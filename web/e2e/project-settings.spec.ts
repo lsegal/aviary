@@ -206,8 +206,7 @@ test("adding a project from the single field saves it to the chosen agent", asyn
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/agents/coder/projects/lsegal%2Faviary");
-	await page.getByRole("button", { name: "+ Add project" }).click();
+	await page.goto("/agents/coder/projects/lsegal%2Faviary?add=1");
 
 	const dialog = page.getByRole("dialog", { name: "Watch a repository" });
 	await expect(dialog).toBeVisible();
@@ -334,7 +333,24 @@ test("a project's board names its agent and links to its projects in System → 
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	const owner = page.getByTestId("project-owner");
 	await expect(owner).toHaveText("agent: coder");
-	await page.getByTestId("project-settings-link").click();
+	// The header's actions are icon buttons, Settings rightmost, and there is
+	// no Add project button (projects are added under their agent).
+	const header = page.locator("header").filter({ has: owner });
+	const settings = header.getByRole("link", { name: "Settings", exact: true });
+	await expect(settings).toHaveAttribute("title", "Settings");
+	await expect(settings).toHaveText("");
+	const chatToggle = header.getByRole("button", { name: "Prompt chat" });
+	await expect(chatToggle).toHaveAttribute("title", "Prompt chat");
+	await expect(chatToggle).toHaveText("");
+	await expect(header.getByRole("button", { name: /Add project/ })).toHaveCount(
+		0,
+	);
+	const actions = header.locator("a, button");
+	await expect(actions.last()).toHaveAttribute(
+		"data-testid",
+		"project-settings-link",
+	);
+	await settings.click();
 	await expect(page).toHaveURL(
 		"/system/projects?agent=coder&project=lsegal%2Faviary",
 	);
