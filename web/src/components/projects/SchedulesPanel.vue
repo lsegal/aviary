@@ -2,16 +2,16 @@
 	<div class="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
 		<section aria-label="Schedules" class="space-y-2">
 			<div class="flex items-center gap-2">
-				<h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Scheduled prompts</h2>
+				<h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Project scheduled tasks</h2>
 				<button type="button" data-testid="schedule-new"
 					class="ml-auto rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-					@click="selected = NEW">New schedule</button>
+					:disabled="!agents.length" @click="onNew">New schedule</button>
 			</div>
 			<p v-if="error || toggleError" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
 				{{ toggleError || error }}
 			</p>
 			<p v-if="loaded && !schedules.length" class="py-8 text-center text-sm text-gray-400">
-				No scheduled prompts for this project yet.
+				No scheduled tasks target this project yet.
 			</p>
 			<ul class="space-y-2">
 				<li v-for="s in schedules" :key="s.id" data-testid="schedule-row"
@@ -31,11 +31,11 @@
 							{{ s.description || s.trigger }}<template v-if="s.enabled && s.nextRun"> · next {{ until(s.nextRun, now) }}</template>
 							<template v-else-if="!s.enabled"> · paused</template>
 						</p>
-						<p v-if="lastResult(s)" data-testid="schedule-last-result"
+						<p v-if="lastScheduleRun(s)" data-testid="schedule-last-result"
 							class="mt-0.5 flex items-center gap-1.5 truncate text-xs text-gray-500 dark:text-gray-400">
-							<span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="lastDot(lastResult(s)?.status ?? '')" />
-							<span class="truncate">{{ lastResult(s)?.summary || lastResult(s)?.status }}</span>
-							<span class="shrink-0 text-gray-400">· {{ age(lastResult(s)?.fireTime ?? "", now) }} ago</span>
+							<span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="scheduleRunDot(lastScheduleRun(s)?.status ?? '')" />
+							<span class="truncate">{{ lastScheduleRun(s)?.summary || lastScheduleRun(s)?.status }}</span>
+							<span class="shrink-0 text-gray-400">· {{ age(lastScheduleRun(s)?.fireTime ?? "", now) }} ago</span>
 							<span v-if="s.history[0]?.status === 'running'" class="shrink-0 text-blue-600 dark:text-blue-400">· running now</span>
 						</p>
 					</button>
@@ -44,7 +44,7 @@
 		</section>
 		<section aria-label="Schedule editor"
 			class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-			<ScheduleEditor v-if="editing" :key="editing.id || 'new'" :schedule="editing" :agents="agents" :save="save"
+			<ScheduleEditor v-if="editing" :key="editing.id" :schedule="editing" :save="save"
 				:remove="remove" :run-now="runNow" :preview="preview" @saved="selected = $event" @deleted="selected = ''" />
 			<p v-else class="py-12 text-center text-sm text-gray-400">Select a schedule to edit it, or create a new one.</p>
 		</section>
@@ -52,17 +52,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
+import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
 import {
 	age,
-	emptySchedule,
+	lastScheduleRun,
 	type ProjectSchedule,
+	scheduleRunDot,
 	until,
 } from "../../lib/projects";
 import ScheduleEditor from "./ScheduleEditor.vue";
-
-// Task ids are always "agent/task", so "new" never names one.
-const NEW = "new";
 
 const props = defineProps<{
 	project: string;
@@ -76,20 +75,34 @@ const props = defineProps<{
 	remove: (s: ProjectSchedule) => Promise<void>;
 	runNow: (s: ProjectSchedule) => Promise<void>;
 	preview: (s: ProjectSchedule) => Promise<string[]>;
+	refresh: () => Promise<void>;
 }>();
 
 /** The schedule id the editor shows, settable from the "Up next" strip. */
 const selected = defineModel<string>("selected", { default: "" });
 
-const fresh = ref(emptySchedule(props.project));
-watch(selected, (id) => {
-	if (id === NEW) fresh.value = emptySchedule(props.project);
-});
-const editing = computed(() =>
-	selected.value === NEW
-		? fresh.value
-		: (props.schedules.find((s) => s.id === selected.value) ?? null),
+const editing = computed(
+	() => props.schedules.find((s) => s.id === selected.value) ?? null,
 );
+
+// A new schedule is created the way any scheduled task is, through the shared
+// Add task dialog, as a "project" task targeting this project.
+const { open: openItemDialog } = useAgentItemDialogs();
+function onNew() {
+	const [agent] = props.agents;
+	if (!agent) return;
+	openItemDialog({
+		kind: "task",
+		mode: "create",
+		agent,
+		agents: props.agents,
+		project: props.project,
+		onCreated: (owner, name) => {
+			selected.value = `${owner}/${name}`;
+			void props.refresh();
+		},
+	});
+}
 
 const toggling = ref("");
 const toggleError = ref("");
@@ -103,19 +116,5 @@ async function onToggle(s: ProjectSchedule) {
 	} finally {
 		toggling.value = "";
 	}
-}
-
-const FINISHED = ["completed", "failed", "canceled", "skipped"];
-
-/** The schedule's latest finished run, or its latest run when none finished. */
-function lastResult(s: ProjectSchedule) {
-	return s.history.find((r) => FINISHED.includes(r.status)) ?? s.history[0];
-}
-
-function lastDot(status: string) {
-	if (status === "completed") return "bg-green-500";
-	if (status === "failed") return "bg-red-500";
-	if (status === "running" || status === "queued") return "bg-blue-500";
-	return "bg-gray-400";
 }
 </script>

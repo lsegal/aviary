@@ -69,7 +69,7 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 	]);
 });
 
-test("an agent's pages are Chats, GitHub Projects, Tasks, Files and Settings", async ({
+test("an agent's pages are Chats, GitHub Projects, Scheduled Tasks, Files and Settings", async ({
 	page,
 }) => {
 	await mockMCP(page, {
@@ -87,7 +87,13 @@ test("an agent's pages are Chats, GitHub Projects, Tasks, Files and Settings", a
 	const agent = page.getByTestId("sidebar-sole-agent");
 	await expect(
 		agent.getByRole("link").and(page.locator(":not([title])")),
-	).toHaveText(["Chats", "GitHub Projects", "Tasks", "Files", "Settings"]);
+	).toHaveText([
+		"Chats",
+		"GitHub Projects",
+		"Scheduled Tasks",
+		"Files",
+		"Settings",
+	]);
 	// The agent comes from the sidebar: the chat has no agent switch.
 	await expect(page.getByRole("button", { name: "assistant" })).toHaveCount(0);
 

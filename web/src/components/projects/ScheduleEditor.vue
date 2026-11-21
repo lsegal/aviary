@@ -3,15 +3,18 @@
 		<div class="grid gap-3 sm:grid-cols-2">
 			<label class="block text-sm">
 				<span class="font-medium text-gray-700 dark:text-gray-200">Name</span>
-				<input v-model="draft.name" name="name" required :disabled="!!draft.id" :class="INPUT" placeholder="nightly-triage" />
+				<input :value="draft.name" name="name" disabled :class="INPUT" />
 			</label>
 			<label class="block text-sm">
 				<span class="font-medium text-gray-700 dark:text-gray-200">Owner agent</span>
-				<select v-model="draft.agent" name="agent" required :disabled="!!draft.id" :class="INPUT">
-					<option v-for="a in agentOptions" :key="a" :value="a">{{ a }}</option>
-				</select>
+				<input :value="draft.agent" name="agent" disabled :class="INPUT" />
 			</label>
 		</div>
+		<p class="text-xs text-gray-500">
+			A project scheduled task.
+			<router-link data-testid="schedule-task-link" :to="agentTaskPath(draft.agent, draft.name)"
+				class="text-blue-600 hover:underline dark:text-blue-400">Open in Scheduled Tasks</router-link>
+		</p>
 		<label class="block text-sm">
 			<span class="font-medium text-gray-700 dark:text-gray-200">Prompt</span>
 			<textarea v-model="draft.prompt" name="prompt" required rows="5" :class="INPUT"
@@ -106,10 +109,10 @@
 		<div class="flex flex-wrap items-center gap-2">
 			<button type="submit" :disabled="busy"
 				class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50">Save</button>
-			<button v-if="draft.id" type="button" :disabled="busy"
+			<button type="button" :disabled="busy"
 				class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 				@click="act(() => props.runNow(schedule))">Run now</button>
-			<button v-if="draft.id" type="button" :disabled="busy"
+			<button type="button" :disabled="busy"
 				class="ml-auto rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950/40"
 				@click="onDelete">Delete</button>
 		</div>
@@ -118,10 +121,10 @@
 			<h3 class="mb-1 font-medium text-gray-700 dark:text-gray-200">Recent runs</h3>
 			<ul data-testid="schedule-runs" class="divide-y divide-gray-100 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
 				<li v-for="run in schedule.history" :key="run.fireTime" class="flex items-center gap-2 px-3 py-1.5 text-xs">
-					<span class="h-2 w-2 shrink-0 rounded-full" :class="runDot(run.status)" />
+					<span class="h-2 w-2 shrink-0 rounded-full" :class="scheduleRunDot(run.status)" />
 					<span class="w-16 shrink-0 text-gray-500">{{ run.status }}</span>
 					<span class="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200" :title="run.summary">{{ run.summary || run.reason }}</span>
-					<span class="shrink-0 tabular-nums text-gray-400">{{ duration(run.durationMS) }}</span>
+					<span class="shrink-0 tabular-nums text-gray-400">{{ runDuration(run.durationMS) }}</span>
 					<span class="shrink-0 text-gray-400">{{ formatFire(run.fireTime) }}</span>
 				</li>
 			</ul>
@@ -132,12 +135,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useAvailableModels } from "../../composables/useAvailableModels";
-import type { ProjectSchedule, ScheduleTrigger } from "../../lib/projects";
+import {
+	formatFire,
+	type ProjectSchedule,
+	runDuration,
+	type ScheduleTrigger,
+	scheduleRunDot,
+} from "../../lib/projects";
+import { agentTaskPath } from "../../stores/settings";
 import ModelSelector from "../ModelSelector.vue";
 
 const props = defineProps<{
 	schedule: ProjectSchedule;
-	agents: string[];
 	save: (s: ProjectSchedule) => Promise<void>;
 	remove: (s: ProjectSchedule) => Promise<void>;
 	runNow: (s: ProjectSchedule) => Promise<void>;
@@ -168,23 +177,10 @@ watch(
 	() => props.schedule,
 	(next, prev) => {
 		// Polls replace the schedule; only a different one resets the edits.
-		if (next.id !== prev?.id || !next.id) draft.value = { ...next };
+		if (next.id !== prev?.id) draft.value = { ...next };
 		else draft.value = { ...draft.value, history: next.history };
 	},
 );
-const agentOptions = computed(() =>
-	draft.value.agent && !props.agents.includes(draft.value.agent)
-		? [draft.value.agent, ...props.agents]
-		: props.agents,
-);
-watch(
-	agentOptions,
-	(list) => {
-		if (!draft.value.agent && list.length) draft.value.agent = list[0];
-	},
-	{ immediate: true },
-);
-
 const days = computed(() =>
 	draft.value.days
 		.split(",")
@@ -241,40 +237,6 @@ watch(
 	{ immediate: true },
 );
 
-function formatFire(iso: string) {
-	const t = Date.parse(iso);
-	return Number.isNaN(t)
-		? iso
-		: new Date(t).toLocaleString(undefined, {
-				weekday: "short",
-				month: "short",
-				day: "numeric",
-				hour: "2-digit",
-				minute: "2-digit",
-			});
-}
-
-function duration(ms: number) {
-	if (!ms) return "";
-	const s = Math.round(ms / 1000);
-	return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
-}
-
-function runDot(status: string) {
-	switch (status) {
-		case "completed":
-			return "bg-green-500";
-		case "failed":
-			return "bg-red-500";
-		case "running":
-		case "queued":
-		case "retrying":
-			return "bg-blue-500";
-		default:
-			return "bg-gray-400";
-	}
-}
-
 const busy = ref(false);
 const error = ref("");
 async function act(fn: () => Promise<void>) {
@@ -294,7 +256,7 @@ async function act(fn: () => Promise<void>) {
 async function onSave() {
 	const s = draft.value;
 	if (await act(() => props.save(s))) {
-		emit("saved", s.id || `${s.agent}/${s.name.trim()}`);
+		emit("saved", s.id);
 	}
 }
 

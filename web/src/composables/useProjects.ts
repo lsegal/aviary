@@ -360,35 +360,19 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		void refresh();
 	});
 
-	/** Creates the schedule when it has no id yet, otherwise updates it. */
+	/**
+	 * Saves an existing project scheduled task. New ones are created through
+	 * the shared Add task dialog, as any scheduled task is.
+	 */
 	async function save(s: ProjectSchedule) {
-		const fields = {
+		await callTool("task_update", {
+			name: s.id,
 			...triggerArgs(s),
 			content: s.prompt.trim(),
 			model: s.model.trim(),
-		};
-		if (s.id) {
-			await callTool("task_update", {
-				name: s.id,
-				...fields,
-				project: s.project,
-				enabled: s.enabled,
-			});
-		} else {
-			await callTool("task_schedule", {
-				...fields,
-				agent: s.agent,
-				name: s.name.trim(),
-				type: "project",
-				project: s.project,
-			});
-			if (!s.enabled) {
-				await callTool("task_update", {
-					name: `${s.agent}/${s.name.trim()}`,
-					enabled: false,
-				});
-			}
-		}
+			project: s.project,
+			enabled: s.enabled,
+		});
 		await refresh();
 	}
 
@@ -420,6 +404,18 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		return Array.isArray(next) ? next.map(String) : [];
 	}
 
+	/**
+	 * The next count fires of a saved schedule, as the scheduler itself
+	 * predicts them (it knows whether a run-once task already fired).
+	 */
+	async function predict(s: ProjectSchedule, count = 5): Promise<string[]> {
+		const result = parseToolJSON(
+			await callTool("task_preview", { name: s.id, count }),
+		);
+		const next = (result as { next?: unknown }).next;
+		return Array.isArray(next) ? next.map(String) : [];
+	}
+
 	return {
 		schedules,
 		upcoming,
@@ -432,5 +428,6 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		remove,
 		runNow,
 		preview,
+		predict,
 	};
 }

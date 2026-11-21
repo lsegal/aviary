@@ -41,7 +41,7 @@
 									class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
 								<span class="text-sm text-gray-700 dark:text-gray-300">
 									Update automatically
-									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(only while no jobs are running)</span>
+									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(applies updates as soon as they are available)</span>
 								</span>
 							</label>
 						</div>

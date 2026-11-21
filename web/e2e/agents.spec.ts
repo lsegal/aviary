@@ -106,7 +106,7 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 	).toHaveValue("assistant");
 
 	// Tasks subtab
-	await agentPageLink(page, "Tasks").click();
+	await agentPageLink(page, "Scheduled Tasks").click();
 	await expect(
 		page.locator('input[placeholder="daily-briefing"]').first(),
 	).toHaveValue("daily-briefing");
@@ -117,7 +117,7 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 		page.getByRole("switch", { name: "Toggle task enabled" }).first(),
 	).toBeVisible();
 	await expect(
-		page.getByRole("heading", { name: "Tasks", exact: true }),
+		page.getByRole("heading", { name: "Scheduled Tasks", exact: true }),
 	).toBeVisible();
 
 	// Channels tab of the agent's Settings page
@@ -847,7 +847,7 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 	});
 
 	await openAgentPage(page, "settings");
-	await agentPageLink(page, "Tasks").click();
+	await agentPageLink(page, "Scheduled Tasks").click();
 
 	const prompt = page.getByPlaceholder("Task prompt...").first();
 	await prompt.fill("line 1\n\nline 3\n");
@@ -869,7 +869,7 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 
 test("tasks can be enabled from the settings UI", async ({ page }) => {
 	await openAgentPage(page, "settings");
-	await agentPageLink(page, "Tasks").click();
+	await agentPageLink(page, "Scheduled Tasks").click();
 
 	await expect(page.getByText("disabled", { exact: true })).toBeVisible();
 	const toggle = page
@@ -985,7 +985,7 @@ test("deleting a task from settings persists immediately", async ({ page }) => {
 	});
 
 	await openAgentPage(page, "settings");
-	await agentPageLink(page, "Tasks").click();
+	await agentPageLink(page, "Scheduled Tasks").click();
 
 	const row = page.getByTestId("task-row").filter({ hasText: "file-task" });
 	await expect(row).toBeVisible();
@@ -996,7 +996,7 @@ test("deleting a task from settings persists immediately", async ({ page }) => {
 
 	await expect(row).toHaveCount(0);
 	await expect(
-		page.getByText("No tasks configured for this agent."),
+		page.getByText("No scheduled tasks configured for this agent."),
 	).toBeVisible();
 	expect(savedConfig).toMatchObject({
 		agents: [
@@ -1194,4 +1194,117 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 			{ name: "elsewhere", projects: [{ target: "o/not-mine" }] },
 		],
 	});
+});
+
+test("a task's session target is picked by name and saved by ID", async ({
+	page,
+}) => {
+	let savedConfig: unknown = null;
+	const config = {
+		...CONFIG,
+		agents: [
+			{
+				...CONFIG.agents[0],
+				tasks: [
+					{
+						name: "daily-briefing",
+						schedule: "0 9 * * *",
+						prompt: "Summarize updates",
+						target: "session:sess_gone",
+					},
+				],
+			},
+		],
+	};
+	await mockMCP(page, {
+		config_get: config,
+		config_save: (args) => {
+			savedConfig = JSON.parse(String(args?.config ?? "{}"));
+			return "ok";
+		},
+		auth_list: ["anthropic:default", "brave_api_key"],
+		session_list: [
+			{
+				id: "sess_planning",
+				agent_id: "assistant",
+				name: "sess_planning",
+				title: "Trip planning",
+				created_at: "",
+			},
+			{ id: "sess_main", agent_id: "assistant", name: "main", created_at: "" },
+		],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		agent_file_list: [],
+	});
+
+	await page.goto("/agents/assistant/tasks");
+	await page
+		.getByTestId("sidebar-tasks")
+		.getByRole("link", { name: "daily-briefing" })
+		.click();
+
+	// A saved session that no longer exists is shown as gone, not blank.
+	const session = page.getByRole("combobox", { name: "Session" });
+	await expect(session.locator("option")).toHaveText([
+		"Choose a session…",
+		"Main Chat",
+		"Trip planning",
+		"Deleted session (no longer exists)",
+	]);
+	await expect(session).toHaveValue("sess_gone");
+	await expect(page.locator('input[placeholder="Target ID"]')).toHaveCount(0);
+
+	await session.selectOption({ label: "Main Chat" });
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect(page.getByTitle("Settings saved")).toBeVisible();
+	expect(savedConfig).toMatchObject({
+		agents: [{ tasks: [{ target: "session:sess_main" }] }],
+	});
+});
+
+test("a task saved with a session name selects that session", async ({
+	page,
+}) => {
+	const config = {
+		...CONFIG,
+		agents: [
+			{
+				...CONFIG.agents[0],
+				tasks: [
+					{
+						name: "daily-briefing",
+						schedule: "0 9 * * *",
+						prompt: "Summarize updates",
+						target: "session:main",
+					},
+				],
+			},
+		],
+	};
+	await mockMCP(page, {
+		config_get: config,
+		auth_list: [],
+		session_list: [
+			{ id: "sess_main", agent_id: "assistant", name: "main", created_at: "" },
+		],
+		agent_list: [{ id: "a1", name: "assistant", state: "idle" }],
+		agent_file_list: [],
+	});
+
+	await page.goto("/agents/assistant/tasks");
+	await page
+		.getByTestId("sidebar-tasks")
+		.getByRole("link", { name: "daily-briefing" })
+		.click();
+	const session = page.getByRole("combobox", { name: "Session" });
+	await expect(session).toHaveValue("sess_main");
+	await expect(session.locator("option:checked")).toHaveText("Main Chat");
 });

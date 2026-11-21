@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/cliagent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/store"
@@ -48,8 +49,9 @@ func needsAutoTitle(sess *domain.Session) bool {
 // sent while one is in flight do not generate another.
 var titlingSessions sync.Map
 
-// autoTitleSession names the chat from its first prompt, falling back to the
-// prompt's own opening words when the model gives no usable title.
+// autoTitleSession names the chat with the agent's model's title for its
+// first prompt. When the model gives no usable title the chat stays unnamed,
+// and needsAutoTitle offers it again on a later prompt.
 func autoTitleSession(agentName string, sess *domain.Session, prompt string) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
@@ -67,9 +69,6 @@ func autoTitleSession(agentName string, sess *domain.Session, prompt string) {
 		slog.Warn("mcp: generating session title failed", "agent", agentName, "session", sess.ID, "err", err)
 	}
 	title = cleanSessionTitle(title)
-	if title == "" {
-		title = fallbackSessionTitle(prompt)
-	}
 	if title == "" || agent.SessionTitle(sess.AgentID, sess.ID) != "" {
 		return
 	}
@@ -78,7 +77,8 @@ func autoTitleSession(agentName string, sess *domain.Session, prompt string) {
 	}
 }
 
-// generateSessionTitle asks the agent's own model for a title.
+// generateSessionTitle asks the agent's own model for a title, through its
+// CLI when the model is CLI-backed.
 func generateSessionTitle(ctx context.Context, agentName, prompt string) (string, error) {
 	cfg, agentCfg, err := loadCompileAgentConfig(agentName)
 	if err != nil {
@@ -87,6 +87,9 @@ func generateSessionTitle(ctx context.Context, agentName, prompt string) (string
 	model := config.EffectiveAgentModel(*agentCfg, cfg.Models)
 	if strings.TrimSpace(model) == "" {
 		return "", fmt.Errorf("agent %q has no model configured", agentName)
+	}
+	if cliagent.IsCLIModel(model) {
+		return agent.CompleteCLIText(ctx, model, sessionTitleSystem, prompt)
 	}
 	provider, err := compileTaskProvider(model)
 	if err != nil {
@@ -112,12 +115,6 @@ func cleanSessionTitle(reply string) string {
 	})
 	line = strings.TrimRight(line, ".!?,;: ")
 	return truncateTitle(line)
-}
-
-// fallbackSessionTitle titles a chat with its prompt's first line.
-func fallbackSessionTitle(prompt string) string {
-	line, _, _ := strings.Cut(strings.TrimSpace(prompt), "\n")
-	return truncateTitle(strings.Join(strings.Fields(line), " "))
 }
 
 // truncateTitle shortens a title at a word boundary, marking the cut.

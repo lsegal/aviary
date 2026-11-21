@@ -30,6 +30,9 @@ type SessionMeta struct {
 	Title        string            `json:"title,omitempty"`
 	Conversation *ConversationMeta `json:"conversation,omitempty"`
 	CLI          *CLISessionMeta   `json:"cli,omitempty"`
+	// LastMessageAt is when the session's last user or assistant message was
+	// persisted, recorded as each one is appended.
+	LastMessageAt *time.Time `json:"last_message_at,omitempty"`
 }
 
 // sessionMetaMu serializes read-modify-write updates of session sidecars, so
