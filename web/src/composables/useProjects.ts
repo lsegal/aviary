@@ -138,7 +138,8 @@ export function useProjectBoard(
 		}
 		try {
 			const [statusText, list] = await Promise.all([
-				callTool("project_status", {}),
+				// The stat cards count the board's own projects, like its filters.
+				callTool("project_status", { targets: projects }),
 				listJobs(projects),
 			]);
 			// Every visible list card shows its job's latest terminal output,

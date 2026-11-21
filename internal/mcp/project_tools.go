@@ -22,7 +22,8 @@ var (
 )
 
 type projectStatusArgs struct {
-	LogOffset int `json:"log_offset,omitempty" jsonschema:"Return only the log lines logged after this offset, as returned in log_offset by an earlier call"`
+	LogOffset int      `json:"log_offset,omitempty" jsonschema:"Return only the log lines logged after this offset, as returned in log_offset by an earlier call"`
+	Targets   []string `json:"targets,omitempty" jsonschema:"Count jobs in each board state over only these projects' jobs"`
 }
 
 type projectJobListArgs struct {
@@ -146,11 +147,11 @@ func retryScheduledJob(taskID string) (map[string]any, error) {
 func registerProjectTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_status",
-		Description: "Projects status: instance identity, watched projects with issue counts, job counts, delivery mode and last check, allowed commenters, quota per CLI provider, and recent log lines",
+		Description: "Projects status: instance identity, watched projects with issue counts, job counts, jobs in each board state (starting, paused, running, done, failed), delivery mode and last check, allowed commenters, quota per CLI provider, and recent log lines",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectStatusArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
-			return m.Status(ctx, args.LogOffset), nil
+			return m.Status(ctx, args.LogOffset, args.Targets), nil
 		})
 	})
 
