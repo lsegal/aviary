@@ -146,7 +146,10 @@ func (p *WorkerPool) run(ctx context.Context) {
 
 // ExecuteNow runs a job immediately in its own goroutine, bypassing queue
 // claiming and worker-pool concurrency limits while still persisting status.
+// The worker runs its own copy of job, so the caller's job is never mutated.
 func (p *WorkerPool) ExecuteNow(job *domain.Job) {
+	running := *job
+	job = &running
 	ctx := context.Background()
 	p.ctxMu.RLock()
 	if p.ctx != nil {

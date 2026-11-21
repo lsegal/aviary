@@ -804,6 +804,35 @@ func TestRunJobNow_ForceStartsPendingJob(t *testing.T) {
 
 }
 
+func TestRunJobNow_ReturnedJobIsNotSharedWithWorker(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m"}}})
+	s, err := New(mgr, 1)
+	require.NoError(t, err)
+
+	job, err := s.Queue().EnqueueAt("alpha/daily", "alpha", "hello", "", 1, time.Now().Add(1*time.Hour), "", "")
+	require.NoError(t, err)
+
+	started, err := s.RunJobNow(job.ID)
+	require.NoError(t, err)
+	assertJobNotSharedWithWorker(t, s, started)
+}
+
+// assertJobNotSharedWithWorker waits for the worker to assign the job's
+// session, then checks the job returned to the caller did not change
+// underneath it.
+func assertJobNotSharedWithWorker(t *testing.T, s *Scheduler, started *domain.Job) {
+	t.Helper()
+	assert.Eventually(t, func() bool {
+		persisted, err := store.ReadJSON[domain.Job](store.FindJobPath(started.ID))
+		return err == nil && persisted.SessionID != ""
+	}, 5*time.Second, 10*time.Millisecond)
+	s.Stop()
+	assert.Empty(t, started.SessionID)
+}
+
 func TestRunJobNow_RejectsExhaustedPendingJob(t *testing.T) {
 	setupSchedulerDataDir(t)
 
@@ -829,6 +858,25 @@ func TestRunJobNow_RejectsExhaustedPendingJob(t *testing.T) {
 	started, err := s.RunJobNow(job.ID)
 	assert.Nil(t, started)
 	assert.ErrorContains(t, err, "has exhausted its 1 allowed attempt")
+}
+
+func TestTrigger_ReturnedJobIsNotSharedWithWorker(t *testing.T) {
+	setupSchedulerDataDir(t)
+
+	mgr := agent.NewManager(nil)
+	s, err := New(mgr, 1)
+	require.NoError(t, err)
+	cfg := &config.Config{Agents: []config.AgentConfig{{
+		Name:  "alpha",
+		Model: "m",
+		Tasks: []config.TaskConfig{{Name: "daily", Prompt: "run daily", Schedule: "0 9 * * *"}},
+	}}}
+	mgr.Reconcile(cfg)
+	s.Reconcile(cfg)
+
+	started, err := s.Trigger("alpha/daily")
+	require.NoError(t, err)
+	assertJobNotSharedWithWorker(t, s, started)
 }
 
 func TestTrigger_NotFound(t *testing.T) {
