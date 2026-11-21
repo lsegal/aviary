@@ -39,14 +39,16 @@
 					<ComboboxEmpty :class="EMPTY">{{ emptyText ?? "No matching options" }}</ComboboxEmpty>
 					<ComboboxGroup v-for="(group, gi) in groups" :key="`${gi}-${group.label}`">
 						<ComboboxLabel v-if="group.label" :class="GROUP_LABEL">{{ group.label }}</ComboboxLabel>
-						<ComboboxItem v-for="option in group.options" :key="optionKey(option.value)"
+						<ComboboxItem v-for="(option, oi) in group.options" :key="optionKey(option.value)"
 							:value="optionKey(option.value)" :disabled="option.disabled"
+							:aria-labelledby="`${uid}-${gi}-${oi}-l`"
+							:aria-describedby="option.description ? `${uid}-${gi}-${oi}-d` : undefined"
 							:class="[ITEM_BASE, ITEM[size], 'group/item']">
 							<span class="min-w-0 flex-1">
-								<span class="block truncate">
+								<span :id="`${uid}-${gi}-${oi}-l`" class="block truncate" data-option-label>
 									<slot name="option" :option="option">{{ option.label }}</slot>
 								</span>
-								<span v-if="option.description" :class="DESCRIPTION">{{ option.description }}</span>
+								<span v-if="option.description" :id="`${uid}-${gi}-${oi}-d`" :class="DESCRIPTION">{{ option.description }}</span>
 							</span>
 							<span class="flex h-4 w-4 shrink-0 items-center">
 								<ComboboxItemIndicator data-testid="select-check">
@@ -82,7 +84,7 @@ import {
 	ComboboxTrigger,
 	ComboboxViewport,
 } from "radix-vue";
-import { computed, type HTMLAttributes, ref } from "vue";
+import { computed, type HTMLAttributes, ref, useId } from "vue";
 import {
 	CHECK,
 	CHEVRON,
@@ -130,6 +132,7 @@ const props = withDefaults(
 const emit = defineEmits<{ "update:modelValue": [value: string | string[]] }>();
 
 const open = ref(false);
+const uid = useId();
 const searchTerm = ref("");
 const inputRef = ref<{ $el: HTMLInputElement } | null>(null);
 

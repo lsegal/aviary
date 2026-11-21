@@ -18,14 +18,16 @@
 					<div v-if="!options.length" :class="EMPTY">{{ emptyText ?? "No options" }}</div>
 					<SelectGroup v-for="(group, gi) in groups" :key="`${gi}-${group.label}`">
 						<SelectLabel v-if="group.label" :class="GROUP_LABEL">{{ group.label }}</SelectLabel>
-						<SelectItem v-for="option in group.options" :key="optionKey(option.value)"
+						<SelectItem v-for="(option, oi) in group.options" :key="optionKey(option.value)"
 							:value="optionKey(option.value)" :text-value="option.label" :disabled="option.disabled"
+							:aria-labelledby="`${uid}-${gi}-${oi}-l`"
+							:aria-describedby="option.description ? `${uid}-${gi}-${oi}-d` : undefined"
 							:class="[ITEM_BASE, ITEM[size], 'group/item']">
 							<span class="min-w-0 flex-1">
-								<SelectItemText>
+								<SelectItemText :id="`${uid}-${gi}-${oi}-l`" data-option-label>
 									<slot name="option" :option="option">{{ option.label }}</slot>
 								</SelectItemText>
-								<span v-if="option.description" :class="DESCRIPTION">{{ option.description }}</span>
+								<span v-if="option.description" :id="`${uid}-${gi}-${oi}-d`" :class="DESCRIPTION">{{ option.description }}</span>
 							</span>
 							<span class="flex h-4 w-4 shrink-0 items-center">
 								<SelectItemIndicator data-testid="select-check">
@@ -58,7 +60,7 @@ import {
 	SelectTrigger,
 	SelectViewport,
 } from "radix-vue";
-import { computed, type HTMLAttributes, ref } from "vue";
+import { computed, type HTMLAttributes, ref, useId } from "vue";
 import {
 	CHECK,
 	CHEVRON,
@@ -100,6 +102,7 @@ const props = withDefaults(
 const emit = defineEmits<{ "update:modelValue": [value: V] }>();
 
 const open = ref(false);
+const uid = useId();
 const groups = computed(() => groupOptions(props.options));
 const selected = computed(() =>
 	props.modelValue === undefined || props.modelValue === null
