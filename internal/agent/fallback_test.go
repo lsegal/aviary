@@ -80,6 +80,7 @@ func TestAgentRunnerSkipsUnavailableFallbackProvider(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout waiting for fallback response")
 	}
+	runner.Wait()
 	assert.Equal(t, "fallback answer", output)
 	assert.Equal(t, []string{
 		"anthropic/primary",

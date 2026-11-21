@@ -982,7 +982,7 @@ function chatLog(calls: Calls) {
 			session_id: "projects-chat",
 			role: "user",
 			content: "What does the board look like?",
-			media_url: PNG,
+			media_urls: [PNG],
 			timestamp: at(5),
 		},
 		{
@@ -990,7 +990,7 @@ function chatLog(calls: Calls) {
 			session_id: "projects-chat",
 			role: "assistant",
 			content: "Here is the failing run.",
-			media_url: PNG,
+			media_urls: [PNG],
 			timestamp: at(4),
 		},
 		// What the server persists once a prompt has run.
@@ -1165,7 +1165,7 @@ test("prompt chat inserts a newline on Shift+Enter and sends on Enter", async ({
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	await page.getByTestId("prompt-chat-toggle").click();
 	const chat = page.getByTestId("project-chat");
-	const input = chat.getByPlaceholder("Type a message or paste an image…");
+	const input = chat.getByPlaceholder("Describe a task or ask a question");
 	await expect(input).toBeEnabled();
 
 	await input.fill("line one");
@@ -1268,7 +1268,7 @@ test("every board shares one prompt chat log with its own project hint", async (
 	await page.getByTestId("prompt-chat-toggle").click();
 	let chat = page.getByTestId("project-chat");
 	await expect(chat).toContainText("about lsegal/aviary");
-	const input = chat.getByPlaceholder("Type a message or paste an image…");
+	const input = chat.getByPlaceholder("Describe a task or ask a question");
 	await input.fill("What is stuck here?");
 	await input.press("Enter");
 	await expect.poll(() => calls.agent_run?.length ?? 0).toBe(1);
@@ -1281,10 +1281,10 @@ test("every board shares one prompt chat log with its own project hint", async (
 	await expect(chat).toContainText("Here is the failing run.");
 	await expect(chat).toContainText("What is stuck here?");
 	await chat
-		.getByPlaceholder("Type a message or paste an image…")
+		.getByPlaceholder("Describe a task or ask a question")
 		.fill("And everywhere?");
 	await chat
-		.getByPlaceholder("Type a message or paste an image…")
+		.getByPlaceholder("Describe a task or ask a question")
 		.press("Enter");
 	await expect.poll(() => calls.agent_run?.length ?? 0).toBe(2);
 

@@ -1467,9 +1467,9 @@ func TestChannelSendFile_PersistsMediaForWebSession(t *testing.T) {
 	assert.NoError(t, err)
 
 	var messages []struct {
-		Role     string `json:"role"`
-		Content  string `json:"content"`
-		MediaURL string `json:"media_url"`
+		Role      string   `json:"role"`
+		Content   string   `json:"content"`
+		MediaURLs []string `json:"media_urls"`
 	}
 	err = json.Unmarshal([]byte(raw), &messages)
 	assert.NoError(t, err)
@@ -1479,7 +1479,8 @@ func TestChannelSendFile_PersistsMediaForWebSession(t *testing.T) {
 	last := messages[len(messages)-1]
 	assert.Equal(t, "assistant", last.Role)
 	assert.Equal(t, "calendar screenshot", last.Content)
-	assert.True(t, strings.HasPrefix(last.MediaURL, "data:image/png;base64,"))
+	assert.Len(t, last.MediaURLs, 1)
+	assert.True(t, strings.HasPrefix(last.MediaURLs[0], "data:image/png;base64,"))
 
 }
 

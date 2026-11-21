@@ -1,63 +1,28 @@
 <template>
-	<div class="space-y-0.5 pl-2" data-testid="sidebar-chats">
-		<div v-for="s in shown" :key="s.id" data-testid="chat-row" :data-session="s.id"
-			class="group relative flex items-center rounded-lg transition-colors"
-			:class="s.id === activeId
-				? 'bg-gray-100 dark:bg-gray-800'
-				: 'hover:bg-gray-100 dark:hover:bg-gray-800'">
-			<input v-if="editingId === s.id" ref="editInput" v-model="editName" data-testid="chat-rename-input"
-				:aria-label="`Rename ${chatDisplayName(s)}`"
-				class="m-0.5 min-w-0 flex-1 rounded-md border border-blue-500 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none dark:bg-gray-900 dark:text-white"
-				@keydown.enter.prevent="saveRename" @keydown.esc.prevent="cancelRename" @blur="saveRename" />
-			<template v-else>
-				<router-link :to="chatPath(agent, s.id)" :title="chatDisplayName(s)"
-					class="min-w-0 flex-1 truncate py-2 pl-3 pr-1 text-sm"
-					:class="s.id === activeId
-						? 'font-semibold text-gray-950 dark:text-white'
-						: 'text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white'"
-					@dblclick.prevent="startRename(s)">
-					{{ chatDisplayName(s) }}
-				</router-link>
-				<span v-if="s.last_message_at" data-testid="chat-last-message"
-					:title="new Date(s.last_message_at).toLocaleString()"
-					class="hidden shrink-0 pr-1 text-xs text-gray-400 group-hover:inline group-focus-within:inline">
-					{{ age(s.last_message_at, now) }}
-				</span>
-				<DropdownMenuRoot :open="menuId === s.id" @update:open="(open) => (menuId = open ? s.id : '')">
-					<DropdownMenuTrigger asChild>
-						<button type="button" :aria-label="`More options for ${chatDisplayName(s)}`"
-							data-testid="chat-menu-button"
-							class="mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
-							:class="menuId === s.id ? 'opacity-100' : 'opacity-0'">
-							<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" class="h-4 w-4">
-								<circle cx="3" cy="8" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="13" cy="8" r="1.4" />
-							</svg>
-						</button>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="start" :side-offset="4"
-						class="z-50 min-w-36 rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-						<DropdownMenuItem
-							class="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-700 outline-none data-[highlighted]:bg-gray-100 dark:text-gray-200 dark:data-[highlighted]:bg-gray-800"
-							@select="startRename(s)">
-							<PencilIcon aria-hidden="true" class="h-4 w-4" />
-							Rename
-						</DropdownMenuItem>
-						<DropdownMenuItem v-if="!isMainChat(s)"
-							class="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 outline-none data-[highlighted]:bg-red-50 dark:text-red-400 dark:data-[highlighted]:bg-red-950/40"
-							@select="askDelete(s)">
-							<TrashIcon aria-hidden="true" class="h-4 w-4" />
-							Delete
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenuRoot>
+	<div>
+		<SidebarItemList data-testid="sidebar-chats" :items="ordered" :item-key="(s) => s.id" more-testid="sidebar-chats-more">
+			<template #default="{ item: s }">
+				<SidebarItemRow data-testid="chat-row" :data-session="s.id" :to="chatPath(agent, s.id)"
+					:label="chatDisplayName(s)" :active="s.id === activeId" :actions="chatActions(s)"
+					menu-testid="chat-menu-button" :editing="editingId === s.id"
+					:menu-open="menuId === s.id" @update:menu-open="(open) => (menuId = open ? s.id : '')"
+					@select="(key) => (key === 'delete' ? askDelete(s) : startRename(s))" @dblclick="startRename(s)">
+					<template #editor>
+						<input :ref="setEditInput" v-model="editName" data-testid="chat-rename-input"
+							:aria-label="`Rename ${chatDisplayName(s)}`"
+							class="m-0.5 min-w-0 flex-1 rounded-md border border-blue-500 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none dark:bg-gray-900 dark:text-white"
+							@keydown.enter.prevent="saveRename" @keydown.esc.prevent="cancelRename" @blur="saveRename" />
+					</template>
+					<template #meta>
+						<span v-if="s.last_message_at" data-testid="chat-last-message"
+							:title="new Date(s.last_message_at).toLocaleString()"
+							class="hidden shrink-0 pr-1 text-xs text-gray-400 group-hover:inline group-focus-within:inline">
+							{{ age(s.last_message_at, now) }}
+						</span>
+					</template>
+				</SidebarItemRow>
 			</template>
-		</div>
-		<button v-if="ordered.length > visibleLimit" type="button" data-testid="sidebar-chats-more"
-			:aria-expanded="showAll"
-			class="block w-full rounded-lg px-3 py-2 text-left text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-			@click="showAll = !showAll">
-			{{ showAll ? "Less" : "More" }}
-		</button>
+		</SidebarItemList>
 
 		<AlertDialogRoot :open="deleteOpen" @update:open="(open) => (deleteOpen = open)">
 			<AlertDialogPortal>
@@ -90,8 +55,6 @@
 </template>
 
 <script setup lang="ts">
-import PencilIcon from "@heroicons/vue/24/outline/PencilIcon";
-import TrashIcon from "@heroicons/vue/24/outline/TrashIcon";
 import {
 	AlertDialogAction,
 	AlertDialogCancel,
@@ -101,10 +64,6 @@ import {
 	AlertDialogPortal,
 	AlertDialogRoot,
 	AlertDialogTitle,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuRoot,
-	DropdownMenuTrigger,
 } from "radix-vue";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -116,6 +75,9 @@ import {
 	isMainChat,
 	useChatSessionsStore,
 } from "../../stores/chatSessions";
+import SidebarItemList from "../sidebar/SidebarItemList.vue";
+import SidebarItemRow from "../sidebar/SidebarItemRow.vue";
+import type { SidebarItemAction } from "../sidebar/types";
 
 const props = defineProps<{ agent: string }>();
 
@@ -136,10 +98,6 @@ const activeId = computed(() => {
 	return sessions.value.find(isMainChat)?.id ?? "";
 });
 
-/** How many chats the list shows before More. */
-const visibleLimit = 5;
-const showAll = ref(false);
-
 // A chat ranks by its last message; one with no messages yet ranks by when it
 // was created, but shows no time, since it has no last message (#661).
 const lastActive = (s: ChatSession) =>
@@ -153,9 +111,16 @@ const ordered = computed(() =>
 			lastActive(b) - lastActive(a),
 	),
 );
-const shown = computed(() =>
-	showAll.value ? ordered.value : ordered.value.slice(0, visibleLimit),
-);
+const renameAction: SidebarItemAction = { key: "edit", label: "Rename" };
+const deleteAction: SidebarItemAction = {
+	key: "delete",
+	label: "Delete",
+	danger: true,
+};
+// Main Chat cannot be deleted.
+function chatActions(s: ChatSession): SidebarItemAction[] {
+	return isMainChat(s) ? [renameAction] : [renameAction, deleteAction];
+}
 
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | undefined;
@@ -218,7 +183,10 @@ function chatPath(agent: string, sessionId: string): string {
 const menuId = ref("");
 const editingId = ref("");
 const editName = ref("");
-const editInput = ref<HTMLInputElement[] | null>(null);
+let editInput: HTMLInputElement | null = null;
+function setEditInput(el: unknown) {
+	editInput = el instanceof HTMLInputElement ? el : null;
+}
 
 async function startRename(s: ChatSession) {
 	menuId.value = "";
@@ -227,7 +195,7 @@ async function startRename(s: ChatSession) {
 	// Wait for the menu to close and hand focus back before taking it.
 	await nextTick();
 	setTimeout(() => {
-		const el = editInput.value?.[0];
+		const el = editInput;
 		el?.focus();
 		el?.select();
 	}, 0);
