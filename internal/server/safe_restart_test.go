@@ -304,7 +304,7 @@ func TestSafeRestart_GitModeRefusalIsReported(t *testing.T) {
 // runUpdater runs the self-updater until the test ends.
 func runUpdater(t *testing.T, srv *Server, auto bool) {
 	t.Helper()
-	srv.cfg.Server.AutoUpdate = auto
+	srv.cfg.Server.AutoUpdate = &auto
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {

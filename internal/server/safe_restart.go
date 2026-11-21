@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/update"
 )
@@ -367,7 +368,7 @@ func (s *Server) runSelfUpdater(ctx context.Context) {
 
 func (s *Server) autoUpdateOn() bool {
 	cfg := s.cfg
-	return cfg != nil && cfg.Server.AutoUpdate
+	return cfg != nil && config.EffectiveServerAutoUpdate(cfg)
 }
 
 // autoApply applies check's update, restarting now and checkpointing any
