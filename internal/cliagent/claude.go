@@ -9,9 +9,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 
+	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/transcript"
 )
@@ -43,20 +45,35 @@ func newClaudeSession(opts Options) *claudeSession {
 	return &claudeSession{opts: opts, sessionID: opts.ResumeID}
 }
 
-// claudeArgs builds the command line for a Claude Code process. The system
-// prompt is read from systemPromptFile rather than passed inline: with a skill
-// expanded into it, it outgrows Windows' 32,767-character command line.
+// claudeArgs builds the command line for a Claude Code process. The model,
+// session, approval and output-format arguments come from claude's CLI
+// provider definition, as every other launch renders them; only what an
+// interactive chat adds on top is appended here: stream-json input for the
+// long-lived process, Aviary's MCP server, tool scoping and the system prompt.
+// The system prompt is read from systemPromptFile rather than passed inline:
+// with a skill expanded into it, it outgrows Windows' 32,767-character
+// command line.
 func claudeArgs(opts Options, resumeID, systemPromptFile string) []string {
-	args := []string{
-		"-p",
-		"--input-format", "stream-json",
-		"--output-format", "stream-json",
-		"--verbose",
-		"--include-partial-messages",
-		"--model", opts.Model,
-		"--strict-mcp-config",
-		"--mcp-config", claudeMCPConfig(opts),
+	mode, values := clidefs.ModeRun, clidefs.Values{
+		Model:        opts.Model,
+		ApprovalArgs: append([]string{}, opts.Approval...),
+		PromptStdin:  true, // turns arrive as stream-json messages on stdin
 	}
+	switch {
+	case opts.Ephemeral:
+	case resumeID != "":
+		mode, values.Session = clidefs.ModeResume, resumeID
+	default:
+		values.Session = opts.NewSessionID
+	}
+	args := renderDefinition(Claude, mode, values)
+	args = append(args, "--input-format", "stream-json", "--include-partial-messages")
+	if !slices.Contains(args, "--model") {
+		// The definition's resume template leaves the model to the stored
+		// session; a chat's model is fixed for its session, so pass it.
+		args = append(args, "--model", opts.Model)
+	}
+	args = append(args, "--strict-mcp-config", "--mcp-config", claudeMCPConfig(opts))
 	if systemPromptFile != "" {
 		args = append(args, "--system-prompt-file", systemPromptFile)
 	}
@@ -69,19 +86,13 @@ func claudeArgs(opts Options, resumeID, systemPromptFile string) []string {
 		// for them separately, in any approval mode.
 		args = append(args, "--allowedTools", "mcp__"+MCPServerName)
 	}
-	args = append(args, opts.Approval...)
 	args = append(args, opts.ExtraDir...)
 	args = append(args, opts.Permissions...)
 	if opts.BuiltinTools && opts.CommandHook != nil {
 		args = append(args, "--settings", claudeHookSettings(opts.CommandHook))
 	}
-	switch {
-	case opts.Ephemeral:
+	if opts.Ephemeral {
 		args = append(args, "--no-session-persistence")
-	case resumeID != "":
-		args = append(args, "--resume", resumeID)
-	case opts.NewSessionID != "":
-		args = append(args, "--session-id", opts.NewSessionID)
 	}
 	return args
 }

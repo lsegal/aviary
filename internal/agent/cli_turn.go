@@ -463,7 +463,7 @@ func (r *AgentRunner) acquireCLIProc(key string, opts cliagent.Options, tools []
 		return proc, true, nil
 	}
 
-	if len(tools) > 0 {
+	if len(tools) > 0 && opts.Backend.ServesAviaryTools() {
 		url, err := cliMCPURL()
 		if err != nil {
 			r.abandonCLIProc(proc)
