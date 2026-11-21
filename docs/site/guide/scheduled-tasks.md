@@ -183,7 +183,7 @@ Each task keeps a run history of its last 20 fires: fire time, what fired it, st
 
 | Tool | CLI | Purpose |
 | --- | --- | --- |
-| `task_schedule` | `aviary task add <agent> <name> <prompt> --every 2h` | Create or replace a task |
+| `task_schedule` | `aviary task add [agent] <name> <prompt> --every 2h` | Create or replace a task |
 | `task_list` | `aviary task list` | Tasks with next run and last result |
 | `task_update` | `aviary task update <name> --at 10:00` | Change fields; an empty value clears one, `enabled=false` pauses |
 | `task_preview` | `aviary task preview [<name>] [--every 15m]` | Next fires of a saved task or unsaved trigger (default 3) |
@@ -192,7 +192,7 @@ Each task keeps a run history of its last 20 fires: fire time, what fired it, st
 
 | `task_upcoming` | | Next fires across enabled tasks (default 5, at most 3 per task), optionally for one project |
 
-`aviary task add` and `update` take every trigger field as a flag (`--schedule`, `--trigger`, `--every`, `--at`, `--days`, `--timezone`, `--start-at`, `--overlap`, `--missed`); `--days` also accepts ranges such as `mon-fri`.
+`aviary task add` and `update` take every trigger field as a flag (`--schedule`, `--trigger`, `--every`, `--at`, `--days`, `--timezone`, `--start-at`, `--overlap`, `--missed`); `--days` also accepts ranges such as `mon-fri`. The agent may be omitted when only one agent exists.
 
 ### Scheduled prompts
 

@@ -11,8 +11,20 @@ export type AgentPage =
 	| "projects";
 
 /**
+ * The sidebar's agent pages: the Agents list, or with a single agent its
+ * top-level pages (#538).
+ */
+function agentNav(page: Page) {
+	return page
+		.getByTestId("sidebar-nav")
+		.locator(
+			"[data-testid=sidebar-agent-list], [data-testid=sidebar-sole-agent]",
+		);
+}
+
+/**
  * Opens one of an agent's pages, by default the first agent's in the
- * sidebar's Agents list.
+ * sidebar's Agents list, or the sole agent's.
  */
 export async function openAgentPage(page: Page, tail: AgentPage, agent = "") {
 	let name = agent;
@@ -20,8 +32,10 @@ export async function openAgentPage(page: Page, tail: AgentPage, agent = "") {
 		if (page.url() === "about:blank") await page.goto("/system/overview");
 		name =
 			(await page
-				.getByTestId("sidebar-agent-list")
-				.locator("a[data-agent]")
+				.getByTestId("sidebar-nav")
+				.locator(
+					"[data-testid=sidebar-agent-list] a[data-agent], [data-testid=sidebar-sole-agent]",
+				)
 				.first()
 				.getAttribute("data-agent")) ?? "";
 	}
@@ -30,7 +44,5 @@ export async function openAgentPage(page: Page, tail: AgentPage, agent = "") {
 
 /** The active agent's page link in the sidebar, such as Tasks or Files. */
 export function agentPageLink(page: Page, label: string) {
-	return page
-		.getByTestId("sidebar-agent-list")
-		.getByRole("link", { name: label, exact: true });
+	return agentNav(page).getByRole("link", { name: label, exact: true });
 }

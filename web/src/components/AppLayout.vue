@@ -71,7 +71,17 @@
           <div class="font-medium">Dev build — no checkout found</div>
           <div v-if="versionMessage" class="mt-1 opacity-80">{{ versionMessage }}</div>
         </div>
-        <nav class="flex flex-wrap gap-2" aria-label="Main">
+        <nav v-if="soleAgent" class="flex flex-wrap gap-2" aria-label="Main">
+          <router-link v-for="child in soleAgent.children" :key="child.key" :to="child.to"
+            :class="topLevelLinkClass(isChildActive(child), true)">
+            {{ child.label }}
+          </router-link>
+          <router-link to="/system/overview" :class="topLevelLinkClass(systemActive, true)">System</router-link>
+          <router-link :to="addAgentLink" data-testid="mobile-add-agent" :class="topLevelLinkClass(false, true)">
+            + Add Agent
+          </router-link>
+        </nav>
+        <nav v-else class="flex flex-wrap gap-2" aria-label="Main">
           <router-link v-for="a in agentNav" :key="a.name" :to="a.to" :class="topLevelLinkClass(a.active, true)">
             {{ a.label }}
           </router-link>
@@ -90,11 +100,18 @@
           :class="mobileSubnavClass(child)">
           {{ child.label }}<span v-if="child.count" class="ml-1.5 text-xs font-normal text-gray-400">{{ child.count }}</span>
         </router-link>
-        <button v-if="systemActive" type="button"
-          class="shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-gray-500 hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-          @click="auth.logout(); $router.push('/login')">
-          Log out
-        </button>
+        <div v-if="systemActive" class="ml-auto flex shrink-0 items-center gap-1">
+          <button type="button" aria-label="Restart" title="Restart" data-testid="restart-button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+            :disabled="upgrading || restartPending" @click="triggerRestart()">
+            <ArrowPathIcon aria-hidden="true" class="h-4 w-4" />
+          </button>
+          <button type="button" aria-label="Log out" title="Log out"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+            @click="auth.logout(); $router.push('/login')">
+            <ArrowRightOnRectangleIcon aria-hidden="true" class="h-4 w-4" />
+          </button>
+        </div>
       </nav>
     </div>
 
@@ -129,6 +146,28 @@
         </div>
       </div>
       <div class="min-h-0 flex-1 space-y-1 overflow-y-auto" data-testid="sidebar-nav">
+        <div v-if="soleAgent" class="mb-3 space-y-1" data-testid="sidebar-sole-agent" :data-agent="soleAgent.name">
+          <template v-for="child in soleAgent.children" :key="child.key">
+            <router-link :to="child.to" :class="[topLevelLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
+              <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
+              <span v-if="child.key === 'projects' && soleAgent.running > 0" data-testid="agent-running-badge"
+                class="shrink-0 rounded-full bg-blue-600 px-1.5 text-xs font-semibold text-white">{{ soleAgent.running }}</span>
+              <span v-else-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
+            </router-link>
+            <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
+              <router-link v-for="p in soleAgent.projects" :key="p.key" :to="p.to"
+                :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
+                <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
+                <span class="shrink-0 text-xs text-gray-400">{{ p.count }}</span>
+              </router-link>
+              <router-link :to="addProjectLink(soleAgent.name)" data-testid="sidebar-add-project"
+                class="mt-1 block rounded-lg px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-800">
+                + Add project
+              </router-link>
+            </div>
+          </template>
+        </div>
+        <template v-else>
         <router-link to="/agents" :class="[topLevelLinkClass(false, false), 'flex items-center']" data-testid="sidebar-agents">
           Agents
         </router-link>
@@ -165,6 +204,7 @@
             + Add Agent
           </router-link>
         </div>
+        </template>
 
         <router-link to="/system/overview" :class="[topLevelLinkClass(false, false), 'flex items-center']" data-testid="sidebar-system">
           System
@@ -187,6 +227,10 @@
             </router-link>
           </template>
         </div>
+        <router-link v-if="soleAgent" :to="addAgentLink" data-testid="sidebar-add-agent"
+          class="block rounded-lg px-3 py-2 text-sm text-blue-600 transition-colors hover:bg-gray-100 dark:text-blue-400 dark:hover:bg-gray-800">
+          + Add Agent
+        </router-link>
       </div>
       <div class="mt-auto flex flex-col gap-2">
         <UpdateStatusBanner :restart="restart" @cancel="cancelRestart()" />
@@ -229,11 +273,18 @@
             {{ healthLabel }}
           </span>
         </div>
-        <button
-          class="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-gray-500 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400"
-          @click="auth.logout(); $router.push('/login')">
-          Log out
-        </button>
+        <div class="flex items-center gap-1 px-1">
+          <button type="button" aria-label="Restart" title="Restart" data-testid="restart-button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+            :disabled="upgrading || restartPending" @click="triggerRestart()">
+            <ArrowPathIcon aria-hidden="true" class="h-4 w-4" />
+          </button>
+          <button type="button" aria-label="Log out" title="Log out"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+            @click="auth.logout(); $router.push('/login')">
+            <ArrowRightOnRectangleIcon aria-hidden="true" class="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </nav>
 
@@ -255,6 +306,8 @@ const systemMoreState = ref<boolean | null>(null);
 </script>
 
 <script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
+import ArrowRightOnRectangleIcon from "@heroicons/vue/24/outline/ArrowRightOnRectangleIcon";
 import GlobeAltIcon from "@heroicons/vue/24/outline/GlobeAltIcon";
 import { type Component, computed, markRaw } from "vue";
 import { useRoute } from "vue-router";
@@ -310,6 +363,7 @@ const {
 	upgradeDialogOpen,
 	openUpgradeDialog,
 	triggerUpgrade,
+	triggerRestart,
 	cancelRestart,
 } = useServerStatus();
 const restartPending = computed(
@@ -422,7 +476,8 @@ const agentNav = computed<AgentNav[]>(() => {
 			),
 			active,
 			running: owned.reduce((n, p) => n + p.running, 0),
-			children: active
+			children:
+				active || names.length === 1
 				? AGENT_PAGES.map((page) => ({
 						key: page.key,
 						label: page.label,
@@ -437,6 +492,15 @@ const agentNav = computed<AgentNav[]>(() => {
 		};
 	});
 });
+
+// With exactly one agent its pages are the top level, with no Agents → name
+// level, and + Add Agent moves below System. A second agent, including one
+// being added, brings the full tree back.
+const soleAgent = computed<AgentNav | undefined>(() =>
+	agentNav.value.length === 1 && !agentNav.value[0].name.startsWith("_")
+		? agentNav.value[0]
+		: undefined,
+);
 
 // The agent's projects list opens on its GitHub Projects pages and boards.
 const projectsOpen = computed(() =>
@@ -504,8 +568,9 @@ function childLinkClass(active: boolean, mobile: boolean): string {
 // second row under the main one.
 const mobileChildren = computed<NavChild[]>(() => {
 	const agent = agentNav.value.find((a) => a.active);
-	if (agent)
-		return [...agent.children, ...(projectsOpen.value ? agent.projects : [])];
+	// A sole agent's pages are already the main row.
+	if (agent && soleAgent.value) return projectsOpen.value ? agent.projects : [];
+	if (agent) return [...agent.children, ...(projectsOpen.value ? agent.projects : [])];
 	if (systemActive.value) return [...systemPrimary, ...systemMore.value];
 	return [];
 });

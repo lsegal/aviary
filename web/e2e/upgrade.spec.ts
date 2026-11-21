@@ -215,6 +215,54 @@ test("dev checkout with local changes blocks the update and says why", async ({
 	);
 });
 
+test("restart button safely restarts and reports progress", async ({
+	page,
+}) => {
+	const restarts: Record<string, unknown>[] = [];
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		server_restart: (args?: Record<string, unknown>) => {
+			restarts.push(args ?? {});
+			return { phase: "updating", when: "now", jobs: [], held: true };
+		},
+	});
+	await page.goto("/system/overview");
+
+	const restart = page.getByRole("button", { name: "Restart", exact: true });
+	await expect(restart).toHaveAttribute("title", "Restart");
+	await restart.click();
+	expect(restarts).toEqual([{}]);
+	await expect(page.getByRole("status")).toContainText("Restarting…");
+	await expect(restart).toBeDisabled();
+});
+
+test("log out icon button returns to the login page", async ({ page }) => {
+	await mockMCP(page, { agent_list: [], job_list: [], config_validate: [] });
+	await page.goto("/system/overview");
+
+	const logout = page.getByRole("button", { name: "Log out", exact: true });
+	await expect(logout).toHaveAttribute("title", "Log out");
+	await logout.click();
+	await expect(page).toHaveURL(/\/login$/);
+});
+
+test("mobile system nav shows the restart and log out icon buttons", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await mockMCP(page, { agent_list: [], job_list: [], config_validate: [] });
+	await page.goto("/system/overview");
+
+	await expect(
+		page.getByRole("button", { name: "Restart", exact: true }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Log out", exact: true }),
+	).toBeVisible();
+});
+
 test("dev build without a checkout says so instead of looking up to date", async ({
 	page,
 }) => {
