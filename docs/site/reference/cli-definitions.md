@@ -177,11 +177,17 @@ Versions are compared component by component, so `0.9.0` is older than `0.58.0`,
 
 Some CLIs keep their settings, sign-in and sessions in one directory and write bookkeeping into a settings file there; Codex records every workspace it runs with write access in as a trusted project in `config.toml`. `configHome` launches such a CLI against an overlay of that directory kept in Aviary's data directory: each `private` file is a copy, so the CLI reads your settings but its writes stay in the overlay, and every other entry links back to yours, so sign-in and sessions are shared.
 
+Claude Code, for another, ignores the permission allow entries of a workspace it has not recorded as trusted in `.claude.json`, even under `-p`, and a job's fresh clone never is. `configHome.trust` records every workspace a launch runs in as trusted in the overlay's copy instead, so the workspace's settings apply in every approval mode while your own `.claude.json` is left untouched.
+
 | Field | Description |
 | --- | --- |
 | `configHome.env` | The variable the CLI reads its directory from, such as `CODEX_HOME`. |
 | `configHome.default` | The directory used when that variable is unset; a leading `~/` is your home directory. |
 | `configHome.private` | Files directly inside the directory that each launch gets its own copy of. |
+| `configHome.outside` | Optional. Maps a `private` file to where it lives while the variable is unset, when that is outside the directory; Claude Code keeps `~/.claude.json` beside `~/.claude`. |
+| `configHome.storageEnv` | Optional. A variable set to your own value of `configHome.env`, empty when unset, for a CLI that keys stored sign-in to its directory, such as `CLAUDE_SECURESTORAGE_CONFIG_DIR` for Claude Code's macOS keychain entry. |
+| `configHome.trust.file` | Optional. The `private` JSON file the CLI records trusted workspaces in. |
+| `configHome.trust.path` | The keys, from the top of that file, to the value set to `true` for a trusted workspace; `{dir}` stands for the workspace's absolute path with forward slashes. |
 
 ### `session`
 

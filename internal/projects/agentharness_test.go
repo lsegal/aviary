@@ -16,6 +16,8 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // The contract harness proves what an agent definition claims, without any
@@ -364,6 +366,8 @@ func TestCodexDefinitionContract(t *testing.T) {
 // assigns the session ID, the child gets the environment the definition names,
 // and the JSON event stream is decoded rather than shown raw.
 func TestClaudeDefinitionContract(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", home)
 	agentContract{
 		Definition: builtinDefinition(t, "claude"),
 		Repo:       "o/r",
@@ -379,9 +383,55 @@ func TestClaudeDefinitionContract(t *testing.T) {
 			"-p", "--resume", "session-7", "--permission-mode", "auto",
 			"--output-format", "stream-json", "--verbose", resumePrompt(),
 		},
-		WantEnv:    map[string]string{"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"},
+		WantEnv: map[string]string{
+			"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0",
+			// Stored sign-in stays keyed to the user's own directory.
+			"CLAUDE_SECURESTORAGE_CONFIG_DIR": home,
+		},
 		WantOutput: "working on it",
 	}.check(t)
+}
+
+// TestClaudeJobTrustsItsFreshClone shows a Claude job resumed in its fresh,
+// never-trusted clone runs against aviary's CLAUDE_CONFIG_DIR overlay, whose
+// .claude.json copy records the clone as trusted. Claude otherwise drops the
+// permission allow entries of the clone's .claude settings, whatever the
+// approval mode, and says so in the job's output. The user's own
+// .claude.json is left byte-identical (#565).
+func TestClaudeJobTrustsItsFreshClone(t *testing.T) {
+	home, userFile := t.TempDir(), []byte(`{"numStartups": 3, "projects": {"/elsewhere": {"hasTrustDialogAccepted": true}}}`)
+	require.NoError(t, os.WriteFile(filepath.Join(home, ".claude.json"), userFile, 0o600))
+	t.Setenv("CLAUDE_CONFIG_DIR", home)
+	clone := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(clone, ".git"), 0o700))
+
+	definition, record := fakeAgentRun{WatchEnv: []string{"CLAUDE_CONFIG_DIR"}}.install(t, builtinDefinition(t, "claude"))
+	registry, err := clidefs.NewRegistry(definition)
+	require.NoError(t, err)
+	runner := CommandRunner{Agent: definition.Name, Definitions: registry, Repo: "o/r", Approval: clidefs.ApprovalFull}
+	session := AgentSession{ID: "session-7", Agent: definition.Name, Resume: true, CheckoutDirectory: clone}
+	require.NoError(t, runner.RunSession(context.Background(), Issue{Number: 7, Target: "o/r"}, session, func(AgentSession) {}))
+
+	invocations := fakeAgentInvocationRecords(t, record)
+	require.Len(t, invocations, 1)
+	assert.Contains(t, invocations[0].Args, "--dangerously-skip-permissions")
+	overlay := invocations[0].Env["CLAUDE_CONFIG_DIR"]
+	require.NotEmpty(t, overlay)
+	assert.NotEqual(t, home, overlay)
+	var copied struct {
+		NumStartups int                        `json:"numStartups"`
+		Projects    map[string]map[string]bool `json:"projects"`
+	}
+	data, err := os.ReadFile(filepath.Join(overlay, ".claude.json"))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &copied))
+	assert.Equal(t, 3, copied.NumStartups, "the copy keeps the user's settings")
+	assert.True(t, copied.Projects["/elsewhere"]["hasTrustDialogAccepted"])
+	assert.True(t, copied.Projects[filepath.ToSlash(clone)]["hasTrustDialogAccepted"], "projects = %v", copied.Projects)
+
+	got, err := os.ReadFile(filepath.Join(home, ".claude.json"))
+	require.NoError(t, err)
+	assert.Equal(t, userFile, got, "the user's .claude.json changed")
 }
 
 // TestOpencodeDefinitionContract proves the shipped opencode definition. The
