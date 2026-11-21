@@ -104,9 +104,9 @@ func TestEngineCompletesFailedWorkWhenItsPullRequestMergesLater(t *testing.T) {
 	src.states[7] = mergedState()
 	src.mu.Unlock()
 	waitForWorkStatus(t, statePath, 7, "completed")
-	if !strings.Contains(logs.String(), "issue #7 failed run reconciled: pull request #15 merged and closed the issue") {
-		t.Fatalf("reconciliation was not logged:\n%s", logs)
-	}
+	// The completed status is saved before the reconciliation is logged, so
+	// wait on the log line itself rather than reading it once.
+	waitForLog(t, logs, "issue #7 failed run reconciled: pull request #15 merged and closed the issue")
 }
 
 // A pull request closed unmerged leaves the failure standing, and once

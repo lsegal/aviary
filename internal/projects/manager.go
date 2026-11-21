@@ -116,7 +116,8 @@ func (m *Manager) SetMentionRouter(route MentionRouter) {
 }
 
 // SetUsageRecorder makes engines started from now on report each agent run's
-// token use to record, so Projects jobs count toward core usage tracking.
+// token use, each job run's wall time, and each issue's merged or failed
+// outcome to record, so Projects jobs count toward core usage tracking.
 func (m *Manager) SetUsageRecorder(record UsageRecorder) {
 	m.usageRecorder.Store(&record)
 }
@@ -642,6 +643,7 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	if route := m.mentionRouter.Load(); route != nil && *route != nil {
 		engine.RouteMention = *route
 	}
+	engine.RecordUsage = runner.RecordUsage
 	engine.noMerge.Store(s.NoMerge)
 	engine.noChangelog.Store(s.NoChangelog)
 	engine.SetTempDirs(s.TempDirs)

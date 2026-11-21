@@ -31,7 +31,7 @@ test("a single agent's pages are the sidebar's top level", async ({ page }) => {
 	await expect(sole.getByRole("link", { name: "assistant" })).toHaveCount(0);
 	for (const label of [
 		"Chats",
-		"Settings",
+		"Agent Settings",
 		"Scheduled Tasks",
 		"GitHub Projects",
 	]) {

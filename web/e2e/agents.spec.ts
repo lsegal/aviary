@@ -120,13 +120,12 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 		page.getByRole("heading", { name: "Scheduled Tasks", exact: true }),
 	).toBeVisible();
 
-	// Channels tab of the agent's Settings page
-	await agentPageLink(page, "Settings").click();
-	await page
-		.getByRole("button", { name: "Channels", exact: true })
-		.first()
-		.click();
-	await expect(page).toHaveURL(/\/agents\/assistant\/settings\/channels$/);
+	// The agent's Settings page stacks General, Permissions and Channels.
+	await agentPageLink(page, "Agent Settings").click();
+	await expect(page).toHaveURL(/\/agents\/assistant\/settings$/);
+	await expect(
+		page.getByRole("heading", { name: "Channels", exact: true }),
+	).toBeVisible();
 	await expect(
 		page.locator('input[placeholder="e.g. +15551234567"]').first(),
 	).toHaveValue("+15551234567");
@@ -147,7 +146,7 @@ test("tab switching does not blank content", async ({ page }) => {
 		).toBeVisible();
 
 		// With one agent its pages are the sidebar's top level.
-		await agentPageLink(page, "Settings").click();
+		await agentPageLink(page, "Agent Settings").click();
 		await expect(
 			page.getByRole("button", { name: "Remove Agent", exact: true }),
 		).toBeVisible();
@@ -409,11 +408,7 @@ test("Slack browse channels shows visible workspace channels", async ({
 		},
 	});
 
-	await openAgentPage(page, "settings");
-	await page
-		.getByRole("button", { name: "Channels", exact: true })
-		.first()
-		.click();
+	await openAgentPage(page, "settings/channels");
 	await page.getByRole("button", { name: "Browse Channels" }).click();
 
 	await expect(
@@ -485,11 +480,7 @@ test("channels use a left list with a reusable right-side editor", async ({
 		],
 	});
 
-	await openAgentPage(page, "settings");
-	await page
-		.getByRole("button", { name: "Channels", exact: true })
-		.first()
-		.click();
+	await openAgentPage(page, "settings/channels");
 
 	await expect(
 		page.getByRole("button", { name: "Signal +15551234567" }),
@@ -595,11 +586,7 @@ test("raw configured channel tokens are masked in dropdowns", async ({
 		],
 	});
 
-	await openAgentPage(page, "settings");
-	await page
-		.getByRole("button", { name: "Channels", exact: true })
-		.first()
-		.click();
+	await openAgentPage(page, "settings/channels");
 
 	await page.getByRole("button", { name: "Discord server-bot" }).click();
 	await expect(
@@ -683,11 +670,7 @@ test("missing auth secrets are highlighted in secret dropdowns", async ({
 		/border-red-300/,
 	);
 
-	await openAgentPage(page, "settings");
-	await page
-		.getByRole("button", { name: "Channels", exact: true })
-		.first()
-		.click();
+	await openAgentPage(page, "settings/channels");
 	await page.getByRole("button", { name: "Discord server-bot" }).click();
 	await expect(
 		page.getByTestId("channel-secret-assistant-0-token"),
@@ -703,11 +686,7 @@ test("missing auth secrets are highlighted in secret dropdowns", async ({
 test("permissions preset disables inaccessible tool groups and tools", async ({
 	page,
 }) => {
-	await openAgentPage(page, "settings");
-	await page
-		.getByRole("button", { name: "Permissions", exact: true })
-		.first()
-		.click();
+	await openAgentPage(page, "settings/permissions");
 
 	const presetTrigger = page.locator("#tool-preset-assistant");
 	await expect(presetTrigger).toContainText("Minimal");
@@ -742,11 +721,7 @@ test("permissions preset disables inaccessible tool groups and tools", async ({
 test("tool permissions inspector shows resolved final tool set", async ({
 	page,
 }) => {
-	await openAgentPage(page, "settings");
-	await page
-		.getByRole("button", { name: "Permissions", exact: true })
-		.first()
-		.click();
+	await openAgentPage(page, "settings/permissions");
 
 	await page.getByTestId("agent-tool-permissions-inspect-assistant").click();
 	await expect(
@@ -757,10 +732,7 @@ test("tool permissions inspector shows resolved final tool set", async ({
 	).toContainText('"finalTools": [\n    "task_run"\n  ]');
 	await page.getByRole("button", { name: "Close" }).click();
 
-	await page
-		.getByRole("button", { name: "Channels", exact: true })
-		.first()
-		.click();
+	// Channels is a section further down the same page.
 	await page
 		.getByTestId("entry-tool-permissions-inspect-assistant-0-0")
 		.click();
@@ -778,11 +750,7 @@ test("tool permissions inspector shows resolved final tool set", async ({
 test("saving settings preserves default-on signal channel checkboxes", async ({
 	page,
 }) => {
-	await openAgentPage(page, "settings");
-	await page
-		.getByRole("button", { name: "Channels", exact: true })
-		.first()
-		.click();
+	await openAgentPage(page, "settings/channels");
 
 	const phoneInput = page.locator('input[placeholder="+15551234567"]').first();
 
@@ -1307,4 +1275,80 @@ test("a task saved with a session name selects that session", async ({
 	const session = page.getByRole("combobox", { name: "Session" });
 	await expect(session).toHaveValue("sess_main");
 	await expect(session.locator("option:checked")).toHaveText("Main Chat");
+});
+
+test("settings deep links scroll to their section", async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 720 });
+	const heading = (name: string) =>
+		page.getByRole("heading", { name, exact: true });
+
+	await openAgentPage(page, "settings/channels");
+	await expect(heading("Channels")).toBeInViewport();
+	await expect(heading("General")).not.toBeInViewport();
+
+	await openAgentPage(page, "settings/permissions");
+	await expect(heading("Permissions")).toBeInViewport();
+	await expect(heading("General")).not.toBeInViewport();
+
+	// The old tab query params land on the same sections.
+	await page.goto("/agents/assistant/settings?tab=channels");
+	await expect(page).toHaveURL(/\/agents\/assistant\/settings\/channels$/);
+	await expect(heading("Channels")).toBeInViewport();
+
+	await agentPageLink(page, "Agent Settings").click();
+	await expect(page).toHaveURL(/\/agents\/assistant\/settings$/);
+	await expect(heading("General")).toBeInViewport();
+});
+
+test("Save Changes saves every settings section at once", async ({ page }) => {
+	let savedConfig: unknown = null;
+	await mockMCP(page, {
+		config_get: CONFIG,
+		config_save: (args) => {
+			savedConfig = JSON.parse(String(args?.config ?? "{}"));
+			return "ok";
+		},
+		auth_list: ["anthropic:default", "brave_api_key"],
+		session_list: [],
+		agent_list: [{ id: "a1", name: "assistant", state: "idle" }],
+		tool_list: [{ name: "task_run", description: "Run a task immediately" }],
+		agent_file_list: [],
+	});
+	await openAgentPage(page, "settings");
+
+	await page
+		.getByPlaceholder("Default: process working directory", { exact: false })
+		.fill("/srv/assistant");
+	await page
+		.locator('input[placeholder="+15551234567"]')
+		.first()
+		.fill("+15550000000");
+	await page.getByRole("button", { name: "Save Changes" }).click();
+
+	await expect(page.getByTitle("Settings saved")).toBeVisible();
+	expect(savedConfig).toMatchObject({
+		agents: [
+			{
+				working_dir: "/srv/assistant",
+				channels: [{ id: "+15550000000" }],
+			},
+		],
+	});
+});
+
+test("Remove Agent sits in the danger zone and asks for confirmation", async ({
+	page,
+}) => {
+	await openAgentPage(page, "settings");
+	const dangerZone = page.getByTestId("agent-danger-zone");
+	await dangerZone
+		.getByRole("button", { name: "Remove Agent", exact: true })
+		.click();
+	const dialog = page.getByRole("alertdialog");
+	await expect(dialog).toContainText("Remove agent?");
+	await dialog.getByRole("button", { name: "Cancel" }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByTestId("settings-title")).toHaveText(
+		"assistant · Agent Settings",
+	);
 });

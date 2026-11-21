@@ -22,6 +22,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/transcript"
@@ -258,6 +259,10 @@ type Engine struct {
 	// never polled.
 	Discussions DiscussionSource
 	Runner      AgentRunner
+	// RecordUsage receives the Projects usage the engine observes: each job
+	// run's wall time and each issue's merged or failed outcome. Nil records
+	// nothing.
+	RecordUsage UsageRecorder
 	// RouteMention hands a prompt to the built-in Projects agent. A direct
 	// mention on a finished or paused job goes to it instead of restarting
 	// the job; nil restarts the job as before.
@@ -2183,6 +2188,9 @@ func (w *Engine) Run(ctx context.Context) error {
 	// status counts over the last day. They are saved beside the work state
 	// so the count survives a restart (issue #413).
 	merges := newRecentMerges(mergesPathFor(w.StatePath), time.Now())
+	merges.onMerge = func(repo string, number int, mergedAt time.Time) {
+		w.recordProjectUsage(mergedAt, repo, number, domain.ProjectUsage{Outcome: domain.ProjectOutcomeMerged})
+	}
 	closureChecker = recordRecentMerges(closureChecker, merges)
 	// webhookRepos are the repositories configured with webhooks when the
 	// watch started. A linked pull request anywhere else delivers nothing, so
@@ -3201,10 +3209,12 @@ func (w *Engine) Run(ctx context.Context) error {
 						waitInterrupted = !due
 					}
 					activeRunner := w.runner()
+					runStarted := time.Now()
+					ran := true
 					if cause := context.Cause(runCtx); isCooperativeCancellation(cause) || errors.Is(cause, errWorkStoppedFromWebUI) || errors.Is(cause, errWorkUpdated) {
-						runErr = cause
+						runErr, ran = cause, false
 					} else if waitInterrupted {
-						runErr = cause
+						runErr, ran = cause, false
 					} else if w.UI != nil {
 						if runner, ok := activeRunner.(SessionAgentOutputRunner); ok {
 							runErr = runner.RunSessionWithOutput(runCtx, i, agentSession, updateSession, jobOutput)
@@ -3217,6 +3227,9 @@ func (w *Engine) Run(ctx context.Context) error {
 						runErr = runner.RunSession(runCtx, i, agentSession, updateSession)
 					} else {
 						runErr = activeRunner.Run(runCtx, i)
+					}
+					if ran {
+						w.recordProjectUsage(time.Now(), issueRepository(i.Target, i), i.Number, domain.ProjectUsage{DurationMS: time.Since(runStarted).Milliseconds()})
 					}
 					cause := context.Cause(runCtx)
 					if isCooperativeCancellation(cause) || errors.Is(cause, errWorkStoppedFromWebUI) || errors.Is(cause, errWorkUpdated) {
@@ -3403,6 +3416,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					jobs[key] = job
 					jobMu.Unlock()
 					w.jobEvents(key, transcript.Event{Kind: transcript.KindSystem, Text: "failed: " + clidoctor.FirstLine(runErr.Error()), IsError: true})
+					w.recordProjectUsage(time.Now(), issueRepository(i.Target, i), i.Number, domain.ProjectUsage{Outcome: domain.ProjectOutcomeFailed})
 					state := work[key]
 					state.Status = "failed"
 					work[key] = state

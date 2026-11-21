@@ -143,7 +143,7 @@ test("other agent pages keep the settings page header", async ({ page }) => {
 	await mockFiles(page, { "AGENTS.md": "# Agents" });
 	await page.goto("/agents/assistant/settings");
 	await expect(page.getByTestId("settings-title")).toHaveText(
-		"assistant · Settings",
+		"assistant · Agent Settings",
 	);
 	await expect(
 		page.locator("main").getByRole("button", { name: "Save Changes" }),

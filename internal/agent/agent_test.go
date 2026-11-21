@@ -1373,6 +1373,29 @@ func TestSessionManager_ListLastMessageAtIsTheLatestMessage(t *testing.T) {
 	assert.True(t, list[0].LastMessageAt.After(list[0].CreatedAt))
 }
 
+func TestSessionManager_ListIncludesHeaderlessSession(t *testing.T) {
+	setTestDataDir(t)
+	sm := NewSessionManager()
+
+	// A session file that starts with a message instead of a header, as an
+	// append to a missing session file leaves, is still listed.
+	first := time.Now().Add(-time.Hour).Round(0)
+	last := first.Add(time.Minute)
+	path := store.SessionPath("headerless", "sess_orphan")
+	require.NoError(t, store.AppendJSONL(path, domain.Message{ID: "msg_1", Role: domain.MessageRoleAssistant, Content: "I can hear you fine", Timestamp: first}))
+	require.NoError(t, MarkMessageResponded("headerless", "sess_orphan", "msg_1", "resp_1"))
+	require.NoError(t, store.AppendJSONL(path, domain.Message{ID: "msg_2", Role: domain.MessageRoleUser, Content: "hello", Timestamp: last}))
+
+	list, err := sm.List("headerless")
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "sess_orphan", list[0].ID)
+	assert.Equal(t, "sess_orphan", list[0].Name)
+	assert.True(t, first.Equal(list[0].CreatedAt), "created_at is the first message time")
+	require.NotNil(t, list[0].LastMessageAt)
+	assert.True(t, last.Equal(*list[0].LastMessageAt))
+}
+
 func TestSessionManager_ListUsesRecordedLastMessageTime(t *testing.T) {
 	setTestDataDir(t)
 	sm := NewSessionManager()

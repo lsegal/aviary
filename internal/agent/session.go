@@ -228,7 +228,14 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 		if err != nil || len(lines) == 0 {
 			continue
 		}
-		header := lines[0]
+		// A file whose first record is not a header (no created_at) still
+		// holds messages, for example when a message was appended before the
+		// header was written. List it with its ID from the file name and its
+		// first message time as created_at.
+		header, records := lines[0], lines[1:]
+		if _, ok := header["created_at"]; !ok {
+			header, records = map[string]any{}, lines
+		}
 		var created, updated time.Time
 		var sessType domain.SessionType
 		if v, ok := header["created_at"]; ok {
@@ -249,6 +256,9 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 			if s, ok := v.(string); ok {
 				sessType = domain.SessionType(s)
 			}
+		}
+		if created.IsZero() {
+			created = firstRecordAt(records)
 		}
 		if created.IsZero() {
 			continue
@@ -276,7 +286,7 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 			Name:          name,
 			Type:          sessType,
 			Title:         meta.Title,
-			LastMessageAt: latest(meta.LastMessageAt, lastMessageAt(lines[1:])),
+			LastMessageAt: latest(meta.LastMessageAt, lastMessageAt(records)),
 			CreatedAt:     created,
 			UpdatedAt:     updated,
 		}
@@ -360,6 +370,19 @@ func lastMessageAt(records []map[string]any) *time.Time {
 		return nil
 	}
 	return &last
+}
+
+// firstRecordAt returns the earliest non-zero timestamp among records, or the
+// zero time when none carries one. Response markers carry a zero timestamp.
+func firstRecordAt(records []map[string]any) time.Time {
+	var first time.Time
+	for _, rec := range records {
+		s, _ := rec["timestamp"].(string)
+		if t, err := time.Parse(time.RFC3339Nano, s); err == nil && !t.IsZero() && (first.IsZero() || t.Before(first)) {
+			first = t
+		}
+	}
+	return first
 }
 
 // latest returns the later of two optional times.

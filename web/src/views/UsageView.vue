@@ -50,6 +50,19 @@
         </div>
       </div>
 
+      <!-- Projects -->
+      <div class="mb-6 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"
+        data-testid="usage-projects">
+        <h3 class="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Projects</h3>
+        <div class="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+          <div v-for="card in projectCards" :key="card.label" class="flex flex-col">
+            <span class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{{ card.label }}</span>
+            <span class="text-xl font-bold" :class="card.color ?? 'text-gray-900 dark:text-white'"
+              :data-testid="card.testid">{{ card.value }}</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Top breakdowns -->
       <div class="mb-6 grid gap-4 lg:grid-cols-3">
         <div v-for="breakdown in breakdowns" :key="breakdown.title"
@@ -326,6 +339,34 @@ const statCards = computed(() => [
 	},
 ]);
 
+const projectCards = computed(() => {
+	const p = store.projectSummary;
+	return [
+		{
+			label: "Issues Worked On",
+			value: String(p.issues),
+			testid: "usage-projects-issues",
+		},
+		{
+			label: "Merged",
+			value: String(p.merged),
+			testid: "usage-projects-merged",
+			color: p.merged > 0 ? "text-green-600 dark:text-green-400" : undefined,
+		},
+		{
+			label: "Failed",
+			value: String(p.failed),
+			testid: "usage-projects-failed",
+			color: p.failed > 0 ? "text-red-500" : undefined,
+		},
+		{
+			label: "Wall Time",
+			value: fmtDuration(p.wallMs),
+			testid: "usage-projects-wall-time",
+		},
+	];
+});
+
 const breakdowns = computed(() => [
 	{
 		title: "Top Models",
@@ -357,6 +398,14 @@ function fmtTokens(n: number): string {
 
 function fmtCost(n: number): string {
 	return `$${n.toFixed(n < 0.01 ? 4 : 2)}`;
+}
+
+function fmtDuration(ms: number): string {
+	const minutes = Math.floor(ms / 60_000);
+	if (minutes < 1) return `${Math.floor(ms / 1000)}s`;
+	const hours = Math.floor(minutes / 60);
+	if (hours < 1) return `${minutes}m`;
+	return `${hours}h ${minutes % 60}m`;
 }
 
 function fmtTs(ts: string): string {

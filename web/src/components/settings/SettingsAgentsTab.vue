@@ -9,37 +9,13 @@
 					</div>
 
 					<div v-for="{ agent, i } in selectedAgentAsSingletonList" :key="`agent-${i}`"
-						:class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'">
-						<!-- The Settings page's tabs; Files, Tasks and GitHub Projects are
-						     pages of their own in the sidebar. -->
-						<div v-if="['general', 'permissions', 'channels'].includes(selectedAgentSubtab)"
-							class="border-b border-gray-200 px-5 dark:border-gray-700">
-							<nav class="flex items-center justify-between gap-4" aria-label="Agent settings">
-								<div class="flex items-center">
-									<button v-for="subtab in ([
-										{ key: 'general', label: 'General' },
-										{ key: 'permissions', label: 'Permissions' },
-										{ key: 'channels', label: 'Channels' },
-									] as const)" :key="subtab.key" type="button" class="-mb-px border-b-2 px-4 py-2.5 text-sm transition-colors"
-										:class="selectedAgentSubtab === subtab.key
-											? 'border-blue-600 font-semibold text-blue-700 dark:border-blue-400 dark:text-blue-400'
-											: 'border-transparent font-medium text-gray-500 hover:border-gray-300 hover:text-gray-800 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200'"
-										@click="selectedAgentSubtab = subtab.key">
-										{{ subtab.label }}
-									</button>
-								</div>
-								<div class="flex items-center">
-									<button type="button"
-										class="-mb-px border-b-2 border-transparent px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:border-red-200 hover:text-red-700 dark:text-red-400 dark:hover:border-red-900 dark:hover:text-red-300"
-										@click="removeAgent(i)">
-										Remove Agent
-									</button>
-								</div>
-							</nav>
-						</div>
-
-						<!-- General subtab -->
-						<div v-show="selectedAgentSubtab === 'general'" class="space-y-4 p-5">
+						:class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'space-y-5'">
+						<!-- Agent Settings is one page of stacked sections; Files, Tasks and
+						     GitHub Projects are pages of their own in the sidebar. -->
+						<section v-show="onAgentSettingsPage" id="agent-settings-general" data-agent-settings-section="general"
+							aria-labelledby="agent-settings-general-heading" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+							<h3 id="agent-settings-general-heading" class="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-800 dark:border-gray-700 dark:text-gray-200">General</h3>
+							<div class="space-y-4 p-5">
 							<div class="grid gap-4 lg:grid-cols-[1fr_1fr_1.5fr]">
 								<div>
 									<label class="field-label">Name</label>
@@ -72,6 +48,8 @@
 								</label>
 							</div>
 						</div>
+
+						</section>
 
 						<!-- Files page: the sidebar lists the files; the page is the open
 						     file's editor, under one bar with its name and actions. -->
@@ -136,8 +114,10 @@
 								:placeholder="agent.name ? 'Pick a file in the sidebar, or add one with its +.' : 'Name the agent first to manage files.'" />
 						</div>
 
-						<!-- Permissions subtab -->
-						<div v-show="selectedAgentSubtab === 'permissions'" class="min-h-[60vh] space-y-4 p-5">
+						<section v-show="onAgentSettingsPage" id="agent-settings-permissions" data-agent-settings-section="permissions"
+							aria-labelledby="agent-settings-permissions-heading" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+							<h3 id="agent-settings-permissions-heading" class="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-800 dark:border-gray-700 dark:text-gray-200">Permissions</h3>
+							<div class="space-y-4 p-5">
 							<div class="grid gap-3 lg:max-w-xl">
 								<div>
 									<label class="field-label" :for="`tool-preset-${agent.name || i}`">Tool preset</label>
@@ -262,15 +242,17 @@
 								</div>
 							</div>
 						</div>
+						</section>
 
-						<!-- Channels subtab -->
-						<div v-show="selectedAgentSubtab === 'channels'" class="min-h-[60vh] space-y-4 p-5">
-							<div class="flex items-center justify-between">
-								<h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Channels</h4>
+						<section v-show="onAgentSettingsPage" id="agent-settings-channels" data-agent-settings-section="channels"
+							aria-labelledby="agent-settings-channels-heading" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+							<div class="flex items-center justify-between border-b border-gray-200 px-5 py-2 dark:border-gray-700">
+								<h3 id="agent-settings-channels-heading" class="py-1 text-sm font-semibold text-gray-800 dark:text-gray-200">Channels</h3>
 								<button type="button"
 									class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
 									@click="addChannel(i)">+ Add Channel</button>
 							</div>
+							<div class="space-y-4 p-5">
 
 							<div v-if="!agent.channels?.length"
 								class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
@@ -717,9 +699,24 @@
 								</div>
 							</div>
 						</div>
+						</section>
 
-						<!-- Tasks subtab -->
-						<div v-show="selectedAgentSubtab === 'tasks'" class="min-h-[60vh] space-y-4 p-5">
+						<section v-show="onAgentSettingsPage" data-testid="agent-danger-zone" aria-labelledby="agent-danger-zone-heading"
+							class="rounded-xl border border-red-200 bg-white dark:border-red-900/60 dark:bg-gray-900">
+							<h3 id="agent-danger-zone-heading" class="border-b border-red-200 px-5 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:text-red-400">Danger Zone</h3>
+							<div class="flex flex-wrap items-center justify-between gap-4 p-5">
+								<p class="text-sm text-gray-600 dark:text-gray-400">Remove this agent and all of its settings from the configuration.</p>
+								<button type="button"
+									class="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+									@click="removeAgent(i)">
+									Remove Agent
+								</button>
+							</div>
+						</section>
+
+						<!-- Tasks page -->
+						<div v-show="selectedAgentSubtab === 'tasks'"
+							class="min-h-[60vh] space-y-4 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
 							<div class="flex items-center justify-between">
 								<h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Scheduled Tasks</h4>
 							</div>

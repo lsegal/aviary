@@ -1,6 +1,6 @@
 <template>
 	<AppLayout>
-		<div :class="isAgentFilesPage ? 'flex h-full flex-col overflow-hidden' : 'h-full overflow-y-auto'">
+		<div ref="scrollRoot" :class="isAgentFilesPage ? 'flex h-full flex-col overflow-hidden' : 'h-full overflow-y-auto'">
 			<div :class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'mx-auto max-w-7xl px-4 py-6 sm:px-6'">
 				<div v-if="!isAgentFilesPage"
 					class="sticky top-0 z-20 -mx-4 mb-6 border-b border-gray-200/80 bg-white/90 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6 dark:border-gray-800/80 dark:bg-gray-950/88">
@@ -578,8 +578,8 @@ watch(
 	},
 );
 
-// An agent's pages: its Settings page's General, Permissions and Channels
-// tabs, then Files and Tasks. GitHub Projects is the agent's board, with its
+// An agent's pages: its Agent Settings page's General, Permissions and
+// Channels sections, then Files and Tasks. GitHub Projects is the agent's board, with its
 // settings in System → Projects.
 const agentSubtabs = [
 	"general",
@@ -617,12 +617,20 @@ function subtabPath(subtab: AgentSubtab): string {
 	return settingsSections.includes(subtab) ? `settings/${subtab}` : subtab;
 }
 
-/** The subtab a route names, or null when it names none. */
+/**
+ * The subtab a route names, or null when it names none. A settings route
+ * names its section in the path or in a ?tab= or ?section= query.
+ */
 function routeSubtab(): AgentSubtab | null {
 	const subtab = route.params.subtab as string | undefined;
 	if (!subtab) return null;
 	if (subtab !== "settings") return subtab as AgentSubtab;
-	return (route.params.section as AgentSubtab | undefined) || "general";
+	const section = [
+		route.params.section,
+		route.query.tab,
+		route.query.section,
+	].find((s): s is AgentSubtab => settingsSections.includes(s as AgentSubtab));
+	return section ?? "general";
 }
 
 function agentRoutePath(idx: number, subtab: AgentSubtab): string {
@@ -630,6 +638,9 @@ function agentRoutePath(idx: number, subtab: AgentSubtab): string {
 }
 
 const selectedAgentSubtab = ref<AgentSubtab>(routeSubtab() ?? "general");
+const onAgentSettingsPage = computed(() =>
+	settingsSections.includes(selectedAgentSubtab.value),
+);
 const selectedAgentIdx = ref(
 	route.params.agent ? agentIdxFromParam(route.params.agent as string) : 0,
 );
@@ -812,11 +823,34 @@ watch(
 	},
 );
 watch(
-	() => [route.params.subtab, route.params.section],
+	() => [
+		route.params.subtab,
+		route.params.section,
+		route.query.tab,
+		route.query.section,
+	],
 	() => {
 		const subtab = routeSubtab();
 		if (subtab) selectedAgentSubtab.value = subtab;
 	},
+);
+
+// A settings URL naming a section opens the page scrolled to it; the bare
+// settings URL opens it at the top.
+const scrollRoot = ref<HTMLElement>();
+watch(
+	() => [route.fullPath, loading.value, draft.value.agents.length],
+	() => {
+		if (loading.value || !onAgentSettingsPage.value) return;
+		if (selectedAgentSubtab.value === "general") {
+			scrollRoot.value?.scrollTo({ top: 0 });
+			return;
+		}
+		document
+			.getElementById(`agent-settings-${selectedAgentSubtab.value}`)
+			?.scrollIntoView({ block: "start" });
+	},
+	{ flush: "post" },
 );
 
 // /agents alone opens the first agent's chat, or adds an agent with ?add
@@ -839,9 +873,9 @@ function resolveAgentsIndex() {
 watch(() => route.fullPath, resolveAgentsIndex);
 
 const agentSubtabLabels: Record<AgentSubtab, string> = {
-	general: "Settings",
-	permissions: "Settings",
-	channels: "Settings",
+	general: "Agent Settings",
+	permissions: "Agent Settings",
+	channels: "Agent Settings",
 	files: "Files",
 	tasks: "Tasks",
 };
@@ -3449,6 +3483,7 @@ const settingsContext = proxyRefs({
 	selectedAgentAsSingletonList,
 	selectedAgentIdx,
 	selectedAgentSubtab,
+	onAgentSettingsPage,
 	selectedChannel,
 	selectedChannelIdx,
 	selectedConfiguredChannel,
