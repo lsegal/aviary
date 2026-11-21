@@ -180,7 +180,7 @@ func gitCheckResult(ctx context.Context, dir string) (CheckResult, error) {
 		return out, err
 	}
 	if st.Upstream != "" {
-		out.LatestVersion, _ = runGit(ctx, dir, "rev-parse", "--short", "@{upstream}")
+		out.LatestVersion, _ = runGit(ctx, dir, "rev-parse", "@{upstream}")
 	}
 	out.UpgradeAvailable = st.Behind > 0
 	blocker := gitBlocker(st)

@@ -5,12 +5,12 @@
       class="flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
       <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
         <h3 id="upgrade-dialog-title" class="text-sm font-semibold text-gray-900 dark:text-white">
-          <template v-if="git">Update this checkout to {{ git.upstream }} ({{ latestVersion }})</template>
+          <template v-if="git">Update this checkout to {{ git.upstream }} ({{ shortVersion(latestVersion) }})</template>
           <template v-else>
             Upgrade Aviary to
             <a v-if="releaseUrl" :href="releaseUrl" target="_blank" rel="noreferrer"
-              class="text-blue-600 underline hover:text-blue-500 dark:text-blue-400">{{ latestVersion }}</a>
-            <span v-else>{{ latestVersion }}</span>
+              class="text-blue-600 underline hover:text-blue-500 dark:text-blue-400">{{ shortVersion(latestVersion) }}</a>
+            <span v-else>{{ shortVersion(latestVersion) }}</span>
           </template>
         </h3>
         <p v-if="git" class="mt-1 text-xs text-gray-500 dark:text-gray-400" data-testid="upgrade-dialog-git">
@@ -76,6 +76,7 @@ import type {
 	RestartJob,
 	RestartWhen,
 } from "../composables/useServerStatus";
+import { shortVersion } from "../lib/version";
 
 defineProps<{
 	open: boolean;
