@@ -20,11 +20,23 @@ export interface UsageRecord {
 }
 
 // ProjectUsage is the Projects work a usage record reports instead of token
-// use: a job run's wall time, or an issue's merged or failed outcome.
+// use: a job run's wall time, or an issue's merged or failed outcome. A
+// merged outcome also carries the merged pull request's diff size.
 export interface ProjectUsage {
 	issue: string;
 	outcome?: "merged" | "failed";
 	duration_ms?: number;
+	additions?: number;
+	deletions?: number;
+}
+
+export interface ProjectSummary {
+	issues: number;
+	merged: number;
+	failed: number;
+	wallMs: number;
+	additions: number;
+	deletions: number;
 }
 
 function fmtDate(daysAgo: number): string {
@@ -132,16 +144,21 @@ export const useUsageStore = defineStore("usage", () => {
 
 	// An issue counts as merged when any of its pull requests merged in range,
 	// and as failed when it did not and its latest outcome in range failed.
-	const projectSummary = computed(() => {
+	// Lines added and removed total the pull requests that merged in range.
+	function summarizeProjects(list: UsageRecord[]): ProjectSummary {
 		const issues = new Set<string>();
 		const merged = new Set<string>();
 		const latest = new Map<string, { at: string; outcome: string }>();
 		let wallMs = 0;
-		for (const r of projectRecords.value) {
+		let additions = 0;
+		let deletions = 0;
+		for (const r of list) {
 			const p = r.project;
 			if (!p) continue;
 			issues.add(p.issue);
 			wallMs += p.duration_ms ?? 0;
+			additions += p.additions ?? 0;
+			deletions += p.deletions ?? 0;
 			if (!p.outcome) continue;
 			if (p.outcome === "merged") merged.add(p.issue);
 			const prev = latest.get(p.issue);
@@ -152,7 +169,32 @@ export const useUsageStore = defineStore("usage", () => {
 		for (const [issue, last] of latest) {
 			if (last.outcome === "failed" && !merged.has(issue)) failed++;
 		}
-		return { issues: issues.size, merged: merged.size, failed, wallMs };
+		return {
+			issues: issues.size,
+			merged: merged.size,
+			failed,
+			wallMs,
+			additions,
+			deletions,
+		};
+	}
+
+	const projectSummary = computed(() => summarizeProjects(projectRecords.value));
+
+	// Each project is the repository of the issues its jobs worked, the
+	// "owner/repo" before the issue's "#number".
+	const projectBreakdown = computed(() => {
+		const byProject = new Map<string, UsageRecord[]>();
+		for (const r of projectRecords.value) {
+			if (!r.project) continue;
+			const name = r.project.issue.replace(/#\d+$/, "");
+			const list = byProject.get(name) ?? [];
+			list.push(r);
+			byProject.set(name, list);
+		}
+		return [...byProject.entries()]
+			.map(([name, list]) => ({ name, ...summarizeProjects(list) }))
+			.sort((a, b) => a.name.localeCompare(b.name));
 	});
 
 	// ── Breakdowns ────────────────────────────────────────────────────────────
@@ -280,6 +322,7 @@ export const useUsageStore = defineStore("usage", () => {
 		records,
 		projectRecords,
 		projectSummary,
+		projectBreakdown,
 		loading,
 		error,
 		startDate,

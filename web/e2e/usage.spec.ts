@@ -124,7 +124,12 @@ test("summarizes project outcomes and wall time apart from token metrics", async
 }) => {
 	const project = (
 		issue: string,
-		extra: { outcome?: string; duration_ms?: number },
+		extra: {
+			outcome?: string;
+			duration_ms?: number;
+			additions?: number;
+			deletions?: number;
+		},
 		timestamp = now,
 	) => ({
 		timestamp,
@@ -144,21 +149,42 @@ test("summarizes project outcomes and wall time apart from token metrics", async
 		usage_query: [
 			...MIXED_RECORDS,
 			project("o/r#1", { duration_ms: 90 * 60_000 }),
-			project("o/r#1", { outcome: "merged" }),
+			project("o/r#1", { outcome: "merged", additions: 1200, deletions: 30 }),
 			project("o/r#2", { duration_ms: 30 * 60_000 }),
 			project("o/r#2", { outcome: "failed" }),
 			// Failed, then retried and merged: counts as merged only.
 			project("o/r#3", { duration_ms: 5 * 60_000 }),
 			project("o/r#3", { outcome: "failed" }, earlier),
-			project("o/r#3", { outcome: "merged" }),
+			project("o/r#3", { outcome: "merged", additions: 40, deletions: 15 }),
+			// A second project; its failed job opened no pull request.
+			project("a/b#4", { duration_ms: 10 * 60_000 }),
+			project("a/b#4", { outcome: "failed" }),
 		],
 	});
 	await page.goto("/system/usage");
 
-	await expect(page.getByTestId("usage-projects-issues")).toHaveText("3");
+	await expect(page.getByTestId("usage-projects-issues")).toHaveText("4");
 	await expect(page.getByTestId("usage-projects-merged")).toHaveText("2");
-	await expect(page.getByTestId("usage-projects-failed")).toHaveText("1");
+	await expect(page.getByTestId("usage-projects-failed")).toHaveText("2");
 	await expect(page.getByTestId("usage-projects-wall-time")).toHaveText(
+		"2h 15m",
+	);
+	await expect(page.getByTestId("usage-projects-additions")).toHaveText(
+		"+1,240",
+	);
+	await expect(page.getByTestId("usage-projects-deletions")).toHaveText(
+		"−45",
+	);
+	// Each project totals its own merged pull requests' lines.
+	await expect(page.getByTestId("usage-project-name")).toHaveText([
+		"a/b",
+		"o/r",
+	]);
+	await expect(page.getByTestId("usage-project-lines")).toHaveText(
+		["+0 −0", "+1,240 −45"],
+		{ useInnerText: true },
+	);
+	await expect(page.getByTestId("usage-project-row").nth(1)).toContainText(
 		"2h 5m",
 	);
 	// Project records are not token calls.
