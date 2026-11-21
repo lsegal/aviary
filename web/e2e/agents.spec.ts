@@ -146,10 +146,7 @@ test("tab switching does not blank content", async ({ page }) => {
 			page.getByRole("heading", { name: "Server", exact: true }),
 		).toBeVisible();
 
-		await page
-			.getByTestId("sidebar-agent-list")
-			.getByRole("link", { name: "assistant", exact: true })
-			.click();
+		// With one agent its pages are the sidebar's top level.
 		await agentPageLink(page, "Settings").click();
 		await expect(
 			page.getByRole("button", { name: "Remove Agent", exact: true }),

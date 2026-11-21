@@ -38,7 +38,13 @@ Install a skill once for your CLI:
 npx skills add lsegal/aviary@gh-fix --global --agent claude-code -y
 ```
 
-Use `--agent codex`, `--agent gemini-cli`, `--agent opencode` or `--agent cline` for other CLIs, or repeat `--agent` to install for several at once. Then run it in the CLI:
+Use `--agent codex`, `--agent gemini-cli`, `--agent opencode` or `--agent cline` for other CLIs, or repeat `--agent` to install for several at once. The GitHub CLI can install the same skill:
+
+```sh
+gh skill install lsegal/aviary gh-fix --allow-hidden-dirs --agent claude-code --scope user
+```
+
+Then run it in the CLI:
 
 ```text
 /gh-fix owner/repo#123

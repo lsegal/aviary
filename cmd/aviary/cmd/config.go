@@ -32,19 +32,24 @@ Set a value:
 }
 
 var configConvertTaskToScriptCmd = &cobra.Command{
-	Use:   "convert-task-to-script <agent> <task>",
+	Use:   "convert-task-to-script [agent] <task>",
 	Short: "Compile a prompt task to a Lua script and update it in place",
 	Long: `Asynchronously compile a PROMPT-type task to a Lua script. If compilation
 succeeds the task is updated in place — YAML-defined tasks stay in aviary.yaml
-and file-based tasks stay in their .md file.
+and file-based tasks stay in their .md file. The agent may be omitted when only
+one agent exists.
 
 Example:
   aviary config convert-task-to-script myagent weather-check`,
-	Args: cobra.ExactArgs(2),
+	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		agent, rest, err := splitAgentArg(cmd.Context(), args, 2)
+		if err != nil {
+			return err
+		}
 		out, err := dispatcher.CallTool(cmd.Context(), "config_task_convert_to_script", map[string]any{
-			"agent": args[0],
-			"task":  args[1],
+			"agent": agent,
+			"task":  rest[0],
 		})
 		if err != nil {
 			return err
@@ -55,19 +60,24 @@ Example:
 }
 
 var configMoveTaskToFileCmd = &cobra.Command{
-	Use:   "move-task-to-file <agent> <task>",
+	Use:   "move-task-to-file [agent] <task>",
 	Short: "Move a task from aviary.yaml to a markdown file in the agent's tasks/ directory",
 	Long: `Move a scheduled task that is currently defined inline in aviary.yaml to a
 markdown file inside the agent's tasks/ directory. The task is removed from
-aviary.yaml and written as <task-name>.md.
+aviary.yaml and written as <task-name>.md. The agent may be omitted when only
+one agent exists.
 
 Example:
   aviary config move-task-to-file myagent daily-report`,
-	Args: cobra.ExactArgs(2),
+	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		agent, rest, err := splitAgentArg(cmd.Context(), args, 2)
+		if err != nil {
+			return err
+		}
 		out, err := dispatcher.CallTool(cmd.Context(), "config_task_move_to_file", map[string]any{
-			"agent": args[0],
-			"task":  args[1],
+			"agent": agent,
+			"task":  rest[0],
 		})
 		if err != nil {
 			return err

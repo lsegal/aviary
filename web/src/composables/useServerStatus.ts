@@ -222,6 +222,17 @@ export function useServerStatus() {
 		}
 	}
 
+	/** Safely restarts the server without upgrading it. */
+	async function triggerRestart() {
+		try {
+			restart.value = JSON.parse(
+				await callTool("server_restart", {}),
+			) as RestartStatus;
+		} catch (err) {
+			versionMessage.value = err instanceof Error ? err.message : String(err);
+		}
+	}
+
 	async function cancelRestart() {
 		try {
 			restart.value = JSON.parse(
@@ -276,6 +287,7 @@ export function useServerStatus() {
 		refreshVersionStatus,
 		openUpgradeDialog,
 		triggerUpgrade,
+		triggerRestart,
 		cancelRestart,
 	};
 }
