@@ -1579,7 +1579,7 @@ test("a job card's PR icon is colored by its pull request state", async ({
 	}
 });
 
-test("the kanban view lays jobs out in five columns of compact cards", async ({
+test("the kanban view lays jobs out in state columns of compact cards", async ({
 	page,
 }) => {
 	const calls = await setup(page);
@@ -1590,8 +1590,10 @@ test("the kanban view lays jobs out in five columns of compact cards", async ({
 	await expect(toggle).toHaveAttribute("aria-pressed", "true");
 
 	const columns = page.getByTestId("kanban-column");
-	await expect(columns).toHaveCount(5);
+	// A project board leads with its Scheduled column, empty here.
+	await expect(columns).toHaveCount(6);
 	await expect(columns.locator("h3")).toHaveText([
+		/Scheduled\s*0/,
 		/Starting\s*1/,
 		/Paused\s*1/,
 		/Running\s*1/,
