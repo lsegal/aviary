@@ -165,6 +165,8 @@ From a terminal, `aviary upgrade` does the same. It checks first and does nothin
 
 An upgrade is a safe restart. Aviary installs the release, updates the skills for every signed-in CLI provider, stops running jobs at a checkpoint and saves their sessions, then restarts. Each job then resumes in its own session and is told that Aviary restarted. Waiting jobs aren't touched. The upgrade dialog in the control panel names the jobs it will stop before you confirm. It offers **Now**, or **When no jobs are running**, which holds new jobs until the restart is done. A waiting upgrade can be canceled from the panel or with `server_restart { cancel: true }`.
 
+Every restart, manual or automatic, first waits for in-flight MCP tool calls to finish, so a call such as `project_issue_create` is never cut off midway; the panel shows "pending: waiting on N MCP calls" meanwhile. New calls are still admitted for `server.restart_call_grace` (1 minute) after the restart was requested, then they wait for the restart and, if it takes longer than 30 seconds, fail with the retryable error "server restarting, try again". After `server.restart_call_max_wait` (5 minutes) the restart proceeds even if calls are still running. Calls that run agent turns (`agent_run`, `agent_run_script`) are not waited for: the restart checkpoints them like jobs. Pass `force: true` to `server_restart` or `server_upgrade` to skip the wait.
+
 `server_restart {}` restarts the same way without installing anything.
 
 **Automatic updates:** set `server.auto_update: true` to install new releases on their own. An available update is applied as soon as it is found, even while jobs are running: like a manual upgrade with **Now**, running jobs are checkpointed and resume after the restart.
