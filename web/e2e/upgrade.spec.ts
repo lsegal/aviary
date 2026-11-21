@@ -133,7 +133,11 @@ test("upgrade dialog says nothing will stop when no jobs run", async ({
 	);
 });
 
-function gitCheck(dirty: boolean) {
+function gitCheck(
+	dirty: boolean,
+	supervised = false,
+	jobs: typeof runningJobs = [],
+) {
 	return {
 		currentVersion: "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		latestVersion: "abc1234bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -149,13 +153,15 @@ function gitCheck(dirty: boolean) {
 			behind: 1,
 			ahead: 0,
 			dirty,
-			hotReload: true,
+			supervised,
 		},
-		restart: { phase: "idle", jobs: [], held: false },
+		restart: { phase: "idle", jobs, held: false },
 	};
 }
 
-test("dev checkout pulls from git without restarting", async ({ page }) => {
+test("unsupervised dev checkout pulls from git and says to restart", async ({
+	page,
+}) => {
 	const upgrades: Record<string, unknown>[] = [];
 	await mockMCP(page, {
 		agent_list: [],
@@ -170,7 +176,7 @@ test("dev checkout pulls from git without restarting", async ({ page }) => {
 				held: false,
 				noop: true,
 				message:
-					"Pulled 1 commit(s) (1111111 → abc1234). Hot reload is rebuilding Aviary with the new code.",
+					"Pulled 1 commit(s) (1111111 → abc1234). Restart Aviary to run the new code.",
 			};
 		},
 	});
@@ -182,7 +188,7 @@ test("dev checkout pulls from git without restarting", async ({ page }) => {
 		"Update this checkout to origin/main (abc1234)",
 	);
 	await expect(dialog).toContainText("git pull --ff-only");
-	await expect(dialog).toContainText("hot reload rebuilds Aviary");
+	await expect(dialog).toContainText("restart Aviary afterwards");
 	await expect(
 		dialog.getByRole("button", { name: "When no jobs are running" }),
 	).toHaveCount(0);
@@ -193,9 +199,55 @@ test("dev checkout pulls from git without restarting", async ({ page }) => {
 		{ version: "abc1234bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", when: "now" },
 	]);
 	await expect(page.getByTestId("update-notice").first()).toContainText(
-		"Hot reload is rebuilding Aviary",
+		"Restart Aviary to run the new code.",
 	);
 	await expect(page.getByRole("status")).toHaveCount(0);
+});
+
+test("supervised dev checkout pulls, then safely restarts onto the pulled code", async ({
+	page,
+}) => {
+	const upgrades: Record<string, unknown>[] = [];
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		server_version_check: gitCheck(false, true, runningJobs.slice(0, 1)),
+		server_upgrade: (args?: Record<string, unknown>) => {
+			upgrades.push(args ?? {});
+			return {
+				phase: "waiting",
+				when: "idle",
+				version: "abc1234",
+				jobs: runningJobs.slice(0, 1),
+				held: true,
+				message:
+					"Pulled 1 commit(s) (1111111 → abc1234). Aviary restarts to build and run the new code.",
+			};
+		},
+	});
+	await page.goto("/system/overview");
+
+	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
+	const dialog = page.getByRole("dialog");
+	await expect(dialog).toContainText(
+		"Aviary then restarts and rebuilds from the pulled sources.",
+	);
+	await expect(dialog).toContainText("resumes each one in its own session");
+	await dialog
+		.getByRole("button", { name: "When no jobs are running" })
+		.click();
+
+	await expect(dialog).toBeHidden();
+	expect(upgrades).toEqual([
+		{ version: "abc1234bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", when: "idle" },
+	]);
+	await expect(page.getByRole("status")).toContainText(
+		"waits for 1 running job",
+	);
+	await expect(page.getByTestId("update-notice").first()).toContainText(
+		"Aviary restarts to build and run the new code.",
+	);
 });
 
 test("dev checkout with local changes blocks the update and says why", async ({
