@@ -8,7 +8,10 @@
 						<div class="min-w-0">
 							<p class="text-xs text-gray-500"><router-link :to="projectsIndexPath" class="hover:underline">{{ projectsIndexLabel }}</router-link> /</p>
 							<div class="flex items-center gap-2">
-								<h1 class="truncate text-xl font-bold text-gray-900 dark:text-white">{{ project }}</h1>
+								<h1 class="truncate text-xl font-bold text-gray-900 dark:text-white">
+									<a :href="targetURL(project)" target="_blank" rel="noopener noreferrer" class="hover:underline"
+										:title="`Open ${project} on GitHub`">{{ project }}</a>
+								</h1>
 								<router-link v-if="owner" :to="settingsPath" data-testid="project-owner"
 									class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
 									:title="`${project} belongs to agent ${owner}`">agent: {{ owner }}</router-link>
@@ -178,6 +181,7 @@ import {
 	type ProjectJob,
 	projectPath,
 	summarizePrompt,
+	targetURL,
 } from "../lib/projects";
 import { shortVersion } from "../lib/version";
 import { useSettingsStore } from "../stores/settings";

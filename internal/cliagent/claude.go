@@ -42,8 +42,10 @@ func newClaudeSession(opts Options) *claudeSession {
 	return &claudeSession{opts: opts, sessionID: opts.ResumeID}
 }
 
-// claudeArgs builds the command line for a Claude Code process.
-func claudeArgs(opts Options, resumeID string) []string {
+// claudeArgs builds the command line for a Claude Code process. The system
+// prompt is read from systemPromptFile rather than passed inline: with a skill
+// expanded into it, it outgrows Windows' 32,767-character command line.
+func claudeArgs(opts Options, resumeID, systemPromptFile string) []string {
 	args := []string{
 		"-p",
 		"--input-format", "stream-json",
@@ -54,8 +56,8 @@ func claudeArgs(opts Options, resumeID string) []string {
 		"--strict-mcp-config",
 		"--mcp-config", claudeMCPConfig(opts),
 	}
-	if opts.SystemPrompt != "" {
-		args = append(args, "--system-prompt", opts.SystemPrompt)
+	if systemPromptFile != "" {
+		args = append(args, "--system-prompt-file", systemPromptFile)
 	}
 	if !opts.BuiltinTools {
 		args = append(args, "--tools", "")
@@ -105,8 +107,41 @@ func cliEnv(opts Options) []string {
 	return env
 }
 
-func (s *claudeSession) start() (*claudeProc, error) {
-	cmd := exec.Command(s.opts.binary(), claudeArgs(s.opts, s.sessionID)...) //nolint:gosec // binary is a fixed backend name
+// writeSystemPromptFile writes the system prompt to a temporary file for
+// --system-prompt-file and returns its path and a cleanup that removes it. An
+// empty prompt writes nothing.
+func writeSystemPromptFile(prompt string) (string, func(), error) {
+	if prompt == "" {
+		return "", func() {}, nil
+	}
+	file, err := os.CreateTemp("", "aviary-system-prompt-*.md")
+	if err != nil {
+		return "", nil, fmt.Errorf("writing the system prompt file: %w", err)
+	}
+	path := file.Name()
+	cleanup := func() { _ = os.Remove(path) }
+	_, err = file.WriteString(prompt)
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("writing the system prompt file: %w", err)
+	}
+	return path, cleanup, nil
+}
+
+func (s *claudeSession) start() (proc *claudeProc, err error) {
+	promptFile, cleanup, err := writeSystemPromptFile(s.opts.SystemPrompt)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			cleanup()
+		}
+	}()
+	cmd := exec.Command(s.opts.binary(), claudeArgs(s.opts, s.sessionID, promptFile)...) //nolint:gosec // binary is a fixed backend name
 	cmd.Dir = s.opts.WorkDir
 	cmd.Env = cliEnv(s.opts)
 	stdin, err := cmd.StdinPipe()
@@ -137,6 +172,7 @@ func (s *claudeSession) start() (*claudeProc, error) {
 		}
 		close(p.lines)
 		p.err = cmd.Wait()
+		cleanup()
 		close(p.done)
 	}()
 	return p, nil
