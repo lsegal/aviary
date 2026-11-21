@@ -322,6 +322,20 @@ test("an agent's GitHub Projects in the sidebar list its projects with live coun
 	);
 });
 
+test("a board watching a project URL links its header to that URL", async ({
+	page,
+}) => {
+	await setup(page);
+	const board = "https://github.com/users/lsegal/projects/3";
+	await page.goto(`/agents/coder/projects/${encodeURIComponent(board)}`);
+
+	const link = page
+		.getByRole("heading", { name: board })
+		.getByRole("link", { name: board });
+	await expect(link).toHaveAttribute("href", board);
+	await expect(link).toHaveAttribute("target", "_blank");
+});
+
 test("board shows status, ordered job cards and live output", async ({
 	page,
 }) => {
@@ -331,6 +345,14 @@ test("board shows status, ordered job cards and live output", async ({
 	await expect(
 		page.getByRole("heading", { name: "lsegal/aviary" }),
 	).toBeVisible();
+	const repoLink = page
+		.getByRole("heading", { name: "lsegal/aviary" })
+		.getByRole("link", { name: "lsegal/aviary" });
+	await expect(repoLink).toHaveAttribute(
+		"href",
+		"https://github.com/lsegal/aviary",
+	);
+	await expect(repoLink).toHaveAttribute("target", "_blank");
 	await expect(page.getByTestId("delivery-status")).toHaveText("live");
 	await expect(page.getByText("poll · checked")).toContainText("every 30s");
 	const stats = page.getByRole("region", { name: "Job counts" });
@@ -405,6 +427,31 @@ test("retry, stop, filters and check now call project tools", async ({
 	await expect
 		.poll(() => calls.project_refresh?.[0])
 		.toEqual({ target: "lsegal/aviary" });
+});
+
+test("job actions are icon buttons with tooltips", async ({ page }) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	const actions = [
+		card.getByRole("link", { name: "Details" }),
+		card.getByRole("button", { name: "Retry" }),
+		card.getByRole("button", { name: "Summarize" }),
+		card.getByRole("button", { name: "Stop" }),
+	];
+	for (const action of actions) {
+		await expect(action.locator("svg")).toHaveCount(1);
+		await expect(action).toHaveText("");
+		await expect(action).toHaveAttribute("title", /\S/);
+	}
+
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	for (const name of ["Retry", "Stop"]) {
+		const action = page.getByRole("button", { name });
+		await expect(action.locator("svg")).toHaveCount(1);
+		await expect(action).toHaveText("");
+		await expect(action).toHaveAttribute("title", /\S/);
+	}
 });
 
 test("run view renders the typed event timeline read-only", async ({

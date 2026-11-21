@@ -38,11 +38,16 @@ func fakeClaude() {
 	} else if i := slices.Index(args, "--session-id"); i >= 0 {
 		session = args[i+1]
 	}
-	systemPrompt := ""
-	if i := slices.Index(args, "--system-prompt"); i >= 0 {
-		systemPrompt = args[i+1]
-	}
 	skip := slices.Contains(args, "--dangerously-skip-permissions")
+	system := ""
+	if i := slices.Index(args, "--system-prompt-file"); i >= 0 {
+		data, err := os.ReadFile(args[i+1])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		system = string(data)
+	}
 	out := json.NewEncoder(os.Stdout)
 	_ = out.Encode(map[string]any{"type": "system", "subtype": "init", "session_id": session})
 	sc := bufio.NewScanner(os.Stdin)
@@ -69,11 +74,14 @@ func fakeClaude() {
 		if text == "sleep" {
 			time.Sleep(time.Minute)
 		}
+		if text == "system" {
+			text = system
+		}
 		if text == "exit" {
 			fmt.Fprintln(os.Stderr, "boom")
 			os.Exit(3)
 		}
-		reply := fmt.Sprintf("turn=%d pid=%d images=%d token=%s skip=%t system=%q text=%s", turn, os.Getpid(), images, os.Getenv(mcpTokenEnv), skip, systemPrompt, text)
+		reply := fmt.Sprintf("turn=%d pid=%d images=%d token=%s skip=%t text=%s", turn, os.Getpid(), images, os.Getenv(mcpTokenEnv), skip, text)
 		_ = out.Encode(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_start"}})
 		_ = out.Encode(map[string]any{"type": "stream_event", "event": map[string]any{
 			"type": "content_block_delta", "delta": map[string]any{"type": "text_delta", "text": reply},
@@ -96,10 +104,14 @@ func fakeCodex() {
 		thread = args[len(args)-2]
 	}
 	prompt, _ := bufio.NewReader(os.Stdin).ReadString(0)
+	developer := ""
 	images := 0
 	for _, a := range args {
 		if a == "--image" {
 			images++
+		}
+		if v, ok := strings.CutPrefix(a, "developer_instructions="); ok {
+			developer = " developer=" + v
 		}
 	}
 	out := json.NewEncoder(os.Stdout)
@@ -109,7 +121,7 @@ func fakeCodex() {
 		return
 	}
 	_ = out.Encode(map[string]any{"type": "item.completed", "item": map[string]any{
-		"id": "i0", "type": "agent_message", "text": fmt.Sprintf("thread=%s images=%d prompt=%s", thread, images, prompt),
+		"id": "i0", "type": "agent_message", "text": fmt.Sprintf("thread=%s images=%d%s prompt=%s", thread, images, developer, prompt),
 	}})
 	_ = out.Encode(map[string]any{"type": "turn.completed", "usage": map[string]any{
 		"input_tokens": 10, "cached_input_tokens": 4, "output_tokens": 2,
@@ -179,7 +191,7 @@ func TestParseModel_BackendAsProvider(t *testing.T) {
 }
 
 func TestClaudeArgs_BuiltinToolsOff(t *testing.T) {
-	args := claudeArgs(Options{Model: "opus", SystemPrompt: "rules", MCPURL: "http://127.0.0.1:1/mcp", MCPToken: "secret", NewSessionID: "abc", Approval: []string{"--permission-mode", "dontAsk"}}, "")
+	args := claudeArgs(Options{Model: "opus", SystemPrompt: "rules", MCPURL: "http://127.0.0.1:1/mcp", MCPToken: "secret", NewSessionID: "abc", Approval: []string{"--permission-mode", "dontAsk"}}, "", "/tmp/prompt.md")
 	assert.Equal(t, "", args[slices.Index(args, "--tools")+1])
 	assert.Equal(t, "mcp__aviary", args[slices.Index(args, "--allowedTools")+1])
 	// The approval flags are always passed, so a defaultMode in the user's
@@ -187,7 +199,9 @@ func TestClaudeArgs_BuiltinToolsOff(t *testing.T) {
 	assert.Equal(t, "dontAsk", args[slices.Index(args, "--permission-mode")+1])
 	assert.Contains(t, args, "--strict-mcp-config")
 	assert.Equal(t, "abc", args[slices.Index(args, "--session-id")+1])
-	assert.Equal(t, "rules", args[slices.Index(args, "--system-prompt")+1])
+	assert.Equal(t, "/tmp/prompt.md", args[slices.Index(args, "--system-prompt-file")+1])
+	assert.NotContains(t, args, "rules", "the system prompt never travels on the command line (#554)")
+	assert.NotContains(t, args, "--system-prompt")
 
 	cfg := args[slices.Index(args, "--mcp-config")+1]
 	assert.Contains(t, cfg, `"url":"http://127.0.0.1:1/mcp"`)
@@ -196,17 +210,18 @@ func TestClaudeArgs_BuiltinToolsOff(t *testing.T) {
 }
 
 func TestClaudeArgs_BuiltinToolsOnAndResume(t *testing.T) {
-	args := claudeArgs(Options{Model: "opus", BuiltinTools: true, Approval: []string{"--permission-mode", "auto"}}, "sess-1")
+	args := claudeArgs(Options{Model: "opus", BuiltinTools: true, Approval: []string{"--permission-mode", "auto"}}, "sess-1", "")
 	assert.NotContains(t, args, "--tools")
 	assert.NotContains(t, args, "--allowedTools")
 	assert.Equal(t, "auto", args[slices.Index(args, "--permission-mode")+1])
 	assert.Equal(t, "sess-1", args[slices.Index(args, "--resume")+1])
 	assert.Equal(t, `{"mcpServers":{}}`, args[slices.Index(args, "--mcp-config")+1])
+	assert.NotContains(t, args, "--system-prompt-file", "no system prompt, no file")
 
-	args = claudeArgs(Options{Model: "opus", Approval: []string{"--permission-mode", "auto"}, ExtraDir: []string{"--add-dir", "/data/agents/a"}}, "")
+	args = claudeArgs(Options{Model: "opus", Approval: []string{"--permission-mode", "auto"}, ExtraDir: []string{"--add-dir", "/data/agents/a"}}, "", "")
 	assert.Equal(t, "/data/agents/a", args[slices.Index(args, "--add-dir")+1], "the agent's own directory is granted (#534)")
 
-	args = claudeArgs(Options{Model: "opus", Ephemeral: true, NewSessionID: "x"}, "")
+	args = claudeArgs(Options{Model: "opus", Ephemeral: true, NewSessionID: "x"}, "", "")
 	assert.Contains(t, args, "--no-session-persistence")
 	assert.NotContains(t, args, "--session-id")
 }
@@ -418,6 +433,26 @@ func TestClaudeSession_LongLivedProcess(t *testing.T) {
 	assert.Contains(t, r3.Text, "turn=1")
 	assert.NotContains(t, r3.Text, pid)
 	assert.Equal(t, "sess-1", events[0].SessionID, "restarted process resumes the same session")
+}
+
+func TestClaudeSession_LongSystemPrompt(t *testing.T) {
+	// A system prompt with a skill expanded into it outgrows Windows'
+	// 32,767-character command line; it reaches the CLI word for word through
+	// a file instead (#554).
+	opts := fakeOptions(t, Claude)
+	opts.SystemPrompt = strings.Repeat("Follow the skill exactly. ", 4000) + "end"
+	require.Greater(t, len(opts.SystemPrompt), 32767)
+	s, err := NewSession(opts)
+	require.NoError(t, err)
+
+	r, err := s.Send(context.Background(), Turn{Text: "system"}, nil)
+	require.NoError(t, err)
+	assert.True(t, strings.HasSuffix(r.Text, "text="+opts.SystemPrompt), "the CLI read the whole system prompt")
+
+	cs := s.(*claudeSession)
+	path := cs.proc.cmd.Args[slices.Index(cs.proc.cmd.Args, "--system-prompt-file")+1]
+	require.NoError(t, s.Close())
+	assert.NoFileExists(t, path, "the prompt file is removed once the process exits")
 }
 
 func TestClaudeSession_ProcessExit(t *testing.T) {

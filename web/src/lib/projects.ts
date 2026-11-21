@@ -605,6 +605,16 @@ export function diffStat(diff: string): { added: number; removed: number } {
 	return { added, removed };
 }
 
+/**
+ * The GitHub page of a watch target: an OWNER/REPO target's repository, or
+ * the repository, project board, or Discussions URL a target is written as.
+ */
+export function targetURL(target: string): string {
+	return target.startsWith("https://")
+		? target
+		: `https://github.com/${target}`;
+}
+
 export function encodeProject(name: string): string {
 	return encodeURIComponent(name);
 }
