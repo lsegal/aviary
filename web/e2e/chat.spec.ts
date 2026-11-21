@@ -848,7 +848,7 @@ test("messages sent while a reply streams are added at once", async ({
 	}
 });
 
-test("a failed turn's error attaches to its message and Retry re-runs it", async ({
+test("a failed turn's error attaches to its message and its icon Retry re-runs it", async ({
 	page,
 }) => {
 	const runs: Record<string, unknown>[] = [];
@@ -919,8 +919,28 @@ test("a failed turn's error attaches to its message and Retry re-runs it", async
 		expect(attached.x + attached.width).toBeLessThan(bubble.x + bubble.width);
 	}
 
+	// Retry is a compact icon button in the footer, next to the time and model.
+	const retry = error.getByRole("button", { name: "Retry" });
+	await expect(retry).toBeVisible();
+	await expect(retry).toHaveText("");
+	await expect(retry).toHaveAttribute("title", "Retry this message");
+	await expect(retry.locator("svg")).toBeVisible();
+	const retryBox = await retry.boundingBox();
+	const footerBox = await error.getByText("claude/opus").boundingBox();
+	expect(retryBox && footerBox).toBeTruthy();
+	if (retryBox && footerBox) {
+		expect(retryBox.width).toBeLessThanOrEqual(24);
+		expect(retryBox.height).toBeLessThanOrEqual(24);
+		expect(retryBox.x).toBeGreaterThan(footerBox.x);
+		expect(
+			Math.abs(
+				retryBox.y + retryBox.height / 2 - (footerBox.y + footerBox.height / 2),
+			),
+		).toBeLessThan(4);
+	}
+
 	// Retrying while the provider still fails updates the error in place.
-	await sent.getByTestId("chat-message-retry").click();
+	await retry.click();
 	await expect.poll(() => runs.length).toBe(2);
 	expect(runs[1]).toMatchObject({ message: "summarize", retry: true });
 	await expect(error).toContainText("502 Bad Gateway");
@@ -928,7 +948,7 @@ test("a failed turn's error attaches to its message and Retry re-runs it", async
 
 	// Once it recovers, Retry lands the reply and the error is gone.
 	failing = false;
-	await sent.getByTestId("chat-message-retry").click();
+	await sent.getByRole("button", { name: "Retry" }).click();
 	await expect.poll(() => runs.length).toBe(3);
 	expect(runs[2]).toMatchObject({ message: "summarize", retry: true });
 	await expect(page.getByText("all good")).toBeVisible();

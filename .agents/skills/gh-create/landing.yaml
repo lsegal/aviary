@@ -1,0 +1,27 @@
+# Landing page content for https://aviary.bot/skills/gh-create/. The docs
+# site reads this file, SKILL.md and agents/openai.yaml at build time.
+eyebrow: GitHub issue writer
+# Wrap the accent word in *asterisks*.
+headline: From quick note to *actionable.*
+tagline: Turns a one-line request into a structured, labeled GitHub issue with media attached, that a person or an agent can pick up and finish.
+usage: /gh-create owner/repo the save button crashes on empty files, see ./crash.png
+steps:
+  - title: Check the repository
+    text: Resolves the repository and its visibility so nothing private leaks into a public issue.
+  - title: Research
+    text: Optionally points to the files involved and links related issues, without holding up filing.
+  - title: Write and label
+    text: Expands the request into a summary, steps or requirements and acceptance criteria, and applies every matching existing label.
+  - title: Attach and diagram
+    text: Uploads the screenshots and videos you mention, and draws wireframes or sequence diagrams when prose isn't enough.
+  - title: File and verify
+    text: Files the issue assigned to you, then reads it back to check that media renders and no local path or secret slipped in.
+aviary: Projects never runs gh-create on its own, but the issues it files are exactly what Projects picks up. The Projects prompt chat files issues through it too.
+requirements:
+  - The GitHub CLI (gh), signed in with permission to create issues.
+  - A CLI agent that loads skills, such as Claude Code, Codex or Gemini CLI.
+options:
+  - name: owner/repo
+    text: The repository to file in. Inside a checkout it can be left out.
+  - name: assign to …
+    text: Assigns someone other than you, or nobody. The default is @me.

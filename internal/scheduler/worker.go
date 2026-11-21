@@ -399,7 +399,7 @@ func resolveTaskExecution(job *domain.Job, cfg *config.AgentConfig) (taskType, p
 
 // executeProjectJob hands a project task to the Projects engine, which runs
 // its prompt in an isolated clone as a board job, and records the run's
-// summary as the job's output.
+// summary as the job's output, in the task session, and at its target.
 func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg *config.AgentConfig) error {
 	if p.projectRunner == nil {
 		return errors.New("project tasks need the Projects engine, which is not running")
@@ -423,6 +423,9 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 	if summary != "" {
 		if persistErr := p.queue.UpdateOutput(job.ID, summary); persistErr != nil {
 			slog.Warn("job: failed to persist output", "id", job.ID, "err", persistErr)
+		}
+		if deliverErr := recordTaskOutput(job, summary, p.deliver); deliverErr != nil {
+			slog.Warn("job: failed to deliver project task output", "id", job.ID, "route", job.OutputChannel, "err", deliverErr)
 		}
 	}
 	return err

@@ -1,0 +1,26 @@
+# Landing page content for https://aviary.bot/skills/gh-discuss/. The docs
+# site reads this file, SKILL.md and agents/openai.yaml at build time.
+eyebrow: GitHub Discussions answerer
+# Wrap the accent word in *asterisks*.
+headline: One question, one *answer.*
+tagline: Researches one unanswered GitHub Discussion inside the repository and replies only when it can give a complete, confident answer.
+usage: /gh-discuss 123
+steps:
+  - title: Validate
+    text: Confirms it has exactly one top-level Discussion thread to look at.
+  - title: Read the question
+    text: Reads the opening post and its replies, and exits if it is already answered or is not really a question.
+  - title: Research
+    text: Searches only the repository's own files, docs and GitHub history for the answer.
+  - title: Reply once
+    text: Posts one top-level answer when the evidence settles it, and otherwise leaves the thread alone.
+aviary: Projects watches Discussions boards and runs gh-discuss on each new thread, so questions get answered from the code while you sleep.
+requirements:
+  - The GitHub CLI (gh), signed in with access to the repository's Discussions.
+  - A checkout of the repository, or a Repository owner/repo line in the prompt.
+  - A CLI agent that loads skills, such as Claude Code, Codex or Gemini CLI.
+options:
+  - name: "123"
+    text: The Discussion number to answer.
+  - name: "Repository: owner/repo"
+    text: Names the repository when you run it outside a checkout.

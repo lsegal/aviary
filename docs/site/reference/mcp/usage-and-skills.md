@@ -31,7 +31,7 @@ Return raw token-usage records within a date range, used to populate the Usage d
 
 Records are stored per LLM call. Aggregate them by `model`, `provider`, or `agent` to produce cost breakdowns and usage summaries.
 
-Records with a `project` object report GitHub Projects work instead of token use: `project.issue` is the lowercase `owner/repo#number` of the issue, `project.duration_ms` is the wall time of one job run on it, and `project.outcome` is `merged` when one of its pull requests merged or `failed` when its job failed. Leave these records out of token aggregates.
+Records with a `project` object report GitHub Projects work instead of token use: `project.issue` is the lowercase `owner/repo#number` of the issue, `project.duration_ms` is the wall time of one job run on it, and `project.outcome` is `merged` when one of its pull requests merged or `failed` when its job failed. A `merged` record also carries `project.additions` and `project.deletions`, the lines the merged pull request's diff added and removed as GitHub reports them. Leave these records out of token aggregates.
 
 ```json
 {

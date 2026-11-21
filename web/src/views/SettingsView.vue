@@ -487,7 +487,6 @@ const router = useRouter();
 // System pages map to their tab; System → Settings is the general tab.
 const systemTabs: Record<string, Tab> = {
 	settings: "general",
-	projects: "projects",
 	providers: "providers",
 	sessions: "sessions",
 	skills: "skills",
@@ -496,6 +495,7 @@ const systemTabs: Record<string, Tab> = {
 function routeToActiveTab(): Tab {
 	if (route.path === "/agents" || route.path.startsWith("/agents/"))
 		return "agents";
+	if (route.path === "/projects/settings") return "projects";
 	return systemTabs[route.params.tab as string] ?? "general";
 }
 
@@ -618,7 +618,7 @@ watch(
 
 // An agent's pages: its Agent Settings page's General, Permissions and
 // Channels sections, then Files and Tasks. GitHub Projects is the agent's board, with its
-// settings in System → Projects.
+// settings in Projects settings.
 const agentSubtabs = [
 	"general",
 	"permissions",
@@ -920,7 +920,7 @@ watch(
 );
 
 // /agents alone opens the first agent's chat, or adds an agent with ?add
-// (the sidebar's + Add Agent). With no agents it shows the empty state.
+// (System → Settings' + Add agent). With no agents it shows the empty state.
 function resolveAgentsIndex() {
 	if (loading.value || activeTab.value !== "agents") return;
 	// /agents/NAME alone opens that agent's chat.
@@ -963,7 +963,7 @@ const agentSubtabLabels: Record<AgentSubtab, string> = {
 };
 const systemTabLabels: Record<Exclude<Tab, "agents">, string> = {
 	general: "Settings",
-	projects: "Projects",
+	projects: "Projects Settings",
 	providers: "Providers & Auth",
 	sessions: "Sessions",
 	skills: "Skills",
@@ -1850,6 +1850,7 @@ function emptyConfig(): AppConfig {
 			tls: { cert: "", key: "" },
 			external_access: false,
 			no_tls: false,
+			auto_update: true,
 		},
 		agents: [],
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
@@ -1867,6 +1868,10 @@ function hydrateDraftConfig(config: AppConfig): AppConfig {
 	}
 	if (hydrated.browser.reuse_tabs === undefined) {
 		hydrated.browser.reuse_tabs = true;
+	}
+	// Unset means on, as on the server.
+	if (hydrated.server.auto_update === undefined) {
+		hydrated.server.auto_update = true;
 	}
 	hydrated.approval = {
 		mode: hydrated.approval?.mode ?? "",
@@ -2103,6 +2108,39 @@ function confirmRemoveAgent() {
 		// Index unchanged but the agent at this slot may have changed; update URL.
 		void router.replace(agentRoutePath(next, selectedAgentSubtab.value));
 	}
+}
+
+// System → Settings' Agents list renames and deletes an agent straight away.
+// Only that change is saved; other unsaved edits stay in the draft. An agent
+// that was never saved only changes in the draft.
+async function saveAgentListChange(
+	name: string,
+	change: (agents: AgentEntry[], idx: number) => void,
+) {
+	const saved = JSON.parse(lastSavedSnapshot.value) as AppConfig;
+	const idx = name ? saved.agents.findIndex((a) => a.name === name) : -1;
+	if (idx < 0) return;
+	change(saved.agents, idx);
+	await store.saveConfig(saved);
+	lastSavedSnapshot.value = JSON.stringify(saved);
+}
+
+async function renameAgentEntry(index: number, name: string) {
+	const entry = draft.value.agents[index];
+	if (!entry) return;
+	await saveAgentListChange(entry.name, (agents, idx) => {
+		agents[idx].name = name;
+	});
+	entry.name = name;
+}
+
+async function deleteAgentEntry(index: number) {
+	const entry = draft.value.agents[index];
+	if (!entry) return;
+	await saveAgentListChange(entry.name, (agents, idx) => {
+		agents.splice(idx, 1);
+	});
+	draft.value.agents.splice(index, 1);
 }
 
 function onAgentNameChange(agentEntry: AgentEntry) {
@@ -2878,6 +2916,8 @@ function normalizedDraftConfig(): AppConfig {
 		normalized.scheduler.precompute_tasks === false ? false : undefined;
 	normalized.browser.reuse_tabs =
 		normalized.browser.reuse_tabs === false ? false : undefined;
+	normalized.server.auto_update =
+		normalized.server.auto_update === false ? false : undefined;
 	const approval = {
 		mode: normalized.approval?.mode || undefined,
 		chat: normalized.approval?.chat || undefined,
@@ -3523,6 +3563,8 @@ const settingsContext = proxyRefs({
 	activeTab,
 	approvalModes: APPROVAL_MODES,
 	addAgent,
+	deleteAgentEntry,
+	renameAgentEntry,
 	addAllowFrom,
 	addChannel,
 	addProviderApiKey,

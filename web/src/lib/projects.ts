@@ -30,12 +30,26 @@ export const BOARD_STATES: BoardState[] = [
 ];
 
 /**
- * The board states a comma-separated list such as the board's ?state= query
+ * The board's filter chips: its scheduled items, then the five job states. A
+ * scheduled item is an upcoming run, not a job; once it runs, its job shows
+ * under its job state.
+ */
+export type BoardFilter = "scheduled" | BoardState;
+
+export const BOARD_FILTERS: BoardFilter[] = ["scheduled", ...BOARD_STATES];
+
+/**
+ * The board filters a comma-separated list such as the board's ?state= query
  * names, in board order; unknown names are dropped and none means no filter.
  */
-export function parseBoardStates(v: unknown): BoardState[] {
+export function parseBoardStates(v: unknown): BoardFilter[] {
 	const names = typeof v === "string" ? v.split(",") : [];
-	return BOARD_STATES.filter((s) => names.includes(s));
+	return BOARD_FILTERS.filter((s) => names.includes(s));
+}
+
+/** The job states among the board filters. */
+export function jobStates(filters: BoardFilter[]): BoardState[] {
+	return filters.filter((s): s is BoardState => s !== "scheduled");
 }
 
 /** The state of a job's pull request, empty while it has none. */
@@ -141,6 +155,8 @@ export interface ProjectJob {
 	session: string;
 	actions: JobActions;
 	output: string[];
+	/** The job's latest structured transcript events, when it emits them. */
+	events: JobEvent[];
 	/** A scheduled prompt's run, which has no issue: its number is its fire time. */
 	scheduled: boolean;
 	/** The `agent/task` key of the schedule a scheduled run fired from. */
@@ -161,10 +177,12 @@ export type JobEvent =
 	| {
 			kind: "command";
 			time: string;
+			callID: string;
 			command: string;
 			output: string;
 			exitCode: number | null;
 			running: boolean;
+			failed: boolean;
 	  }
 	| { kind: "file_change"; time: string; path: string; diff: string }
 	| {
@@ -342,6 +360,7 @@ export function normalizeJob(v: unknown): ProjectJob {
 			retryUnavailable: str(raw.retry_unavailable),
 		},
 		output: lines(raw.scrollback),
+		events: normalizeEvents(raw.events),
 		scheduled: str(raw.kind) === "schedule",
 		scheduleID: str(raw.schedule_id),
 	};
@@ -380,15 +399,19 @@ function normalizeEvent(v: unknown): JobEvent | null {
 				name: str(raw.name),
 				input: raw.input,
 			};
-		case "command":
+		case "command": {
+			const exitCode = typeof raw.exit_code === "number" ? raw.exit_code : null;
 			return {
 				kind: "command",
 				time,
+				callID: str(raw.call_id),
 				command: str(raw.command),
 				output: str(raw.output),
-				exitCode: typeof raw.exit_code === "number" ? raw.exit_code : null,
+				exitCode,
 				running: str(raw.status) === "running",
+				failed: raw.is_error === true || (exitCode !== null && exitCode !== 0),
 			};
+		}
 		case "file_change":
 			return {
 				kind: "file_change",
@@ -433,10 +456,14 @@ function normalizeEvent(v: unknown): JobEvent | null {
 	}
 }
 
-/** Normalizes typed job events, attaching each tool_result to its tool_call. */
+/**
+ * Normalizes typed job events, attaching each tool_result to its tool_call
+ * and folding each command's completion into the row that started it.
+ */
 export function normalizeEvents(v: unknown): JobEvent[] {
 	const events: JobEvent[] = [];
 	const calls = new Map<string, Extract<JobEvent, { kind: "tool_call" }>>();
+	const commands = new Map<string, Extract<JobEvent, { kind: "command" }>>();
 	for (const item of arr(v)) {
 		const raw = obj(item);
 		if (str(raw.kind) === "tool_result") {
@@ -454,6 +481,18 @@ export function normalizeEvents(v: unknown): JobEvent[] {
 		if (!event) continue;
 		if (event.kind === "tool_call" && event.callID)
 			calls.set(event.callID, event);
+		if (event.kind === "command" && event.callID) {
+			const started = commands.get(event.callID);
+			if (started) {
+				started.command ||= event.command;
+				started.output = event.output || started.output;
+				started.exitCode = event.exitCode;
+				started.running = event.running;
+				started.failed = event.failed;
+				continue;
+			}
+			commands.set(event.callID, event);
+		}
 		events.push(event);
 	}
 	return events;
@@ -465,7 +504,7 @@ export function normalizeJobDetail(v: unknown): JobDetail {
 	const rawOutput = lines(raw.raw_output);
 	return {
 		job,
-		events: normalizeEvents(raw.events),
+		events: job.events,
 		output: rawOutput.length > 0 ? rawOutput : job.output,
 	};
 }
@@ -556,7 +595,8 @@ export function sortJobs(jobs: ProjectJob[]): ProjectJob[] {
 	);
 }
 
-const STATE_LABELS: Record<BoardState, string> = {
+const STATE_LABELS: Record<BoardFilter, string> = {
+	scheduled: "Scheduled",
 	starting: "Starting",
 	paused: "Paused",
 	running: "Running",
@@ -564,7 +604,7 @@ const STATE_LABELS: Record<BoardState, string> = {
 	failed: "Failed",
 };
 
-export function stateLabel(state: BoardState): string {
+export function stateLabel(state: BoardFilter): string {
 	return STATE_LABELS[state];
 }
 
@@ -615,6 +655,17 @@ export function lifecycleStep(detail: JobDetail): {
 	return { step, done: false };
 }
 
+/** Whether a raw output line is a stream-json heartbeat with nothing to read. */
+export function isHeartbeatLine(line: string): boolean {
+	if (!line.includes("heartbeat")) return false;
+	try {
+		const raw = obj(JSON.parse(line));
+		return raw.type === "tool_progress" && raw.heartbeat === true;
+	} catch {
+		return false;
+	}
+}
+
 /** The prompt chat's request for a summary of a job's session log. */
 export function summarizePrompt(job: Pick<ProjectJob, "repo" | "number">) {
 	return `Summarize the current session log of work on ${job.repo}#${job.number}`;
@@ -647,6 +698,38 @@ export function diffLines(
 			return { text, kind: "del" };
 		return { text, kind: "ctx" };
 	});
+}
+
+// Input fields that name what a tool call acts on, most telling first.
+const TOOL_SUMMARY_FIELDS = [
+	"command",
+	"cmd",
+	"file_path",
+	"path",
+	"pattern",
+	"url",
+	"query",
+	"description",
+	"prompt",
+];
+
+/** A one-line summary of a tool call: its name and what it acts on. */
+export function toolCallSummary(name: string, input: unknown): string {
+	let detail = "";
+	if (typeof input === "string") detail = input;
+	else if (input && typeof input === "object") {
+		const fields = input as Raw;
+		const key = TOOL_SUMMARY_FIELDS.find(
+			(k) => typeof fields[k] === "string" && fields[k],
+		);
+		detail = key
+			? String(fields[key])
+			: Object.keys(fields).length
+				? JSON.stringify(fields)
+				: "";
+	}
+	detail = detail.replace(/\s+/g, " ").trim();
+	return detail ? `${name} ${detail}` : name;
 }
 
 export function diffStat(diff: string): { added: number; removed: number } {

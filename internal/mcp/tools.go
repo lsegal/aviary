@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -200,64 +201,11 @@ type agentTemplateSyncArgs struct {
 }
 
 func loadSessionByID(agentName, sessionID string) (*domain.Session, error) {
-	agentID, resolvedAgentName, err := resolveAgentIdentity(agentName)
+	agentID, _, err := resolveAgentIdentity(agentName)
 	if err != nil {
 		return nil, err
 	}
-	sessionID = strings.TrimSpace(sessionID)
-	path := store.FindSessionPath(agentID, sessionID)
-	if path == "" {
-		return nil, fmt.Errorf("session %q not found for agent %q", sessionID, resolvedAgentName)
-	}
-	lines, err := store.ReadJSONL[map[string]any](path)
-	if err != nil {
-		return nil, fmt.Errorf("reading session %q: %w", sessionID, err)
-	}
-	var created, updated time.Time
-	storedID := sessionID
-	storedName := sessionID
-	for _, m := range lines {
-		if v, ok := m["id"]; ok {
-			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-				storedID = strings.TrimSpace(s)
-			}
-		}
-		if v, ok := m["name"]; ok {
-			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-				storedName = strings.TrimSpace(s)
-			}
-		}
-		if v, ok := m["created_at"]; ok {
-			if s, ok := v.(string); ok {
-				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-					created = t
-				}
-			}
-		}
-		if v, ok := m["updated_at"]; ok {
-			if s, ok := v.(string); ok {
-				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-					updated = t
-				}
-			}
-		}
-		if !created.IsZero() {
-			break
-		}
-	}
-	if created.IsZero() {
-		return nil, fmt.Errorf("session %q is missing agent metadata", sessionID)
-	}
-	if updated.IsZero() {
-		updated = created
-	}
-	return &domain.Session{
-		ID:        storedID,
-		AgentID:   agentID,
-		Name:      storedName,
-		CreatedAt: created,
-		UpdatedAt: updated,
-	}, nil
+	return agent.NewSessionManager().Load(agentID, strings.TrimSpace(sessionID))
 }
 
 func resolveAgentIdentity(agentName string) (agentID, resolvedName string, err error) {
@@ -343,10 +291,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 				return nil, struct{}{}, err
 			}
 			sess = loaded
-			agentID = strings.TrimSpace(sess.AgentID)
-			if agentID == "" {
-				return nil, struct{}{}, fmt.Errorf("session %q is missing agent metadata", args.SessionID)
-			}
+			agentID = sess.AgentID
 			agentName = agentID
 		} else {
 			if agentName == "" {
@@ -937,6 +882,11 @@ type sessionStopArgs struct {
 	Session   string `json:"session,omitempty"`
 }
 
+type sessionTurnArgs struct {
+	Agent     string `json:"agent"`
+	SessionID string `json:"session_id"`
+}
+
 type sessionSetTargetArgs struct {
 	Agent       string `json:"agent"`
 	SessionID   string `json:"session_id"`
@@ -1140,6 +1090,9 @@ func registerSessionTools(s *sdkmcp.Server) {
 			LastMessageAt string `json:"last_message_at,omitempty"`
 			IsProcessing  bool   `json:"is_processing"`
 			Deletable     bool   `json:"deletable"`
+			// Channels names the channel types the session forwards its
+			// replies to, such as "slack", making it a channel session.
+			Channels []string `json:"channels,omitempty"`
 		}
 		out := make([]sessionDTO, 0, len(sessions))
 		for _, sess := range sessions {
@@ -1159,6 +1112,13 @@ func registerSessionTools(s *sdkmcp.Server) {
 			}
 			if sess.LastMessageAt != nil {
 				dto.LastMessageAt = sess.LastMessageAt.Format(time.RFC3339Nano)
+			}
+			if chs, err := store.ReadSessionChannels(sess.AgentID, sess.ID); err == nil {
+				for _, ch := range chs.Channels {
+					if ch.Type != "" && !slices.Contains(dto.Channels, ch.Type) {
+						dto.Channels = append(dto.Channels, ch.Type)
+					}
+				}
 			}
 			out = append(out, dto)
 		}
@@ -1191,6 +1151,25 @@ func registerSessionTools(s *sdkmcp.Server) {
 		Name:        "session_history",
 		Description: "Read session history. Prefer order=desc and limit=20 to recover recent context in group chats or resumed sessions.",
 	}, sessionHistoryHandler)
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "session_turn",
+		Description: "Get what a session's running turn has streamed so far: whether it is processing, its tool calls with their status, and its partial text",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionTurnArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		agentName := strings.TrimSpace(args.Agent)
+		sid := strings.TrimSpace(args.SessionID)
+		if agentName == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		if sid == "" {
+			return nil, struct{}{}, fmt.Errorf("session_id is required")
+		}
+		agentID, _, err := resolveAgentIdentity(agentName)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(agent.GetActiveTurn(agentID, sid))
+	})
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "session_stop",

@@ -6,7 +6,9 @@
 /gh-fix owner/repo#123
 ```
 
-[Read the skill](https://github.com/lsegal/aviary/tree/main/.agents/skills/gh-fix/SKILL.md)
+[Landing page](/skills/gh-fix/) · [Read the skill](https://github.com/lsegal/aviary/tree/main/.agents/skills/gh-fix/SKILL.md)
+
+This skill works on its own, with no Aviary at all. Aviary just runs it for you.
 
 ## How It Works
 

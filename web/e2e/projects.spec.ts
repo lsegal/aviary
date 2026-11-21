@@ -227,10 +227,18 @@ const EVENTS_218 = [
 	{
 		kind: "command",
 		time: at(9),
+		call_id: "b1",
 		command: "go test ./internal/scheduler/...",
+		status: "running",
+	},
+	{
+		kind: "command",
+		time: at(9),
+		call_id: "b1",
 		output: "--- FAIL: TestBackoffCap (0.01s)",
 		exit_code: 1,
-		status: "completed",
+		is_error: true,
+		status: "done",
 	},
 	{
 		kind: "comment_relay",
@@ -242,10 +250,17 @@ const EVENTS_218 = [
 	{
 		kind: "command",
 		time: at(7),
+		call_id: "b2",
 		command: "go test ./internal/scheduler/...",
+		status: "running",
+	},
+	{
+		kind: "command",
+		time: at(7),
+		call_id: "b2",
 		output: "ok  internal/scheduler 2.41s",
 		exit_code: 0,
-		status: "completed",
+		status: "done",
 	},
 	{
 		kind: "usage",
@@ -253,6 +268,13 @@ const EVENTS_218 = [
 		usage: { input_tokens: 182000, output_tokens: 9100, cost_usd: 1.42 },
 	},
 ];
+
+// The typed events and raw stdout project_job_get returns per job; tests may
+// grow them to stand in for a running job.
+const EVENTS: Record<number, object[]> = { 218: EVENTS_218 };
+const RAW_OUTPUT: Record<number, string> = {
+	218: '{"type":"assistant","message":{"content":[{"type":"text","text":"I can reproduce it"}]}}\n',
+};
 
 // project_job_list's project filter: the board passes targets, one or more.
 // The board's toggle chip for one job state.
@@ -339,11 +361,8 @@ async function setup(
 				...CLONES[found.number],
 				session_id: "7f3c…a9",
 				scrollback: scrollback(found.number),
-				events: found.number === 218 ? EVENTS_218 : [],
-				raw_output:
-					found.number === 218
-						? '{"type":"assistant","message":{"content":[{"type":"text","text":"I can reproduce it"}]}}\n'
-						: "",
+				events: EVENTS[found.number] ?? [],
+				raw_output: RAW_OUTPUT[found.number] ?? "",
 			};
 		},
 		project_job_retry: ok("project_job_retry"),
@@ -685,10 +704,11 @@ test("board shows status, ordered job cards and live output", async ({
 		/width: 83%/,
 	);
 
-	// Running cards stream output and refresh within a few seconds.
-	const running = cards.filter({ hasText: "#218" }).getByTestId("job-output");
+	// Cards stream output and refresh within a few seconds; #221 emits no
+	// events, so it shows its scrollback.
+	const running = cards.filter({ hasText: "#221" }).getByTestId("job-output");
 	await expect(running).toContainText(
-		"read internal/scheduler/queue.go (#218)",
+		"read internal/scheduler/queue.go (#221)",
 	);
 	const first = await running.textContent();
 	await expect(running).not.toHaveText(first ?? "", { timeout: 5_000 });
@@ -730,6 +750,219 @@ test("long wrapped output never grows a card past half the viewport (#718)", asy
 		card.getByRole("link", { name: /#218 Cap scheduler/ }),
 	).toBeInViewport();
 	await expect(card.getByRole("button", { name: "Retry" })).toBeInViewport();
+});
+
+/** project_job_get for the board's fixtures, with #218's events from events(). */
+const jobGetWithEvents =
+	(events: () => unknown[]) => (args?: Record<string, unknown>) => {
+		const found = JOBS.find(
+			(j) => j.target === args?.target && j.number === args?.number,
+		);
+		if (!found) throw new Error("no such job");
+		return {
+			...found,
+			...CLONES[found.number],
+			scrollback: `$ go test ./... (#${found.number})`,
+			events: found.number === 218 ? events() : [],
+			raw_output: "",
+		};
+	};
+
+test("job cards show the transcript in a rich view by default, falling back to raw (#769)", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	const rich = card.getByTestId("job-output-rich");
+	await expect(rich).toBeVisible();
+	await expect(card.getByTestId("job-output")).toHaveCount(0);
+	// Cards read enough events to fill their output area.
+	expect(calls.project_job_get?.[0]?.events).toBe(40);
+
+	// Agent messages render as markdown.
+	await expect(rich.locator('[data-row="message"] strong')).toHaveText(
+		"without a cap",
+	);
+	// Each tool call is one row with its summary and a status badge, its
+	// full text in a tooltip.
+	const read = rich.locator('[data-call-id="c1"]');
+	await expect(read).toHaveCount(1);
+	await expect(read).toContainText("Read internal/scheduler/queue.go");
+	await expect(read.getByTestId("tool-status")).toHaveText("✓ ok");
+	await expect(read.locator("span.font-mono")).toHaveAttribute(
+		"title",
+		"Read internal/scheduler/queue.go",
+	);
+	const commands = rich.locator('[data-row="tool"]', {
+		hasText: "go test ./internal/scheduler/...",
+	});
+	await expect(commands.first().getByTestId("tool-status")).toHaveText(
+		"✕ exit 1",
+	);
+	await expect(commands.last().getByTestId("tool-status")).toHaveText("✓ ok");
+	await expect(
+		rich.locator('[data-row="tool"]', { hasText: "edit internal/scheduler" }),
+	).toContainText("+2 −1");
+
+	// The toggle sits in the action row, rich selected.
+	await expect(
+		card.getByRole("button", { name: "Rich output" }),
+	).toHaveAttribute("aria-pressed", "true");
+	await expect(
+		card.getByRole("button", { name: "Raw output" }),
+	).toHaveAttribute("title", /raw terminal scrollback/);
+
+	// A job with no events shows its scrollback, with no error.
+	const fallback = page.getByTestId("job-card").filter({ hasText: "#221" });
+	await expect(fallback.getByTestId("job-output")).toContainText(
+		"read internal/scheduler/queue.go (#221)",
+	);
+	await expect(fallback.getByTestId("job-output-rich")).toHaveCount(0);
+});
+
+test("the rich/raw toggle applies to every card and survives a reload (#769)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const cards = page.getByTestId("job-card");
+	await expect(cards).toHaveCount(5);
+	await expect(page.getByTestId("job-output-rich")).toHaveCount(1);
+
+	await cards
+		.filter({ hasText: "#209" })
+		.getByRole("button", { name: "Raw output" })
+		.click();
+	await expect(page.getByTestId("job-output-rich")).toHaveCount(0);
+	await expect(page.getByTestId("job-output")).toHaveCount(5);
+	const card = cards.filter({ hasText: "#218" });
+	await expect(card.getByTestId("job-output")).toContainText(
+		"read internal/scheduler/queue.go (#218)",
+	);
+	await expect(
+		card.getByRole("button", { name: "Raw output" }),
+	).toHaveAttribute("aria-pressed", "true");
+
+	await page.reload();
+	await expect(cards).toHaveCount(5);
+	await expect(page.getByTestId("job-output")).toHaveCount(5);
+	await expect(page.getByTestId("job-output-rich")).toHaveCount(0);
+	// Raw output keeps streaming.
+	const output = card.getByTestId("job-output");
+	const first = await output.textContent();
+	await expect(output).not.toHaveText(first ?? "", { timeout: 5_000 });
+
+	// Switching back shows the rich view again.
+	await card.getByRole("button", { name: "Rich output" }).click();
+	await expect(page.getByTestId("job-output-rich")).toHaveCount(1);
+});
+
+test("a tool call's status updates in place without duplicate rows (#769)", async ({
+	page,
+}) => {
+	let finished = false;
+	let failed = false;
+	const events = () => [
+		{ kind: "message", time: at(2), text: "Running the tests." },
+		{
+			kind: "tool_call",
+			time: at(2),
+			call_id: "t1",
+			name: "Bash",
+			input: { command: "go test ./internal/scheduler/... -run TestBackoff" },
+		},
+		...(finished
+			? [
+					{
+						kind: "tool_result",
+						time: at(1),
+						call_id: "t1",
+						output: "ok",
+					},
+				]
+			: []),
+		{
+			kind: "tool_call",
+			time: at(1),
+			call_id: "t2",
+			name: "Read",
+			input: { file_path: "missing.go" },
+		},
+		...(failed
+			? [
+					{
+						kind: "tool_result",
+						time: at(1),
+						call_id: "t2",
+						output: "no such file",
+						is_error: true,
+					},
+				]
+			: []),
+	];
+	await setup(page, () => STATUS, {
+		project_job_get: jobGetWithEvents(events),
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const rich = page
+		.getByTestId("job-card")
+		.filter({ hasText: "#218" })
+		.getByTestId("job-output-rich");
+	const bash = rich.locator('[data-call-id="t1"]');
+	const read = rich.locator('[data-call-id="t2"]');
+	await expect(bash.getByTestId("tool-status")).toHaveText("running");
+	await expect(read.getByTestId("tool-status")).toHaveText("running");
+
+	finished = true;
+	failed = true;
+	await expect(bash.getByTestId("tool-status")).toHaveText("✓ ok");
+	await expect(read.getByTestId("tool-status")).toHaveText("✕ error");
+	await expect(read.getByTestId("tool-status")).toHaveAttribute(
+		"title",
+		"no such file",
+	);
+	await expect(rich.locator('[data-row="tool"]')).toHaveCount(2);
+	await expect(bash).toHaveCount(1);
+	await expect(read).toHaveCount(1);
+});
+
+test("rich card output stays pinned to the bottom unless scrolled up (#769)", async ({
+	page,
+}) => {
+	let count = 30;
+	const events = () =>
+		Array.from({ length: count }, (_, i) => ({
+			kind: "message",
+			time: at(1),
+			text: `Step ${i + 1} of the plan is done.`,
+		}));
+	await setup(page, () => STATUS, {
+		project_job_get: jobGetWithEvents(events),
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const rich = page
+		.getByTestId("job-card")
+		.filter({ hasText: "#218" })
+		.getByTestId("job-output-rich");
+	const gap = () =>
+		rich.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+	await expect(rich).toContainText("Step 30 of the plan");
+	await expect.poll(gap).toBeLessThanOrEqual(1);
+
+	// New output keeps the view at the bottom.
+	count = 34;
+	await expect(rich).toContainText("Step 34 of the plan");
+	await expect.poll(gap).toBeLessThanOrEqual(1);
+
+	// Scrolled up, it stays put as output arrives.
+	await rich.evaluate((el) => {
+		el.scrollTop = 0;
+		el.dispatchEvent(new Event("scroll"));
+	});
+	count = 38;
+	await expect(rich).toContainText("Step 38 of the plan");
+	expect(await rich.evaluate((el) => el.scrollTop)).toBe(0);
 });
 
 /** Asserts el's right edge sits at the card's right padding. */
@@ -907,12 +1140,12 @@ test("an agent's GitHub Projects is one board of all its projects, with no setti
 	);
 
 	// No settings live on the route: no form fields, and Settings opens the
-	// agent's projects in System → Projects.
+	// agent's projects in Projects settings.
 	await expect(page.locator("[data-field]")).toHaveCount(0);
 	await expect(page.getByTestId("agent-projects")).toHaveCount(0);
 	await expect(page.getByTestId("project-settings-link")).toHaveAttribute(
 		"href",
-		"/system/projects?agent=coder",
+		"/projects/settings?agent=coder",
 	);
 
 	// Filters and search narrow the whole board, as on one project's.
@@ -1046,9 +1279,16 @@ test("run view renders the typed event timeline read-only", async ({
 
 	const timeline = page.getByRole("list", { name: "Activity" });
 	await expect(timeline.locator("strong")).toHaveText("without a cap");
+	// Each command is one row whose badge carries its result.
 	const commands = timeline.locator('[data-event="command"]');
-	await expect(commands.first()).toContainText("exit 1");
-	await expect(commands.last()).toContainText("exit 0");
+	await expect(commands).toHaveCount(2);
+	await expect(commands.first().getByTestId("command-status")).toHaveText(
+		"failed · exit 1",
+	);
+	await expect(commands.last().getByTestId("command-status")).toHaveText("ok");
+	await expect(timeline).not.toContainText("running");
+	await commands.first().locator("summary").click();
+	await expect(commands.first()).toContainText("--- FAIL: TestBackoffCap");
 	const edit = timeline.locator('[data-event="file_change"]');
 	await expect(edit).toContainText("edit internal/scheduler/queue.go");
 	await expect(edit).toContainText("+2");
@@ -1068,7 +1308,8 @@ test("run view renders the typed event timeline read-only", async ({
 	);
 	await expect(timeline.locator('[data-event="usage"]')).toContainText("$1.42");
 
-	// Raw CLI stdout sits beside the timeline.
+	// Raw CLI stdout sits beside the timeline once opened.
+	await page.getByTestId("raw-output-toggle").click();
 	await expect(page.getByTestId("run-output")).toContainText(
 		'"type":"assistant"',
 	);
@@ -1130,6 +1371,158 @@ test("the run view stepper shows a merged PR as done", async ({ page }) => {
 	await expect(steps.locator('[aria-current="step"]')).toHaveCount(0);
 	await expect(steps.locator("li").nth(5)).toContainText("✓");
 });
+
+test("job detail commands are single rows whose badge resolves in place (#774)", async ({
+	page,
+}) => {
+	const events: object[] = [
+		{
+			kind: "command",
+			time: at(3),
+			call_id: "r1",
+			command: "pnpm lint",
+			status: "running",
+		},
+	];
+	EVENTS[221] = events;
+	try {
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+		const rows = page
+			.getByRole("list", { name: "Activity" })
+			.locator('[data-event="command"]');
+		await expect(rows).toHaveCount(1);
+		const badge = rows.first().getByTestId("command-status");
+		await expect(badge).toHaveText("running");
+
+		events.push({
+			kind: "command",
+			time: at(2),
+			call_id: "r1",
+			output: "Checked 107 files",
+			exit_code: 0,
+			status: "done",
+		});
+		await expect(badge).toHaveText("ok");
+		await expect(badge).toHaveAttribute("title", "Succeeded");
+		await expect(rows).toHaveCount(1);
+
+		events.push(
+			{
+				kind: "command",
+				time: at(1),
+				call_id: "r2",
+				command: "go test ./...",
+				status: "running",
+			},
+			{
+				kind: "command",
+				time: at(1),
+				call_id: "r2",
+				output: "FAIL",
+				exit_code: 2,
+				is_error: true,
+				status: "done",
+			},
+		);
+		await expect(rows).toHaveCount(2);
+		const failed = rows.last().getByTestId("command-status");
+		await expect(failed).toHaveText("failed · exit 2");
+		await expect(failed).toHaveAttribute("title", "Failed with exit code 2");
+		await expect(page.getByText(/^exit \d/)).toHaveCount(0);
+	} finally {
+		delete EVENTS[221];
+	}
+});
+
+test("job detail's raw Output starts collapsed, toggles, remembers, and hides heartbeats (#774)", async ({
+	page,
+}) => {
+	RAW_OUTPUT[221] = [
+		'{"type":"assistant","message":{"content":[{"type":"text","text":"Working"}]}}',
+		'{"type":"tool_progress","tool_use_id":"t1","heartbeat":true,"elapsed_time_seconds":30}',
+	].join("\n");
+	try {
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+		const toggle = page.getByTestId("raw-output-toggle");
+		const panel = page.getByTestId("raw-output");
+		await expect(page.getByRole("list", { name: "Activity" })).toBeVisible();
+		await expect(panel).toHaveCount(0);
+		await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+		await toggle.click();
+		await expect(panel).toBeVisible();
+		const output = page.getByTestId("run-output");
+		await expect(output).toContainText('"text":"Working"');
+		await expect(output).not.toContainText("tool_progress");
+		await page.getByTestId("raw-output-heartbeats").check();
+		await expect(output).toContainText('"heartbeat":true');
+
+		await page.reload();
+		await expect(panel).toBeVisible();
+		await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+		await toggle.click();
+		await expect(panel).toHaveCount(0);
+		await page.reload();
+		await expect(page.getByRole("list", { name: "Activity" })).toBeVisible();
+		await expect(panel).toHaveCount(0);
+	} finally {
+		delete RAW_OUTPUT[221];
+	}
+});
+
+test("job detail shows the clone with session and agent above the stepper (#774)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	const meta = page.getByTestId("job-meta");
+	await expect(meta.getByTestId("job-session")).toHaveText("7f3c…a9");
+	await expect(meta.getByTestId("job-agent")).toContainText("claude");
+	await expect(meta.getByTestId("job-clone-path")).toBeVisible();
+	const clone = await meta.getByTestId("job-clone").boundingBox();
+	const steps = await page.getByTestId("lifecycle").boundingBox();
+	expect(clone && steps && clone.y + clone.height <= steps.y).toBe(true);
+});
+
+for (const { name, width, height, compact } of [
+	{ name: "mobile", width: 390, height: 844, compact: true },
+	{ name: "narrow desktop", width: 820, height: 800, compact: true },
+	{ name: "wide desktop", width: 1600, height: 900, compact: false },
+]) {
+	test(`the job detail stepper never scrolls sideways at ${name} width (#774)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height });
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+		const steps = page.getByTestId("lifecycle");
+		await expect(steps.locator('[aria-current="step"]')).toContainText(
+			"Implementing",
+		);
+		const overflow = await steps.evaluate(
+			(el) => el.scrollWidth - el.clientWidth,
+		);
+		expect(overflow).toBeLessThanOrEqual(0);
+		const summary = page.getByTestId("lifecycle-compact");
+		if (compact) {
+			await expect(summary).toBeVisible();
+			await expect(summary).toHaveText("3/6 · Implementing");
+		} else {
+			await expect(summary).toBeHidden();
+		}
+		await expect(steps.locator("li").nth(2)).toHaveAttribute(
+			"title",
+			"Step 3 of 6: Implementing (current)",
+		);
+		await expect(steps.locator("li").nth(0)).toHaveAttribute(
+			"data-step",
+			"done",
+		);
+	});
+}
 
 const SIGNED_OUT = {
 	signed_out: true,
@@ -1921,7 +2314,7 @@ test("search filters the whole job list across every field", async ({
 	await expect(cards).toHaveCount(12);
 });
 
-test("the view tabs, five state filters and kanban toggle sit beside the search", async ({
+test("the Scheduled and five state filters and kanban toggle sit beside the search", async ({
 	page,
 }) => {
 	await setup(page);
@@ -1931,16 +2324,20 @@ test("the view tabs, five state filters and kanban toggle sit beside the search"
 		toolbar.getByRole("searchbox", { name: "Search jobs" }),
 	).toBeVisible();
 	await expect(
-		toolbar.getByRole("tablist", { name: "Project views" }),
-	).toBeVisible();
-	await expect(
 		toolbar.getByRole("group", { name: "Job filter" }).getByRole("button"),
-	).toHaveText([/^Starting/, /^Paused/, /^Running/, /^Done/, /^Failed/]);
+	).toHaveText([
+		/^Scheduled/,
+		/^Starting/,
+		/^Paused/,
+		/^Running/,
+		/^Done/,
+		/^Failed/,
+	]);
 	await expect(toolbar.getByTestId("kanban-toggle")).toBeVisible();
-	// The header no longer carries its own copy of the tabs.
+	// The board has no separate Schedules view to switch to (#767).
 	await expect(
 		page.getByRole("tablist", { name: "Project views" }),
-	).toHaveCount(1);
+	).toHaveCount(0);
 	await expect(page.getByRole("group", { name: "Job filter" })).toHaveCount(1);
 
 	// Each state filter shows exactly that state's jobs.
@@ -2061,17 +2458,6 @@ test("a URL's state query preselects its chips over the remembered ones", async 
 	const cards = page.getByTestId("job-card");
 	await expect(cards).toHaveCount(2);
 
-	// The Board/Schedules toggle keeps the selection.
-	await page.getByRole("tab", { name: /^Schedules/ }).click();
-	await expect(page).toHaveURL(/tab=schedules/);
-	await expect(page).toHaveURL(/state=running(,|%2C)failed/);
-	await page.getByRole("tab", { name: /^Board/ }).click();
-	await expect(stateChip(page, "Running")).toHaveAttribute(
-		"aria-pressed",
-		"true",
-	);
-	await expect(cards).toHaveCount(2);
-
 	// The URL's selection is now the remembered one.
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	await expect(page).toHaveURL(/[?&]state=running(,|%2C)failed$/);
@@ -2149,6 +2535,39 @@ test("the kanban view lays jobs out in state columns of compact cards", async ({
 		"aria-pressed",
 		"true",
 	);
+});
+
+test("prompt chat opened mid-turn shows the running turn (#764)", async ({
+	page,
+}) => {
+	const calls: Calls = {};
+	Object.assign(
+		calls,
+		await setup(page, undefined, {
+			...chatFixtures(calls),
+			session_turn: (args?: Record<string, unknown>) => ({
+				agent_id: args?.agent,
+				session_id: args?.session_id,
+				processing: true,
+				items: [
+					{ tool: { id: "call_1", name: "project_status", done: true } },
+					{ text: "Reading the board" },
+					{ tool: { id: "call_2", name: "project_job_get" } },
+				],
+			}),
+		}),
+	);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.getByTestId("prompt-chat-toggle").click();
+	const chat = page.getByTestId("project-chat");
+	await expect(chat.getByTestId("chat-tool-call")).toHaveCount(2);
+	await expect(chat.getByTestId("chat-tool-call").nth(1)).toHaveAttribute(
+		"data-pending",
+		"true",
+	);
+	// A running call shows on its chip, not in a typing bubble below it.
+	await expect(chat.getByTestId("chat-typing")).toHaveCount(0);
+	await expect(chat).toContainText("Reading the board");
 });
 
 test("job count stat boxes reflow without wrapping mid-value", async ({
@@ -2240,3 +2659,99 @@ test("job count stat boxes reflow without wrapping mid-value", async ({
 		}
 	}
 });
+
+for (const { name, width } of [
+	{ name: "desktop", width: 1440 },
+	{ name: "narrow desktop", width: 1024 },
+	{ name: "mobile", width: 390 },
+]) {
+	test(`job detail header keeps its actions on one row at ${name} width (#797)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		const title =
+			"Job detail view: rich single-row transcript, collapsible raw Output, prominent Clone, and a stepper that never scrolls sideways";
+		await setup(page, () => STATUS, {
+			project_job_get: (args?: Record<string, unknown>) => {
+				const found = JOBS.find(
+					(j) => j.target === args?.target && j.number === args?.number,
+				);
+				if (!found) throw new Error("no such job");
+				return {
+					...found,
+					title,
+					...CLONES[found.number],
+					scrollback: "",
+					events: [],
+					raw_output: "",
+				};
+			},
+		});
+		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+		const header = page.getByTestId("job-detail-header");
+		const actions = page.getByTestId("job-detail-actions");
+		await expect(page.getByTestId("job-detail-title")).toContainText(title);
+		await expect(actions.getByRole("button", { name: "Stop" })).toBeVisible();
+
+		const buttons = actions.locator(":scope > a, :scope > button");
+		await expect(buttons).toHaveCount(6);
+		const boxes = await buttons.evaluateAll((els) =>
+			els.map((el) => {
+				const r = el.getBoundingClientRect();
+				return {
+					top: (el as HTMLElement).offsetTop,
+					height: r.height,
+					right: r.right,
+				};
+			}),
+		);
+		// Every action, the close button included, sits on one row at one height.
+		expect(new Set(boxes.map((b) => b.top)).size).toBe(1);
+		expect(new Set(boxes.map((b) => b.height)).size).toBe(1);
+		await expect(page.getByTestId("job-detail-close")).toHaveAttribute(
+			"aria-label",
+			"Close job details",
+		);
+		const close = boxes[boxes.length - 1];
+
+		const layout = await header.evaluate((el) => {
+			const style = getComputedStyle(el);
+			const r = el.getBoundingClientRect();
+			const t = el
+				.querySelector("[data-testid=job-detail-title]")
+				?.getBoundingClientRect();
+			const a = el
+				.querySelector("[data-testid=job-detail-actions]")
+				?.getBoundingClientRect();
+			return {
+				contentRight: r.right - Number.parseFloat(style.paddingRight),
+				overflow: el.scrollWidth - el.clientWidth,
+				titleHeight: t?.height ?? 0,
+				titleRight: t?.right ?? 0,
+				titleBottom: t?.bottom ?? 0,
+				actionsLeft: a?.left ?? 0,
+				actionsTop: a?.top ?? 0,
+			};
+		});
+		expect(layout.overflow).toBeLessThanOrEqual(0);
+		// The Issue and PR links show their whole label, not an ellipsis.
+		for (const link of await actions
+			.getByRole("link", { name: /^(Issue|PR) #/ })
+			.all()) {
+			expect(
+				await link
+					.locator("span.truncate")
+					.evaluate((el) => el.scrollWidth - el.clientWidth),
+			).toBeLessThanOrEqual(0);
+		}
+		// The close button ends the row at the header's content edge.
+		expect(Math.abs(close.right - layout.contentRight)).toBeLessThanOrEqual(1);
+		// The long title wraps instead of squeezing or overlapping the actions.
+		expect(layout.titleHeight).toBeGreaterThan(40);
+		if (width >= 1024) {
+			expect(layout.titleRight).toBeLessThanOrEqual(layout.actionsLeft);
+		} else {
+			expect(layout.titleBottom).toBeLessThanOrEqual(layout.actionsTop);
+		}
+	});
+}
