@@ -10,9 +10,10 @@ Each agent's pages, in sidebar order:
 | --- | --- | --- |
 | Chat | `/agents/<agent>/chat/:sessionId?` | Real-time conversation and session management with that agent. |
 | GitHub Projects | `/agents/<agent>/projects` | One board of the jobs of every project the agent owns, with no settings; each project's board at `/agents/<agent>/projects/<owner%2Frepo>` and its job runs under `/jobs/<number>`. |
+| Channels | `/agents/<agent>/channels/:channel?` | The agent's Slack, Discord and Signal channels; a channel's conversation in the chat UI, and its settings at `/agents/<agent>/channels/<name>/settings`. `/agents/<agent>/settings/channels` redirects here. |
 | Tasks | `/agents/<agent>/tasks` | The agent's task definitions. |
 | Files | `/agents/<agent>/files` | The agent's root markdown files. |
-| Settings | `/agents/<agent>/settings` | General (name, model, fallbacks, working directory), Permissions (`/settings/permissions`) and Channels (`/settings/channels`) tabs. |
+| Settings | `/agents/<agent>/settings` | General (name, model, fallbacks, working directory), and Permissions (`/settings/permissions`) sections. |
 
 `/agents` opens the first agent's chat; `/agents?add=1` adds an agent.
 

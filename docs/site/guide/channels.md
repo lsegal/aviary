@@ -8,7 +8,17 @@ Currently supported channel systems are:
 - Discord
 - Signal
 
-You can configure channels either in `aviary.yaml` or in the control panel at **Agents > *agent* > Agent Settings > Channels**.
+You can configure channels either in `aviary.yaml` or in the control panel's **Channels** sidebar section, below **GitHub Projects** under each agent.
+
+## The Channels Section
+
+Each agent's **Channels** section lists its channels:
+
+- **+** on the **Channels** row adds a channel: give it a name and a type. It starts disabled, its settings open next, and its own chat session is created right away.
+- Clicking a channel opens its conversation in the normal chat UI: the channel's own session first, plus any conversations the channel received from other chats. The gear in the header opens the channel's settings, the only place a channel is edited.
+- A channel's **…** menu offers **Edit** (its settings), **Rename** and **Remove**. Renaming keeps its session and history, and tasks and reports that deliver to it follow the new name. Removing asks whether to **archive** its sessions, keeping them with their history as regular chats under **Chats**, or **delete** them.
+
+Channel sessions live under their channel, not under **Chats**.
 
 For the exact `agents[].channels` schema, see the [Configuration Reference](/reference/config#agents-channels).
 
@@ -35,7 +45,9 @@ agents:
 
 Shared channel behavior:
 
-- `id` is Aviary's configured integration name for that channel connection, not the remote platform's workspace or channel ID.
+- `id` is Aviary's configured integration name for that channel connection, not the remote platform's workspace or channel ID. The channel's own session is keyed by its type and `id`.
+- `name` is the channel's display name, and the name delivery targets pick it by. It defaults to the `id`.
+- `deliver_to` is the conversation the channel's own session sends to: a Slack or Discord channel ID, or a Signal number or group ID. Without it, messages delivered to the channel stay in Aviary.
 - `disabled_tools` can only restrict what the agent already has permission to use.
 - `allow_from` controls which senders and group contexts are allowed to reach the agent.
 - Channel-level `model` and `fallbacks` override the agent defaults for messages arriving through that channel.
@@ -122,7 +134,7 @@ Slack-specific notes:
 - `allow_from[].allowed_groups` accepts raw Slack channel IDs or human-friendly names such as `alerts` or `#alerts`.
 - Slack apps connected through Events API and Socket Mode cannot emit classic typing notifications, but Aviary uses Slack assistant thread status indicators when `show_typing` is enabled.
 - `users:read` is required if you want Aviary to resolve Slack user names and support name-based routing instead of raw user IDs only.
-- In the control panel, **Agents > *agent* > Agent Settings > Channels > Slack** includes a **Browse Channels** action that validates the bot token and lists channels visible to the app.
+- In the control panel, a Slack channel's settings include a **Browse Channels** action that validates the bot token and lists channels visible to the app.
 
 ### Common Confusions
 
@@ -233,12 +245,21 @@ allow_from:
 
 ## Delivery Targets
 
-Scheduled tasks and explicit session delivery can send output to configured channels. Channel targets use the form `<channel-type>:<configured-channel-id>:<delivery-id>`.
+Anything that sends to a channel picks it by name with `channel:<name>`: scheduled task delivery (`target`), project reports (`reports.targets`), and tasks an agent schedules from a channel conversation. The message lands in the channel's own session, which sends it on to the channel's `deliver_to` conversation.
 
-Examples:
+```yaml
+agents:
+  - name: lobby
+    channels:
+      - type: slack
+        id: workspace-bot
+        name: Team Slack
+        deliver_to: C0123456789
+    tasks:
+      - name: daily-summary
+        schedule: "0 9 * * *"
+        target: channel:Team Slack
+        prompt: Summarize yesterday's alerts.
+```
 
-- Slack: `slack:workspace-bot:#team-updates`
-- Discord: `discord:ops-guild:234567890123456789`
-- Signal: `signal:+15551234567:<group-or-recipient-id>`
-
-For Slack, the final segment can be a human-friendly channel name like `#team-updates` or a raw Slack channel ID.
+Older configs are migrated when they load: a `<channel-type>:<configured-id>:<delivery-id>` target, or a `session:` target naming one of a channel's sessions, becomes `channel:<name>`, and a channel with no `deliver_to` takes the target's conversation.

@@ -163,7 +163,9 @@ channels:
 | `type` | string | _(required)_ | Channel type: `"slack"`, `"discord"`, or `"signal"` |
 | `enabled` | bool | `true` | Whether this channel connection is active |
 | `token` | string | | Bot token for the channel. For Slack this is the `xoxb-...` token. For Discord this is the bot token from the Discord Developer Portal. |
-| `id` | string | | Aviary's configured channel/integration ID. Used when routing task output, e.g. `slack:workspace-bot:#alerts`. |
+| `id` | string | | Aviary's configured channel/integration ID. The channel's own session is keyed by its type and `id`. |
+| `name` | string | `id` | Display name in the **Channels** sidebar section, and the name delivery targets pick the channel by (`channel:<name>`). Unique per agent. |
+| `deliver_to` | string | | The conversation the channel's own session sends to: a Slack or Discord channel ID, or a Signal number or group ID. Empty keeps deliveries in Aviary. |
 | `url` | string | | Channel transport address. For Slack this is the App-Level token (`xapp-...`) used by Socket Mode. For Signal this is the `signal-cli` daemon address. Discord does not use `url`. |
 | `model` | string | | Override model for all messages on this channel |
 | `fallbacks` | []string | | Override fallbacks for all messages on this channel |
@@ -186,7 +188,6 @@ channels:
 - Set `separate_top_level_sessions: true` to keep each new top-level Slack message and its thread replies in a separate session.
 - `users:read` is required on the Slack bot token if you want Aviary to resolve Slack user names for name-based routing.
 - Slack Event Subscriptions should include both message events and the `app_mention` event if you want the bot to answer `@bot` mentions in channels.
-- Slack scheduled task delivery routes use the form `slack:<configured-id>:<slack-channel-id>`.
 - For Slack, Aviary accepts either raw IDs or friendly names in many places:
   `@alice` for users, and `#alerts` for channels in the common case. Raw Slack IDs still work when needed.
 
@@ -197,7 +198,6 @@ channels:
 - `id` is Aviary's configured integration name for that Discord connection, not a Discord channel ID.
 - `allow_from[].from` should contain Discord user IDs.
 - `allow_from[].allowed_groups` should contain Discord channel IDs.
-- Discord scheduled task delivery routes use the form `discord:<configured-id>:<discord-channel-id>`.
 
 **allow_from entries:**
 
@@ -227,7 +227,7 @@ tasks:
   - name: daily-summary
     schedule: "0 9 * * *"
     prompt: "Summarize what happened yesterday and post to Slack."
-    target: slack:workspace-bot:#alerts
+    target: channel:Alerts
 
   - name: process-new-files
     watch: "./inbox/*.csv"
@@ -250,7 +250,7 @@ tasks:
 | `watch` | string | | File glob pattern; the task runs when matching files change |
 | `prompt` | string | | Prompt text sent to the agent (for `type: prompt`) |
 | `script` | string | | Lua script executed directly (for `type: script`) |
-| `target` | string | | Target session or output destination. Use `session:<name>` for a session or `<channel-type>:<configured-channel-id>:<delivery-id>` for channel delivery. |
+| `target` | string | | Target session or output destination. Use `session:<name>` for a session or `channel:<name>` for one of the agent's channels, which delivers into that channel's session. |
 
 ### agents[].projects
 
@@ -273,7 +273,7 @@ agents:
 | --- | --- | --- | --- |
 | `[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board. The agent's model and fallbacks are its jobs' provider and model defaults, in fallback order: a `<cli>/<model>` (or `cli/<cli>/<model>`) model runs jobs on that CLI provider; any other model runs them on the agent itself |
 | `[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
-| `[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `<channel type>:<configured channel id>:<delivery id>` or `session:<name>` |
+| `[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `channel:<name>` (one of the reports agent's channels) or `session:<name>` |
 | `[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
 
 ---
