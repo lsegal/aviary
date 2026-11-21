@@ -77,8 +77,8 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { age, githubURL, jobPath, type ProjectJob } from "../../lib/projects";
 import { projectOwner } from "../../lib/projectSettings";
+import { age, githubURL, jobPath, type ProjectJob } from "../../lib/projects";
 import { useSettingsStore } from "../../stores/settings";
 import JobStatusPill from "./JobStatusPill.vue";
 

@@ -594,6 +594,20 @@ const revertAvailable = ref(false);
 
 const draft = ref<AppConfig>(emptyConfig());
 
+// System → Skills' provider panel saves its own setting straight away; keep
+// the draft's copy current so Save Changes does not write the old value back.
+watch(
+	() => store.config?.coding_skills,
+	(codingSkills) => {
+		draft.value.coding_skills = codingSkills;
+		// It is saved already, so it is no unsaved change of the draft's.
+		if (!lastSavedSnapshot) return;
+		const saved = JSON.parse(lastSavedSnapshot) as AppConfig;
+		saved.coding_skills = codingSkills;
+		lastSavedSnapshot = JSON.stringify(saved);
+	},
+);
+
 // An agent's pages: its Settings page's General, Permissions and Channels
 // tabs, then Files, Tasks and GitHub Projects.
 const agentSubtabs = [

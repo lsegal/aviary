@@ -6,6 +6,7 @@
 						<CodingSkillsPanel v-if="activeTab === 'skills'" />
 					</section>
 
+					<section aria-labelledby="skills-for-agents" class="space-y-5">
 					<div class="flex items-center justify-between">
 						<div>
 							<h3 id="skills-for-agents" class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -94,6 +95,7 @@
 							</div>
 						</div>
 					</div>
+					</section>
 				</section>
 </template>
 
@@ -101,6 +103,13 @@
 import { computed, defineComponent, inject, ref } from "vue";
 import CodingSkillsPanel from "../skills/CodingSkillsPanel.vue";
 import { settingsViewContextKey } from "./context";
+
+interface Skill {
+	name: string;
+	description?: string;
+	path: string;
+	source: string;
+}
 
 type StatusFilter = "all" | "enabled" | "disabled";
 type SourceFilter = "all" | "builtin" | "disk";
@@ -119,12 +128,15 @@ export default defineComponent({
 		const enabled = (name: string) =>
 			Boolean(settings.skillConfig(name).enabled);
 		const enabledSkillCount = computed(
-			() => settings.installedSkills.value.filter((s) => enabled(s.name)).length,
+			() =>
+				(settings.installedSkills as Skill[]).filter((s) =>
+					enabled(s.name),
+				).length,
 		);
 		// Enabled skills first, then by name, narrowed by the search and filters.
 		const filteredSkills = computed(() => {
 			const term = skillSearch.value.trim().toLowerCase();
-			return settings.installedSkills.value
+			return (settings.installedSkills as Skill[])
 				.filter((skill) => {
 					if (skillStatusFilter.value !== "all") {
 						if (enabled(skill.name) !== (skillStatusFilter.value === "enabled"))

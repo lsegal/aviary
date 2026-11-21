@@ -274,14 +274,21 @@
   </div>
 </template>
 
+<script lang="ts">
+import { ref } from "vue";
+
+// Shared by every page's layout, so the System expander stays as toggled.
+const systemMoreState = ref<boolean | null>(null);
+</script>
+
 <script setup lang="ts">
 import GlobeAltIcon from "@heroicons/vue/24/outline/GlobeAltIcon";
-import { type Component, computed, markRaw, ref } from "vue";
+import { type Component, computed, markRaw } from "vue";
 import { useRoute } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
 import { useServerStatus } from "../composables/useServerStatus";
-import { type ProjectSummary, projectPath } from "../lib/projects";
 import { projectOwner } from "../lib/projectSettings";
+import { type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
@@ -414,6 +421,16 @@ function agentPagePath(agent: string, page: string): string {
 	return `/agents/${encodeURIComponent(agent)}/${page}`;
 }
 
+// On one agent's page, another agent's link opens the same page for it;
+// elsewhere it opens the agent's chat.
+const agentPageTail = computed(() => {
+	const match = /^\/agents\/[^/]+\/(.+)$/.exec(route.path);
+	const tail = match?.[1] ?? "chat";
+	if (tail.startsWith("chat")) return "chat";
+	if (tail.startsWith("projects")) return "projects";
+	return tail;
+});
+
 const agentNav = computed<AgentNav[]>(() => {
 	const names = [...agentNames.value];
 	// An agent added but not saved yet routes as _N until it has a name.
@@ -425,7 +442,10 @@ const agentNav = computed<AgentNav[]>(() => {
 		return {
 			name,
 			label: pending === name ? "New agent" : name,
-			to: pending === name ? agentPagePath(name, "settings") : agentPagePath(name, "chat"),
+			to: agentPagePath(
+				name,
+				pending === name ? "settings" : agentPageTail.value,
+			),
 			active,
 			running: owned.reduce((n, p) => n + p.running, 0),
 			children:
@@ -476,8 +496,9 @@ const systemMore = computed(() => [...systemRest, ...watchChildren.value]);
 
 const systemActive = computed(() => route.path.startsWith("/system/"));
 
-// The expander opens itself while one of its pages is showing.
-const systemMoreToggled = ref<boolean | null>(null);
+// The expander opens itself while one of its pages is showing; a click
+// overrides that until the next page load.
+const systemMoreToggled = systemMoreState;
 const systemMoreOpen = computed(
 	() =>
 		systemMoreToggled.value ??

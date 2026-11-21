@@ -697,7 +697,9 @@ watch(
 		const name = agentsStore.agents.find((a) => a.name === param)?.name;
 		if (name) {
 			const sessionId =
-				typeof route.params.sessionId === "string" ? route.params.sessionId : "";
+				typeof route.params.sessionId === "string"
+					? route.params.sessionId
+					: "";
 			await selectAgent(name, sessionId);
 		}
 	},

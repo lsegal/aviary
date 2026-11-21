@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { AgentFileArgs } from "./helpers/mockMCP";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { agentPageLink, openAgentPage } from "./helpers/sidebar";
 
 const CONFIG = {
 	server: { port: 16677, tls: { cert: "", key: "" } },
@@ -93,10 +94,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("agents and tasks tab shows configured entries", async ({ page }) => {
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await openAgentPage(page, "settings");
 
-	await expect(page.getByRole("button", { name: "Add Agent" })).toBeVisible();
+	await expect(page.getByTestId("sidebar-add-agent")).toBeVisible();
 	await expect(
 		page.getByRole("button", { name: "Remove Agent", exact: true }).first(),
 	).toBeVisible();
@@ -106,10 +106,7 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 	).toHaveValue("assistant");
 
 	// Tasks subtab
-	await page
-		.getByRole("button", { name: "Tasks", exact: true })
-		.first()
-		.click();
+	await agentPageLink(page, "Tasks").click();
 	await expect(
 		page.locator('input[placeholder="daily-briefing"]').first(),
 	).toHaveValue("daily-briefing");
@@ -123,11 +120,13 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 		page.getByRole("heading", { name: "Tasks", exact: true }),
 	).toBeVisible();
 
-	// Channels subtab
+	// Channels tab of the agent's Settings page
+	await agentPageLink(page, "Settings").click();
 	await page
 		.getByRole("button", { name: "Channels", exact: true })
 		.first()
 		.click();
+	await expect(page).toHaveURL(/\/agents\/assistant\/settings\/channels$/);
 	await expect(
 		page.locator('input[placeholder="e.g. +15551234567"]').first(),
 	).toHaveValue("+15551234567");
@@ -137,20 +136,26 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 });
 
 test("tab switching does not blank content", async ({ page }) => {
-	await page.goto("/settings");
+	await page.goto("/system/settings");
 
+	const system = page.getByTestId("sidebar-system-list");
+	await page.getByTestId("sidebar-system-more").click();
 	for (let i = 0; i < 3; i += 1) {
-		await page.getByRole("link", { name: "General", exact: true }).click();
+		await system.getByRole("link", { name: "Settings", exact: true }).click();
 		await expect(
 			page.getByRole("heading", { name: "Server", exact: true }),
 		).toBeVisible();
 
 		await page
-			.getByRole("link", { name: "Agents & Tasks", exact: true })
+			.getByTestId("sidebar-agent-list")
+			.getByRole("link", { name: "assistant", exact: true })
 			.click();
-		await expect(page.getByRole("button", { name: "Add Agent" })).toBeVisible();
+		await agentPageLink(page, "Settings").click();
+		await expect(
+			page.getByRole("button", { name: "Remove Agent", exact: true }),
+		).toBeVisible();
 
-		await page.getByRole("link", { name: "Sessions", exact: true }).click();
+		await system.getByRole("link", { name: "Sessions", exact: true }).click();
 		await expect(
 			page.getByRole("button", { name: "Refresh Sessions" }),
 		).toBeVisible();
@@ -239,23 +244,23 @@ test("switching agents preserves subtab and loads that agent file state", async 
 				?.get(String(args?.file ?? "")) ?? "",
 	});
 
-	await page.goto("/settings/agents/assistant/tasks");
+	await page.goto("/agents/assistant/tasks");
 
 	await expect(
 		page.locator('input[placeholder="daily-briefing"]').first(),
 	).toHaveValue("daily-briefing");
 
-	await page.getByRole("button", { name: "coder", exact: true }).click();
-	await expect(page).toHaveURL(/\/settings\/agents\/coder\/tasks$/);
+	await page
+		.getByTestId("sidebar-agent-list")
+		.getByRole("link", { name: "coder", exact: true })
+		.click();
+	await expect(page).toHaveURL(/\/agents\/coder\/tasks$/);
 	await expect(
 		page.locator('input[placeholder="daily-briefing"]').first(),
 	).toHaveValue("repo-check");
 
-	await page
-		.getByRole("button", { name: "General", exact: true })
-		.first()
-		.click();
-	await expect(page).toHaveURL(/\/settings\/agents\/coder\/general$/);
+	await agentPageLink(page, "Files").click();
+	await expect(page).toHaveURL(/\/agents\/coder\/files$/);
 	await expect(
 		page.getByRole("button", { name: "IDENTITY.md", exact: true }),
 	).toBeVisible();
@@ -267,7 +272,7 @@ test("switching agents preserves subtab and loads that agent file state", async 
 });
 
 test("general tab shows web search settings", async ({ page }) => {
-	await page.goto("/settings");
+	await page.goto("/system/settings");
 
 	await expect(
 		page.getByRole("heading", { name: "Web Search", exact: true }),
@@ -282,7 +287,7 @@ test("general tab shows web search settings", async ({ page }) => {
 test("model dropdown hides models from unauthenticated providers", async ({
 	page,
 }) => {
-	await page.goto("/settings");
+	await page.goto("/system/settings");
 
 	await page.getByTestId("default-model-selector").locator("input").click();
 
@@ -322,7 +327,7 @@ test("model dropdown shows Gemini models when gemini auth is present", async ({
 		],
 	});
 
-	await page.goto("/settings");
+	await page.goto("/system/settings");
 	await page.locator(".cursor-text").first().click();
 
 	await expect(
@@ -331,7 +336,7 @@ test("model dropdown shows Gemini models when gemini auth is present", async ({
 });
 
 test("providers auth tab shows credential controls", async ({ page }) => {
-	await page.goto("/settings");
+	await page.goto("/system/settings");
 	await page
 		.getByRole("link", { name: "Providers & Auth", exact: true })
 		.click();
@@ -407,8 +412,7 @@ test("Slack browse channels shows visible workspace channels", async ({
 		},
 	});
 
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await openAgentPage(page, "settings");
 	await page
 		.getByRole("button", { name: "Channels", exact: true })
 		.first()
@@ -484,8 +488,7 @@ test("channels use a left list with a reusable right-side editor", async ({
 		],
 	});
 
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await openAgentPage(page, "settings");
 	await page
 		.getByRole("button", { name: "Channels", exact: true })
 		.first()
@@ -595,8 +598,7 @@ test("raw configured channel tokens are masked in dropdowns", async ({
 		],
 	});
 
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await openAgentPage(page, "settings");
 	await page
 		.getByRole("button", { name: "Channels", exact: true })
 		.first()
@@ -673,7 +675,7 @@ test("missing auth secrets are highlighted in secret dropdowns", async ({
 		],
 	});
 
-	await page.goto("/settings");
+	await page.goto("/system/settings");
 	await expect(page.getByTestId("web-search-secret")).toContainText(
 		"missing_brave_key",
 	);
@@ -684,7 +686,7 @@ test("missing auth secrets are highlighted in secret dropdowns", async ({
 		/border-red-300/,
 	);
 
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await openAgentPage(page, "settings");
 	await page
 		.getByRole("button", { name: "Channels", exact: true })
 		.first()
@@ -704,8 +706,7 @@ test("missing auth secrets are highlighted in secret dropdowns", async ({
 test("permissions preset disables inaccessible tool groups and tools", async ({
 	page,
 }) => {
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await openAgentPage(page, "settings");
 	await page
 		.getByRole("button", { name: "Permissions", exact: true })
 		.first()
@@ -744,8 +745,7 @@ test("permissions preset disables inaccessible tool groups and tools", async ({
 test("tool permissions inspector shows resolved final tool set", async ({
 	page,
 }) => {
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await openAgentPage(page, "settings");
 	await page
 		.getByRole("button", { name: "Permissions", exact: true })
 		.first()
@@ -781,8 +781,7 @@ test("tool permissions inspector shows resolved final tool set", async ({
 test("saving settings preserves default-on signal channel checkboxes", async ({
 	page,
 }) => {
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await openAgentPage(page, "settings");
 	await page
 		.getByRole("button", { name: "Channels", exact: true })
 		.first()
@@ -850,12 +849,8 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 		},
 	});
 
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
-	await page
-		.getByRole("button", { name: "Tasks", exact: true })
-		.first()
-		.click();
+	await openAgentPage(page, "settings");
+	await agentPageLink(page, "Tasks").click();
 
 	const prompt = page.getByPlaceholder("Task prompt...").first();
 	await prompt.fill("line 1\n\nline 3\n");
@@ -876,12 +871,8 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 });
 
 test("tasks can be enabled from the settings UI", async ({ page }) => {
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
-	await page
-		.getByRole("button", { name: "Tasks", exact: true })
-		.first()
-		.click();
+	await openAgentPage(page, "settings");
+	await agentPageLink(page, "Tasks").click();
 
 	await expect(page.getByText("disabled", { exact: true })).toBeVisible();
 	const toggle = page
@@ -893,12 +884,7 @@ test("tasks can be enabled from the settings UI", async ({ page }) => {
 
 test("task header wraps cleanly on mobile", async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
-	await page
-		.getByRole("button", { name: "Tasks", exact: true })
-		.first()
-		.click();
+	await openAgentPage(page, "tasks", "assistant");
 
 	const definedIn = page.getByText("Defined in: aviary.yaml", {
 		exact: true,
@@ -1001,12 +987,8 @@ test("deleting a task from settings persists immediately", async ({ page }) => {
 		},
 	});
 
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
-	await page
-		.getByRole("button", { name: "Tasks", exact: true })
-		.first()
-		.click();
+	await openAgentPage(page, "settings");
+	await agentPageLink(page, "Tasks").click();
 
 	await expect(page.getByRole("button", { name: "file-task" })).toBeVisible();
 	await page.getByLabel("Delete task").click();
@@ -1026,8 +1008,7 @@ test("deleting a task from settings persists immediately", async ({ page }) => {
 test("agent files editor lists root markdown files and protects built-ins", async ({
 	page,
 }) => {
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await openAgentPage(page, "files");
 
 	await expect(page.getByRole("button", { name: "IDENTITY.md" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "AGENTS.md" })).toBeVisible();
@@ -1085,8 +1066,7 @@ test("agent files editor auto-syncs templates when an older agent has no root fi
 		},
 	});
 
-	await page.goto("/settings");
-	await page.getByRole("link", { name: "Agents & Tasks", exact: true }).click();
+	await openAgentPage(page, "files");
 	await page.getByRole("button", { name: "Refresh" }).first().click();
 
 	await expect(page.getByRole("button", { name: "AGENTS.md" })).toBeVisible();
@@ -1148,7 +1128,7 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 		agent_file_list: [],
 	});
 
-	await page.goto("/settings/agents/assistant/tasks");
+	await page.goto("/agents/assistant/tasks");
 	await page.getByRole("button", { name: "nightly-triage" }).click();
 
 	// A project that is no longer watched stays selected instead of clearing.
