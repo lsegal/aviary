@@ -2692,7 +2692,8 @@ for (const { name, width } of [
 		await expect(actions.getByRole("button", { name: "Stop" })).toBeVisible();
 
 		const buttons = actions.locator(":scope > a, :scope > button");
-		await expect(buttons).toHaveCount(6);
+		// Raw output, Retry, Stop and close; the issue and PR links live in the title.
+		await expect(buttons).toHaveCount(4);
 		const boxes = await buttons.evaluateAll((els) =>
 			els.map((el) => {
 				const r = el.getBoundingClientRect();
@@ -2708,7 +2709,7 @@ for (const { name, width } of [
 		expect(new Set(boxes.map((b) => b.height)).size).toBe(1);
 		await expect(page.getByTestId("job-detail-close")).toHaveAttribute(
 			"aria-label",
-			"Close job details",
+			"Close details",
 		);
 		const close = boxes[boxes.length - 1];
 
@@ -2732,16 +2733,6 @@ for (const { name, width } of [
 			};
 		});
 		expect(layout.overflow).toBeLessThanOrEqual(0);
-		// The Issue and PR links show their whole label, not an ellipsis.
-		for (const link of await actions
-			.getByRole("link", { name: /^(Issue|PR) #/ })
-			.all()) {
-			expect(
-				await link
-					.locator("span.truncate")
-					.evaluate((el) => el.scrollWidth - el.clientWidth),
-			).toBeLessThanOrEqual(0);
-		}
 		// The close button ends the row at the header's content edge.
 		expect(Math.abs(close.right - layout.contentRight)).toBeLessThanOrEqual(1);
 		// The long title wraps instead of squeezing or overlapping the actions.
@@ -2750,6 +2741,210 @@ for (const { name, width } of [
 			expect(layout.titleRight).toBeLessThanOrEqual(layout.actionsLeft);
 		} else {
 			expect(layout.titleBottom).toBeLessThanOrEqual(layout.actionsTop);
+		}
+	});
+}
+
+test("job detail title links the issue and its PR, with no separate buttons (#834)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	const refs = page.getByTestId("job-detail-refs");
+	await expect(refs).toContainText("#218•");
+	await expect(refs.getByTestId("job-pr")).toContainText("PR #233");
+	const issue = refs.getByRole("link", { name: "#218", exact: true });
+	await expect(issue).toHaveAttribute(
+		"href",
+		"https://github.com/lsegal/aviary/issues/218",
+	);
+	await expect(issue).toHaveAttribute("target", "_blank");
+	const pr = refs.getByTestId("job-pr");
+	await expect(pr).toHaveAttribute(
+		"href",
+		"https://github.com/lsegal/aviary/pull/233",
+	);
+	await expect(pr).toHaveAttribute("target", "_blank");
+	await expect(pr).toHaveAttribute("data-pr-state", "draft");
+	// The title line holds the links, so the action row has none.
+	const actions = page.getByTestId("job-detail-actions");
+	await expect(actions.getByRole("link", { name: /#\d/ })).toHaveCount(0);
+	await expect(actions.getByRole("link")).toHaveCount(1);
+
+	// A job with no PR shows the issue link alone.
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+	await expect(refs).toHaveText("#221");
+	await expect(refs.getByRole("link", { name: "#221" })).toHaveAttribute(
+		"href",
+		"https://github.com/lsegal/aviary/issues/221",
+	);
+	await expect(refs.getByTestId("job-pr")).toHaveCount(0);
+});
+
+test("job detail's Raw output is an icon button that toggles its panel (#834)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	const actions = page.getByTestId("job-detail-actions");
+	const toggle = actions.getByRole("button", {
+		name: "Raw output",
+		exact: true,
+	});
+	await expect(toggle).toHaveAttribute("aria-pressed", "false");
+	await expect(toggle).toHaveText("");
+	await expect(toggle).toHaveAttribute("title", /raw CLI output/);
+	const size = async (name: string) => {
+		const box = await actions
+			.getByRole("button", { name, exact: true })
+			.boundingBox();
+		return box && { width: box.width, height: box.height };
+	};
+	expect(await size("Raw output")).toEqual(await size("Retry"));
+
+	await toggle.click();
+	await expect(page.getByTestId("raw-output")).toBeVisible();
+	await expect(toggle).toHaveAttribute("aria-pressed", "true");
+	await toggle.click();
+	await expect(page.getByTestId("raw-output")).toHaveCount(0);
+	await expect(toggle).toHaveAttribute("aria-pressed", "false");
+});
+
+test("job detail's close button is a borderless ghost, and it and Escape close the pane (#834)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	const close = page.getByRole("link", { name: "Close details" });
+	await expect(close).toHaveAttribute("title", "Close details");
+	const border = (el: Element) =>
+		Number.parseFloat(getComputedStyle(el).borderLeftWidth);
+	expect(await close.evaluate(border)).toBe(0);
+	expect(
+		await page.getByRole("button", { name: "Retry" }).evaluate(border),
+	).toBeGreaterThan(0);
+	await close.click();
+	await expect(page).toHaveURL("/agents/coder/projects/lsegal%2Faviary");
+	await expect(page.getByTestId("job-detail")).toHaveCount(0);
+
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	await expect(page.getByTestId("job-detail")).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(page).toHaveURL("/agents/coder/projects/lsegal%2Faviary");
+	await expect(page.getByTestId("job-detail")).toHaveCount(0);
+	await expect(page.getByTestId("job-card").first()).toBeVisible();
+});
+
+// Long unbroken tokens: a clone path, a URL and minified JSON.
+const LONG_PATH =
+	"/var/folders/_3/6nm7yxhj0v3716vn7dyl134h0000gn/T/aviary-gh-fix-761-b/internal/projects/core/very_long_directory_name_without_breaks/file_with_a_really_long_name.go";
+const LONG_URL =
+	"https://github.com/lsegal/aviary/actions/runs/43097434009/job/123456789012?pr=834&check_suite_focus=true&very_long_query_parameter=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const LONG_JSON = JSON.stringify({
+	type: "assistant",
+	message: { content: [{ type: "text", text: "x".repeat(160) }] },
+});
+const LONG_EVENTS = [
+	{ kind: "system", time: at(9), text: `Cloned into ${LONG_PATH}` },
+	{
+		kind: "message",
+		time: at(8),
+		text: `See ${LONG_URL} and \`${LONG_PATH}\`.\n\n\`\`\`json\n${LONG_JSON}\n\`\`\``,
+	},
+	{ kind: "reasoning", time: at(8), text: LONG_JSON },
+	{
+		kind: "plan",
+		time: at(7),
+		items: [{ text: `Edit ${LONG_PATH}`, status: "in_progress" }],
+	},
+	{
+		kind: "tool_call",
+		time: at(7),
+		call_id: "w1",
+		name: "Read",
+		input: { file_path: LONG_PATH },
+	},
+	{ kind: "tool_result", time: at(7), call_id: "w1", output: LONG_JSON },
+	{
+		kind: "file_change",
+		time: at(6),
+		path: LONG_PATH,
+		diff: `@@ -1,1 +1,1 @@\n-${LONG_JSON}\n+${LONG_URL}`,
+	},
+	{
+		kind: "command",
+		time: at(5),
+		call_id: "w2",
+		command: `cat ${LONG_PATH} | curl -d @- ${LONG_URL}`,
+		status: "running",
+	},
+	{
+		kind: "command",
+		time: at(5),
+		call_id: "w2",
+		output: `${LONG_JSON}\n${LONG_URL}`,
+		exit_code: 0,
+		status: "done",
+	},
+	{
+		kind: "comment_relay",
+		time: at(4),
+		author: "lsegal",
+		text: `Look at ${LONG_URL}`,
+		url: "https://github.com/lsegal/aviary/issues/221#issuecomment-1",
+	},
+];
+
+// Elements wider than their box, other than one-line rows that truncate
+// with an ellipsis on purpose.
+const sidewaysOverflow = (root: Element) =>
+	[root, ...root.querySelectorAll("*")]
+		.filter(
+			(el): el is HTMLElement =>
+				el instanceof HTMLElement &&
+				getComputedStyle(el).textOverflow !== "ellipsis" &&
+				!el.classList.contains("sr-only") &&
+				el.scrollWidth > el.clientWidth + 1,
+		)
+		.map((el) => `${el.tagName}.${el.className}`);
+
+for (const { name, width, height } of [
+	{ name: "mobile", width: 390, height: 844 },
+	{ name: "narrow desktop", width: 820, height: 800 },
+]) {
+	test(`the rich transcript never scrolls sideways at ${name} width (#834)`, async ({
+		page,
+	}) => {
+		EVENTS[221] = LONG_EVENTS;
+		const clone = CLONES[221];
+		CLONES[221] = { checkout_directory: LONG_PATH, checkout_state: "present" };
+		try {
+			await page.setViewportSize({ width, height });
+			await setup(page);
+			await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/221");
+			const transcript = page.getByTestId("job-transcript");
+			await expect(transcript.locator('[data-event="command"]')).toHaveCount(1);
+			// Expanded content wraps too.
+			await transcript.evaluate((el) => {
+				for (const d of el.querySelectorAll("details")) d.open = true;
+			});
+			expect(await transcript.evaluate(sidewaysOverflow)).toEqual([]);
+			expect(
+				await page.getByTestId("job-meta").evaluate(sidewaysOverflow),
+			).toEqual([]);
+			await expect(page.getByTestId("job-clone-path")).toHaveText(LONG_PATH);
+
+			// The board card's transcript shares the rule.
+			await page.goto("/agents/coder/projects/lsegal%2Faviary");
+			const rich = page
+				.getByTestId("job-card")
+				.filter({ hasText: "#221" })
+				.getByTestId("job-output-rich");
+			await expect(rich.locator('[data-row="message"]')).toBeVisible();
+			expect(await rich.evaluate(sidewaysOverflow)).toEqual([]);
+		} finally {
+			delete EVENTS[221];
+			CLONES[221] = clone;
 		}
 	});
 }

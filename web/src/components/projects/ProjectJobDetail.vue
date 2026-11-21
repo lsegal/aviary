@@ -169,7 +169,14 @@ import ClipboardDocumentIcon from "@heroicons/vue/24/outline/ClipboardDocumentIc
 import CommandLineIcon from "@heroicons/vue/24/outline/CommandLineIcon";
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import XMarkIcon from "@heroicons/vue/24/outline/XMarkIcon";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+	computed,
+	nextTick,
+	onBeforeUnmount,
+	onMounted,
+	ref,
+	watch,
+} from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useProjectJob } from "../../composables/useProjects";
 import {
@@ -197,7 +204,12 @@ const boardPath = computed(() => projectPath(agent.value, project.value));
 function onKeydown(e: KeyboardEvent) {
 	if (e.key !== "Escape" || e.defaultPrevented) return;
 	const target = e.target as HTMLElement | null;
-	if (target?.closest("input:not([type=checkbox]):not([type=radio]), textarea, select, [contenteditable=true], [role=dialog]")) return;
+	if (
+		target?.closest(
+			"input:not([type=checkbox]):not([type=radio]), textarea, select, [contenteditable=true], [role=dialog]",
+		)
+	)
+		return;
 	router.push(boardPath.value);
 }
 onMounted(() => window.addEventListener("keydown", onKeydown));
