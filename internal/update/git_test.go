@@ -291,3 +291,18 @@ func TestCheck_DevBuildWithoutCheckoutReportsNoCheckout(t *testing.T) {
 		t.Fatalf("message = %q", check.Message)
 	}
 }
+
+func TestRequestRebuild_WritesSupervisorRestartFile(t *testing.T) {
+	t.Setenv(RestartFileEnv, "")
+	if Supervised() || RequestRebuild() {
+		t.Fatal("an unsupervised backend must re-exec instead of asking for a rebuild")
+	}
+	path := filepath.Join(t.TempDir(), "restart")
+	t.Setenv(RestartFileEnv, path)
+	if !Supervised() || !RequestRebuild() {
+		t.Fatal("a supervised backend asks the supervisor to rebuild it")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("restart file not written: %v", err)
+	}
+}

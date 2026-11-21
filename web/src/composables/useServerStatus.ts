@@ -228,6 +228,11 @@ export function useServerStatus() {
 				if (git.value) updateNotice.value = st.message ?? "";
 				return;
 			}
+			if (git.value && st.message) {
+				// The pull is done; the restart onto it may still wait for jobs.
+				upgradeAvailable.value = false;
+				updateNotice.value = st.message;
+			}
 			restart.value = st;
 		} catch (err) {
 			versionMessage.value = err instanceof Error ? err.message : String(err);
