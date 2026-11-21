@@ -159,21 +159,24 @@ export function projectOwner(
 	return owner?.name ?? "";
 }
 
+/** Every agent's projects and the settings they share. */
+export const PROJECTS_SETTINGS_PATH = "/projects/settings";
+
 /** The settings path where target's owning agent manages it. */
 export function projectSettingsPath(
 	cfg: JobModelsConfig | null | undefined,
 	target: string,
 ): string {
 	const owner = projectOwner(cfg, target);
-	if (!owner) return "/system/projects";
+	if (!owner) return PROJECTS_SETTINGS_PATH;
 	return agentProjectsSettingsPath(owner, target);
 }
 
-/** System → Projects opened on an agent's projects, one of them selected. */
+/** The projects settings opened on an agent's projects, one of them selected. */
 export function agentProjectsSettingsPath(agent: string, target = ""): string {
 	const query = new URLSearchParams({ agent });
 	if (target) query.set("project", target);
-	return `/system/projects?${query}`;
+	return `${PROJECTS_SETTINGS_PATH}?${query}`;
 }
 
 /** The projects with target added, unless already listed. */
