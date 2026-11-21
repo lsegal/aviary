@@ -157,8 +157,17 @@ func TestReaperRunsOnItsInterval(t *testing.T) {
 	w.recordClone("o/r#1", "o/r", Issue{Number: 1, Target: "o/r"}, clone)
 	w.clones.reapInterval = 10 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go w.reapClonesEvery(ctx)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		w.reapClonesEvery(ctx)
+	}()
+	// The reaper must be done writing its registry before the temp
+	// directories are removed.
+	defer func() {
+		cancel()
+		<-stopped
+	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for isDir(clone) {
 		if time.Now().After(deadline) {
