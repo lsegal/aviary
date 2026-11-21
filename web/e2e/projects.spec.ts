@@ -386,7 +386,7 @@ test("an agent's Code Loop in the sidebar list its projects with live counts", a
 	const row = page.getByTestId("sidebar-row-projects");
 	await expect(row.getByTestId("project-running-badge")).toHaveText("2");
 	await expect(
-		page.getByTestId("sidebar-nav").getByRole("link", { name: /^GitHub/ }),
+		page.getByTestId("sidebar-nav").getByRole("link", { name: /^Code Loop/ }),
 	).toHaveAttribute("href", "/agents/coder/projects");
 
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
