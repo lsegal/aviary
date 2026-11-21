@@ -32,7 +32,9 @@ const (
 type Message struct {
 	Role     Role
 	Content  string
-	MediaURL string
+	// MediaURLs are images attached to the message, as data URLs or
+	// remote URLs.
+	MediaURLs []string
 	ToolCall *ToolCall
 	Result   *ToolResult
 }

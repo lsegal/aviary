@@ -1482,7 +1482,7 @@ func TestHandleIncomingChannelMessage_PersistsIncomingMedia(t *testing.T) {
 	}, time.Second, 25*time.Millisecond)
 	assert.True(t, found)
 	assert.Equal(t, "describe this", userMsg.Content)
-	assert.Equal(t, "data:image/png;base64,cG5n", userMsg.MediaURL)
+	assert.Equal(t, []string{"data:image/png;base64,cG5n"}, userMsg.MediaURLs)
 
 	if runner, ok := srv.agents.Get("bot"); ok {
 		runner.Wait()

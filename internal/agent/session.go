@@ -396,19 +396,19 @@ func AppendReplyToSession(agentID, sessionID, content string) error {
 
 // AppendMediaMessageToSession appends a message with optional text and media to
 // an existing session and fires the session-message observer.
-func AppendMediaMessageToSession(agentID, sessionID string, role domain.MessageRole, content, mediaURL string) error {
-	return AppendMediaMessageToSessionWithSender(agentID, sessionID, role, content, mediaURL, nil)
+func AppendMediaMessageToSession(agentID, sessionID string, role domain.MessageRole, content string, mediaURLs []string) error {
+	return AppendMediaMessageToSessionWithSender(agentID, sessionID, role, content, mediaURLs, nil)
 }
 
 // AppendMediaMessageToSessionWithSender appends a message with optional text,
 // media, and structured sender metadata to an existing session.
-func AppendMediaMessageToSessionWithSender(agentID, sessionID string, role domain.MessageRole, content, mediaURL string, sender *domain.MessageSender) error {
+func AppendMediaMessageToSessionWithSender(agentID, sessionID string, role domain.MessageRole, content string, mediaURLs []string, sender *domain.MessageSender) error {
 	msg := domain.Message{
 		ID:        newID("msg"),
 		Role:      role,
 		Sender:    sender,
 		Content:   content,
-		MediaURL:  mediaURL,
+		MediaURLs: mediaURLs,
 		Timestamp: time.Now(),
 	}
 	if err := store.AppendJSONL(store.SessionPath(agentID, sessionID), msg); err != nil {
