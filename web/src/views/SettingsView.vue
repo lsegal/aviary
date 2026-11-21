@@ -19,6 +19,7 @@
 									<span class="text-xs font-medium">{{ headerNoticeText }}</span>
 								</div>
 							</transition>
+							<template v-if="!tasksRoot">
 							<button v-if="revertAvailable" type="button"
 								class="rounded-lg border border-amber-200 px-3 py-2 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
 								:disabled="loading || saving || reverting"
@@ -30,6 +31,7 @@
 							<button type="button"
 								class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
 								:disabled="saving || reverting" @click="saveAll()">{{ saving ? "Saving…" : "Save Changes" }}</button>
+							</template>
 						</div>
 					</div>
 				</div>
@@ -44,7 +46,7 @@
 				</div>
 				<div v-if="compileToastVisible" :class="isAgentFilesPage ? 'mx-4 mt-4 sm:mx-6' : 'mb-4'"
 					class="flex items-center justify-between rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-					<span>Compile in progress… <RouterLink to="/system/jobs" class="font-medium underline">View jobs</RouterLink></span>
+					<span>Compile in progress… <RouterLink :to="agentTaskPath(draft.agents[selectedAgentIdx]?.name ?? '')" class="font-medium underline">View runs</RouterLink></span>
 					<button type="button" class="ml-4 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200" @click="compileToastVisible = false">✕</button>
 				</div>
 
@@ -684,7 +686,19 @@ function projectTargetOptions(task: AgentTask): string[] {
 		: targets;
 }
 
+/**
+ * The Scheduled Tasks root page: the overview of the agent's tasks, with no
+ * task open. A task opens for editing with its ?task.
+ */
+const tasksRoot = computed(
+	() =>
+		activeTab.value === "agents" &&
+		selectedAgentSubtab.value === "tasks" &&
+		!(typeof route.query.task === "string" && route.query.task),
+);
+
 const selectedTask = computed((): AgentTask | null => {
+	if (tasksRoot.value) return null;
 	const agent = draft.value.agents[selectedAgentIdx.value];
 	if (!agent?.tasks?.length) return null;
 	const idx = selectedTaskIdx.value ?? 0;
@@ -779,16 +793,6 @@ function routeTaskIdx(): number {
 	return tasks.findIndex((t) => t.name === q);
 }
 
-// Picking a task in the sidebar routes to it; without one the page opens
-// the first task, as the sidebar highlights.
-watch(
-	() => route.query.task,
-	(q) => {
-		if (selectedAgentSubtab.value !== "tasks" || q) return;
-		const tasks = draft.value.agents[selectedAgentIdx.value]?.tasks ?? [];
-		selectedTaskIdx.value = tasks.length ? 0 : null;
-	},
-);
 watch(
 	() => [
 		route.query.task,
@@ -897,6 +901,22 @@ function resolveAgentsIndex() {
 		void router.replace(`/agents/${route.params.agent}/chat`);
 		return;
 	}
+	// An index segment (/agents/_0/…, as /system/jobs redirects to) names a
+	// named agent by its name.
+	const param = route.params.agent as string | undefined;
+	if (param?.startsWith("_") && route.params.subtab) {
+		const name = draft.value.agents[agentIdxFromParam(param)]?.name;
+		if (name) {
+			void router.replace({
+				path: route.path.replace(
+					`/agents/${param}`,
+					`/agents/${encodeURIComponent(name)}`,
+				),
+				query: route.query,
+			});
+			return;
+		}
+	}
 	if (route.path !== "/agents") return;
 	if (route.query.add !== undefined) {
 		addAgent();
@@ -912,7 +932,7 @@ const agentSubtabLabels: Record<AgentSubtab, string> = {
 	permissions: "Agent Settings",
 	channels: "Agent Settings",
 	files: "Files",
-	tasks: "Tasks",
+	tasks: "Scheduled Tasks",
 };
 const systemTabLabels: Record<Exclude<Tab, "agents">, string> = {
 	general: "Settings",
@@ -927,6 +947,7 @@ const pageTitle = computed(() => {
 	if (activeTab.value !== "agents") return systemTabLabels[activeTab.value];
 	const agent = draft.value.agents[selectedAgentIdx.value];
 	if (!agent || route.path === "/agents") return "Agents";
+	if (tasksRoot.value) return "Scheduled Tasks";
 	const name = agent.name || "New agent";
 	return `${name} · ${agentSubtabLabels[selectedAgentSubtab.value]}`;
 });
@@ -1476,8 +1497,12 @@ const agentFileSaveTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 // agent's open file across them, so only leaving the view asks about unsaved
 // settings, and only leaving the view or opening another of the agent's files
 // asks about an edited file.
+// The Scheduled Tasks root page has no Save, so going there from a task's
+// editor leaves its edits.
 const staysInSettings: KeepsEdits = (to, from) =>
-	to.meta.view === "settings" && from.meta.view === "settings";
+	to.meta.view === "settings" &&
+	from.meta.view === "settings" &&
+	!(to.params.subtab === "tasks" && !to.query.task);
 useUnsavedChanges(hasDraftChanges, { keeps: staysInSettings });
 function agentFileDirty(state: AgentFileEditorState): boolean {
 	return !!state.selectedFile && state.content !== state.savedContent;
@@ -3580,6 +3605,7 @@ const settingsContext = proxyRefs({
 	selectedConfiguredChannelIndex,
 	selectedTask,
 	selectedTaskIdx,
+	tasksRoot,
 	selectedTaskTarget,
 	serverPortInput,
 	sessionAgent,
