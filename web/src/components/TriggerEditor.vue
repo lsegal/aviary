@@ -36,26 +36,21 @@
 				</label>
 				<label class="block text-sm">
 					<span class="text-gray-600 dark:text-gray-300">Timezone</span>
-					<input :value="value.timezone" name="timezone" :list="zoneListId" :class="INPUT" :placeholder="localZone" @input="setInput('timezone', $event)" />
-					<datalist :id="zoneListId">
-						<option v-for="z in zones" :key="z" :value="z" />
-					</datalist>
+					<AppCombobox :model-value="value.timezone" name="timezone" :options="zoneOptions" class="mt-1" clearable
+						:placeholder="`Local time (${localZone})`" empty-text="No matching timezones"
+						@update:model-value="set('timezone', String($event))" />
 				</label>
 			</div>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<label class="block text-sm">
 					<span class="text-gray-600 dark:text-gray-300">If the last run is still going</span>
-					<select :value="value.overlap" name="overlap" :class="INPUT" @change="setInput('overlap', $event)">
-						<option value="queue">Queue this run</option>
-						<option value="skip">Skip this run</option>
-					</select>
+					<AppSelect :model-value="value.overlap" name="overlap" :options="OVERLAP_OPTIONS" class="mt-1"
+						@update:model-value="set('overlap', $event)" />
 				</label>
 				<label class="block text-sm">
 					<span class="text-gray-600 dark:text-gray-300">Runs missed while asleep or stopped</span>
-					<select :value="value.missed" name="missed" :class="INPUT" @change="setInput('missed', $event)">
-						<option value="skip">Skip them</option>
-						<option value="run_once">Run once to catch up</option>
-					</select>
+					<AppSelect :model-value="value.missed" name="missed" :options="MISSED_OPTIONS" class="mt-1"
+						@update:model-value="set('missed', $event)" />
 				</label>
 			</div>
 			<div data-testid="trigger-preview" class="text-xs">
@@ -71,9 +66,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, ref, useId, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { formatFire } from "../lib/projects";
 import type { TriggerFields } from "../lib/trigger";
+import { AppCombobox, AppSelect, type SelectOption } from "./ui/select";
 
 // One trigger editor for every surface that schedules a task: Projects
 // schedules and agent tasks.
@@ -100,9 +96,38 @@ const zones: string[] =
 	(Intl as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.(
 		"timeZone",
 	) ?? [];
-const zoneListId = `trigger-timezones-${useId()}`;
+const OVERLAP_OPTIONS: SelectOption<TriggerFields["overlap"]>[] = [
+	{
+		value: "queue",
+		label: "Queue this run",
+		description: "Starts it once the current run finishes",
+	},
+	{
+		value: "skip",
+		label: "Skip this run",
+		description: "Drops it while the last run is still going",
+	},
+];
+const MISSED_OPTIONS: SelectOption<TriggerFields["missed"]>[] = [
+	{
+		value: "skip",
+		label: "Skip them",
+		description: "Waits for the next scheduled time",
+	},
+	{
+		value: "run_once",
+		label: "Run once to catch up",
+		description: "Runs a single missed occurrence after waking",
+	},
+];
 
 const value = computed(() => props.modelValue);
+// A saved zone the browser doesn't list still shows as chosen.
+const zoneOptions = computed<SelectOption[]>(() => {
+	const tz = value.value.timezone;
+	const list = tz && !zones.includes(tz) ? [tz, ...zones] : zones;
+	return list.map((z) => ({ value: z, label: z }));
+});
 const triggers = computed(() =>
 	props.optional
 		? [{ key: "" as const, label: "None" }, ...TRIGGERS]
@@ -113,7 +138,7 @@ function set<K extends keyof TriggerFields>(key: K, v: TriggerFields[K]) {
 	emit("update:modelValue", { ...props.modelValue, [key]: v });
 }
 function setInput(key: keyof TriggerFields, e: Event) {
-	set(key, (e.target as HTMLInputElement | HTMLSelectElement).value as never);
+	set(key, (e.target as HTMLInputElement).value as never);
 }
 
 const days = computed(() =>

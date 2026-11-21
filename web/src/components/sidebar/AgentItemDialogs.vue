@@ -26,21 +26,18 @@
 						</div>
 						<template v-if="form.targetKind === 'project'">
 							<label for="agent-task-project" class="field-label mt-3">Project</label>
-							<select id="agent-task-project" v-model="form.project" data-testid="task-project"
-								aria-describedby="agent-task-project-help" class="field-input">
-								<option value="" disabled>Select a watched project…</option>
-								<option v-for="p in projectChoices" :key="p.target" :value="p.target">{{ p.target }}</option>
-							</select>
+							<AppCombobox id="agent-task-project" v-model="form.project" data-testid="task-project"
+								aria-describedby="agent-task-project-help" placeholder="Select a watched project…"
+								empty-text="No matching projects"
+								:options="projectChoices.map((p) => ({ value: p.target, label: p.target }))" />
 							<p id="agent-task-project-help" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
 								{{ projectChoices.length ? "Runs in an isolated clone of the project, under the agent that owns it." : "No watched projects yet." }}
 							</p>
 						</template>
 						<template v-else>
 							<label for="agent-task-agent" class="field-label mt-3">Agent</label>
-							<select id="agent-task-agent" v-model="form.agent" :disabled="dialog.mode !== 'create'"
-								class="field-input disabled:opacity-60">
-								<option v-for="a in agentChoices" :key="a" :value="a">{{ a }}</option>
-							</select>
+							<AppSelect id="agent-task-agent" v-model="form.agent" :disabled="dialog.mode !== 'create'"
+								:options="agentChoices.map((a) => ({ value: a, label: a }))" />
 						</template>
 						<div class="mt-3">
 							<TriggerEditor :key="editorKey" v-model="form.trigger" :preview="previewTrigger" :optional="form.targetKind !== 'project'" />
@@ -51,14 +48,9 @@
 						<TaskCostFeedback :agent="feedbackAgent" :prompt="form.prompt" :type="taskType"
 							:target="form.target" :precompile="dialog.mode === 'create' && canPrecompute && form.precompute" />
 						<label for="agent-task-send-to" class="field-label mt-3">Send To</label>
-						<select id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
-							aria-describedby="agent-task-send-to-help" class="field-input">
-							<option value="">Task session only</option>
-							<option v-for="s in channelSessions" :key="s.id" :value="`session:${s.id}`">
-								{{ chatDisplayName(s) }} · {{ s.channels?.join(", ") }}
-							</option>
-							<option v-if="otherTarget" :value="otherTarget">{{ otherTarget }}</option>
-						</select>
+						<AppCombobox id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
+							aria-describedby="agent-task-send-to-help" :options="sendToOptions"
+							empty-text="No matching sessions" />
 						<p id="agent-task-send-to-help" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
 							Runs always show their output in the task's own session; a channel session also gets a copy.
 						</p>
@@ -170,6 +162,7 @@ import TriggerEditor from "../TriggerEditor.vue";
 import SegmentedControl, {
 	type SegmentedOption,
 } from "../ui/SegmentedControl.vue";
+import { AppCombobox, AppSelect, type SelectOption } from "../ui/select";
 
 type TaskKind = "prompt" | "script";
 type TargetKind = "agent" | "project";
@@ -306,6 +299,16 @@ const channelSessions = computed(() =>
 		.sessions(taskAgent.value)
 		.filter((s) => (s.channels?.length ?? 0) > 0),
 );
+const sendToOptions = computed<SelectOption[]>(() => [
+	{ value: "", label: "Task session only" },
+	...channelSessions.value.map((s) => ({
+		value: `session:${s.id}`,
+		label: `${chatDisplayName(s)} · ${s.channels?.join(", ")}`,
+	})),
+	...(otherTarget.value
+		? [{ value: otherTarget.value, label: otherTarget.value }]
+		: []),
+]);
 
 // Each dialog opening reloads the chats, so a newly bound channel shows up;
 // picking another agent clears a Send To that named one of the old agent's.

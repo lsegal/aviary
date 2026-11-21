@@ -3,6 +3,7 @@ import modelCatalog from "../../internal/models/catalog.json" with {
 	type: "json",
 };
 import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
+import { chooseOption, optionLabels } from "./helpers/select";
 
 const CLI_DEFINITIONS = { acme: { binary: "acme-cli" } };
 
@@ -299,17 +300,13 @@ test("the default model pickers offer the models of installed CLI providers", as
 		"default-fallbacks-selector",
 	]) {
 		const selector = page.getByTestId(testId);
-		await selector.locator("input").click();
-		const options = selector.locator(".truncate.font-medium");
 		// Only installed CLIs with models contribute: codex, not the missing
 		// claude, acme and muse, nor gemini, which reports no models.
-		await expect(options).toHaveText(offered);
-		await page.keyboard.press("Escape");
+		expect(await optionLabels(selector.locator("input"))).toEqual(offered);
 	}
 
 	const defaultModel = page.getByTestId("default-model-selector");
-	await defaultModel.locator("input").click();
-	await defaultModel.getByText("codex/gpt-5.5-mini", { exact: true }).click();
+	await chooseOption(defaultModel.locator("input"), "codex/gpt-5.5-mini");
 	await page.getByRole("button", { name: "Save Changes" }).click();
 	await expect.poll(() => saved).not.toBeNull();
 	expect(saved).toMatchObject({
