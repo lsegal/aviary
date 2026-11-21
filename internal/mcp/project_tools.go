@@ -27,12 +27,21 @@ type projectStatusArgs struct {
 }
 
 type projectJobListArgs struct {
-	Target string `json:"target,omitempty" jsonschema:"Only list jobs of this project"`
-	Status string `json:"status,omitempty" jsonschema:"Only list jobs with this status, such as active, waiting, queued, paused, failed or complete"`
-	State  string `json:"state,omitempty" jsonschema:"Only list jobs the board shows in this state: starting, paused, running, done or failed"`
-	Query  string `json:"query,omitempty" jsonschema:"Only list jobs with this text, case-insensitively, in any field: number, pull request, title, repository, status, skill, agent, session, schedule, or output"`
-	Offset int    `json:"offset,omitempty" jsonschema:"Index of the first job to return"`
-	Limit  int    `json:"limit,omitempty" jsonschema:"Most jobs to return; defaults to 50"`
+	Target  string   `json:"target,omitempty" jsonschema:"Only list jobs of this project"`
+	Targets []string `json:"targets,omitempty" jsonschema:"Only list jobs of these projects, together with target"`
+	Status  string   `json:"status,omitempty" jsonschema:"Only list jobs with this status, such as active, waiting, queued, paused, failed or complete"`
+	State   string   `json:"state,omitempty" jsonschema:"Only list jobs the board shows in this state: starting, paused, running, done or failed"`
+	Query   string   `json:"query,omitempty" jsonschema:"Only list jobs with this text, case-insensitively, in any field: number, pull request, title, repository, status, skill, agent, session, schedule, or output"`
+	Offset  int      `json:"offset,omitempty" jsonschema:"Index of the first job to return"`
+	Limit   int      `json:"limit,omitempty" jsonschema:"Most jobs to return; defaults to 50"`
+}
+
+// jobListTargets is the projects a job list covers: target plus targets.
+func jobListTargets(args projectJobListArgs) []string {
+	if args.Target == "" {
+		return args.Targets
+	}
+	return append([]string{args.Target}, args.Targets...)
 }
 
 type projectJobArgs struct {
@@ -153,7 +162,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Annotations: readOnlyTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectJobListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult("project_job_list", func(m *projects.Manager) (map[string]any, error) {
-			return m.ListJobs(args.Target, args.Status, args.State, args.Query, args.Offset, args.Limit), nil
+			return m.ListJobs(jobListTargets(args), args.Status, args.State, args.Query, args.Offset, args.Limit), nil
 		})
 	})
 

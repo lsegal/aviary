@@ -4,6 +4,9 @@
 		<div class="space-y-1.5 p-4">
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
 				<JobStatusPill :state="job.state" />
+				<router-link v-if="showProject" :to="projectBoardPath" data-testid="job-project"
+					class="truncate rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+					:title="`Open ${job.target}'s board`">{{ job.target }}</router-link>
 				<span v-if="job.scheduled" data-testid="job-scheduled"
 					class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
 					Scheduled
@@ -88,6 +91,7 @@ import {
 	githubURL,
 	jobPath,
 	type ProjectJob,
+	projectPath,
 	waitText,
 } from "../../lib/projects";
 import { useSettingsStore } from "../../stores/settings";
@@ -98,6 +102,8 @@ const props = defineProps<{
 	job: ProjectJob;
 	now: number;
 	busy?: boolean;
+	/** Names the job's project, on a board of several. */
+	showProject?: boolean;
 }>();
 const emit = defineEmits<{
 	retry: [job: ProjectJob];
@@ -106,12 +112,12 @@ const emit = defineEmits<{
 }>();
 
 const settings = useSettingsStore();
+const owner = computed(() => projectOwner(settings.config, props.job.target));
 const runPath = computed(() =>
-	jobPath(
-		projectOwner(settings.config, props.job.target),
-		props.job.target,
-		props.job.number,
-	),
+	jobPath(owner.value, props.job.target, props.job.number),
+);
+const projectBoardPath = computed(() =>
+	projectPath(owner.value, props.job.target),
 );
 
 const waitingText = computed(() => waitText(props.job, props.now));

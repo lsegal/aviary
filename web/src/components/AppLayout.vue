@@ -61,6 +61,8 @@
             </button>
           </div>
           <div v-if="versionMessage" class="mt-1 text-xs opacity-80" data-testid="version-message">{{ versionMessage }}</div>
+          <div v-if="autoUpdateWaiting" class="mt-1 text-xs" data-testid="auto-update-status">{{ autoUpdateWaiting }}</div>
+          <div v-if="autoUpdateError" class="mt-1 text-xs font-medium text-red-700 [overflow-wrap:anywhere] dark:text-red-300" data-testid="auto-update-error">{{ autoUpdateError }}</div>
         </div>
         <div v-else-if="updateNotice" data-testid="update-notice"
           class="mb-3 rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900 dark:border-green-700 dark:bg-green-950/40 dark:text-green-100">
@@ -249,6 +251,8 @@
             <template v-else>{{ shortVersion(latestVersion) }}</template>
           </div>
           <div v-if="versionMessage" class="mt-1 text-xs opacity-80" data-testid="version-message">{{ versionMessage }}</div>
+          <div v-if="autoUpdateWaiting" class="mt-1 text-xs" data-testid="auto-update-status">{{ autoUpdateWaiting }}</div>
+          <div v-if="autoUpdateError" class="mt-1 text-xs font-medium text-red-700 [overflow-wrap:anywhere] dark:text-red-300" data-testid="auto-update-error">{{ autoUpdateError }}</div>
         </div>
         <div v-else-if="updateNotice" data-testid="update-notice"
           class="rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900 dark:border-green-700 dark:bg-green-950/40 dark:text-green-100">
@@ -370,6 +374,27 @@ const {
 const restartPending = computed(
 	() => !!restart.value && restart.value.phase !== "idle",
 );
+// Why an automatic update has not applied yet, and how its last attempt
+// failed, shown at the update notice.
+const autoUpdateWaiting = computed(() => {
+	const auto = restart.value?.autoUpdate;
+	switch (auto?.state) {
+		case "waiting-jobs": {
+			const n = auto.jobs ?? 0;
+			return `Auto update is waiting for ${n === 1 ? "1 running job" : `${n} running jobs`} to finish.`;
+		}
+		case "waiting-restart":
+			return "Auto update is waiting for the pending restart.";
+		case "applying":
+			return git.value ? "Auto update is pulling the checkout…" : "Auto update is applying…";
+		default:
+			return "";
+	}
+});
+const autoUpdateError = computed(() => {
+	const err = restart.value?.autoUpdate?.error;
+	return err ? `Auto update failed: ${err}` : "";
+});
 const logoUrl = "/logo.png";
 const brandLinks: BrandLink[] = [
 	{
@@ -511,8 +536,9 @@ const projectsOpen = computed(() =>
 
 const addAgentLink = { path: "/agents", query: { add: "1" } };
 
+// + Add project opens the add dialog on the agent's GitHub Projects board.
 function addProjectLink(agent: string) {
-	return { path: agentPagePath(agent, "projects"), query: { new: "1" } };
+	return { path: agentPagePath(agent, "projects"), query: { add: "1" } };
 }
 
 // Runtime watches no agent owns sit with System's other pages.

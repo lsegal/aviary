@@ -78,13 +78,15 @@ export function useProjectList(interval = 10_000) {
 }
 
 /**
- * A project's live status and one page of its jobs with their recent output.
- * A non-empty search narrows the jobs to those with the text in any field,
- * including their output, and total then counts only the matches. In kanban
- * mode it reads every job in the filter instead, without their output.
+ * The live status and one page of the jobs of a set of projects, with their
+ * recent output: one project's board, or an agent's board of all its
+ * projects. No projects means an empty board. A non-empty search narrows the
+ * jobs to those with the text in any field, including their output, and
+ * total then counts only the matches. In kanban mode it reads every job in
+ * the filter instead, without their output.
  */
 export function useProjectBoard(
-	project: Ref<string>,
+	targets: Ref<string[]>,
 	filter: Ref<BoardFilter>,
 	search: Ref<string> = ref(""),
 	kanban: Ref<boolean> = ref(false),
@@ -99,14 +101,14 @@ export function useProjectBoard(
 	const error = ref("");
 	const loading = ref(true);
 
-	async function listJobs(target: string) {
+	async function listJobs(projects: string[]) {
 		// The kanban view lays every job out in its state's column, so it
 		// reads them all instead of one page.
 		const all = kanban.value;
 		const list = normalizeJobList(
 			parseToolJSON(
 				await callTool("project_job_list", {
-					target,
+					targets: projects,
 					state: filter.value === "all" ? undefined : filter.value,
 					query: search.value.trim() || undefined,
 					offset: all ? 0 : page.value * JOBS_PAGE_SIZE,
@@ -125,15 +127,19 @@ export function useProjectBoard(
 	let latest = 0;
 	async function load() {
 		const call = ++latest;
-		const target = project.value;
-		if (!target) {
+		const projects = targets.value;
+		const key = projects.join(" ");
+		if (!projects.length) {
+			jobs.value = [];
+			total.value = 0;
+			unfilteredTotal.value = 0;
 			loading.value = false;
 			return;
 		}
 		try {
 			const [statusText, list] = await Promise.all([
 				callTool("project_status", {}),
-				listJobs(target),
+				listJobs(projects),
 			]);
 			// Every visible list card shows its job's latest terminal output,
 			// which streams while the job runs; kanban cards show none.
@@ -156,7 +162,7 @@ export function useProjectBoard(
 					}
 				}),
 			);
-			if (target !== project.value || call !== latest) return;
+			if (key !== targets.value.join(" ") || call !== latest) return;
 			status.value = normalizeStatus(parseToolJSON(statusText));
 			jobs.value = list.jobs;
 			total.value = list.total;
@@ -171,7 +177,7 @@ export function useProjectBoard(
 
 	const { refresh } = usePoll(load, PROJECTS_POLL_MS);
 
-	watch([project, filter, kanban], () => {
+	watch([() => targets.value.join(" "), filter, kanban], () => {
 		page.value = 0;
 		loading.value = true;
 		void refresh();
@@ -193,7 +199,12 @@ export function useProjectBoard(
 	}
 
 	async function checkNow() {
-		await callTool("project_refresh", { target: project.value });
+		// One check reads every project, so a board of several asks once.
+		const [target] = targets.value;
+		await callTool(
+			"project_refresh",
+			targets.value.length === 1 ? { target } : {},
+		);
 		await refresh();
 	}
 

@@ -231,6 +231,10 @@ const EVENTS_218 = [
 	},
 ];
 
+// project_job_list's project filter: the board passes targets, one or more.
+const inTargets = (args: Record<string, unknown> | undefined, target: string) =>
+	!Array.isArray(args?.targets) || args.targets.includes(target);
+
 interface Calls {
 	[tool: string]: Record<string, unknown>[];
 }
@@ -279,7 +283,7 @@ async function setup(
 			record("project_job_list", args);
 			const jobs = JOBS.filter(
 				(j) =>
-					(!args?.target || j.target === args.target) &&
+					inTargets(args, j.target) &&
 					(!args?.status || j.status === args.status) &&
 					(!args?.state || j.state === args.state),
 			);
@@ -337,7 +341,7 @@ test("an agent's GitHub Projects in the sidebar list its projects with live coun
 	).toContainText("idle");
 	await expect(page.getByTestId("sidebar-add-project")).toHaveAttribute(
 		"href",
-		"/agents/coder/projects?new=1",
+		"/agents/coder/projects?add=1",
 	);
 });
 
@@ -445,6 +449,83 @@ test("retry, stop, filters and check now call project tools", async ({
 	await expect
 		.poll(() => calls.project_refresh?.[0])
 		.toEqual({ target: "lsegal/aviary" });
+});
+
+const ZVID_JOB = job({
+	number: 7,
+	title: "Decode B-frames",
+	status: "active",
+	agent: "claude",
+	model: "opus",
+	started: 5,
+	target: "lsegal/zvidlib",
+});
+
+test("an agent's GitHub Projects is one board of all its projects, with no settings", async ({
+	page,
+}) => {
+	const calls = await setup(page, undefined, {
+		project_job_list: (args?: Record<string, unknown>) => {
+			calls.project_job_list ??= [];
+			calls.project_job_list.push(args ?? {});
+			const query = typeof args?.query === "string" ? args.query : "";
+			const jobs = [...JOBS, ZVID_JOB].filter(
+				(j) =>
+					inTargets(args, j.target) &&
+					(!args?.status || j.status === args.status) &&
+					(!args?.state || j.state === args.state) &&
+					(!query || j.title.toLowerCase().includes(query.toLowerCase())),
+			);
+			return { jobs, total: jobs.length, offset: 0, limit: args?.limit ?? 50 };
+		},
+	});
+	await page.goto("/agents/coder/projects");
+
+	await expect(
+		page.getByRole("heading", { name: "GitHub Projects" }),
+	).toBeVisible();
+	await expect(page.getByTestId("board-projects")).toHaveText("2 projects");
+	// Every project's jobs share the board, each naming its project.
+	const cards = page.getByTestId("job-card");
+	await expect(cards).toHaveCount(6);
+	expect(calls.project_job_list.at(-1)?.targets).toEqual([
+		"lsegal/aviary",
+		"lsegal/zvidlib",
+	]);
+	const zvid = cards.filter({ hasText: "Decode B-frames" });
+	await expect(zvid.getByTestId("job-project")).toHaveText("lsegal/zvidlib");
+	await expect(zvid.getByTestId("job-project")).toHaveAttribute(
+		"href",
+		"/agents/coder/projects/lsegal%2Fzvidlib",
+	);
+
+	// No settings live on the route: no form fields, and Settings opens the
+	// agent's projects in System → Projects.
+	await expect(page.locator("[data-field]")).toHaveCount(0);
+	await expect(page.getByTestId("agent-projects")).toHaveCount(0);
+	await expect(page.getByTestId("project-settings-link")).toHaveAttribute(
+		"href",
+		"/system/projects?agent=coder",
+	);
+
+	// Filters and search narrow the whole board, as on one project's.
+	await page.getByRole("tab", { name: "Running" }).click();
+	await expect(cards).toHaveCount(2);
+	await page.getByLabel("Search jobs").fill("B-frames");
+	await expect(cards).toHaveCount(1);
+	await expect(cards).toContainText("lsegal/zvidlib");
+
+	// One check reads every project.
+	await page.getByLabel("Search jobs").fill("");
+	await page.getByRole("button", { name: "Check now" }).click();
+	await expect.poll(() => calls.project_refresh?.[0]).toEqual({});
+});
+
+test("one project's board leaves its cards unlabelled", async ({ page }) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await expect(page.getByTestId("job-card")).toHaveCount(5);
+	await expect(page.getByTestId("job-project")).toHaveCount(0);
 });
 
 test("job actions are icon buttons with tooltips", async ({ page }) => {
@@ -860,7 +941,7 @@ test("search filters the whole job list across every field", async ({
 			const query = typeof args?.query === "string" ? args.query : "";
 			const scoped = many.filter(
 				(j) =>
-					(!args?.target || j.target === args.target) &&
+					inTargets(args, j.target) &&
 					(!args?.status || j.status === args.status) &&
 					(!args?.state || j.state === args.state),
 			);
@@ -898,8 +979,28 @@ test("search filters the whole job list across every field", async ({
 	await expect(cards).toHaveCount(12);
 	await expect(page.getByTestId("search-count")).toHaveCount(0);
 
+	// Paging uses chevron icon buttons that still name themselves and disable
+	// at either end.
+	const prev = pages.getByRole("button", { name: "Previous page" });
+	const next = pages.getByRole("button", { name: "Next page" });
+	for (const [button, title] of [
+		[prev, "Previous page"],
+		[next, "Next page"],
+	] as const) {
+		await expect(button).toHaveAttribute("title", title);
+		await expect(button).toHaveText("");
+		await expect(button.locator("svg")).toHaveCount(1);
+	}
+	await expect(prev).toBeDisabled();
+	await expect(next).toBeEnabled();
+	await next.click();
+	await next.click();
+	await expect(pages).toContainText("Page 3 of 3");
+	await expect(next).toBeDisabled();
+	await expect(prev).toBeEnabled();
+	await prev.click();
+
 	// Typing filters at once and lands on the first page of the matches.
-	await pages.getByRole("button", { name: "Next" }).click();
 	await expect(pages).toContainText("Page 2 of 3");
 	await search.pressSequentially("351");
 	await expect(pages).toContainText("Page 1 of 1");

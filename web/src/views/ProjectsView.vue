@@ -2,13 +2,18 @@
 	<AppLayout>
 		<div class="flex h-full min-h-0">
 			<div class="flex h-full min-w-0 flex-1 flex-col overflow-y-auto">
-				<template v-if="project">
+				<template v-if="project || aggregate">
 					<header
 						class="flex flex-col gap-3 border-b border-gray-200 px-4 py-4 dark:border-gray-800 sm:px-6 xl:flex-row xl:items-center">
 						<div class="min-w-0">
-							<p class="text-xs text-gray-500"><router-link :to="projectsIndexPath" class="hover:underline">{{ projectsIndexLabel }}</router-link> /</p>
+							<p v-if="aggregate" class="text-xs text-gray-500">{{ routeAgent }} /</p>
+							<p v-else class="text-xs text-gray-500"><router-link :to="projectsIndexPath" class="hover:underline">{{ projectsIndexLabel }}</router-link> /</p>
 							<div class="flex items-center gap-2">
-								<h1 class="truncate text-xl font-bold text-gray-900 dark:text-white">
+								<h1 v-if="aggregate" class="truncate text-xl font-bold text-gray-900 dark:text-white">GitHub Projects</h1>
+								<span v-if="aggregate" data-testid="board-projects"
+									class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+									:title="targets.join(', ')">{{ targets.length }} {{ targets.length === 1 ? "project" : "projects" }}</span>
+								<h1 v-else class="truncate text-xl font-bold text-gray-900 dark:text-white">
 									<a :href="targetURL(project)" target="_blank" rel="noopener noreferrer" class="hover:underline"
 										:title="`Open ${project} on GitHub`">{{ project }}</a>
 								</h1>
@@ -63,7 +68,7 @@
 						</p>
 
 						<template v-if="view === 'board'">
-						<UpNextStrip :runs="upcoming" :now="now" @open="openSchedule" />
+						<UpNextStrip v-if="!aggregate" :runs="upcoming" :now="now" @open="openSchedule" />
 
 						<section v-if="status" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="Job counts">
 							<div v-for="s in statCards" :key="s.label" class="rounded-xl border px-4 py-3" :class="s.cls">
@@ -93,7 +98,7 @@
 								<input v-model="search" type="search" aria-label="Search jobs" placeholder="Search jobs, logs, #issue, #PR, session…"
 									class="field-input pl-9!" />
 							</div>
-							<div role="tablist" aria-label="Project views" class="flex max-w-full shrink-0 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+							<div v-if="!aggregate" role="tablist" aria-label="Project views" class="flex max-w-full shrink-0 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
 								<button v-for="v in VIEWS" :key="v.key" type="button" role="tab" :aria-selected="view === v.key"
 									class="shrink-0 px-3 py-1.5" :class="view === v.key ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
 									@click="setView(v.key)">
@@ -120,11 +125,15 @@
 									{{ total }} of {{ unfilteredTotal }} {{ unfilteredTotal === 1 ? "job matches" : "jobs match" }}
 								</span>
 								<nav v-if="!kanban && (searching || pageCount > 1)" class="flex items-center gap-3 sm:ml-auto" aria-label="Job pages">
-									<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
-										:disabled="page === 0" @click="page--">Previous</button>
+									<button type="button" aria-label="Previous page" title="Previous page" class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+										:disabled="page === 0" @click="page--">
+										<ChevronLeftIcon aria-hidden="true" class="h-4 w-4" />
+									</button>
 									<span class="text-gray-500">Page {{ page + 1 }} of {{ Math.max(pageCount, 1) }}</span>
-									<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
-										:disabled="page + 1 >= pageCount" @click="page++">Next</button>
+									<button type="button" aria-label="Next page" title="Next page" class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+										:disabled="page + 1 >= pageCount" @click="page++">
+										<ChevronRightIcon aria-hidden="true" class="h-4 w-4" />
+									</button>
 								</nav>
 							</template>
 						</div>
@@ -142,9 +151,13 @@
 							<button type="button" class="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								@click="search = ''">Clear search</button>
 						</div>
+						<div v-else-if="aggregate && !targets.length" class="py-12 text-center text-sm text-gray-400" data-testid="board-no-projects">
+							{{ routeAgent }} owns no projects yet.
+							<button type="button" class="text-blue-600 hover:underline dark:text-blue-400" @click="openAdd">Add one</button>.
+						</div>
 						<div v-else-if="!jobs.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
 						<section v-else class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Jobs">
-							<JobCard v-for="job in jobs" :key="job.id" :job="job" :now="now"
+							<JobCard v-for="job in jobs" :key="job.id" :job="job" :now="now" :show-project="aggregate"
 								:busy="busyJob === job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
 								@summarize="onSummarize" />
 						</section>
@@ -169,13 +182,15 @@
 					</div>
 				</template>
 			</div>
-			<ProjectChatPanel v-if="project && chatOpen" ref="chatPanel" :project="project" @close="chatOpen = false" />
+			<ProjectChatPanel v-if="(project || aggregate) && chatOpen" ref="chatPanel" :project="project" @close="chatOpen = false" />
 		</div>
 		<AddProjectDialog v-if="adding" :agent="routeAgent" @close="closeAdd" @added="onAdded" />
 	</AppLayout>
 </template>
 
 <script setup lang="ts">
+import ChevronLeftIcon from "@heroicons/vue/24/outline/ChevronLeftIcon";
+import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
 import ViewColumnsIcon from "@heroicons/vue/24/outline/ViewColumnsIcon";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -195,7 +210,12 @@ import {
 	useProjectSchedules,
 } from "../composables/useProjects";
 import { useServerStatus } from "../composables/useServerStatus";
-import { projectOwner, projectSettingsPath } from "../lib/projectSettings";
+import {
+	agentProjectsSettingsPath,
+	projectOwner,
+	projectSettingsPath,
+	projectTargets,
+} from "../lib/projectSettings";
 import {
 	age,
 	BOARD_STATES,
@@ -253,8 +273,21 @@ const projectsIndexPath = computed(() =>
 const projectsIndexLabel = computed(() =>
 	routeAgent.value ? `${routeAgent.value} · GitHub Projects` : "Watches",
 );
+// Without a project the route is the agent's GitHub Projects: one board of
+// every project it owns.
+const aggregate = computed(() => !project.value && !!routeAgent.value);
+const targets = computed(() =>
+	project.value
+		? [project.value]
+		: projectTargets(
+				settingsStore.config?.agents.find((a) => a.name === routeAgent.value)
+					?.projects,
+			),
+);
 const settingsPath = computed(() =>
-	projectSettingsPath(settingsStore.config, project.value),
+	aggregate.value
+		? agentProjectsSettingsPath(routeAgent.value)
+		: projectSettingsPath(settingsStore.config, project.value),
 );
 const filter = ref<BoardFilter>("all");
 // The search narrows the jobs within the filter, across every field and the
@@ -280,7 +313,7 @@ const {
 	importProfile,
 	retry,
 	stop,
-} = useProjectBoard(project, filter, search, kanban);
+} = useProjectBoard(targets, filter, search, kanban);
 const {
 	schedules,
 	upcoming,

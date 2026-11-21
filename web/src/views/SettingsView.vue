@@ -618,14 +618,14 @@ watch(
 );
 
 // An agent's pages: its Settings page's General, Permissions and Channels
-// tabs, then Files, Tasks and GitHub Projects.
+// tabs, then Files and Tasks. GitHub Projects is the agent's board, with its
+// settings in System → Projects.
 const agentSubtabs = [
 	"general",
 	"permissions",
 	"channels",
 	"files",
 	"tasks",
-	"projects",
 ] as const;
 type AgentSubtab = (typeof agentSubtabs)[number];
 
@@ -822,7 +822,6 @@ const agentSubtabLabels: Record<AgentSubtab, string> = {
 	channels: "Settings",
 	files: "Files",
 	tasks: "Tasks",
-	projects: "GitHub Projects",
 };
 const systemTabLabels: Record<Exclude<Tab, "agents">, string> = {
 	general: "Settings",
