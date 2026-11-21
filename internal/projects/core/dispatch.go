@@ -16,13 +16,14 @@ func IssueBlocked(issue Issue) (bool, string) {
 	if issue.HasSubIssues {
 		return true, "has sub-issues"
 	}
+	repo := IssueRepository(issue.Target, issue)
 	blocked := make([]string, 0)
 	for _, dependency := range issue.DependsOn {
 		if !strings.EqualFold(dependency.State, "closed") {
 			if dependency.State == "" {
-				blocked = append(blocked, fmt.Sprintf("depends on #%d", dependency.Number))
+				blocked = append(blocked, "depends on "+dependency.Reference(repo))
 			} else {
-				blocked = append(blocked, fmt.Sprintf("depends on #%d (%s)", dependency.Number, strings.ToLower(dependency.State)))
+				blocked = append(blocked, fmt.Sprintf("depends on %s (%s)", dependency.Reference(repo), strings.ToLower(dependency.State)))
 			}
 		}
 	}

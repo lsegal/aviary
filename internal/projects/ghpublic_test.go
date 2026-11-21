@@ -593,7 +593,7 @@ func TestLoadDependenciesReadsEveryPublicPage(t *testing.T) {
 	if err := gh.loadDependencies(context.Background(), "owner/repo", issue); err != nil {
 		t.Fatalf("loadDependencies() error = %v", err)
 	}
-	want := []IssueDependency{{Number: 3, State: "closed"}, {Number: 5, State: "open"}}
+	want := []IssueDependency{{Number: 3, State: "closed", Repository: "owner/repo"}, {Number: 5, State: "open", Repository: "owner/repo"}}
 	if !reflect.DeepEqual(issue.DependsOn, want) {
 		t.Fatalf("DependsOn = %#v, want %#v", issue.DependsOn, want)
 	}
