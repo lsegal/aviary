@@ -102,6 +102,10 @@ type Options struct {
 	// RefusalNote, when set, is added to a CLI tool's error when the CLI's
 	// own permission check refused the call, naming that layer.
 	RefusalNote string
+	// CommandHook, when set with BuiltinTools, has the CLI check each of its
+	// shell tool calls against the agent's Allowed Exec Commands. Only
+	// claude honors it.
+	CommandHook *CommandHook
 	// ResumeID is the CLI-native session ID to resume. Empty starts a new
 	// session; the new ID is reported with an EventSession event.
 	ResumeID string

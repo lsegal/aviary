@@ -112,6 +112,7 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		opts.Permissions, enforce = cliPermissionArgs(backend, mode, r.cfg.Permissions, workDir)
 		if enforce != nil {
 			opts.Approval = enforce
+			opts.CommandHook = cliCommandHook(r.agent.Name, r.cfg.Permissions)
 		}
 		opts.RefusalNote = cliRefusalNote(backend, mode, r.agent.Name, enforce != nil)
 	}
@@ -420,13 +421,7 @@ func cliPermissionArgs(backend cliagent.Backend, mode clidefs.ApprovalMode, perm
 	if !ok || perms == nil {
 		return nil, nil
 	}
-	var commands []clidefs.Rule
-	if perms.Exec != nil {
-		for _, raw := range perms.Exec.AllowedCommands {
-			pattern, deny := strings.CutPrefix(strings.TrimSpace(raw), "!")
-			commands = append(commands, clidefs.Rule{Pattern: strings.TrimSpace(pattern), Deny: deny})
-		}
-	}
+	commands := commandRules(perms)
 	var paths []clidefs.PathRule
 	if perms.Filesystem != nil {
 		expanded, err := filesystem.ExpandRules(perms.Filesystem.AllowedPaths, baseDir)
@@ -442,6 +437,41 @@ func cliPermissionArgs(backend cliagent.Backend, mode clidefs.ApprovalMode, perm
 		enforce = definition.EnforceArgs(mode)
 	}
 	return args, enforce
+}
+
+// commandRules returns the agent's Allowed Exec Commands as ordered rules.
+func commandRules(perms *config.PermissionsConfig) []clidefs.Rule {
+	if perms == nil || perms.Exec == nil {
+		return nil
+	}
+	var commands []clidefs.Rule
+	for _, raw := range perms.Exec.AllowedCommands {
+		pattern, deny := strings.CutPrefix(strings.TrimSpace(raw), "!")
+		commands = append(commands, clidefs.Rule{Pattern: strings.TrimSpace(pattern), Deny: deny})
+	}
+	return commands
+}
+
+// cliCommandHook has the CLI check each shell call against the agent's
+// Allowed Exec Commands when they are narrower than every command and the
+// CLI's enforce arguments are in place: claude's dontAsk mode otherwise still
+// runs commands it classifies as read-only that no allow rule covers (#595).
+// It is nil when the rules allow every command or aviary's own binary cannot
+// be found.
+func cliCommandHook(agentName string, perms *config.PermissionsConfig) *cliagent.CommandHook {
+	if allowsEveryCommand(commandRules(perms)) {
+		return nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		slog.Warn("agent: CLI shell calls not checked against Allowed Exec Commands", "agent", agentName, "err", err)
+		return nil
+	}
+	var rules []string
+	if perms != nil && perms.Exec != nil {
+		rules = append(rules, perms.Exec.AllowedCommands...)
+	}
+	return &cliagent.CommandHook{Executable: exe, Agent: agentName, Rules: rules}
 }
 
 // allowsEveryCommand reports whether the agent's command rules allow "*".
