@@ -97,6 +97,7 @@
 								class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-2.5 py-1 dark:border-gray-700">
 								<span class="h-1.5 w-1.5 rounded-full" :class="cli.signedIn ? 'bg-green-500' : 'bg-gray-400'" />
 								<b class="text-gray-800 dark:text-gray-100">{{ cli.name }}</b>
+								<span v-if="cli.models.length" class="text-gray-600 dark:text-gray-300">{{ cli.models.join(", ") }}</span>
 								<span class="text-gray-500">{{ cli.quota || "no quota reported" }}</span>
 							</span>
 						</section>
