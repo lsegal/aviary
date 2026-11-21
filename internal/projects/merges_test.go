@@ -54,7 +54,7 @@ func TestRecentMergesSurviveEngineRestart(t *testing.T) {
 	now := time.Now()
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	before := newRecentMerges(mergesPathFor(statePath), now)
-	before.record("o/r", OriginatingWorkState{IssueState: "closed", PullRequests: []PullRequestWorkState{
+	before.record("o/r", 1, OriginatingWorkState{IssueState: "closed", PullRequests: []PullRequestWorkState{
 		{Number: 8, State: "closed", Merged: true, MergedAt: now.Add(-3 * time.Hour)},
 		{Number: 9, State: "closed", Merged: true, MergedAt: now.Add(-25 * time.Hour)},
 	}})
