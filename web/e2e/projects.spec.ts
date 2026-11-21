@@ -348,16 +348,59 @@ test("an agent's GitHub Projects in the sidebar list its projects with live coun
 
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	const projects = page.getByTestId("sidebar-agent-projects");
-	await expect(
-		projects.getByRole("link", { name: /lsegal\/aviary/ }),
-	).toContainText("2 running");
-	await expect(
-		projects.getByRole("link", { name: /lsegal\/zvidlib/ }),
-	).toContainText("idle");
+	// A project with running jobs shows only their count in a gray badge
+	// (#636).
+	const aviary = projects.getByRole("link", { name: /lsegal\/aviary/ });
+	const badge = aviary.getByTestId("project-running-badge");
+	await expect(badge).toHaveText("2");
+	await expect(badge).toHaveAttribute("aria-label", "2 running jobs");
+	await expect(badge).toHaveAttribute("title", "2 running jobs");
+	await expect(badge).toHaveClass(/\bbg-gray-200\b/);
+	await expect(aviary).not.toContainText("running");
+	// An idle project shows nothing beside its name.
+	const zvidlib = projects.getByRole("link", { name: /lsegal\/zvidlib/ });
+	await expect(zvidlib).toHaveText("lsegal/zvidlib");
+	await expect(zvidlib.getByTestId("project-running-badge")).toHaveCount(0);
+	await expect(zvidlib).not.toContainText("idle");
 	await expect(page.getByTestId("sidebar-add-project")).toHaveAttribute(
 		"href",
 		"/agents/coder/projects?add=1",
 	);
+});
+
+test("a project's running badge follows its jobs live in the sidebar", async ({
+	page,
+}) => {
+	await page.clock.install();
+	let running = 1;
+	await setup(page, () => STATUS, {
+		project_job_list: () => {
+			const jobs = Array.from({ length: running }, (_, i) => ({
+				...JOBS[0],
+				target: "lsegal/zvidlib",
+				number: 900 + i,
+				status: "active",
+			}));
+			return { jobs, total: jobs.length, offset: 0, limit: 50 };
+		},
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Fzvidlib");
+	const row = page
+		.getByTestId("sidebar-agent-projects")
+		.getByRole("link", { name: /lsegal\/zvidlib/ });
+	const badge = row.getByTestId("project-running-badge");
+	await expect(badge).toHaveText("1");
+	await expect(badge).toHaveAttribute("aria-label", "1 running job");
+
+	running = 3;
+	await page.clock.runFor(10_000);
+	await expect(badge).toHaveText("3");
+	await expect(badge).toHaveAttribute("aria-label", "3 running jobs");
+
+	running = 0;
+	await page.clock.runFor(10_000);
+	await expect(badge).toHaveCount(0);
+	await expect(row).toHaveText("lsegal/zvidlib");
 });
 
 test("a board watching a project URL links its header to that URL", async ({
