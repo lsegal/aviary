@@ -967,9 +967,8 @@ test("the waiting indicator is three staggered dots while the agent thinks", asy
 	const indicator = page.getByTestId("chat-activity");
 	await expect(indicator).toHaveAttribute("aria-live", "polite");
 	// Only the dots show; the status text is for screen readers.
-	await expect(indicator).toHaveAccessibleName("Agent is thinking");
+	await expect(indicator).toHaveText("Agent is thinking");
 	await expect(indicator.locator(".sr-only")).toHaveText("Agent is thinking");
-	await expect(indicator).not.toContainText("Thinking…");
 	const dots = page.getByTestId("chat-activity-dot");
 	await expect(dots).toHaveCount(3);
 	const animations = await dots.evaluateAll((els) =>
@@ -1011,11 +1010,13 @@ test("the waiting indicator dots are static with reduced motion", async ({
 	await expect(
 		page
 			.getByTestId("chat-activity-dot")
-			.evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName)),
+			.evaluateAll((els) =>
+				els.map((el) => getComputedStyle(el).animationName),
+			),
 	).resolves.toEqual(["none", "none", "none"]);
 });
 
-test("a running tool spins and shows its elapsed time once slow", async ({
+test("a running tool spins and counts up its elapsed time on its chip", async ({
 	page,
 }) => {
 	await page.clock.install();
@@ -1024,12 +1025,8 @@ test("a running tool spins and shows its elapsed time once slow", async ({
 
 	const block = jobListBlocks(page);
 	await expect(block.getByTestId("tool-call-spinner")).toBeVisible();
-	// The waiting bubble stays dots-only; the tool's label lives on its chip.
-	const indicator = page.getByTestId("chat-activity");
-	await expect(indicator).toHaveAccessibleName(
-		"Agent is running project_job_list",
-	);
-	await expect(indicator).not.toContainText("Running");
+	// The tool's chip is its status; no typing bubble repeats it below.
+	await expect(page.getByTestId("chat-activity")).toHaveCount(0);
 	const elapsed = block.getByTestId("tool-call-elapsed");
 	await expect(elapsed).toHaveCount(0);
 
@@ -1064,9 +1061,9 @@ test("finished tool chips show a check or a warning with the error", async ({
 	);
 	await expect(page.getByTestId("tool-call-spinner")).toHaveCount(0);
 	// Between tools and before any reply, the turn is thinking again.
-	await expect(page.getByTestId("chat-activity")).toHaveAccessibleName(
-		"Agent is thinking",
-	);
+	await expect(
+		page.getByTestId("chat-activity").locator(".sr-only"),
+	).toHaveText("Agent is thinking");
 });
 
 test("the waiting indicator goes away once reply text streams", async ({

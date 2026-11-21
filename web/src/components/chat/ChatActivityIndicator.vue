@@ -4,16 +4,9 @@
 		<span v-for="i in 3" :key="i" data-testid="chat-activity-dot" aria-hidden="true"
 			class="chat-activity-dot h-2 w-2 rounded-full bg-gray-500 dark:bg-gray-400"
 			:style="{ animationDelay: `${(i - 1) * 160}ms` }" />
-		<span class="sr-only">{{ tool ? `Agent is running ${tool}` : "Agent is thinking" }}</span>
+		<span class="sr-only">Agent is thinking</span>
 	</div>
 </template>
-
-<script setup lang="ts">
-defineProps<{
-	/** The running tool's name; absent while the agent is thinking. */
-	tool?: string;
-}>();
-</script>
 
 <style scoped>
 .chat-activity-dot {

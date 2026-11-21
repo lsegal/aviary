@@ -24,7 +24,7 @@
 					clip-rule="evenodd" />
 			</svg>
 			<span>{{ name }}</span>
-			<span v-if="state === 'running' && elapsed !== undefined" data-testid="tool-call-elapsed"
+			<span v-if="elapsed !== undefined" data-testid="tool-call-elapsed"
 				class="tabular-nums">· {{ elapsed }}s</span>
 			<span class="sr-only">({{ state }})</span>
 			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
@@ -68,7 +68,7 @@ const props = withDefaults(
 		error?: string;
 		images?: string[];
 		pending?: boolean;
-		/** Seconds the call has been running, shown once it is slow. */
+		/** Seconds the call has taken (so far, while running), once it is slow. */
 		elapsed?: number;
 		open?: boolean;
 	}>(),

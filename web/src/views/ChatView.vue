@@ -105,8 +105,8 @@
 								</div>
 							</div>
 						</template>
-						<div v-if="turnActivity" class="text-left">
-							<ChatActivityIndicator :tool="turnActivity.tool" />
+						<div v-if="showThinking" class="text-left">
+							<ChatActivityIndicator />
 						</div>
 						<div v-if="messages.length === 0 && !currentSessionProcessing"
 							class="text-center text-sm text-gray-400 mt-8">
@@ -199,6 +199,7 @@ interface Message {
 	toolPending?: boolean;
 	/** When this client saw a pending tool call start, in epoch ms. */
 	toolStartedAt?: number;
+	toolFinishedAt?: number;
 	timestamp?: string;
 	model?: string;
 	isError?: boolean;
@@ -556,31 +557,29 @@ const SLOW_TOOL_MS = 5000;
 const activityNow = ref(Date.now());
 let activityTimer: ReturnType<typeof setInterval> | undefined;
 
-// What the in-progress turn is doing: running its oldest unfinished tool
-// call, or thinking. Undefined once reply text streams or no turn runs.
-const turnActivity = computed(() => {
-	if (!currentSessionProcessing.value) return undefined;
-	const last = messages.value[messages.value.length - 1];
-	if (last?.role === "assistant" && !last.isError) return undefined;
-	let running: Message | undefined;
-	for (let i = messages.value.length - 1; i >= 0; i--) {
-		const msg = messages.value[i];
-		if (msg.role === "user") break;
-		if (msg.role === "tool" && msg.toolPending) running = msg;
-	}
-	return { tool: running ? toolName(running) : undefined };
-});
-
-// Seconds a running tool call has taken, once it is slow.
-function toolElapsed(msg: Message): number | undefined {
-	if (!msg.toolPending || !msg.toolStartedAt) return undefined;
-	const ms = activityNow.value - msg.toolStartedAt;
-	return ms >= SLOW_TOOL_MS ? Math.floor(ms / 1000) : undefined;
-}
-
 const hasRunningTool = computed(() =>
 	messages.value.some((msg) => msg.role === "tool" && msg.toolPending),
 );
+
+// The typing bubble shows while the turn thinks: not once reply text
+// streams, and not while a tool runs, whose chip already shows that.
+const showThinking = computed(() => {
+	if (!currentSessionProcessing.value) return false;
+	const last = messages.value[messages.value.length - 1];
+	if (last?.role === "assistant" && !last.isError) return false;
+	return !hasRunningTool.value;
+});
+
+// Seconds a tool call has taken, counting up while it runs and kept once it
+// finishes, shown only once it is slow.
+function toolElapsed(msg: Message): number | undefined {
+	if (!msg.toolStartedAt) return undefined;
+	const end = msg.toolPending
+		? activityNow.value
+		: (msg.toolFinishedAt ?? msg.toolStartedAt);
+	const ms = end - msg.toolStartedAt;
+	return ms >= SLOW_TOOL_MS ? Math.floor(ms / 1000) : undefined;
+}
 
 watch(hasRunningTool, (running) => {
 	clearInterval(activityTimer);
@@ -1052,11 +1051,16 @@ async function runTurn(
 				: -1;
 			if (index !== -1 && data) {
 				const current = messages.value[index];
+				// A finished call stays finished if its start arrives again.
+				const stillPending = !!current.toolPending && !data.done;
 				messages.value.splice(index, 1, {
 					...current,
 					toolData: { ...current.toolData, ...data },
-					// A finished call stays finished if its start arrives again.
-					toolPending: !!current.toolPending && !data.done,
+					toolPending: stillPending,
+					toolFinishedAt:
+						current.toolPending && !stillPending
+							? Date.now()
+							: current.toolFinishedAt,
 				});
 				return;
 			}
