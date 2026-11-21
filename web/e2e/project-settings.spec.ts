@@ -3,7 +3,7 @@ import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 const STATUS = {
 	identity: "7F3CA91B",
-	ready_label: "ready",
+	issue_filter: "assignee:@me",
 	projects: [{ name: "lsegal/aviary", running: 0, waiting: 0, jobs: 0 }],
 };
 
@@ -67,11 +67,6 @@ const READY_CHECK = {
 			status: "warn",
 			message:
 				"You can't push to lsegal/zvidlib, so pull requests will come from your fork",
-		},
-		{
-			name: "ready_label",
-			status: "ok",
-			message: '"ready" exists, with 4 open issues',
 		},
 		{ name: "clis", status: "ok", message: "Found claude and codex" },
 		{
@@ -300,12 +295,6 @@ test("add-project checks report each failing prerequisite", async ({
 					message: "gh is signed in and can read lsegal/zvidlib",
 				},
 				{
-					name: "ready_label",
-					status: "fail",
-					message:
-						'lsegal/zvidlib has no "ready" label; create it or pick another ready label',
-				},
-				{
 					name: "clis",
 					status: "fail",
 					message:
@@ -325,14 +314,14 @@ test("add-project checks report each failing prerequisite", async ({
 
 	const checks = dialog.getByTestId("add-project-checks");
 	await expect(checks).toContainText("Needs attention");
-	await expect(checks.locator('[data-status="fail"]')).toHaveCount(3);
-	for (const name of ["ready_label", "clis", "skills"]) {
+	await expect(checks.locator('[data-status="fail"]')).toHaveCount(2);
+	for (const name of ["clis", "skills"]) {
 		await expect(checks.locator(`[data-check="${name}"]`)).toHaveAttribute(
 			"data-status",
 			"fail",
 		);
 	}
-	await expect(checks).toContainText('has no "ready" label');
+	await expect(checks).not.toContainText("label");
 	await expect(
 		checks.getByRole("link", { name: "Manage skills" }),
 	).toBeVisible();

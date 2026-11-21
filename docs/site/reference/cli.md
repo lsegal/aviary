@@ -276,7 +276,7 @@ Watch GitHub projects and fix ready issues with a CLI provider. Nothing is writt
 
 ```
 aviary watch [TARGET ...] [--agent NAME] [--concurrency N] [--interval D]
-             [--delivery poll|webhook] [--ready-label L] [--ready-state S]
+             [--delivery poll|webhook] [--ready-state S]
              [--filter F ...] [--all-issues] [--allowed-commenters LOGINS]
              [--yolo] [--no-merge] [--no-changelog]
 ```

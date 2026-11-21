@@ -23,7 +23,7 @@ const STATUS = {
 	concurrency: 4,
 	delivery: "poll",
 	poll_interval: "30s",
-	ready_label: "ready",
+	issue_filter: "assignee:@me",
 	allowed_commenters: ["lsegal", "octocat"],
 	quotas: {
 		claude: "38% of 5h quota left",
@@ -531,6 +531,12 @@ test("board shows status, ordered job cards and live output", async ({
 	await expect(page.getByTestId("delivery-status")).toHaveText("live");
 	await expect(page.getByTestId("instance-id")).toHaveText("Instance 7F3CA91B");
 	await expect(page.getByText("poll · checked")).toContainText("every 30s");
+	// The header names the issue search pickup runs, never a ready label.
+	await expect(page.getByTestId("issue-filter")).toHaveText("assignee:@me");
+	await expect(page.getByText("poll · checked")).toContainText(
+		"Issues matching assignee:@me",
+	);
+	await expect(page.getByText("poll · checked")).not.toContainText("labeled");
 	const stats = page.getByRole("region", { name: "Job counts" });
 	await expect(stats).toContainText("2of 4 busy");
 	await expect(stats).toContainText("Merged (24h)3");
@@ -882,6 +888,7 @@ const SIGNED_OUT = {
 };
 const browserStatus = (github: object) => ({
 	...STATUS,
+	issue_filter: "",
 	delivery: "browser",
 	poll_interval: "20s",
 	github,
@@ -903,6 +910,11 @@ test.describe("GitHub sign-in banner", () => {
 		await expect(page.getByText("browser · checked")).toContainText(
 			"every 20s",
 		);
+		// Without a filter every open issue is picked up, with no label.
+		await expect(page.getByText("browser · checked")).toContainText(
+			"All open issues",
+		);
+		await expect(page.getByTestId("issue-filter")).toHaveCount(0);
 		// The page only reads status until the user acts.
 		expect(calls.project_github_signin).toBeUndefined();
 
