@@ -125,6 +125,7 @@ async function setup(
 		config?: unknown;
 		jobs?: { number: number; status: string }[];
 		clonesError?: string;
+		sessions?: unknown[];
 	} = {},
 ) {
 	await setAuthToken(page);
@@ -136,7 +137,7 @@ async function setup(
 	await mockMCP(page, {
 		agent_list: [],
 		auth_list: [],
-		session_list: [],
+		session_list: opts.sessions ?? [],
 		tool_list: [],
 		agent_file_list: [],
 		project_status: STATUS,
@@ -740,7 +741,19 @@ const REPORTS_CONFIG = {
 test("reports can be turned on with an agent and a target, then off", async ({
 	page,
 }) => {
-	const calls = await setup(page, { config: REPORTS_CONFIG });
+	const calls = await setup(page, {
+		config: REPORTS_CONFIG,
+		sessions: [
+			{ id: "sess_main", agent_id: "atlas", name: "main", created_at: "" },
+			{
+				id: "sess_reports",
+				agent_id: "atlas",
+				name: "sess_reports",
+				title: "Project reports",
+				created_at: "",
+			},
+		],
+	});
 	await page.goto("/system/projects?agent=coder");
 	const yaml = page.getByTestId("agent-project-yaml");
 	const toggle = page.getByRole("switch", { name: "Send job reports" });
@@ -767,9 +780,14 @@ test("reports can be turned on with an agent and a target, then off", async ({
 	await page
 		.getByRole("combobox", { name: "Target 2 channel" })
 		.selectOption("session");
-	await page
-		.getByRole("textbox", { name: "Target 2 delivery ID" })
-		.fill("projects");
+	// A session target is picked by name and saved by its ID.
+	const session = page.getByRole("combobox", { name: "Target 2 session" });
+	await expect(session.locator("option")).toHaveText([
+		"Choose a session…",
+		"Main Chat",
+		"Project reports",
+	]);
+	await session.selectOption({ label: "Project reports" });
 	await page.locator('[data-field="report_waiting"]').uncheck();
 	await expect(page.getByTestId("reports-error")).toHaveCount(0);
 	await expect(yaml).toContainText(
@@ -778,7 +796,7 @@ test("reports can be turned on with an agent and a target, then off", async ({
 			"        other: kept",
 			"        reports:",
 			"          agent: atlas",
-			'          targets: ["slack:main:C123", "session:projects"]',
+			'          targets: ["slack:main:C123", "session:sess_reports"]',
 			"          events: [merged, failed]",
 		].join("\n"),
 	);
@@ -791,7 +809,7 @@ test("reports can be turned on with an agent and a target, then off", async ({
 			other: "kept",
 			reports: {
 				agent: "atlas",
-				targets: ["slack:main:C123", "session:projects"],
+				targets: ["slack:main:C123", "session:sess_reports"],
 				events: ["merged", "failed"],
 			},
 		},

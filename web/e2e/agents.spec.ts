@@ -1244,7 +1244,10 @@ test("a task's session target is picked by name and saved by ID", async ({
 	});
 
 	await page.goto("/agents/assistant/tasks");
-	await page.getByRole("button", { name: "daily-briefing" }).click();
+	await page
+		.getByTestId("sidebar-tasks")
+		.getByRole("link", { name: "daily-briefing" })
+		.click();
 
 	// A saved session that no longer exists is shown as gone, not blank.
 	const session = page.getByRole("combobox", { name: "Session" });
@@ -1295,7 +1298,10 @@ test("a task saved with a session name selects that session", async ({
 	});
 
 	await page.goto("/agents/assistant/tasks");
-	await page.getByRole("button", { name: "daily-briefing" }).click();
+	await page
+		.getByTestId("sidebar-tasks")
+		.getByRole("link", { name: "daily-briefing" })
+		.click();
 	const session = page.getByRole("combobox", { name: "Session" });
 	await expect(session).toHaveValue("sess_main");
 	await expect(session.locator("option:checked")).toHaveText("Main Chat");

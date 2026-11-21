@@ -3368,6 +3368,7 @@ const settingsContext = proxyRefs({
 	concurrencyInput,
 	configuredChannelLabel,
 	configuredProviders,
+	chatDisplayName,
 	configuredTaskChannelOptions,
 	convertTaskToScript,
 	createSession,

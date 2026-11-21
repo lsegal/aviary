@@ -60,7 +60,6 @@
 
 <script lang="ts">
 import { defineComponent, inject } from "vue";
-import { chatDisplayName } from "../../stores/chatSessions";
 import { settingsViewContextKey } from "./context";
 
 export default defineComponent({
@@ -70,7 +69,7 @@ export default defineComponent({
 		if (!settings) {
 			throw new Error("Settings view context is not available.");
 		}
-		return { ...settings, chatDisplayName };
+		return settings;
 	},
 });
 </script>
