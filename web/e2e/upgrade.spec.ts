@@ -236,7 +236,9 @@ test("dev build shows its commit SHA as the version", async ({ page }) => {
 	});
 	await page.goto("/system/overview");
 
-	await expect(page.getByText("Version 1111111 -> abc1234").last()).toBeVisible();
+	await expect(
+		page.getByText("Version 1111111 -> abc1234").last(),
+	).toBeVisible();
 	await expect(page.getByText("abc1234bbbb")).toHaveCount(0);
 	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
 	await expect(page.getByRole("dialog")).toContainText(
