@@ -129,6 +129,7 @@ type Args = Record<string, unknown>;
 async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
 	await setAuthToken(page);
 	const calls: Record<string, Args[]> = {};
+	const tasks: unknown[] = [...TASKS];
 	const record = (tool: string) => (args?: Args) => {
 		calls[tool] ??= [];
 		calls[tool].push(args ?? {});
@@ -139,6 +140,25 @@ async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
 		auth_list: [],
 		// No agent owns the watch, so its board sits under System → Watches.
 		config_get: { agents: [{ name: "assistant", model: "cli/codex/gpt-5.5" }] },
+		// The shared Add task dialog saves the config; the saved project task
+		// then lists like any other.
+		config_save: (args?: Args) => {
+			record("config_save")(args);
+			const config = JSON.parse(String(args?.config ?? "{}")) as {
+				agents: { name: string; tasks?: Record<string, unknown>[] }[];
+			};
+			for (const agent of config.agents)
+				for (const t of agent.tasks ?? [])
+					if (!tasks.some((x) => (x as Args).id === `${agent.name}/${t.name}`))
+						tasks.push(
+							schedule({
+								...t,
+								id: `${agent.name}/${t.name}`,
+								agent_name: agent.name,
+							}),
+						);
+			return "ok";
+		},
 		project_status: STATUS,
 		project_job_list: { jobs: [SCHEDULED_JOB], total: 1 },
 		project_job_get: {
@@ -147,7 +167,7 @@ async function setup(page: Page, opts: { upcoming?: unknown[] } = {}) {
 			events: [],
 		},
 		project_job_stop: record("project_job_stop"),
-		task_list: TASKS,
+		task_list: () => tasks,
 		task_upcoming: (args?: Args) => {
 			record("task_upcoming")(args);
 			return opts.upcoming ?? UPCOMING;
@@ -322,38 +342,49 @@ test("schedules tab lists, toggles, edits, runs and deletes schedules", async ({
 		.toEqual({ name: "assistant/nightly-triage" });
 });
 
-test("new schedule creates a project task", async ({ page }) => {
+test("new schedule creates a project scheduled task through the shared Add task dialog", async ({
+	page,
+}) => {
 	const calls = await setup(page);
 	await page.goto("/system/watches/lsegal%2Faviary?tab=schedules");
 	await page.getByTestId("schedule-new").click();
-	const editor = page.getByTestId("schedule-editor");
-	await editor.getByLabel("Name").fill("hourly-ci-watch");
-	await editor.getByLabel("Owner agent").selectOption("reviewer");
-	await editor.getByLabel("Prompt").fill("Rerun flaky CI jobs on open PRs.");
-	await editor.getByRole("radio", { name: "Interval" }).click();
-	await editor.getByLabel("Every").fill("1h");
-	await editor.getByLabel(/still going/).selectOption("skip");
-	await editor.getByRole("button", { name: "Save" }).click();
-	await expect
-		.poll(() => calls.task_schedule?.[0])
-		.toEqual({
-			trigger: "interval",
-			schedule: "",
-			every: "1h",
-			at: "",
-			days: "",
-			start_at: "",
-			timezone: "",
-			overlap: "skip",
-			missed: "skip",
-			content: "Rerun flaky CI jobs on open PRs.",
-			model: "",
-			agent: "reviewer",
+
+	const dialog = page.getByRole("dialog", {
+		name: "Add project scheduled task",
+	});
+	await expect(dialog).toBeVisible();
+	await expect(dialog).toContainText("lsegal/aviary");
+	await expect(dialog.getByLabel("Agent")).toHaveValue("assistant");
+	await dialog.getByLabel("Task name").fill("hourly-ci-watch");
+	await dialog.getByLabel("Schedule").fill("0 * * * *");
+	await dialog.getByLabel("Prompt").fill("Rerun flaky CI jobs on open PRs.");
+	await dialog.getByRole("button", { name: "Create" }).click();
+	await expect(dialog).toBeHidden();
+
+	const config = JSON.parse(String(calls.config_save?.[0]?.config)) as {
+		agents: { name: string; tasks: unknown[] }[];
+	};
+	expect(config.agents[0].tasks).toEqual([
+		expect.objectContaining({
 			name: "hourly-ci-watch",
 			type: "project",
 			project: "lsegal/aviary",
-		});
-	await expect(page).toHaveURL(/schedule=reviewer\/hourly-ci-watch/);
+			schedule: "0 * * * *",
+			prompt: "Rerun flaky CI jobs on open PRs.",
+			enabled: true,
+		}),
+	]);
+	expect(calls.task_schedule).toBeUndefined();
+
+	// It stays in the project, opened in the schedule editor, which links to
+	// the same task in Scheduled Tasks.
+	await expect(page).toHaveURL(/schedule=assistant\/hourly-ci-watch/);
+	const editor = page.getByTestId("schedule-editor");
+	await expect(editor.getByLabel("Name")).toHaveValue("hourly-ci-watch");
+	await expect(editor.getByTestId("schedule-task-link")).toHaveAttribute(
+		"href",
+		"/agents/assistant/tasks?task=hourly-ci-watch",
+	);
 });
 
 test.describe("phone width", () => {
