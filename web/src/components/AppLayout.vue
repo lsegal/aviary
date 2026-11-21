@@ -452,7 +452,7 @@ const AGENT_PAGES = [
 	{ key: "projects", label: "GitHub Projects" },
 	{ key: "tasks", label: "Tasks" },
 	{ key: "files", label: "Files" },
-	{ key: "settings", label: "Settings" },
+	{ key: "settings", label: "Agent Settings" },
 ] as const;
 
 // System's first pages are always shown; the rest sit behind the expander in
