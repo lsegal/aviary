@@ -39,7 +39,14 @@
 
 <script setup lang="ts">
 import CheckIcon from "@heroicons/vue/24/outline/CheckIcon";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+	computed,
+	nextTick,
+	onBeforeUnmount,
+	onMounted,
+	ref,
+	watch,
+} from "vue";
 import type { RouteLocationRaw } from "vue-router";
 import ProjectRunningBadge from "./projects/ProjectRunningBadge.vue";
 
@@ -68,7 +75,9 @@ const shown = ref<Set<string> | null>(null);
 const open = ref(false);
 
 const visibleItems = computed(() =>
-	shown.value ? props.items.filter((i) => shown.value?.has(i.key)) : props.items,
+	shown.value
+		? props.items.filter((i) => shown.value?.has(i.key))
+		: props.items,
 );
 const hiddenItems = computed(() =>
 	shown.value ? props.items.filter((i) => !shown.value?.has(i.key)) : [],
@@ -129,7 +138,9 @@ watch(hiddenItems, (items) => {
 });
 
 function menuItems(): HTMLElement[] {
-	return [...(menu.value?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? [])];
+	return [
+		...(menu.value?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? []),
+	];
 }
 
 async function openMenu(focus: "first" | "last" | "active" | null) {

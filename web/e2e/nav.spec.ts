@@ -196,7 +196,9 @@ test("with several agents the phone main nav stays on one row", async ({
 	await expect(writer).toBeVisible();
 	const tops = await nav.evaluate((el) =>
 		[...el.children]
-			.filter((c) => c instanceof HTMLElement && c.offsetParent && !c.ariaHidden)
+			.filter(
+				(c) => c instanceof HTMLElement && c.offsetParent && !c.ariaHidden,
+			)
 			.map((c) => Math.round(c.getBoundingClientRect().top)),
 	);
 	expect(new Set(tops).size).toBe(1);
