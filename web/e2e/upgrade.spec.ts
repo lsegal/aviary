@@ -117,6 +117,46 @@ test("upgrading when no jobs are running holds new jobs and can be canceled", as
 	expect(calls).toEqual(["upgrade:idle", "restart:cancel=true"]);
 });
 
+test("an upgrade waiting on in-flight MCP calls says so and can be canceled", async ({
+	page,
+}) => {
+	const calls: string[] = [];
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		server_version_check: versionCheck([]),
+		server_upgrade: () => {
+			calls.push("upgrade");
+			return {
+				phase: "draining",
+				when: "now",
+				upgrade: true,
+				version: "v0.7.0",
+				mcpCalls: 2,
+				jobs: [],
+				held: true,
+			};
+		},
+		server_restart: (args?: Record<string, unknown>) => {
+			calls.push(`restart:cancel=${args?.cancel}`);
+			return { phase: "idle", jobs: [], held: false };
+		},
+	});
+	await page.goto("/system/overview");
+
+	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
+	await page.getByRole("dialog").getByRole("button", { name: "Now" }).click();
+
+	const status = page.getByRole("status");
+	await expect(status).toContainText(
+		"Upgrade to v0.7.0 pending: waiting on 2 MCP calls.",
+	);
+	await status.getByRole("button", { name: "Cancel" }).click();
+	await expect(status).toBeHidden();
+	expect(calls).toEqual(["upgrade", "restart:cancel=true"]);
+});
+
 test("upgrade dialog says nothing will stop when no jobs run", async ({
 	page,
 }) => {

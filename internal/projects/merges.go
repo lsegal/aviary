@@ -29,7 +29,7 @@ type recentMerges struct {
 	// onMerge is told of each pull request merged within recentMergeWindow
 	// the first time it is recorded, with its issue's repo and number. Nil
 	// tells nothing.
-	onMerge func(repo string, number int, mergedAt time.Time)
+	onMerge func(repo string, number int, pullRequest PullRequestWorkState)
 }
 
 // newRecentMerges restores the merges saved at path within recentMergeWindow
@@ -71,7 +71,7 @@ func (m *recentMerges) record(repo string, number int, state OriginatingWorkStat
 	}
 	now := time.Now()
 	cutoff := now.Add(-recentMergeWindow)
-	var merged []time.Time
+	var merged []PullRequestWorkState
 	m.mu.Lock()
 	changed := false
 	for _, pullRequest := range state.PullRequests {
@@ -86,7 +86,7 @@ func (m *recentMerges) record(repo string, number int, state OriginatingWorkStat
 		// A merge older than the window may already have been reported and
 		// forgotten since, so only newly seen recent merges are reported.
 		if !seen && !pullRequest.MergedAt.Before(cutoff) {
-			merged = append(merged, pullRequest.MergedAt)
+			merged = append(merged, pullRequest)
 		}
 		m.at[key] = pullRequest.MergedAt
 		changed = true
@@ -97,8 +97,8 @@ func (m *recentMerges) record(repo string, number int, state OriginatingWorkStat
 	onMerge := m.onMerge
 	m.mu.Unlock()
 	if onMerge != nil {
-		for _, mergedAt := range merged {
-			onMerge(repo, number, mergedAt)
+		for _, pullRequest := range merged {
+			onMerge(repo, number, pullRequest)
 		}
 	}
 }

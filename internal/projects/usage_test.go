@@ -81,23 +81,25 @@ func TestRecentMergesReportEachNewRecentMergeOnce(t *testing.T) {
 	path := mergesPathFor(filepath.Join(t.TempDir(), "state.json"))
 	merges := newRecentMerges(path, now)
 	type merge struct {
-		repo     string
-		number   int
-		mergedAt time.Time
+		repo      string
+		number    int
+		mergedAt  time.Time
+		additions int
+		deletions int
 	}
 	var reported []merge
-	merges.onMerge = func(repo string, number int, mergedAt time.Time) {
-		reported = append(reported, merge{repo, number, mergedAt})
+	merges.onMerge = func(repo string, number int, pullRequest PullRequestWorkState) {
+		reported = append(reported, merge{repo, number, pullRequest.MergedAt, pullRequest.Additions, pullRequest.Deletions})
 	}
 	state := OriginatingWorkState{IssueState: "closed", PullRequests: []PullRequestWorkState{
-		{Number: 8, State: "closed", Merged: true, MergedAt: now.Add(-time.Hour)},
+		{Number: 8, State: "closed", Merged: true, MergedAt: now.Add(-time.Hour), Additions: 30, Deletions: 4},
 		{Number: 9, State: "closed", Merged: true, MergedAt: now.Add(-25 * time.Hour)},
 		{Number: 10, State: "open"},
 	}}
 	merges.record("o/r", 7, state)
 	merges.record("o/r", 7, state)
-	if len(reported) != 1 || reported[0] != (merge{"o/r", 7, now.Add(-time.Hour)}) {
-		t.Fatalf("reported merges = %+v, want only o/r#8's merge, once, for issue o/r#7", reported)
+	if len(reported) != 1 || reported[0] != (merge{"o/r", 7, now.Add(-time.Hour), 30, 4}) {
+		t.Fatalf("reported merges = %+v, want only o/r#8's merge and diff size, once, for issue o/r#7", reported)
 	}
 
 	// A restarted engine restores the merges it already reported, so reading

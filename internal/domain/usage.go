@@ -37,10 +37,14 @@ const (
 )
 
 // ProjectUsage is the Projects work one usage record reports: a job run on
-// Issue that took DurationMS of wall time, or Issue's Outcome.
+// Issue that took DurationMS of wall time, or Issue's Outcome. A merged
+// outcome also carries the Additions and Deletions of the pull request that
+// merged.
 type ProjectUsage struct {
 	// Issue is the lowercase "owner/repo#number" of the issue worked on.
 	Issue      string `json:"issue"`
 	Outcome    string `json:"outcome,omitempty"`
 	DurationMS int64  `json:"duration_ms,omitempty"`
+	Additions  int    `json:"additions,omitempty"`
+	Deletions  int    `json:"deletions,omitempty"`
 }

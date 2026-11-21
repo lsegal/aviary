@@ -2948,25 +2948,27 @@ func registerServerTools(s *sdkmcp.Server) {
 	type serverUpgradeArgs struct {
 		Version string `json:"version,omitempty" jsonschema:"release to install, with or without a leading v; defaults to the latest release"`
 		When    string `json:"when,omitempty" jsonschema:"now (default) stops running jobs at a checkpoint and resumes them after the restart; idle holds new jobs and upgrades once no jobs are running"`
+		Force   bool   `json:"force,omitempty" jsonschema:"restart without waiting for in-flight MCP tool calls to finish"`
 	}
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_upgrade",
 		Description: "Upgrade Aviary with a safe restart: install the release, update skills for every signed-in CLI provider, checkpoint running jobs, restart, and resume each job in its own session. Does nothing when already current. A dev build in a source checkout instead runs git pull --ff-only (refused when the tree has local changes) and does not restart; hot reload picks up the new code",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args serverUpgradeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return requestSafeRestart(ctx, saferestart.Request{When: args.When, Upgrade: true, Version: args.Version})
+		return requestSafeRestart(ctx, saferestart.Request{When: args.When, Upgrade: true, Version: args.Version, Force: args.Force})
 	})
 
 	type serverRestartArgs struct {
 		When   string `json:"when,omitempty" jsonschema:"now (default) stops running jobs at a checkpoint and resumes them after the restart; idle holds new jobs and restarts once no jobs are running"`
-		Cancel bool   `json:"cancel,omitempty" jsonschema:"withdraw a restart or upgrade that is still waiting for jobs to finish"`
+		Cancel bool   `json:"cancel,omitempty" jsonschema:"withdraw a restart or upgrade that is still waiting for jobs or MCP tool calls to finish"`
+		Force  bool   `json:"force,omitempty" jsonschema:"restart without waiting for in-flight MCP tool calls to finish"`
 	}
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "server_restart",
-		Description: "Restart Aviary safely: checkpoint running jobs, restart, and resume each job in its own session",
+		Description: "Restart Aviary safely: wait for in-flight MCP tool calls (unless force is set), checkpoint running jobs, restart, and resume each job in its own session",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args serverRestartArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return requestSafeRestart(ctx, saferestart.Request{When: args.When, Cancel: args.Cancel})
+		return requestSafeRestart(ctx, saferestart.Request{When: args.When, Cancel: args.Cancel, Force: args.Force})
 	})
 
 	addTool(s, &sdkmcp.Tool{

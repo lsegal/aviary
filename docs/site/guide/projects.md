@@ -1,6 +1,6 @@
 # Projects
 
-Projects watches GitHub repositories, GitHub Project boards and Discussions boards, and runs a CLI provider such as Codex or Claude Code on every issue that is ready for work. Each job runs the `gh-fix` skill on an issue, or `gh-discuss` on a new Discussion thread. The skill does the work: it opens a branch and a draft pull request, implements and tests the fix, repairs CI, and merges. Projects decides which issue runs, on which CLI, and when.
+Projects watches GitHub repositories, GitHub Project boards and Discussions boards, and runs a CLI provider such as Codex or Claude Code on every issue that is ready for work. Each job runs the [`gh-fix`](/skills/gh-fix/) skill on an issue, or [`gh-discuss`](/skills/gh-discuss/) on a new Discussion thread. Both are ordinary skills you can also install and run without Aviary; see [Skills](/skills/). The skill does the work: it opens a branch and a draft pull request, implements and tests the fix, repairs CI, and merges. Projects decides which issue runs, on which CLI, and when.
 
 [The code loop on GitHub](./code-loop) follows one issue through every stage, from the watch to the merged pull request.
 

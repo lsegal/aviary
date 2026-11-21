@@ -2190,8 +2190,10 @@ func (w *Engine) Run(ctx context.Context) error {
 	// status counts over the last day. They are saved beside the work state
 	// so the count survives a restart (issue #413).
 	merges := newRecentMerges(mergesPathFor(w.StatePath), time.Now())
-	merges.onMerge = func(repo string, number int, mergedAt time.Time) {
-		w.recordProjectUsage(mergedAt, repo, number, domain.ProjectUsage{Outcome: domain.ProjectOutcomeMerged})
+	// Each merge also records the merged pull request's diff size, so Usage
+	// can report the code each project's jobs changed (issue #787).
+	merges.onMerge = func(repo string, number int, pullRequest PullRequestWorkState) {
+		w.recordProjectUsage(pullRequest.MergedAt, repo, number, domain.ProjectUsage{Outcome: domain.ProjectOutcomeMerged, Additions: pullRequest.Additions, Deletions: pullRequest.Deletions})
 	}
 	closureChecker = recordRecentMerges(closureChecker, merges)
 	// webhookRepos are the repositories configured with webhooks when the
