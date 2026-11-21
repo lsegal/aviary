@@ -106,7 +106,7 @@ func TestPolledReviewMentionIsSkippedWithAReason(t *testing.T) {
 			}()
 			select {
 			case <-runner.dispatched:
-			case <-time.After(time.Second):
+			case <-time.After(runLoopWait):
 				t.Fatal("initial issue was not dispatched")
 			}
 			test.mention.UpdatedAt = time.Now()
@@ -144,11 +144,11 @@ func startWebhookMentionRun(t *testing.T) (*fakeRunner, *fakeCommentClient, chan
 	go func() { done <- w.Run(ctx) }()
 	select {
 	case <-runner.dispatched:
-	case <-time.After(time.Second):
+	case <-time.After(runLoopWait):
 		t.Fatal("initial issue was not dispatched")
 	}
 	close(runner.release)
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(runLoopWait)
 	for {
 		state, err := loadWorkState(w.StatePath)
 		if err == nil && state[7].Status == "completed" {

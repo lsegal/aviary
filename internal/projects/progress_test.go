@@ -63,7 +63,7 @@ func TestEngineUpdatesJobProgressAsChecklistChanges(t *testing.T) {
 		src.mu.Lock()
 		src.state = OriginatingWorkState{IssueState: "OPEN", PullRequests: []PullRequestWorkState{{Repository: "o/r", Number: 9, State: "OPEN", IsDraft: true, TasksDone: tasksDone, TasksTotal: tasksTotal}}}
 		src.mu.Unlock()
-		deadline := time.Now().Add(webhookDispatchWait)
+		deadline := time.Now().Add(runLoopWait)
 		for time.Now().Before(deadline) {
 			if job := latest(); job.HasProgress() == (tasksTotal > 0) && job.Progress == want && job.TasksTotal == tasksTotal {
 				return
@@ -120,7 +120,7 @@ func TestEngineRecordsPullRequestOpenedOncePerJob(t *testing.T) {
 		src.mu.Lock()
 		src.state = OriginatingWorkState{IssueState: "OPEN", PullRequests: pullRequests}
 		src.mu.Unlock()
-		deadline := time.Now().Add(webhookDispatchWait)
+		deadline := time.Now().Add(runLoopWait)
 		for time.Now().Before(deadline) {
 			if job := latest(); job.PullRequest == number && job.TasksDone == tasksDone {
 				return

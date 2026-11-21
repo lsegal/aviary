@@ -38,7 +38,7 @@ func TestEngineTracksCurrentPullRequestInJobSnapshot(t *testing.T) {
 	}
 	waitFor := func(want int, wantRepo string) {
 		t.Helper()
-		deadline := time.Now().Add(webhookDispatchWait)
+		deadline := time.Now().Add(runLoopWait)
 		for time.Now().Before(deadline) {
 			if job, ok := latest(); ok && job.PullRequest == want && job.PullRequestRepository == wantRepo {
 				return
@@ -50,7 +50,7 @@ func TestEngineTracksCurrentPullRequestInJobSnapshot(t *testing.T) {
 	}
 
 	// Running before its draft pull request exists, the job has none.
-	deadline := time.Now().Add(webhookDispatchWait)
+	deadline := time.Now().Add(runLoopWait)
 	for time.Now().Before(deadline) {
 		if job, ok := latest(); ok && job.Status == "active" {
 			break
