@@ -219,10 +219,19 @@
         </div>
         </template>
 
-        <router-link to="/system/overview" :class="[topLevelLinkClass(false, false), 'flex items-center']" data-testid="sidebar-system">
-          System
-        </router-link>
-        <div class="mb-3 mt-1 space-y-1 pl-2" data-testid="sidebar-system-list">
+        <div class="relative">
+          <router-link to="/system/overview" :class="[topLevelLinkClass(systemActive && systemCollapsed, false), 'flex items-center pr-9']" data-testid="sidebar-system">
+            System
+          </router-link>
+          <button type="button" data-testid="sidebar-system-toggle" :aria-expanded="!systemCollapsed"
+            :aria-label="systemCollapsed ? 'Expand System' : 'Collapse System'"
+            :title="systemCollapsed ? 'Expand System' : 'Collapse System'"
+            class="absolute right-2 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+            @click="systemCollapsed = !systemCollapsed">
+            <span aria-hidden="true" class="inline-block transition-transform" :class="systemCollapsed ? '' : 'rotate-90'">›</span>
+          </button>
+        </div>
+        <div v-if="!systemCollapsed" class="mb-3 mt-1 space-y-1 pl-2" data-testid="sidebar-system-list">
           <router-link v-for="child in systemPrimary" :key="child.key" :to="child.to" :class="childLinkClass(isChildActive(child), false)">
             {{ child.label }}
           </router-link>
@@ -305,8 +314,10 @@
 <script lang="ts">
 import { ref } from "vue";
 
-// Shared by every page's layout, so the System expander stays as toggled.
+// Shared by every page's layout, so the System expander and the System
+// section's collapse stay as toggled.
 const systemMoreState = ref<boolean | null>(null);
+const systemCollapsedState = ref(false);
 </script>
 
 <script setup lang="ts">
@@ -646,6 +657,9 @@ const systemActive = computed(() => route.path.startsWith("/system/"));
 // The expander opens itself while one of its pages is showing; a click
 // overrides that until the next page load.
 const systemMoreToggled = systemMoreState;
+// Collapsed, only the System header shows; it then stands in for whichever
+// System page is current.
+const systemCollapsed = systemCollapsedState;
 const systemMoreOpen = computed(
 	() =>
 		systemMoreToggled.value ??
