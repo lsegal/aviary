@@ -15,6 +15,14 @@ These skills are separate from the skills Aviary's own agents use. They live in 
 
 **System › Skills** in the control panel lists these skills with every other installed skill. Under **Installed in providers** it shows the installed version of each skill in each CLI provider, with **Install**, **Update** and **Update all**. Aviary installs through `npx skills add`, so Node.js must be on the `PATH`.
 
+To install all four from the command line, run:
+
+```sh
+aviary install-skills
+```
+
+It installs `gh-create`, `gh-discuss`, `gh-fix` and `gh-safe-merge` globally with `npx skills`: into `~/.agents/skills`, where Aviary and the CLIs that read `.agents/skills` find them, and into the skills directory of every CLI provider on the `PATH`. Skills already installed are refreshed rather than duplicated, so it is safe to run again. Aviary runs the same install automatically on its first launch, so a fresh install can work GitHub issues with no manual step; if that install fails, for example with no network, Aviary tries again at the next start.
+
 By default Aviary keeps the skills current on its own:
 
 - **Update with Aviary.** At startup, including the restart after an upgrade, Aviary reinstalls any skill whose installed copy differs from the one the running release was built with. Each release installs the skills from its own tag, so they match what it was tested against.

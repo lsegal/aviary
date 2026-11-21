@@ -528,6 +528,13 @@ test("system skills shows provider installs and installs them on one page", asyn
 	await expect(updateAll).toHaveText("Update all (0)");
 	await expect(updateAll).toBeDisabled();
 
+	await expect(page.getByTestId("coding-skills-install-command")).toHaveText(
+		"aviary install-skills",
+	);
+	await expect(
+		page.getByText("Aviary runs it automatically on first launch."),
+	).toBeVisible();
+
 	await page.getByTestId("coding-skills-auto-update").uncheck();
 	await expect
 		.poll(() => savedConfigs.at(-1) ?? "")
