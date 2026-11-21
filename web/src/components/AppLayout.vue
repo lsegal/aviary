@@ -85,11 +85,18 @@
           :class="mobileSubnavClass(child)">
           {{ child.label }}<span v-if="child.count" class="ml-1.5 text-xs font-normal text-gray-400">{{ child.count }}</span>
         </router-link>
-        <button v-if="systemActive" type="button"
-          class="shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-gray-500 hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-          @click="auth.logout(); $router.push('/login')">
-          Log out
-        </button>
+        <div v-if="systemActive" class="ml-auto flex shrink-0 items-center gap-1">
+          <button type="button" aria-label="Restart" title="Restart" data-testid="restart-button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+            :disabled="upgrading || restartPending" @click="triggerRestart()">
+            <ArrowPathIcon aria-hidden="true" class="h-4 w-4" />
+          </button>
+          <button type="button" aria-label="Log out" title="Log out"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+            @click="auth.logout(); $router.push('/login')">
+            <ArrowRightOnRectangleIcon aria-hidden="true" class="h-4 w-4" />
+          </button>
+        </div>
       </nav>
     </div>
 
@@ -219,11 +226,18 @@
             {{ healthLabel }}
           </span>
         </div>
-        <button
-          class="w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-gray-500 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400"
-          @click="auth.logout(); $router.push('/login')">
-          Log out
-        </button>
+        <div class="flex items-center gap-1 px-1">
+          <button type="button" aria-label="Restart" title="Restart" data-testid="restart-button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+            :disabled="upgrading || restartPending" @click="triggerRestart()">
+            <ArrowPathIcon aria-hidden="true" class="h-4 w-4" />
+          </button>
+          <button type="button" aria-label="Log out" title="Log out"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-red-50 hover:text-red-500 dark:text-gray-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+            @click="auth.logout(); $router.push('/login')">
+            <ArrowRightOnRectangleIcon aria-hidden="true" class="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </nav>
 
@@ -245,6 +259,8 @@ const systemMoreState = ref<boolean | null>(null);
 </script>
 
 <script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
+import ArrowRightOnRectangleIcon from "@heroicons/vue/24/outline/ArrowRightOnRectangleIcon";
 import GlobeAltIcon from "@heroicons/vue/24/outline/GlobeAltIcon";
 import { type Component, computed, markRaw } from "vue";
 import { useRoute } from "vue-router";
@@ -299,6 +315,7 @@ const {
 	upgradeDialogOpen,
 	openUpgradeDialog,
 	triggerUpgrade,
+	triggerRestart,
 	cancelRestart,
 } = useServerStatus();
 const restartPending = computed(
