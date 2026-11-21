@@ -17,7 +17,7 @@
 					</button>
 				</span>
 			</template>
-			<ComboboxInput ref="inputRef" :id="id" :aria-label="ariaLabel" :aria-invalid="invalid ? 'true' : undefined"
+			<ComboboxInput ref="inputRef" :id="id" :data-value="dataValue" :aria-label="ariaLabel" :aria-invalid="invalid ? 'true' : undefined"
 				:aria-describedby="ariaDescribedby" :placeholder="multiple ? (selectedKeys.length ? '' : placeholder) : placeholder"
 				class="min-w-[4rem] flex-1 bg-transparent p-0 text-inherit outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
 				@focus="open = true" @click="open = true" @keydown.backspace="onBackspace" />
@@ -40,7 +40,7 @@
 					<ComboboxGroup v-for="(group, gi) in groups" :key="`${gi}-${group.label}`">
 						<ComboboxLabel v-if="group.label" :class="GROUP_LABEL">{{ group.label }}</ComboboxLabel>
 						<ComboboxItem v-for="(option, oi) in group.options" :key="optionKey(option.value)"
-							:value="optionKey(option.value)" :disabled="option.disabled"
+							:value="optionKey(option.value)" :data-value="String(option.value)" :disabled="option.disabled"
 							:aria-labelledby="`${uid}-${gi}-${oi}-l`"
 							:aria-describedby="option.description ? `${uid}-${gi}-${oi}-d` : undefined"
 							:class="[ITEM_BASE, ITEM[size], 'group/item']">

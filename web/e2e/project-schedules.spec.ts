@@ -1,6 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import {
+	chooseOption,
+	expectValue,
+	optionLabels,
+	searchOption,
+} from "./helpers/select";
+import {
 	expectSavedTrigger,
 	expectTrigger,
 	fillTrigger,
@@ -441,11 +447,9 @@ test("a scheduled card's editor edits, runs and deletes its schedule", async ({
 
 	// The model override is the shared model picker, holding the task's model.
 	const model = editor.getByTestId("schedule-model");
-	await expect(model).toContainText("cli/claude/opus");
-	await model.getByRole("button").click();
-	await model.getByRole("textbox").fill("cli/codex/gpt-5.5");
-	await model.getByRole("textbox").press("Enter");
-	await expect(model).toContainText("cli/codex/gpt-5.5");
+	await expect(model.getByRole("combobox")).toHaveValue("cli/claude/opus");
+	await searchOption(model.getByRole("combobox"), "cli/codex/gpt-5.5");
+	await expect(model.getByRole("combobox")).toHaveValue("cli/codex/gpt-5.5");
 	await editor.getByRole("button", { name: "Save" }).click();
 	await expect
 		.poll(() => calls.task_update?.at(-1))
@@ -494,7 +498,7 @@ test("the header Schedule button creates a project scheduled task through the sh
 	});
 	await expect(dialog).toBeVisible();
 	await expect(dialog).toContainText("lsegal/aviary");
-	await expect(dialog.getByLabel("Agent")).toHaveValue("assistant");
+	await expectValue(dialog.getByLabel("Agent"), "assistant");
 	await dialog.getByLabel("Task name").fill("hourly-ci-watch");
 	// A project task needs a time trigger: no None tab, daily by default.
 	await expect(dialog.getByRole("radio", { name: "None" })).toHaveCount(0);
@@ -512,11 +516,11 @@ test("the header Schedule button creates a project scheduled task through the sh
 	await expect(precompute).not.toBeChecked();
 	// Send To offers the agent's channel sessions by name.
 	const sendTo = dialog.getByLabel("Send To");
-	await expect(sendTo.locator("option")).toHaveText([
+	expect(await optionLabels(sendTo)).toEqual([
 		"Task session only",
 		"ops · discord",
 	]);
-	await sendTo.selectOption({ label: "ops · discord" });
+	await chooseOption(sendTo, "ops · discord");
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
 	expect(calls.config_task_convert_to_script).toBeUndefined();

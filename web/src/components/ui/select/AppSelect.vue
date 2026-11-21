@@ -19,7 +19,7 @@
 					<SelectGroup v-for="(group, gi) in groups" :key="`${gi}-${group.label}`">
 						<SelectLabel v-if="group.label" :class="GROUP_LABEL">{{ group.label }}</SelectLabel>
 						<SelectItem v-for="(option, oi) in group.options" :key="optionKey(option.value)"
-							:value="optionKey(option.value)" :text-value="option.label" :disabled="option.disabled"
+							:value="optionKey(option.value)" :data-value="String(option.value)" :text-value="option.label" :disabled="option.disabled"
 							:aria-labelledby="`${uid}-${gi}-${oi}-l`"
 							:aria-describedby="option.description ? `${uid}-${gi}-${oi}-d` : undefined"
 							:class="[ITEM_BASE, ITEM[size], 'group/item']">

@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { chooseValue, expectValue } from "./helpers/select";
 
 test.beforeEach(async ({ page }) => {
 	await setAuthToken(page);
@@ -108,7 +109,7 @@ test("system tools can run a tool from the menu and show output", async ({
 	).toBeVisible();
 
 	await page.getByPlaceholder("Task name to run immediately.").fill("nightly");
-	await page.getByRole("combobox").nth(0).selectOption("true");
+	await chooseValue(page.getByRole("combobox").nth(0), "true");
 	await page.getByRole("button", { name: "Run Tool" }).click();
 
 	await expect(page.getByTestId("tool-run-output")).toContainText('"ok":true');
@@ -125,7 +126,7 @@ test("system tools can run a tool from the menu and show output", async ({
 	await expect(
 		page.getByPlaceholder("Task name to run immediately."),
 	).toHaveValue("nightly");
-	await expect(page.getByRole("combobox").nth(0)).toHaveValue("true");
+	await expectValue(page.getByRole("combobox").nth(0), "true");
 	await expect(page.getByTestId("tool-run-output")).toContainText('"ok":true');
 
 	await page.getByPlaceholder("Task name to run immediately.").fill("weekly");
@@ -320,10 +321,10 @@ test("settings sets the chat approval mode over the general one", async ({
 	page,
 }) => {
 	const saved = await setupApprovalSettings(page, { mode: "read-only" });
-	await expect(page.getByTestId("approval-mode")).toHaveValue("read-only");
+	await expectValue(page.getByTestId("approval-mode"), "read-only");
 	const chat = page.getByTestId("approval-chat");
-	await expect(chat).toHaveValue("");
-	await chat.selectOption("full");
+	await expectValue(chat, "");
+	await chooseValue(chat, "full");
 	await page.getByRole("button", { name: "Save Changes" }).click();
 	await expect.poll(() => saved.length).toBe(1);
 	expect(saved[0].approval).toEqual({ mode: "read-only", chat: "full" });
@@ -337,9 +338,9 @@ test("settings drops the approval section at its defaults", async ({
 		chat: "full",
 	});
 	const chat = page.getByTestId("approval-chat");
-	await expect(chat).toHaveValue("full");
-	await page.getByTestId("approval-mode").selectOption("");
-	await chat.selectOption("");
+	await expectValue(chat, "full");
+	await chooseValue(page.getByTestId("approval-mode"), "");
+	await chooseValue(chat, "");
 	await page.getByRole("button", { name: "Save Changes" }).click();
 	await expect.poll(() => saved.length).toBe(1);
 	expect(saved[0].approval).toBeUndefined();
