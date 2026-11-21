@@ -855,6 +855,91 @@ test("prompt chat opens beside the board and remembers it is open", async ({
 	await expect(page.getByTestId("project-chat")).toHaveCount(0);
 });
 
+test("logs panel docks below the board, streams lines, and resizes", async ({
+	page,
+}) => {
+	// Each status poll after the first adds a log line.
+	let polls = 0;
+	await setup(page, () => {
+		polls++;
+		const extra = Array.from(
+			{ length: Math.max(0, polls - 1) },
+			(_, i) => `12:05:${String(i).padStart(2, "0")} live line ${i + 1}`,
+		);
+		return {
+			...STATUS,
+			recent_logs: [STATUS.recent_logs, ...extra].join("\n"),
+		};
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+
+	// The log lines no longer sit under the job cards.
+	await expect(page.getByTestId("job-card").first()).toBeVisible();
+	await expect(page.getByText("Project log")).toHaveCount(0);
+	await expect(page.getByTestId("project-logs")).toHaveCount(0);
+
+	// The Logs button sits just left of the Prompt chat button.
+	const toggle = page.getByTestId("logs-toggle");
+	await expect(toggle).toHaveAttribute("title", "Logs");
+	await expect(toggle).toHaveAttribute("aria-pressed", "false");
+	const toggleBox = await toggle.boundingBox();
+	const chatBox = await page.getByTestId("prompt-chat-toggle").boundingBox();
+	if (!toggleBox || !chatBox) throw new Error("no header buttons");
+	expect(toggleBox.x).toBeLessThan(chatBox.x);
+
+	await toggle.click();
+	const panel = page.getByTestId("project-logs");
+	await expect(panel).toBeVisible();
+	await expect(toggle).toHaveAttribute("aria-pressed", "true");
+	await expect(panel).toContainText("claimed #221");
+	// It docks at the bottom of the board.
+	const viewport = page.viewportSize();
+	const panelBox = await panel.boundingBox();
+	if (!viewport || !panelBox) throw new Error("no panel");
+	expect(panelBox.y + panelBox.height).toBeCloseTo(viewport.height, 0);
+
+	// New lines stream in, and the view stays pinned to the newest one.
+	await expect(panel).toContainText("live line 2", { timeout: 10_000 });
+	const lines = page.getByTestId("project-logs-lines");
+	await expect
+		.poll(() =>
+			lines.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight),
+		)
+		.toBeLessThan(2);
+
+	// Dragging the top edge up makes the panel taller, and the height and
+	// open state survive a reload.
+	const before = panelBox.height;
+	const handle = page.getByTestId("project-logs-resize");
+	const box = await handle.boundingBox();
+	if (!box) throw new Error("no resize handle");
+	await page.mouse.move(box.x + 200, box.y + box.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(box.x + 200, box.y - 100);
+	await page.mouse.up();
+	const after = (await panel.boundingBox())?.height ?? 0;
+	expect(after).toBeGreaterThan(before + 80);
+
+	await page.reload();
+	await expect(page.getByTestId("project-logs")).toBeVisible();
+	expect(
+		(await page.getByTestId("project-logs").boundingBox())?.height,
+	).toBeCloseTo(after, 0);
+
+	// Clicking Logs again closes it, and it stays closed after a reload.
+	await page.getByTestId("logs-toggle").click();
+	await expect(page.getByTestId("project-logs")).toHaveCount(0);
+	await expect(page.getByTestId("logs-toggle")).toHaveAttribute(
+		"aria-pressed",
+		"false",
+	);
+	await page.reload();
+	await expect(
+		page.getByRole("heading", { name: "lsegal/aviary" }),
+	).toBeVisible();
+	await expect(page.getByTestId("project-logs")).toHaveCount(0);
+});
+
 test("Summarize sends the job to the prompt chat", async ({ page }) => {
 	const calls: Calls = {};
 	Object.assign(calls, await setup(page, undefined, chatFixtures(calls)));
