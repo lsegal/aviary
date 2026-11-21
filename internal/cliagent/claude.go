@@ -166,30 +166,77 @@ func (p *claudeProc) exitError() error {
 	}
 }
 
-func (s *claudeSession) Send(ctx context.Context, turn Turn, onEvent func(Event)) (Result, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// exited reports whether the process has already ended.
+func (p *claudeProc) exited() bool {
+	select {
+	case <-p.done:
+		return true
+	default:
+		return false
+	}
+}
 
+// discard kills the current process; the next turn starts a new one that
+// resumes the session.
+func (s *claudeSession) discard() {
+	p := s.proc
+	s.proc = nil
+	if p != nil {
+		p.kill()
+	}
+}
+
+// deliver writes msg to the session's process, starting one first if there
+// is none. When the write fails the process is discarded and the error says
+// the process stopped, not how the pipe write failed.
+func (s *claudeSession) deliver(msg []byte) (*claudeProc, error) {
 	if s.proc == nil {
 		p, err := s.start()
 		if err != nil {
-			return Result{}, err
+			return nil, err
 		}
 		s.proc = p
 	}
 	p := s.proc
+	if _, err := p.stdin.Write(msg); err != nil {
+		s.discard()
+		if out := strings.TrimSpace(p.stderr.String()); out != "" {
+			return nil, fmt.Errorf("claude stopped before it could take the turn: %s", out)
+		}
+		return nil, errors.New("claude stopped before it could take the turn")
+	}
+	return p, nil
+}
+
+func (s *claudeSession) Send(ctx context.Context, turn Turn, onEvent func(Event)) (Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	msg, err := claudeUserMessage(turn)
 	if err != nil {
 		return Result{}, err
 	}
-	if _, err := p.stdin.Write(append(msg, '\n')); err != nil {
-		s.proc = nil
-		p.kill()
-		return Result{}, fmt.Errorf("writing to claude: %w", err)
+	msg = append(msg, '\n')
+
+	// A process kept between turns can die while idle (a crash, the system
+	// reaping it). That is only discovered here, so heal it within the turn:
+	// start a new process resuming the session and deliver the turn to it.
+	reused := s.proc != nil
+	if reused && s.proc.exited() {
+		s.discard()
+		reused = false
+	}
+	p, err := s.deliver(msg)
+	if err != nil && reused {
+		p, err = s.deliver(msg)
+		reused = false
+	}
+	if err != nil {
+		return Result{}, err
 	}
 
 	m := newClaudeMapper(onEvent)
+	gotLine := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -201,8 +248,19 @@ func (s *claudeSession) Send(ctx context.Context, turn Turn, onEvent func(Event)
 		case line, ok := <-p.lines:
 			if !ok {
 				s.proc = nil
+				if reused && !gotLine {
+					// The idle process died just as the turn reached it,
+					// before answering; deliver the turn to a new one.
+					p.kill()
+					if p, err = s.deliver(msg); err != nil {
+						return Result{}, err
+					}
+					reused = false
+					continue
+				}
 				return Result{}, p.exitError()
 			}
+			gotLine = true
 			res, done, err := m.handle(line)
 			if m.sessionID != "" {
 				s.sessionID = m.sessionID
