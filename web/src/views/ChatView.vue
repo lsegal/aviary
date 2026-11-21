@@ -1,8 +1,9 @@
 <template>
 	<component :is="props.agent ? 'div' : AppLayout" :class="props.agent ? 'relative h-full min-h-0' : undefined">
 		<div class="flex h-full flex-col">
-			<!-- Chat picker: the sidebar's Chats list covers wide screens. -->
-			<div v-if="selectedAgent" data-testid="chat-picker"
+			<!-- Chat picker: the sidebar's Chats list covers wide screens. A pinned
+				session is the only chat, so it has none. -->
+			<div v-if="selectedAgent && !props.session" data-testid="chat-picker"
 				class="items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 select-none dark:border-gray-800 dark:bg-gray-900/50"
 				:class="props.agent ? 'flex' : 'flex lg:hidden'">
 				<DropdownMenuRoot>
@@ -126,7 +127,7 @@
 								clip-rule="evenodd" />
 						</svg>
 					</button>
-					<button type="submit" :disabled="isSending || (!input.trim() && !pastedMedia) || !selectedAgent || !selectedSessionId"
+					<button type="submit" :disabled="(!input.trim() && !pastedMedia) || !selectedAgent || !selectedSessionId"
 						class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40"
 						aria-label="Send message" title="Send">
 						<svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
@@ -219,6 +220,9 @@ const props = defineProps<{
 	/** The Projects board the embedded chat was opened from, sent with each
 	 * prompt so the agent answers about that project. */
 	project?: string;
+	/** Pins the embedded chat to this one session, with no chat picker, as
+	 * the Projects prompt chat does with its hidden session. */
+	session?: string;
 }>();
 
 const agentsStore = useAgentsStore();
@@ -397,8 +401,9 @@ const input = ref("");
 const pastedMedia = ref(""); // base64 data URL of a pasted/dropped image
 const messages = ref<Message[]>([]);
 const sessionProcessing = ref<Record<string, boolean>>({});
-const isStreaming = ref(false);
-const isSending = ref(false);
+// Each send streams its own reply, and several can run at once.
+const activeStreams = ref(0);
+const isStreaming = computed(() => activeStreams.value > 0);
 const hasInlineError = ref(false);
 const expandedImageURL = ref("");
 const chatInputEl = ref<InstanceType<typeof ChatComposerInput> | null>(null);
@@ -495,7 +500,8 @@ async function mountChat() {
 	await agentsStore.fetchAgents();
 	if (props.agent) {
 		selectedAgent.value = props.agent;
-		await loadSessions();
+		if (props.session) selectedSessionId.value = props.session;
+		else await loadSessions();
 		await loadSessionMessages();
 	} else {
 		await mountRouteChat();
@@ -894,14 +900,14 @@ function onChatInputKeydown(e: KeyboardEvent) {
 	setChatInputValue(history[history.length - 1 - nextIndex]);
 }
 
+// send never waits for a running reply: each message is added and delivered
+// at once, and its reply streams alongside any others still running.
 async function send() {
-	if (isSending.value) return;
 	const text = input.value.trim();
 	const mediaURL = pastedMedia.value;
 	if (!text && !mediaURL) return;
 	if (!selectedAgent.value || !selectedSessionId.value) return;
 
-	isSending.value = true;
 	const now = new Date().toISOString();
 	const agentModel = agentsStore.agents.find(
 		(a) => a.name === selectedAgent.value,
@@ -921,20 +927,26 @@ async function send() {
 		mediaURL: mediaURL || undefined,
 		timestamp: now,
 	});
-	await scrollBottom(true);
-
+	// Count the stream before yielding so no reload replaces the new message.
 	loadMessagesSeq += 1;
-	isStreaming.value = true;
+	activeStreams.value += 1;
 	let streamError = false;
 	hasInlineError.value = false;
+	await scrollBottom(true);
 	try {
-		let assistantIndex = -1;
+		// Other sends can add messages while this reply streams, so the
+		// reply's bubble is found by key rather than by position.
+		let assistantKey = "";
 		let pendingText = "";
 		const appendAssistantText = (chunk: string) => {
 			if (!chunk) return;
+			let assistantIndex = assistantKey
+				? messages.value.findIndex((m) => m.localKey === assistantKey)
+				: -1;
 			if (assistantIndex === -1) {
+				assistantKey = newMessageKey();
 				messages.value.push({
-					localKey: newMessageKey(),
+					localKey: assistantKey,
 					role: "assistant",
 					text: "",
 					timestamp: now,
@@ -953,7 +965,7 @@ async function send() {
 				...parseToolMessage(`[tool] ${payload}`, now, agentModel),
 				localKey: newMessageKey(),
 			});
-			assistantIndex = -1;
+			assistantKey = "";
 		};
 		// A call and its result arrive as separate chunks sharing an ID, so
 		// the result finishes the call's block instead of adding another.
@@ -980,7 +992,7 @@ async function send() {
 				toolPending: !!data && !data.done,
 				localKey: newMessageKey(),
 			});
-			assistantIndex = -1;
+			assistantKey = "";
 		};
 		const flushPendingChunks = () => {
 			while (pendingText) {
@@ -1023,42 +1035,40 @@ async function send() {
 					scrollBottom();
 				}
 			},
-			selectedSessionId.value,
+			// A pinned session is opened by name, which creates it on first use.
+			props.session ? "" : selectedSessionId.value,
 			mediaURL || undefined,
 			props.project,
+			props.session,
 		);
 		flushPendingChunks();
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		const normalized = msg.toLowerCase();
-		if (
+		const stopped =
 			normalized.includes("stopped") ||
 			normalized.includes("canceled") ||
-			normalized.includes("cancelled")
-		) {
-			isStreaming.value = false;
-			await loadSessionMessages(true);
-			await refreshSessionProcessing();
-			await scrollBottom();
-			return;
+			normalized.includes("cancelled");
+		if (!stopped) {
+			streamError = true;
+			hasInlineError.value = true;
+			messages.value.push({
+				localKey: newMessageKey(),
+				role: "assistant",
+				text: `Error: ${msg}`,
+				isError: true,
+				timestamp: now,
+				model: agentModel,
+			});
 		}
-		streamError = true;
-		hasInlineError.value = true;
-		messages.value.push({
-			localKey: newMessageKey(),
-			role: "assistant",
-			text: `Error: ${msg}`,
-			isError: true,
-			timestamp: now,
-			model: agentModel,
-		});
 	} finally {
-		isStreaming.value = false;
-		isSending.value = false;
+		activeStreams.value -= 1;
 	}
-	// Reload canonical messages from server after streaming completes.
-	// Skip if we showed an inline error so the error bubble stays visible.
-	if (!streamError) {
+	// The last reply to finish reloads the canonical messages; reloading
+	// earlier would drop replies still streaming. Skip if we showed an inline
+	// error so the error bubble stays visible.
+	if (activeStreams.value > 0) return;
+	if (!streamError && !hasInlineError.value) {
 		await loadSessionMessages(true);
 	}
 	await refreshSessionProcessing();
