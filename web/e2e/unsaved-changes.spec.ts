@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { openGearMenuItem } from "./helpers/sidebar";
 
 const PIXEL_PNG = Buffer.from(
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -90,7 +91,7 @@ test("a chat's draft is kept across route changes and reloads", async ({
 
 	// Composers keep drafts instead of asking before leaving.
 	expect(await beforeUnloadCount(page)).toBe(base);
-	await page.getByRole("link", { name: "Overview", exact: true }).click();
+	await page.getByTestId("sidebar-system").click();
 	await expect(page).toHaveURL(/\/system\/overview$/);
 	await expect(page.getByTestId("unsaved-changes-dialog")).toHaveCount(0);
 
@@ -194,14 +195,14 @@ test("leaving an edited file asks first; Stay keeps the edits, Leave goes", asyn
 	await expect(editor).toHaveValue("# Agents");
 
 	// Nothing changed: no prompt.
-	await page.getByRole("link", { name: "Overview", exact: true }).click();
+	await page.getByTestId("sidebar-system").click();
 	await expect(page).toHaveURL(/\/system\/overview$/);
 	await page.goBack();
 	await expect(editor).toHaveValue("# Agents");
 
 	await editor.fill("# Agents\nedited");
 	const dialog = page.getByTestId("unsaved-changes-dialog");
-	await page.getByRole("link", { name: "Overview", exact: true }).click();
+	await page.getByTestId("sidebar-system").click();
 	await expect(dialog).toBeVisible();
 	await expect(dialog).toContainText(
 		"You have unsaved changes. Leave this page?",
@@ -220,7 +221,7 @@ test("leaving an edited file asks first; Stay keeps the edits, Leave goes", asyn
 	await dialog.getByRole("button", { name: "Stay" }).click();
 	await expect(editor).toHaveValue("# Agents\nedited");
 
-	await page.getByRole("link", { name: "Overview", exact: true }).click();
+	await page.getByTestId("sidebar-system").click();
 	await dialog.getByRole("button", { name: "Leave" }).click();
 	await expect(page).toHaveURL(/\/system\/overview$/);
 });
@@ -252,7 +253,7 @@ test("the beforeunload handler is registered only while a field is dirty", async
 	await expect.poll(() => beforeUnloadCount(page)).toBe(base);
 
 	// After saving, leaving does not ask.
-	await page.getByRole("link", { name: "Overview", exact: true }).click();
+	await page.getByTestId("sidebar-system").click();
 	await expect(page).toHaveURL(/\/system\/overview$/);
 });
 
@@ -265,7 +266,7 @@ test("unsaved settings ask before leaving the Settings pages only", async ({
 	const nav = page.getByTestId("sidebar-nav");
 	await expect(nav).toBeVisible();
 	const base = await beforeUnloadCount(page);
-	await nav.getByRole("link", { name: "Settings", exact: true }).click();
+	await openGearMenuItem(page, "Settings");
 	await expect(page.getByTestId("settings-title")).toBeVisible();
 	// A freshly loaded config is no unsaved change.
 	const certPath = page.getByPlaceholder("/path/to/cert.pem");
@@ -276,15 +277,13 @@ test("unsaved settings ask before leaving the Settings pages only", async ({
 	await expect.poll(() => beforeUnloadCount(page)).toBe(base + 1);
 
 	// Other Settings pages keep the draft, so moving between them does not ask.
-	await nav
-		.getByRole("link", { name: "Providers & Auth", exact: true })
-		.click();
+	await page.getByTestId("settings-tab-providers").click();
 	await expect(page).toHaveURL(/\/system\/providers$/);
 	await expect(page.getByTestId("unsaved-changes-dialog")).toHaveCount(0);
-	await nav.getByRole("link", { name: "Settings", exact: true }).click();
+	await page.getByTestId("settings-tab-general").click();
 	await expect(certPath).toHaveValue("/tmp/cert.pem");
 
-	await nav.getByRole("link", { name: "Overview", exact: true }).click();
+	await nav.getByTestId("sidebar-system").click();
 	await expect(page.getByTestId("unsaved-changes-dialog")).toBeVisible();
 	await page.getByRole("button", { name: "Stay" }).click();
 	await expect(page).toHaveURL(/\/system\/settings$/);

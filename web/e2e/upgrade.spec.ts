@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { openGearMenuItem } from "./helpers/sidebar";
 
 const runningJobs = [
 	{ source: "projects", id: "lsegal/aviary#12", title: "Fix the parser" },
@@ -325,7 +326,7 @@ test("auto update shows why its last attempt failed", async ({ page }) => {
 	await expect(page.getByTestId("auto-update-status")).toHaveCount(0);
 });
 
-test("restart button safely restarts and reports progress", async ({
+test("the gear menu's Restart safely restarts and reports progress", async ({
 	page,
 }) => {
 	const restarts: Record<string, unknown>[] = [];
@@ -340,25 +341,27 @@ test("restart button safely restarts and reports progress", async ({
 	});
 	await page.goto("/system/overview");
 
-	const restart = page.getByRole("button", { name: "Restart", exact: true });
-	await expect(restart).toHaveAttribute("title", "Restart");
-	await restart.click();
-	expect(restarts).toEqual([{}]);
+	await openGearMenuItem(page, "Restart");
+	await expect.poll(() => restarts).toEqual([{}]);
 	await expect(page.getByRole("status")).toContainText("Restarting…");
-	await expect(restart).toBeDisabled();
+	await page
+		.getByTestId("sidebar-footer")
+		.getByTestId("gear-menu-button")
+		.click();
+	await expect(
+		page.getByTestId("gear-menu").getByRole("menuitem", { name: "Restart" }),
+	).toHaveAttribute("data-disabled", "");
 });
 
-test("log out icon button returns to the login page", async ({ page }) => {
+test("the gear menu's Logout returns to the login page", async ({ page }) => {
 	await mockMCP(page, { agent_list: [], job_list: [], config_validate: [] });
 	await page.goto("/system/overview");
 
-	const logout = page.getByRole("button", { name: "Log out", exact: true });
-	await expect(logout).toHaveAttribute("title", "Log out");
-	await logout.click();
+	await openGearMenuItem(page, "Logout");
 	await expect(page).toHaveURL(/\/login$/);
 });
 
-test("mobile system nav shows the restart and log out icon buttons", async ({
+test("the mobile header has the gear menu instead of restart and log out buttons", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -367,10 +370,19 @@ test("mobile system nav shows the restart and log out icon buttons", async ({
 
 	await expect(
 		page.getByRole("button", { name: "Restart", exact: true }),
-	).toBeVisible();
+	).toHaveCount(0);
 	await expect(
 		page.getByRole("button", { name: "Log out", exact: true }),
-	).toBeVisible();
+	).toHaveCount(0);
+	await page
+		.getByTestId("mobile-header-status")
+		.getByTestId("gear-menu-button")
+		.click();
+	await page
+		.getByTestId("gear-menu")
+		.getByRole("menuitem", { name: "Settings" })
+		.click();
+	await expect(page).toHaveURL("/system/settings");
 });
 
 test("dev build shows its commit SHA as the version", async ({ page }) => {

@@ -66,5 +66,7 @@ export const SETTINGS_TABS = [
 
 /** Whether path is one of Settings' tabs rather than a System page. */
 export function isSettingsPath(path: string): boolean {
-	return SETTINGS_TABS.some((t) => path === t.to || path.startsWith(`${t.to}/`));
+	return SETTINGS_TABS.some(
+		(t) => path === t.to || path.startsWith(`${t.to}/`),
+	);
 }

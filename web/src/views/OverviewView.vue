@@ -232,11 +232,11 @@ import { useRoute } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import SetupWizard from "../components/SetupWizard.vue";
 import { Skeleton } from "../components/ui/skeleton";
-import { useOverviewStore } from "../stores/overview";
 import { useProjectList } from "../composables/useProjects";
 import { projectOwner } from "../lib/projectSettings";
 import { projectPath } from "../lib/projects";
 import { SYSTEM_PAGES, type SystemPage } from "../lib/systemNav";
+import { useOverviewStore } from "../stores/overview";
 import { agentTaskPath, useSettingsStore } from "../stores/settings";
 
 const store = useOverviewStore();
