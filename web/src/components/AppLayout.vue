@@ -66,6 +66,11 @@
           class="mb-3 rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900 dark:border-green-700 dark:bg-green-950/40 dark:text-green-100">
           {{ updateNotice }}
         </div>
+        <div v-else-if="noCheckout" data-testid="update-no-checkout"
+          class="mb-3 rounded-xl border border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">
+          <div class="font-medium">Dev build — no checkout found</div>
+          <div v-if="versionMessage" class="mt-1 opacity-80">{{ versionMessage }}</div>
+        </div>
         <nav class="flex flex-wrap gap-2" aria-label="Main">
           <router-link v-for="a in agentNav" :key="a.name" :to="a.to" :class="topLevelLinkClass(a.active, true)">
             {{ a.label }}
@@ -205,6 +210,11 @@
           class="rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900 dark:border-green-700 dark:bg-green-950/40 dark:text-green-100">
           {{ updateNotice }}
         </div>
+        <div v-else-if="noCheckout" data-testid="update-no-checkout"
+          class="rounded-xl border border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">
+          <div class="font-medium">Dev build — no checkout found</div>
+          <div v-if="versionMessage" class="mt-1 opacity-80">{{ versionMessage }}</div>
+        </div>
         <div class="flex flex-wrap gap-1.5 px-1">
           <span
             class="flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs dark:border-gray-700 dark:bg-gray-800"
@@ -291,6 +301,7 @@ const {
 	upgradeAvailable,
 	upgradeSupported,
 	git,
+	noCheckout,
 	updateNotice,
 	versionMessage,
 	upgrading,
@@ -511,9 +522,10 @@ const dotClass = computed(() => {
 	return "bg-yellow-400 animate-pulse";
 });
 
-const versionDotClass = computed(() =>
-	upgradeAvailable.value ? "bg-yellow-400" : "bg-green-500",
-);
+const versionDotClass = computed(() => {
+	if (upgradeAvailable.value) return "bg-yellow-400";
+	return noCheckout.value ? "bg-gray-400" : "bg-green-500";
+});
 
 const displayVersion = computed(() =>
 	version.value ? version.value : status.value === "disconnected" ? "—" : "…",

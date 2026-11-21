@@ -214,3 +214,32 @@ test("dev checkout with local changes blocks the update and says why", async ({
 		"uncommitted changes",
 	);
 });
+
+test("dev build without a checkout says so instead of looking up to date", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		server_version_check: {
+			currentVersion: "dev",
+			upgradeAvailable: false,
+			upgradeSupported: false,
+			noCheckout: true,
+			message:
+				"This dev build found no source checkout, so updates cannot be checked.",
+			restart: { phase: "idle", jobs: [], held: false },
+		},
+	});
+	await page.goto("/system/overview");
+
+	const notice = page
+		.getByTestId("update-no-checkout")
+		.filter({ visible: true });
+	await expect(notice).toContainText("Dev build — no checkout found");
+	await expect(notice).toContainText("found no source checkout");
+	await expect(
+		page.getByRole("button", { name: "Upgrade", exact: true }),
+	).toHaveCount(0);
+});
