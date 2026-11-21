@@ -631,7 +631,11 @@ function cancelSidebarPeekClose() {
 function openSidebarPeekSoon(e: MouseEvent) {
 	if (sidebarPeek.value) return;
 	cancelSidebarPeekOpen();
-	if ((e.target as Element).closest("a, button")) return;
+	// mouseenter targets the rail itself, also when a page change remounts it
+	// under a pointer resting on one of its icons; ask what is under the
+	// pointer instead.
+	const under = document.elementFromPoint(e.clientX, e.clientY) ?? e.target;
+	if ((under as Element | null)?.closest?.("a, button")) return;
 	sidebarPeekOpenTimer = setTimeout(() => {
 		sidebarPeek.value = true;
 	}, SIDEBAR_PEEK_DELAY);
