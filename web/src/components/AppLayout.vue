@@ -414,12 +414,8 @@ const restartPending = computed(
 const autoUpdateWaiting = computed(() => {
 	const auto = restart.value?.autoUpdate;
 	switch (auto?.state) {
-		case "waiting-jobs": {
-			const n = auto.jobs ?? 0;
-			return `Auto update is waiting for ${n === 1 ? "1 running job" : `${n} running jobs`} to finish.`;
-		}
 		case "waiting-restart":
-			return "Auto update is waiting for the pending restart.";
+			return "Auto update is waiting for the restart in progress.";
 		case "applying":
 			return git.value ? "Auto update is pulling the checkout…" : "Auto update is applying…";
 		default:
