@@ -187,6 +187,9 @@ type AgentSession struct {
 	Agent             string
 	CheckoutDirectory string
 	Resume            bool
+	// ReusedClone marks CheckoutDirectory as a clone an earlier job left that
+	// this fresh run was handed and must not clone again (#622).
+	ReusedClone bool
 	// RunDir is the sanctioned temp directory a run without a checkout starts
 	// in and clones under, chosen once per run by CommandRunner.
 	RunDir string
@@ -2812,6 +2815,16 @@ func (w *Engine) Run(ctx context.Context) error {
 			} else if w.Comments != nil && session.Resume && !pending.woken {
 				w.reclaimRescinded(ctx, closureChecker, issue)
 			}
+			// A fresh job on a repository with a free clone reuses that clone
+			// instead of cloning and installing dependencies again (#622).
+			reusedClone := ""
+			if !session.Resume && session.CheckoutDirectory == "" && issue.Prompt == "" && !isDiscussionTarget(issue.Target) {
+				if repo := issueRepository(issue.Target, issue); repo != "" {
+					if reusedClone = w.leaseReusableClone(issueKey(issue), repo); reusedClone != "" {
+						session.CheckoutDirectory, session.ReusedClone = reusedClone, true
+					}
+				}
+			}
 			workMu.Lock()
 			key := issueKey(issue)
 			active[key] = session.ID
@@ -2821,8 +2834,21 @@ func (w *Engine) Run(ctx context.Context) error {
 			jobs[key] = JobSnapshot{Kind: core.JobKindIssue, Number: issue.Number, Target: issue.Target, Repository: issueRepository(issue.Target, issue), Title: issue.Title, Status: "queued", CheckoutDirectory: session.CheckoutDirectory, SessionID: session.ID, Agent: spec.Name, Model: spec.Model, Effort: spec.Level, Started: time.Now()}
 			jobMu.Unlock()
 			work[key] = workState{Status: "active", SessionID: session.ID, Agent: session.Agent, CheckoutDirectory: session.CheckoutDirectory, Owner: string(w.Identity)}
+			if reusedClone != "" {
+				// The earlier job that held the clone must never resume in it.
+				for other, state := range work {
+					if other != key && state.CheckoutDirectory != "" && cloneKey(state.CheckoutDirectory) == cloneKey(reusedClone) {
+						state.CheckoutDirectory = ""
+						work[other] = state
+					}
+				}
+			}
 			err = saveScopedWorkState(w.StatePath, work, targets)
 			workMu.Unlock()
+			if reusedClone != "" {
+				w.reassignClone(key, issue.Target, issue, reusedClone)
+				w.releaseCloneLease(reusedClone)
+			}
 			if err != nil {
 				releaseHeld()
 				return err
@@ -2978,6 +3004,31 @@ func (w *Engine) Run(ctx context.Context) error {
 				// pull request does not record it again (#405). It is guarded
 				// by jobMu.
 				announced := map[string]bool{}
+				if agentSession.ReusedClone {
+					if err := w.prepareReusedClone(ctx, agentSession.CheckoutDirectory); err != nil {
+						_, _ = fmt.Fprintf(jobOutput, "Could not reuse clone %s (%v); the agent clones fresh instead.\n", agentSession.CheckoutDirectory, err)
+						w.logf("issue #%d could not reuse clone %s: %v", i.Number, agentSession.CheckoutDirectory, err)
+						agentSession.CheckoutDirectory, agentSession.ReusedClone = "", false
+						workMu.Lock()
+						state := work[key]
+						state.CheckoutDirectory = ""
+						work[key] = state
+						saveErr := saveScopedWorkState(w.StatePath, work, targets)
+						workMu.Unlock()
+						if saveErr != nil {
+							w.logf("issue #%d failed to save work state: %v", i.Number, saveErr)
+						}
+						jobMu.Lock()
+						job := jobs[key]
+						job.CheckoutDirectory = ""
+						jobs[key] = job
+						jobMu.Unlock()
+						publish()
+					} else {
+						_, _ = fmt.Fprintf(jobOutput, "Reusing clone %s, reset to the latest default branch.\n", agentSession.CheckoutDirectory)
+						w.logf("issue #%d reusing clone %s", i.Number, agentSession.CheckoutDirectory)
+					}
+				}
 				for {
 					runCtx, cancelRun := context.WithCancelCause(ctx)
 					workMu.Lock()

@@ -19,6 +19,12 @@ type cloneState struct {
 	// view reads the run loop's live work state and jobs; nil before the
 	// loop starts, when the state file is read instead.
 	view func() (map[string]workState, map[string]JobSnapshot)
+	// leased holds the clones handed to a job until its work state records
+	// them, keyed by cloneKey, with the job's key (issue #622).
+	leased map[string]string
+	// leaseMu serializes choosing a clone to reuse, so two jobs are never
+	// handed the same one.
+	leaseMu sync.Mutex
 }
 
 // SetTempDirs replaces the ordered temp directories new clones are placed in.
@@ -84,11 +90,71 @@ func (w *Engine) recordClone(key, target string, issue Issue, checkout string) {
 	}
 }
 
+// leaseReusableClone hands job key a free clone of repo, reserving it until
+// releaseCloneLease, or returns "" when no clone of repo is free. The caller
+// records the clone in the job's work state before releasing the lease.
+func (w *Engine) leaseReusableClone(key, repo string) string {
+	reg, err := w.cloneRegistry()
+	if err != nil {
+		return ""
+	}
+	w.clones.leaseMu.Lock()
+	defer w.clones.leaseMu.Unlock()
+	// Only booked clones are candidates; scanning the temp directories for
+	// leftovers is left to listing, off the dispatch path.
+	usage := w.cloneUsage()
+	rec, ok := pickReusableClone(reg, repo, usage)
+	if !ok {
+		return ""
+	}
+	w.clones.mu.Lock()
+	if w.clones.leased == nil {
+		w.clones.leased = map[string]string{}
+	}
+	w.clones.leased[cloneKey(rec.Path)] = key
+	w.clones.mu.Unlock()
+	return rec.Path
+}
+
+// releaseCloneLease ends the reservation leaseReusableClone made.
+func (w *Engine) releaseCloneLease(path string) {
+	w.clones.mu.Lock()
+	delete(w.clones.leased, cloneKey(path))
+	w.clones.mu.Unlock()
+}
+
+// prepareReusedClone resets a reused clone for its new job within
+// cloneReuseBudget.
+func (w *Engine) prepareReusedClone(ctx context.Context, dir string) error {
+	git := w.checkpointGit
+	if git == nil {
+		git = runCheckpointGit
+	}
+	ctx, cancel := context.WithTimeout(ctx, cloneReuseBudget)
+	defer cancel()
+	return prepareReusedClone(ctx, git, dir)
+}
+
+// reassignClone books a reused clone to its new job, dropping what its
+// earlier job recorded about it.
+func (w *Engine) reassignClone(key, target string, issue Issue, checkout string) {
+	if reg, err := w.cloneRegistry(); err == nil {
+		_ = reg.remove(checkout)
+	}
+	w.recordClone(key, target, issue, checkout)
+}
+
 // cloneUsage gathers what deciding whether a clone is in use reads.
 func (w *Engine) cloneUsage() cloneUsage {
 	usage := cloneUsage{roots: w.CloneRoots(), live: w.Active.checkouts()}
 	w.clones.mu.Lock()
 	view := w.clones.view
+	if len(w.clones.leased) > 0 {
+		usage.leased = make(map[string]string, len(w.clones.leased))
+		for path, key := range w.clones.leased {
+			usage.leased[path] = key
+		}
+	}
 	w.clones.mu.Unlock()
 	if view != nil {
 		usage.work, usage.jobs = view()

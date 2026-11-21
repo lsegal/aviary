@@ -100,11 +100,11 @@ func startPolledRunWith(t *testing.T, allowed []string, selfLogin string, config
 	go func() { done <- w.Run(ctx) }()
 	select {
 	case <-runner.dispatched:
-	case <-time.After(time.Second):
+	case <-time.After(runLoopWait):
 		t.Fatal("initial issue was not dispatched")
 	}
 	close(runner.release)
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(runLoopWait)
 	for {
 		state, err := loadWorkState(w.StatePath)
 		if err == nil && state[7].Status == "completed" {
@@ -129,7 +129,7 @@ func startPolledRunWith(t *testing.T, allowed []string, selfLogin string, config
 func waitForScans(t *testing.T, mentions *fakeMentionSource, more int) {
 	t.Helper()
 	target := mentions.scanCount() + more
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(runLoopWait)
 	for mentions.scanCount() < target {
 		if time.Now().After(deadline) {
 			t.Fatalf("mention scans = %d, want at least %d", mentions.scanCount(), target)

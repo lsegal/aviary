@@ -285,6 +285,11 @@ func (r *cloneRegistry) adopt(roots []string, work map[string]workState) {
 		if state.CheckoutDirectory == "" || !isDir(state.CheckoutDirectory) {
 			continue
 		}
+		// A recorded clone keeps the job it was last handed to; a reused
+		// clone's earlier jobs and its directory name name older ones.
+		if _, known := r.get(state.CheckoutDirectory); known {
+			continue
+		}
 		rec := cloneRecord{Path: state.CheckoutDirectory, Job: key, Adopted: true}
 		if separator := strings.LastIndexByte(key, '#'); separator > 0 {
 			rec.Issue, _ = strconv.Atoi(key[separator+1:])
@@ -303,7 +308,7 @@ func (r *cloneRegistry) adopt(roots []string, work map[string]workState) {
 				continue
 			}
 			path := filepath.Join(root, entry.Name())
-			if !isDir(filepath.Join(path, ".git")) {
+			if _, known := r.get(path); known || !isDir(filepath.Join(path, ".git")) {
 				continue
 			}
 			number, _ := strconv.Atoi(match[2])
@@ -375,6 +380,9 @@ type cloneUsage struct {
 	live    []checkpointRun
 	jobs    map[string]JobSnapshot
 	roots   []string
+	// leased maps the clones handed to a job that has not recorded them in
+	// its work state yet to that job's key.
+	leased map[string]string
 }
 
 // inUseStatuses are the work statuses whose job may still need its clone. A
@@ -404,6 +412,9 @@ var errWorkStateUnreadable = errors.New("work state could not be read")
 // says why. Only a live agent run or a job in an in-use status counts as
 // use; a clone no job here records is unused, not speculatively in use.
 func classifyClone(rec cloneRecord, usage cloneUsage) (cloneVerdict, string) {
+	if job, ok := usage.leased[cloneKey(rec.Path)]; ok {
+		return cloneInUse, "being handed to job " + job
+	}
 	for _, run := range usage.live {
 		if run.Checkout != "" && (cloneKey(run.Checkout) == cloneKey(rec.Path) || underRoots(run.Checkout, []string{rec.Path})) {
 			return cloneInUse, fmt.Sprintf("an agent is working in it for #%d", run.Number)
