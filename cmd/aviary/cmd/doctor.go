@@ -245,9 +245,9 @@ func writeProjectsAgentGates(out io.Writer, registry *clidefs.Registry) {
 			continue
 		}
 		gated++
-		_, _ = fmt.Fprintf(out, "  %-12s [INFO] unavailable for Projects: %s\n", name, definition.ProjectsUnavailable)
+		_, _ = fmt.Fprintf(out, "  %-12s [INFO] unavailable for Code Loop: %s\n", name, definition.ProjectsUnavailable)
 	}
 	if gated == 0 {
-		_, _ = fmt.Fprintln(out, "  (every agent can run Projects jobs)")
+		_, _ = fmt.Fprintln(out, "  (every agent can run Code Loop jobs)")
 	}
 }
