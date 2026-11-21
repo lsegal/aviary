@@ -235,7 +235,7 @@ test("the … menu renames and deletes files, and locks built-ins", async ({
 	await identity.hover();
 	await identity.getByTestId("file-menu-button").click();
 	await page.getByRole("menuitem", { name: "Edit" }).click();
-	const dialog = page.getByRole("dialog", { name: "Edit file" });
+	const dialog = page.getByRole("dialog", { name: "Rename file" });
 	await expect(dialog.getByLabel("File name")).toHaveValue("IDENTITY.md");
 	await dialog.getByLabel("File name").fill("PERSONA.md");
 	await dialog.getByRole("button", { name: "Save" }).click();

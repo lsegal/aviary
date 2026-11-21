@@ -3410,9 +3410,9 @@ func TestAgentFileCRUD_WithTempDir(t *testing.T) {
 	out, err = d.CallTool(ctx, "agent_file_list", map[string]any{})
 	assert.NoError(t, err)
 	assert.NotContains(t, out, "OLD.md")
-	toolCallContains(t, d, "agent_file_rename", map[string]any{"file": "NEW.md", "to": "state.json"}, "already exists")
-	toolCallContains(t, d, "agent_file_rename", map[string]any{"file": "NEW.md", "to": "RULES.md"}, "protected")
-	toolCallContains(t, d, "agent_file_rename", map[string]any{"file": "AGENTS.md", "to": "X.md"}, "protected")
+	toolCallContains(t, d, "agent_file_rename", map[string]any{"agent": "bot", "file": "NEW.md", "to": "state.json"}, "already exists")
+	toolCallContains(t, d, "agent_file_rename", map[string]any{"agent": "bot", "file": "NEW.md", "to": "RULES.md"}, "protected")
+	toolCallContains(t, d, "agent_file_rename", map[string]any{"agent": "bot", "file": "AGENTS.md", "to": "X.md"}, "protected")
 
 	// Protected files cannot be deleted.
 	out, err = d.CallTool(ctx, "agent_file_delete", map[string]any{"file": "RULES.md"})

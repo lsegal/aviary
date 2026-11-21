@@ -103,9 +103,7 @@ export const useAgentFilesStore = defineStore("agentFiles", () => {
 			throw new Error("Built-in files cannot be renamed.");
 		if (files(agent).some((f) => f.toUpperCase() === file.toUpperCase()))
 			throw new Error(`${file} already exists.`);
-		const content = await callTool("agent_file_read", { agent, file: from });
-		await callTool("agent_file_write", { agent, file, content });
-		await callTool("agent_file_delete", { agent, file: from });
+		await callTool("agent_file_rename", { agent, file: from, to: file });
 		await load(agent);
 		return file;
 	}

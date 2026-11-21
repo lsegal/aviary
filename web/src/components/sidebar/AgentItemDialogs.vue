@@ -141,7 +141,7 @@ const title = computed(() => {
 		if (d.kind === "file") return "Add file";
 		return d.project ? "Add project scheduled task" : "Add task";
 	}
-	return d.kind === "task" ? "Edit task" : "Edit file";
+	return d.kind === "task" ? "Edit task" : "Rename file";
 });
 
 const description = computed(() => {
