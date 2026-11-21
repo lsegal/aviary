@@ -76,7 +76,7 @@
         <nav v-if="soleAgent" class="flex flex-wrap gap-2" aria-label="Main">
           <router-link v-for="child in soleAgent.children" :key="child.key" :to="child.to"
             :class="topLevelLinkClass(isChildActive(child), true)">
-            {{ child.label }}
+            {{ child.label }}<ProjectRunningBadge :running="child.running ?? 0" class="ml-1.5" />
           </router-link>
           <router-link to="/system/overview" :class="topLevelLinkClass(systemActive, true)">System</router-link>
           <router-link :to="addAgentLink" data-testid="mobile-add-agent" :class="topLevelLinkClass(false, true)">
@@ -100,7 +100,7 @@
       <nav class="group/row relative flex gap-2 overflow-x-auto pb-1" :class="mobileAdd ? 'pr-9' : ''">
         <router-link v-for="child in mobileChildren" :key="child.key" :to="child.to"
           :class="mobileSubnavClass(child)">
-          {{ child.label }}<span v-if="child.count" class="ml-1.5 text-xs font-normal text-gray-400">{{ child.count }}</span><ProjectRunningBadge
+          {{ child.label }}<ProjectRunningBadge
             :running="child.running ?? 0" class="ml-1.5" />
         </router-link>
         <SidebarRowAction v-if="mobileAdd" :label="rowAddLabel(mobileAdd.page)" data-testid="mobile-row-action" @click="openAdd(mobileAdd.page, mobileAdd.agent)" />
@@ -161,9 +161,7 @@
               <router-link :to="child.to"
                 :class="[topLevelLinkClass(isChildActive(child), false), 'flex items-center gap-2', hasRowAction(child) ? rowActionPad : '']">
                 <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
-                <span v-if="child.key === 'projects' && soleAgent.running > 0" data-testid="agent-running-badge"
-                  class="shrink-0 rounded-full bg-green-600 px-1.5 text-xs font-semibold text-white">{{ soleAgent.running }}</span>
-                <span v-else-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
+                <ProjectRunningBadge :running="child.running ?? 0" />
               </router-link>
               <SidebarRowAction v-if="child.key === 'projects'" label="Add project" data-testid="sidebar-add-project"
                 :to="addProjectLink(soleAgent.name)" />
@@ -205,7 +203,7 @@
                   <router-link :to="child.to"
                     :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2', hasRowAction(child) ? rowActionPad : '']">
                     <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
-                    <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
+                    <ProjectRunningBadge :running="child.running ?? 0" />
                   </router-link>
                   <SidebarRowAction v-if="child.key === 'projects'" label="Add project" data-testid="sidebar-add-project"
                     :to="addProjectLink(a.name)" />
@@ -247,7 +245,6 @@
             <router-link v-for="child in systemMore" :key="child.key" :to="child.to"
               :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
               <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
-              <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
               <ProjectRunningBadge :running="child.running ?? 0" />
             </router-link>
           </template>
@@ -359,8 +356,8 @@ interface NavChild {
 	key: string;
 	label: string;
 	to: string;
-	count?: string;
-	/** A project's running jobs, shown as a gray badge when any. */
+	/** Running jobs (a project's, or all of GitHub Projects'), shown as a
+	 * gray badge when any. */
 	running?: number;
 	/** Overrides the path match, for items picked by a query. */
 	active?: boolean;
@@ -519,6 +516,7 @@ const agentNav = computed<AgentNav[]>(() => {
 	return names.map((name) => {
 		const active = routeAgent.value === name;
 		const owned = pending === name ? [] : ownedProjects(name);
+		const running = owned.reduce((n, p) => n + p.running, 0);
 		return {
 			name,
 			label: pending === name ? "New agent" : name,
@@ -527,17 +525,14 @@ const agentNav = computed<AgentNav[]>(() => {
 				pending === name ? "settings" : agentPageTail.value,
 			),
 			active,
-			running: owned.reduce((n, p) => n + p.running, 0),
+			running,
 			children:
 				active || names.length === 1
 				? AGENT_PAGES.map((page) => ({
 						key: page.key,
 						label: page.label,
 						to: agentPagePath(name, page.key),
-						count:
-							page.key === "projects" && owned.length
-								? String(owned.length)
-								: undefined,
+						running: page.key === "projects" ? running : undefined,
 					}))
 				: [],
 			projects: owned.map((p) => projectChild(name, p)),
