@@ -1404,14 +1404,14 @@ func TestAppendSessionMessage_RecordsLastMessageTime(t *testing.T) {
 	)
 
 	before := time.Now()
-	runner.appendSessionMessage("sess", domain.MessageRoleAssistant, "reply", "", "m")
+	runner.appendSessionMessage("sess", domain.MessageRoleAssistant, "reply", nil, "m")
 	meta, err := store.ReadSessionMeta(store.SessionMetaPath("agent_lastmsg", "sess"))
 	require.NoError(t, err)
 	require.NotNil(t, meta.LastMessageAt)
 	assert.False(t, meta.LastMessageAt.Before(before))
 
 	recorded := *meta.LastMessageAt
-	runner.appendSessionMessage("sess", domain.MessageRoleTool, "{}", "", "")
+	runner.appendSessionMessage("sess", domain.MessageRoleTool, "{}", nil, "")
 	meta, err = store.ReadSessionMeta(store.SessionMetaPath("agent_lastmsg", "sess"))
 	require.NoError(t, err)
 	assert.True(t, recorded.Equal(*meta.LastMessageAt), "tool records do not move the last message time")
