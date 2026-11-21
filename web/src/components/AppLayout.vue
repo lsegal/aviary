@@ -154,6 +154,7 @@
                 class="shrink-0 rounded-full bg-blue-600 px-1.5 text-xs font-semibold text-white">{{ soleAgent.running }}</span>
               <span v-else-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
             </router-link>
+            <ChatSessionList v-if="child.key === 'chat' && chatsOpen" :agent="soleAgent.name" />
             <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
               <router-link v-for="p in soleAgent.projects" :key="p.key" :to="p.to"
                 :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
@@ -185,6 +186,7 @@
                   <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
                   <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
                 </router-link>
+                <ChatSessionList v-if="child.key === 'chat' && chatsOpen" :agent="a.name" />
                 <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
                   <router-link v-for="p in a.projects" :key="p.key" :to="p.to"
                     :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
@@ -319,6 +321,7 @@ import { type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
+import ChatSessionList from "./chat/ChatSessionList.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 
 interface NavChild {
@@ -388,7 +391,7 @@ const brandLinks: BrandLink[] = [
 // An agent's pages, in sidebar order. Settings holds its General,
 // Permissions and Channels tabs.
 const AGENT_PAGES = [
-	{ key: "chat", label: "Chat" },
+	{ key: "chat", label: "Chats" },
 	{ key: "projects", label: "GitHub Projects" },
 	{ key: "tasks", label: "Tasks" },
 	{ key: "files", label: "Files" },
@@ -503,6 +506,9 @@ const soleAgent = computed<AgentNav | undefined>(() =>
 		? agentNav.value[0]
 		: undefined,
 );
+
+// The agent's Chats list opens on its chat pages.
+const chatsOpen = computed(() => /^\/agents\/[^/]+\/chat(\/|$)/.test(route.path));
 
 // The agent's projects list opens on its GitHub Projects pages and boards.
 const projectsOpen = computed(() =>
