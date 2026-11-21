@@ -17,7 +17,7 @@
 		<div v-show="editorShown" data-testid="file-preview-editor-pane" class="flex min-h-0 min-w-0 flex-1 flex-col">
 			<slot />
 		</div>
-		<div v-if="previewer && previewShown" class="relative flex min-h-0 min-w-0 flex-col"
+		<div v-if="previewer && previewShown" data-testid="file-preview-pane" class="relative flex min-h-0 min-w-0 flex-col"
 			:class="desktop ? 'shrink-0 border-l border-gray-200 dark:border-gray-800' : 'flex-1'"
 			:style="desktop ? { width: `${effectiveWidth}px` } : undefined">
 			<div v-if="desktop" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize preview"
