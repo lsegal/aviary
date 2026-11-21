@@ -107,10 +107,9 @@
 
 			<!-- Input -->
 			<div class="sticky bottom-0 z-10 bg-white px-6 pb-4 pt-2 dark:bg-gray-950">
-				<ChatComposer ref="composer" v-model="input" v-model:attachments="attachments"
+				<ChatComposer v-model="input" v-model:attachments="attachments"
 					:disabled="!selectedAgent || !selectedSessionId" :running="currentSessionProcessing"
-					@submit="send" @stop="stopSession" @keydown="onChatInputKeydown"
-					@update:model-value="onChatInput" />
+					:history="userMessageHistory" @submit="send" @stop="stopSession" />
 			</div>
 		</div>
 		<div v-if="expandedImageURL" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6"
@@ -385,12 +384,9 @@ const activeStreams = ref(0);
 const isStreaming = computed(() => activeStreams.value > 0);
 const hasInlineError = ref(false);
 const expandedImageURL = ref("");
-const composer = ref<{ textarea: HTMLTextAreaElement | null } | null>(null);
 const messagesEl = ref<HTMLElement | null>(null);
 const isAtBottom = ref(true);
 const hasScrollOverflow = ref(false);
-const historyIndex = ref(-1);
-const historyDraft = ref("");
 let ws: WebSocket | null = null;
 let nextMessageKey = 0;
 let loadMessagesSeq = 0;
@@ -636,7 +632,6 @@ async function selectAgent(name: string, sessionId = "") {
 	selectedAgent.value = name;
 	selectedSessionId.value = "";
 	messages.value = [];
-	resetHistoryNavigation();
 	updateScrollState();
 	await loadSessions(sessionId);
 	await loadSessionMessages();
@@ -665,7 +660,6 @@ async function selectSession(id: string, push = true) {
 	loadMessagesSeq += 1;
 	selectedSessionId.value = id;
 	messages.value = [];
-	resetHistoryNavigation();
 	updateScrollState();
 	if (push) pushChatPath();
 	await loadSessionMessages();
@@ -699,7 +693,6 @@ async function createSession() {
 		pushChatPath();
 		loadMessagesSeq += 1;
 		messages.value = [];
-		resetHistoryNavigation();
 		updateScrollState();
 	} catch (e) {
 		console.error("Failed to create session", e);
@@ -711,7 +704,6 @@ async function loadSessionMessages(force = false) {
 	if (!selectedSessionId.value) {
 		loadMessagesSeq += 1;
 		messages.value = [];
-		resetHistoryNavigation();
 		updateScrollState();
 		return;
 	}
@@ -762,7 +754,6 @@ async function loadSessionMessages(force = false) {
 					isError: m.role === "assistant" && isErrorMessage(m.content),
 				};
 			});
-		resetHistoryNavigation();
 		await scrollBottom(true);
 	} catch (e) {
 		console.error("Failed to load session messages", e);
@@ -800,65 +791,6 @@ async function scrollBottom(force = false) {
 	updateScrollState();
 }
 
-function resetHistoryNavigation() {
-	historyIndex.value = -1;
-	historyDraft.value = "";
-}
-
-function onChatInput(value: string) {
-	if (historyIndex.value === -1) return;
-	historyDraft.value = value;
-	historyIndex.value = -1;
-}
-
-function setChatInputValue(value: string) {
-	input.value = value;
-	void nextTick(() => {
-		const el = composer.value?.textarea;
-		if (!el) return;
-		const end = value.length;
-		el.setSelectionRange(end, end);
-	});
-}
-
-function onChatInputKeydown(e: KeyboardEvent) {
-	if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-	if (e.altKey || e.ctrlKey || e.metaKey) return;
-	if (!selectedAgent.value || !selectedSessionId.value) return;
-	const history = userMessageHistory.value;
-	if (history.length === 0) return;
-	// In a multi-line draft the arrows move the caret between lines first.
-	const el = e.target as HTMLTextAreaElement;
-	if (el.selectionStart !== el.selectionEnd) return;
-	const before = el.value.slice(0, el.selectionStart);
-	const after = el.value.slice(el.selectionEnd);
-	if (e.key === "ArrowUp" && before.includes("\n")) return;
-	if (e.key === "ArrowDown" && after.includes("\n")) return;
-
-	if (e.key === "ArrowUp") {
-		e.preventDefault();
-		if (historyIndex.value === -1) {
-			historyDraft.value = input.value;
-		}
-		const nextIndex = Math.min(historyIndex.value + 1, history.length - 1);
-		historyIndex.value = nextIndex;
-		setChatInputValue(history[history.length - 1 - nextIndex]);
-		return;
-	}
-
-	if (historyIndex.value === -1) return;
-	e.preventDefault();
-	const nextIndex = historyIndex.value - 1;
-	if (nextIndex < 0) {
-		const draft = historyDraft.value;
-		resetHistoryNavigation();
-		setChatInputValue(draft);
-		return;
-	}
-	historyIndex.value = nextIndex;
-	setChatInputValue(history[history.length - 1 - nextIndex]);
-}
-
 // send never waits for a running reply: each message is added and delivered
 // at once, and its reply streams alongside any others still running.
 async function send() {
@@ -874,7 +806,6 @@ async function send() {
 
 	input.value = "";
 	attachments.value = [];
-	resetHistoryNavigation();
 	sessionProcessing.value = {
 		...sessionProcessing.value,
 		[selectedSessionId.value]: true,
