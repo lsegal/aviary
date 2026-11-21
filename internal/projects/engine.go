@@ -253,6 +253,8 @@ type Engine struct {
 	// clones keeps the temp directories new clones go in and the record of
 	// every clone this instance has made.
 	clones cloneState
+	// filings are the create-issue requests still filing or recently filed.
+	filings issueFilings
 	Issues IssueSource
 	// Discussions lists unanswered top-level Discussion threads for
 	// Discussions-board targets. When nil, Discussions-board targets are

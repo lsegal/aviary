@@ -238,6 +238,7 @@ func TestClaudeArgs_BuiltinToolsOff(t *testing.T) {
 	cfg := args[slices.Index(args, "--mcp-config")+1]
 	assert.Contains(t, cfg, `"url":"http://127.0.0.1:1/mcp"`)
 	assert.Contains(t, cfg, "${AVIARY_MCP_TOKEN}")
+	assert.Contains(t, cfg, `"timeout":1800000`, "Claude Code would give up on a tool call after 60s (#710)")
 	assert.NotContains(t, strings.Join(args, " "), "secret", "the token must not appear on the command line")
 }
 
@@ -271,6 +272,7 @@ func TestCodexArgs(t *testing.T) {
 	}
 	assert.Contains(t, joined, `mcp_servers.aviary.url="http://127.0.0.1:1/mcp"`)
 	assert.Contains(t, joined, `mcp_servers.aviary.bearer_token_env_var="AVIARY_MCP_TOKEN"`)
+	assert.Contains(t, joined, "mcp_servers.aviary.tool_timeout_sec=1800", "codex would give up on a tool call after 60s (#710)")
 	assert.Contains(t, args, `developer_instructions="say \"hi\"\nnow"`)
 	assert.Contains(t, args, "--ignore-user-config")
 	assert.NotContains(t, args, "--profile")
