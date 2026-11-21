@@ -45,4 +45,4 @@ Settings opens from the sidebar's gear menu, which also holds **Restart** and **
 
 Skills detects built-in skills plus disk-installed skills from `~/.config/aviary/skills` and `~/.agents/skills`, and is where users can confirm installs from `npx skills find`, [skills.sh](https://skills.sh/), or commands like `npx skills add --global -a universal 4ier/notion-cli`.
 
-Other routes: `/login` (token-based access to the local control plane) and `/onboarding` (the setup wizard).
+Other routes: `/login` (token-based access to the local control plane) and `/onboarding` (the setup wizard, which every page redirects to while no agent is configured).

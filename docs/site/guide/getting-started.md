@@ -160,7 +160,7 @@ Choose **Add agent**, enter a name and model, and save. The wizard writes the ag
 
 **Option 2 — Control panel**
 
-If no agents are configured, the control panel shows a setup wizard on the Overview page. Click **Create Agent**, fill in a name and model, and save.
+If no agents are configured, the control panel opens the setup wizard first, whichever page you land on. Pick a provider, click **Create agent**, fill in a name and model, and save.
 
 **Option 3 — Edit `aviary.yaml` directly**
 

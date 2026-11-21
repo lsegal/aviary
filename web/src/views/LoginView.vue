@@ -32,11 +32,9 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { useAgentsStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
 
 const auth = useAuthStore();
-const agentsStore = useAgentsStore();
 const router = useRouter();
 const tokenInput = ref("");
 const loading = ref(false);
@@ -48,10 +46,7 @@ async function submit() {
 	const ok = await auth.login(tokenInput.value.trim());
 	loading.value = false;
 	if (ok) {
-		await agentsStore.fetchAgents();
-		await router.push(
-			agentsStore.agents.length === 0 ? "/system/overview" : "/agents",
-		);
+		await router.push("/agents");
 	} else {
 		errorMsg.value = "Invalid token. Please try again.";
 	}
