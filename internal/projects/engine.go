@@ -1580,10 +1580,12 @@ func (w *Engine) pausedWake(ctx context.Context, checker WorkClosureChecker, pau
 			w.logChanged("paused-check-"+issueKey(issue), err.Error(), "issue #%d paused-work check failed: %v", issue.Number, err)
 		}
 		if blocked, _ := issueBlocked(issue); blocked && paused.Kind == core.PausedStacked {
-			check.Blockers = make(map[int]OriginatingWorkState)
-			for _, number := range core.OpenDependencies(issue) {
-				if blocker, err := checker.OriginatingWorkState(ctx, repo, number); err == nil {
-					check.Blockers[number] = blocker
+			check.Blockers = make(map[string]OriginatingWorkState)
+			for _, dependency := range core.OpenDependencies(issue) {
+				// A blocker is read from its own repository, which can differ
+				// from the issue's.
+				if blocker, err := checker.OriginatingWorkState(ctx, dependency.Repository, dependency.Number); err == nil {
+					check.Blockers[dependency.Key()] = blocker
 				}
 			}
 		}
@@ -2564,7 +2566,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					workMu.Lock()
 					state := work[key]
 					state.Status = "paused"
-					state.Paused = &core.PausedWork{Kind: core.PausedBlocked, WaitingOn: core.OpenDependencies(issue)}
+					state.Paused = &core.PausedWork{Kind: core.PausedBlocked, WaitingOn: core.DependencyReferences(issueRepository(issue.Target, issue), core.OpenDependencies(issue))}
 					work[key] = state
 					workMu.Unlock()
 					w.logChanged("paused-"+key, reason, "issue #%d not picked up: %s; paused until it closes", issue.Number, reason)
@@ -3297,7 +3299,7 @@ func (w *Engine) Run(ctx context.Context) error {
 							if closed && held != nil {
 								if held.Kind == core.PausedStacked {
 									if dependency, ok := stackableDependency(i); ok {
-										held.WaitingOn = []int{dependency.Number}
+										held.WaitingOn = []string{dependency.Reference(issueRepository(i.Target, i))}
 									} else {
 										held.Kind = core.PausedPullRequest
 									}
@@ -5072,7 +5074,9 @@ func (w *Engine) stackableOnDependency(ctx context.Context, checker WorkClosureC
 	if !ok {
 		return 0, false
 	}
-	repo := issue.Repository
+	// StackableDependency only returns a blocker in the issue's own
+	// repository, so it is read from there.
+	repo := dependency.Repository
 	if !w.stacksEnabled(ctx, repo) {
 		return 0, false
 	}

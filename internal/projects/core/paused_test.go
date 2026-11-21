@@ -3,19 +3,19 @@ package core
 import "testing"
 
 func TestWakePaused(t *testing.T) {
-	blockedIssue := Issue{Number: 7, State: "open", DependsOn: []IssueDependency{{Number: 12, State: "open"}}}
-	unblockedIssue := Issue{Number: 7, State: "open", DependsOn: []IssueDependency{{Number: 12, State: "closed"}}}
+	blockedIssue := Issue{Number: 7, Repository: "o/r", State: "open", DependsOn: []IssueDependency{{Number: 12, State: "open"}}}
+	unblockedIssue := Issue{Number: 7, Repository: "o/r", State: "open", DependsOn: []IssueDependency{{Number: 12, State: "closed"}}}
 	held := &OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 15, State: "open"}}}
 	stacked := &OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 15, State: "open", Stacked: true}}}
 	merged := &OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 15, State: "closed", Merged: true}}}
 	rejected := &OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 15, State: "closed"}}}
 	closedIssue := &OriginatingWorkState{IssueState: "closed", PullRequests: []PullRequestWorkState{{Number: 15, State: "closed"}}}
-	blockerOpen := map[int]OriginatingWorkState{12: {IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 14, State: "open"}}}}
-	blockerMerged := map[int]OriginatingWorkState{12: {IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 14, State: "closed", Merged: true}}}}
-	blockerClosed := map[int]OriginatingWorkState{12: {IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 14, State: "closed"}}}}
+	blockerOpen := map[string]OriginatingWorkState{"o/r#12": {IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 14, State: "open"}}}}
+	blockerMerged := map[string]OriginatingWorkState{"o/r#12": {IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 14, State: "closed", Merged: true}}}}
+	blockerClosed := map[string]OriginatingWorkState{"o/r#12": {IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 14, State: "closed"}}}}
 
-	blocked := PausedWork{Kind: PausedBlocked, WaitingOn: []int{12}}
-	stack := PausedWork{Kind: PausedStacked, WaitingOn: []int{12}, PullRequests: []int{15}}
+	blocked := PausedWork{Kind: PausedBlocked, WaitingOn: []string{"#12"}}
+	stack := PausedWork{Kind: PausedStacked, WaitingOn: []string{"#12"}, PullRequests: []int{15}}
 	pullRequest := PausedWork{Kind: PausedPullRequest, PullRequests: []int{15}}
 	for _, test := range []struct {
 		name   string
@@ -59,8 +59,8 @@ func TestWakePaused(t *testing.T) {
 // leaves every kind of paused work exactly where it was.
 func TestWakePausedIgnoresReviewActivity(t *testing.T) {
 	reviewed := &OriginatingWorkState{IssueState: "open", IssueBody: "edited", PullRequests: []PullRequestWorkState{{Number: 15, State: "open", Stacked: true}}}
-	issue := Issue{Number: 7, State: "open", DependsOn: []IssueDependency{{Number: 12, State: "open"}}}
-	blockers := map[int]OriginatingWorkState{12: {IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 14, State: "open"}}}}
+	issue := Issue{Number: 7, Repository: "o/r", State: "open", DependsOn: []IssueDependency{{Number: 12, State: "open"}}}
+	blockers := map[string]OriginatingWorkState{"o/r#12": {IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 14, State: "open"}}}}
 	for _, kind := range []string{PausedBlocked, PausedStacked, PausedPullRequest} {
 		if got, reason := WakePaused(PausedWork{Kind: kind}, PausedCheck{Issue: issue, Own: reviewed, Blockers: blockers}); got != PausedStay {
 			t.Errorf("%s: WakePaused() = %v (%q), want it to stay paused", kind, got, reason)
@@ -77,7 +77,7 @@ func TestWakePausedResumesWhenEveryBlockerClosed(t *testing.T) {
 	issue := Issue{Number: 5, State: "open", DependsOn: []IssueDependency{{Number: 2, State: "closed"}, {Number: 3, State: "closed"}, {Number: 4, State: "closed"}}}
 	none := &OriginatingWorkState{IssueState: "open"}
 	for _, paused := range []PausedWork{
-		{Kind: PausedBlocked, WaitingOn: []int{2, 3, 4}},
+		{Kind: PausedBlocked, WaitingOn: []string{"#2", "#3", "#4"}},
 		{Kind: PausedStacked},
 		{Kind: PausedPullRequest},
 		{Kind: PausedPullRequest, PullRequests: []int{15}},

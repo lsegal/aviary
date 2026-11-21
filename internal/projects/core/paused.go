@@ -49,8 +49,9 @@ func HeldForOwner(reason string) bool {
 // only saves work; whether it wakes is always read back from GitHub.
 type PausedWork struct {
 	Kind string `json:"kind"`
-	// WaitingOn lists the open issues the work is blocked by.
-	WaitingOn []int `json:"waitingOn,omitempty"`
+	// WaitingOn lists the open issues the work is blocked by, each named
+	// as IssueDependency.Reference does from the paused issue's repository.
+	WaitingOn []string `json:"waitingFor,omitempty"`
 	// PullRequests lists the work's own open pull requests.
 	PullRequests []int `json:"pullRequests,omitempty"`
 	// Reason overrides what the dashboards say a manual pause waits on, for
@@ -85,24 +86,40 @@ const (
 
 // PausedCheck is the GitHub state a wake check reads. Issue is the issue as
 // the poll listed it. Own is the state of the issue's own pull requests, and
-// Blockers holds the state of each issue it waits on. A state that could not
-// be read is left out, and a check never wakes on missing state.
+// Blockers holds the state of each issue it waits on, keyed by
+// IssueDependency.Key. A state that could not be read is left out, and a
+// check never wakes on missing state.
 type PausedCheck struct {
 	Issue    Issue
 	Own      *OriginatingWorkState
-	Blockers map[int]OriginatingWorkState
+	Blockers map[string]OriginatingWorkState
 }
 
-// OpenDependencies returns the numbers of the issues issue depends on that
-// are not closed.
-func OpenDependencies(issue Issue) []int {
-	var open []int
+// OpenDependencies returns the issues issue depends on that are not closed,
+// each with its Repository resolved: a dependency that names none lives in
+// issue's own repository.
+func OpenDependencies(issue Issue) []IssueDependency {
+	repo := IssueRepository(issue.Target, issue)
+	var open []IssueDependency
 	for _, dependency := range issue.DependsOn {
 		if !strings.EqualFold(dependency.State, "closed") {
-			open = append(open, dependency.Number)
+			if dependency.Repository == "" {
+				dependency.Repository = repo
+			}
+			open = append(open, dependency)
 		}
 	}
 	return open
+}
+
+// DependencyReferences names each dependency as seen from repo, as
+// PausedWork.WaitingOn records them.
+func DependencyReferences(repo string, dependencies []IssueDependency) []string {
+	var references []string
+	for _, dependency := range dependencies {
+		references = append(references, dependency.Reference(repo))
+	}
+	return references
 }
 
 // OpenPullRequests returns the numbers of the open, unmerged pull requests in
@@ -174,10 +191,11 @@ func WakePaused(paused PausedWork, check PausedCheck) (PausedWake, string) {
 				return PausedRestart, rejected
 			}
 		}
-		for _, number := range OpenDependencies(check.Issue) {
-			state, ok := check.Blockers[number]
+		repo := IssueRepository(check.Issue.Target, check.Issue)
+		for _, dependency := range OpenDependencies(check.Issue) {
+			state, ok := check.Blockers[dependency.Key()]
 			if ok && len(state.PullRequests) > 0 && len(OpenPullRequests(state)) == 0 {
-				return PausedResume, fmt.Sprintf("its blocker #%d no longer has an open pull request", number)
+				return PausedResume, fmt.Sprintf("its blocker %s no longer has an open pull request", dependency.Reference(repo))
 			}
 		}
 		return PausedStay, reason + "; its stacked pull request waits for that to merge"
