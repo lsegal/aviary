@@ -105,8 +105,7 @@
 							</div>
 						</template>
 						<div v-if="currentSessionProcessing" class="text-left">
-							<span
-								class="inline-block animate-pulse rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-400 dark:bg-gray-800">…</span>
+							<TypingIndicator />
 						</div>
 						<div v-if="messages.length === 0 && !currentSessionProcessing"
 							class="text-center text-sm text-gray-400 mt-8">
@@ -160,6 +159,7 @@ import {
 } from "../components/chat/attachments";
 import ChatComposer from "../components/chat/ChatComposer.vue";
 import ChatToolCall from "../components/chat/ChatToolCall.vue";
+import TypingIndicator from "../components/chat/TypingIndicator.vue";
 import {
 	chatDraftKey,
 	getChatDraft,

@@ -935,3 +935,69 @@ test("a failed turn's error attaches to its message and Retry re-runs it", async
 	await expect(page.getByTestId("chat-message-error")).toHaveCount(0);
 	await expect(page.getByText("summarize", { exact: true })).toHaveCount(1);
 });
+
+test("a processing session shows a staggered three-dot typing indicator", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		session_list: [
+			{
+				id: "s1",
+				agent_id: "a1",
+				name: "main",
+				created_at: "2026-03-12T12:00:00Z",
+				is_processing: true,
+			},
+		],
+		session_messages: [
+			{
+				id: "m1",
+				session_id: "s1",
+				role: "user",
+				content: "first prompt",
+				timestamp: "2026-03-12T12:00:00Z",
+			},
+		],
+		config_validate: [],
+	});
+	await page.goto("/agents/assistant/chat");
+
+	const indicator = page.getByRole("status", { name: "Assistant is working" });
+	await expect(indicator).toBeVisible();
+	await expect(indicator).not.toContainText("…");
+	const dots = indicator.locator(".typing-dot");
+	await expect(dots).toHaveCount(3);
+	const animations = await dots.evaluateAll((els) =>
+		els.map((el) => {
+			const style = getComputedStyle(el);
+			return {
+				name: style.animationName,
+				delay: style.animationDelay,
+				iterations: style.animationIterationCount,
+			};
+		}),
+	);
+	for (const animation of animations) {
+		expect(animation.name).not.toBe("none");
+		expect(animation.iterations).toBe("infinite");
+	}
+	expect(new Set(animations.map((a) => a.delay)).size).toBe(3);
+
+	await page.emulateMedia({ reducedMotion: "reduce" });
+	await expect
+		.poll(() =>
+			dots.evaluateAll((els) =>
+				els.map((el) => getComputedStyle(el).animationName),
+			),
+		)
+		.toEqual(["none", "none", "none"]);
+});
