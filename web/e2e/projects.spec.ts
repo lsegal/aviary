@@ -957,6 +957,55 @@ test("logs panel docks below the board, streams lines, and resizes", async ({
 	await expect(page.getByTestId("project-logs")).toHaveCount(0);
 });
 
+test("logs panel wraps long lines and indents multi-line entries", async ({
+	page,
+}) => {
+	const url = `https://github.com/lsegal/aviary/issues?q=${"x".repeat(300)}`;
+	await setup(page, () => ({
+		...STATUS,
+		recent_logs: [
+			`2026-11-20 12:03:58 handoff poll #2 error: read issue list at ${url} the issue list did not render within 15s`,
+			"2026-11-20 12:04:02 prompt agent (claude/opus) filing an issue on lsegal/aviary",
+			"## Summary",
+			"Body line two",
+			"12:04:11 claimed #221",
+		].join("\n"),
+	}));
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.getByTestId("logs-toggle").click();
+	const lines = page.getByTestId("project-logs-lines");
+	await expect(lines).toContainText("claimed #221");
+
+	// Nothing overflows sideways, not even the unbroken URL.
+	expect(
+		await lines.evaluate((el) => el.scrollWidth - el.clientWidth),
+	).toBeLessThanOrEqual(0);
+	const entries = page.getByTestId("project-logs-entry");
+	await expect(entries).toHaveCount(3);
+	const first = entries.nth(0);
+	expect(await first.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(
+		0,
+	);
+	await expect(first).toContainText(url);
+
+	// Continuation lines stay in their entry, keep their line breaks, and line
+	// up after the timestamp rather than under it.
+	const second = entries.nth(1);
+	const text = second.locator("span").nth(1);
+	expect(await text.innerText()).toBe(
+		"prompt agent (claude/opus) filing an issue on lsegal/aviary\n## Summary\nBody line two",
+	);
+	const timeBox = await second.locator("span").first().boundingBox();
+	const textBox = await text.boundingBox();
+	if (!timeBox || !textBox) throw new Error("no entry boxes");
+	expect(textBox.x).toBeGreaterThan(timeBox.x + timeBox.width);
+	expect(textBox.height).toBeGreaterThan(timeBox.height * 2);
+	await expect(second.locator("span").first()).toHaveText(
+		"2026-11-20 12:04:02",
+	);
+	await expect(entries.nth(2).locator("span").first()).toHaveText("12:04:11");
+});
+
 test("Summarize sends the job to the prompt chat", async ({ page }) => {
 	const calls: Calls = {};
 	Object.assign(calls, await setup(page, undefined, chatFixtures(calls)));
