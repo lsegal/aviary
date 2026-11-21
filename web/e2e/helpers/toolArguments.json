@@ -18,6 +18,11 @@
 		"agent",
 		"file"
 	],
+	"agent_file_rename": [
+		"agent",
+		"file",
+		"to"
+	],
 	"agent_file_write": [
 		"agent",
 		"content",

@@ -3398,6 +3398,22 @@ func TestAgentFileCRUD_WithTempDir(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, out, "PROFILE.txt deleted")
 
+	// Rename a regular file; the destination must not exist.
+	_, err = d.CallTool(ctx, "agent_file_write", map[string]any{"file": "OLD.md", "content": "old"})
+	assert.NoError(t, err)
+	out, err = d.CallTool(ctx, "agent_file_rename", map[string]any{"file": "OLD.md", "to": "NEW.md"})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "OLD.md renamed to NEW.md")
+	out, err = d.CallTool(ctx, "agent_file_read", map[string]any{"file": "NEW.md"})
+	assert.NoError(t, err)
+	assert.Contains(t, out, "old")
+	out, err = d.CallTool(ctx, "agent_file_list", map[string]any{})
+	assert.NoError(t, err)
+	assert.NotContains(t, out, "OLD.md")
+	toolCallContains(t, d, "agent_file_rename", map[string]any{"file": "NEW.md", "to": "state.json"}, "already exists")
+	toolCallContains(t, d, "agent_file_rename", map[string]any{"file": "NEW.md", "to": "RULES.md"}, "protected")
+	toolCallContains(t, d, "agent_file_rename", map[string]any{"file": "AGENTS.md", "to": "X.md"}, "protected")
+
 	// Protected files cannot be deleted.
 	out, err = d.CallTool(ctx, "agent_file_delete", map[string]any{"file": "RULES.md"})
 	assert.True(t, (err != nil && strings.Contains(err.Error(), "protected")) || strings.Contains(out, "protected"))
