@@ -401,7 +401,7 @@ onBeforeUnmount(() => {
 /* hero */
 .pp-hero {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+	grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.95fr);
 	gap: 4rem;
 	align-items: center;
 	padding: 4.8rem 0 5.8rem;
@@ -409,7 +409,7 @@ onBeforeUnmount(() => {
 
 .pp-hero h1 {
 	margin: 0.4rem 0 0;
-	font-size: clamp(2.8rem, 5.4vw, 4.4rem);
+	font-size: clamp(2.6rem, 4.6vw, 4rem);
 	line-height: 1.02;
 }
 
