@@ -419,6 +419,17 @@ watch([input, attachments], ([text, atts]) => {
 	if (draftKey.value) setChatDraft(draftKey.value, { text, attachments: atts });
 });
 const messages = ref<Message[]>([]);
+// Clearing this chat from the Chats list empties it here at once.
+watch(
+	() => chatSessions.lastCleared,
+	({ key }) => {
+		if (!key || key !== draftKey.value) return;
+		loadMessagesSeq += 1;
+		input.value = "";
+		attachments.value = [];
+		messages.value = [];
+	},
+);
 const sessionProcessing = ref<Record<string, boolean>>({});
 // Each send streams its own reply, and several can run at once.
 const activeStreams = ref(0);
