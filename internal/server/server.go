@@ -547,7 +547,7 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 		rOpts.SuppressDelivery = true
 	}
 
-	runner.PromptMediaWithOverrides(msgCtx, msg.Text, msg.MediaURL, rOpts, func(e agent.StreamEvent) {
+	runner.PromptMediaWithOverrides(msgCtx, msg.Text, mediaList(msg.MediaURL), rOpts, func(e agent.StreamEvent) {
 		switch e.Type {
 		case agent.StreamEventText:
 			if slackStreamer != nil {

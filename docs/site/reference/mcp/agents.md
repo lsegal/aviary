@@ -40,7 +40,7 @@ Send a message to an agent and stream the response. This is the primary tool for
 | `session` | string | | Session name; defaults to `"main"` |
 | `session_id` | string | | Session ID to resume instead of looking up by name |
 | `file` | string | | Local file path to attach to the message |
-| `media_url` | string | | Image URL (data URL or remote URL) to attach |
+| `media_urls` | string[] | | Attachments: image URLs (data URLs or remote URLs) and text file data URLs (`data:text/plain;name=<file>;base64,...`), whose text is given to the model inline |
 | `bare` | bool | | Skip system prompt, rules, memory, and tool preamble |
 | `history` | bool | | Include prior session messages (defaults to `true`, `false` when `bare=true`) |
 | `include_tool_progress` | bool | | Emit tool-call events in MCP progress notifications (for streaming UIs) |

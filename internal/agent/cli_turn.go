@@ -68,7 +68,7 @@ var cliProcs = struct {
 type cliTurnInput struct {
 	model         string
 	message       string
-	mediaURL      string
+	mediaURLs     []string
 	memoryContext string
 	systemPrompt  string
 	tools         []ToolInfo
@@ -143,7 +143,7 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		defer proc.scope.setTurn(nil)
 	}
 
-	turn := cliagent.Turn{Text: in.message, MediaURL: in.mediaURL}
+	turn := cliagent.Turn{Text: in.message, MediaURLs: in.mediaURLs}
 	var prefix []string
 	if in.memoryContext != "" {
 		prefix = append(prefix, in.memoryContext)
@@ -181,7 +181,7 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 				ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error, Done: true,
 			}})
 			rec, _ := json.Marshal(toolEventRecord{Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error})
-			r.appendSessionMessage(in.sessionID, domain.MessageRoleTool, string(rec), "", "")
+			r.appendSessionMessage(in.sessionID, domain.MessageRoleTool, string(rec), nil, "")
 		case cliagent.EventUsage:
 			in.usage.InputTokens += ev.Usage.InputTokens
 			in.usage.OutputTokens += ev.Usage.OutputTokens
@@ -202,7 +202,7 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		opts.NewSessionID = newUUID()
 		opts.MCPURL, opts.MCPToken = proc.sessOptsMCP()
 		if proc.sess, err = newCLISession(opts); err == nil {
-			retry := cliagent.Turn{Text: in.message, MediaURL: in.mediaURL}
+			retry := cliagent.Turn{Text: in.message, MediaURLs: in.mediaURLs}
 			if prior := r.cliPriorConversation(in.sessionID, in.systemPrompt); prior != "" {
 				retry.Text = prior + "\n\n" + retry.Text
 			}
@@ -233,7 +233,7 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 	}
 	var assistantMsgID string
 	if answer != "" {
-		assistantMsgID = r.appendSessionMessage(in.sessionID, domain.MessageRoleAssistant, answer, "", in.model)
+		assistantMsgID = r.appendSessionMessage(in.sessionID, domain.MessageRoleAssistant, answer, nil, in.model)
 	}
 	if in.promptMsgID != "" {
 		if assistantMsgID == "" {

@@ -118,21 +118,17 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 				)))
 				continue
 			}
-			if strings.TrimSpace(m.MediaURL) != "" {
-				blocks := make([]anthropic.ContentBlockParamUnion, 0, 2)
+			if len(m.MediaURLs) > 0 {
+				blocks := make([]anthropic.ContentBlockParamUnion, 0, 1+len(m.MediaURLs))
 				if strings.TrimSpace(m.Content) != "" {
 					blocks = append(blocks, anthropic.NewTextBlock(m.Content))
 				}
-				if strings.HasPrefix(m.MediaURL, "data:") {
-					// data:<mediatype>;base64,<data>
-					parts := strings.SplitN(m.MediaURL, ",", 2)
-					if len(parts) == 2 {
-						header := strings.TrimPrefix(parts[0], "data:")
-						mediaType := strings.TrimSuffix(header, ";base64")
-						blocks = append(blocks, anthropic.NewImageBlockBase64(mediaType, parts[1]))
+				for _, mediaURL := range m.MediaURLs {
+					if mimeType, data, ok := ParseImageDataURL(mediaURL); ok {
+						blocks = append(blocks, anthropic.NewImageBlockBase64(mimeType, data))
+					} else if !strings.HasPrefix(mediaURL, "data:") {
+						blocks = append(blocks, anthropic.NewImageBlock(anthropic.URLImageSourceParam{URL: mediaURL}))
 					}
-				} else {
-					blocks = append(blocks, anthropic.NewImageBlock(anthropic.URLImageSourceParam{URL: m.MediaURL}))
 				}
 				appendMsg(anthropic.NewUserMessage(blocks...))
 				continue

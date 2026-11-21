@@ -74,7 +74,7 @@ type Message struct {
 	Role       MessageRole    `json:"role"`
 	Sender     *MessageSender `json:"sender,omitempty"`
 	Content    string         `json:"content"`
-	MediaURL   string         `json:"media_url,omitempty"`
+	MediaURLs  []string       `json:"media_urls,omitempty"`
 	Model      string         `json:"model,omitempty"`       // LLM model used; only set on assistant messages
 	ResponseID string         `json:"response_id,omitempty"` // ID of the assistant message that responded to this prompt
 	Timestamp  time.Time      `json:"timestamp"`

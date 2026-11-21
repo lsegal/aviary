@@ -811,7 +811,7 @@ func TestAnthropicProvider_Stream_WithMediaURL_Data(t *testing.T) {
 	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
 	req := Request{
 		Messages: []Message{
-			{Role: RoleUser, Content: "Look at this", MediaURL: "data:image/png;base64,abc123"},
+			{Role: RoleUser, Content: "Look at this", MediaURLs: []string{"data:image/png;base64,abc123"}},
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
@@ -829,7 +829,7 @@ func TestAnthropicProvider_Stream_WithMediaURL_HTTP(t *testing.T) {
 	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
 	req := Request{
 		Messages: []Message{
-			{Role: RoleUser, Content: "Look", MediaURL: "https://example.com/img.png"},
+			{Role: RoleUser, Content: "Look", MediaURLs: []string{"https://example.com/img.png"}},
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
@@ -848,7 +848,7 @@ func TestAnthropicProvider_Stream_WithMediaURL_NoContent(t *testing.T) {
 	req := Request{
 		Messages: []Message{
 			// MediaURL with no text content
-			{Role: RoleUser, Content: "", MediaURL: "data:image/png;base64,abc123"},
+			{Role: RoleUser, Content: "", MediaURLs: []string{"data:image/png;base64,abc123"}},
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
@@ -1028,7 +1028,7 @@ func TestOpenAIProvider_Stream_WithMediaURL(t *testing.T) {
 	p := NewOpenAIProvider("test-key", "gpt-4o", srv.URL)
 	req := Request{
 		Messages: []Message{
-			{Role: RoleUser, Content: "Look", MediaURL: "https://example.com/img.png"},
+			{Role: RoleUser, Content: "Look", MediaURLs: []string{"https://example.com/img.png"}},
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
@@ -1046,7 +1046,7 @@ func TestOpenAIProvider_Stream_MediaURLNoContent(t *testing.T) {
 	p := NewOpenAIProvider("test-key", "gpt-4o", srv.URL)
 	req := Request{
 		Messages: []Message{
-			{Role: RoleUser, Content: "", MediaURL: "https://example.com/img.png"},
+			{Role: RoleUser, Content: "", MediaURLs: []string{"https://example.com/img.png"}},
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
@@ -1229,7 +1229,7 @@ func TestOpenAICodexProvider_Stream_AllRoles(t *testing.T) {
 			{Role: RoleUser, Content: "User msg"},
 			{Role: RoleAssistant, Content: "Asst msg"},
 			{Role: RoleSystem, Content: "Sys inline"},
-			{Role: RoleUser, Content: "Follow-up", MediaURL: "https://example.com/img.png"},
+			{Role: RoleUser, Content: "Follow-up", MediaURLs: []string{"https://example.com/img.png"}},
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
@@ -1251,7 +1251,7 @@ func TestOpenAICodexProvider_Stream_WithMedia_NoContent(t *testing.T) {
 
 	req := Request{
 		Messages: []Message{
-			{Role: RoleUser, Content: "", MediaURL: "https://example.com/img.png"},
+			{Role: RoleUser, Content: "", MediaURLs: []string{"https://example.com/img.png"}},
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
@@ -1848,9 +1848,9 @@ func TestGeminiCodeAssistProvider_Stream_IncludesInlineImageData(t *testing.T) {
 	p := NewGeminiCodeAssistProvider("test-token", "gemini-2.0-flash")
 	req := Request{
 		Messages: []Message{{
-			Role:     RoleUser,
-			Content:  "what does this say",
-			MediaURL: "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("png-bytes")),
+			Role:      RoleUser,
+			Content:   "what does this say",
+			MediaURLs: []string{"data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("png-bytes"))},
 		}},
 	}
 	ch, err := p.Stream(context.Background(), req)
