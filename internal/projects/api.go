@@ -123,10 +123,10 @@ func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 }
 
 // ListJobs is project_job_list: every job, running and errored ones first,
-// filtered by project, status and a search query, and paged. total counts
-// the jobs that match all three; with a query, unfiltered_total counts those
-// matching only the project and status.
-func (m *Manager) ListJobs(target, status, query string, offset, limit int) map[string]any {
+// filtered by projects, status and a search query, and paged. No targets
+// means every project. total counts the jobs that match all three; with a
+// query, unfiltered_total counts those matching only the projects and status.
+func (m *Manager) ListJobs(targets []string, status, query string, offset, limit int) map[string]any {
 	if limit <= 0 {
 		limit = defaultJobListLimit
 	}
@@ -134,7 +134,7 @@ func (m *Manager) ListJobs(target, status, query string, offset, limit int) map[
 	var matched []map[string]any
 	unfiltered := 0
 	for _, job := range m.currentSnapshot().Jobs {
-		if target != "" && job.Target != target {
+		if len(targets) > 0 && !slices.Contains(targets, job.Target) {
 			continue
 		}
 		if status != "" && job.Status != status {
