@@ -456,6 +456,8 @@ func (r *AgentRunner) promptCore(
 			// into the session JSONL with participant metadata.
 			if history := r.loadSessionConversationWithinBudget(sessionID, 24, llm.ModelInputBudget(effectiveModel), systemPrompt); len(history) > 0 {
 				conversation = history
+				// History ends with this turn's user message; keep its images.
+				conversation[len(conversation)-1].MediaURLs = mediaURLs
 			}
 		}
 		toolNames := make(map[string]struct{}, len(tools))

@@ -660,3 +660,27 @@ func TestCodexSession_LongSystemPrompt(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "thread=thread-new images=0 developer=\"short rules\" prompt=short rules", r.Text)
 }
+
+func TestClaudeUserMessageSendsEveryImage(t *testing.T) {
+	raw, err := claudeUserMessage(Turn{Text: "compare", MediaURLs: []string{redPixel, "https://example.com/second.png"}})
+	require.NoError(t, err)
+	var msg struct {
+		Message struct {
+			Content []struct {
+				Type   string `json:"type"`
+				Source struct {
+					Type string `json:"type"`
+				} `json:"source"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"message"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &msg))
+	content := msg.Message.Content
+	require.Len(t, content, 3)
+	assert.Equal(t, "image", content[0].Type)
+	assert.Equal(t, "base64", content[0].Source.Type)
+	assert.Equal(t, "image", content[1].Type)
+	assert.Equal(t, "url", content[1].Source.Type)
+	assert.Equal(t, "compare", content[2].Text)
+}

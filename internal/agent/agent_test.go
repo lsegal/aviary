@@ -1995,3 +1995,51 @@ func TestIsAuthError(t *testing.T) {
 	assert.False(t, isAuthError(errors.New("500 internal server error")))
 	assert.False(t, isAuthError(errors.New("context deadline exceeded")))
 }
+
+func TestPromptMedia_PersistsAndSendsEveryImage(t *testing.T) {
+	setTestDataDir(t)
+	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
+		return &fakeToolClient{}, nil
+	})
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+	prov := &captureProvider{}
+	runner := NewAgentRunner(
+		&domain.Agent{ID: "agent_multi_media", Name: "multi-media"},
+		&config.AgentConfig{Name: "multi-media", Model: "test/model"},
+		prov, nil,
+	)
+	sess, err := NewSessionManager().Create(runner.agent.ID)
+	assert.NoError(t, err)
+
+	images := []string{"data:image/png;base64,Zmlyc3Q=", "data:image/png;base64,c2Vjb25k"}
+	done := make(chan struct{}, 1)
+	runner.PromptMedia(WithSessionID(context.Background(), sess.ID), "compare these", images, func(e StreamEvent) {
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		assert.FailNow(t, "timeout")
+	}
+
+	assert.NotEmpty(t, prov.requests)
+	msgs := prov.requests[0].Messages
+	assert.Equal(t, images, msgs[len(msgs)-1].MediaURLs)
+
+	lines, err := store.ReadJSONL[domain.Message](store.SessionPath(runner.agent.ID, sess.ID))
+	assert.NoError(t, err)
+	var user *domain.Message
+	for i := range lines {
+		if lines[i].Role == domain.MessageRoleUser {
+			user = &lines[i]
+		}
+	}
+	if assert.NotNil(t, user) {
+		assert.Equal(t, images, user.MediaURLs)
+	}
+}

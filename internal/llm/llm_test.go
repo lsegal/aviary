@@ -820,6 +820,46 @@ func TestAnthropicProvider_Stream_WithMediaURL_Data(t *testing.T) {
 	collectEvents(t, ch)
 }
 
+func TestAnthropicProvider_Stream_SendsEveryImage(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		anthropicSSEResponse(w, "two images")
+	}))
+	defer srv.Close()
+
+	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
+	req := Request{
+		Messages: []Message{
+			{Role: RoleUser, Content: "Compare", MediaURLs: []string{"data:image/png;base64,Zmlyc3Q=", "https://example.com/second.png"}},
+		},
+	}
+	ch, err := p.Stream(context.Background(), req)
+	assert.NoError(t, err)
+	collectEvents(t, ch)
+
+	var payload struct {
+		Messages []struct {
+			Content []struct {
+				Type   string `json:"type"`
+				Source struct {
+					Data string `json:"data"`
+					URL  string `json:"url"`
+				} `json:"source"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	assert.NoError(t, json.Unmarshal(body, &payload))
+	assert.Len(t, payload.Messages, 1)
+	var images []string
+	for _, block := range payload.Messages[0].Content {
+		if block.Type == "image" {
+			images = append(images, block.Source.Data+block.Source.URL)
+		}
+	}
+	assert.Equal(t, []string{"Zmlyc3Q=", "https://example.com/second.png"}, images)
+}
+
 func TestAnthropicProvider_Stream_WithMediaURL_HTTP(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		anthropicSSEResponse(w, "image response")
@@ -1035,6 +1075,28 @@ func TestOpenAIProvider_Stream_WithMediaURL(t *testing.T) {
 	assert.NoError(t, err)
 
 	collectEvents(t, ch)
+}
+
+func TestOpenAIProvider_Stream_SendsEveryImage(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		openAISSEResponse(w, "two images")
+	}))
+	defer srv.Close()
+
+	p := NewOpenAIProvider("test-key", "gpt-4o", srv.URL)
+	req := Request{
+		Messages: []Message{
+			{Role: RoleUser, Content: "Compare", MediaURLs: []string{"https://example.com/first.png", "https://example.com/second.png"}},
+		},
+	}
+	ch, err := p.Stream(context.Background(), req)
+	assert.NoError(t, err)
+	collectEvents(t, ch)
+
+	assert.Contains(t, string(body), "https://example.com/first.png")
+	assert.Contains(t, string(body), "https://example.com/second.png")
 }
 
 func TestOpenAIProvider_Stream_MediaURLNoContent(t *testing.T) {
@@ -1848,9 +1910,12 @@ func TestGeminiCodeAssistProvider_Stream_IncludesInlineImageData(t *testing.T) {
 	p := NewGeminiCodeAssistProvider("test-token", "gemini-2.0-flash")
 	req := Request{
 		Messages: []Message{{
-			Role:     RoleUser,
-			Content:  "what does this say",
-			MediaURLs: []string{"data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("png-bytes"))},
+			Role:    RoleUser,
+			Content: "what does this say",
+			MediaURLs: []string{
+				"data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("png-bytes")),
+				"data:image/jpeg;base64," + base64.StdEncoding.EncodeToString([]byte("jpg-bytes")),
+			},
 		}},
 	}
 	ch, err := p.Stream(context.Background(), req)
@@ -1875,9 +1940,11 @@ func TestGeminiCodeAssistProvider_Stream_IncludesInlineImageData(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, envelope.Request.Contents, 1)
 	assert.Equal(t, "user", envelope.Request.Contents[0].Role)
-	assert.Len(t, envelope.Request.Contents[0].Parts, 2)
+	assert.Len(t, envelope.Request.Contents[0].Parts, 3)
 	assert.Equal(t, "what does this say", envelope.Request.Contents[0].Parts[0].Text)
 	assert.NotNil(t, envelope.Request.Contents[0].Parts[1].InlineData)
+	assert.NotNil(t, envelope.Request.Contents[0].Parts[2].InlineData)
+	assert.Equal(t, "image/jpeg", envelope.Request.Contents[0].Parts[2].InlineData.MimeType)
 	assert.Equal(t, "image/png", envelope.Request.Contents[0].Parts[1].InlineData.MimeType)
 	assert.Equal(t, base64.StdEncoding.EncodeToString([]byte("png-bytes")), envelope.Request.Contents[0].Parts[1].InlineData.Data)
 }
