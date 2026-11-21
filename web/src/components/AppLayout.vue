@@ -253,12 +253,12 @@
           <div v-if="versionMessage" class="mt-1 opacity-80">{{ versionMessage }}</div>
         </div>
         <div class="flex items-center gap-2 px-1" data-testid="sidebar-footer">
-          <SidebarGearMenu :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
-            @restart="triggerRestart()" />
           <VersionIndicator :version="version" :latest-version="latestVersion" :status="status"
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <div class="ml-auto flex shrink-0 items-center gap-1" data-testid="sidebar-footer-actions">
             <ConnectionIndicator :status="status" @retry="reconnect()" />
+            <SidebarGearMenu :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+              @restart="triggerRestart()" />
           </div>
         </div>
       </div>
