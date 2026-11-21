@@ -31,8 +31,8 @@ export const CONTENT_BASE =
 	"app-popover z-[60] overflow-hidden border border-gray-200 bg-white text-gray-900 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100";
 
 export const ITEM: Record<SelectSize, string> = {
-	md: "rounded-md px-2.5 py-2 text-sm [@media(pointer:coarse)]:py-2.5",
-	sm: "rounded px-2 py-1 text-xs [@media(pointer:coarse)]:py-2",
+	md: "rounded-md px-2.5 py-2 text-sm [@media(pointer:coarse)]:min-h-11",
+	sm: "rounded px-2 py-1 text-xs [@media(pointer:coarse)]:min-h-10",
 };
 
 export const ITEM_BASE =
