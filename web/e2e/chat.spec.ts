@@ -522,8 +522,12 @@ test("pasting two images attaches and sends both", async ({ page }) => {
 
 	const previews = page.getByTestId("chat-attachment");
 	await expect(previews).toHaveCount(2);
-	await expect(page.getByRole("button", { name: "Remove image 1" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "Remove image 2" })).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Remove image 1" }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Remove image 2" }),
+	).toBeVisible();
 
 	await input.fill("compare these");
 	await input.press("Enter");
@@ -584,18 +588,19 @@ test("the file picker and drag-and-drop append attachments", async ({
 	await expect(input).toBeEnabled();
 	await pasteImages(input, [RED_PNG]);
 
-	await page.getByTestId("chat-attachment-input").setInputFiles([
-		{
-			name: "a.png",
-			mimeType: "image/png",
-			buffer: Buffer.from(BLUE_PNG, "base64"),
+	// Pick two files at once in the hidden file input.
+	await page.getByTestId("chat-attachment-input").evaluate(
+		(el, images) => {
+			const data = new DataTransfer();
+			for (const b64 of images) {
+				const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+				data.items.add(new File([bytes], "picked.png", { type: "image/png" }));
+			}
+			(el as HTMLInputElement).files = data.files;
+			el.dispatchEvent(new Event("change", { bubbles: true }));
 		},
-		{
-			name: "b.png",
-			mimeType: "image/png",
-			buffer: Buffer.from(RED_PNG, "base64"),
-		},
-	]);
+		[BLUE_PNG, RED_PNG],
+	);
 	const previews = page.getByTestId("chat-attachment");
 	await expect(previews).toHaveCount(3);
 
