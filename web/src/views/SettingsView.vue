@@ -1,8 +1,8 @@
 <template>
 	<AppLayout>
-		<div ref="scrollRoot" class="h-full overflow-y-auto">
-			<div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-				<div
+		<div ref="scrollRoot" :class="isAgentFilesPage ? 'flex h-full flex-col overflow-hidden' : 'h-full overflow-y-auto'">
+			<div :class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'mx-auto max-w-7xl px-4 py-6 sm:px-6'">
+				<div v-if="!isAgentFilesPage"
 					class="sticky top-0 z-20 -mx-4 mb-6 border-b border-gray-200/80 bg-white/90 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6 dark:border-gray-800/80 dark:bg-gray-950/88">
 					<div class="flex items-center justify-between gap-3">
 						<h2 class="text-xl font-bold text-gray-900 dark:text-white" data-testid="settings-title">{{ pageTitle }}</h2>
@@ -34,16 +34,16 @@
 					</div>
 				</div>
 
-				<div v-if="errorMessage"
-					class="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+				<div v-if="errorMessage" :class="isAgentFilesPage ? 'mx-4 mt-4 sm:mx-6' : 'mb-4'"
+					class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
 					{{ errorMessage }}
 				</div>
-				<div v-if="okMessage"
-					class="mb-4 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+				<div v-if="okMessage" :class="isAgentFilesPage ? 'mx-4 mt-4 sm:mx-6' : 'mb-4'"
+					class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
 					{{ okMessage }}
 				</div>
-				<div v-if="compileToastVisible"
-					class="mb-4 flex items-center justify-between rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+				<div v-if="compileToastVisible" :class="isAgentFilesPage ? 'mx-4 mt-4 sm:mx-6' : 'mb-4'"
+					class="flex items-center justify-between rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-300">
 					<span>Compile in progress… <RouterLink to="/system/jobs" class="font-medium underline">View jobs</RouterLink></span>
 					<button type="button" class="ml-4 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200" @click="compileToastVisible = false">✕</button>
 				</div>
@@ -922,6 +922,17 @@ const pageTitle = computed(() => {
 	const name = agent.name || "New agent";
 	return `${name} · ${agentSubtabLabels[selectedAgentSubtab.value]}`;
 });
+
+/**
+ * The Files page is a full-page editor: the open file's bar replaces the
+ * page header, and the editor fills the rest of the page.
+ */
+const isAgentFilesPage = computed(
+	() =>
+		activeTab.value === "agents" &&
+		selectedAgentSubtab.value === "files" &&
+		selectedAgentIdx.value < draft.value.agents.length,
+);
 
 const selectedAgentAsSingletonList = computed(() =>
 	selectedAgentIdx.value < draft.value.agents.length
@@ -3465,6 +3476,7 @@ const settingsContext = proxyRefs({
 	isEntryCategoryFullyEnabled,
 	isEntryCategoryPartiallyEnabled,
 	isEntryToolEnabled,
+	isAgentFilesPage,
 	isProtectedAgentFile,
 	isTaskEnabled,
 	isToolEnabled,
