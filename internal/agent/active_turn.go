@@ -113,7 +113,7 @@ func beginActiveTurn(agentID, sessionID string) *activeRun {
 	}
 	runs[run.id] = run
 	activeTurns.mu.Unlock()
-	activeTurns.notify(run, false)
+	activeTurns.notify(run, true)
 	return run
 }
 

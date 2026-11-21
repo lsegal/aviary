@@ -44,7 +44,8 @@
 								<span class="text-xs font-medium text-gray-400 dark:text-gray-500 select-none">{{ item.label }}</span>
 							</div>
 							<!-- Tool-use indicator -->
-							<div v-else-if="item.type === 'message' && item.msg.role === 'tool'" class="text-left my-0.5">
+							<div v-else-if="item.type === 'message' && item.msg.role === 'tool'" data-testid="chat-tool-call"
+								:data-pending="item.msg.toolPending ? 'true' : undefined" class="text-left my-0.5">
 								<ChatToolCall :name="toolName(item.msg)" :args="item.msg.toolData?.args"
 									:result="item.msg.toolData?.result ?? (item.msg.toolData ? undefined : item.msg.text)"
 									:error="item.msg.toolData?.error" :pending="!!item.msg.toolPending" />
@@ -104,7 +105,7 @@
 								</div>
 							</div>
 						</template>
-						<div v-if="currentSessionProcessing" class="text-left">
+						<div v-if="currentSessionProcessing" data-testid="chat-typing" class="text-left">
 							<span
 								class="inline-block animate-pulse rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-400 dark:bg-gray-800">…</span>
 						</div>
