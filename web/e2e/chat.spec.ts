@@ -905,9 +905,7 @@ test("a failed turn's error attaches to its message and Retry re-runs it", async
 	await input.press("Enter");
 
 	// The error hangs off the sent message's bubble, not as its own entry.
-	const sent = page
-		.locator("div.flex-col.items-end")
-		.filter({ hasText: "summarize" });
+	const sent = page.locator(".text-right").filter({ hasText: "summarize" });
 	const error = sent.getByTestId("chat-message-error");
 	await expect(error).toContainText("Error: MCP error: 502 Bad Gateway");
 	await expect(error).toContainText("claude/opus");
@@ -918,9 +916,7 @@ test("a failed turn's error attaches to its message and Retry re-runs it", async
 	if (bubble && attached) {
 		// Staggered: tucked under the bubble and inset from its right edge.
 		expect(attached.y).toBeLessThan(bubble.y + bubble.height + 1);
-		expect(attached.x + attached.width).toBeLessThan(
-			bubble.x + bubble.width,
-		);
+		expect(attached.x + attached.width).toBeLessThan(bubble.x + bubble.width);
 	}
 
 	// Retrying while the provider still fails updates the error in place.

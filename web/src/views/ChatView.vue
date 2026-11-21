@@ -50,7 +50,7 @@
 									:error="item.msg.toolData?.error" :pending="!!item.msg.toolPending" />
 							</div>
 							<!-- Regular user / assistant messages -->
-							<div v-else-if="item.type === 'message'" :class="item.msg.role === 'user' ? 'flex flex-col items-end' : 'text-left'">
+							<div v-else-if="item.type === 'message'" :class="item.msg.role === 'user' ? 'flex flex-col items-end text-right' : 'text-left'">
 								<div
 									:class="item.msg.role === 'user'
 										? 'inline-flex flex-col items-end gap-1 rounded-xl bg-blue-600 px-4 py-2 text-base text-white max-w-lg'
