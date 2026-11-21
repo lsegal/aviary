@@ -204,6 +204,7 @@ func TestAgentRunner_PersistsToolMessagesSeparately(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	assert.Len(t, toolEvents, 2)
 	assert.Equal(t, "web_search", toolEvents[0].Name)
@@ -270,6 +271,7 @@ func TestAgentRunner_NormalizesSessionHistoryCurrentSessionID(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, toolClient.calls, 1) {
 		assert.Equal(t, "session_history", toolClient.calls[0].Tool)
@@ -319,6 +321,7 @@ func TestAgentRunner_BareOverrideClearsSystemPrompt(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, provider.requests, 1) {
 		assert.Equal(t, "", provider.requests[0].System)
@@ -408,6 +411,7 @@ func TestAgentRunner_HistoryOverrideFalseSkipsSessionConversation(t *testing.T) 
 	case <-time.After(3 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, provider.requests, 1) {
 		assert.Len(t, provider.requests[0].Messages, 1)
@@ -449,6 +453,7 @@ func TestAgentRunner_HistoryOverrideTrueLoadsSessionConversation(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, provider.requests, 1) {
 		// Prior conversation is collapsed into a single assistant message
@@ -503,6 +508,7 @@ func TestAgentRunner_DefaultPromptIncludesSystemPreamble(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, provider.requests, 1) {
 		system := provider.requests[0].System
@@ -557,6 +563,7 @@ func TestAgentRunner_NonInteractiveJobPrompt(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, provider.requests, 1) {
 		assert.Contains(t, provider.requests[0].System, "IMPORTANT: This is a non-interactive job run.")
@@ -592,6 +599,7 @@ func TestAgentRunner_RequestContextReachesTurnNotSession(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 
 	if assert.Len(t, provider.requests, 1) {
 		system := provider.requests[0].System
@@ -674,6 +682,7 @@ func TestAgentRunner_NilProvider(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 	assert.GreaterOrEqual(t, len(got), 2)
 	assert.Equal(t, StreamEventText, got[0].Type)
 	assert.Equal(t, StreamEventDone, got[len(got)-1].Type)
@@ -702,6 +711,7 @@ func TestAgentRunner_WithProvider(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		assert.FailNow(t, "timeout")
 	}
+	runner.Wait()
 	assert.Equal(t, "hello world", text)
 	assert.Equal(t, []string{"hello ", "world"}, chunks)
 
