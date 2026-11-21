@@ -691,7 +691,9 @@ test("long wrapped output never grows a card past half the viewport (#718)", asy
 		await output.evaluate((el) => el.scrollHeight),
 	);
 	// The header and actions keep their natural size.
-	await expect(card.getByRole("link", { name: /#218 Cap scheduler/ })).toBeInViewport();
+	await expect(
+		card.getByRole("link", { name: /#218 Cap scheduler/ }),
+	).toBeInViewport();
 	await expect(card.getByRole("button", { name: "Retry" })).toBeInViewport();
 });
 
