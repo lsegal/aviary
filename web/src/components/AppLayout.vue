@@ -97,11 +97,13 @@
 
     <div v-if="mobileChildren.length"
       class="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-800 dark:bg-gray-950 lg:hidden">
-      <nav class="flex gap-2 overflow-x-auto pb-1">
+      <nav class="group flex gap-2 overflow-x-auto pb-1">
         <router-link v-for="child in mobileChildren" :key="child.key" :to="child.to"
           :class="mobileSubnavClass(child)">
           {{ child.label }}<span v-if="child.count" class="ml-1.5 text-xs font-normal text-gray-400">{{ child.count }}</span>
         </router-link>
+        <SidebarRowAction v-if="mobileAdd" :label="rowAddLabel(mobileAdd.page)" class="my-auto ml-auto h-8 w-8"
+          data-testid="mobile-row-action" @click="openAdd(mobileAdd.page, mobileAdd.agent)" />
         <div v-if="systemActive" class="ml-auto flex shrink-0 items-center gap-1">
           <button type="button" aria-label="Restart" title="Restart" data-testid="restart-button"
             class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
@@ -150,13 +152,19 @@
       <div class="min-h-0 flex-1 space-y-1 overflow-y-auto" data-testid="sidebar-nav">
         <div v-if="soleAgent" class="mb-3 space-y-1" data-testid="sidebar-sole-agent" :data-agent="soleAgent.name">
           <template v-for="child in soleAgent.children" :key="child.key">
-            <router-link :to="child.to" :class="[topLevelLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
-              <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
-              <span v-if="child.key === 'projects' && soleAgent.running > 0" data-testid="agent-running-badge"
-                class="shrink-0 rounded-full bg-blue-600 px-1.5 text-xs font-semibold text-white">{{ soleAgent.running }}</span>
-              <span v-else-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
-            </router-link>
+            <div class="group relative" :data-testid="`sidebar-row-${child.key}`">
+              <router-link :to="child.to" :class="[topLevelLinkClass(isChildActive(child), false), 'flex items-center gap-2', rowAddLabel(child.key) ? 'pr-10' : '']">
+                <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
+                <span v-if="child.key === 'projects' && soleAgent.running > 0" data-testid="agent-running-badge"
+                  class="shrink-0 rounded-full bg-blue-600 px-1.5 text-xs font-semibold text-white">{{ soleAgent.running }}</span>
+                <span v-else-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
+              </router-link>
+              <SidebarRowAction v-if="rowAddLabel(child.key)" :label="rowAddLabel(child.key)"
+                class="absolute right-2 top-1/2 -translate-y-1/2" @click="openAdd(child.key, soleAgent.name)" />
+            </div>
             <ChatSessionList v-if="child.key === 'chat' && chatsOpen" :agent="soleAgent.name" />
+            <AgentTaskList v-if="child.key === 'tasks' && tasksOpen" :agent="soleAgent.name" />
+            <AgentFileList v-if="child.key === 'files' && filesOpen" :agent="soleAgent.name" />
             <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
               <router-link v-for="p in soleAgent.projects" :key="p.key" :to="p.to"
                 :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
@@ -184,11 +192,17 @@
             </router-link>
             <div v-if="a.children.length" class="space-y-1 border-l border-gray-200 pl-2 dark:border-gray-800" :data-testid="`sidebar-agent-${a.name}`">
               <template v-for="child in a.children" :key="child.key">
-                <router-link :to="child.to" :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
-                  <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
-                  <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
-                </router-link>
+                <div class="group relative" :data-testid="`sidebar-row-${child.key}`">
+                  <router-link :to="child.to" :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2', rowAddLabel(child.key) ? 'pr-10' : '']">
+                    <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
+                    <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
+                  </router-link>
+                  <SidebarRowAction v-if="rowAddLabel(child.key)" :label="rowAddLabel(child.key)"
+                    class="absolute right-2 top-1/2 mt-0.5 -translate-y-1/2" @click="openAdd(child.key, a.name)" />
+                </div>
                 <ChatSessionList v-if="child.key === 'chat' && chatsOpen" :agent="a.name" />
+                <AgentTaskList v-if="child.key === 'tasks' && tasksOpen" :agent="a.name" />
+                <AgentFileList v-if="child.key === 'files' && filesOpen" :agent="a.name" />
                 <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
                   <router-link v-for="p in a.projects" :key="p.key" :to="p.to"
                     :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
@@ -298,6 +312,8 @@
       <slot />
     </main>
 
+    <AgentItemDialogs />
+
     <UpgradeDialog :open="upgradeDialogOpen" :latest-version="latestVersion" :release-url="releaseUrl"
       :jobs="restart?.jobs ?? []" :busy="upgrading" :git="git" @close="upgradeDialogOpen = false"
       @confirm="triggerUpgrade($event)" />
@@ -316,16 +332,22 @@ import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowRightOnRectangleIcon from "@heroicons/vue/24/outline/ArrowRightOnRectangleIcon";
 import GlobeAltIcon from "@heroicons/vue/24/outline/GlobeAltIcon";
 import { type Component, computed, markRaw } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
+import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useServerStatus } from "../composables/useServerStatus";
+import { agentFilePath, useAgentFilesStore } from "../stores/agentFiles";
 import { projectOwner } from "../lib/projectSettings";
 import { shortVersion } from "../lib/version";
 import { type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
-import { useSettingsStore } from "../stores/settings";
+import { agentTaskPath, useSettingsStore } from "../stores/settings";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
 import ChatSessionList from "./chat/ChatSessionList.vue";
+import AgentFileList from "./sidebar/AgentFileList.vue";
+import AgentItemDialogs from "./sidebar/AgentItemDialogs.vue";
+import AgentTaskList from "./sidebar/AgentTaskList.vue";
+import SidebarRowAction from "./sidebar/SidebarRowAction.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 
 interface NavChild {
@@ -333,6 +355,8 @@ interface NavChild {
 	label: string;
 	to: string;
 	count?: string;
+	/** Overrides the path match, for items picked by a query. */
+	active?: boolean;
 }
 
 interface AgentNav {
@@ -355,6 +379,7 @@ interface BrandLink {
 
 const auth = useAuthStore();
 const route = useRoute();
+const router = useRouter();
 const {
 	status,
 	version,
@@ -540,6 +565,60 @@ const projectsOpen = computed(() =>
 	/^\/agents\/[^/]+\/projects(\/|$)/.test(route.path),
 );
 
+// An agent's Tasks and Files list their items on their own pages.
+const tasksOpen = computed(() => /^\/agents\/[^/]+\/tasks\/?$/.test(route.path));
+const filesOpen = computed(() => /^\/agents\/[^/]+\/files\/?$/.test(route.path));
+
+const { open: openItemDialog } = useAgentItemDialogs();
+const agentFiles = useAgentFilesStore();
+
+/** The "+" of an agent's page row, or "" when the page has none. */
+function rowAddLabel(page: string): string {
+	if (page === "tasks") return "Add task";
+	if (page === "files") return "Add file";
+	return "";
+}
+
+function openAdd(page: string, agent: string) {
+	if (page === "tasks" || page === "files")
+		openItemDialog({ kind: page === "tasks" ? "task" : "file", agent, mode: "create" });
+}
+
+/** The active agent's tasks or files, for the narrow-screen second row. */
+function agentItems(agent: string): NavChild[] {
+	if (tasksOpen.value) {
+		const tasks =
+			settingsStore.config?.agents.find((a) => a.name === agent)?.tasks ?? [];
+		const q = route.query.task;
+		return tasks
+			.filter((t) => t.name)
+			.map((t, i) => ({
+				key: `task:${t.name}`,
+				label: t.name,
+				to: router.resolve(agentTaskPath(agent, t.name)).fullPath,
+				active: typeof q === "string" && q ? q === t.name : i === 0,
+			}));
+	}
+	if (filesOpen.value) {
+		const q = route.query.file;
+		return agentFiles.files(agent).map((f, i) => ({
+			key: `file:${f}`,
+			label: f,
+			to: router.resolve(agentFilePath(agent, f)).fullPath,
+			active: typeof q === "string" && q ? q === f : i === 0,
+		}));
+	}
+	return [];
+}
+
+const mobileAdd = computed(() => {
+	const agent = agentNav.value.find((a) => a.active);
+	if (!agent) return null;
+	if (tasksOpen.value) return { page: "tasks", agent: agent.name };
+	if (filesOpen.value) return { page: "files", agent: agent.name };
+	return null;
+});
+
 const addAgentLink = { path: "/agents", query: { add: "1" } };
 
 // + Add project opens the add dialog on the agent's GitHub Projects board.
@@ -603,14 +682,17 @@ function childLinkClass(active: boolean, mobile: boolean): string {
 const mobileChildren = computed<NavChild[]>(() => {
 	const agent = agentNav.value.find((a) => a.active);
 	// A sole agent's pages are already the main row.
-	if (agent && soleAgent.value) return projectsOpen.value ? agent.projects : [];
-	if (agent) return [...agent.children, ...(projectsOpen.value ? agent.projects : [])];
+	const items = agent
+		? [...(projectsOpen.value ? agent.projects : []), ...agentItems(agent.name)]
+		: [];
+	if (agent && soleAgent.value) return items;
+	if (agent) return [...agent.children, ...items];
 	if (systemActive.value) return [...systemPrimary, ...systemMore.value];
 	return [];
 });
 
 function mobileSubnavClass(child: NavChild): string {
-	return isChildActive(child)
+	return (child.active ?? isChildActive(child))
 		? "shrink-0 rounded-lg bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-950 dark:bg-gray-800 dark:text-white"
 		: "shrink-0 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white";
 }

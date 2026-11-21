@@ -14,7 +14,18 @@ export function editDeleteActions(
 ): SidebarItemAction[] {
 	const { locked = false, lockedTitle } = options;
 	return [
-		{ key: "edit", label: editLabel, disabled: locked, title: locked ? lockedTitle : undefined },
-		{ key: "delete", label: "Delete", danger: true, disabled: locked, title: locked ? lockedTitle : undefined },
+		{
+			key: "edit",
+			label: editLabel,
+			disabled: locked,
+			title: locked ? lockedTitle : undefined,
+		},
+		{
+			key: "delete",
+			label: "Delete",
+			danger: true,
+			disabled: locked,
+			title: locked ? lockedTitle : undefined,
+		},
 	];
 }

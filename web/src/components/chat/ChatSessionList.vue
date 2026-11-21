@@ -1,6 +1,6 @@
 <template>
 	<div data-testid="sidebar-chats">
-		<SidebarItemList :items="ordered" :item-key="(s) => s.id" more-testid="sidebar-chats-more">
+		<SidebarItemList :items="sessions" :item-key="(s) => s.id" more-testid="sidebar-chats-more">
 			<template #default="{ item: s }">
 				<SidebarItemRow data-testid="chat-row" :data-session="s.id" :to="chatPath(agent, s.id)"
 					:label="chatDisplayName(s)" :active="s.id === activeId" :actions="chatActions(s)"
@@ -94,18 +94,6 @@ const activeId = computed(() => {
 	if (typeof route.params.sessionId === "string") return route.params.sessionId;
 	return sessions.value.find(isMainChat)?.id ?? "";
 });
-
-const lastActive = (s: ChatSession) =>
-	Date.parse(s.last_message_at || s.created_at) || 0;
-
-// Main Chat leads; the rest follow, most recent message first.
-const ordered = computed(() =>
-	[...sessions.value].sort(
-		(a, b) =>
-			Number(isMainChat(b)) - Number(isMainChat(a)) ||
-			lastActive(b) - lastActive(a),
-	),
-);
 
 const renameAction: SidebarItemAction = { key: "edit", label: "Rename" };
 const deleteAction: SidebarItemAction = {

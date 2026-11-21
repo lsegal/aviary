@@ -160,7 +160,9 @@ function showing(kind: "task" | "file", agent: string, name: string): boolean {
 
 async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 	const name = form.name.trim();
-	const clash = agentTasks(agent).some((t) => t.name === name && t.name !== from);
+	const clash = agentTasks(agent).some(
+		(t) => t.name === name && t.name !== from,
+	);
 	if (clash) throw new Error(`A task named ${name} already exists.`);
 	const fields = { schedule: form.schedule.trim(), prompt: form.prompt };
 	if (mode === "create") {
@@ -182,7 +184,10 @@ async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 	}
 	const current = agentTasks(agent).find((t) => t.name === from);
 	if (!current) throw new Error(`Task ${from} no longer exists.`);
-	if (current.schedule !== fields.schedule || current.prompt !== fields.prompt) {
+	if (
+		current.schedule !== fields.schedule ||
+		current.prompt !== fields.prompt
+	) {
 		await settings.saveAgentTasks(agent, (tasks) =>
 			tasks.map((t) => (t.name === from ? { ...t, ...fields } : t)),
 		);

@@ -108,7 +108,7 @@ test("the Chats list shows Main Chat first, titles, and last-message time on hov
 		page
 			.getByTestId("sidebar-chats")
 			.locator(
-				'[data-testid="chat-row"]:last-of-type + [data-testid="sidebar-new-chat"]',
+				':has([data-testid="chat-row"]) + [data-testid="sidebar-new-chat"]',
 			),
 	).toBeVisible();
 	// The top tabs are gone on wide screens.
