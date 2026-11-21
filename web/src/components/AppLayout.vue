@@ -100,14 +100,9 @@
       :class="sidebarPeek ? 'fixed inset-y-0 left-0 z-40 shadow-xl' : 'relative'"
       @mouseenter="cancelSidebarPeekClose" @mouseleave="closeSidebarPeekSoon" @click="closeSidebarPeekOnLink"
       @focusout="closeSidebarPeekOnFocusOut">
-      <div class="group/row mb-6 flex items-center gap-2">
+      <div class="mb-6 flex items-center gap-2">
         <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 shrink-0 object-contain" />
-        <div class="relative flex min-w-0 flex-1 items-center self-stretch">
-          <span class="truncate text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
-          <!-- With one agent there is no Agents row, so its pages hang off
-               Aviary itself and Add agent sits here. -->
-          <SidebarRowAction v-if="soleAgent" label="Add agent" data-testid="sidebar-add-agent" :to="addAgentLink" />
-        </div>
+        <span class="min-w-0 flex-1 truncate text-lg font-bold text-gray-900 dark:text-white" data-testid="sidebar-title">Aviary</span>
         <div class="flex items-center gap-1">
           <a
             v-for="link in brandLinks"
@@ -174,12 +169,9 @@
           </template>
         </div>
         <template v-else>
-        <div class="group/row relative">
-          <router-link to="/agents" :class="[topLevelLinkClass(false), 'flex items-center pr-9']" data-testid="sidebar-agents">
-            Agents
-          </router-link>
-          <SidebarRowAction label="Add agent" data-testid="sidebar-add-agent" :to="addAgentLink" />
-        </div>
+        <router-link to="/agents" :class="[topLevelLinkClass(false), 'flex items-center']" data-testid="sidebar-agents">
+          Agents
+        </router-link>
         <div class="mb-3 mt-1 space-y-1 pl-2" data-testid="sidebar-agent-list">
           <template v-for="a in agentNav" :key="a.name">
             <router-link :to="a.to" :data-agent="a.name"
@@ -774,8 +766,7 @@ const agentNav = computed<AgentNav[]>(() => {
 });
 
 // With exactly one agent its pages are the top level, with no Agents → name
-// level, and + Add Agent moves below System. A second agent, including one
-// being added, brings the full tree back.
+// level. A second agent, including one being added, brings the full tree back.
 const soleAgent = computed<AgentNav | undefined>(() =>
 	agentNav.value.length === 1 && !agentNav.value[0].name.startsWith("_")
 		? agentNav.value[0]
@@ -840,8 +831,6 @@ const mobileAdd = computed(() => {
 	if (filesOpen.value) return { page: "files", agent: agent.name };
 	return null;
 });
-
-const addAgentLink = { path: "/agents", query: { add: "1" } };
 
 // Add project opens the add dialog on the agent's GitHub Projects board.
 function addProjectLink(agent: string) {
@@ -939,20 +928,13 @@ const mobileChildren = computed<NavChild[]>(() => {
 });
 
 // The narrow-screen main row: a sole agent's pages, or one pill per agent,
-// plus System and + Add Agent. Items that do not fit go behind "…".
+// plus System. Agents are added from System → Settings. Items that do not fit go behind "…".
 const mobileMainItems = computed<MobileNavItem[]>(() => {
 	const system: MobileNavItem = {
 		key: "system",
 		label: "System",
 		to: "/system/overview",
 		active: systemActive.value,
-	};
-	const addAgent: MobileNavItem = {
-		key: "add-agent",
-		label: "+ Add Agent",
-		to: addAgentLink,
-		active: false,
-		testid: "mobile-add-agent",
 	};
 	const sole = soleAgent.value;
 	if (sole) {
@@ -965,7 +947,6 @@ const mobileMainItems = computed<MobileNavItem[]>(() => {
 				running: child.running,
 			})),
 			system,
-			addAgent,
 		];
 	}
 	return [
@@ -975,7 +956,6 @@ const mobileMainItems = computed<MobileNavItem[]>(() => {
 			to: a.to,
 			active: a.active,
 		})),
-		addAgent,
 		system,
 	];
 });

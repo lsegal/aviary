@@ -481,11 +481,7 @@ test('on a touch screen the sidebar\'s "+" actions show without hovering', async
 	);
 
 	await expect(page.getByTestId("sidebar-sole-agent")).toBeVisible();
-	for (const testid of [
-		"sidebar-new-chat",
-		"sidebar-add-project",
-		"sidebar-add-agent",
-	]) {
+	for (const testid of ["sidebar-new-chat", "sidebar-add-project"]) {
 		await expect.poll(() => opacity(page, testid)).toBe(1);
 	}
 

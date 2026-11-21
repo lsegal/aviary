@@ -67,7 +67,8 @@ type ServerConfig struct {
 	FailedTaskTimeout string `yaml:"failed_task_timeout,omitempty" json:"failed_task_timeout,omitempty"`
 	// AutoUpdate installs new releases automatically as soon as they are
 	// available, checkpointing running jobs so they resume after the restart.
-	AutoUpdate bool `yaml:"auto_update,omitempty" json:"auto_update,omitempty"`
+	// Unset means on; see EffectiveServerAutoUpdate.
+	AutoUpdate *bool `yaml:"auto_update,omitempty" json:"auto_update,omitempty"`
 }
 
 // TLSConfig holds paths to TLS certificate and key.
@@ -507,6 +508,15 @@ func EffectiveBrowserReuseTabs(b BrowserConfig) bool {
 	return BoolOr(b.ReuseTabs, true)
 }
 
+// EffectiveServerAutoUpdate reports whether new releases install
+// automatically. Defaults to true when unset.
+func EffectiveServerAutoUpdate(cfg *Config) bool {
+	if cfg == nil {
+		return true
+	}
+	return BoolOr(cfg.Server.AutoUpdate, true)
+}
+
 // EffectiveCodingSkillsAutoUpdate reports whether outdated skills Aviary ships
 // are reinstalled automatically. Defaults to true when unset.
 func EffectiveCodingSkillsAutoUpdate(cfg *Config) bool {
@@ -538,6 +548,9 @@ func normalize(cfg *Config) {
 	}
 	if len(cfg.Models.Providers) == 0 {
 		cfg.Models.Providers = nil
+	}
+	if BoolOr(cfg.Server.AutoUpdate, true) {
+		cfg.Server.AutoUpdate = nil
 	}
 	if EffectiveBrowserReuseTabs(cfg.Browser) {
 		cfg.Browser.ReuseTabs = nil
