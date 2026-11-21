@@ -165,11 +165,7 @@ function card(input: ShareCard, logo: string): Node {
 								? h("span", { whiteSpace: "pre" }, parts.before)
 								: null,
 							parts.accent
-								? h(
-										"span",
-										{ color: palette.brand2 },
-										parts.accent,
-									)
+								? h("span", { color: palette.brand2 }, parts.accent)
 								: null,
 							parts.after
 								? h("span", { whiteSpace: "pre" }, parts.after)
