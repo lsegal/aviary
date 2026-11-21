@@ -505,13 +505,14 @@ func TestCLITurn_FullModeEnforcesNarrowedRules(t *testing.T) {
 		commands []string
 		paths    []string
 		enforced bool
+		hooked   bool
 	}{
-		{"everything allowed", []string{"*", "!rm *"}, []string{"@/**", "!@/token"}, false},
-		{"a parent of the Aviary directory", []string{"*"}, []string{parent}, false},
-		{"narrowed commands", []string{"gh *"}, []string{"@/**"}, true},
-		{"narrowed paths", []string{"*"}, []string{"@/agents/**"}, true},
-		{"denied Aviary directory", []string{"*"}, []string{"!@/**"}, true},
-		{"no command rules", nil, []string{"@/**"}, true},
+		{"everything allowed", []string{"*", "!rm *"}, []string{"@/**", "!@/token"}, false, false},
+		{"a parent of the Aviary directory", []string{"*"}, []string{parent}, false, false},
+		{"narrowed commands", []string{"gh *"}, []string{"@/**"}, true, true},
+		{"narrowed paths", []string{"*"}, []string{"@/agents/**"}, true, false},
+		{"denied Aviary directory", []string{"*"}, []string{"!@/**"}, true, false},
+		{"no command rules", nil, []string{"@/**"}, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fb.turns = nil
@@ -537,7 +538,18 @@ func TestCLITurn_FullModeEnforcesNarrowedRules(t *testing.T) {
 			if !tc.enforced {
 				assert.Equal(t, []string{"--dangerously-skip-permissions"}, opts.Approval)
 				assert.Contains(t, opts.RefusalNote, "not by Aviary")
+				assert.Nil(t, opts.CommandHook)
 				return
+			}
+			if tc.hooked {
+				// claude's dontAsk mode still runs read-only commands no
+				// allow rule covers, so a hook checks every shell call (#595).
+				require.NotNil(t, opts.CommandHook)
+				assert.Equal(t, "agent_cli_full", opts.CommandHook.Agent)
+				assert.Equal(t, tc.commands, opts.CommandHook.Rules)
+				assert.NotEmpty(t, opts.CommandHook.Executable)
+			} else {
+				assert.Nil(t, opts.CommandHook, "rules allowing every command need no hook")
 			}
 			assert.Equal(t, enforce, opts.Approval)
 			assert.Contains(t, opts.RefusalNote, "Refused by Aviary")

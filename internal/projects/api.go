@@ -125,10 +125,11 @@ func (m *Manager) Status(_ context.Context, logOffset int) map[string]any {
 }
 
 // ListJobs is project_job_list: every job, running and errored ones first,
-// filtered by projects, status and a search query, and paged. No targets
-// means every project. total counts the jobs that match all three; with a
-// query, unfiltered_total counts those matching only the projects and status.
-func (m *Manager) ListJobs(targets []string, status, query string, offset, limit int) map[string]any {
+// filtered by projects, engine status, board state and a search query, and
+// paged. No targets means every project. total counts the jobs that match
+// them all; with a query, unfiltered_total counts those matching all but the
+// query.
+func (m *Manager) ListJobs(targets []string, status, state, query string, offset, limit int) map[string]any {
 	if limit <= 0 {
 		limit = defaultJobListLimit
 	}
@@ -140,6 +141,9 @@ func (m *Manager) ListJobs(targets []string, status, query string, offset, limit
 			continue
 		}
 		if status != "" && job.Status != status {
+			continue
+		}
+		if state != "" && job.BoardState() != state {
 			continue
 		}
 		unfiltered++
@@ -512,6 +516,7 @@ func jobSummary(job core.JobSnapshot) map[string]any {
 		"number": job.Number,
 		"title":  job.Title,
 		"status": job.Status,
+		"state":  job.BoardState(),
 		"kind":   job.Kind,
 		"agent":  job.Agent,
 		"model":  job.Model,
@@ -537,6 +542,9 @@ func jobSummary(job core.JobSnapshot) map[string]any {
 	if job.PullRequest > 0 {
 		summary["pull_request"] = job.PullRequest
 		summary["pull_request_url"] = job.PullRequestURL()
+		if job.PullRequestState != "" {
+			summary["pull_request_state"] = job.PullRequestState
+		}
 	}
 	if job.HasProgress() {
 		summary["progress"] = map[string]int{"done": job.TasksDone, "total": job.TasksTotal, "percent": job.Progress}

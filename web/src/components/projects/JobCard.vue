@@ -3,7 +3,7 @@
 		class="flex min-w-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
 		<div class="space-y-1.5 p-4">
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-				<JobStatusPill :status="job.status" />
+				<JobStatusPill :state="job.state" />
 				<router-link v-if="showProject" :to="projectBoardPath" data-testid="job-project"
 					class="truncate rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
 					:title="`Open ${job.target}'s board`">{{ job.target }}</router-link>
@@ -29,8 +29,7 @@
 					target="_blank" rel="noreferrer" class="hover:underline">#{{ job.number }}</a>
 				<template v-if="job.pr">
 					<span>·</span>
-					<a :href="job.prURL || githubURL(job.prRepo, 'pull', job.pr)" target="_blank" rel="noreferrer"
-						class="hover:underline">PR {{ prLabel }}</a>
+					<PullRequestLink :job="job" />
 				</template>
 				<template v-else-if="job.status !== 'queued' && job.number">
 					<span>·</span>
@@ -93,9 +92,11 @@ import {
 	jobPath,
 	type ProjectJob,
 	projectPath,
+	waitText,
 } from "../../lib/projects";
 import { useSettingsStore } from "../../stores/settings";
 import JobStatusPill from "./JobStatusPill.vue";
+import PullRequestLink from "./PullRequestLink.vue";
 
 const props = defineProps<{
 	job: ProjectJob;
@@ -119,21 +120,7 @@ const projectBoardPath = computed(() =>
 	projectPath(owner.value, props.job.target),
 );
 
-// Fork PRs live in another repository, so name it.
-const prLabel = computed(() =>
-	props.job.prRepo && props.job.prRepo !== props.job.repo
-		? `${props.job.prRepo}#${props.job.pr}`
-		: `#${props.job.pr}`,
-);
-
-const waitingText = computed(() => {
-	const { waitingReason, wakeAt } = props.job;
-	if (!waitingReason) return "";
-	const wake = Date.parse(wakeAt);
-	return Number.isNaN(wake) || wake <= props.now
-		? waitingReason
-		: `${waitingReason} · wakes in ${age(new Date(props.now - (wake - props.now)).toISOString(), props.now)}`;
-});
+const waitingText = computed(() => waitText(props.job, props.now));
 
 const progressPct = computed(() =>
 	Math.round((props.job.progressDone / props.job.progressTotal) * 100),
