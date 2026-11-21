@@ -51,6 +51,12 @@ session_remove { agent: "assistant", session_id: "01HZ..." }
 
 Or use **System → Sessions** in the control panel to delete sessions across all agents at once.
 
+**Clear a session:** The `"main"` session cannot be deleted. Clear its messages instead; it keeps its ID, name, and bindings:
+
+```bash
+session_clear { agent: "assistant", session_id: "main" }
+```
+
 **Resume a session:** Pass `session_id` to `agent_run` or select the session in the Chat view.
 
 ---

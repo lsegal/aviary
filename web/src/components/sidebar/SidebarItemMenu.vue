@@ -18,7 +18,7 @@
 					? 'text-red-600 data-[highlighted]:bg-red-50 dark:text-red-400 dark:data-[highlighted]:bg-red-950/40'
 					: 'text-gray-700 data-[highlighted]:bg-gray-100 dark:text-gray-200 dark:data-[highlighted]:bg-gray-800'"
 				@select="emit('select', action.key)">
-				<component :is="action.danger ? TrashIcon : PencilIcon" aria-hidden="true" class="h-4 w-4" />
+				<component :is="actionIcon(action)" aria-hidden="true" class="h-4 w-4" />
 				{{ action.label }}
 			</DropdownMenuItem>
 		</DropdownMenuContent>
@@ -26,6 +26,7 @@
 </template>
 
 <script setup lang="ts">
+import BackspaceIcon from "@heroicons/vue/24/outline/BackspaceIcon";
 import PencilIcon from "@heroicons/vue/24/outline/PencilIcon";
 import TrashIcon from "@heroicons/vue/24/outline/TrashIcon";
 import {
@@ -44,4 +45,10 @@ defineProps<{
 }>();
 const emit = defineEmits<{ select: [key: string] }>();
 const open = defineModel<boolean>("open", { default: false });
+
+// Clear empties an item rather than deleting it.
+function actionIcon(action: SidebarItemAction) {
+	if (action.key === "clear") return BackspaceIcon;
+	return action.danger ? TrashIcon : PencilIcon;
+}
 </script>
