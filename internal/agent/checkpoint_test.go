@@ -116,9 +116,9 @@ func TestRecoverCheckpoints_TimedOut(t *testing.T) {
 	// Session should have a timeout message appended.
 	msgs, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_timedout", sessionID))
 	require.NoError(t, err)
-	require.Len(t, msgs, 1)
-	assert.Equal(t, domain.MessageRoleAssistant, msgs[0].Role)
-	assert.Contains(t, msgs[0].Content, "interrupted")
+	require.Len(t, msgs, 2, "the session header, then the message")
+	assert.Equal(t, domain.MessageRoleAssistant, msgs[1].Role)
+	assert.Contains(t, msgs[1].Content, "interrupted")
 }
 
 func TestRecoverCheckpoints_Fresh(t *testing.T) {
@@ -208,8 +208,8 @@ func TestRecoverCheckpoints_RetryLimit(t *testing.T) {
 
 	msgs, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_retry_limit", sessionID))
 	require.NoError(t, err)
-	require.Len(t, msgs, 1)
-	assert.Contains(t, msgs[0].Content, "stopped retrying")
+	require.Len(t, msgs, 2, "the session header, then the message")
+	assert.Contains(t, msgs[1].Content, "stopped retrying")
 }
 
 func TestRecoverCheckpoints_UnreadableFile(t *testing.T) {
