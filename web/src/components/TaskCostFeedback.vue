@@ -133,6 +133,9 @@ watch(
 			state.value = "ready";
 			return;
 		}
+		// The old verdict no longer describes the input; the request itself
+		// waits for typing to pause.
+		state.value = "checking";
 		timer = setTimeout(() => void analyze(), props.debounceMs);
 	},
 	{ immediate: true },

@@ -263,7 +263,7 @@ test("saving is not blocked by an analysis in flight", async ({ page }) => {
 		"data-state",
 		"checking",
 	);
-	expect(calls).toHaveLength(1);
+	await expect.poll(() => calls.length).toBe(1);
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
 });
