@@ -1026,6 +1026,36 @@ test("logs panel docks below the board, streams lines, and resizes", async ({
 	await expect(page.getByTestId("project-logs")).toHaveCount(0);
 });
 
+test("prompt chat inserts a newline on Shift+Enter and sends on Enter", async ({
+	page,
+}) => {
+	const calls: Calls = {};
+	Object.assign(calls, await setup(page, undefined, chatFixtures(calls)));
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.getByTestId("prompt-chat-toggle").click();
+	const chat = page.getByTestId("project-chat");
+	const input = chat.getByPlaceholder("Type a message or paste an image…");
+	await expect(input).toBeEnabled();
+
+	await input.fill("line one");
+	const before = (await input.boundingBox())?.height ?? 0;
+	await input.press("Shift+Enter");
+	await input.pressSequentially("line two");
+	await expect(input).toHaveValue("line one\nline two");
+	await expect
+		.poll(async () => (await input.boundingBox())?.height ?? 0)
+		.toBeGreaterThan(before);
+	expect(calls.agent_run ?? []).toHaveLength(0);
+
+	await input.press("Enter");
+	await expect.poll(() => calls.agent_run?.length ?? 0).toBe(1);
+	expect(calls.agent_run[0].message).toBe("line one\nline two");
+	await expect(input).toHaveValue("");
+	const sent = chat.locator(".whitespace-pre-wrap", { hasText: "line two" });
+	await expect(sent).toBeVisible();
+	expect(await sent.innerText()).toBe("line one\nline two");
+});
+
 test("logs panel wraps long lines and indents multi-line entries", async ({
 	page,
 }) => {
