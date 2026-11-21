@@ -46,7 +46,7 @@
 						<textarea id="agent-task-prompt" v-model="form.prompt" rows="6" class="field-input font-mono text-xs"
 							:placeholder="form.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'" />
 						<TaskCostFeedback :agent="feedbackAgent" :prompt="form.prompt" :type="taskType"
-							:target="form.target" :precompile="dialog.mode === 'create' && canPrecompute && form.precompute" />
+							:target="form.target" :trigger="form.trigger" :precompile="dialog.mode === 'create' && canPrecompute && form.precompute" />
 						<label for="agent-task-send-to" class="field-label mt-3">Send To</label>
 						<AppCombobox id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
 							aria-describedby="agent-task-send-to-help" :options="sendToOptions"
