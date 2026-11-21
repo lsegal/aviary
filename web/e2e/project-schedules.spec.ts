@@ -373,6 +373,13 @@ test("a scheduled card opens its editor within the project page", async ({
 	await expect(editor.getByTestId("trigger-preview").locator("li")).toHaveCount(
 		3,
 	);
+	// Project tasks are never precomputed, so the feedback is informational.
+	const feedback = editor.getByTestId("task-cost-feedback");
+	await expect(feedback).toHaveAttribute("data-state", "project");
+	await expect(feedback).toContainText("Project tasks are never precomputed");
+	await expect(feedback).toContainText(
+		"Estimate unavailable: depends on the work the Projects job does",
+	);
 	const runs = editor.getByTestId("schedule-runs").locator("li");
 	await expect(runs).toHaveCount(2);
 	await expect(runs.first()).toContainText("running");
@@ -539,6 +546,10 @@ test("the header Schedule button creates a project scheduled task through the sh
 	const precompute = dialog.getByLabel("Try to precompute task");
 	await expect(precompute).toBeDisabled();
 	await expect(precompute).not.toBeChecked();
+	await expect(dialog.getByTestId("task-cost-feedback")).toHaveAttribute(
+		"data-state",
+		"project",
+	);
 	// Send To offers the agent's channel sessions by name.
 	const sendTo = dialog.getByLabel("Send To");
 	await expect(sendTo.locator("option")).toHaveText([

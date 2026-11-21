@@ -865,6 +865,8 @@ placeholder="Default project agent model"
 <div class="mt-4">
 <label class="field-label">{{ selectedTask.type === 'script' ? 'Script' : 'Prompt' }}</label>
 <textarea v-model="selectedTask.prompt" rows="12" class="field-input min-h-[28vh] font-mono text-xs" :placeholder="selectedTask.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'"></textarea>
+<TaskCostFeedback :agent="agent.name" :prompt="selectedTask.prompt ?? ''" :type="selectedTask.type || 'prompt'"
+	:target="selectedTask.target ?? ''" :model="selectedTask.type === 'project' ? (selectedTask.model ?? '') : ''" />
 <div class="flex gap-2 mt-3">
 <!-- Move task to file -->
 <button v-if="!selectedTask.from_file" type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Move this task out of aviary.yaml into a tasks/ file' : 'Task must have a name to be moved'" @click="moveTaskToFile(i, selectedTaskIdx ?? 0, agent.name, selectedTask.name)">Move to File</button>
@@ -921,6 +923,7 @@ import MessagingLogo from "../MessagingLogo.vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
 import SessionSelect from "../SessionSelect.vue";
+import TaskCostFeedback from "../TaskCostFeedback.vue";
 import TriggerEditor from "../TriggerEditor.vue";
 import TasksOverview from "../tasks/TasksOverview.vue";
 import { settingsViewContextKey } from "./context";
@@ -942,6 +945,7 @@ export default defineComponent({
 		SwitchRoot,
 		SwitchThumb,
 		TasksOverview,
+		TaskCostFeedback,
 		TriggerEditor,
 	},
 	setup() {

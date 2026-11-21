@@ -45,6 +45,7 @@ type compileTaskAnalysis struct {
 	ShouldCompile          bool               `json:"should_compile"`
 	NeedsDiscovery         bool               `json:"needs_discovery,omitempty"`
 	Reason                 string             `json:"reason,omitempty"`
+	UnboundedInput         bool               `json:"unbounded_input,omitempty"`
 	DeterministicStepCount int                `json:"deterministic_step_count,omitempty"`
 	Steps                  []compiledTaskStep `json:"steps,omitempty"`
 }
@@ -223,30 +224,13 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 		return nil, err
 	}
 
-	analysisSystem := "You are Aviary's task determinism analyzer. Break the task into concrete execution steps. For each step, decide whether it is deterministic from the prompt plus the available tool catalog. A step is deterministic when it can be executed with fixed arguments and bounded tool calls, even if the observed external result changes from run to run. For example, checking a URL with a fixed tool call, reading a fixed inbox query, downloading a fixed file, or visiting a fixed page with a grounded selector are deterministic observation steps. Do not confuse changing external data with nondeterminism. A step is nondeterministic only when it requires fuzzy judgment, semantic interpretation, hidden selectors, open-ended search, or discovery of missing parameters/capabilities. A notify step is deterministic whenever it can be implemented as print(...) or a fixed message template derived only from deterministic step outputs. When a non-empty task output target is provided, any script output emitted via print(...) will be delivered to that target by Aviary automatically. Treat that routed notification delivery as deterministic and preferred; do not require session_send for that case. If the task needs discovery that is not explicitly allowed, set needs_discovery=true. Only allow script compilation when the task contains more than one deterministic step and the overall workflow can be fully expressed in Aviary's Lua runtime with available tools. Prefer using the named tools in the catalog as evidence of capability; do not claim capabilities are missing when a listed tool clearly covers the step. Reply with JSON only using this schema: {\"should_compile\":bool,\"needs_discovery\":bool,\"reason\":string,\"deterministic_step_count\":number,\"steps\":[{\"kind\":\"deterministic|agent_run|notify|unknown\",\"deterministic\":bool,\"tool\":\"optional tool name\",\"description\":\"short description\"}]}. Do not invent tools."
-	analysisUser := buildCompileStageUserPrompt(prompt, target, tools, fmt.Sprintf("run_discovery=%t", runDiscovery))
-	analysisText, err := completeLLMText(ctx, provider, model, "analysis", analysisSystem, analysisUser, nil)
+	analysis, err := analyzeTaskDeterminism(ctx, provider, model, prompt, target, tools, runDiscovery)
 	if err != nil {
 		if tracker != nil {
 			tracker.record.Status = domain.TaskCompileStatusFailed
 			tracker.record.Reason = err.Error()
 		}
 		return nil, err
-	}
-	var analysis compileTaskAnalysis
-	if err := json.Unmarshal([]byte(extractJSONObject(analysisText)), &analysis); err != nil {
-		if tracker != nil {
-			tracker.record.Status = domain.TaskCompileStatusFailed
-			tracker.record.Reason = fmt.Sprintf("parsing compiler analysis: %v", err)
-		}
-		return nil, fmt.Errorf("parsing compiler analysis: %w", err)
-	}
-	if analysis.DeterministicStepCount == 0 {
-		for _, step := range analysis.Steps {
-			if step.Deterministic {
-				analysis.DeterministicStepCount++
-			}
-		}
 	}
 
 	result := &compiledTaskResult{
@@ -271,7 +255,7 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 		"deterministic_step_count", analysis.DeterministicStepCount,
 		"reason", strings.TrimSpace(analysis.Reason),
 	)
-	if analysis.DeterministicStepCount <= 1 || !analysis.ShouldCompile || analysis.NeedsDiscovery {
+	if !analysis.allowsCompile() {
 		if result.Reason == "" {
 			result.Reason = "task could not be validated as deterministic enough for script compilation"
 		}
@@ -386,6 +370,39 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 	return result, nil
 }
 
+// taskDeterminismSystemPrompt instructs the determinism analyzer that gates
+// precompilation, and the task editors' live preview of that gate.
+const taskDeterminismSystemPrompt = "You are Aviary's task determinism analyzer. Break the task into concrete execution steps. For each step, decide whether it is deterministic from the prompt plus the available tool catalog. A step is deterministic when it can be executed with fixed arguments and bounded tool calls, even if the observed external result changes from run to run. For example, checking a URL with a fixed tool call, reading a fixed inbox query, downloading a fixed file, or visiting a fixed page with a grounded selector are deterministic observation steps. Do not confuse changing external data with nondeterminism. A step is nondeterministic only when it requires fuzzy judgment, semantic interpretation, hidden selectors, open-ended search, or discovery of missing parameters/capabilities. A notify step is deterministic whenever it can be implemented as print(...) or a fixed message template derived only from deterministic step outputs. When a non-empty task output target is provided, any script output emitted via print(...) will be delivered to that target by Aviary automatically. Treat that routed notification delivery as deterministic and preferred; do not require session_send for that case. If the task needs discovery that is not explicitly allowed, set needs_discovery=true. Set unbounded_input=true when the amount of data a run reads or fetches has no fixed bound (for example, every new email, an arbitrary web page, or a whole feed), so the size of a model run cannot be estimated. Only allow script compilation when the task contains more than one deterministic step and the overall workflow can be fully expressed in Aviary's Lua runtime with available tools. Prefer using the named tools in the catalog as evidence of capability; do not claim capabilities are missing when a listed tool clearly covers the step. Reply with JSON only using this schema: {\"should_compile\":bool,\"needs_discovery\":bool,\"reason\":string,\"unbounded_input\":bool,\"deterministic_step_count\":number,\"steps\":[{\"kind\":\"deterministic|agent_run|notify|unknown\",\"deterministic\":bool,\"tool\":\"optional tool name\",\"description\":\"short description\"}]}. Do not invent tools."
+
+// allowsCompile reports whether the analysis passes the precompile gate: more
+// than one deterministic step, a compile recommendation, and no discovery.
+func (a *compileTaskAnalysis) allowsCompile() bool {
+	return a.DeterministicStepCount > 1 && a.ShouldCompile && !a.NeedsDiscovery
+}
+
+// analyzeTaskDeterminism runs the determinism analysis stage of task
+// compilation: it asks model to break prompt into steps and judge whether
+// the task can be compiled into a script.
+func analyzeTaskDeterminism(ctx context.Context, provider llm.Provider, model, prompt, target string, tools []agent.ToolInfo, runDiscovery bool) (*compileTaskAnalysis, error) {
+	user := buildCompileStageUserPrompt(prompt, target, tools, fmt.Sprintf("run_discovery=%t", runDiscovery))
+	text, err := completeLLMText(ctx, provider, model, "analysis", taskDeterminismSystemPrompt, user, nil)
+	if err != nil {
+		return nil, err
+	}
+	var analysis compileTaskAnalysis
+	if err := json.Unmarshal([]byte(extractJSONObject(text)), &analysis); err != nil {
+		return nil, fmt.Errorf("parsing compiler analysis: %w", err)
+	}
+	if analysis.DeterministicStepCount == 0 {
+		for _, step := range analysis.Steps {
+			if step.Deterministic {
+				analysis.DeterministicStepCount++
+			}
+		}
+	}
+	return &analysis, nil
+}
+
 func loadCompileAgentConfig(agentName string) (*config.Config, *config.AgentConfig, error) {
 	cfg, err := config.Load("")
 	if err != nil {
@@ -457,6 +474,13 @@ func completeLLMText(
 		switch ev.Type {
 		case llm.EventTypeText:
 			b.WriteString(ev.Text)
+		case llm.EventTypeUsage:
+			if usage := llmUsageFromContext(ctx); usage != nil && ev.Usage != nil {
+				usage.InputTokens += ev.Usage.InputTokens
+				usage.OutputTokens += ev.Usage.OutputTokens
+				usage.CacheReadTokens += ev.Usage.CacheReadTokens
+				usage.CacheWriteTokens += ev.Usage.CacheWriteTokens
+			}
 		case llm.EventTypeError:
 			if tracker != nil && stageIndex >= 0 {
 				tracker.finishStage(stageIndex, "failed", b.String(), ev.Error)
