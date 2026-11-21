@@ -31,6 +31,9 @@ func TestMain(m *testing.M) {
 	case "wired":
 		fakeWired()
 		os.Exit(0)
+	case "muse":
+		fakeMuse()
+		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }

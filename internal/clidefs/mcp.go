@@ -52,7 +52,8 @@ type MCPAllowFile struct {
 
 // SystemPrompt says how an interactive chat hands the CLI the agent's system
 // prompt: written to a temporary file for each turn, whose path
-// {systemPromptFile} stands for. A definition that declares none gets the
+// {systemPromptFile} stands for, or inline as a JSON string, which
+// {systemPromptJSON} stands for. A definition that declares none gets the
 // prompt at the start of the session's first turn instead.
 type SystemPrompt struct {
 	// Args are added to the chat's run and resume command lines where their
@@ -73,7 +74,10 @@ const (
 	placeholderMCPFile       = "mcpFile"
 	placeholderMCPAllowFile  = "mcpAllowFile"
 	placeholderSystemPrompt  = "systemPromptFile"
+	placeholderSystemJSON    = "systemPromptJSON"
 )
+
+var systemPromptPlaceholders = []string{placeholderSystemPrompt, placeholderSystemJSON}
 
 var mcpPlaceholders = []string{
 	placeholderMCPName, placeholderMCPURL, placeholderMCPTokenEnv, placeholderMCPAuthEnv,
@@ -190,31 +194,57 @@ func (d Definition) MCPToolPrefix(name string) string {
 	return substituteAll([]string{d.MCP.ToolPrefix}, MCPValues{Name: name}.value)[0]
 }
 
-// SystemPromptArgs renders the systemPrompt block's arguments for the prompt
-// written to file.
-func (d Definition) SystemPromptArgs(file string) []string {
+// SystemPromptValues are what one chat substitutes into the definition's
+// systemPrompt block.
+type SystemPromptValues struct {
+	// Prompt is the system prompt itself.
+	Prompt string
+	// File is the path the prompt was written to.
+	File string
+}
+
+func (v SystemPromptValues) value(name string) (string, bool) {
+	switch name {
+	case placeholderSystemPrompt:
+		return v.File, true
+	case placeholderSystemJSON:
+		var b strings.Builder
+		encoder := json.NewEncoder(&b)
+		encoder.SetEscapeHTML(false)
+		_ = encoder.Encode(v.Prompt)
+		return strings.TrimSuffix(b.String(), "\n"), true
+	}
+	return "", false
+}
+
+// SystemPromptWritesFile reports whether the definition's systemPrompt block
+// names the prompt file, so the prompt has to be written to one.
+func (d Definition) SystemPromptWritesFile() bool {
+	if d.SystemPrompt == nil {
+		return false
+	}
+	used, _ := placeholdersIn("systemPrompt", d.systemPromptStrings(), systemPromptPlaceholders)
+	return used[placeholderSystemPrompt]
+}
+
+// SystemPromptArgs renders the systemPrompt block's arguments.
+func (d Definition) SystemPromptArgs(values SystemPromptValues) []string {
 	if d.SystemPrompt == nil {
 		return nil
 	}
-	return substituteAll(d.SystemPrompt.Args, systemPromptValue(file))
+	return substituteAll(d.SystemPrompt.Args, values.value)
 }
 
-// SystemPromptEnv renders the systemPrompt block's environment for the
-// prompt written to file.
-func (d Definition) SystemPromptEnv(file string) []string {
+// SystemPromptEnv renders the systemPrompt block's environment.
+func (d Definition) SystemPromptEnv(values SystemPromptValues) []string {
 	if d.SystemPrompt == nil {
 		return nil
 	}
-	return renderEnv(d.SystemPrompt.Env, systemPromptValue(file))
+	return renderEnv(d.SystemPrompt.Env, values.value)
 }
 
-func systemPromptValue(file string) func(string) (string, bool) {
-	return func(name string) (string, bool) {
-		if name == placeholderSystemPrompt {
-			return file, true
-		}
-		return "", false
-	}
+func (d Definition) systemPromptStrings() []string {
+	return append(append([]string{}, d.SystemPrompt.Args...), envStrings(d.SystemPrompt.Env)...)
 }
 
 func substituteAll(args []string, value func(string) (string, bool)) []string {
@@ -416,12 +446,12 @@ func (d Definition) validateSystemPrompt() error {
 	if len(s.Args) > 0 && !d.chatTakesApproval() {
 		return fmt.Errorf(`field "systemPrompt.args" needs an argument that is exactly {approval} in "args.run" and "args.resume"`)
 	}
-	used, err := placeholdersIn("systemPrompt", append(append([]string{}, s.Args...), envStrings(s.Env)...), []string{placeholderSystemPrompt})
+	used, err := placeholdersIn("systemPrompt", d.systemPromptStrings(), systemPromptPlaceholders)
 	if err != nil {
 		return err
 	}
-	if !used[placeholderSystemPrompt] {
-		return fmt.Errorf(`field "systemPrompt" must name the prompt file with {%s}`, placeholderSystemPrompt)
+	if !used[placeholderSystemPrompt] && !used[placeholderSystemJSON] {
+		return fmt.Errorf(`field "systemPrompt" must name the prompt file with {%s} or pass the prompt with {%s}`, placeholderSystemPrompt, placeholderSystemJSON)
 	}
 	return nil
 }

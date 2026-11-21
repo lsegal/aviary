@@ -27,7 +27,7 @@ func TestBuiltinApprovalTranslations(t *testing.T) {
 			ApprovalFull:     {"--yolo"},
 		},
 		"muse": {
-			ApprovalReadOnly: {"--approval-mode", "untrusted", "--disable-write"},
+			ApprovalReadOnly: {"--permission-profile", ":read-only"},
 			ApprovalAuto:     {"--approval-mode", "never"},
 			ApprovalFull:     {"--yolo"},
 		},

@@ -248,13 +248,17 @@ func (s *definitionSession) wiring() (args, env []string, cleanup func(), err er
 		env = append(env, s.definition.MCPEnv(values)...)
 	}
 	if s.opts.SystemPrompt != "" && s.definition.TakesSystemPrompt() {
-		path, remove, err := writeSystemPromptFile(s.opts.SystemPrompt)
-		if err != nil {
-			return nil, nil, nil, err
+		values := clidefs.SystemPromptValues{Prompt: s.opts.SystemPrompt}
+		if s.definition.SystemPromptWritesFile() {
+			path, remove, err := writeSystemPromptFile(s.opts.SystemPrompt)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			cleanups = append(cleanups, remove)
+			values.File = path
 		}
-		cleanups = append(cleanups, remove)
-		args = append(args, s.definition.SystemPromptArgs(path)...)
-		env = append(env, s.definition.SystemPromptEnv(path)...)
+		args = append(args, s.definition.SystemPromptArgs(values)...)
+		env = append(env, s.definition.SystemPromptEnv(values)...)
 	}
 	return args, env, cleanup, nil
 }
