@@ -159,12 +159,12 @@ import {
 } from "../components/chat/attachments";
 import ChatComposer from "../components/chat/ChatComposer.vue";
 import ChatToolCall from "../components/chat/ChatToolCall.vue";
-import TypingIndicator from "../components/chat/TypingIndicator.vue";
 import {
 	chatDraftKey,
 	getChatDraft,
 	setChatDraft,
 } from "../components/chat/drafts";
+import TypingIndicator from "../components/chat/TypingIndicator.vue";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
 import { renderMarkdown } from "../lib/markdown";
