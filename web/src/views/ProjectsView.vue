@@ -476,7 +476,6 @@ function onNewSchedule() {
 		kind: "task",
 		mode: "create",
 		agent,
-		agents: scheduleOwners.value,
 		project: project.value,
 		onCreated: () => void refreshSchedules(),
 	});

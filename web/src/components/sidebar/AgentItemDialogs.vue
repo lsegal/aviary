@@ -254,8 +254,8 @@ const taskAgent = computed(() => {
 });
 
 /** The task's saved type for the dialog's Type and Target. */
-const taskType = computed((): AgentTaskType =>
-	form.targetKind === "project" ? "project" : form.type,
+const taskType = computed(
+	(): AgentTaskType => (form.targetKind === "project" ? "project" : form.type),
 );
 
 /** Precompute compiles prompt tasks of an agent into scripts. */
@@ -267,7 +267,8 @@ const precomputeHelp = computed(() => {
 	return "Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs";
 });
 watch(canPrecompute, (can) => {
-	form.precompute = can && settings.config?.scheduler?.precompute_tasks !== false;
+	form.precompute =
+		can && settings.config?.scheduler?.precompute_tasks !== false;
 });
 
 // A project task runs a prompt on a time trigger, so choosing Project makes
@@ -277,7 +278,8 @@ watch(
 	(kind) => {
 		if (kind !== "project") return;
 		form.type = "prompt";
-		if (!form.trigger.trigger) form.trigger = { ...form.trigger, trigger: "daily" };
+		if (!form.trigger.trigger)
+			form.trigger = { ...form.trigger, trigger: "daily" };
 		if (!form.project) form.project = projectChoices.value[0]?.target ?? "";
 	},
 );
