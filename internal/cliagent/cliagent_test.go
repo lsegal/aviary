@@ -53,7 +53,11 @@ func fakeClaude() {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
 	turn := 0
+	dieNext := false
 	for sc.Scan() {
+		if dieNext {
+			os.Exit(1) // dies as the next turn reaches it, without answering
+		}
 		turn++
 		var msg struct {
 			Message struct {
@@ -73,6 +77,9 @@ func fakeClaude() {
 		}
 		if text == "sleep" {
 			time.Sleep(time.Minute)
+		}
+		if text == "die-next" {
+			dieNext = true
 		}
 		if text == "system" {
 			text = system
@@ -465,6 +472,91 @@ func TestClaudeSession_ProcessExit(t *testing.T) {
 	r, err := s.Send(context.Background(), Turn{Text: "again"}, nil)
 	require.NoError(t, err)
 	assert.Contains(t, r.Text, "text=again")
+}
+
+// replyPID returns the pid field of a fake claude reply.
+func replyPID(t *testing.T, text string) int {
+	t.Helper()
+	var turn, pid int
+	_, err := fmt.Sscanf(text, "turn=%d pid=%d", &turn, &pid)
+	require.NoError(t, err)
+	return pid
+}
+
+func TestClaudeSession_ProcessDiedWhileIdle(t *testing.T) {
+	opts := fakeOptions(t, Claude)
+	opts.NewSessionID = "sess-idle"
+	s, err := NewSession(opts)
+	require.NoError(t, err)
+	defer s.Close() //nolint:errcheck
+
+	r1, err := s.Send(context.Background(), Turn{Text: "one"}, nil)
+	require.NoError(t, err)
+	proc, err := os.FindProcess(replyPID(t, r1.Text))
+	require.NoError(t, err)
+	require.NoError(t, proc.Kill())
+	<-s.(*claudeSession).proc.done
+
+	var events []Event
+	r2, err := s.Send(context.Background(), Turn{Text: "two"}, collect(&events))
+	require.NoError(t, err, "the turn that finds the dead process is still answered")
+	assert.Contains(t, r2.Text, "text=two")
+	assert.NotEqual(t, replyPID(t, r1.Text), replyPID(t, r2.Text))
+	assert.Equal(t, "sess-idle", events[0].SessionID, "the new process resumes the session")
+}
+
+func TestClaudeSession_WriteToDeadProcess(t *testing.T) {
+	opts := fakeOptions(t, Claude)
+	opts.NewSessionID = "sess-pipe"
+	s, err := NewSession(opts)
+	require.NoError(t, err)
+	defer s.Close() //nolint:errcheck
+
+	r1, err := s.Send(context.Background(), Turn{Text: "one"}, nil)
+	require.NoError(t, err)
+	// The process looks alive but its pipe is gone, as when it dies with
+	// its output still held open.
+	require.NoError(t, s.(*claudeSession).proc.stdin.Close())
+
+	var events []Event
+	r2, err := s.Send(context.Background(), Turn{Text: "two"}, collect(&events))
+	require.NoError(t, err)
+	assert.Contains(t, r2.Text, "text=two")
+	assert.NotEqual(t, replyPID(t, r1.Text), replyPID(t, r2.Text))
+	assert.Equal(t, "sess-pipe", events[0].SessionID)
+}
+
+func TestClaudeSession_ProcessDiesAsTurnArrives(t *testing.T) {
+	opts := fakeOptions(t, Claude)
+	opts.NewSessionID = "sess-race"
+	s, err := NewSession(opts)
+	require.NoError(t, err)
+	defer s.Close() //nolint:errcheck
+
+	r1, err := s.Send(context.Background(), Turn{Text: "die-next"}, nil)
+	require.NoError(t, err)
+
+	var events []Event
+	r2, err := s.Send(context.Background(), Turn{Text: "two"}, collect(&events))
+	require.NoError(t, err)
+	assert.Contains(t, r2.Text, "turn=1")
+	assert.Contains(t, r2.Text, "text=two")
+	assert.NotEqual(t, replyPID(t, r1.Text), replyPID(t, r2.Text))
+	assert.Equal(t, "sess-race", events[0].SessionID)
+}
+
+func TestClaudeSession_UndeliverableTurn(t *testing.T) {
+	s := newClaudeSession(fakeOptions(t, Claude))
+	defer s.Close() //nolint:errcheck
+	_, err := s.Send(context.Background(), Turn{Text: "one"}, nil)
+	require.NoError(t, err)
+	s.proc.stdin.Close() //nolint:errcheck,gosec // simulate a broken pipe
+	s.opts.Binary = "/nonexistent/claude"
+
+	_, err = s.Send(context.Background(), Turn{Text: "two"}, nil)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "writing to claude")
+	assert.NotContains(t, err.Error(), "pipe")
 }
 
 func TestCodexSession_ResumesThread(t *testing.T) {

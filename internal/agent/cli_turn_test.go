@@ -483,6 +483,70 @@ func TestCLITurn_PassesAgentPermissionsToTheCLI(t *testing.T) {
 	assert.Empty(t, fb.turns[0].opts.RefusalNote)
 }
 
+// TestCLITurn_FullModeEnforcesNarrowedRules checks the full chat approval
+// mode skips the CLI's own permission checks only for an agent whose rules
+// allow every command and the whole Aviary directory. Narrower rules launch
+// the CLI with its enforce arguments instead, so it refuses what they leave
+// out, naming the agent's rules, and still runs what they allow (#577).
+func TestCLITurn_FullModeEnforcesNarrowedRules(t *testing.T) {
+	setTestDataDir(t)
+	SetToolClientFactory(func(context.Context) (ToolClient, error) { return &recordingToolClient{}, nil })
+	t.Cleanup(func() { SetToolClientFactory(nil) })
+	fb := useFakeCLI(t)
+	enforce := []string{"--permission-mode", "dontAsk", "--allowedTools", "WebFetch", "--allowedTools", "WebSearch", "--allowedTools", "Skill"}
+	parent := filepath.Join(filepath.Dir(config.BaseDir()), "**")
+
+	for _, tc := range []struct {
+		name     string
+		commands []string
+		paths    []string
+		enforced bool
+	}{
+		{"everything allowed", []string{"*", "!rm *"}, []string{"@/**", "!@/token"}, false},
+		{"a parent of the Aviary directory", []string{"*"}, []string{parent}, false},
+		{"narrowed commands", []string{"gh *"}, []string{"@/**"}, true},
+		{"narrowed paths", []string{"*"}, []string{"@/agents/**"}, true},
+		{"denied Aviary directory", []string{"*"}, []string{"!@/**"}, true},
+		{"no command rules", nil, []string{"@/**"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fb.turns = nil
+			perms := &config.PermissionsConfig{
+				Preset:          config.PermissionsPresetFull,
+				CLIBuiltinTools: true,
+				Filesystem:      &config.FilesystemPermissionsConfig{AllowedPaths: tc.paths},
+			}
+			if tc.commands != nil {
+				perms.Exec = &config.ExecPermissionsConfig{AllowedCommands: tc.commands}
+			}
+			m := newTestManager(t)
+			m.Reconcile(&config.Config{
+				Agents:   []config.AgentConfig{{Name: "agent_cli_full", Model: "cli/claude/opus", Permissions: perms}},
+				Approval: config.ApprovalConfig{Chat: clidefs.ApprovalFull},
+			})
+			runner, ok := m.Get("agent_cli_full")
+			require.True(t, ok)
+			t.Cleanup(runner.Stop)
+			runCLIPrompt(t, runner, "main", "hi")
+			require.Len(t, fb.turns, 1)
+			opts := fb.turns[0].opts
+			if !tc.enforced {
+				assert.Equal(t, []string{"--dangerously-skip-permissions"}, opts.Approval)
+				assert.Contains(t, opts.RefusalNote, "not by Aviary")
+				return
+			}
+			assert.Equal(t, enforce, opts.Approval)
+			assert.Contains(t, opts.RefusalNote, "Refused by Aviary")
+			assert.Contains(t, opts.RefusalNote, `agent "agent_cli_full"'s Allowed Exec Commands or Filesystem Allowed Paths`)
+			for _, command := range tc.commands {
+				if command != "*" && !strings.HasPrefix(command, "!") {
+					assert.Contains(t, opts.Permissions, "Bash("+command+")", "an allowed command still runs without asking")
+				}
+			}
+		})
+	}
+}
+
 // posixDrive writes a Windows drive letter as claude's rules do: C:\a is /c/a.
 func posixDrive(path string) string {
 	if len(path) >= 2 && path[1] == ':' {
