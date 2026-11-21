@@ -166,7 +166,7 @@
 						</div>
 
 						<SchedulesPanel v-if="view === 'schedules'" v-model:selected="selectedSchedule" :project="project"
-							:schedules="schedules" :agents="owner ? [owner] : scheduleAgents" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
+							:schedules="schedules" :agent="scheduleAgent" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
 							:save="saveSchedule" :set-enabled="setScheduleEnabled" :remove="removeSchedule" :run-now="runScheduleNow"
 							:preview="previewSchedule" :refresh="refreshSchedules" />
 
@@ -401,6 +401,9 @@ const {
 	predict: predictSchedule,
 	refresh: refreshSchedules,
 } = useProjectSchedules(project);
+// New project scheduled tasks run under the project's owning agent; a watch no
+// agent owns falls back to the first agent.
+const scheduleAgent = computed(() => owner.value || scheduleAgents.value[0] || "");
 
 // The project's scheduled tasks are their own kind of box on the board: in
 // the list, with no states selected, and in the kanban's Scheduled column.

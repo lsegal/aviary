@@ -5,7 +5,7 @@
 				<h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Project scheduled tasks</h2>
 				<button type="button" data-testid="schedule-new"
 					class="ml-auto rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-					:disabled="!agents.length" @click="onNew">New schedule</button>
+					:disabled="!agent" @click="onNew">New schedule</button>
 			</div>
 			<p v-if="error || toggleError" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
 				{{ toggleError || error }}
@@ -68,7 +68,8 @@ import ScheduleEditor from "./ScheduleEditor.vue";
 const props = defineProps<{
 	project: string;
 	schedules: ProjectSchedule[];
-	agents: string[];
+	/** The agent new schedules run under: the project's owning agent. */
+	agent: string;
 	error: string;
 	loaded: boolean;
 	now: number;
@@ -91,13 +92,11 @@ const editing = computed(
 // Add task dialog, as a "project" task targeting this project.
 const { open: openItemDialog } = useAgentItemDialogs();
 function onNew() {
-	const [agent] = props.agents;
-	if (!agent) return;
+	if (!props.agent) return;
 	openItemDialog({
 		kind: "task",
 		mode: "create",
-		agent,
-		agents: props.agents,
+		agent: props.agent,
 		project: props.project,
 		onCreated: (owner, name) => {
 			selected.value = `${owner}/${name}`;
