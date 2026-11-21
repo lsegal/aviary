@@ -31,7 +31,6 @@
 									<tr
 										class="border-b border-gray-200 text-left text-xs font-medium text-gray-500 dark:border-gray-700 dark:text-gray-400">
 										<th class="px-3 py-2">Name</th>
-										<th class="px-3 py-2">ID</th>
 										<th class="px-3 py-2">Updated</th>
 										<th class="px-3 py-2">Actions</th>
 									</tr>
@@ -39,8 +38,7 @@
 								<tbody>
 									<tr v-for="s in sessions" :key="s.id"
 										class="border-b border-gray-100 text-gray-700 dark:border-gray-800 dark:text-gray-300">
-										<td class="px-3 py-2">{{ s.name || '—' }}</td>
-										<td class="px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">{{ s.id.slice(-10) }}</td>
+										<td class="px-3 py-2">{{ chatDisplayName(s) }}</td>
 										<td class="px-3 py-2 text-xs">{{ formatDate(s.updated_at) }}</td>
 										<td class="px-3 py-2">
 											<div class="flex items-center gap-2">
@@ -62,6 +60,7 @@
 
 <script lang="ts">
 import { defineComponent, inject } from "vue";
+import { chatDisplayName } from "../../stores/chatSessions";
 import { settingsViewContextKey } from "./context";
 
 export default defineComponent({
@@ -71,7 +70,7 @@ export default defineComponent({
 		if (!settings) {
 			throw new Error("Settings view context is not available.");
 		}
-		return settings;
+		return { ...settings, chatDisplayName };
 	},
 });
 </script>

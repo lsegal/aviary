@@ -208,7 +208,7 @@
                 <td class="px-5 py-2.5">
                   <span class="flex items-center gap-1.5">
                     <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="s.has_error ? 'bg-red-500' : s.has_throttle ? 'bg-amber-500' : 'bg-green-500'" />
-                    <code class="font-mono text-gray-600 dark:text-gray-400">...{{ s.session_id.slice(-12) }}</code>
+                    <span data-testid="usage-session-name" class="text-gray-700 dark:text-gray-300">{{ sessionLabel(s.agent_id, s.session_id) }}</span>
                   </span>
                 </td>
                 <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ s.agent_id }}</td>
@@ -228,11 +228,37 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import { chatDisplayName, useChatSessionsStore } from "../stores/chatSessions";
 import { useUsageStore } from "../stores/usage";
 
 const store = useUsageStore();
+const chatSessions = useChatSessionsStore();
+
+// Sessions are listed by name, so load each listed agent's sessions once.
+watch(
+	() => [...new Set(store.sessionList.map((s) => s.agent_id))],
+	(agents) => {
+		for (const agent of agents) {
+			if (
+				agent &&
+				!(agent in chatSessions.byAgent) &&
+				!chatSessions.loading[agent]
+			)
+				void chatSessions.load(agent).catch(() => {});
+		}
+	},
+	{ immediate: true },
+);
+
+function sessionLabel(agent: string, id: string): string {
+	const sess = chatSessions.sessions(agent).find((s) => s.id === id);
+	if (sess) return chatDisplayName(sess);
+	if (agent in chatSessions.byAgent) return "Deleted session";
+	// Sessions the agent cannot list (such as Projects job runs) have no name.
+	return `…${id.slice(-12)}`;
+}
 
 const hoveredDay = ref<number | null>(null);
 const hoveredHour = ref<number | null>(null);
