@@ -142,13 +142,13 @@ test("a task's editor keeps its own Save Changes", async ({ page }) => {
 	await mockTasks(page);
 	await page.goto("/agents/assistant/tasks?task=daily-report");
 
-	await expect(page.getByRole("button", { name: "Save Changes" })).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "Save Changes" }),
+	).toBeVisible();
 	await expect(page.getByTestId("tasks-overview")).toHaveCount(0);
 });
 
-test("the summary stat cards and graphs render with data", async ({
-	page,
-}) => {
+test("the summary stat cards and graphs render with data", async ({ page }) => {
 	await mockTasks(page);
 	await page.goto("/agents/assistant/tasks");
 
@@ -193,7 +193,9 @@ test("tasks show as cards by default with every field", async ({ page }) => {
 	await expect(daily.getByTestId("task-schedule")).toHaveText(
 		/^daily at 02:00 \(America\/Toronto\) · next in 4\dm$/,
 	);
-	await expect(daily.getByTestId("task-last-run")).toHaveText("Succeeded 3h ago");
+	await expect(daily.getByTestId("task-last-run")).toHaveText(
+		"Succeeded 3h ago",
+	);
 	for (const action of ["Run now", "Pause", "Edit", "View runs"])
 		await expect(daily.getByRole("button", { name: action })).toBeVisible();
 
@@ -249,7 +251,9 @@ test("card quick actions work", async ({ page }) => {
 		.filter({ hasText: "daily-report" });
 
 	await daily.getByRole("button", { name: "Run now" }).click();
-	await expect.poll(() => calls.runs).toEqual([{ name: "assistant/daily-report" }]);
+	await expect
+		.poll(() => calls.runs)
+		.toEqual([{ name: "assistant/daily-report" }]);
 
 	await daily.getByRole("button", { name: "Pause" }).click();
 	await expect
@@ -275,8 +279,12 @@ test("card quick actions work", async ({ page }) => {
 
 	// Clicking the card opens the task's editor.
 	await daily.getByRole("heading", { name: "daily-report" }).click();
-	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\?task=daily-report$/);
-	await expect(page.getByRole("button", { name: "Save Changes" })).toBeVisible();
+	await expect(page).toHaveURL(
+		/\/agents\/assistant\/tasks\?task=daily-report$/,
+	);
+	await expect(
+		page.getByRole("button", { name: "Save Changes" }),
+	).toBeVisible();
 });
 
 test("clicking a list row opens the task's editor", async ({ page }) => {
