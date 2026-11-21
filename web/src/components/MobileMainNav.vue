@@ -25,13 +25,13 @@
       </div>
     </div>
 
-    <!-- Every pill at its natural width, measured to decide what fits. -->
+    <!-- Every pill at its natural width, measured to decide what fits. Its
+         text comes from CSS so it never matches a text search of the page. -->
     <div aria-hidden="true" class="pointer-events-none invisible absolute left-0 top-0 h-0 w-0 overflow-hidden">
       <div ref="measure" class="flex w-max flex-nowrap gap-2">
-      <span v-for="item in items" :key="item.key" :data-key="item.key" :class="pillClass(item.active)">
-        {{ item.label }}<span v-if="(item.running ?? 0) > 0" class="ml-1.5 rounded-full px-1.5 text-xs font-semibold">{{ item.running }}</span>
-      </span>
-        <span data-key="__more" :class="pillClass(false)">…</span>
+        <span v-for="item in items" :key="item.key" :data-key="item.key" :data-label="item.label"
+          :data-count="item.running || undefined" :class="[pillClass(item.active), measureClass(item)]" />
+        <span data-key="__more" data-label="…" :class="[pillClass(false), 'before:content-[attr(data-label)]']" />
       </div>
     </div>
   </nav>
@@ -225,6 +225,13 @@ function pillClass(active: boolean): string {
 	return active
 		? `${base} border-gray-300 bg-white text-gray-950 shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white`
 		: `${base} border-gray-200 bg-white text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white`;
+}
+
+function measureClass(item: MobileNavItem): string {
+	const label = "before:content-[attr(data-label)]";
+	return (item.running ?? 0) > 0
+		? `${label} after:ml-1.5 after:px-1.5 after:text-xs after:font-semibold after:content-[attr(data-count)]`
+		: label;
 }
 
 function menuItemClass(active: boolean): string {
