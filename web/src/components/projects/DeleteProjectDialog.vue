@@ -48,7 +48,10 @@ import { useRemoveProject } from "../../composables/useProjectSettings";
 
 /** The project to delete; the dialog is open while it is set. */
 const props = defineProps<{ target: string }>();
-const emit = defineEmits<{ deleted: [target: string, stopped: number[]]; close: [] }>();
+const emit = defineEmits<{
+	deleted: [target: string, stopped: number[]];
+	close: [];
+}>();
 
 const { inFlight, loadInFlight, remove } = useRemoveProject(
 	toRef(props, "target"),

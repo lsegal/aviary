@@ -866,7 +866,10 @@ test("a project row's ✕ deletes that project after a confirmation naming it an
 	await dialog.getByRole("button", { name: "Delete project" }).click();
 	await expect(dialog).toBeHidden();
 	await expect(projects).toHaveCount(1);
-	await expect(projects.first()).toHaveAttribute("data-target", "lsegal/aviary");
+	await expect(projects.first()).toHaveAttribute(
+		"data-target",
+		"lsegal/aviary",
+	);
 	expect(calls.project_remove).toEqual([{ target: "lsegal/nupp" }]);
 	// The removal goes through project_remove alone, never a config rewrite.
 	expect(calls.config_save).toBeUndefined();
