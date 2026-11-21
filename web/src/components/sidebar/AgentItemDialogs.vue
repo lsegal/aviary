@@ -26,17 +26,19 @@
 						<label for="agent-task-prompt" class="field-label mt-3">{{ form.type === "script" ? "Script" : "Prompt" }}</label>
 						<textarea id="agent-task-prompt" v-model="form.prompt" rows="6" class="field-input font-mono text-xs"
 							:placeholder="form.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'" />
-						<label v-if="dialog.mode === 'create'" class="mt-3 flex items-start gap-3"
-							:class="dialog.project ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'">
-							<input v-model="form.precompute" type="checkbox" :disabled="!!dialog.project"
-								data-testid="agent-task-precompute"
-								class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-							<span class="text-sm text-gray-700 dark:text-gray-300">Try to precompute task
-								<span class="block text-xs text-gray-500 dark:text-gray-400">{{ dialog.project
+						<div v-if="dialog.mode === 'create'" class="mt-3 flex items-start gap-3"
+							:class="dialog.project ? 'opacity-60' : ''">
+							<input id="agent-task-precompute" v-model="form.precompute" type="checkbox"
+								:disabled="!!dialog.project" aria-describedby="agent-task-precompute-help"
+								class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800" />
+							<div>
+								<label for="agent-task-precompute" class="text-sm text-gray-700 dark:text-gray-300"
+									:class="dialog.project ? 'cursor-not-allowed' : 'cursor-pointer'">Try to precompute task</label>
+								<p id="agent-task-precompute-help" class="text-xs text-gray-500 dark:text-gray-400">{{ dialog.project
 									? "Project tasks run as Projects jobs, so they are never precomputed"
-									: "Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs" }}</span>
-							</span>
-						</label>
+									: "Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs" }}</p>
+							</div>
+						</div>
 					</template>
 					<p v-else class="mt-1 text-xs text-gray-400 dark:text-gray-500">
 						Root-level <span class="font-mono">.md</span> only; <span class="font-mono">.md</span> is added when missing.
