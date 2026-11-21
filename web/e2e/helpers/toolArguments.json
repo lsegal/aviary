@@ -296,7 +296,7 @@
 		"limit",
 		"offset",
 		"query",
-		"state",
+		"states",
 		"status",
 		"target",
 		"targets"

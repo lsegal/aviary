@@ -266,7 +266,10 @@ test("board lists scheduled tasks as their own boxes with run details", async ({
 	await expect(boxes).toHaveCount(1);
 	await expect(boxes.first()).toContainText("weekly-deps");
 	await page.getByLabel("Search jobs").fill("");
-	await page.getByRole("tab", { name: "Running" }).click();
+	await page
+		.getByRole("group", { name: "Job filter" })
+		.getByRole("button", { name: /^Running/ })
+		.click();
 	await expect(boxes).toHaveCount(0);
 });
 
@@ -294,7 +297,10 @@ test("kanban shows a Scheduled column of compact scheduled boxes", async ({
 	await expect(cards.first().locator("pre")).toHaveCount(0);
 
 	// A state filter narrows the board to that state's column.
-	await page.getByRole("tab", { name: "Running" }).click();
+	await page
+		.getByRole("group", { name: "Job filter" })
+		.getByRole("button", { name: /^Running/ })
+		.click();
 	await expect(columns).toHaveCount(1);
 	await expect(columns.first()).toHaveAttribute("data-state", "running");
 });

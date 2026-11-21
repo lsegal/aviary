@@ -1,6 +1,6 @@
 import { onMounted, onUnmounted, type Ref, ref, watch } from "vue";
 import {
-	type BoardFilter,
+	type BoardState,
 	type JobDetail,
 	normalizeJobDetail,
 	normalizeJobList,
@@ -88,7 +88,7 @@ export function useProjectList(interval = 10_000) {
  */
 export function useProjectBoard(
 	targets: Ref<string[]>,
-	filter: Ref<BoardFilter>,
+	states: Ref<BoardState[]>,
 	search: Ref<string> = ref(""),
 	kanban: Ref<boolean> = ref(false),
 ) {
@@ -110,7 +110,7 @@ export function useProjectBoard(
 			parseToolJSON(
 				await callTool("project_job_list", {
 					targets: projects,
-					state: filter.value === "all" ? undefined : filter.value,
+					states: states.value.length ? states.value : undefined,
 					query: search.value.trim() || undefined,
 					offset: all ? 0 : page.value * JOBS_PAGE_SIZE,
 					limit: all ? ALL_JOBS_LIMIT : JOBS_PAGE_SIZE,
@@ -179,11 +179,14 @@ export function useProjectBoard(
 
 	const { refresh } = usePoll(load, PROJECTS_POLL_MS);
 
-	watch([() => targets.value.join(" "), filter, kanban], () => {
-		page.value = 0;
-		loading.value = true;
-		void refresh();
-	});
+	watch(
+		[() => targets.value.join(" "), () => states.value.join(","), kanban],
+		() => {
+			page.value = 0;
+			loading.value = true;
+			void refresh();
+		},
+	);
 	// A new search starts on the first page of its matches; when the page is
 	// already first, the page watcher stays quiet, so load here.
 	watch(search, () => {
