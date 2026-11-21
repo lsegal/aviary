@@ -11,9 +11,12 @@ import (
 	"time"
 )
 
-// HotReloadEnv is set by scripts/dev-go.mjs when the backend runs under
-// forgo's hot reload, so a pulled checkout is rebuilt and relaunched on its own.
-const HotReloadEnv = "AVIARY_HOT_RELOAD"
+// RestartFileEnv is set by scripts/dev-go.mjs to a file the backend creates
+// before exiting to ask for a restart. The script then runs the backend again,
+// rebuilding it from the checkout's current sources. Hot reload alone cannot be
+// trusted to pick up a pull: it patches the running program in place, keeps
+// the old code for changes it cannot apply, and only works on linux/amd64.
+const RestartFileEnv = "AVIARY_RESTART_FILE"
 
 // CheckoutEnv is set by scripts/dev-go.mjs to the root of the source checkout
 // the backend was built from. It is authoritative for git mode: the process's
@@ -33,17 +36,17 @@ type GitState struct {
 	Behind   int    `json:"behind"`
 	Ahead    int    `json:"ahead"`
 	Dirty    bool   `json:"dirty"`
-	// HotReload is true when the backend runs under hot reload, so pulled
-	// sources go live without a restart.
-	HotReload bool `json:"hotReload"`
+	// Supervised is true when a restart rebuilds the backend from the
+	// checkout (see RestartFileEnv), so pulled sources go live by restarting.
+	Supervised bool `json:"supervised"`
 }
 
 // GitPullResult describes a git-mode update.
 type GitPullResult struct {
-	From      string `json:"from"`
-	To        string `json:"to"`
-	Commits   int    `json:"commits"`
-	HotReload bool   `json:"hotReload"`
+	From       string `json:"from"`
+	To         string `json:"to"`
+	Commits    int    `json:"commits"`
+	Supervised bool   `json:"supervised"`
 }
 
 var (
@@ -109,6 +112,23 @@ func GitCheckout() string {
 	return checkoutDir()
 }
 
+// Supervised reports whether a restart rebuilds the backend from its checkout.
+func Supervised() bool {
+	return os.Getenv(RestartFileEnv) != ""
+}
+
+// RequestRebuild asks scripts/dev-go.mjs to run the backend again from the
+// checkout's sources once this process exits. It reports false when the
+// backend is not supervised or the request could not be written, in which
+// case the caller re-executes its own binary instead.
+func RequestRebuild() bool {
+	path := os.Getenv(RestartFileEnv)
+	if path == "" {
+		return false
+	}
+	return os.WriteFile(path, nil, 0o600) == nil
+}
+
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
@@ -131,7 +151,7 @@ func gitCount(ctx context.Context, dir, rng string) (int, error) {
 // ReadGitState fetches the checkout's upstream and reports how far behind it
 // is and whether the working tree has local changes.
 func ReadGitState(ctx context.Context, dir string) (GitState, error) {
-	st := GitState{Dir: dir, HotReload: os.Getenv(HotReloadEnv) != ""}
+	st := GitState{Dir: dir, Supervised: Supervised()}
 	var err error
 	if st.Branch, err = runGit(ctx, dir, "rev-parse", "--abbrev-ref", "HEAD"); err != nil {
 		return st, err
@@ -204,7 +224,7 @@ func GitPull(ctx context.Context, dir string) (GitPullResult, error) {
 	if blocker := gitBlocker(st); blocker != "" {
 		return GitPullResult{}, fmt.Errorf("not updating: %s", blocker)
 	}
-	res := GitPullResult{Commits: st.Behind, HotReload: st.HotReload}
+	res := GitPullResult{Commits: st.Behind, Supervised: st.Supervised}
 	res.From, _ = runGit(ctx, dir, "rev-parse", "--short", "HEAD")
 	if st.Behind > 0 {
 		if _, err := runGit(ctx, dir, "pull", "--ff-only", "--quiet"); err != nil {
@@ -222,8 +242,8 @@ func GitPullMessage(res GitPullResult) string {
 		return fmt.Sprintf("The checkout is already up to date (%s).", res.To)
 	}
 	msg := fmt.Sprintf("Pulled %d commit(s) (%s → %s).", res.Commits, res.From, res.To)
-	if res.HotReload {
-		return msg + " Hot reload is rebuilding Aviary with the new code."
+	if res.Supervised {
+		return msg + " Aviary restarts to build and run the new code."
 	}
 	return msg + " Restart Aviary to run the new code."
 }

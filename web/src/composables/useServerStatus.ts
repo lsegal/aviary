@@ -44,7 +44,7 @@ export interface GitState {
 	behind: number;
 	ahead: number;
 	dirty: boolean;
-	hotReload: boolean;
+	supervised: boolean;
 }
 
 interface VersionCheck {
@@ -227,6 +227,11 @@ export function useServerStatus() {
 				if (!st.emulated) upgradeAvailable.value = false;
 				if (git.value) updateNotice.value = st.message ?? "";
 				return;
+			}
+			if (git.value && st.message) {
+				// The pull is done; the restart onto it may still wait for jobs.
+				upgradeAvailable.value = false;
+				updateNotice.value = st.message;
 			}
 			restart.value = st;
 		} catch (err) {

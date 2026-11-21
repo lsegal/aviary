@@ -280,9 +280,19 @@ async function setup(
 				},
 			],
 		},
+		// Like the Manager, project_status counts the jobs of the projects
+		// it is passed in each board state.
 		project_status: (args?: Record<string, unknown>) => {
 			record("project_status", args);
-			return status();
+			const states: Record<string, number> = {
+				starting: 0,
+				paused: 0,
+				running: 0,
+				done: 0,
+				failed: 0,
+			};
+			for (const j of JOBS) if (inTargets(args, j.target)) states[j.state]++;
+			return { states, ...status() };
 		},
 		project_job_list: (args?: Record<string, unknown>) => {
 			record("project_job_list", args);
@@ -367,7 +377,7 @@ test("a board watching a project URL links its header to that URL", async ({
 test("board shows status, ordered job cards and live output", async ({
 	page,
 }) => {
-	await setup(page);
+	const calls = await setup(page);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 
 	await expect(
@@ -386,9 +396,21 @@ test("board shows status, ordered job cards and live output", async ({
 	await expect(page.getByText("poll · checked")).toContainText("every 30s");
 	const stats = page.getByRole("region", { name: "Job counts" });
 	await expect(stats).toContainText("2of 4 busy");
-	await expect(stats).toContainText("Waiting1");
 	await expect(stats).toContainText("Merged (24h)3");
 	await expect(stats).not.toContainText("Completed");
+	await expect(stats).not.toContainText("Waiting");
+	await expect
+		.poll(() => calls.project_status.at(-1)?.targets)
+		.toEqual(["lsegal/aviary"]);
+	// Each board state's card counts the jobs its filter tab shows.
+	for (const label of ["Starting", "Paused", "Running", "Done", "Failed"]) {
+		const card = stats.locator("div").filter({ hasText: label });
+		await expect(card).toHaveText(new RegExp(`^${label}\\d+$`));
+		const count = Number((await card.textContent())?.replace(/\D/g, ""));
+		await page.getByRole("tab", { name: label }).click();
+		await expect(page.getByTestId("job-card")).toHaveCount(count);
+	}
+	await page.getByRole("tab", { name: "All" }).click();
 	const clis = page.getByRole("region", { name: "CLI providers" });
 	await expect(clis).toContainText("38% of 5h quota left");
 	await expect(clis).toContainText("signed out");
@@ -838,7 +860,11 @@ test("prompt chat opens beside the board and remembers it is open", async ({
 		.toMatchObject({ agent: "projects", session_id: "projects-chat" });
 	await expect(chat.getByTestId("chat-picker")).toHaveCount(0);
 	await expect(chat.getByRole("button", { name: "New chat" })).toHaveCount(0);
-	expect(calls.session_list ?? []).toHaveLength(0);
+	// The sidebar lists the sole agent's own chats; none are the Projects
+	// agent's.
+	expect(
+		(calls.session_list ?? []).filter((c) => c.agent === "projects"),
+	).toHaveLength(0);
 	// Images show in both directions.
 	await expect(chat.locator("img")).toHaveCount(2);
 	await expect(chat).toContainText("Here is the failing run.");
@@ -985,6 +1011,54 @@ test("prompt chat inserts a newline on Shift+Enter and sends on Enter", async ({
 	const sent = chat.locator(".whitespace-pre-wrap", { hasText: "line two" });
 	await expect(sent).toBeVisible();
 	expect(await sent.innerText()).toBe("line one\nline two");
+});
+
+test("logs panel wraps long lines and indents multi-line entries", async ({
+	page,
+}) => {
+	const url = `https://github.com/lsegal/aviary/issues?q=${"x".repeat(300)}`;
+	await setup(page, () => ({
+		...STATUS,
+		recent_logs: [
+			`2026-11-20 12:03:58 handoff poll #2 error: read issue list at ${url} the issue list did not render within 15s`,
+			"2026-11-20 12:04:02 prompt agent (claude/opus) filing an issue on lsegal/aviary",
+			"## Summary",
+			"Body line two",
+			"12:04:11 claimed #221",
+		].join("\n"),
+	}));
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.getByTestId("logs-toggle").click();
+	const lines = page.getByTestId("project-logs-lines");
+	await expect(lines).toContainText("claimed #221");
+
+	// Nothing overflows sideways, not even the unbroken URL.
+	expect(
+		await lines.evaluate((el) => el.scrollWidth - el.clientWidth),
+	).toBeLessThanOrEqual(0);
+	const entries = page.getByTestId("project-logs-entry");
+	await expect(entries).toHaveCount(3);
+	const first = entries.nth(0);
+	expect(await first.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+	await expect(first).toContainText(url);
+
+	// Continuation lines stay in their entry, keep their line breaks, and line
+	// up after the timestamp rather than under it.
+	const second = entries.nth(1);
+	const text = second.locator("span").nth(1);
+	expect(await text.innerText()).toBe(
+		"prompt agent (claude/opus) filing an issue on lsegal/aviary\n## Summary\nBody line two",
+	);
+	const timeBox = await second.locator("span").first().boundingBox();
+	const textBox = await text.boundingBox();
+	if (!timeBox || !textBox) throw new Error("no entry boxes");
+	expect(textBox.x).toBeGreaterThan(timeBox.x + timeBox.width);
+	const oneLine = (await entries.nth(2).boundingBox())?.height ?? 0;
+	expect(textBox.height).toBeGreaterThan(oneLine * 2.5);
+	await expect(second.locator("span").first()).toHaveText(
+		"2026-11-20 12:04:02",
+	);
+	await expect(entries.nth(2).locator("span").first()).toHaveText("12:04:11");
 });
 
 test("Summarize sends the job to the prompt chat", async ({ page }) => {
