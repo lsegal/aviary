@@ -2560,12 +2560,13 @@ test("prompt chat opened mid-turn shows the running turn (#764)", async ({
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	await page.getByTestId("prompt-chat-toggle").click();
 	const chat = page.getByTestId("project-chat");
-	await expect(chat.getByTestId("chat-typing")).toBeVisible();
 	await expect(chat.getByTestId("chat-tool-call")).toHaveCount(2);
 	await expect(chat.getByTestId("chat-tool-call").nth(1)).toHaveAttribute(
 		"data-pending",
 		"true",
 	);
+	// A running call shows on its chip, not in a typing bubble below it.
+	await expect(chat.getByTestId("chat-typing")).toHaveCount(0);
 	await expect(chat).toContainText("Reading the board");
 });
 
