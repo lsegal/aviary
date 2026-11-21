@@ -255,7 +255,7 @@ func embedPatterns(dir string) []string {
 				}
 			}
 		}
-		file.Close()
+		_ = file.Close()
 	}
 	return patterns
 }

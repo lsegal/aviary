@@ -35,8 +35,8 @@ var (
 	// refreshAfterHotReload reruns the startup registrations a hot reload
 	// does not repeat, so reloaded code's MCP tools go live too.
 	refreshAfterHotReload = mcp.RefreshLiveServer
-	executablePath = os.Executable
-	idlePoll       = 2 * time.Second
+	executablePath        = os.Executable
+	idlePoll              = 2 * time.Second
 	// autoUpdateWait is how long one self-updater round waits for a restart
 	// already in progress before checking for a newer update.
 	autoUpdateWait = update.CheckInterval
