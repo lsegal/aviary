@@ -38,7 +38,7 @@ test.beforeEach(async ({ page }) => {
 	await setAuthToken(page);
 });
 
-test("footer is one row: gear and version on the left, connection right-aligned", async ({
+test("footer is one row: version on the left, connection then gear right-aligned (#838)", async ({
 	page,
 }) => {
 	await connectHealthy(page);
@@ -52,27 +52,30 @@ test("footer is one row: gear and version on the left, connection right-aligned"
 
 	const actions = footer.getByTestId("sidebar-footer-actions");
 	const buttons = actions.getByRole("button");
-	await expect(buttons).toHaveCount(1);
+	await expect(buttons).toHaveCount(2);
 	await expect(buttons.nth(0)).toHaveAccessibleName("Connected");
+	await expect(buttons.nth(1)).toHaveAccessibleName("Settings menu");
 	// Restart and Log out moved into the gear menu (#822).
 	await expect(footer.getByRole("button", { name: "Restart" })).toHaveCount(0);
 	await expect(footer.getByRole("button", { name: "Log out" })).toHaveCount(0);
 
-	const gear = footer.getByTestId("gear-menu-button");
+	const gear = actions.getByTestId("gear-menu-button");
+	const connection = actions.getByTestId("connection-status");
 	const row = await footer.boundingBox();
 	const gearBox = await gear.boundingBox();
+	const connectionBox = await connection.boundingBox();
 	const versionBox = await version.boundingBox();
 	const actionsBox = await actions.boundingBox();
-	if (!row || !gearBox || !versionBox || !actionsBox)
+	if (!row || !gearBox || !connectionBox || !versionBox || !actionsBox)
 		throw new Error("footer not laid out");
 	// One row: everything shares the row's vertical band.
 	expect(row.height).toBeLessThan(40);
-	expect(gearBox.x - row.x).toBeLessThan(12);
-	expect(gearBox.x).toBeLessThan(versionBox.x);
+	expect(versionBox.x - row.x).toBeLessThan(12);
 	expect(versionBox.x).toBeLessThan(actionsBox.x);
-	expect(row.x + row.width - (actionsBox.x + actionsBox.width)).toBeLessThan(
-		12,
-	);
+	// The gear sits immediately right of the connection state (#838).
+	expect(connectionBox.x + connectionBox.width).toBeLessThanOrEqual(gearBox.x);
+	expect(gearBox.x - (connectionBox.x + connectionBox.width)).toBeLessThan(12);
+	expect(row.x + row.width - (gearBox.x + gearBox.width)).toBeLessThan(12);
 
 	// The old pills are gone.
 	await expect(page.getByText(/^Version /)).toHaveCount(0);
