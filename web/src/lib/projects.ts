@@ -856,17 +856,18 @@ export function runDuration(ms: number): string {
 /** The schedule's trigger in words, as the scheduler describes it. */
 export function triggerSummary(s: ProjectSchedule): string {
 	if (s.description) return s.description;
+	const zone = ` (${s.timezone || "Local"})`;
 	switch (s.trigger) {
 		case "once":
 			return s.startAt ? `once at ${formatFire(s.startAt)}` : "once";
 		case "interval":
-			return `every ${s.every}`;
+			return `every ${s.every}${zone}`;
 		case "daily":
-			return `daily at ${s.at}`;
+			return `daily at ${s.at}${zone}`;
 		case "weekly":
-			return `weekly on ${s.days} at ${s.at}`;
+			return `weekly on ${s.days} at ${s.at}${zone}`;
 		case "cron":
-			return `cron ${s.schedule}`;
+			return `cron ${s.schedule}${zone}`;
 	}
 }
 

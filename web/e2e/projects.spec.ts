@@ -672,6 +672,44 @@ test("board shows status, ordered job cards and live output", async ({
 	await expect(running).not.toHaveText(first ?? "", { timeout: 5_000 });
 });
 
+test("long wrapped output never grows a card past half the viewport (#718)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1280, height: 700 });
+	const line = `$ ${"go test ./internal/scheduler/... -run TestBackoffCap -count=1 ".repeat(6)}`;
+	await setup(page, () => STATUS, {
+		project_job_get: (args?: Record<string, unknown>) => {
+			const found = JOBS.find(
+				(j) => j.target === args?.target && j.number === args?.number,
+			);
+			if (!found) throw new Error("no such job");
+			return {
+				...found,
+				...CLONES[found.number],
+				scrollback: Array(12).fill(line).join("\n"),
+				events: [],
+				raw_output: "",
+			};
+		},
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	const output = card.getByTestId("job-output");
+	await expect(output).toContainText("TestBackoffCap");
+	const cardBox = await card.boundingBox();
+	const outputBox = await output.boundingBox();
+	expect(cardBox?.height).toBeLessThanOrEqual(350);
+	// The log area clips its content instead of stretching the card.
+	expect(outputBox?.height).toBeLessThan(
+		await output.evaluate((el) => el.scrollHeight),
+	);
+	// The header and actions keep their natural size.
+	await expect(
+		card.getByRole("link", { name: /#218 Cap scheduler/ }),
+	).toBeInViewport();
+	await expect(card.getByRole("button", { name: "Retry" })).toBeInViewport();
+});
+
 test("retry, stop, filters and check now call project tools", async ({
 	page,
 }) => {
@@ -861,7 +899,7 @@ test("run view renders the typed event timeline read-only", async ({
 	await expect(page).toHaveURL(
 		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
 	);
-	await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
 		"#218 Cap scheduler retry backoff at 10 minutes",
 	);
 
@@ -1316,6 +1354,112 @@ test("prompt chat inserts a newline on Shift+Enter and sends on Enter", async ({
 	expect(await sent.innerText()).toBe("line one\nline two");
 });
 
+test("job details open under the project header, keeping the chat and logs panels", async ({
+	page,
+}) => {
+	const calls: Calls = {};
+	Object.assign(calls, await setup(page, undefined, chatFixtures(calls)));
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.getByTestId("prompt-chat-toggle").click();
+	await page.getByTestId("logs-toggle").click();
+	const chat = page.getByTestId("project-chat");
+	const input = chat.getByPlaceholder("Describe a task or ask a question");
+	await expect(chat).toContainText("Here is the failing run.");
+	await input.fill("what about #218?");
+	await expect(page.getByTestId("project-logs")).toBeVisible();
+
+	await page
+		.getByTestId("job-card")
+		.filter({ hasText: "#218" })
+		.getByRole("link", { name: "Details" })
+		.click();
+	await expect(page).toHaveURL(
+		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
+	);
+	await expect(page.getByTestId("job-detail")).toContainText(
+		"#218 Cap scheduler retry backoff at 10 minutes",
+	);
+	// The project header and its buttons stay.
+	await expect(
+		page.getByRole("heading", { level: 1, name: "lsegal/aviary" }),
+	).toBeVisible();
+	await expect(page.getByTestId("delivery-status")).toBeVisible();
+	await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
+	await expect(page.getByTestId("project-settings-link")).toBeVisible();
+	// The open panels keep their content and the unsent draft.
+	await expect(chat).toContainText("Here is the failing run.");
+	await expect(input).toHaveValue("what about #218?");
+	await expect(page.getByTestId("project-logs")).toBeVisible();
+
+	// Switching jobs and closing details keeps them too.
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page
+		.getByTestId("job-card")
+		.filter({ hasText: "#218" })
+		.getByRole("link", { name: "Details" })
+		.click();
+	await page.getByTestId("job-detail-close").click();
+	await expect(page).toHaveURL("/agents/coder/projects/lsegal%2Faviary");
+	await expect(page.getByTestId("job-card").first()).toBeVisible();
+	await expect(chat).toBeVisible();
+	await expect(page.getByTestId("project-logs")).toBeVisible();
+	expect(calls.agent_run ?? []).toHaveLength(0);
+});
+
+test("closing job details returns to the board with its filters and search", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const search = page.getByRole("searchbox", { name: "Search jobs" });
+	await search.fill("scheduler");
+	await stateChip(page, "Running").click();
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	await expect(card).toBeVisible();
+
+	await card.getByRole("link", { name: "Details" }).click();
+	await expect(page.getByTestId("job-detail")).toBeVisible();
+	await expect(search).toHaveCount(0);
+	await page.getByTestId("job-detail-close").click();
+	await expect(search).toHaveValue("scheduler");
+	await expect(stateChip(page, "Running")).toHaveAttribute(
+		"aria-pressed",
+		"true",
+	);
+
+	// Browser back and forward move between the board and the details
+	// without reloading the page.
+	await page.evaluate(() => {
+		(window as unknown as { marker: boolean }).marker = true;
+	});
+	await page.goBack();
+	await expect(page.getByTestId("job-detail")).toBeVisible();
+	await page.goForward();
+	await expect(page.getByTestId("job-detail")).toHaveCount(0);
+	await expect(search).toHaveValue("scheduler");
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { marker?: boolean }).marker,
+		),
+	).toBe(true);
+});
+
+test("loading a job details URL shows the project header with that job open", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	await expect(
+		page.getByRole("heading", { level: 1, name: "lsegal/aviary" }),
+	).toBeVisible();
+	await expect(page.getByTestId("prompt-chat-toggle")).toBeVisible();
+	await expect(page.getByTestId("logs-toggle")).toBeVisible();
+	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
+		"#218 Cap scheduler retry backoff at 10 minutes",
+	);
+	await expect(page.getByTestId("job-card")).toHaveCount(0);
+});
+
 test("logs panel wraps long lines and indents multi-line entries", async ({
 	page,
 }) => {
@@ -1690,8 +1834,8 @@ test("the state chips multi-select and each board remembers its own", async ({
 		.filter({ hasText: "#218" })
 		.getByRole("link", { name: "Details" })
 		.click();
-	await expect(page).toHaveURL(/\/jobs\/218$/);
-	await page.getByRole("link", { name: "lsegal/aviary", exact: true }).click();
+	await expect(page.getByTestId("job-detail")).toBeVisible();
+	await page.getByTestId("job-detail-close").click();
 	await expect(page).toHaveURL(/[?&]state=running(,|%2C)failed$/);
 	await pressed(["Running", "Failed"]);
 	await expect(cards).toHaveCount(2);

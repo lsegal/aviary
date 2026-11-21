@@ -111,6 +111,13 @@ func TestCronInTimezone(t *testing.T) {
 	assertTimes(t, spec.Preview(from, 2), "2026-11-19T09:00:00+09:00", "2026-11-20T09:00:00+09:00")
 }
 
+func TestCronDescribeIncludesExpression(t *testing.T) {
+	spec := mustParse(t, Fields{Schedule: "0 * * * *", Timezone: "America/Los_Angeles"})
+	if got, want := spec.Describe(), "cron 0 * * * * (America/Los_Angeles)"; got != want {
+		t.Fatalf("Describe() = %q, want %q", got, want)
+	}
+}
+
 func TestStartAtBoundsRecurring(t *testing.T) {
 	spec := mustParse(t, Fields{At: "09:00", StartAt: "2026-12-01T09:00:00Z", Timezone: "UTC"})
 	from := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
