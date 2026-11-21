@@ -450,7 +450,7 @@ const brandLinks: BrandLink[] = [
 const AGENT_PAGES = [
 	{ key: "chat", label: "Chats" },
 	{ key: "projects", label: "GitHub Projects" },
-	{ key: "tasks", label: "Tasks" },
+	{ key: "tasks", label: "Scheduled Tasks" },
 	{ key: "files", label: "Files" },
 	{ key: "settings", label: "Settings" },
 ] as const;
@@ -563,7 +563,7 @@ const projectsOpen = computed(() =>
 	/^\/agents\/[^/]+\/projects(\/|$)/.test(route.path),
 );
 
-// An agent's Tasks and Files list their items on their own pages.
+// An agent's Scheduled Tasks and Files list their items on their own pages.
 const tasksOpen = computed(() => /^\/agents\/[^/]+\/tasks\/?$/.test(route.path));
 const filesOpen = computed(() => /^\/agents\/[^/]+\/files\/?$/.test(route.path));
 

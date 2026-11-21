@@ -715,13 +715,13 @@
 						<!-- Tasks subtab -->
 						<div v-show="selectedAgentSubtab === 'tasks'" class="min-h-[60vh] space-y-4 p-5">
 							<div class="flex items-center justify-between">
-								<h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Tasks</h4>
+								<h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Scheduled Tasks</h4>
 							</div>
 
 
 							<div v-if="!agent.tasks?.length"
 								class="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-								No tasks configured for this agent. Add one with the + on Tasks in the sidebar.
+								No scheduled tasks configured for this agent. Add one with the + on Scheduled Tasks in the sidebar.
 							</div>
 
 <!-- The sidebar lists the tasks; this edits the open one. -->

@@ -106,7 +106,7 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 	).toHaveValue("assistant");
 
 	// Tasks subtab
-	await agentPageLink(page, "Tasks").click();
+	await agentPageLink(page, "Scheduled Tasks").click();
 	await expect(
 		page.locator('input[placeholder="daily-briefing"]').first(),
 	).toHaveValue("daily-briefing");
@@ -117,7 +117,7 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 		page.getByRole("switch", { name: "Toggle task enabled" }).first(),
 	).toBeVisible();
 	await expect(
-		page.getByRole("heading", { name: "Tasks", exact: true }),
+		page.getByRole("heading", { name: "Scheduled Tasks", exact: true }),
 	).toBeVisible();
 
 	// Channels tab of the agent's Settings page
@@ -847,7 +847,7 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 	});
 
 	await openAgentPage(page, "settings");
-	await agentPageLink(page, "Tasks").click();
+	await agentPageLink(page, "Scheduled Tasks").click();
 
 	const prompt = page.getByPlaceholder("Task prompt...").first();
 	await prompt.fill("line 1\n\nline 3\n");
@@ -869,7 +869,7 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 
 test("tasks can be enabled from the settings UI", async ({ page }) => {
 	await openAgentPage(page, "settings");
-	await agentPageLink(page, "Tasks").click();
+	await agentPageLink(page, "Scheduled Tasks").click();
 
 	await expect(page.getByText("disabled", { exact: true })).toBeVisible();
 	const toggle = page
@@ -985,7 +985,7 @@ test("deleting a task from settings persists immediately", async ({ page }) => {
 	});
 
 	await openAgentPage(page, "settings");
-	await agentPageLink(page, "Tasks").click();
+	await agentPageLink(page, "Scheduled Tasks").click();
 
 	const row = page.getByTestId("task-row").filter({ hasText: "file-task" });
 	await expect(row).toBeVisible();
