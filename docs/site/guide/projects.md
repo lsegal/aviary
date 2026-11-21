@@ -140,7 +140,7 @@ Targets use the same form as a scheduled task's target ([delivery targets](/guid
 
 ## Job transcripts
 
-Each job keeps a structured transcript built from the CLI's machine-readable event stream: messages, reasoning, tool calls and results, shell commands with their output and exit codes, file changes, plans, and token usage. Projects adds its own events: claims, pull requests opened, pauses, restarts, and relayed comments. `project_job_get` returns the transcript beside the CLI's raw output. Claude Code (`stream-json`) and Codex (`exec --json`) are mapped today. Other CLIs record their raw output and Projects' own events.
+Each job keeps a structured transcript built from the CLI's machine-readable event stream: messages, reasoning, tool calls and results, shell commands with their output and exit codes, file changes, plans, and token usage. Projects adds its own events: claims, pull requests opened, pauses, restarts, and relayed comments. `project_job_get` returns the transcript beside the CLI's raw output. Claude Code (`stream-json`), Codex (`exec --json`) and Gemini CLI (`gemini-json`) are mapped by their output format. opencode, Cline and Muse write generic `jsonl` streams, mapped by the `opencode-json`, `cline-json` and `muse-json` transcript mappers their definitions name in [`output.transcript`](/reference/cli-definitions#output). `agy` has no machine-readable output, so Projects does not dispatch jobs to it. A custom definition whose stream has no mapper records only its raw output and Projects' own events.
 
 ## Scheduled prompts
 
