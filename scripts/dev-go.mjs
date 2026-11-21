@@ -27,9 +27,9 @@ const installDir =
 // forgo only publishes release binaries for these platforms.
 const SUPPORTED = new Set(["darwin-arm64", "linux-x64", "win32-x64"]);
 
-// The oldest forgo whose hot reload Aviary's dev updates rely on: 0.7.3 fixed
+// The oldest forgo whose hot reload Aviary's dev updates rely on: 0.7.4 fixed
 // a crash after reloading code that uses a type (lsegal/forgo#50).
-const MIN_FORGO_VERSION = "0.7.3";
+const MIN_FORGO_VERSION = "0.7.4";
 
 function isExecutable(file) {
 	try {
