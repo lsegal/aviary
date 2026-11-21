@@ -70,6 +70,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
 import { useAvailableModels } from "../../composables/useAvailableModels";
+import { useUnsavedChanges } from "../../composables/useUnsavedChanges";
 import {
 	formatFire,
 	type ProjectSchedule,
@@ -95,14 +96,34 @@ onMounted(() => void refreshCredentials());
 const INPUT =
 	"mt-1 block w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:disabled:bg-gray-800";
 const draft = ref<ProjectSchedule>({ ...props.schedule });
+/** The schedule's editable fields, without what polls keep refreshing. */
+function editable(s: ProjectSchedule): string {
+	return JSON.stringify({
+		...s,
+		history: undefined,
+		nextRun: undefined,
+		description: undefined,
+	});
+}
+const saved = ref(editable(draft.value));
 watch(
 	() => props.schedule,
 	(next, prev) => {
 		// Polls replace the schedule; only a different one resets the edits.
-		if (next.id !== prev?.id) draft.value = { ...next };
-		else draft.value = { ...draft.value, history: next.history };
+		if (next.id !== prev?.id) {
+			draft.value = { ...next };
+			saved.value = editable(draft.value);
+		} else draft.value = { ...draft.value, history: next.history };
 	},
 );
+// The editor shows the schedule at ?tab=schedules&schedule=<id>, so picking
+// another schedule or tab leaves it as surely as another page does.
+useUnsavedChanges(() => editable(draft.value) !== saved.value, {
+	keeps: (to, from) =>
+		to.path === from.path &&
+		to.query.tab === from.query.tab &&
+		to.query.schedule === from.query.schedule,
+});
 const busy = ref(false);
 const error = ref("");
 async function act(fn: () => Promise<void>) {
@@ -122,12 +143,16 @@ async function act(fn: () => Promise<void>) {
 async function onSave() {
 	const s = draft.value;
 	if (await act(() => props.save(s))) {
+		saved.value = editable(s);
 		emit("saved", s.id);
 	}
 }
 
 async function onDelete() {
 	if (!window.confirm(`Delete the schedule "${draft.value.name}"?`)) return;
-	if (await act(() => props.remove(props.schedule))) emit("deleted");
+	if (await act(() => props.remove(props.schedule))) {
+		saved.value = editable(draft.value);
+		emit("deleted");
+	}
 }
 </script>
