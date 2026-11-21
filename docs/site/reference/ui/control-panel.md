@@ -22,6 +22,7 @@ Each agent's pages, in sidebar order:
 | --- | --- | --- |
 | Overview | `/system/overview` | Health, counts, validation, and initial setup. |
 | Settings | `/system/settings` | Server, models, browser, scheduler, and search settings. |
+| Projects | `/system/projects` | The Projects settings every agent's GitHub projects share (concurrency, delivery, issue selection, merging), and the job clones on disk. |
 | Providers & Auth | `/system/providers` | API keys, OAuth flows, and secret management. |
 | Usage | `/system/usage` | Token and session analytics. |
 | Jobs | `/system/jobs` | Scheduled work, queue state, logs, run-now, and compile attempts. |

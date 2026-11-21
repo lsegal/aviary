@@ -101,6 +101,7 @@
 					<SettingsSkillsTab />
 					<SettingsSessionsTab />
 					<SettingsProvidersTab />
+					<SettingsProjectsTab />
 				</template>
 
 
@@ -358,6 +359,7 @@ import AppLayout from "../components/AppLayout.vue";
 import { settingsViewContextKey } from "../components/settings/context";
 import SettingsAgentsTab from "../components/settings/SettingsAgentsTab.vue";
 import SettingsGeneralTab from "../components/settings/SettingsGeneralTab.vue";
+import SettingsProjectsTab from "../components/settings/SettingsProjectsTab.vue";
 import SettingsProvidersTab from "../components/settings/SettingsProvidersTab.vue";
 import SettingsSessionsTab from "../components/settings/SettingsSessionsTab.vue";
 import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
@@ -394,7 +396,13 @@ import {
 	useSettingsStore,
 } from "../stores/settings";
 
-type Tab = "general" | "agents" | "skills" | "sessions" | "providers";
+type Tab =
+	| "general"
+	| "agents"
+	| "projects"
+	| "skills"
+	| "sessions"
+	| "providers";
 
 interface SessionRow {
 	id: string;
@@ -483,6 +491,7 @@ const router = useRouter();
 // System pages map to their tab; System → Settings is the general tab.
 const systemTabs: Record<string, Tab> = {
 	settings: "general",
+	projects: "projects",
 	providers: "providers",
 	sessions: "sessions",
 	skills: "skills",
@@ -817,6 +826,7 @@ const agentSubtabLabels: Record<AgentSubtab, string> = {
 };
 const systemTabLabels: Record<Exclude<Tab, "agents">, string> = {
 	general: "Settings",
+	projects: "Projects",
 	providers: "Providers & Auth",
 	sessions: "Sessions",
 	skills: "Skills",
@@ -2828,6 +2838,10 @@ function normalizedDraftConfig(): AppConfig {
 		chat: normalized.approval?.chat || undefined,
 	};
 	normalized.approval = approval.mode || approval.chat ? approval : undefined;
+	normalized.projects =
+		normalized.projects && Object.keys(normalized.projects).length
+			? normalized.projects
+			: undefined;
 
 	normalized.search = {
 		web: {

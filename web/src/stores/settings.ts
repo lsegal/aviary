@@ -1,7 +1,10 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { useMCP } from "../composables/useMCP";
-import type { ProjectsSection } from "../lib/projectSettings";
+import type {
+	AgentProjectsSection,
+	ProjectsSection,
+} from "../lib/projectSettings";
 import type { PermissionsPreset } from "../lib/toolPermissions";
 
 export interface TLSConfig {
@@ -74,8 +77,8 @@ export interface AgentEntry {
 	permissions?: AgentPermissions;
 	channels: AgentChannel[];
 	tasks: AgentTask[];
-	/** The GitHub projects this agent owns and their settings (non-default values only). */
-	projects?: ProjectsSection;
+	/** The GitHub projects this agent owns; their settings are AppConfig.projects. */
+	projects?: AgentProjectsSection;
 }
 
 export type AgentTaskType = "prompt" | "script" | "project";
@@ -164,6 +167,8 @@ export interface AppConfig {
 	skills: Record<string, SkillConfig>;
 	coding_skills?: CodingSkillsConfig;
 	approval?: ApprovalConfig;
+	/** The shared projects settings of every agent's projects (non-default values only). */
+	projects?: ProjectsSection;
 }
 
 /** Normalizes a task's type, which defaults to prompt. */
@@ -266,6 +271,7 @@ export const useSettingsStore = defineStore("settings", () => {
 				scheduler: { ...base.scheduler, ...parsed.scheduler },
 				skills: parsed.skills ?? {},
 				approval: parsed.approval,
+				projects: parsed.projects,
 			};
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);

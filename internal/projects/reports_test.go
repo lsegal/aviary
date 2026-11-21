@@ -11,7 +11,7 @@ import (
 
 type sentReport struct{ agent, target, text string }
 
-func testReporter(cfg config.ProjectsConfig) (*reporter, *[]sentReport) {
+func testReporter(cfg []config.ProjectConfig) (*reporter, *[]sentReport) {
 	var sent []sentReport
 	r := newReporter()
 	r.send = func(f func()) { f() }
@@ -27,11 +27,11 @@ func reportJob(status string) core.JobSnapshot {
 	return core.JobSnapshot{Number: 7, Target: "acme/app", Repository: "acme/app", Title: "Fix login", Status: status, Kind: core.JobKindIssue}
 }
 
-func reportsConfig(reports *config.ProjectReportsConfig) config.ProjectsConfig {
-	return config.ProjectsConfig{List: []config.ProjectConfig{
+func reportsConfig(reports *config.ProjectReportsConfig) []config.ProjectConfig {
+	return []config.ProjectConfig{
 		{Target: "acme/app", Reports: reports},
 		{Target: "acme/quiet"},
-	}}
+	}
 }
 
 func TestReporterSendsLifecycleEventsThroughEveryTarget(t *testing.T) {
@@ -150,7 +150,7 @@ func TestManagerDeliversReportsFromSnapshots(t *testing.T) {
 		sent <- sentReport{agent, target, text}
 		return nil
 	})
-	m.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "cli/codex", Projects: reportsConfig(&config.ProjectReportsConfig{Agent: "bot", Targets: []string{"telegram:main:42"}})}}})
+	m.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "cli/codex", Projects: config.AgentProjectsConfig{List: reportsConfig(&config.ProjectReportsConfig{Agent: "bot", Targets: []string{"telegram:main:42"}})}}}})
 
 	m.Snapshot(core.Snapshot{Jobs: []core.JobSnapshot{reportJob("active")}})
 	m.Snapshot(core.Snapshot{Jobs: []core.JobSnapshot{reportJob("failed")}})

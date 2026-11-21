@@ -45,9 +45,9 @@ func (r *reporter) setDelivery(deliver ReportDelivery) {
 }
 
 // configure applies every agent's per-project report settings.
-func (r *reporter) configure(cfg config.ProjectsConfig) {
+func (r *reporter) configure(list []config.ProjectConfig) {
 	projects := map[string]*config.ProjectReportsConfig{}
-	for _, project := range cfg.List {
+	for _, project := range list {
 		if project.Reports.Enabled() {
 			projects[strings.TrimSpace(project.Target)] = project.Reports
 		}

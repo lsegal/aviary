@@ -68,6 +68,10 @@ The home screen. It shows:
 
 Covers the `server`, `models`, `browser`, `scheduler`, and `search` config sections. Port and TLS changes require a server restart to take effect.
 
+### Projects (`/system/projects`)
+
+The one set of [Projects](/guide/projects) settings, shared by every project of every agent: how many jobs run at once across all of them, how GitHub is read, which issues are picked up, merging and changelogs, the approval mode, and where clones go. It also lists the job clones on disk. An agent's GitHub Projects page only lists the projects it owns.
+
 ### Providers & Auth (`/system/providers`)
 
 Manages API credentials and OAuth sessions:

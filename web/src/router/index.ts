@@ -46,7 +46,7 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		{
-			path: "/system/:tab(settings|providers|sessions|skills)",
+			path: "/system/:tab(settings|projects|providers|sessions|skills)",
 			component: SettingsView,
 			meta: { requiresAuth: true },
 		},

@@ -7,9 +7,10 @@ const STATUS = {
 };
 
 // Shapes follow internal/config/projects.go and internal/projects/api.go.
-// A project lives in the projects: section of the agent that owns it.
-const CODER_PROJECTS = {
-	list: [{ target: "lsegal/aviary" }],
+// A project lives in the projects: section of the agent that owns it; the
+// settings every project runs under are the one top-level projects: section.
+const CODER_PROJECTS = { list: [{ target: "lsegal/aviary" }] };
+const PROJECTS = {
 	allowed_commenters: ["lsegal", "teammate"],
 	webhook: { path: "/hooks/gh" },
 };
@@ -24,6 +25,7 @@ const CONFIG = {
 			projects: CODER_PROJECTS,
 		},
 	],
+	projects: PROJECTS,
 };
 
 const CLIS = {
@@ -347,23 +349,19 @@ test("a project's board names its agent and links to the agent's projects", asyn
 	);
 });
 
-test("changing a setting writes only the differing values under the agent", async ({
+test("changing a setting writes only the differing values to the shared section", async ({
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/agents/coder/projects");
+	await page.goto("/system/projects");
 
 	const yaml = page.getByTestId("project-yaml");
 	await expect(yaml).toHaveText(
 		[
-			"agents:",
-			"  - name: coder",
-			"    projects:",
-			"      list:",
-			"        - target: lsegal/aviary",
-			"      allowed_commenters: [lsegal, teammate]",
-			"      webhook:",
-			"        path: /hooks/gh",
+			"projects:",
+			"  allowed_commenters: [lsegal, teammate]",
+			"  webhook:",
+			"    path: /hooks/gh",
 		].join("\n"),
 	);
 	const jobsLabel = page.locator("label", {
@@ -408,18 +406,21 @@ test("changing a setting writes only the differing values under the agent", asyn
 
 	await saveChanges(page);
 	await expect.poll(() => calls.config_save?.length).toBe(1);
-	expect(savedProjects(calls, "coder")).toEqual({
-		...CODER_PROJECTS,
+	expect(savedConfig(calls).projects).toEqual({
+		...PROJECTS,
 		concurrency: 6,
 		no_merge: true,
 		delivery: "webhook",
 	});
-	// Nothing is written outside the agent: no top-level projects section,
-	// and the other agent has none.
-	expect(savedConfig(calls).projects).toBeUndefined();
+	// No agent's section carries settings: the agents keep only their lists.
+	expect(savedProjects(calls, "coder")).toEqual(CODER_PROJECTS);
 	expect(savedProjects(calls, "atlas")).toBeUndefined();
 
-	// Back to defaults, the values drop out again.
+	// Back to defaults, the values drop out again, once the save has reloaded
+	// the draft.
+	await expect(
+		page.getByRole("button", { name: "Save Changes" }),
+	).toBeEnabled();
 	await page.locator('[data-field="concurrency"]').fill("3");
 	await page
 		.getByRole("switch", { name: "Merge pull requests when CI passes" })
@@ -435,7 +436,22 @@ test("changing a setting writes only the differing values under the agent", asyn
 	await expect(yaml).not.toContainText("browser_vision");
 	await saveChanges(page);
 	await expect.poll(() => calls.config_save?.length).toBe(2);
+	expect(savedConfig(calls).projects).toEqual(PROJECTS);
 	expect(savedProjects(calls, "coder")).toEqual(CODER_PROJECTS);
+});
+
+test("the agent's projects subtab lists its projects with no settings form", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects");
+	await expect(page.getByTestId("agent-project")).toHaveCount(1);
+	const subtab = page.getByTestId("agent-projects");
+	await expect(subtab.locator('[data-field="concurrency"]')).toHaveCount(0);
+	await expect(page.getByTestId("project-settings")).toBeHidden();
+	await page.getByTestId("shared-settings-link").click();
+	await expect(page).toHaveURL("/system/projects");
+	await expect(page.getByTestId("project-settings")).toBeVisible();
 });
 
 test("yolo loads as the full approval mode and saves as the Projects override", async ({
@@ -444,13 +460,10 @@ test("yolo loads as the full approval mode and saves as the Projects override", 
 	const calls = await setup(page, {
 		config: {
 			...CONFIG,
-			agents: [
-				CONFIG.agents[0],
-				{ ...CONFIG.agents[1], projects: { ...CODER_PROJECTS, yolo: true } },
-			],
+			projects: { ...PROJECTS, yolo: true },
 		},
 	});
-	await page.goto("/agents/coder/projects");
+	await page.goto("/system/projects");
 	const mode = page.locator('[data-field="approval_mode"]');
 	await expect(mode).toHaveValue("full");
 
@@ -460,8 +473,8 @@ test("yolo loads as the full approval mode and saves as the Projects override", 
 	await expect(yaml).not.toContainText("yolo");
 	await saveChanges(page);
 	await expect.poll(() => calls.config_save?.length).toBe(1);
-	expect(savedProjects(calls, "coder")).toEqual({
-		...CODER_PROJECTS,
+	expect(savedConfig(calls).projects).toEqual({
+		...PROJECTS,
 		approval_mode: "read-only",
 	});
 });
@@ -472,16 +485,10 @@ test("following the general approval mode writes no Projects override", async ({
 	const calls = await setup(page, {
 		config: {
 			...CONFIG,
-			agents: [
-				CONFIG.agents[0],
-				{
-					...CONFIG.agents[1],
-					projects: { ...CODER_PROJECTS, approval_mode: "auto" },
-				},
-			],
+			projects: { ...PROJECTS, approval_mode: "auto" },
 		},
 	});
-	await page.goto("/agents/coder/projects");
+	await page.goto("/system/projects");
 	const mode = page.locator('[data-field="approval_mode"]');
 	await expect(mode).toHaveValue("auto");
 	await mode.selectOption("");
@@ -490,7 +497,7 @@ test("following the general approval mode writes no Projects override", async ({
 	);
 	await saveChanges(page);
 	await expect.poll(() => calls.config_save?.length).toBe(1);
-	expect(savedProjects(calls, "coder")).toEqual(CODER_PROJECTS);
+	expect(savedConfig(calls).projects).toEqual(PROJECTS);
 });
 
 test("an agent's projects run their jobs on its model and fallbacks", async ({
@@ -592,7 +599,7 @@ test("clones show what's in use and unused ones can be cleared", async ({
 	page,
 }) => {
 	const calls = await setup(page);
-	await page.goto("/agents/coder/projects");
+	await page.goto("/system/projects");
 	const rows = page.getByTestId("clone-row");
 	await expect(rows).toHaveCount(3);
 	await expect(rows.first()).toContainText("lsegal/aviary#209");
@@ -627,7 +634,7 @@ test("an unreadable work state shows an error instead of clones", async ({
 	await setup(page, {
 		clonesError: "work state could not be read: unexpected end of JSON",
 	});
-	await page.goto("/agents/coder/projects");
+	await page.goto("/system/projects");
 	await expect(
 		page.getByText(
 			"Couldn't list clones: work state could not be read: unexpected end of JSON",
@@ -650,16 +657,13 @@ test("change settings first opens the agent's projects with the new one listed",
 	await dialog.getByRole("button", { name: "Change settings first" }).click();
 	await expect(page).toHaveURL("/agents/coder/projects?add=lsegal%2Fzvidlib");
 	await expect(page.getByTestId("agent-project")).toHaveCount(2);
-	await expect(page.getByTestId("project-yaml")).toContainText(
+	await expect(page.getByTestId("agent-project-yaml")).toContainText(
 		"- target: lsegal/zvidlib",
 	);
-	await page.locator('[data-field="concurrency"]').fill("5");
 	await saveChanges(page);
 	await expect.poll(() => calls.config_save?.length).toBe(1);
 	expect(savedProjects(calls, "coder")).toEqual({
-		...CODER_PROJECTS,
 		list: [{ target: "lsegal/aviary" }, { target: "lsegal/zvidlib" }],
-		concurrency: 5,
 	});
 	expect(calls.project_add).toBeUndefined();
 });
@@ -686,7 +690,7 @@ test("reports can be turned on with an agent and a target, then off", async ({
 }) => {
 	const calls = await setup(page, { config: REPORTS_CONFIG });
 	await page.goto("/agents/coder/projects");
-	const yaml = page.getByTestId("project-yaml");
+	const yaml = page.getByTestId("agent-project-yaml");
 	const toggle = page.getByRole("switch", { name: "Send job reports" });
 	await expect(toggle).toHaveAttribute("aria-checked", "false");
 	await expect(page.locator('[data-field="reports_agent"]')).toHaveCount(0);

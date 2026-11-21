@@ -26,8 +26,8 @@ func chatContextSnapshot(t *testing.T, text string) map[string]any {
 func TestChatContextNamesBoardTargetsAndLiveJobs(t *testing.T) {
 	m := newTestManager(t)
 	m.Reconcile(&config.Config{Agents: []config.AgentConfig{
-		{Name: "coder", Model: "cli/codex", Projects: config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}}},
-		{Name: "docs", Model: "cli/codex", Projects: config.ProjectsConfig{List: []config.ProjectConfig{{Target: "x/y"}}}},
+		{Name: "coder", Model: "cli/codex", Projects: config.AgentProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}}},
+		{Name: "docs", Model: "cli/codex", Projects: config.AgentProjectsConfig{List: []config.ProjectConfig{{Target: "x/y"}}}},
 	}})
 	m.snapshot.Store(&core.Snapshot{
 		Targets:     []string{"x/y", "o/r"},

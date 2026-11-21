@@ -33,7 +33,9 @@
 						{{ checkNote }}
 					</p>
 				</form>
-				<p class="text-xs text-gray-500 dark:text-gray-400">Save Changes writes the projects to {{ agentLabel }} in aviary.yaml; the running watch picks them up right away.</p>
+				<p class="text-xs text-gray-500 dark:text-gray-400">Save Changes writes the projects to {{ agentLabel }} in aviary.yaml; the running watch picks them up right away.
+					Every project runs under the shared settings in
+					<router-link to="/system/projects" data-testid="shared-settings-link" class="text-blue-600 hover:underline dark:text-blue-400">System → Projects</router-link>.</p>
 			</div>
 		</section>
 
@@ -109,131 +111,11 @@
 			</div>
 		</section>
 
-		<section :class="CARD" data-testid="agent-project-settings">
-			<h3 :class="CARD_HEAD">
-				Settings <span :class="CARD_NOTE">One engine runs every agent's projects, so these combine with other agents' project settings. Grey tags mark defaults that aren't saved</span>
-			</h3>
-			<div class="space-y-4 p-4">
-				<div class="grid gap-4 sm:grid-cols-3">
-					<label class="block">
-						<span :class="LABEL">Jobs at once <DefaultTag :on="isDefault('concurrency')" /></span>
-						<input v-model.number="form.concurrency" type="number" min="1" :class="INPUT" data-field="concurrency" />
-					</label>
-					<label class="block">
-						<span :class="LABEL">Ready label <DefaultTag :on="isDefault('readyLabel')" /></span>
-						<input v-model="form.readyLabel" type="text" placeholder="Off (board status only)" :class="INPUT" data-field="ready_label" />
-					</label>
-					<label class="block">
-						<span :class="LABEL">How to read GitHub <DefaultTag :on="isDefault('delivery')" /></span>
-						<select v-model="form.delivery" :class="INPUT" data-field="delivery">
-							<option v-for="d in DELIVERY_OPTIONS" :key="d.key" :value="d.key">{{ d.label }}</option>
-						</select>
-					</label>
-				</div>
-				<label class="block">
-					<span :class="LABEL">Who can steer jobs through comments</span>
-					<input v-model="commentersText" type="text" placeholder="Only you (the signed-in gh user)" :class="[INPUT, 'font-mono']"
-						data-field="allowed_commenters" @input="form.commenters = parseList(commentersText)" />
-				</label>
-				<div class="space-y-3">
-					<label v-for="t in toggles" :key="t.key" class="flex cursor-pointer items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
-						<SwitchRoot :checked="form[t.key]" :aria-label="t.label" :data-field="t.key"
-							class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none"
-							:class="form[t.key] ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'"
-							@update:checked="(v: boolean) => (form[t.key] = v)">
-							<SwitchThumb class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
-								:class="form[t.key] ? 'translate-x-[110%]' : 'translate-x-[10%]'" />
-						</SwitchRoot>
-						{{ t.label }}
-					</label>
-				</div>
-				<label class="block max-w-xs">
-					<span :class="LABEL">CLI approval mode</span>
-					<select v-model="form.approvalMode" :class="INPUT" data-field="approval_mode">
-						<option value="">Same as the general approval mode</option>
-						<option v-for="m in APPROVAL_MODES" :key="m.value" :value="m.value">{{ m.label }}</option>
-					</select>
-					<span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">How much jobs' CLI providers may do
-						without asking, translated into each CLI's own flags at launch.</span>
-				</label>
-				<details class="rounded-lg border border-gray-200 dark:border-gray-800" :open="advancedOpen">
-					<summary class="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Issue selection and checking</summary>
-					<div class="grid gap-4 border-t border-gray-200 p-3 dark:border-gray-800 sm:grid-cols-2">
-						<div>
-							<label class="block">
-								<span :class="LABEL">Issue filter, one term group per line <DefaultTag :on="isDefault('filter')" /></span>
-								<textarea v-model="filterText" rows="2" :disabled="form.allIssues" :class="[INPUT, 'font-mono disabled:opacity-50']"
-									data-field="filter" @input="form.filter = lines(filterText)" />
-							</label>
-							<label class="mt-1 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-								<input v-model="form.allIssues" type="checkbox" data-field="all_issues" /> Every ready issue, not just filtered ones
-							</label>
-						</div>
-						<div class="space-y-3">
-							<label class="block">
-								<span :class="LABEL">Check interval</span>
-								<input v-model="form.interval" type="text" :placeholder="defaultInterval(form.delivery)" :class="INPUT" data-field="interval" />
-							</label>
-							<label class="block">
-								<span :class="LABEL">Board ready status</span>
-								<input v-model="form.readyState" type="text" placeholder="Auto-detect Todo or Ready" :class="INPUT" data-field="ready_state" />
-							</label>
-							<label class="block">
-								<span :class="LABEL">Stuck-job watchdog interval</span>
-								<input v-model="form.unblockInterval" type="text" placeholder="Default (0 turns it off)" :class="INPUT" data-field="unblock_interval" />
-							</label>
-						</div>
-						<label class="block sm:col-span-2">
-							<span :class="LABEL">Clone into, one directory per line (first with 2 GiB free)</span>
-							<textarea v-model="tempDirsText" rows="2" placeholder="System temp directory" :class="[INPUT, 'font-mono']"
-								data-field="temp_dirs" @input="form.tempDirs = lines(tempDirsText)" />
-						</label>
-					</div>
-				</details>
-			</div>
-		</section>
-
-		<section :class="CARD">
-			<h3 :class="CARD_HEAD">Clones <span :class="CARD_NOTE">Each job works in its own clone, shared across projects</span></h3>
-			<div class="p-4">
-				<p v-if="!clones.loaded.value" class="text-sm text-gray-500">Reading clones…</p>
-				<p v-else-if="clones.error.value" class="text-sm text-gray-500">Couldn't list clones: {{ clones.error.value }}</p>
-				<p v-else-if="!clones.clones.value.length" class="text-sm text-gray-500">No clones on disk.</p>
-				<ul v-else class="divide-y divide-gray-200 text-sm dark:divide-gray-800">
-					<li v-for="c in clones.clones.value" :key="c.path" data-testid="clone-row" class="flex items-center gap-3 py-2">
-						<div class="min-w-0 flex-1">
-							<p class="truncate font-mono text-xs text-gray-800 dark:text-gray-200">{{ c.path }}</p>
-							<p class="text-xs text-gray-500">
-								{{ [c.repo && c.issue ? `${c.repo}#${c.issue}` : c.repo, c.pr ? `PR #${c.pr}` : ""].filter(Boolean).join(" · ") }}
-							</p>
-						</div>
-						<span data-testid="clone-size" class="text-xs tabular-nums text-gray-500"
-							:title="c.size === null ? 'Not measured in time' : undefined">{{ c.size === null ? "size unknown" : formatBytes(c.size) }}</span>
-						<span data-testid="clone-state" class="max-w-xs text-right text-xs" :class="c.inUse ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500'">
-							{{ cloneState(c) }}<template v-if="c.reason">: <span data-testid="clone-reason">{{ c.reason }}</span></template>
-						</span>
-					</li>
-				</ul>
-				<p v-if="clones.loaded.value && !clones.error.value && clones.clones.value.length" data-testid="clone-total" class="mt-2 text-xs text-gray-500">
-					{{ clones.clones.value.length }} {{ clones.clones.value.length === 1 ? "clone" : "clones" }},
-					{{ formatBytes(clones.totalSize.value) }} total<template v-if="clones.unmeasured.value">
-						({{ clones.unmeasured.value }} not measured)</template>
-				</p>
-				<button v-if="clones.clones.value.some((c) => cloneState(c) === 'unused')" type="button" :disabled="clones.clearing.value"
-					class="mt-3 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-					@click="clones.clear()">{{ clones.clearing.value ? "Clearing…" : "Clear unused clones" }}</button>
-				<p v-if="clones.cleared.value" data-testid="clone-message" class="mt-2 text-xs text-green-700 dark:text-green-400">
-					Removed {{ clones.cleared.value.removed }} {{ clones.cleared.value.removed === 1 ? "clone" : "clones" }},
-					reclaimed {{ formatBytes(clones.cleared.value.reclaimed) }}<template v-if="clones.cleared.value.kept">, kept {{ clones.cleared.value.kept }}</template>.
-				</p>
-			</div>
-		</section>
-
 		<DeleteProjectSection v-if="selected && savedTargets.includes(selected)" :target="selected" @deleted="onDeleted" />
 
 		<section :class="CARD">
 			<h3 :class="CARD_HEAD">YAML <span :class="CARD_NOTE">Only what differs from defaults ends up in aviary.yaml</span></h3>
-			<pre data-testid="project-yaml"
+			<pre data-testid="agent-project-yaml"
 				class="overflow-x-auto rounded-b-xl bg-gray-50 px-4 py-3 font-mono text-xs text-gray-800 dark:bg-gray-900 dark:text-gray-200">{{ yaml || "# Every setting is a default, so nothing is written." }}</pre>
 		</section>
 	</div>
@@ -241,40 +123,27 @@
 
 <script setup lang="ts">
 import { SwitchRoot, SwitchThumb } from "radix-vue";
-import { computed, h, nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import {
-	useProjectCheck,
-	useProjectClones,
-} from "../../composables/useProjectSettings";
+import { useProjectCheck } from "../../composables/useProjectSettings";
 import { useProviderStatus } from "../../composables/useProviderAuth";
-import { APPROVAL_MODES } from "../../lib/approval";
 import {
-	cloneState,
-	DELIVERY_OPTIONS,
-	defaultFields,
-	defaultInterval,
-	formatBytes,
+	type AgentProjectsSection,
+	agentProjectsYAML,
 	isListed,
 	type JobModelsConfig,
 	jobModels,
 	joinReportTarget,
 	type ProjectReports,
-	type ProjectSettings,
-	type ProjectsSection,
-	parseList,
 	projectOwner,
-	projectsYAML,
 	projectTargets,
 	REPORT_EVENTS,
 	reportsError,
 	reportsFromSection,
-	settingsFromSection,
 	splitReportTarget,
 	withoutProject,
 	withProject,
 	withReports,
-	withSettings,
 } from "../../lib/projectSettings";
 import { projectPath } from "../../lib/projects";
 import { type AgentEntry, useSettingsStore } from "../../stores/settings";
@@ -301,37 +170,6 @@ const TARGET_CHANNEL = `${INPUT.replace("w-full ", "")} w-44 shrink-0`;
 const ICON_BTN =
 	"rounded-md px-1.5 text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-800";
 
-type ToggleKey = "merge" | "changelog" | "browserVision" | "browserVisible";
-const TOGGLES: { key: ToggleKey; label: string }[] = [
-	{ key: "merge", label: "Merge pull requests when CI passes" },
-	{ key: "changelog", label: "Add a changelog entry to each pull request" },
-];
-// The browser switches only apply to browser delivery.
-const BROWSER_TOGGLES: { key: ToggleKey; label: string }[] = [
-	{
-		key: "browserVision",
-		label: "Read pages it no longer recognizes from capped screenshots",
-	},
-	{
-		key: "browserVisible",
-		label: "Show the browser it reads GitHub with, for debugging",
-	},
-];
-
-function DefaultTag(p: { on: boolean }) {
-	return p.on
-		? h(
-				"span",
-				{
-					class:
-						"rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-normal text-gray-500 dark:bg-gray-800 dark:text-gray-400",
-				},
-				"default",
-			)
-		: null;
-}
-DefaultTag.props = ["on"];
-
 const route = useRoute();
 // The CLI providers, so a model such as claude/opus shows as its own spec.
 const cliStatus = useProviderStatus({ refreshOnMount: false });
@@ -340,25 +178,20 @@ const cliNames = computed(() =>
 );
 // The probe is slow, so it runs here only when nothing is cached yet.
 if (cliStatus.clis.value === null) void cliStatus.refresh();
-const clones = useProjectClones();
 
 const agentLabel = computed(() => props.agent.name || "This agent");
-const section = computed<ProjectsSection>(() => props.agent.projects ?? {});
+const section = computed<AgentProjectsSection>(
+	() => props.agent.projects ?? {},
+);
 const targets = computed(() => projectTargets(section.value));
 
 /** Stores the agent's section, dropping it once it holds nothing. */
-function store(next: ProjectsSection) {
+function store(next: AgentProjectsSection) {
 	const clean = Object.fromEntries(
 		Object.entries(next).filter(([, v]) => v !== undefined),
 	);
 	props.agent.projects = Object.keys(clean).length ? clean : undefined;
 }
-
-const lines = (text: string) =>
-	text
-		.split("\n")
-		.map((l) => l.trim())
-		.filter(Boolean);
 
 // ── Projects ────────────────────────────────────────────────────────────────
 
@@ -550,43 +383,7 @@ function toggleReportEvent(key: string) {
 	});
 }
 
-// ── Settings ────────────────────────────────────────────────────────────────
-
-const form = ref<ProjectSettings>(settingsFromSection(section.value));
-const commentersText = ref(form.value.commenters.join(", "));
-const filterText = ref(form.value.filter.join("\n"));
-const tempDirsText = ref(form.value.tempDirs.join("\n"));
-watch(
-	form,
-	(s) => {
-		const next = withSettings(section.value, s);
-		if (JSON.stringify(next) !== JSON.stringify(section.value)) store(next);
-	},
-	{ deep: true },
-);
-
-const defaults = computed(() => defaultFields(form.value));
-const isDefault = (key: keyof ProjectSettings) => defaults.value.has(key);
-const advancedOpen = computed(
-	() =>
-		!(
-			[
-				"filter",
-				"allIssues",
-				"interval",
-				"readyState",
-				"unblockInterval",
-				"tempDirs",
-			] as const
-		).every(isDefault),
-);
-const toggles = computed(() =>
-	form.value.delivery === "browser"
-		? [...TOGGLES, ...BROWSER_TOGGLES]
-		: TOGGLES,
-);
-
 const yaml = computed(() =>
-	projectsYAML(props.agent.name || "agent", section.value),
+	agentProjectsYAML(props.agent.name || "agent", section.value),
 );
 </script>

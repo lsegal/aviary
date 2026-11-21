@@ -9,18 +9,12 @@ import (
 	"github.com/lsegal/aviary/internal/clidefs"
 )
 
-// ProjectsConfig is an agent's projects: section in aviary.yaml: the
-// projects the agent owns and the settings that configure them. Every field
-// is optional and holds only a value that differs from its default, so a
-// watch started with defaults writes nothing here.
-//
-// One Projects engine runs every agent's projects, so the engine-wide
-// settings (everything but List) of all agents are merged in agent order,
-// a later agent's non-zero value winning; see Config.ProjectSettings.
+// ProjectsConfig is the top-level projects: section in aviary.yaml: the one
+// set of Projects settings, shared by every project of every agent. Every
+// field is optional and holds only a value that differs from its default, so
+// a watch started with defaults writes nothing here. The projects themselves
+// are listed under the agents that own them; see AgentProjectsConfig.
 type ProjectsConfig struct {
-	// List is the watched projects: repositories, project boards and
-	// Discussions boards.
-	List []ProjectConfig `yaml:"list,omitempty" json:"list,omitempty"`
 	// Concurrency is how many jobs run at once across every project. 0 means
 	// DefaultProjectsConcurrency.
 	Concurrency int `yaml:"concurrency,omitempty" json:"concurrency,omitempty"`
@@ -78,6 +72,15 @@ type ProjectsConfig struct {
 	TempDirs []string `yaml:"temp_dirs,omitempty" json:"temp_dirs,omitempty"`
 	// Webhook configures webhook delivery.
 	Webhook *ProjectsWebhookConfig `yaml:"webhook,omitempty" json:"webhook,omitempty"`
+}
+
+// AgentProjectsConfig is an agent's projects: section in aviary.yaml: the
+// projects the agent owns. Their settings are the shared top-level projects:
+// section.
+type AgentProjectsConfig struct {
+	// List is the watched projects: repositories, project boards and
+	// Discussions boards.
+	List []ProjectConfig `yaml:"list,omitempty" json:"list,omitempty"`
 }
 
 // ProjectConfig is one watched project. The agent whose projects: section
@@ -237,7 +240,7 @@ func (p ProjectsConfig) EffectiveFilter() string {
 }
 
 // Targets returns every watched target, in order, without duplicates.
-func (p ProjectsConfig) Targets() []string {
+func (p AgentProjectsConfig) Targets() []string {
 	var targets []string
 	seen := map[string]bool{}
 	for _, project := range p.List {
@@ -252,8 +255,13 @@ func (p ProjectsConfig) Targets() []string {
 }
 
 // IsZero reports whether the section holds nothing, so Save leaves it out.
+func (p AgentProjectsConfig) IsZero() bool {
+	return len(p.List) == 0
+}
+
+// IsZero reports whether the section holds nothing, so Save leaves it out.
 func (p ProjectsConfig) IsZero() bool {
-	return len(p.List) == 0 && p.Concurrency == 0 && p.Interval == "" && p.Delivery == "" &&
+	return p.Concurrency == 0 && p.Interval == "" && p.Delivery == "" &&
 		p.ReadyLabel == nil && p.ReadyState == "" && len(p.Filter) == 0 && !p.AllIssues &&
 		len(p.AllowedCommenters) == 0 &&
 		p.ApprovalMode == "" && !p.Yolo && !p.NoMerge && !p.NoChangelog &&
@@ -261,10 +269,9 @@ func (p ProjectsConfig) IsZero() bool {
 		p.ChatModel == "" && len(p.ChatFallbacks) == 0 && len(p.TempDirs) == 0 && p.Webhook == nil
 }
 
-// MergeProjects lays overlay's non-zero engine-wide settings over base. List
-// is base's.
-func MergeProjects(base, overlay ProjectsConfig) ProjectsConfig {
-	merged := base
+// Override returns p with a runtime watch's non-zero settings laid over it.
+func (p ProjectsConfig) Override(overlay ProjectsConfig) ProjectsConfig {
+	merged := p
 	if overlay.Concurrency > 0 {
 		merged.Concurrency = overlay.Concurrency
 	}
@@ -319,17 +326,13 @@ func MergeProjects(base, overlay ProjectsConfig) ProjectsConfig {
 	return merged
 }
 
-// ProjectSettings returns every agent's projects merged into the one section
-// the Projects engine runs: List holds each agent's projects in agent order,
-// and the engine-wide settings are merged as MergeProjects does, a later
-// agent's value winning.
-func (c *Config) ProjectSettings() ProjectsConfig {
-	var merged ProjectsConfig
+// ProjectList returns every agent's projects, in agent order.
+func (c *Config) ProjectList() []ProjectConfig {
+	var list []ProjectConfig
 	for _, agent := range c.Agents {
-		merged = MergeProjects(merged, agent.Projects)
-		merged.List = append(merged.List, agent.Projects.List...)
+		list = append(list, agent.Projects.List...)
 	}
-	return merged
+	return list
 }
 
 // ProjectOwners maps every watched target to the name of the agent that owns

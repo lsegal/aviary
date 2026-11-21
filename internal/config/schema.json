@@ -68,7 +68,7 @@
         "properties": {
           "name": { "type": "string" },
           "projects": {
-            "description": "The GitHub projects this agent owns and the settings that configure them. A project belongs to exactly one agent, whose model and fallbacks run its jobs; the settings besides list are merged across every agent's projects.",
+            "description": "The GitHub projects this agent owns. A project belongs to exactly one agent, whose model and fallbacks run its jobs; their settings are the shared top-level projects section.",
             "type": "object",
             "additionalProperties": false,
             "properties": {
@@ -112,157 +112,6 @@
                 "x-label": "Projects",
                 "x-order": 1,
                 "description": "Watched projects."
-              },
-              "concurrency": {
-                "type": "integer",
-                "minimum": 0,
-                "x-label": "Concurrency",
-                "x-order": 2,
-                "description": "Jobs that run at once across every project. Defaults to 3."
-              },
-              "interval": {
-                "type": "string",
-                "x-label": "Poll interval",
-                "x-order": 3,
-                "description": "Time between GitHub polls, as a duration such as 30s. Defaults to 30s."
-              },
-              "delivery": {
-                "type": "string",
-                "enum": [
-                  "poll",
-                  "webhook"
-                ],
-                "x-label": "Delivery",
-                "x-order": 4,
-                "description": "How GitHub changes arrive: poll (default) or webhook (an ngrok tunnel and repository webhooks)."
-              },
-              "ready_label": {
-                "type": "string",
-                "x-label": "Ready label",
-                "x-order": 5,
-                "description": "Label a repository issue needs to be picked up. Defaults to ready; an empty string turns it off."
-              },
-              "ready_state": {
-                "type": "string",
-                "x-label": "Ready state",
-                "x-order": 6,
-                "description": "Project board status that marks an item ready. Defaults to Todo or Ready."
-              },
-              "filter": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "x-label": "Issue filter",
-                "x-order": 7,
-                "description": "GitHub issue search filter. Defaults to assignee:@me."
-              },
-              "all_issues": {
-                "type": "boolean",
-                "x-label": "All issues",
-                "x-order": 8,
-                "description": "Drop the issue filter; the ready label still applies."
-              },
-              "allowed_commenters": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "x-label": "Allowed commenters",
-                "x-order": 9,
-                "description": "GitHub logins whose comments steer jobs. Defaults to the authenticated gh user."
-              },
-              "approval_mode": {
-                "type": "string",
-                "enum": ["read-only", "auto", "full"],
-                "x-label": "Approval mode",
-                "x-order": 13,
-                "description": "Projects' approval-mode override for the CLI runs it launches. Empty follows approval.mode."
-              },
-              "yolo": {
-                "type": "boolean",
-                "x-label": "YOLO",
-                "x-order": 13,
-                "description": "Disable the CLI providers' sandboxes and permission checks."
-              },
-              "no_merge": {
-                "type": "boolean",
-                "x-label": "No merge",
-                "x-order": 14,
-                "description": "Leave finished gh-fix pull requests ready for a human to merge."
-              },
-              "no_changelog": {
-                "type": "boolean",
-                "x-label": "No changelog",
-                "x-order": 15,
-                "description": "Skip changelog entries in gh-fix pull requests."
-              },
-              "unblock_interval": {
-                "type": "string",
-                "x-label": "Unblock interval",
-                "x-order": 16,
-                "description": "How often the stuck-job watchdog runs, such as 15m; 0 turns it off. Defaults to 15m."
-              },
-              "unblock_agent": {
-                "type": "string",
-                "x-label": "Unblock agent",
-                "x-order": 17,
-                "description": "Agent spec for the watchdog's unblock call. Defaults to the coding agent."
-              },
-              "unblock_model": {
-                "type": "string",
-                "x-label": "Unblock model",
-                "x-order": 18,
-                "description": "Model for the watchdog's unblock call."
-              },
-              "chat_model": {
-                "type": "string",
-                "x-label": "Prompt chat model",
-                "x-order": 19,
-                "description": "Model of the built-in Projects agent behind the board's prompt chat. Defaults to models.defaults."
-              },
-              "chat_fallbacks": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "x-label": "Prompt chat fallbacks",
-                "x-order": 20,
-                "description": "Fallback models of the built-in Projects agent, tried in order."
-              },
-              "temp_dirs": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "x-label": "Clone directories",
-                "x-order": 21,
-                "description": "Absolute directories new clones go in, tried in order. Defaults to the system temp directory."
-              },
-              "webhook": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "listen": {
-                    "type": "string",
-                    "description": "Webhook listener address. Defaults to :0."
-                  },
-                  "path": {
-                    "type": "string",
-                    "description": "Webhook path. Defaults to /webhook."
-                  },
-                  "secret": {
-                    "type": "string",
-                    "description": "Webhook signature secret."
-                  },
-                  "ngrok_binary": {
-                    "type": "string",
-                    "description": "ngrok executable; fetched through npx when not installed."
-                  }
-                },
-                "x-label": "Webhook",
-                "x-order": 22,
-                "description": "Webhook delivery settings."
               }
             }
           },
@@ -615,6 +464,164 @@
           "x-label": "Chat approval mode",
           "x-order": 2,
           "description": "Override for CLI-backed chat turns (web UI chat and the Projects prompt chat). Empty follows mode."
+        }
+      }
+    },
+    "projects": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The one set of Projects settings, shared by every project of every agent. The projects themselves are listed under the agents that own them.",
+      "properties": {
+        "concurrency": {
+          "type": "integer",
+          "minimum": 0,
+          "x-label": "Concurrency",
+          "x-order": 2,
+          "description": "Jobs that run at once across every project. Defaults to 3."
+        },
+        "interval": {
+          "type": "string",
+          "x-label": "Poll interval",
+          "x-order": 3,
+          "description": "Time between GitHub polls, as a duration such as 30s. Defaults to 30s."
+        },
+        "delivery": {
+          "type": "string",
+          "enum": [
+            "poll",
+            "webhook"
+          ],
+          "x-label": "Delivery",
+          "x-order": 4,
+          "description": "How GitHub changes arrive: poll (default) or webhook (an ngrok tunnel and repository webhooks)."
+        },
+        "ready_label": {
+          "type": "string",
+          "x-label": "Ready label",
+          "x-order": 5,
+          "description": "Label a repository issue needs to be picked up. Defaults to ready; an empty string turns it off."
+        },
+        "ready_state": {
+          "type": "string",
+          "x-label": "Ready state",
+          "x-order": 6,
+          "description": "Project board status that marks an item ready. Defaults to Todo or Ready."
+        },
+        "filter": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-label": "Issue filter",
+          "x-order": 7,
+          "description": "GitHub issue search filter. Defaults to assignee:@me."
+        },
+        "all_issues": {
+          "type": "boolean",
+          "x-label": "All issues",
+          "x-order": 8,
+          "description": "Drop the issue filter; the ready label still applies."
+        },
+        "allowed_commenters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-label": "Allowed commenters",
+          "x-order": 9,
+          "description": "GitHub logins whose comments steer jobs. Defaults to the authenticated gh user."
+        },
+        "approval_mode": {
+          "type": "string",
+          "enum": ["read-only", "auto", "full"],
+          "x-label": "Approval mode",
+          "x-order": 13,
+          "description": "Projects' approval-mode override for the CLI runs it launches. Empty follows approval.mode."
+        },
+        "yolo": {
+          "type": "boolean",
+          "x-label": "YOLO",
+          "x-order": 13,
+          "description": "Disable the CLI providers' sandboxes and permission checks."
+        },
+        "no_merge": {
+          "type": "boolean",
+          "x-label": "No merge",
+          "x-order": 14,
+          "description": "Leave finished gh-fix pull requests ready for a human to merge."
+        },
+        "no_changelog": {
+          "type": "boolean",
+          "x-label": "No changelog",
+          "x-order": 15,
+          "description": "Skip changelog entries in gh-fix pull requests."
+        },
+        "unblock_interval": {
+          "type": "string",
+          "x-label": "Unblock interval",
+          "x-order": 16,
+          "description": "How often the stuck-job watchdog runs, such as 15m; 0 turns it off. Defaults to 15m."
+        },
+        "unblock_agent": {
+          "type": "string",
+          "x-label": "Unblock agent",
+          "x-order": 17,
+          "description": "Agent spec for the watchdog's unblock call. Defaults to the coding agent."
+        },
+        "unblock_model": {
+          "type": "string",
+          "x-label": "Unblock model",
+          "x-order": 18,
+          "description": "Model for the watchdog's unblock call."
+        },
+        "chat_model": {
+          "type": "string",
+          "x-label": "Prompt chat model",
+          "x-order": 19,
+          "description": "Model of the built-in Projects agent behind the board's prompt chat. Defaults to models.defaults."
+        },
+        "chat_fallbacks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-label": "Prompt chat fallbacks",
+          "x-order": 20,
+          "description": "Fallback models of the built-in Projects agent, tried in order."
+        },
+        "temp_dirs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-label": "Clone directories",
+          "x-order": 21,
+          "description": "Absolute directories new clones go in, tried in order. Defaults to the system temp directory."
+        },
+        "webhook": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "listen": {
+              "type": "string",
+              "description": "Webhook listener address. Defaults to :0."
+            },
+            "path": {
+              "type": "string",
+              "description": "Webhook path. Defaults to /webhook."
+            },
+            "secret": {
+              "type": "string",
+              "description": "Webhook signature secret."
+            },
+            "ngrok_binary": {
+              "type": "string",
+              "description": "ngrok executable; fetched through npx when not installed."
+            }
+          },
+          "x-label": "Webhook",
+          "x-order": 22,
+          "description": "Webhook delivery settings."
         }
       }
     }

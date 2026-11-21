@@ -175,7 +175,8 @@ func TestManagerBrowserSettingsFollowAviarysBrowser(t *testing.T) {
 	}
 	m.SetBrowser(config.BrowserConfig{Binary: "/opt/chrome", ProfileDir: "/data/profile"})
 	m.agents = &config.Config{Models: config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}}}
-	m.cfg = config.ProjectsConfig{List: []config.ProjectConfig{{Target: "o/r"}}, BrowserVision: true}
+	m.cfg = config.ProjectsConfig{BrowserVision: true}
+	m.list = []config.ProjectConfig{{Target: "o/r"}}
 	m.mu.Lock()
 	s, err := m.settingsLocked()
 	m.mu.Unlock()
