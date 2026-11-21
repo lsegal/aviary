@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { systemList } from "./helpers/sidebar";
 
 test.beforeEach(async ({ page }) => {
 	await setAuthToken(page);
@@ -37,21 +38,16 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 		"assistant",
 		"coder",
 	]);
-	// Agents are added from System → Settings, not the sidebar (#759).
+	// Agents are added from Settings, not the sidebar (#759).
 	await expect(page.getByTestId("sidebar-add-agent")).toHaveCount(0);
 
-	const system = page.getByTestId("sidebar-system-list");
+	// System starts collapsed and lists every page, with no Overview child,
+	// Settings or Providers & Auth, and no More expander (#822).
+	const toggle = page.getByTestId("sidebar-system-toggle");
+	await expect(toggle).toHaveAttribute("aria-expanded", "false");
+	await expect(page.getByTestId("sidebar-system-list")).toHaveCount(0);
+	const system = await systemList(page);
 	await expect(system.getByRole("link")).toHaveText([
-		"Overview",
-		"Settings",
-		"Providers & Auth",
-		"Usage",
-	]);
-	await page.getByTestId("sidebar-system-more").click();
-	await expect(system.getByRole("link")).toHaveText([
-		"Overview",
-		"Settings",
-		"Providers & Auth",
 		"Usage",
 		"Tools",
 		"Skills",
@@ -60,28 +56,29 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 		"Logs",
 		"Daemons",
 	]);
+	await expect(page.getByTestId("sidebar-system-more")).toHaveCount(0);
 });
 
 test("the System section collapses to its header and stays collapsed across pages", async ({
 	page,
 }) => {
-	await page.goto("/system/settings");
+	await page.goto("/system/logs");
 
 	const header = page.getByTestId("sidebar-system");
 	const toggle = page.getByTestId("sidebar-system-toggle");
 	const list = page.getByTestId("sidebar-system-list");
+	await expect(toggle).toHaveAttribute("aria-expanded", "false");
+	// The header stands in for the current System page while collapsed.
+	await expect(header).toHaveClass(/bg-white/);
+
+	await toggle.click();
 	await expect(toggle).toHaveAttribute("aria-expanded", "true");
-	await page.getByTestId("sidebar-system-more").click();
 	await expect(list.getByRole("link", { name: "Daemons" })).toBeVisible();
+	await expect(header).not.toHaveClass(/bg-white/);
 
 	await toggle.click();
 	await expect(toggle).toHaveAttribute("aria-expanded", "false");
 	await expect(list).toHaveCount(0);
-	await expect(
-		page.getByTestId("sidebar-nav").getByRole("link", { name: "Settings" }),
-	).toHaveCount(0);
-	// The header stands in for the current System page while collapsed.
-	await expect(header).toHaveClass(/bg-white/);
 
 	// The state outlives route changes, and the header still navigates.
 	await page.getByTestId("sidebar-agents").click();
@@ -93,11 +90,11 @@ test("the System section collapses to its header and stays collapsed across page
 	await expect(list).toHaveCount(0);
 	await expect(header).toHaveClass(/bg-white/);
 
-	// Expanding restores the list, More/Less state included.
+	// Expanded, the header is still the overview's own item.
 	await toggle.click();
 	await expect(toggle).toHaveAttribute("aria-expanded", "true");
 	await expect(list.getByRole("link", { name: "Daemons" })).toBeVisible();
-	await expect(header).not.toHaveClass(/bg-white/);
+	await expect(header).toHaveClass(/bg-white/);
 });
 
 test("an agent's pages are Chats, GitHub Projects, Scheduled Tasks, Files and Agent Settings", async ({
