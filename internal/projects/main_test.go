@@ -89,6 +89,28 @@ func TestOriginatingWorkStateReadsPullRequestDraftStatus(t *testing.T) {
 	}
 }
 
+// A pull request's diff size is read from the same pull request response,
+// so Usage can report the code a project's jobs changed (issue #787).
+func TestOriginatingWorkStateReadsPullRequestDiffSize(t *testing.T) {
+	responses := [][]byte{
+		[]byte(`{"state":"CLOSED"}`),
+		[]byte(`[{"event":"cross-referenced","source":{"issue":{"number":9,"body":"Closes #7","pull_request":{}}}}]`),
+		[]byte(`{"state":"closed","merged_at":"2026-11-09T12:00:00Z","additions":120,"deletions":45}`),
+	}
+	var calls int
+	gh := GHCLI{runCommand: func(context.Context, ...string) ([]byte, error) {
+		calls++
+		return responses[calls-1], nil
+	}}
+	state, err := gh.OriginatingWorkState(context.Background(), "owner/repo", 7)
+	if err != nil || len(state.PullRequests) != 1 || state.PullRequests[0].Additions != 120 || state.PullRequests[0].Deletions != 45 {
+		t.Fatalf("OriginatingWorkState() = (%#v, %v), want 120 additions and 45 deletions", state, err)
+	}
+	if calls != len(responses) {
+		t.Fatalf("API calls = %d, want %d (no extra read for the diff size)", calls, len(responses))
+	}
+}
+
 // A same-repo pull request keeps being matched by the plain #N closing form,
 // even when the timeline event names its repository.
 func TestOriginatingWorkStateRecognizesSameRepoPlainReference(t *testing.T) {
