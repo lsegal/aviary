@@ -24,7 +24,7 @@ export interface SessionMessage {
 	role?: "assistant" | "user" | "tool" | string;
 	timestamp?: string;
 	content?: string | null;
-	media_url?: string | null;
+	media_urls?: string[] | null;
 	[key: string]: unknown;
 }
 

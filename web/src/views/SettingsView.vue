@@ -190,50 +190,6 @@
 		</AlertDialogPortal>
 	</AlertDialogRoot>
 
-	<!-- Delete file confirmation dialog -->
-	<AlertDialogRoot :open="!!deleteFileTarget" @update:open="(v) => { if (!v) deleteFileTarget = null }">
-		<AlertDialogPortal>
-			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
-			<AlertDialogContent
-				class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
-				<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
-					Delete file?
-				</AlertDialogTitle>
-				<AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-					This will permanently delete
-					<span class="font-medium text-gray-900 dark:text-white">{{ deleteFileTarget?.file }}</span>.
-					This cannot be undone.
-				</AlertDialogDescription>
-				<div ref="deleteFileBtns" class="mt-6 flex justify-end gap-3">
-					<AlertDialogCancel
-						class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
-						Cancel
-					</AlertDialogCancel>
-					<AlertDialogAction
-						class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
-						@click="confirmDeleteAgentFile">
-						Delete
-					</AlertDialogAction>
-				</div>
-			</AlertDialogContent>
-		</AlertDialogPortal>
-	</AlertDialogRoot>
-
-	<!-- Delete task confirmation dialog -->
-	<AlertDialogRoot :open="deleteTaskOpen" @update:open="(v) => { if (!v) deleteTaskOpen = false }">
-		<AlertDialogPortal>
-			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
-			<AlertDialogContent class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
-				<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">Delete task?</AlertDialogTitle>
-				<AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">This will permanently delete <span class="font-medium text-gray-900 dark:text-white">{{ deleteTaskTarget?.name || 'this task' }}</span>. This cannot be undone.</AlertDialogDescription>
-				<div ref="deleteTaskBtns" class="mt-6 flex justify-end gap-3">
-					<AlertDialogCancel class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">Cancel</AlertDialogCancel>
-					<AlertDialogAction class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500" @click="confirmDeleteTaskAction">Delete</AlertDialogAction>
-				</div>
-			</AlertDialogContent>
-		</AlertDialogPortal>
-	</AlertDialogRoot>
-
 	<!-- Remove session confirmation dialog -->
 	<AlertDialogRoot :open="removeTargetOpen" @update:open="(v) => { if (!v) removeTargetOpen = false }">
 		<AlertDialogPortal>
@@ -384,6 +340,7 @@ import {
 	toolCategory,
 	toolCategoryLabel,
 } from "../lib/toolPermissions";
+import { isProtectedAgentFile, useAgentFilesStore } from "../stores/agentFiles";
 import { useAuthStore } from "../stores/auth";
 import { chatDisplayName } from "../stores/chatSessions";
 import {
@@ -392,6 +349,7 @@ import {
 	type AgentTask,
 	type AllowFromEntry,
 	type AppConfig,
+	agentTaskPath,
 	agentTaskType,
 	type SkillConfig,
 	useSettingsStore,
@@ -522,6 +480,7 @@ watch(
 );
 
 const store = useSettingsStore();
+const agentFilesStore = useAgentFilesStore();
 const { callTool, listTools } = useMCP();
 const { availableModelOptions, credentials, refreshCredentials } =
 	useAvailableModels();
@@ -762,6 +721,67 @@ watch(
 		} else if (!len) {
 			selectedTaskIdx.value = null;
 		}
+	},
+);
+
+/** The task the Tasks page names in its ?task, or -1. */
+function routeTaskIdx(): number {
+	const q = route.query.task;
+	if (selectedAgentSubtab.value !== "tasks" || typeof q !== "string" || !q)
+		return -1;
+	const tasks = draft.value.agents[selectedAgentIdx.value]?.tasks ?? [];
+	return tasks.findIndex((t) => t.name === q);
+}
+
+// Picking a task in the sidebar routes to it; without one the page opens
+// the first task, as the sidebar highlights.
+watch(
+	() => route.query.task,
+	(q) => {
+		if (selectedAgentSubtab.value !== "tasks" || q) return;
+		const tasks = draft.value.agents[selectedAgentIdx.value]?.tasks ?? [];
+		selectedTaskIdx.value = tasks.length ? 0 : null;
+	},
+);
+watch(
+	() => [
+		route.query.task,
+		draft.value.agents[selectedAgentIdx.value]?.tasks
+			?.map((t) => t.name)
+			.join("\n"),
+	],
+	() => {
+		const idx = routeTaskIdx();
+		if (idx >= 0 && idx !== selectedTaskIdx.value) selectedTaskIdx.value = idx;
+	},
+	{ immediate: true },
+);
+
+// The sidebar saves tasks straight away; take them into the draft so Save
+// Changes does not write the old list back.
+watch(
+	() =>
+		JSON.stringify((store.config?.agents ?? []).map((a) => [a.name, a.tasks])),
+	() => {
+		if (!store.config || !lastSavedSnapshot) return;
+		const saved = hydrateDraftConfig(store.config);
+		let changed = false;
+		for (const agent of saved.agents) {
+			const entry = draft.value.agents.find((a) => a.name === agent.name);
+			if (!entry) continue;
+			if (JSON.stringify(entry.tasks) === JSON.stringify(agent.tasks)) continue;
+			entry.tasks = agent.tasks;
+			changed = true;
+		}
+		if (!changed) return;
+		// They are saved already, so they are no unsaved change of the draft's.
+		const snapshot = JSON.parse(lastSavedSnapshot) as AppConfig;
+		const normalized = normalizedDraftConfig();
+		for (const agent of snapshot.agents) {
+			const next = normalized.agents.find((a) => a.name === agent.name);
+			if (next) agent.tasks = next.tasks;
+		}
+		lastSavedSnapshot = JSON.stringify(snapshot);
 	},
 );
 
@@ -1355,28 +1375,14 @@ watch(activeTab, (tab) => {
 	}
 });
 
-const PROTECTED_AGENT_FILES = [
-	"AGENTS.md",
-	"SYSTEM.md",
-	"MEMORY.md",
-	"RULES.md",
-] as const;
-const protectedAgentFiles = new Set(
-	PROTECTED_AGENT_FILES.map((file) => file.toUpperCase()),
-);
-
 interface AgentFileEditorState {
 	files: string[];
 	selectedFile: string;
 	content: string;
-	draftFileName: string;
 	loaded: boolean;
 	loading: boolean;
 	saving: boolean;
-	deleting: boolean;
-	creating: boolean;
 	syncing: boolean;
-	autoSynced: boolean;
 	saveFlash: boolean;
 	error: string;
 }
@@ -1389,14 +1395,10 @@ function getAgentFileState(agentName: string): AgentFileEditorState {
 			files: [],
 			selectedFile: "",
 			content: "",
-			draftFileName: "",
 			loaded: false,
 			loading: false,
 			saving: false,
-			deleting: false,
-			creating: false,
 			syncing: false,
-			autoSynced: false,
 			saveFlash: false,
 			error: "",
 		};
@@ -1415,20 +1417,6 @@ function flashAgentFileSave(agentName: string) {
 	}, 3200);
 }
 
-function isProtectedAgentFile(file: string): boolean {
-	return protectedAgentFiles.has(file.toUpperCase());
-}
-
-function canDeleteAgentFile(file: string): boolean {
-	return file !== "" && !isProtectedAgentFile(file);
-}
-
-function normalizeNewAgentFileName(file: string): string {
-	const trimmed = file.trim();
-	if (!trimmed) return "";
-	return trimmed.toLowerCase().endsWith(".md") ? trimmed : `${trimmed}.md`;
-}
-
 async function readAgentFile(agentName: string, file: string) {
 	const state = getAgentFileState(agentName);
 	state.error = "";
@@ -1439,31 +1427,40 @@ async function readAgentFile(agentName: string, file: string) {
 	state.selectedFile = file;
 }
 
+/** The file the Files page names in its ?file, if any. */
+function routeAgentFile(): string {
+	const q = route.query.file;
+	return selectedAgentSubtab.value === "files" && typeof q === "string"
+		? q
+		: "";
+}
+
+/** Opens the routed file, else keeps the open one, else opens the first. */
+async function openAgentFile(agentName: string) {
+	const state = getAgentFileState(agentName);
+	const wanted = routeAgentFile();
+	const file = [wanted, state.selectedFile].find(
+		(f) => f && state.files.includes(f),
+	);
+	if (file) {
+		if (file !== state.selectedFile || !state.loaded)
+			await readAgentFile(agentName, file);
+	} else if (state.files.length > 0) {
+		await readAgentFile(agentName, state.files[0]);
+	} else {
+		state.selectedFile = "";
+		state.content = "";
+	}
+}
+
 async function loadAgentFiles(agentName: string) {
 	if (!agentName) return;
 	const state = getAgentFileState(agentName);
 	state.loading = true;
 	state.error = "";
 	try {
-		let raw = await callTool("agent_file_list", { agent: agentName });
-		const allFiles = safeJsonParse<string[]>(raw, []);
-		state.files = allFiles.filter((f) => !f.includes("/"));
-		if (state.files.length === 0 && !state.autoSynced) {
-			state.autoSynced = true;
-			await callTool("agent_template_sync", { agent: agentName });
-			raw = await callTool("agent_file_list", { agent: agentName });
-			state.files = safeJsonParse<string[]>(raw, []).filter(
-				(f) => !f.includes("/"),
-			);
-		}
-		if (state.selectedFile && state.files.includes(state.selectedFile)) {
-			await readAgentFile(agentName, state.selectedFile);
-		} else if (state.files.length > 0) {
-			await readAgentFile(agentName, state.files[0]);
-		} else {
-			state.selectedFile = "";
-			state.content = "";
-		}
+		state.files = await agentFilesStore.load(agentName);
+		await openAgentFile(agentName);
 		state.loaded = true;
 	} catch (e) {
 		state.error = e instanceof Error ? e.message : String(e);
@@ -1471,6 +1468,36 @@ async function loadAgentFiles(agentName: string) {
 		state.loading = false;
 	}
 }
+
+// The sidebar adds, renames and deletes files; follow its list.
+watch(
+	() => {
+		const name = draft.value.agents[selectedAgentIdx.value]?.name?.trim() ?? "";
+		return [name, agentFilesStore.files(name).join("\n")] as const;
+	},
+	([agentName]) => {
+		if (!agentName) return;
+		const state = getAgentFileState(agentName);
+		const listed = agentFilesStore.files(agentName);
+		if (listed.join("\n") === state.files.join("\n")) return;
+		state.files = [...listed];
+		if (state.loaded && !state.loading) void openAgentFile(agentName);
+	},
+);
+
+// Picking a file in the sidebar routes to it.
+watch(
+	() => route.query.file,
+	() => {
+		const agentName =
+			draft.value.agents[selectedAgentIdx.value]?.name?.trim() ?? "";
+		const wanted = routeAgentFile();
+		if (!agentName || !wanted) return;
+		const state = getAgentFileState(agentName);
+		if (wanted !== state.selectedFile && state.files.includes(wanted))
+			void selectAgentFile(agentName, wanted);
+	},
+);
 
 function moveAgentFileState(previousName: string, nextName: string) {
 	if (!previousName || !nextName || previousName === nextName) return;
@@ -1560,66 +1587,13 @@ async function syncAgentTemplates(agentName: string) {
 	state.syncing = true;
 	state.error = "";
 	try {
-		state.autoSynced = true;
-		await callTool("agent_template_sync", { agent: agentName });
+		await agentFilesStore.syncTemplates(agentName);
 		await loadAgentFiles(agentName);
 		flashHeaderNotice(`Templates synced for ${agentName}`);
 	} catch (e) {
 		state.error = e instanceof Error ? e.message : String(e);
 	} finally {
 		state.syncing = false;
-	}
-}
-
-async function createAgentFile(agentName: string) {
-	if (!agentName) return;
-	const state = getAgentFileState(agentName);
-	const file = normalizeNewAgentFileName(state.draftFileName);
-	if (!file) {
-		state.error = "file name is required";
-		return;
-	}
-	state.creating = true;
-	state.error = "";
-	try {
-		await callTool("agent_file_write", {
-			agent: agentName,
-			file,
-			content: "",
-		});
-		state.draftFileName = "";
-		await loadAgentFiles(agentName);
-		state.selectedFile = file;
-	} catch (e) {
-		state.error = e instanceof Error ? e.message : String(e);
-	} finally {
-		state.creating = false;
-	}
-}
-
-async function deleteAgentFile(agentName: string) {
-	if (!agentName) return;
-	const state = getAgentFileState(agentName);
-	if (!canDeleteAgentFile(state.selectedFile)) return;
-	state.deleting = true;
-	state.error = "";
-	try {
-		const deletedFile = state.selectedFile;
-		await callTool("agent_file_delete", {
-			agent: agentName,
-			file: deletedFile,
-		});
-		await loadAgentFiles(agentName);
-		if (
-			state.selectedFile === deletedFile &&
-			!state.files.includes(deletedFile)
-		) {
-			state.selectedFile = state.files[0] ?? "";
-		}
-	} catch (e) {
-		state.error = e instanceof Error ? e.message : String(e);
-	} finally {
-		state.deleting = false;
 	}
 }
 
@@ -1940,30 +1914,6 @@ function confirmRemoveAgent() {
 	}
 }
 
-const deleteFileTarget = ref<{ agentName: string; file: string } | null>(null);
-const deleteFileBtns = ref<HTMLElement>();
-watch(deleteFileTarget, (v) => {
-	if (v)
-		setTimeout(() => {
-			const btns =
-				deleteFileBtns.value?.querySelectorAll<HTMLElement>("button");
-			btns?.[btns.length - 1]?.focus();
-		});
-});
-
-function promptDeleteAgentFile(agentName: string) {
-	const state = getAgentFileState(agentName);
-	if (!canDeleteAgentFile(state.selectedFile)) return;
-	deleteFileTarget.value = { agentName, file: state.selectedFile };
-}
-
-async function confirmDeleteAgentFile() {
-	const target = deleteFileTarget.value;
-	if (!target) return;
-	deleteFileTarget.value = null;
-	await deleteAgentFile(target.agentName);
-}
-
 function onAgentNameChange(agentEntry: AgentEntry) {
 	if (agentEntry.name) {
 		void loadAgentFiles(agentEntry.name);
@@ -1991,6 +1941,8 @@ async function onTaskNameBlur() {
 			new_name: newName,
 		});
 		await loadConfig();
+		if (route.query.task === oldName)
+			await router.replace(agentTaskPath(agentName, newName));
 	} catch (e) {
 		renameTaskError.value = e instanceof Error ? e.message : String(e);
 		// revert on error
@@ -1998,46 +1950,6 @@ async function onTaskNameBlur() {
 	} finally {
 		renamingTask.value = false;
 	}
-}
-
-function addTask(agentIndex: number) {
-	const task: AgentTask = {
-		enabled: true,
-		name: `scheduled-${Date.now()}`,
-		type: "prompt",
-		prompt: "",
-		schedule: "",
-		watch: "",
-		target: "",
-		run_once: false,
-		from_file: true,
-	};
-	if (!Array.isArray(draft.value.agents[agentIndex].tasks)) {
-		draft.value.agents[agentIndex].tasks = [];
-	}
-	draft.value.agents[agentIndex].tasks.push(task);
-	// Focus the new task's name field so the user can rename it immediately.
-	void nextTick().then(() => {
-		try {
-			// Use requestAnimationFrame twice to ensure the element is painted
-			// and inserted in the DOM before attempting to focus it.
-			requestAnimationFrame(() => {
-				requestAnimationFrame(() => {
-					const el = document.querySelector<HTMLInputElement>(
-						`input[data-task-id="${task.name}"]`,
-					);
-					el?.focus();
-					el?.select();
-				});
-			});
-		} catch {
-			// ignore
-		}
-	});
-}
-
-function removeTask(agentIndex: number, taskIndex: number) {
-	draft.value.agents[agentIndex].tasks.splice(taskIndex, 1);
 }
 
 async function convertTaskToScript(agentName: string, taskName: string) {
@@ -2761,65 +2673,6 @@ async function importAgents() {
 	}
 }
 
-const newTaskNameMap = ref<Record<string, string>>({});
-
-function createTaskFromName(agentIndex: number) {
-	const agent = draft.value.agents[agentIndex];
-	if (!agent) return;
-	const key = agent.name || String(agentIndex);
-	const desired = (newTaskNameMap.value[key] || "").trim();
-	addTask(agentIndex);
-	nextTick(() => {
-		const tasks = draft.value.agents[agentIndex].tasks;
-		const idx = tasks.length - 1;
-		if (desired) tasks[idx].name = desired;
-		selectedTaskIdx.value = idx;
-		newTaskNameMap.value[key] = "";
-	});
-}
-
-const deleteTaskTarget = ref<{
-	agentIndex: number;
-	taskIndex: number;
-	name?: string;
-} | null>(null);
-const deleteTaskOpen = ref(false);
-
-function promptDeleteTask(
-	agentIndex: number,
-	taskIndex: number,
-	name?: string,
-) {
-	deleteTaskTarget.value = { agentIndex, taskIndex, name };
-	deleteTaskOpen.value = true;
-}
-
-async function confirmDeleteTaskAction() {
-	if (!deleteTaskTarget.value) return;
-	const draftSnapshot = JSON.parse(JSON.stringify(draft.value)) as AppConfig;
-	const previousSelectedTaskIdx = selectedTaskIdx.value;
-	const { agentIndex, taskIndex } = deleteTaskTarget.value;
-	removeTask(agentIndex, taskIndex);
-	const tasks = draft.value.agents[agentIndex]?.tasks ?? [];
-	if (tasks.length) {
-		selectedTaskIdx.value = Math.min(
-			selectedTaskIdx.value ?? 0,
-			tasks.length - 1,
-		);
-	} else {
-		selectedTaskIdx.value = null;
-	}
-	try {
-		await persistDraftConfig();
-		deleteTaskOpen.value = false;
-		deleteTaskTarget.value = null;
-	} catch (e) {
-		draft.value = draftSnapshot;
-		selectedTaskIdx.value = previousSelectedTaskIdx;
-		errorMessage.value = e instanceof Error ? e.message : String(e);
-	}
-}
-
 function normalizedDraftConfig(): AppConfig {
 	const normalized = JSON.parse(JSON.stringify(draft.value)) as AppConfig;
 
@@ -3481,7 +3334,6 @@ const settingsContext = proxyRefs({
 	addProviderEndpoint,
 	addProviderOAuth,
 	addSecret,
-	addTask,
 	agentExecAllowedCommands,
 	agentFileEditorState,
 	agentFilesystemAllowedPaths,
@@ -3496,7 +3348,6 @@ const settingsContext = proxyRefs({
 	availableToolNamesForAgent,
 	availableToolsForAgent,
 	browseSlackChannels,
-	canDeleteAgentFile,
 	cdpPortInput,
 	channelCardClass,
 	channelListButtonClass,
@@ -3519,9 +3370,7 @@ const settingsContext = proxyRefs({
 	configuredProviders,
 	configuredTaskChannelOptions,
 	convertTaskToScript,
-	createAgentFile,
 	createSession,
-	createTaskFromName,
 	deleteProviderCredential,
 	deleteProviderConnection,
 	deleteSecret,
@@ -3558,7 +3407,6 @@ const settingsContext = proxyRefs({
 	loadInstalledSkills,
 	loadSessions,
 	moveTaskToFile,
-	newTaskNameMap,
 	oauthBusy,
 	openAICallbackUrl,
 	openAIUrl,
@@ -3569,8 +3417,6 @@ const settingsContext = proxyRefs({
 	onTaskNameFocus,
 	openToolInspectionModal,
 	PERMISSION_PRESET_OPTIONS,
-	promptDeleteAgentFile,
-	promptDeleteTask,
 	providerAddSelection,
 	providerApiKeyValue,
 	providerBaseURIValue,
@@ -3582,7 +3428,6 @@ const settingsContext = proxyRefs({
 	removeChannel,
 	removeTarget,
 	removeTargetOpen,
-	removeTask,
 	renamingTask,
 	saveAgentFile,
 	secretName,

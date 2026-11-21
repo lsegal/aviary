@@ -252,17 +252,19 @@ func (p *GeminiCodeAssistProvider) Stream(ctx context.Context, req Request) (<-c
 	for _, msg := range req.Messages {
 		switch msg.Role {
 		case RoleUser:
-			parts := make([]part, 0, 2)
+			parts := make([]part, 0, 1+len(msg.MediaURLs))
 			if strings.TrimSpace(msg.Content) != "" {
 				parts = append(parts, part{Text: msg.Content})
 			}
-			if mimeType, data, ok := ParseImageDataURL(msg.MediaURL); ok {
-				parts = append(parts, part{
-					InlineData: &inlineData{
-						MimeType: mimeType,
-						Data:     data,
-					},
-				})
+			for _, mediaURL := range msg.MediaURLs {
+				if mimeType, data, ok := ParseImageDataURL(mediaURL); ok {
+					parts = append(parts, part{
+						InlineData: &inlineData{
+							MimeType: mimeType,
+							Data:     data,
+						},
+					})
+				}
 			}
 			if len(parts) == 0 {
 				continue
