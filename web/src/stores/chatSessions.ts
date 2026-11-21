@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
+import { chatDraftKey, setChatDraft } from "../components/chat/drafts";
 import { useMCP } from "../composables/useMCP";
 
 export interface ChatSession {
@@ -11,9 +12,14 @@ export interface ChatSession {
 	created_at: string;
 	last_message_at?: string;
 	is_processing?: boolean;
+	/**
+	 * Whether the chat can be deleted. The server decides; Main Chat and other
+	 * permanent chats can only be cleared.
+	 */
+	deletable?: boolean;
 }
 
-/** The default chat, which every agent has and which cannot be deleted. */
+/** The default chat, which every agent has. */
 export function isMainChat(s: Pick<ChatSession, "name">): boolean {
 	return s.name === "main";
 }
@@ -78,5 +84,32 @@ export const useChatSessionsStore = defineStore("chatSessions", () => {
 		};
 	}
 
-	return { byAgent, loading, sessions, load, create, rename, remove };
+	/** The draft key of the chat cleared last, so open views can empty it. */
+	const lastCleared = ref({ key: "", seq: 0 });
+
+	/** Empties a chat's messages and draft; the chat itself stays. */
+	async function clear(agent: string, id: string) {
+		await callTool("session_clear", { agent, session_id: id });
+		const key = chatDraftKey(agent, id);
+		setChatDraft(key, { text: "", attachments: [] });
+		lastCleared.value = { key, seq: lastCleared.value.seq + 1 };
+		byAgent.value = {
+			...byAgent.value,
+			[agent]: sessions(agent).map((s) =>
+				s.id === id ? { ...s, last_message_at: undefined } : s,
+			),
+		};
+	}
+
+	return {
+		byAgent,
+		loading,
+		lastCleared,
+		sessions,
+		load,
+		create,
+		rename,
+		remove,
+		clear,
+	};
 });

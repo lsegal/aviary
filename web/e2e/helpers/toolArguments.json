@@ -368,6 +368,11 @@
 		"when"
 	],
 	"server_version_check": [],
+	"session_clear": [
+		"agent",
+		"session",
+		"session_id"
+	],
 	"session_create": [
 		"agent"
 	],

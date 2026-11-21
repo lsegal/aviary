@@ -1118,6 +1118,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 			UpdatedAt     string `json:"updated_at"`
 			LastMessageAt string `json:"last_message_at,omitempty"`
 			IsProcessing  bool   `json:"is_processing"`
+			Deletable     bool   `json:"deletable"`
 		}
 		// A channel's sessions live under its Channels entry, not Chats.
 		var agentCfg config.AgentConfig
@@ -1143,6 +1144,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 				CreatedAt:    sess.CreatedAt.Format(time.RFC3339Nano),
 				UpdatedAt:    sess.UpdatedAt.Format(time.RFC3339Nano),
 				IsProcessing: agent.IsSessionProcessing(sess.AgentID, sess.ID),
+				Deletable:    sess.Deletable(),
 			}
 			if sess.LastMessageAt != nil {
 				dto.LastMessageAt = sess.LastMessageAt.Format(time.RFC3339Nano)
@@ -1224,7 +1226,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "session_remove",
-		Description: "Permanently delete a session and all its messages",
+		Description: "Permanently delete a session and all its messages. Main Chat and other permanent sessions cannot be deleted; use session_clear for them",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionStopArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		if strings.TrimSpace(args.Agent) == "" {
 			return nil, struct{}{}, fmt.Errorf("agent is required")
@@ -1241,6 +1243,28 @@ func registerSessionTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 		return text(fmt.Sprintf("session %q removed", sid))
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "session_clear",
+		Description: "Remove all messages from a session, stopping its in-progress work; the session keeps its ID, name, title, and channel bindings",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionStopArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		if strings.TrimSpace(args.Agent) == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		sid := strings.TrimSpace(args.SessionID)
+		if sid == "" {
+			return nil, struct{}{}, fmt.Errorf("session_id is required")
+		}
+		agentID, _, err := resolveAgentIdentity(args.Agent)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		agent.StopSession(agentID, sid)
+		if err := agent.NewSessionManager().Clear(agentID, sid); err != nil {
+			return nil, struct{}{}, err
+		}
+		return text(fmt.Sprintf("session %q cleared", sid))
 	})
 
 	addTool(s, &sdkmcp.Tool{

@@ -313,17 +313,12 @@ func cloneChannels(cfg *config.Config) *config.Config {
 	return prev
 }
 
-// saveChannelConfig writes cfg after a channel change. File-backed tasks stay
+// saveChannelConfig writes cfg after a channel change, which the channel
+// tools check themselves, so unrelated config problems do not block it.
+// File-backed tasks stay
 // in their files: those whose target changed are rewritten, and the rest are
 // left out of aviary.yaml.
 func saveChannelConfig(prev, cfg *config.Config) error {
-	if issues := config.Validate(cfg, nil); len(issues) > 0 {
-		for _, issue := range issues {
-			if issue.Level == config.LevelError {
-				return fmt.Errorf("validation: %s: %s", issue.Field, issue.Message)
-			}
-		}
-	}
 	for i := range cfg.Agents {
 		a := &cfg.Agents[i]
 		dir := config.AgentTasksDir(*a)

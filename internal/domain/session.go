@@ -35,6 +35,13 @@ type Session struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
+// Deletable reports whether the session may be deleted. Main Chat, which
+// channels and other features look up by name, and hidden sessions such as
+// the Projects prompt chat are permanent; they can only be cleared.
+func (s *Session) Deletable() bool {
+	return s.Type != SessionTypeMain && s.Type != SessionTypeHidden
+}
+
 // MessageRole identifies who sent a message.
 type MessageRole string
 
