@@ -1190,8 +1190,11 @@ func (r *AgentRunner) filterTools(tools []ToolInfo, restrictTools, disabledTools
 }
 
 // toolEventRecord is the JSON payload embedded in "[tool] ..." session messages
-// and stream events. Result/Error are only set in persisted history.
+// and stream events. Result/Error are only set in persisted history. ID is the
+// tool-use ID the call's stream events carry, so the chat can match a stored
+// call to the one it streamed instead of showing it twice (#740).
 type toolEventRecord struct {
+	ID     string         `json:"id,omitempty"`
 	Name   string         `json:"name"`
 	Args   map[string]any `json:"args"`
 	Result string         `json:"result,omitempty"`
@@ -1274,7 +1277,12 @@ func (r *AgentRunner) executeToolCall(
 	}
 	args = normalizeSessionToolArguments(name, sessionID, args)
 	streamRec.Args = args
-	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args}})
+	// The call, its result, and its history record share one ID, so a
+	// re-delivered event updates the call's chat entry instead of adding one.
+	// Providers' own call IDs are not unique across a session for every
+	// backend, so Aviary assigns its own.
+	streamRec.ID = newID("call")
+	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args}})
 	if r.IsVerbose() {
 		emit(StreamEvent{Type: StreamEventStatus, Text: verboseStatusText(streamRec.Name, streamRec.Args)})
 	}
@@ -1290,18 +1298,18 @@ func (r *AgentRunner) executeToolCall(
 			emit(StreamEvent{Type: StreamEventStop})
 			return "", true
 		}
-		emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args, Error: callErr.Error(), Done: true}})
-		errRec := toolEventRecord{Name: name, Args: args, Error: callErr.Error()}
+		emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args, Error: callErr.Error(), Done: true}})
+		errRec := toolEventRecord{ID: streamRec.ID, Name: name, Args: args, Error: callErr.Error()}
 		errPayload, _ := json.Marshal(errRec)
 		r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(errPayload), nil, "")
 		return "error: " + callErr.Error(), false
 	}
 
-	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{Name: streamRec.Name, Args: streamRec.Args, Result: resultText, Done: true}})
+	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args, Result: resultText, Done: true}})
 	if change, ok := FileChangeFromToolResult(name, resultText); ok {
 		emit(StreamEvent{Type: StreamEventFile, File: change})
 	}
-	histRec := toolEventRecord{Name: name, Args: args, Result: resultText}
+	histRec := toolEventRecord{ID: streamRec.ID, Name: name, Args: args, Result: resultText}
 	histPayload, _ := json.Marshal(histRec)
 	r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(histPayload), nil, "")
 	return resultText, false

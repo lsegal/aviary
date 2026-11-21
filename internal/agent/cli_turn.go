@@ -206,7 +206,7 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 			in.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{
 				ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error, Done: true,
 			}})
-			rec, _ := json.Marshal(toolEventRecord{Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error})
+			rec, _ := json.Marshal(toolEventRecord{ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error})
 			r.appendSessionMessage(in.sessionID, domain.MessageRoleTool, string(rec), nil, "")
 		case cliagent.EventUsage:
 			in.usage.InputTokens += ev.Usage.InputTokens

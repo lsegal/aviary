@@ -242,6 +242,22 @@ function parseToolMessage(
 	return { id, role: "tool", text: raw, timestamp, model };
 }
 
+/**
+ * Collapse stored tool records that share a tool-use ID into one entry, the
+ * latest, so a call stored more than once shows once (#740). Records without
+ * an ID are distinct calls and are all kept.
+ */
+function dedupeToolMessages(list: Message[]): Message[] {
+	const last = new Map<string, number>();
+	list.forEach((m, i) => {
+		if (m.role === "tool" && m.toolData?.id) last.set(m.toolData.id, i);
+	});
+	return list.filter(
+		(m, i) =>
+			m.role !== "tool" || !m.toolData?.id || last.get(m.toolData.id) === i,
+	);
+}
+
 function parseToolChunk(
 	content: string,
 	timestamp?: string,
@@ -750,35 +766,39 @@ async function loadSessionMessages(force = false) {
 			return;
 		}
 		const persisted = (JSON.parse(raw) as PersistedMessage[]) ?? [];
-		messages.value = persisted
-			.filter(
-				(m): m is PersistedMessage & { role: "user" | "assistant" | "tool" } =>
-					m.role === "user" || m.role === "assistant" || m.role === "tool",
-			)
-			.map((m) => {
-				if (m.role === "tool") {
+		messages.value = dedupeToolMessages(
+			persisted
+				.filter(
+					(
+						m,
+					): m is PersistedMessage & { role: "user" | "assistant" | "tool" } =>
+						m.role === "user" || m.role === "assistant" || m.role === "tool",
+				)
+				.map((m) => {
+					if (m.role === "tool") {
+						return {
+							...parseToolMessage(
+								`[tool] ${m.content}`,
+								m.timestamp,
+								m.model,
+								m.id,
+							),
+						};
+					}
+					if (m.role === "assistant" && m.content.startsWith("[tool] ")) {
+						return parseToolMessage(m.content, m.timestamp, m.model, m.id);
+					}
 					return {
-						...parseToolMessage(
-							`[tool] ${m.content}`,
-							m.timestamp,
-							m.model,
-							m.id,
-						),
+						id: m.id,
+						role: m.role,
+						text: m.content,
+						mediaURLs: m.media_urls,
+						timestamp: m.timestamp,
+						model: m.model,
+						isError: m.role === "assistant" && isErrorMessage(m.content),
 					};
-				}
-				if (m.role === "assistant" && m.content.startsWith("[tool] ")) {
-					return parseToolMessage(m.content, m.timestamp, m.model, m.id);
-				}
-				return {
-					id: m.id,
-					role: m.role,
-					text: m.content,
-					mediaURLs: m.media_urls,
-					timestamp: m.timestamp,
-					model: m.model,
-					isError: m.role === "assistant" && isErrorMessage(m.content),
-				};
-			});
+				}),
+		);
 		await scrollBottom(true);
 	} catch (e) {
 		console.error("Failed to load session messages", e);
@@ -875,22 +895,14 @@ async function send() {
 				text: current.text + chunk,
 			});
 		};
-		const appendToolMessage = (payload: string) => {
-			messages.value.push({
-				...parseToolMessage(`[tool] ${payload}`, now, agentModel),
-				localKey: newMessageKey(),
-			});
-			assistantKey = "";
-		};
-		// A call and its result arrive as separate chunks sharing an ID, so
-		// the result finishes the call's block instead of adding another.
-		const appendToolChunk = (chunk: string) => {
-			const msg = parseToolChunk(chunk, now);
+		// Tool events are keyed by tool-use ID: a call and its result share
+		// one block, and an event delivered again for a call already shown
+		// updates that block instead of adding another (#740).
+		const upsertToolMessage = (msg: Message, pending: boolean) => {
 			const data = msg.toolData;
 			const index = data?.id
 				? messages.value.findLastIndex(
-						(m) =>
-							m.role === "tool" && m.toolPending && m.toolData?.id === data.id,
+						(m) => m.role === "tool" && m.toolData?.id === data.id,
 					)
 				: -1;
 			if (index !== -1 && data) {
@@ -898,16 +910,27 @@ async function send() {
 				messages.value.splice(index, 1, {
 					...current,
 					toolData: { ...current.toolData, ...data },
-					toolPending: !data.done,
+					// A finished call stays finished if its start arrives again.
+					toolPending: !!current.toolPending && !data.done,
 				});
 				return;
 			}
 			messages.value.push({
 				...msg,
-				toolPending: !!data && !data.done,
+				toolPending: pending,
 				localKey: newMessageKey(),
 			});
 			assistantKey = "";
+		};
+		const appendToolMessage = (payload: string) => {
+			upsertToolMessage(
+				parseToolMessage(`[tool] ${payload}`, now, agentModel),
+				false,
+			);
+		};
+		const appendToolChunk = (chunk: string) => {
+			const msg = parseToolChunk(chunk, now);
+			upsertToolMessage(msg, !!msg.toolData && !msg.toolData.done);
 		};
 		const flushPendingChunks = () => {
 			while (pendingText) {
