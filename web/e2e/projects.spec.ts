@@ -300,12 +300,13 @@ test("an agent's GitHub Projects in the sidebar list its projects with live coun
 }) => {
 	await setup(page);
 	await page.goto("/system/overview");
-	const agents = page.getByTestId("sidebar-agent-list");
-	await expect(agents.getByTestId("agent-running-badge")).toHaveText("2");
-	// No GitHub top level: projects live under their agent.
+	// coder is the only agent, so its pages, GitHub Projects among them, are
+	// the sidebar's top level (#538).
+	const agent = page.getByTestId("sidebar-sole-agent");
+	await expect(agent.getByTestId("agent-running-badge")).toHaveText("2");
 	await expect(
 		page.getByTestId("sidebar-nav").getByRole("link", { name: /^GitHub/ }),
-	).toHaveCount(0);
+	).toHaveAttribute("href", "/agents/coder/projects");
 
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	const projects = page.getByTestId("sidebar-agent-projects");

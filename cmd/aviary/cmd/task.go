@@ -128,10 +128,11 @@ func writeTaskTable(w io.Writer, tasks []domain.ScheduledTask) {
 }
 
 var taskAddCmd = &cobra.Command{
-	Use:   "add <agent> <name> <prompt>",
+	Use:   "add [agent] <name> <prompt>",
 	Short: "Add or replace a scheduled task",
 	Long: `
 Add a scheduled task for an agent, or replace the task with the same name.
+The agent may be omitted when only one agent exists.
 Choose the trigger with --schedule (cron), or --every, --at, --days and
 --start-at (with --trigger to be explicit). For example:
 
@@ -144,9 +145,13 @@ that agent's model for the task's runs (default: the agent's own model):
 
   aviary task add assistant triage "Triage new issues" --project lsegal/aviary --at 02:00
 `,
-	Args: cobra.ExactArgs(3),
+	Args: cobra.RangeArgs(2, 3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		params := map[string]any{"agent": args[0], "name": args[1], "content": args[2], "precompile": false}
+		agent, rest, err := splitAgentArg(cmd.Context(), args, 3)
+		if err != nil {
+			return err
+		}
+		params := map[string]any{"agent": agent, "name": rest[0], "content": rest[1], "precompile": false}
 		changedTaskFlags(cmd, params, triggerFlagNames(map[string]string{"target": "target", "type": "type", "run-once": "run_once", "project": "project", "model": "model"}))
 		if _, ok := params["project"]; ok && params["type"] == nil {
 			params["type"] = "project"

@@ -178,6 +178,8 @@ Manage agents.
 aviary agent <subcommand>
 ```
 
+Agent-scoped commands take the agent's name, which may be omitted when only one agent exists (the built-in Projects agent does not count): the command then acts on that agent. With several agents, omitting it is an error that lists the agents to choose from.
+
 ### aviary agent list
 
 List all configured agents and their current state.
@@ -191,8 +193,10 @@ aviary agent list
 Send a message to an agent and stream the response.
 
 ```
-aviary agent run <name> [message] [flags]
+aviary agent run [name] [message] [flags]
 ```
+
+With a single agent, `aviary agent run "hello"` sends `hello` to it; with `--file`, the name alone may be omitted too.
 
 | Flag | Default | Description |
 | --- | --- | --- |
@@ -207,7 +211,7 @@ aviary agent run <name> [message] [flags]
 Immediately stop all work in progress for an agent.
 
 ```
-aviary agent stop <name>
+aviary agent stop [name]
 ```
 
 ### aviary agent template-sync
@@ -215,7 +219,7 @@ aviary agent stop <name>
 Sync embedded template files into an agent directory. Missing files are added; existing files are preserved.
 
 ```
-aviary agent template-sync <name>
+aviary agent template-sync [name]
 ```
 
 ---

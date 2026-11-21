@@ -34,14 +34,24 @@ var agentRunWorkdir string
 var agentRunOutputFormat string
 
 var agentRunCmd = &cobra.Command{
-	Use:   "run <name> [message]",
+	Use:   "run [name] [message]",
 	Short: "Send a message to an agent and stream the response",
-	Args:  cobra.RangeArgs(1, 2),
+	Long: `Send a message to an agent and stream the response. The name may be
+omitted when only one agent exists: "aviary agent run hello" sends "hello" to
+the sole agent, and with --file every argument is optional.`,
+	Args: cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
+		want := 2
+		if agentRunFile != "" {
+			want = 1
+		}
+		name, rest, err := splitAgentArg(cmd.Context(), args, want)
+		if err != nil {
+			return err
+		}
 		msg := ""
-		if len(args) > 1 {
-			msg = args[1]
+		if len(rest) > 0 {
+			msg = rest[0]
 		}
 		if agentRunFile != "" {
 			data, err := os.ReadFile(agentRunFile)
@@ -91,12 +101,16 @@ var agentRunCmd = &cobra.Command{
 }
 
 var agentStopCmd = &cobra.Command{
-	Use:   "stop <name>",
+	Use:   "stop [name]",
 	Short: "Immediately stop all work in progress for an agent",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		name, _, err := splitAgentArg(cmd.Context(), args, 1)
+		if err != nil {
+			return err
+		}
 		out, err := dispatcher.CallTool(cmd.Context(), "agent_stop", map[string]any{
-			"name": args[0],
+			"name": name,
 		})
 		if err != nil {
 			return err
@@ -107,12 +121,16 @@ var agentStopCmd = &cobra.Command{
 }
 
 var agentTemplateSyncCmd = &cobra.Command{
-	Use:   "template-sync <name>",
+	Use:   "template-sync [name]",
 	Short: "Sync embedded template files into an agent directory",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		name, _, err := splitAgentArg(cmd.Context(), args, 1)
+		if err != nil {
+			return err
+		}
 		out, err := dispatcher.CallTool(cmd.Context(), "agent_template_sync", map[string]any{
-			"agent": args[0],
+			"agent": name,
 		})
 		if err != nil {
 			return err
