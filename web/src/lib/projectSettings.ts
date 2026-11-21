@@ -135,9 +135,7 @@ export function isListed(
 export function projectTargets(
 	section: AgentProjectsSection | undefined,
 ): string[] {
-	return (section ?? [])
-		.map((p) => (p.target ?? "").trim())
-		.filter(Boolean);
+	return (section ?? []).map((p) => (p.target ?? "").trim()).filter(Boolean);
 }
 
 /** The parts of the Aviary config a project's job models come from. */
@@ -489,13 +487,11 @@ export function agentProjectsYAML(
 	agent: string,
 	section: AgentProjectsSection,
 ): string {
-	const entries = Object.entries(section).filter(([, v]) => v !== undefined);
-	if (!entries.length) return "";
+	if (!section.length) return "";
 	return [
 		"agents:",
 		`  - name: ${yamlScalar(agent)}`,
-		"    projects:",
-		...entries.flatMap(([k, v]) => yamlValue("      ", k, v)),
+		...yamlValue("    ", "projects", section),
 	].join("\n");
 }
 

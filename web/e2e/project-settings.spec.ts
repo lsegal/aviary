@@ -660,7 +660,10 @@ test("change settings first opens the agent's projects with the new one listed",
 	);
 	await saveChanges(page);
 	await expect.poll(() => calls.config_save?.length).toBe(1);
-	expect(savedProjects(calls, "coder")).toEqual([{ target: "lsegal/aviary" }, { target: "lsegal/zvidlib" }]);
+	expect(savedProjects(calls, "coder")).toEqual([
+		{ target: "lsegal/aviary" },
+		{ target: "lsegal/zvidlib" },
+	]);
 	expect(calls.project_add).toBeUndefined();
 });
 
