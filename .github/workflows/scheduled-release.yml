@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           # A release is in flight until release.yml finishes, and its
-          # `pnpm release` step pushes the version commit and the new tag
+          # `pnpm release` step publishes the signed version commit and the new tag
           # together, so a check during the run would see unreleased commits
           # that the running release already covers.
           for status in requested queued pending waiting in_progress; do
