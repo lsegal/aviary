@@ -65,6 +65,12 @@ async function mockAgent(
 			store.delete(String(args?.file ?? ""));
 			return "ok";
 		},
+		agent_file_rename: (args) => {
+			const from = String(args?.file ?? "");
+			store.set(String(args?.to ?? ""), store.get(from) ?? "");
+			store.delete(from);
+			return "ok";
+		},
 	});
 	return { saved, store };
 }

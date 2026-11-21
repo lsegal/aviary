@@ -27,6 +27,16 @@ async function mockFiles(page: Page, files: Record<string, string>) {
 			store.set(String(args?.file ?? ""), String(args?.content ?? ""));
 			return "ok";
 		},
+		agent_file_delete: (args) => {
+			store.delete(String(args?.file ?? ""));
+			return "ok";
+		},
+		agent_file_rename: (args) => {
+			const from = String(args?.file ?? "");
+			store.set(String(args?.to ?? ""), store.get(from) ?? "");
+			store.delete(from);
+			return "ok";
+		},
 		agent_template_sync: (args?: Record<string, unknown>) => {
 			synced.push(String(args?.agent ?? ""));
 			store.set("SYSTEM.md", "# System");
@@ -34,6 +44,12 @@ async function mockFiles(page: Page, files: Record<string, string>) {
 		},
 	});
 	return { store, synced, configSaves };
+}
+
+/** Picks an action from the file bar's "..." menu, left of Save. */
+async function fileMenu(page: Page, name: string) {
+	await page.getByTestId("agent-file-menu").click();
+	await page.getByRole("menuitem", { name, exact: true }).click();
 }
 
 const LONG = Array.from({ length: 300 }, (_, i) => `line ${i + 1}`).join("\n");
@@ -51,8 +67,34 @@ test("the Files page is one file bar over a full-page editor", async ({
 		"title",
 		/built in and cannot be renamed or deleted/,
 	);
-	for (const name of ["Refresh", "Sync Templates", "Save"])
-		await expect(bar.getByRole("button", { name, exact: true })).toBeVisible();
+	// The bar's actions are a "..." menu directly left of Save.
+	const menu = bar.getByRole("button", { name: "More file actions" });
+	const save = bar.getByRole("button", { name: "Save", exact: true });
+	await expect(menu).toBeVisible();
+	await expect(save).toBeVisible();
+	for (const name of ["Refresh", "Sync Templates"])
+		await expect(bar.getByRole("button", { name, exact: true })).toHaveCount(0);
+	const [menuBox, saveBox] = await Promise.all([
+		menu.boundingBox(),
+		save.boundingBox(),
+	]);
+	expect((menuBox?.x ?? 0) + (menuBox?.width ?? 0)).toBeLessThanOrEqual(
+		saveBox?.x ?? 0,
+	);
+	await menu.click();
+	await expect(page.getByRole("menuitem")).toHaveText([
+		"Refresh",
+		"Sync Templates",
+		"Rename",
+		"Delete",
+	]);
+	// Built-in files cannot be renamed or deleted.
+	for (const name of ["Rename", "Delete"])
+		await expect(page.getByRole("menuitem", { name })).toHaveAttribute(
+			"data-disabled",
+			"",
+		);
+	await page.keyboard.press("Escape");
 
 	// No settings page header or its duplicate actions.
 	const main = page.locator("main");
@@ -100,7 +142,7 @@ test("the Files page is one file bar over a full-page editor", async ({
 	await expect(page.getByTestId("agent-file-builtin")).toHaveCount(0);
 });
 
-test("the file bar's Save, Cmd/Ctrl+S, Refresh and Sync Templates work", async ({
+test("the file bar's Save, Cmd/Ctrl+S, and its menu's Refresh and Sync Templates work", async ({
 	page,
 }) => {
 	const { store, synced, configSaves } = await mockFiles(page, {
@@ -124,15 +166,13 @@ test("the file bar's Save, Cmd/Ctrl+S, Refresh and Sync Templates work", async (
 
 	// Refresh reloads the file list from disk.
 	store.set("NOTES.md", "# Notes");
-	await bar.getByRole("button", { name: "Refresh", exact: true }).click();
+	await fileMenu(page, "Refresh");
 	await expect(
 		page.getByTestId("sidebar-files").getByTestId("file-row"),
 	).toHaveText(["AGENTS.md", "NOTES.md"]);
 	await expect(editor).toHaveValue("# Saved by shortcut");
 
-	await bar
-		.getByRole("button", { name: "Sync Templates", exact: true })
-		.click();
+	await fileMenu(page, "Sync Templates");
 	await expect.poll(() => synced).toEqual(["assistant"]);
 	await expect(
 		page.getByTestId("sidebar-files").getByTestId("file-row"),
@@ -144,9 +184,8 @@ test("Refresh re-reads the open file and asks before discarding edits", async ({
 }) => {
 	const { store } = await mockFiles(page, { "MEMORY.md": "# Memory v1" });
 	await page.goto("/agents/assistant/files?file=MEMORY.md");
-	const refresh = page
-		.getByTestId("agent-file-bar")
-		.getByRole("button", { name: "Refresh", exact: true });
+	const refresh = { click: () => fileMenu(page, "Refresh") };
+	const menuButton = page.getByTestId("agent-file-menu");
 	const editor = page.getByTestId("agent-file-editor");
 	await expect(editor).toHaveValue("# Memory v1");
 
@@ -167,7 +206,7 @@ test("Refresh re-reads the open file and asks before discarding edits", async ({
 	await expect
 		.poll(() => prompts)
 		.toEqual(["Discard unsaved changes to MEMORY.md and reload it from disk?"]);
-	await expect(refresh).toBeEnabled();
+	await expect(menuButton).toBeEnabled();
 	await expect(editor).toHaveValue("# My unsaved edit");
 
 	// Accepting replaces them with the file on disk.
@@ -187,6 +226,52 @@ test("Refresh re-reads the open file and asks before discarding edits", async ({
 	await refresh.click();
 	await expect(editor).toHaveValue("# Memory v4");
 	expect(prompts).toHaveLength(1);
+});
+
+test("the menu renames and deletes the open file", async ({ page }) => {
+	const { store } = await mockFiles(page, {
+		"AGENTS.md": "# Agents",
+		"NOTES.md": "# Notes",
+	});
+	await page.goto("/agents/assistant/files?file=NOTES.md");
+	const editor = page.getByTestId("agent-file-editor");
+	const rows = page.getByTestId("sidebar-files").getByTestId("file-row");
+	await expect(editor).toHaveValue("# Notes");
+
+	await fileMenu(page, "Rename");
+	const dialog = page.getByRole("dialog", { name: "Rename file" });
+	await expect(dialog.getByLabel("File name")).toHaveValue("NOTES.md");
+	await dialog.getByLabel("File name").fill("IDEAS");
+	await dialog.getByRole("button", { name: "Save" }).click();
+	await expect(dialog).toBeHidden();
+	await expect(page).toHaveURL(/\?file=IDEAS\.md$/);
+	await expect(page.getByTestId("agent-file-name")).toHaveText("IDEAS.md");
+	await expect(editor).toHaveValue("# Notes");
+	await expect(rows).toHaveText(["AGENTS.md", "IDEAS.md"]);
+	expect(store.has("NOTES.md")).toBe(false);
+
+	// Delete confirms with the file's name, then empties the editor.
+	await fileMenu(page, "Delete");
+	const confirm = page.getByRole("alertdialog", { name: "Delete file?" });
+	await expect(confirm).toContainText("IDEAS.md");
+	await confirm.getByRole("button", { name: "Delete" }).click();
+	await expect(confirm).toBeHidden();
+	await expect(rows).toHaveText(["AGENTS.md"]);
+	expect(store.has("IDEAS.md")).toBe(false);
+	await expect(page.getByTestId("agent-file-name")).toHaveText("Files");
+	await expect(editor).toHaveValue("");
+	await expect(editor).toHaveAttribute(
+		"placeholder",
+		"Pick a file in the sidebar, or add one with its +.",
+	);
+
+	// With no file open, Rename and Delete are unavailable.
+	await page.getByTestId("agent-file-menu").click();
+	for (const name of ["Rename", "Delete"])
+		await expect(page.getByRole("menuitem", { name })).toHaveAttribute(
+			"data-disabled",
+			"",
+		);
 });
 
 test("other agent pages keep the settings page header", async ({ page }) => {
