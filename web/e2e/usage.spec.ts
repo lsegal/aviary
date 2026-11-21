@@ -100,6 +100,25 @@ test("hides cost when no record reports one", async ({ page }) => {
 	await expect(page.getByText("$", { exact: false })).toHaveCount(0);
 });
 
+test("lists sessions by name instead of by ID", async ({ page }) => {
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		usage_query: MIXED_RECORDS,
+		session_list: (args) =>
+			args?.agent === "claude-agent"
+				? [{ id: "s1", agent_id: "claude-agent", name: "main", created_at: "" }]
+				: [],
+	});
+	await page.goto("/system/usage");
+
+	const names = page.getByTestId("usage-session-name");
+	await expect(names).toHaveText(["Main Chat", "Deleted session"], {
+		useInnerText: true,
+	});
+});
+
 test("summarizes project outcomes and wall time apart from token metrics", async ({
 	page,
 }) => {

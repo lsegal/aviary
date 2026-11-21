@@ -202,7 +202,7 @@
 				<AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">
 					This will permanently delete
 					<span
-						class="break-all font-medium text-gray-900 dark:text-white">{{ removeTarget?.name || removeTarget?.id }}</span>
+						class="break-all font-medium text-gray-900 dark:text-white">{{ removeTarget ? chatDisplayName(removeTarget) : '' }}</span>
 					and all its messages. This cannot be undone.
 				</AlertDialogDescription>
 				<div ref="removeSessionBtns" class="mt-6 flex justify-end gap-3">
@@ -342,6 +342,7 @@ import {
 } from "../lib/toolPermissions";
 import { isProtectedAgentFile, useAgentFilesStore } from "../stores/agentFiles";
 import { useAuthStore } from "../stores/auth";
+import { chatDisplayName } from "../stores/chatSessions";
 import {
 	type AgentChannel,
 	type AgentEntry,
@@ -365,6 +366,7 @@ type Tab =
 interface SessionRow {
 	id: string;
 	name: string;
+	title?: string;
 	updated_at: string;
 	is_processing?: boolean;
 }
@@ -2096,7 +2098,7 @@ function selectedConfiguredChannelIndex(
 
 function taskDeliveryTargetLabel(agent: AgentEntry, task: AgentTask): string {
 	const parsed = parseTaskChannelValue(task.target);
-	if (parsed.type === "session") return "Session name";
+	if (parsed.type === "session") return "Session";
 	const channel = selectedConfiguredChannel(agent, task);
 	switch (channel?.type) {
 		case "slack":
@@ -3366,6 +3368,7 @@ const settingsContext = proxyRefs({
 	concurrencyInput,
 	configuredChannelLabel,
 	configuredProviders,
+	chatDisplayName,
 	configuredTaskChannelOptions,
 	convertTaskToScript,
 	createSession,

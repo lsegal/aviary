@@ -877,3 +877,81 @@ export function emptySchedule(project: string): ProjectSchedule {
 		history: [],
 	};
 }
+
+const FINISHED_RUNS = ["completed", "failed", "canceled", "skipped"];
+
+/** The schedule's latest finished run, or its latest run when none finished. */
+export function lastScheduleRun(s: ProjectSchedule): ScheduleRun | undefined {
+	return (
+		s.history.find((r) => FINISHED_RUNS.includes(r.status)) ?? s.history[0]
+	);
+}
+
+/** The dot color of a schedule run's status. */
+export function scheduleRunDot(status: string): string {
+	switch (status) {
+		case "completed":
+			return "bg-green-500";
+		case "failed":
+			return "bg-red-500";
+		case "running":
+		case "queued":
+		case "retrying":
+			return "bg-blue-500";
+		default:
+			return "bg-gray-400";
+	}
+}
+
+/** A schedule fire time as "Tue, Nov 21, 02:00" in the browser's zone. */
+export function formatFire(iso: string): string {
+	const t = Date.parse(iso);
+	return Number.isNaN(t)
+		? iso
+		: new Date(t).toLocaleString(undefined, {
+				weekday: "short",
+				month: "short",
+				day: "numeric",
+				hour: "2-digit",
+				minute: "2-digit",
+			});
+}
+
+/** A schedule run's duration as "42s" or "5m 12s"; empty when unknown. */
+export function runDuration(ms: number): string {
+	if (!ms) return "";
+	const s = Math.round(ms / 1000);
+	return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+/** The schedule's trigger in words, as the scheduler describes it. */
+export function triggerSummary(s: ProjectSchedule): string {
+	if (s.description) return s.description;
+	switch (s.trigger) {
+		case "once":
+			return s.startAt ? `once at ${formatFire(s.startAt)}` : "once";
+		case "interval":
+			return `every ${s.every}`;
+		case "daily":
+			return `daily at ${s.at}`;
+		case "weekly":
+			return `weekly on ${s.days} at ${s.at}`;
+		case "cron":
+			return `cron ${s.schedule}`;
+	}
+}
+
+/** The prompt's first line, cut to max characters with an ellipsis. */
+export function truncatePrompt(prompt: string, max = 80): string {
+	const line = prompt.trim().split("\n")[0]?.trim() ?? "";
+	return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+}
+
+/** Whether a schedule matches the board's search text. */
+export function scheduleMatches(s: ProjectSchedule, search: string): boolean {
+	const q = search.trim().toLowerCase();
+	if (!q) return true;
+	return [s.id, s.name, s.prompt, triggerSummary(s)].some((f) =>
+		f.toLowerCase().includes(q),
+	);
+}

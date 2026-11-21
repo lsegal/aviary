@@ -242,8 +242,7 @@ type Status struct {
 
 // Auto update states reported in AutoUpdate.
 const (
-	AutoWaitingJobs    = "waiting-jobs"    // waiting for running jobs to finish
-	AutoWaitingRestart = "waiting-restart" // waiting for a pending restart
+	AutoWaitingRestart = "waiting-restart" // waiting for a restart in progress
 	AutoApplying       = "applying"        // applying the update now
 )
 
@@ -253,8 +252,6 @@ type AutoUpdate struct {
 	// State is one of the Auto* constants, or "" when the update is not
 	// waiting on anything, e.g. after a failed attempt.
 	State string `json:"state,omitempty"`
-	// Jobs is how many running jobs AutoWaitingJobs waits for.
-	Jobs int `json:"jobs,omitempty"`
 	// Error is why the last attempt to apply the update failed.
 	Error string `json:"error,omitempty"`
 }

@@ -31,11 +31,11 @@
 							{{ s.description || s.trigger }}<template v-if="s.enabled && s.nextRun"> · next {{ until(s.nextRun, now) }}</template>
 							<template v-else-if="!s.enabled"> · paused</template>
 						</p>
-						<p v-if="lastResult(s)" data-testid="schedule-last-result"
+						<p v-if="lastScheduleRun(s)" data-testid="schedule-last-result"
 							class="mt-0.5 flex items-center gap-1.5 truncate text-xs text-gray-500 dark:text-gray-400">
-							<span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="lastDot(lastResult(s)?.status ?? '')" />
-							<span class="truncate">{{ lastResult(s)?.summary || lastResult(s)?.status }}</span>
-							<span class="shrink-0 text-gray-400">· {{ age(lastResult(s)?.fireTime ?? "", now) }} ago</span>
+							<span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="scheduleRunDot(lastScheduleRun(s)?.status ?? '')" />
+							<span class="truncate">{{ lastScheduleRun(s)?.summary || lastScheduleRun(s)?.status }}</span>
+							<span class="shrink-0 text-gray-400">· {{ age(lastScheduleRun(s)?.fireTime ?? "", now) }} ago</span>
 							<span v-if="s.history[0]?.status === 'running'" class="shrink-0 text-blue-600 dark:text-blue-400">· running now</span>
 						</p>
 					</button>
@@ -56,7 +56,9 @@ import { computed, ref, watch } from "vue";
 import {
 	age,
 	emptySchedule,
+	lastScheduleRun,
 	type ProjectSchedule,
+	scheduleRunDot,
 	until,
 } from "../../lib/projects";
 import ScheduleEditor from "./ScheduleEditor.vue";
@@ -103,19 +105,5 @@ async function onToggle(s: ProjectSchedule) {
 	} finally {
 		toggling.value = "";
 	}
-}
-
-const FINISHED = ["completed", "failed", "canceled", "skipped"];
-
-/** The schedule's latest finished run, or its latest run when none finished. */
-function lastResult(s: ProjectSchedule) {
-	return s.history.find((r) => FINISHED.includes(r.status)) ?? s.history[0];
-}
-
-function lastDot(status: string) {
-	if (status === "completed") return "bg-green-500";
-	if (status === "failed") return "bg-red-500";
-	if (status === "running" || status === "queued") return "bg-blue-500";
-	return "bg-gray-400";
 }
 </script>

@@ -159,7 +159,7 @@
           <template v-for="child in soleAgent.children" :key="child.key">
             <div class="group/row relative" :data-testid="`sidebar-row-${child.key}`">
               <router-link :to="child.to"
-                :class="[topLevelLinkClass(isChildActive(child), false), 'flex items-center gap-2', hasRowAction(child) ? 'pr-9' : '']">
+                :class="[topLevelLinkClass(isChildActive(child), false), 'flex items-center gap-2', hasRowAction(child) ? rowActionPad : '']">
                 <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
                 <span v-if="child.key === 'projects' && soleAgent.running > 0" data-testid="agent-running-badge"
                   class="shrink-0 rounded-full bg-green-600 px-1.5 text-xs font-semibold text-white">{{ soleAgent.running }}</span>
@@ -203,7 +203,7 @@
               <template v-for="child in a.children" :key="child.key">
                 <div class="group/row relative" :data-testid="`sidebar-row-${child.key}`">
                   <router-link :to="child.to"
-                    :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2', hasRowAction(child) ? 'pr-9' : '']">
+                    :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2', hasRowAction(child) ? rowActionPad : '']">
                     <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
                     <span v-if="child.count" class="shrink-0 text-xs text-gray-400">{{ child.count }}</span>
                   </router-link>
@@ -414,12 +414,8 @@ const restartPending = computed(
 const autoUpdateWaiting = computed(() => {
 	const auto = restart.value?.autoUpdate;
 	switch (auto?.state) {
-		case "waiting-jobs": {
-			const n = auto.jobs ?? 0;
-			return `Auto update is waiting for ${n === 1 ? "1 running job" : `${n} running jobs`} to finish.`;
-		}
 		case "waiting-restart":
-			return "Auto update is waiting for the pending restart.";
+			return "Auto update is waiting for the restart in progress.";
 		case "applying":
 			return git.value ? "Auto update is pulling the checkout…" : "Auto update is applying…";
 		default:
@@ -623,6 +619,12 @@ const addAgentLink = { path: "/agents", query: { add: "1" } };
 function addProjectLink(agent: string) {
 	return { path: agentPagePath(agent, "projects"), query: { add: "1" } };
 }
+
+// Rows whose "+" sits over their right edge make room for it only while it
+// shows, so a count badge stays at the right edge until then. The "+" shows
+// on row hover or focus, and always on touch (see SidebarRowAction).
+const rowActionPad =
+	"pr-9 [@media(hover:hover)]:pr-3 group-hover/row:pr-9 group-focus-within/row:pr-9";
 
 // Rows whose "+" sits over their right edge keep room for it.
 function hasRowAction(child: NavChild): boolean {

@@ -98,6 +98,8 @@ const activeId = computed(() => {
 	return sessions.value.find(isMainChat)?.id ?? "";
 });
 
+// A chat ranks by its last message; one with no messages yet ranks by when it
+// was created, but shows no time, since it has no last message (#661).
 const lastActive = (s: ChatSession) =>
 	Date.parse(s.last_message_at || s.created_at) || 0;
 
