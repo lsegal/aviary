@@ -168,8 +168,15 @@ export function projectSettingsPath(
 	target: string,
 ): string {
 	const owner = projectOwner(cfg, target);
-	if (!owner) return "/agents";
-	return `/agents/${encodeURIComponent(owner)}/projects?project=${encodeURIComponent(target)}`;
+	if (!owner) return "/system/projects";
+	return agentProjectsSettingsPath(owner, target);
+}
+
+/** System → Projects opened on an agent's projects, one of them selected. */
+export function agentProjectsSettingsPath(agent: string, target = ""): string {
+	const query = new URLSearchParams({ agent });
+	if (target) query.set("project", target);
+	return `/system/projects?${query}`;
 }
 
 /** The projects with target added, unless already listed. */
