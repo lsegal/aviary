@@ -27,6 +27,9 @@ var (
 	gitPull        = update.GitPull
 	executablePath = os.Executable
 	idlePoll       = 2 * time.Second
+	// autoUpdateWait is how long one self-updater round waits for jobs to
+	// finish before checking for a newer update.
+	autoUpdateWait = update.CheckInterval
 )
 
 type restartState struct {
@@ -34,6 +37,7 @@ type restartState struct {
 	status     saferestart.Status
 	cancel     chan struct{}
 	reexecPath string
+	auto       *saferestart.AutoUpdate
 }
 
 // restartSnapshot is what newly connected dashboards are told about a restart
@@ -65,6 +69,10 @@ func currentRestartSnapshot() *saferestart.Status {
 func (s *Server) RestartStatus() saferestart.Status {
 	s.restart.mu.Lock()
 	st := s.restart.status
+	if s.restart.auto != nil {
+		auto := *s.restart.auto
+		st.AutoUpdate = &auto
+	}
 	s.restart.mu.Unlock()
 	if st.Phase == "" {
 		st.Phase = saferestart.PhaseIdle
@@ -291,32 +299,40 @@ func (s *Server) runDone() <-chan struct{} {
 
 // runSelfUpdater checks for a new release (or, in git mode, new upstream
 // commits) every update.CheckInterval, tells every dashboard about it, and
-// applies it when auto_update is on and no jobs are running.
+// applies it when auto_update is on, as soon as no jobs are running.
 func (s *Server) runSelfUpdater(ctx context.Context) {
 	if update.IsDevBuild() && !update.EmulationActive() && gitCheckout() == "" {
 		return // dev builds outside a checkout have nothing to compare against
 	}
 	var lastNotified string
+	notify := func(check update.CheckResult) {
+		latest := ""
+		if check.UpgradeAvailable {
+			latest = check.LatestVersion
+		}
+		if latest != lastNotified {
+			lastNotified = latest
+			wsBroadcast(wsEvent{Type: "version", Check: &check})
+		}
+	}
 	tick := func() {
 		update.ClearCache()
 		check, err := versionCheck(ctx, &http.Client{Timeout: 30 * time.Second})
-		if err != nil || !check.UpgradeAvailable {
+		if err != nil {
 			return
 		}
-		if check.LatestVersion != lastNotified {
-			lastNotified = check.LatestVersion
-			c := check
-			wsBroadcast(wsEvent{Type: "version", Check: &c})
-		}
-		if s.cfg == nil || !s.cfg.Server.AutoUpdate || !check.UpgradeSupported {
+		notify(check)
+		if !check.UpgradeAvailable || !s.autoUpdateOn() || !check.UpgradeSupported {
+			s.setAutoUpdate(nil)
 			return
 		}
-		if s.RestartStatus().Phase != saferestart.PhaseIdle || len(saferestart.RunningJobs()) > 0 {
-			return
-		}
-		slog.Info("server: applying automatic update", "component", "update", "version", check.LatestVersion)
-		if _, err := s.requestRestart(ctx, saferestart.Request{When: saferestart.WhenIdle, Upgrade: true, Version: check.LatestVersion}); err != nil {
-			slog.Warn("server: automatic update", "component", "update", "error", err)
+		if s.autoApply(ctx, check) {
+			// Tell dashboards the update is gone, e.g. after a git pull
+			// that hot reload has not yet restarted onto.
+			update.ClearCache()
+			if check, err := versionCheck(ctx, &http.Client{Timeout: 30 * time.Second}); err == nil {
+				notify(check)
+			}
 		}
 	}
 	ticker := time.NewTicker(update.CheckInterval)
@@ -329,4 +345,84 @@ func (s *Server) runSelfUpdater(ctx context.Context) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func (s *Server) autoUpdateOn() bool {
+	cfg := s.cfg
+	return cfg != nil && cfg.Server.AutoUpdate
+}
+
+// autoApply applies check's update once no restart is pending and no jobs
+// are running, publishing what it waits for meanwhile, and reports whether
+// it applied. It waits at most autoUpdateWait, so the next round re-checks
+// for a newer update. A failed attempt stays published until one succeeds.
+func (s *Server) autoApply(ctx context.Context, check update.CheckResult) bool {
+	version := check.LatestVersion
+	deadline := time.NewTimer(autoUpdateWait)
+	defer deadline.Stop()
+	poll := time.NewTicker(idlePoll)
+	defer poll.Stop()
+	for {
+		if !s.autoUpdateOn() {
+			s.setAutoUpdate(nil)
+			return false
+		}
+		state, jobs := "", 0
+		if s.RestartStatus().Phase != saferestart.PhaseIdle {
+			state = saferestart.AutoWaitingRestart
+		} else if n := len(saferestart.RunningJobs()); n > 0 {
+			state, jobs = saferestart.AutoWaitingJobs, n
+		}
+		if state == "" {
+			break
+		}
+		s.setAutoUpdateState(version, state, jobs)
+		select {
+		case <-ctx.Done():
+			return false
+		case <-deadline.C:
+			return false
+		case <-poll.C:
+		}
+	}
+
+	slog.Info("server: applying automatic update", "component", "update", "version", version)
+	s.setAutoUpdateState(version, saferestart.AutoApplying, 0)
+	st, err := s.requestRestart(ctx, saferestart.Request{When: saferestart.WhenIdle, Upgrade: true, Version: version})
+	if err != nil {
+		slog.Warn("server: automatic update", "component", "update", "error", err)
+		s.setAutoUpdate(&saferestart.AutoUpdate{Version: version, Error: err.Error()})
+		return false
+	}
+	if st.Message != "" {
+		slog.Info("server: automatic update applied", "component", "update", "message", st.Message)
+	}
+	s.setAutoUpdate(nil)
+	return true
+}
+
+// setAutoUpdateState records what a pending automatic update waits for,
+// keeping the last attempt's error.
+func (s *Server) setAutoUpdateState(version, state string, jobs int) {
+	s.restart.mu.Lock()
+	next := saferestart.AutoUpdate{Version: version, State: state, Jobs: jobs}
+	if prev := s.restart.auto; prev != nil && prev.Version == version {
+		next.Error = prev.Error
+	}
+	s.restart.mu.Unlock()
+	s.setAutoUpdate(&next)
+}
+
+// setAutoUpdate records the automatic update state, or clears it for nil,
+// and tells every dashboard when it changed.
+func (s *Server) setAutoUpdate(auto *saferestart.AutoUpdate) {
+	s.restart.mu.Lock()
+	prev := s.restart.auto
+	if (prev == nil && auto == nil) || (prev != nil && auto != nil && *prev == *auto) {
+		s.restart.mu.Unlock()
+		return
+	}
+	s.restart.auto = auto
+	s.restart.mu.Unlock()
+	publishRestartStatus(s.RestartStatus())
 }

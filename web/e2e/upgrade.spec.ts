@@ -217,6 +217,60 @@ test("dev checkout with local changes blocks the update and says why", async ({
 	);
 });
 
+test("auto update says it waits for running jobs", async ({ page }) => {
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		server_version_check: {
+			...gitCheck(false),
+			restart: {
+				phase: "idle",
+				jobs: runningJobs,
+				held: false,
+				autoUpdate: {
+					version: "abc1234bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+					state: "waiting-jobs",
+					jobs: 2,
+				},
+			},
+		},
+	});
+	await page.goto("/system/overview");
+
+	await expect(page.getByTestId("auto-update-status").first()).toContainText(
+		"Auto update is waiting for 2 running jobs to finish.",
+	);
+	await expect(page.getByTestId("auto-update-error")).toHaveCount(0);
+});
+
+test("auto update shows why its last attempt failed", async ({ page }) => {
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		server_version_check: {
+			...gitCheck(false),
+			restart: {
+				phase: "idle",
+				jobs: [],
+				held: false,
+				autoUpdate: {
+					version: "abc1234bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+					error:
+						"git pull --ff-only --quiet: exit status 1: fatal: unable to access remote",
+				},
+			},
+		},
+	});
+	await page.goto("/system/overview");
+
+	await expect(page.getByTestId("auto-update-error").first()).toContainText(
+		"Auto update failed: git pull --ff-only --quiet: exit status 1",
+	);
+	await expect(page.getByTestId("auto-update-status")).toHaveCount(0);
+});
+
 test("restart button safely restarts and reports progress", async ({
 	page,
 }) => {

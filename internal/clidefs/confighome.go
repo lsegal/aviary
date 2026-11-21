@@ -129,7 +129,19 @@ func (d Definition) HomeEnv(base string, workspaces ...string) ([]string, error)
 	if d.ConfigHome == nil {
 		return nil, nil
 	}
-	dir, err := d.ConfigHome.Overlay(base, workspaces...)
+	return d.homeEnv(d.ConfigHome.Overlay(base, workspaces...))
+}
+
+// OwnHomeEnv points the CLI at its OwnOverlay under base when the definition
+// declares a ConfigHome, and is empty otherwise.
+func (d Definition) OwnHomeEnv(base string, workspaces ...string) ([]string, error) {
+	if d.ConfigHome == nil {
+		return nil, nil
+	}
+	return d.homeEnv(d.ConfigHome.OwnOverlay(base, workspaces...))
+}
+
+func (d Definition) homeEnv(dir string, err error) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +193,23 @@ func expandHome(path string) (string, error) {
 // given, along with those of earlier launches that still exist, is recorded
 // as trusted in the copy Trust names.
 func (c ConfigHome) Overlay(base string, workspaces ...string) (string, error) {
+	return c.overlay(base, refreshCopy, workspaces)
+}
+
+// OwnOverlay prepares an overlay under base like Overlay, except that each
+// Private file is emptied rather than copied from the user's: the CLI reads
+// aviary's settings only, as `codex --ignore-user-config` would, while still
+// sharing the user's sign-in and sessions. Settings aviary adds for one
+// launch go in files named with LaunchFilePrefix, such as a codex profile.
+func (c ConfigHome) OwnOverlay(base string, workspaces ...string) (string, error) {
+	return c.overlay(base, func(_, dst string) error { return writeReplacing(dst, nil) }, workspaces)
+}
+
+// LaunchFilePrefix starts the name of a file aviary writes into an overlay
+// for a single launch. Refreshing the overlay leaves such files alone.
+const LaunchFilePrefix = "aviary-"
+
+func (c ConfigHome) overlay(base string, fill func(src, dst string) error, workspaces []string) (string, error) {
 	overlayMu.Lock()
 	defer overlayMu.Unlock()
 	home, err := c.Home()
@@ -206,7 +235,7 @@ func (c ConfigHome) Overlay(base string, workspaces ...string) (string, error) {
 	for _, entry := range existing {
 		name := entry.Name()
 		path, target := filepath.Join(dir, name), filepath.Join(home, name)
-		if private[name] || strings.HasPrefix(name, ".aviary-") {
+		if private[name] || strings.HasPrefix(name, ".aviary-") || strings.HasPrefix(name, LaunchFilePrefix) {
 			continue
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
@@ -228,7 +257,7 @@ func (c ConfigHome) Overlay(base string, workspaces ...string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("preparing the %s overlay: %w", c.Env, err)
 		}
-		if err := refreshCopy(src, filepath.Join(dir, name)); err != nil {
+		if err := fill(src, filepath.Join(dir, name)); err != nil {
 			return "", fmt.Errorf("preparing the %s overlay: %w", c.Env, err)
 		}
 	}

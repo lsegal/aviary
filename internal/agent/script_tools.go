@@ -29,7 +29,7 @@ func NormalizeScriptToolArguments(ctx context.Context, name string, args map[str
 		if agentID != "" {
 			cloned["name"] = agentID
 		}
-	case "session_messages", "session_history", "session_stop", "session_remove", "session_set_target", "session_send":
+	case "session_messages", "session_history", "session_stop", "session_remove", "session_rename", "session_set_target", "session_send":
 		if agentID != "" {
 			cloned["agent"] = agentID
 		}
