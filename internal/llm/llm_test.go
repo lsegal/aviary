@@ -575,68 +575,146 @@ func TestAnthropicProvider_Stream_WithSystem(t *testing.T) {
 
 }
 
-func TestAnthropicProvider_Stream_WithPromptCacheControl(t *testing.T) {
-	t.Setenv(anthropicPromptCacheEnv, "1")
-
+// streamAnthropicPayload sends req through p to a mock server and returns the
+// decoded request body.
+func streamAnthropicPayload(t *testing.T, newProvider func(baseURL string) *AnthropicProvider, req Request) map[string]any {
+	t.Helper()
 	var requestBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var err error
 		requestBody, err = io.ReadAll(r.Body)
 		assert.NoError(t, err)
-		anthropicSSEResponse(w, "cached")
+		anthropicSSEResponse(w, "ok")
 	}))
 	defer srv.Close()
 
-	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
-	ch, err := p.Stream(context.Background(), Request{
-		System:       "You are a helpful assistant.",
-		Messages:     []Message{{Role: RoleUser, Content: "Hello"}},
-		CacheControl: &CacheControl{Type: "ephemeral"},
-	})
-	assert.NoError(t, err)
+	ch, err := newProvider(srv.URL).Stream(context.Background(), req)
+	require.NoError(t, err)
 	collectEvents(t, ch)
 
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(requestBody, &payload))
-	cacheControl, ok := payload["cache_control"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, "ephemeral", cacheControl["type"])
-	_, hasTTL := cacheControl["ttl"]
-	assert.False(t, hasTTL)
-	if systemBlocks, ok := payload["system"].([]any); ok {
-		require.Len(t, systemBlocks, 1)
-		block, ok := systemBlocks[0].(map[string]any)
+	return payload
+}
+
+// cacheBreakpoints lists the request blocks carrying cache_control, as
+// "tools[i]", "system[i]" or "messages[i].content[j]".
+func cacheBreakpoints(t *testing.T, payload map[string]any) []string {
+	t.Helper()
+	var marks []string
+	check := func(name string, block any) {
+		m, ok := block.(map[string]any)
 		require.True(t, ok)
-		_, hasBlockCacheControl := block["cache_control"]
-		assert.False(t, hasBlockCacheControl)
-	} else {
-		t.Fatalf("expected system blocks in request payload")
+		if cc, ok := m["cache_control"].(map[string]any); ok {
+			assert.Equal(t, "ephemeral", cc["type"])
+			marks = append(marks, name)
+		}
+	}
+	for _, key := range []string{"tools", "system"} {
+		blocks, _ := payload[key].([]any)
+		for i, block := range blocks {
+			check(fmt.Sprintf("%s[%d]", key, i), block)
+		}
+	}
+	messages, _ := payload["messages"].([]any)
+	for i, msg := range messages {
+		content, _ := msg.(map[string]any)["content"].([]any)
+		for j, block := range content {
+			check(fmt.Sprintf("messages[%d].content[%d]", i, j), block)
+		}
+	}
+	_, topLevel := payload["cache_control"]
+	assert.False(t, topLevel, "cache breakpoints are set per block, not top-level")
+	return marks
+}
+
+func promptCacheTestRequest() Request {
+	tool := ToolDefinition{Name: "lookup", Description: "Look something up.", InputSchema: map[string]any{"type": "object"}}
+	second := tool
+	second.Name = "fetch"
+	return Request{
+		System: "You are a helpful assistant.",
+		Tools:  []ToolDefinition{tool, second},
+		Messages: []Message{
+			{Role: RoleUser, Content: "Look up Go"},
+			{Role: RoleAssistant, ToolCall: &ToolCall{ID: "toolu_1", Name: "lookup", Arguments: map[string]any{}}},
+			{Role: RoleUser, Result: &ToolResult{ToolCallID: "toolu_1", Content: "Go is a language."}},
+			{Role: RoleUser, Content: "Thanks, and Rust?"},
+		},
+		CacheControl: DefaultPromptCacheControl(),
 	}
 }
 
-func TestAnthropicProvider_Stream_PromptCacheControlDisabledByDefault(t *testing.T) {
-	var requestBody []byte
+func TestAnthropicProvider_Stream_PromptCacheBreakpoints(t *testing.T) {
+	payload := streamAnthropicPayload(t, func(baseURL string) *AnthropicProvider {
+		return newTestAnthropicProvider(baseURL, "claude-opus-5-5")
+	}, promptCacheTestRequest())
+
+	// The tool result and the follow-up merge into one user message; the
+	// breakpoint sits on its last block.
+	assert.Equal(t, []string{"tools[1]", "system[0]", "messages[2].content[1]"}, cacheBreakpoints(t, payload))
+}
+
+func TestAnthropicOAuthProvider_Stream_PromptCacheBreakpoints(t *testing.T) {
+	payload := streamAnthropicPayload(t, func(baseURL string) *AnthropicProvider {
+		t.Setenv("ANTHROPIC_BASE_URL", baseURL)
+		return NewAnthropicOAuthProvider("oauth-token", "claude-opus-5-5")
+	}, promptCacheTestRequest())
+
+	// The breakpoint goes after the system prompt, not on the billing header.
+	assert.Equal(t, []string{"tools[1]", "system[1]", "messages[2].content[1]"}, cacheBreakpoints(t, payload))
+}
+
+func TestAnthropicProvider_Stream_PromptCacheBreakpointsWithoutToolsOrSystem(t *testing.T) {
+	payload := streamAnthropicPayload(t, func(baseURL string) *AnthropicProvider {
+		return newTestAnthropicProvider(baseURL, "claude-opus-5-5")
+	}, Request{
+		Messages: []Message{
+			{Role: RoleUser, Content: "Hello"},
+			{Role: RoleAssistant, Content: "Hi"},
+			{Role: RoleUser, Content: "How are you?"},
+		},
+		CacheControl: DefaultPromptCacheControl(),
+	})
+
+	assert.Equal(t, []string{"messages[2].content[0]"}, cacheBreakpoints(t, payload))
+}
+
+func TestAnthropicProvider_Stream_NoPromptCacheWithoutCacheControl(t *testing.T) {
+	req := promptCacheTestRequest()
+	req.CacheControl = nil
+	payload := streamAnthropicPayload(t, func(baseURL string) *AnthropicProvider {
+		return newTestAnthropicProvider(baseURL, "claude-opus-5-5")
+	}, req)
+
+	assert.Empty(t, cacheBreakpoints(t, payload))
+}
+
+func TestAnthropicProvider_Stream_ReportsCacheUsage(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var err error
-		requestBody, err = io.ReadAll(r.Body)
-		assert.NoError(t, err)
-		anthropicSSEResponse(w, "uncached")
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		// message_delta omits the input and cache counts, as older API
+		// responses do; message_start's values must survive.
+		_, _ = fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-opus-5-5\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":12,\"cache_creation_input_tokens\":40,\"cache_read_input_tokens\":3000,\"output_tokens\":1}}}\n\n")
+		_, _ = fmt.Fprint(w, "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n")
+		_, _ = fmt.Fprint(w, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n")
+		_, _ = fmt.Fprint(w, "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
+		_, _ = fmt.Fprint(w, "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":7}}\n\n")
+		_, _ = fmt.Fprint(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
 	}))
 	defer srv.Close()
 
-	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
-	ch, err := p.Stream(context.Background(), Request{
-		System:       "You are a helpful assistant.",
-		Messages:     []Message{{Role: RoleUser, Content: "Hello"}},
-		CacheControl: &CacheControl{Type: "ephemeral"},
-	})
-	assert.NoError(t, err)
-	collectEvents(t, ch)
-
-	var payload map[string]any
-	require.NoError(t, json.Unmarshal(requestBody, &payload))
-	_, hasCacheControl := payload["cache_control"]
-	assert.False(t, hasCacheControl)
+	ch, err := newTestAnthropicProvider(srv.URL, "claude-opus-5-5").Stream(context.Background(), promptCacheTestRequest())
+	require.NoError(t, err)
+	var usage *Usage
+	for _, ev := range collectEvents(t, ch) {
+		if ev.Type == EventTypeUsage {
+			usage = ev.Usage
+		}
+	}
+	require.NotNil(t, usage)
+	assert.Equal(t, Usage{InputTokens: 12, OutputTokens: 7, CacheReadTokens: 3000, CacheWriteTokens: 40}, *usage)
 }
 
 func TestStrictSchemaObjectRequiresEveryProperty(t *testing.T) {
