@@ -254,7 +254,11 @@ async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 	const updated = withTrigger({ ...current, prompt: form.prompt }, trigger);
 	if (JSON.stringify(updated) !== JSON.stringify(current)) {
 		await settings.saveAgentTasks(agent, (tasks) =>
-			tasks.map((t) => (t.name === from ? withTrigger({ ...t, prompt: form.prompt }, trigger) : t)),
+			tasks.map((t) =>
+				t.name === from
+					? withTrigger({ ...t, prompt: form.prompt }, trigger)
+					: t,
+			),
 		);
 	}
 	if (name !== from) {

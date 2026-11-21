@@ -174,9 +174,7 @@ test("the add-task modal sets every trigger type, timezone and policy, and they 
 		await dialog.getByRole("button", { name: "Create" }).click();
 		await expect(dialog).toBeHidden();
 
-		const task = saved
-			.at(-1)
-			?.agents[0].tasks.find((t) => t.name === name) as
+		const task = saved.at(-1)?.agents[0].tasks.find((t) => t.name === name) as
 			| Record<string, unknown>
 			| undefined;
 		expectSavedTrigger(task, c);

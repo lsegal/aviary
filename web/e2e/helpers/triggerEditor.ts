@@ -77,9 +77,9 @@ export async function expectTrigger(scope: Locator, c: TriggerCase) {
 			editor.getByRole("button", { name: d, exact: true }),
 		).toHaveAttribute("aria-pressed", "true");
 	await expect(editor.getByLabel("Timezone")).toHaveValue(TIMEZONE);
-	await expect(
-		editor.getByLabel("If the last run is still going"),
-	).toHaveValue("skip");
+	await expect(editor.getByLabel("If the last run is still going")).toHaveValue(
+		"skip",
+	);
 	await expect(
 		editor.getByLabel("Runs missed while asleep or stopped"),
 	).toHaveValue("run_once");
@@ -105,4 +105,3 @@ export function expectSavedTrigger(
 		);
 	if (c.label === "Cron") expect(task?.trigger).toBeUndefined();
 }
-
