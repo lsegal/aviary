@@ -996,7 +996,7 @@ test("deleting a task from settings persists immediately", async ({ page }) => {
 
 	await expect(row).toHaveCount(0);
 	await expect(
-		page.getByText("No tasks configured for this agent."),
+		page.getByText("No scheduled tasks configured for this agent."),
 	).toBeVisible();
 	expect(savedConfig).toMatchObject({
 		agents: [
