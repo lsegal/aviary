@@ -13,8 +13,25 @@ interface Sess {
 const hoursAgo = (h: number) =>
 	new Date(Date.now() - h * 3_600_000).toISOString();
 
-/** Mocks one agent whose chats live in `sessions`, recording tool calls. */
-async function mockChats(page: Page, sessions: Sess[]) {
+interface Msg {
+	id: string;
+	role: "user" | "assistant";
+	content: string;
+	timestamp: string;
+}
+
+/** The server's rule: Main Chat can only be cleared, never deleted. */
+const deletable = (s: Sess) => s.name !== "main";
+
+/**
+ * Mocks one agent whose chats live in `sessions`, and their messages in
+ * `messages` by session ID, recording tool calls.
+ */
+async function mockChats(
+	page: Page,
+	sessions: Sess[],
+	messages: Record<string, Msg[]> = {},
+) {
 	const calls: Array<{ tool: string; args: Record<string, unknown> }> = [];
 	const record = (tool: string) => (args?: Record<string, unknown>) => {
 		calls.push({ tool, args: args ?? {} });
@@ -27,8 +44,18 @@ async function mockChats(page: Page, sessions: Sess[]) {
 		config_get: { agents: [{ name: "assistant", model: "x/y" }] },
 		config_validate: [],
 		job_list: [],
-		session_list: () => sessions,
-		session_messages: [],
+		session_list: () =>
+			sessions.map((s) => ({ ...s, deletable: deletable(s) })),
+		session_messages: (args?: Record<string, unknown>) =>
+			messages[String(args?.session_id)] ?? [],
+		session_clear: (args?: Record<string, unknown>) => {
+			record("session_clear")(args);
+			const s = sessions.find((x) => x.id === args?.session_id);
+			if (!s) throw new Error(`session ${args?.session_id} not found`);
+			delete messages[s.id];
+			delete s.last_message_at;
+			return "cleared";
+		},
 		session_create: () => {
 			const sess = {
 				id: "sess_new",
@@ -48,6 +75,10 @@ async function mockChats(page: Page, sessions: Sess[]) {
 		session_remove: (args?: Record<string, unknown>) => {
 			record("session_remove")(args);
 			const i = sessions.findIndex((x) => x.id === args?.session_id);
+			if (i >= 0 && !deletable(sessions[i]))
+				throw new Error(
+					`session "${args?.session_id}" cannot be deleted; clear it instead`,
+				);
 			if (i >= 0) sessions.splice(i, 1);
 			return "removed";
 		},
@@ -189,16 +220,16 @@ test("the … menu renames and deletes a chat after confirmation", async ({
 	]);
 	await page.goto("/agents/assistant/chat/sess_1");
 
-	// Main Chat can be renamed but not deleted.
+	// Main Chat can be renamed and cleared but not deleted.
 	await chatRows(page).first().hover();
 	await chatRows(page).first().getByTestId("chat-menu-button").click();
-	await expect(page.getByRole("menuitem", { name: "Rename" })).toBeVisible();
-	await expect(page.getByRole("menuitem", { name: "Delete" })).toHaveCount(0);
+	await expect(page.getByRole("menuitem")).toHaveText(["Rename", "Clear"]);
 	await page.keyboard.press("Escape");
 
 	const row = chatRows(page).nth(1);
 	await row.hover();
 	await row.getByTestId("chat-menu-button").click();
+	await expect(page.getByRole("menuitem")).toHaveText(["Rename", "Delete"]);
 	await page.getByRole("menuitem", { name: "Rename" }).click();
 	await expect(page.getByTestId("chat-rename-input")).toBeFocused();
 	await page.getByTestId("chat-rename-input").fill("Pantry");
@@ -214,6 +245,145 @@ test("the … menu renames and deletes a chat after confirmation", async ({
 
 	await expect(chatRows(page)).toHaveText([/Main Chat/]);
 	await expect(page).toHaveURL("/agents/assistant/chat/main");
+	expect(calls).toContainEqual({
+		tool: "session_remove",
+		args: { agent: "assistant", session_id: "sess_1" },
+	});
+});
+
+const mainHistory = (): Msg[] => [
+	{
+		id: "m1",
+		role: "user",
+		content: "remember the milk",
+		timestamp: hoursAgo(3),
+	},
+	{
+		id: "m2",
+		role: "assistant",
+		content: "Noted: milk",
+		timestamp: hoursAgo(3),
+	},
+];
+
+function twoChats(): Sess[] {
+	return [
+		{
+			id: "main",
+			agent_id: "assistant",
+			name: "main",
+			created_at: hoursAgo(48),
+			last_message_at: hoursAgo(3),
+		},
+		{
+			id: "sess_1",
+			agent_id: "assistant",
+			name: "sess_1",
+			title: "Groceries",
+			created_at: hoursAgo(5),
+			last_message_at: hoursAgo(1),
+		},
+	];
+}
+
+test("clearing Main Chat after confirmation empties it and keeps it in the list", async ({
+	page,
+}) => {
+	const calls = await mockChats(page, twoChats(), { main: mainHistory() });
+	await page.goto("/agents/assistant/chat");
+	await expect(page.getByText("Noted: milk")).toBeVisible();
+	const composer = page.getByPlaceholder("Describe a task or ask a question");
+	await composer.fill("half-typed thought");
+
+	const row = chatRows(page).first();
+	await row.hover();
+	await row.getByTestId("chat-menu-button").click();
+	await page.getByRole("menuitem", { name: "Clear" }).click();
+	const dialog = page.getByRole("alertdialog");
+	await expect(dialog.getByRole("heading")).toHaveText("Clear Main Chat?");
+	await expect(dialog).toContainText(
+		"This removes all messages in this chat. The chat itself stays.",
+	);
+	await expect(dialog.getByRole("button")).toHaveText(["Cancel", "Clear"]);
+	await expect(dialog.getByRole("button", { name: "Clear" })).toHaveClass(
+		/bg-red-600/,
+	);
+	await dialog.getByRole("button", { name: "Clear" }).click();
+
+	await expect(dialog).toBeHidden();
+	await expect(page.getByText("Noted: milk")).toHaveCount(0);
+	await expect(page.getByText("remember the milk")).toHaveCount(0);
+	// The draft goes with the messages.
+	await expect(composer).toHaveValue("");
+	await expect(chatRows(page)).toHaveText([/Main Chat/, /Groceries/]);
+	await expect(page).toHaveURL("/agents/assistant/chat");
+	expect(calls).toContainEqual({
+		tool: "session_clear",
+		args: { agent: "assistant", session_id: "main" },
+	});
+	expect(calls.filter((c) => c.tool === "session_remove")).toHaveLength(0);
+
+	// The draft stays gone after a reload.
+	await page.reload();
+	await expect(chatRows(page)).toHaveText([/Main Chat/, /Groceries/]);
+	await expect(composer).toHaveValue("");
+});
+
+test("cancelling Clear changes nothing", async ({ page }) => {
+	const calls = await mockChats(page, twoChats(), { main: mainHistory() });
+	await page.goto("/agents/assistant/chat");
+	await expect(page.getByText("Noted: milk")).toBeVisible();
+
+	const row = chatRows(page).first();
+	await row.hover();
+	await row.getByTestId("chat-menu-button").click();
+	await page.getByRole("menuitem", { name: "Clear" }).click();
+	const dialog = page.getByRole("alertdialog");
+	await dialog.getByRole("button", { name: "Cancel" }).click();
+
+	await expect(dialog).toBeHidden();
+	await expect(page.getByText("Noted: milk")).toBeVisible();
+	await expect(chatRows(page)).toHaveText([/Main Chat/, /Groceries/]);
+	expect(calls.filter((c) => c.tool === "session_clear")).toHaveLength(0);
+});
+
+test("chats revealed by More keep their Delete action", async ({ page }) => {
+	await mockChats(page, manyChats(7));
+	await page.goto("/system/overview");
+	await page.getByTestId("sidebar-chats-more").click();
+
+	const last = chatRows(page).nth(7);
+	await last.hover();
+	await last.getByTestId("chat-menu-button").click();
+	await expect(page.getByRole("menuitem")).toHaveText(["Rename", "Delete"]);
+	await page.keyboard.press("Escape");
+});
+
+test("Settings → Sessions offers Clear, not Remove, for Main Chat", async ({
+	page,
+}) => {
+	const calls = await mockChats(page, twoChats(), { main: mainHistory() });
+	await page.goto("/system/sessions");
+	await page.getByRole("combobox").first().selectOption("assistant");
+
+	const buttons = page.getByTestId("session-remove-button");
+	await expect(buttons).toHaveText(["Clear", "Remove"]);
+
+	await buttons.first().click();
+	const dialog = page.getByRole("alertdialog");
+	await expect(dialog.getByRole("heading")).toHaveText("Clear Main Chat?");
+	await dialog.getByRole("button", { name: "Clear" }).click();
+	await expect(dialog).toBeHidden();
+	await expect(buttons).toHaveText(["Clear", "Remove"]);
+	expect(calls).toContainEqual({
+		tool: "session_clear",
+		args: { agent: "assistant", session_id: "main" },
+	});
+
+	await buttons.nth(1).click();
+	await expect(dialog.getByRole("heading")).toHaveText("Remove session?");
+	await dialog.getByRole("button", { name: "Remove" }).click();
+	await expect(buttons).toHaveText(["Clear"]);
 	expect(calls).toContainEqual({
 		tool: "session_remove",
 		args: { agent: "assistant", session_id: "sess_1" },
