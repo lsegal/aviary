@@ -744,7 +744,10 @@ const selectedChannel = computed((): AgentChannel | null => {
 	return agent.channels[idx] ?? null;
 });
 
-// A channel's settings page names its channel in the path.
+// A channel's settings page names its channel in the path. Whether it names
+// one is decided when the route or the channel list changes, not while the
+// form edits the channel.
+const channelNotFound = ref(false);
 watch(
 	() => [
 		route.params.channel,
@@ -757,9 +760,27 @@ watch(
 		const idx = (
 			draft.value.agents[selectedAgentIdx.value]?.channels ?? []
 		).findIndex((c) => channelName(c).toLowerCase() === name.toLowerCase());
+		channelNotFound.value = idx < 0;
 		if (idx >= 0) selectedChannelIdx.value = idx;
 	},
 	{ immediate: true, flush: "post" },
+);
+
+// A channel without a name of its own is named by its ID, so editing the ID
+// renames it; the address follows.
+watch(
+	() => (selectedChannel.value ? channelName(selectedChannel.value) : ""),
+	(name, prev) => {
+		if (!name || !prev || name === prev) return;
+		if (selectedAgentSubtab.value !== "channels" || channelNotFound.value)
+			return;
+		const current = route.params.channel;
+		if (typeof current !== "string" || current.toLowerCase() !== prev.toLowerCase())
+			return;
+		void router.replace(
+			`/agents/${agentRouteId(selectedAgentIdx.value)}/channels/${encodeURIComponent(name)}/settings`,
+		);
+	},
 );
 
 // Agent tab click → push new route (also resets subtab) and reset selectedTaskIdx for the new agent.
@@ -3501,6 +3522,7 @@ const settingsContext = proxyRefs({
 	onAgentSettingsPage,
 	selectedChannel,
 	selectedChannelIdx,
+	channelNotFound,
 	selectedTask,
 	selectedTaskIdx,
 	selectedTaskTarget,

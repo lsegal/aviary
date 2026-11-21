@@ -759,7 +759,9 @@ const REPORTS_CONFIG = {
 		{
 			name: "atlas",
 			model: "anthropic/claude-sonnet-4-5",
-			channels: [{ type: "slack", id: "main", token: "xoxb-test" }],
+			channels: [
+				{ type: "slack", id: "main", name: "Team Slack", token: "xoxb-test" },
+			],
 		},
 		{ name: "scout", model: "anthropic/claude-sonnet-4-5" },
 		{
@@ -802,12 +804,13 @@ test("reports can be turned on with an agent and a target, then off", async ({
 	);
 	await page.locator('[data-field="reports_agent"]').selectOption("atlas");
 
+	// A channel is picked by name: the report lands in its session.
 	await page
 		.getByRole("combobox", { name: "Target 1 channel" })
-		.selectOption("slack:main");
-	await page
-		.getByRole("textbox", { name: "Target 1 delivery ID" })
-		.fill("C123");
+		.selectOption({ label: "Channel: Team Slack" });
+	await expect(
+		page.getByRole("textbox", { name: "Target 1 delivery ID" }),
+	).toHaveCount(0);
 	await page.getByRole("button", { name: "Add a target" }).click();
 	await page
 		.getByRole("combobox", { name: "Target 2 channel" })
@@ -828,7 +831,7 @@ test("reports can be turned on with an agent and a target, then off", async ({
 			"        other: kept",
 			"        reports:",
 			"          agent: atlas",
-			'          targets: ["slack:main:C123", "session:sess_reports"]',
+			'          targets: ["channel:Team Slack", "session:sess_reports"]',
 			"          events: [merged, failed]",
 		].join("\n"),
 	);
@@ -841,7 +844,7 @@ test("reports can be turned on with an agent and a target, then off", async ({
 			other: "kept",
 			reports: {
 				agent: "atlas",
-				targets: ["slack:main:C123", "session:sess_reports"],
+				targets: ["channel:Team Slack", "session:sess_reports"],
 				events: ["merged", "failed"],
 			},
 		},
@@ -871,7 +874,7 @@ test("saved reports load into the form and are checked like the server does", as
 					projects: [
 						{
 							target: "lsegal/aviary",
-							reports: { agent: "atlas", targets: ["slack:main:C123"] },
+							reports: { agent: "atlas", targets: ["channel:Team Slack"] },
 						},
 					],
 				},
@@ -886,8 +889,8 @@ test("saved reports load into the form and are checked like the server does", as
 		"atlas",
 	);
 	await expect(
-		page.getByRole("textbox", { name: "Target 1 delivery ID" }),
-	).toHaveValue("C123");
+		page.getByRole("combobox", { name: "Target 1 channel" }),
+	).toHaveValue("channel:Team Slack");
 	// No events filter means every event is reported.
 	for (const e of ["merged", "failed", "waiting"])
 		await expect(page.locator(`[data-field="report_${e}"]`)).toBeChecked();

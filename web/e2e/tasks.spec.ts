@@ -20,7 +20,7 @@ test("a configured task can be run now from System → Jobs", async ({
 				trigger_type: "cron",
 				schedule: "0 9 * * *",
 				prompt: "write the report",
-				target: "slack:alerts:C123",
+				target: "channel:alerts",
 			},
 		],
 		task_run: (args) => {

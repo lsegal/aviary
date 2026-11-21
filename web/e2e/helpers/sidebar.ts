@@ -5,7 +5,7 @@ export type AgentPage =
 	| "chat"
 	| "settings"
 	| "settings/permissions"
-	| "settings/channels"
+	| "channels"
 	| "files"
 	| "tasks"
 	| "projects";
@@ -40,6 +40,17 @@ export async function openAgentPage(page: Page, tail: AgentPage, agent = "") {
 				.getAttribute("data-agent")) ?? "";
 	}
 	await page.goto(`/agents/${encodeURIComponent(name)}/${tail}`);
+}
+
+/** Opens a channel's settings form, by default the assistant agent's. */
+export async function openChannelSettings(
+	page: Page,
+	channel: string,
+	agent = "assistant",
+) {
+	await page.goto(
+		`/agents/${encodeURIComponent(agent)}/channels/${encodeURIComponent(channel)}/settings`,
+	);
 }
 
 /** The active agent's page link in the sidebar, such as Tasks or Files. */

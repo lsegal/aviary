@@ -1,7 +1,11 @@
 import { expect, test } from "@playwright/test";
 import type { AgentFileArgs } from "./helpers/mockMCP";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
-import { agentPageLink, openAgentPage } from "./helpers/sidebar";
+import {
+	agentPageLink,
+	openAgentPage,
+	openChannelSettings,
+} from "./helpers/sidebar";
 
 const CONFIG = {
 	server: { port: 16677, tls: { cert: "", key: "" } },
@@ -32,7 +36,7 @@ const CONFIG = {
 					name: "daily-briefing",
 					schedule: "0 * * * * *",
 					prompt: "Summarize updates",
-					target: "signal:+15551234567:+15551234567",
+					target: "channel:+15551234567",
 				},
 			],
 			permissions: {
@@ -408,7 +412,7 @@ test("Slack browse channels shows visible workspace channels", async ({
 		},
 	});
 
-	await openAgentPage(page, "settings/channels");
+	await openChannelSettings(page, "workspace-bot");
 	await page.getByRole("button", { name: "Browse Channels" }).click();
 
 	await expect(
@@ -423,7 +427,7 @@ test("Slack browse channels shows visible workspace channels", async ({
 	await expect(page.getByText("Joined", { exact: true })).toBeVisible();
 });
 
-test("channels use a left list with a reusable right-side editor", async ({
+test("each channel has its own settings page", async ({
 	page,
 }) => {
 	await setAuthToken(page);
@@ -480,18 +484,14 @@ test("channels use a left list with a reusable right-side editor", async ({
 		],
 	});
 
-	await openAgentPage(page, "settings/channels");
+	await openChannelSettings(page, "+15551234567");
 
-	await expect(
-		page.getByRole("button", { name: "Signal +15551234567" }),
-	).toBeVisible();
-	await expect(
-		page.getByRole("button", { name: "Discord server-bot" }),
-	).toBeVisible();
-	await expect(
-		page.getByRole("button", { name: "Slack workspace-bot" }),
-	).toBeVisible();
-	await expect(page.getByLabel("Delete channel")).toHaveCount(3);
+	// One channel, with no list of the others and no delete button: a
+	// channel is removed from its sidebar entry.
+	await expect(page.getByTestId("channel-settings")).toBeVisible();
+	await expect(page.getByLabel("Delete channel")).toHaveCount(0);
+	await expect(page.getByLabel("Remove channel")).toHaveCount(0);
+	await expect(page.getByTestId("channel-owner")).toHaveText("assistant");
 	await expect(
 		page.locator('input[placeholder="+15551234567"]').first(),
 	).toBeVisible();
@@ -499,7 +499,7 @@ test("channels use a left list with a reusable right-side editor", async ({
 		page.getByTestId("channel-secret-assistant-1-token"),
 	).toBeHidden();
 
-	await page.getByRole("button", { name: "Discord server-bot" }).click();
+	await openChannelSettings(page, "server-bot");
 
 	await expect(
 		page.getByTestId("channel-secret-assistant-1-token"),
@@ -520,7 +520,7 @@ test("channels use a left list with a reusable right-side editor", async ({
 		page.getByText("auth:discord_bot_token", { exact: true }),
 	).toHaveCount(0);
 
-	await page.getByRole("button", { name: "Slack workspace-bot" }).click();
+	await openChannelSettings(page, "workspace-bot");
 	await expect(
 		page.getByTestId("channel-secret-assistant-2-url"),
 	).toContainText("slack_app_token");
@@ -586,9 +586,7 @@ test("raw configured channel tokens are masked in dropdowns", async ({
 		],
 	});
 
-	await openAgentPage(page, "settings/channels");
-
-	await page.getByRole("button", { name: "Discord server-bot" }).click();
+	await openChannelSettings(page, "server-bot");
 	await expect(
 		page.getByTestId("channel-secret-assistant-0-token"),
 	).toContainText("discord****");
@@ -599,7 +597,7 @@ test("raw configured channel tokens are masked in dropdowns", async ({
 		page.getByText("discord-plaintext-token", { exact: true }),
 	).toHaveCount(0);
 
-	await page.getByRole("button", { name: "Slack workspace-bot" }).click();
+	await openChannelSettings(page, "workspace-bot");
 	await expect(
 		page.getByTestId("channel-secret-assistant-1-url"),
 	).toContainText("xapp-pl****");
@@ -670,8 +668,7 @@ test("missing auth secrets are highlighted in secret dropdowns", async ({
 		/border-red-300/,
 	);
 
-	await openAgentPage(page, "settings/channels");
-	await page.getByRole("button", { name: "Discord server-bot" }).click();
+	await openChannelSettings(page, "server-bot");
 	await expect(
 		page.getByTestId("channel-secret-assistant-0-token"),
 	).toContainText("missing_discord_token");
@@ -750,7 +747,7 @@ test("tool permissions inspector shows resolved final tool set", async ({
 test("saving settings preserves default-on signal channel checkboxes", async ({
 	page,
 }) => {
-	await openAgentPage(page, "settings/channels");
+	await openChannelSettings(page, "+15551234567");
 
 	const phoneInput = page.locator('input[placeholder="+15551234567"]').first();
 
@@ -760,6 +757,8 @@ test("saving settings preserves default-on signal channel checkboxes", async ({
 	await expect(page.getByLabel("Send read receipts")).toBeChecked();
 
 	await phoneInput.fill("+12132957731");
+	// The channel is named by its ID, so the address follows the edit.
+	await expect(page).toHaveURL(/\/channels\/%2B12132957731\/settings$/);
 	await page.getByRole("button", { name: "Save Changes" }).click();
 
 	await expect(page.getByTitle("Settings saved")).toBeVisible();
@@ -1283,18 +1282,19 @@ test("settings deep links scroll to their section", async ({ page }) => {
 	const heading = (name: string) =>
 		page.getByRole("heading", { name, exact: true });
 
-	await openAgentPage(page, "settings/channels");
-	await expect(heading("Channels")).toBeInViewport();
-	await expect(heading("General")).not.toBeInViewport();
-
 	await openAgentPage(page, "settings/permissions");
 	await expect(heading("Permissions")).toBeInViewport();
 	await expect(heading("General")).not.toBeInViewport();
 
 	// The old tab query params land on the same sections.
-	await page.goto("/agents/assistant/settings?tab=channels");
-	await expect(page).toHaveURL(/\/agents\/assistant\/settings\/channels$/);
-	await expect(heading("Channels")).toBeInViewport();
+	await page.goto("/agents/assistant/settings?tab=permissions");
+	await expect(page).toHaveURL(/\/agents\/assistant\/settings\/permissions$/);
+	await expect(heading("Permissions")).toBeInViewport();
+
+	// Channels moved to their own sidebar section; the old address goes there.
+	await page.goto("/agents/assistant/settings/channels");
+	await expect(page).toHaveURL(/\/agents\/assistant\/channels$/);
+	await expect(heading("Channels")).toHaveCount(0);
 
 	await agentPageLink(page, "Agent Settings").click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/settings$/);

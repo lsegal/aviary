@@ -266,7 +266,7 @@
 									class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Open conversation</router-link>
 							</div>
 							<div class="space-y-4 p-5">
-							<p v-if="!selectedChannel || channelName(selectedChannel).toLowerCase() !== String($route.params.channel ?? '').toLowerCase()"
+							<p v-if="channelNotFound || !selectedChannel"
 								class="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
 								No channel named {{ $route.params.channel }}.
 							</p>
