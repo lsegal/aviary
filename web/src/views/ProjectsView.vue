@@ -29,20 +29,6 @@
 							</p>
 						</div>
 						<div class="flex flex-wrap items-center gap-2 xl:ml-auto">
-							<div role="tablist" aria-label="Project views" class="flex overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
-								<button v-for="v in VIEWS" :key="v.key" type="button" role="tab" :aria-selected="view === v.key"
-									class="px-3 py-1.5" :class="view === v.key ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
-									@click="setView(v.key)">
-									{{ v.key === "schedules" && schedules.length ? `${v.label} ${schedules.length}` : v.label }}
-								</button>
-							</div>
-							<div v-if="view === 'board'" role="tablist" aria-label="Job filter" class="flex overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
-								<button v-for="f in FILTERS" :key="f.key" type="button" role="tab" :aria-selected="filter === f.key"
-									class="px-3 py-1.5" :class="filter === f.key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
-									@click="filter = f.key">
-									{{ f.key === "all" && total ? `${f.label} ${total}` : f.label }}
-								</button>
-							</div>
 							<button v-if="view === 'board'" type="button"
 								class="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 								:disabled="checking" @click="onCheckNow">
@@ -76,12 +62,7 @@
 							{{ error }}
 						</p>
 
-						<SchedulesPanel v-if="view === 'schedules'" v-model:selected="selectedSchedule" :project="project"
-							:schedules="schedules" :agents="owner ? [owner] : scheduleAgents" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
-							:save="saveSchedule" :set-enabled="setScheduleEnabled" :remove="removeSchedule" :run-now="runScheduleNow"
-							:preview="previewSchedule" />
-
-						<template v-else>
+						<template v-if="view === 'board'">
 						<UpNextStrip :runs="upcoming" :now="now" @open="openSchedule" />
 
 						<section v-if="status" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="Job counts">
@@ -101,8 +82,10 @@
 							</span>
 						</section>
 
+						</template>
+
 						<div class="flex flex-wrap items-center gap-3 text-sm" data-testid="job-toolbar">
-							<div class="relative min-w-0 flex-1 sm:max-w-xs">
+							<div v-if="view === 'board'" class="relative min-w-0 flex-1 sm:max-w-xs">
 								<span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400 dark:text-gray-500"
 									aria-hidden="true" data-testid="search-icon">
 									<MagnifyingGlassIcon class="h-4 w-4" />
@@ -110,19 +93,50 @@
 								<input v-model="search" type="search" aria-label="Search jobs" placeholder="Search jobs, logs, #issue, #PR, session…"
 									class="field-input pl-9!" />
 							</div>
-							<span v-if="searching" class="text-gray-500 dark:text-gray-400" data-testid="search-count">
-								{{ total }} of {{ unfilteredTotal }} {{ unfilteredTotal === 1 ? "job matches" : "jobs match" }}
-							</span>
-							<nav v-if="searching || pageCount > 1" class="flex items-center gap-3 sm:ml-auto" aria-label="Job pages">
-								<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
-									:disabled="page === 0" @click="page--">Previous</button>
-								<span class="text-gray-500">Page {{ page + 1 }} of {{ Math.max(pageCount, 1) }}</span>
-								<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
-									:disabled="page + 1 >= pageCount" @click="page++">Next</button>
-							</nav>
+							<div role="tablist" aria-label="Project views" class="flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+								<button v-for="v in VIEWS" :key="v.key" type="button" role="tab" :aria-selected="view === v.key"
+									class="px-3 py-1.5" :class="view === v.key ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
+									@click="setView(v.key)">
+									{{ v.key === "schedules" && schedules.length ? `${v.label} ${schedules.length}` : v.label }}
+								</button>
+							</div>
+							<template v-if="view === 'board'">
+								<div role="tablist" aria-label="Job filter" class="flex overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+									<button v-for="f in FILTERS" :key="f.key" type="button" role="tab" :aria-selected="filter === f.key"
+										class="px-3 py-1.5" :class="filter === f.key ? FILTER_ACTIVE[f.key] : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
+										@click="filter = f.key">
+										{{ f.key === "all" && total ? `${f.label} ${total}` : f.label }}
+									</button>
+								</div>
+								<button type="button" data-testid="kanban-toggle" :aria-pressed="kanban"
+									:aria-label="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
+									:title="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
+									class="rounded-lg border p-1.5"
+									:class="kanban ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
+									@click="kanban = !kanban">
+									<ViewColumnsIcon aria-hidden="true" class="h-5 w-5" />
+								</button>
+								<span v-if="searching" class="text-gray-500 dark:text-gray-400" data-testid="search-count">
+									{{ total }} of {{ unfilteredTotal }} {{ unfilteredTotal === 1 ? "job matches" : "jobs match" }}
+								</span>
+								<nav v-if="!kanban && (searching || pageCount > 1)" class="flex items-center gap-3 sm:ml-auto" aria-label="Job pages">
+									<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
+										:disabled="page === 0" @click="page--">Previous</button>
+									<span class="text-gray-500">Page {{ page + 1 }} of {{ Math.max(pageCount, 1) }}</span>
+									<button type="button" class="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-40 dark:border-gray-700"
+										:disabled="page + 1 >= pageCount" @click="page++">Next</button>
+								</nav>
+							</template>
 						</div>
 
+						<SchedulesPanel v-if="view === 'schedules'" v-model:selected="selectedSchedule" :project="project"
+							:schedules="schedules" :agents="owner ? [owner] : scheduleAgents" :error="scheduleError" :loaded="schedulesLoaded" :now="now"
+							:save="saveSchedule" :set-enabled="setScheduleEnabled" :remove="removeSchedule" :run-now="runScheduleNow"
+							:preview="previewSchedule" />
+
+						<template v-else>
 						<div v-if="loading && !jobs.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
+						<KanbanBoard v-else-if="kanban" :jobs="jobs" :filter="filter" :now="now" />
 						<div v-else-if="!jobs.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
 							<p>No jobs match “<b class="text-gray-800 dark:text-gray-100">{{ search.trim() }}</b>”.</p>
 							<button type="button" class="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -163,12 +177,14 @@
 
 <script setup lang="ts">
 import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
+import ViewColumnsIcon from "@heroicons/vue/24/outline/ViewColumnsIcon";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import JobCard from "../components/projects/JobCard.vue";
+import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
 import SchedulesPanel from "../components/projects/SchedulesPanel.vue";
 import UpNextStrip from "../components/projects/UpNextStrip.vue";
@@ -182,9 +198,11 @@ import { useServerStatus } from "../composables/useServerStatus";
 import { projectOwner, projectSettingsPath } from "../lib/projectSettings";
 import {
 	age,
+	BOARD_STATES,
 	type BoardFilter,
 	type ProjectJob,
 	projectPath,
+	stateLabel,
 	summarizePrompt,
 	targetURL,
 } from "../lib/projects";
@@ -193,11 +211,17 @@ import { useSettingsStore } from "../stores/settings";
 
 const FILTERS: { key: BoardFilter; label: string }[] = [
 	{ key: "all", label: "All" },
-	{ key: "running", label: "Running" },
-	{ key: "waiting", label: "Waiting" },
-	{ key: "done", label: "Done" },
-	{ key: "failed", label: "Failed" },
+	...BOARD_STATES.map((key) => ({ key, label: stateLabel(key) })),
 ];
+// A selected state tab takes that state's color; Starting is orange.
+const FILTER_ACTIVE: Record<BoardFilter, string> = {
+	all: "bg-gray-900 text-white dark:bg-white dark:text-gray-900",
+	starting: "bg-orange-500 text-white",
+	paused: "bg-amber-500 text-white",
+	running: "bg-blue-600 text-white",
+	done: "bg-green-600 text-white",
+	failed: "bg-red-600 text-white",
+};
 
 type ProjectView = "board" | "schedules";
 const VIEWS: { key: ProjectView; label: string }[] = [
@@ -237,6 +261,10 @@ const filter = ref<BoardFilter>("all");
 // whole list rather than one page.
 const search = ref("");
 const searching = computed(() => search.value.trim() !== "");
+// The kanban layout survives reloads, like the prompt chat's open state.
+const KANBAN_KEY = "aviary.projects.kanban";
+const kanban = ref(localStorage.getItem(KANBAN_KEY) === "1");
+watch(kanban, (on) => localStorage.setItem(KANBAN_KEY, on ? "1" : "0"));
 const { version } = useServerStatus();
 const {
 	status,
@@ -252,7 +280,7 @@ const {
 	importProfile,
 	retry,
 	stop,
-} = useProjectBoard(project, filter, search);
+} = useProjectBoard(project, filter, search, kanban);
 const {
 	schedules,
 	upcoming,

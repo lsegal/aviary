@@ -30,7 +30,7 @@ type projectJobListArgs struct {
 	Target string `json:"target,omitempty" jsonschema:"Only list jobs of this project"`
 	Status string `json:"status,omitempty" jsonschema:"Only list jobs with this status, such as active, waiting, queued, paused, failed or complete"`
 	State  string `json:"state,omitempty" jsonschema:"Only list jobs the board shows in this state: starting, paused, running, done or failed"`
-	Query string `json:"query,omitempty" jsonschema:"Only list jobs with this text, case-insensitively, in any field: number, pull request, title, repository, status, skill, agent, session, schedule, or output"`
+	Query  string `json:"query,omitempty" jsonschema:"Only list jobs with this text, case-insensitively, in any field: number, pull request, title, repository, status, skill, agent, session, schedule, or output"`
 	Offset int    `json:"offset,omitempty" jsonschema:"Index of the first job to return"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"Most jobs to return; defaults to 50"`
 }

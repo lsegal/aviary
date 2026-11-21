@@ -13,7 +13,24 @@ export type JobStatus =
 	| "complete"
 	| "failed";
 
-export type BoardFilter = "all" | "running" | "waiting" | "done" | "failed";
+/**
+ * The five states the board shows a job in, as internal/projects/core's
+ * BoardState maps every engine status onto them.
+ */
+export type BoardState = "starting" | "paused" | "running" | "done" | "failed";
+
+export const BOARD_STATES: BoardState[] = [
+	"starting",
+	"paused",
+	"running",
+	"done",
+	"failed",
+];
+
+export type BoardFilter = "all" | BoardState;
+
+/** The state of a job's pull request, empty while it has none. */
+export type PullRequestState = "" | "draft" | "open" | "merged";
 
 export interface ProjectSummary {
 	name: string;
@@ -90,6 +107,8 @@ export interface ProjectJob {
 	number: number;
 	title: string;
 	status: JobStatus;
+	/** The board state the job shows in. */
+	state: BoardState;
 	skill: string;
 	cli: string;
 	issueURL: string;
@@ -97,6 +116,7 @@ export interface ProjectJob {
 	prURL: string;
 	/** The OWNER/REPO hosting the pull request, which differs for forks. */
 	prRepo: string;
+	prState: PullRequestState;
 	waitingReason: string;
 	wakeAt: string;
 	progressDone: number;
@@ -227,6 +247,18 @@ export function normalizeJobStatus(v: unknown): JobStatus {
 	return STATUSES.includes(s) ? s : "queued";
 }
 
+export function normalizeBoardState(v: unknown): BoardState {
+	const s = str(v) as BoardState;
+	return BOARD_STATES.includes(s) ? s : "starting";
+}
+
+const PR_STATES: PullRequestState[] = ["draft", "open", "merged"];
+
+function normalizePullRequestState(v: unknown): PullRequestState {
+	const s = str(v) as PullRequestState;
+	return PR_STATES.includes(s) ? s : "";
+}
+
 const SKILLS: Record<string, string> = {
 	issue: "gh-fix",
 	discussion: "gh-discuss",
@@ -257,12 +289,14 @@ export function normalizeJob(v: unknown): ProjectJob {
 		number,
 		title: str(raw.title),
 		status: normalizeJobStatus(raw.status),
+		state: normalizeBoardState(raw.state),
 		skill: SKILLS[str(raw.kind)] ?? str(raw.kind),
 		cli: model ? `${agent}/${model}` : agent,
 		issueURL,
 		pr: num(raw.pull_request),
 		prURL,
 		prRepo: repoOf(prURL) || repo,
+		prState: normalizePullRequestState(raw.pull_request_state),
 		waitingReason: str(raw.wait_reason),
 		wakeAt: str(raw.wake_at),
 		progressDone: num(progress.done),
@@ -489,42 +523,27 @@ export function sortJobs(jobs: ProjectJob[]): ProjectJob[] {
 	);
 }
 
-/** The engine statuses a board tab shows, or undefined for every job. */
-export function filterStatuses(filter: BoardFilter): JobStatus[] | undefined {
-	switch (filter) {
-		case "running":
-			return ["active", "stopping"];
-		case "waiting":
-			return ["waiting", "paused", "queued"];
-		case "done":
-			return ["complete"];
-		case "failed":
-			return ["failed"];
-		default:
-			return undefined;
-	}
-}
-
-const STATUS_LABELS: Record<JobStatus, string> = {
-	queued: "Queued",
-	active: "Running",
-	waiting: "Waiting",
+const STATE_LABELS: Record<BoardState, string> = {
+	starting: "Starting",
 	paused: "Paused",
-	stopping: "Stopping",
-	complete: "Done",
+	running: "Running",
+	done: "Done",
 	failed: "Failed",
 };
 
-export function statusLabel(status: JobStatus): string {
-	return STATUS_LABELS[status];
+export function stateLabel(state: BoardState): string {
+	return STATE_LABELS[state];
 }
 
-export function statusTone(status: JobStatus): string {
-	if (isRunning(status)) return "blue";
-	if (isWaiting(status)) return "amber";
-	if (status === "failed") return "red";
-	if (status === "complete") return "green";
-	return "gray";
+const PR_STATE_LABELS: Record<Exclude<PullRequestState, "">, string> = {
+	draft: "Draft pull request",
+	open: "Open pull request",
+	merged: "Merged pull request",
+};
+
+/** The hover text of a pull request's state icon. */
+export function pullRequestStateLabel(state: PullRequestState): string {
+	return state ? PR_STATE_LABELS[state] : "Pull request";
 }
 
 export const LIFECYCLE_STEPS = [
@@ -746,6 +765,21 @@ export function normalizeUpcoming(v: unknown): UpcomingRun[] {
 		const raw = obj(u);
 		return { id: str(raw.task_id), name: str(raw.name), at: str(raw.at) };
 	});
+}
+
+/**
+ * What a waiting or paused job waits on, as the engine recorded it, with the
+ * time left until a scheduled wakeup; empty when it records no reason.
+ */
+export function waitText(
+	job: Pick<ProjectJob, "waitingReason" | "wakeAt">,
+	now = Date.now(),
+): string {
+	if (!job.waitingReason) return "";
+	const wake = Date.parse(job.wakeAt);
+	return Number.isNaN(wake) || wake <= now
+		? job.waitingReason
+		: `${job.waitingReason} · wakes ${until(job.wakeAt, now)}`;
 }
 
 /** A compact "in 14m" / "in 3h" countdown to an RFC 3339 timestamp. */

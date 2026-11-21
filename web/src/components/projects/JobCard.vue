@@ -3,7 +3,7 @@
 		class="flex min-w-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
 		<div class="space-y-1.5 p-4">
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-				<JobStatusPill :status="job.status" />
+				<JobStatusPill :state="job.state" />
 				<span v-if="job.scheduled" data-testid="job-scheduled"
 					class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
 					Scheduled
@@ -26,8 +26,7 @@
 					target="_blank" rel="noreferrer" class="hover:underline">#{{ job.number }}</a>
 				<template v-if="job.pr">
 					<span>·</span>
-					<a :href="job.prURL || githubURL(job.prRepo, 'pull', job.pr)" target="_blank" rel="noreferrer"
-						class="hover:underline">PR {{ prLabel }}</a>
+					<PullRequestLink :job="job" />
 				</template>
 				<template v-else-if="job.status !== 'queued' && job.number">
 					<span>·</span>
@@ -84,9 +83,16 @@ import SparklesIcon from "@heroicons/vue/24/outline/SparklesIcon";
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import { computed } from "vue";
 import { projectOwner } from "../../lib/projectSettings";
-import { age, githubURL, jobPath, type ProjectJob } from "../../lib/projects";
+import {
+	age,
+	githubURL,
+	jobPath,
+	type ProjectJob,
+	waitText,
+} from "../../lib/projects";
 import { useSettingsStore } from "../../stores/settings";
 import JobStatusPill from "./JobStatusPill.vue";
+import PullRequestLink from "./PullRequestLink.vue";
 
 const props = defineProps<{
 	job: ProjectJob;
@@ -108,21 +114,7 @@ const runPath = computed(() =>
 	),
 );
 
-// Fork PRs live in another repository, so name it.
-const prLabel = computed(() =>
-	props.job.prRepo && props.job.prRepo !== props.job.repo
-		? `${props.job.prRepo}#${props.job.pr}`
-		: `#${props.job.pr}`,
-);
-
-const waitingText = computed(() => {
-	const { waitingReason, wakeAt } = props.job;
-	if (!waitingReason) return "";
-	const wake = Date.parse(wakeAt);
-	return Number.isNaN(wake) || wake <= props.now
-		? waitingReason
-		: `${waitingReason} · wakes in ${age(new Date(props.now - (wake - props.now)).toISOString(), props.now)}`;
-});
+const waitingText = computed(() => waitText(props.job, props.now));
 
 const progressPct = computed(() =>
 	Math.round((props.job.progressDone / props.job.progressTotal) * 100),

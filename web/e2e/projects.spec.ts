@@ -44,6 +44,18 @@ const actions = (status: string) => ({
 	stop: ["active", "waiting", "paused"].includes(status),
 });
 
+// The board state core.JobSnapshot.BoardState reports for each status of a
+// job whose clone exists.
+const STATE_OF: Record<string, string> = {
+	queued: "starting",
+	active: "running",
+	stopping: "running",
+	waiting: "paused",
+	paused: "paused",
+	complete: "done",
+	failed: "failed",
+};
+
 const job = (fields: {
 	number: number;
 	title: string;
@@ -56,12 +68,16 @@ const job = (fields: {
 	progress?: [number, number];
 	waitReason?: string;
 	target?: string;
+	/** Overrides the board state, such as a running job with no clone yet. */
+	state?: string;
+	prState?: "draft" | "open" | "merged";
 }) => ({
 	key: `${fields.target ?? "lsegal/aviary"}#${fields.number}`,
 	target: fields.target ?? "lsegal/aviary",
 	number: fields.number,
 	title: fields.title,
 	status: fields.status,
+	state: fields.state ?? STATE_OF[fields.status],
 	kind: "issue",
 	agent: fields.agent,
 	model: fields.model,
@@ -72,6 +88,7 @@ const job = (fields: {
 		? {
 				pull_request: fields.pr,
 				pull_request_url: `https://github.com/${fields.prRepo ?? "lsegal/aviary"}/pull/${fields.pr}`,
+				pull_request_state: fields.prState ?? "open",
 			}
 		: {}),
 	...(fields.progress
@@ -96,6 +113,7 @@ const JOBS = [
 		model: "opus",
 		started: 14,
 		pr: 233,
+		prState: "draft",
 		progress: [2, 5],
 	}),
 	job({
@@ -105,6 +123,7 @@ const JOBS = [
 		agent: "codex",
 		model: "gpt-5.5",
 		started: 3,
+		state: "starting",
 	}),
 	job({
 		number: 209,
@@ -135,6 +154,7 @@ const JOBS = [
 		model: "opus",
 		started: 300,
 		pr: 205,
+		prState: "merged",
 	}),
 ];
 
@@ -260,7 +280,8 @@ async function setup(
 			const jobs = JOBS.filter(
 				(j) =>
 					(!args?.target || j.target === args.target) &&
-					(!args?.status || j.status === args.status),
+					(!args?.status || j.status === args.status) &&
+					(!args?.state || j.state === args.state),
 			);
 			return { jobs, total: jobs.length, offset: 0, limit: args?.limit ?? 50 };
 		},
@@ -365,7 +386,9 @@ test("board shows status, ordered job cards and live output", async ({
 	const cards = page.getByTestId("job-card");
 	await expect(cards).toHaveCount(5);
 	// Running and errored jobs come first, finished jobs last.
-	await expect(cards.nth(0)).toContainText("Running");
+	// #221's agent has not reported its clone yet, so it is still starting.
+	await expect(cards.nth(0)).toContainText("Starting");
+	await expect(cards.nth(0).getByTestId("job-state")).toHaveClass(/orange/);
 	await expect(cards.nth(1)).toContainText("Running");
 	await expect(cards.nth(2)).toContainText("#209");
 	await expect(cards.nth(4)).toContainText("Done");
@@ -374,7 +397,7 @@ test("board shows status, ordered job cards and live output", async ({
 	// Fork-aware PR link, waiting reason and checklist progress.
 	const paused = cards.filter({ hasText: "#214" });
 	await expect(
-		paused.getByRole("link", { name: "PR someone/aviary#229" }),
+		paused.getByRole("link", { name: /PR someone\/aviary#229/ }),
 	).toHaveAttribute("href", "https://github.com/someone/aviary/pull/229");
 	await expect(paused.getByTestId("job-waiting")).toHaveText(
 		"Stacked on PR #226, waiting for it to merge",
@@ -411,15 +434,12 @@ test("retry, stop, filters and check now call project tools", async ({
 	const done = page.getByTestId("job-card").filter({ hasText: "#200" });
 	await expect(done.getByRole("button", { name: "Stop" })).toHaveCount(0);
 
-	await page.getByRole("tab", { name: "Waiting" }).click();
+	await page.getByRole("tab", { name: "Paused" }).click();
 	await expect(page.getByTestId("job-card")).toHaveCount(1);
 	await expect(page.getByTestId("job-card")).toContainText("#214");
-	const statuses = calls.project_job_list
-		.filter((c) => c.status)
-		.map((c) => c.status);
-	expect(statuses).toEqual(
-		expect.arrayContaining(["waiting", "paused", "queued"]),
-	);
+	await expect
+		.poll(() => calls.project_job_list.some((c) => c.state === "paused"))
+		.toBe(true);
 
 	await page.getByRole("button", { name: "Check now" }).click();
 	await expect
@@ -841,7 +861,8 @@ test("search filters the whole job list across every field", async ({
 			const scoped = many.filter(
 				(j) =>
 					(!args?.target || j.target === args.target) &&
-					(!args?.status || j.status === args.status),
+					(!args?.status || j.status === args.status) &&
+					(!args?.state || j.state === args.state),
 			);
 			const found = query ? scoped.filter((j) => matches(j, query)) : scoped;
 			const offset = Number(args?.offset ?? 0);
@@ -920,4 +941,114 @@ test("search filters the whole job list across every field", async ({
 	await expect(search).toHaveValue("");
 	await expect(pages).toContainText("Page 1 of 3");
 	await expect(cards).toHaveCount(12);
+});
+
+test("the view tabs, five state filters and kanban toggle sit beside the search", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const toolbar = page.getByTestId("job-toolbar");
+	await expect(
+		toolbar.getByRole("searchbox", { name: "Search jobs" }),
+	).toBeVisible();
+	await expect(
+		toolbar.getByRole("tablist", { name: "Project views" }),
+	).toBeVisible();
+	await expect(
+		toolbar.getByRole("tablist", { name: "Job filter" }).getByRole("tab"),
+	).toHaveText([/^All/, "Starting", "Paused", "Running", "Done", "Failed"]);
+	await expect(toolbar.getByTestId("kanban-toggle")).toBeVisible();
+	// The header no longer carries its own copy of the tabs.
+	await expect(
+		page.getByRole("tablist", { name: "Project views" }),
+	).toHaveCount(1);
+	await expect(page.getByRole("tablist", { name: "Job filter" })).toHaveCount(
+		1,
+	);
+
+	// Each state filter shows exactly that state's jobs.
+	for (const [tab, numbers] of [
+		["Starting", ["#221"]],
+		["Running", ["#218"]],
+		["Paused", ["#214"]],
+		["Done", ["#200"]],
+		["Failed", ["#209"]],
+	] as const) {
+		await toolbar.getByRole("tab", { name: tab }).click();
+		const cards = page.getByTestId("job-card");
+		await expect(cards).toHaveCount(numbers.length);
+		for (const n of numbers) await expect(cards).toContainText(n);
+	}
+});
+
+test("a job card's PR icon is colored by its pull request state", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const icon = (n: string) =>
+		page
+			.getByTestId("job-card")
+			.filter({ hasText: n })
+			.getByTestId("pr-state-icon");
+	for (const [n, label, color] of [
+		["#218", "Draft pull request", /text-gray-400/],
+		["#209", "Open pull request", /text-green-600/],
+		["#200", "Merged pull request", /text-purple-600/],
+	] as const) {
+		await expect(icon(n)).toHaveAttribute("aria-label", label);
+		await expect(icon(n).locator("title")).toHaveText(label);
+		await expect(icon(n)).toHaveClass(color);
+	}
+});
+
+test("the kanban view lays jobs out in five columns of compact cards", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await expect(page.getByTestId("job-card")).toHaveCount(5);
+	const toggle = page.getByTestId("kanban-toggle");
+	await toggle.click();
+	await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+	const columns = page.getByTestId("kanban-column");
+	await expect(columns).toHaveCount(5);
+	await expect(columns.locator("h3")).toHaveText([
+		/Starting\s*1/,
+		/Paused\s*1/,
+		/Running\s*1/,
+		/Done\s*1/,
+		/Failed\s*1/,
+	]);
+	await expect(page.getByTestId("job-card")).toHaveCount(0);
+	const cards = page.getByTestId("kanban-card");
+	await expect(cards).toHaveCount(5);
+	// Compact cards: truncated title, PR, timing, and no output.
+	const running = columns
+		.filter({ hasText: "Running" })
+		.getByTestId("kanban-card");
+	await expect(running.locator("a").first()).toHaveClass(/\btruncate\b/);
+	await expect(running.getByTestId("job-pr")).toContainText("PR #233");
+	await expect(running.getByTestId("kanban-timing")).toHaveText("14m");
+	await expect(page.getByTestId("job-output")).toHaveCount(0);
+	// A paused card says what it waits on, from the job's recorded reason.
+	await expect(
+		columns.filter({ hasText: "Paused" }).getByTestId("kanban-paused-reason"),
+	).toHaveText("Stacked on PR #226, waiting for it to merge");
+	// The kanban reads every job at once rather than a page.
+	await expect.poll(() => calls.project_job_list.at(-1)?.limit).toBe(1000);
+
+	// A state filter narrows the board to that state's column.
+	await page.getByRole("tab", { name: "Paused" }).click();
+	await expect(columns).toHaveCount(1);
+	await expect(columns).toHaveAttribute("data-state", "paused");
+
+	// The layout survives a reload.
+	await page.reload();
+	await expect(page.getByTestId("kanban-toggle")).toHaveAttribute(
+		"aria-pressed",
+		"true",
+	);
 });

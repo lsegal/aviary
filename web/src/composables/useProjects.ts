@@ -1,7 +1,6 @@
 import { onMounted, onUnmounted, type Ref, ref, watch } from "vue";
 import {
 	type BoardFilter,
-	filterStatuses,
 	type JobDetail,
 	normalizeJobDetail,
 	normalizeJobList,
@@ -25,8 +24,7 @@ export const PROJECTS_POLL_MS = 2_000;
 /** Lines of terminal output shown on a board card. */
 export const CARD_OUTPUT_LINES = 12;
 export const JOBS_PAGE_SIZE = 12;
-// project_job_list's page size when the board filters by several statuses
-// and pages the merged result itself.
+// project_job_list's page size when the board reads every job at once.
 const ALL_JOBS_LIMIT = 1_000;
 
 // Polls fn every interval while the component is mounted, without
@@ -82,12 +80,14 @@ export function useProjectList(interval = 10_000) {
 /**
  * A project's live status and one page of its jobs with their recent output.
  * A non-empty search narrows the jobs to those with the text in any field,
- * including their output, and total then counts only the matches.
+ * including their output, and total then counts only the matches. In kanban
+ * mode it reads every job in the filter instead, without their output.
  */
 export function useProjectBoard(
 	project: Ref<string>,
 	filter: Ref<BoardFilter>,
 	search: Ref<string> = ref(""),
+	kanban: Ref<boolean> = ref(false),
 ) {
 	const { callTool } = useMCP();
 	const status = ref<ProjectStatus | null>(null);
@@ -100,47 +100,24 @@ export function useProjectBoard(
 	const loading = ref(true);
 
 	async function listJobs(target: string) {
-		const statuses = filterStatuses(filter.value);
-		const query = search.value.trim() || undefined;
-		if (!statuses) {
-			const list = normalizeJobList(
-				parseToolJSON(
-					await callTool("project_job_list", {
-						target,
-						query,
-						offset: page.value * JOBS_PAGE_SIZE,
-						limit: JOBS_PAGE_SIZE,
-					}),
-				),
-			);
-			return {
-				jobs: sortJobs(list.jobs),
-				total: list.total,
-				unfilteredTotal: list.unfilteredTotal,
-			};
-		}
-		// project_job_list filters by one status, so a tab that shows several
-		// merges them and pages the result here.
-		const lists = await Promise.all(
-			statuses.map(async (s) =>
-				normalizeJobList(
-					parseToolJSON(
-						await callTool("project_job_list", {
-							target,
-							status: s,
-							query,
-							limit: ALL_JOBS_LIMIT,
-						}),
-					),
-				),
+		// The kanban view lays every job out in its state's column, so it
+		// reads them all instead of one page.
+		const all = kanban.value;
+		const list = normalizeJobList(
+			parseToolJSON(
+				await callTool("project_job_list", {
+					target,
+					state: filter.value === "all" ? undefined : filter.value,
+					query: search.value.trim() || undefined,
+					offset: all ? 0 : page.value * JOBS_PAGE_SIZE,
+					limit: all ? ALL_JOBS_LIMIT : JOBS_PAGE_SIZE,
+				}),
 			),
 		);
-		const all = sortJobs(lists.flatMap((l) => l.jobs));
-		const start = page.value * JOBS_PAGE_SIZE;
 		return {
-			jobs: all.slice(start, start + JOBS_PAGE_SIZE),
-			total: all.length,
-			unfilteredTotal: lists.reduce((n, l) => n + l.unfilteredTotal, 0),
+			jobs: sortJobs(list.jobs),
+			total: list.total,
+			unfilteredTotal: list.unfilteredTotal,
 		};
 	}
 
@@ -158,10 +135,10 @@ export function useProjectBoard(
 				callTool("project_status", {}),
 				listJobs(target),
 			]);
-			// Every visible card shows its job's latest terminal output, which
-			// streams while the job runs.
+			// Every visible list card shows its job's latest terminal output,
+			// which streams while the job runs; kanban cards show none.
 			await Promise.all(
-				list.jobs.map(async (j) => {
+				(kanban.value ? [] : list.jobs).map(async (j) => {
 					try {
 						const detail = normalizeJobDetail(
 							parseToolJSON(
@@ -194,7 +171,7 @@ export function useProjectBoard(
 
 	const { refresh } = usePoll(load, PROJECTS_POLL_MS);
 
-	watch([project, filter], () => {
+	watch([project, filter, kanban], () => {
 		page.value = 0;
 		loading.value = true;
 		void refresh();
