@@ -688,7 +688,6 @@ onBeforeUnmount(() => {
 const systemPrimary: NavChild[] = [
 	{ key: "overview", label: "Overview", to: "/system/overview" },
 	{ key: "settings", label: "Settings", to: "/system/settings" },
-	{ key: "projects", label: "Projects", to: "/system/projects" },
 	{ key: "providers", label: "Providers & Auth", to: "/system/providers" },
 	{ key: "usage", label: "Usage", to: "/system/usage" },
 ];

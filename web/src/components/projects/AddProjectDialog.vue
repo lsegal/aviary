@@ -82,6 +82,7 @@ import {
 	type CheckStatus,
 	checkLabel,
 	jobModels,
+	PROJECTS_SETTINGS_PATH,
 	projectOwner,
 	settingsFromSection,
 } from "../../lib/projectSettings";
@@ -161,7 +162,7 @@ async function start() {
 function changeSettings() {
 	emit("close");
 	void router.push(
-		`/system/projects?${new URLSearchParams({ agent: agent.value, add: normalized.value })}`,
+		`${PROJECTS_SETTINGS_PATH}?${new URLSearchParams({ agent: agent.value, add: normalized.value })}`,
 	);
 }
 
