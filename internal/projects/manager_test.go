@@ -38,7 +38,7 @@ func ownedBy(settings config.ProjectsConfig, targets ...string) *config.Config {
 		list = append(list, config.ProjectConfig{Target: target})
 	}
 	return &config.Config{
-		Agents:   []config.AgentConfig{{Name: "coder", Model: "cli/codex", Projects: config.AgentProjectsConfig{List: list}}},
+		Agents:   []config.AgentConfig{{Name: "coder", Model: "cli/codex", Projects: list}},
 		Projects: settings,
 	}
 }
@@ -47,12 +47,8 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	m := newTestManager(t)
 	m.Reconcile(&config.Config{
 		Agents: []config.AgentConfig{
-			{Name: "shared", Model: "cli/codex", Projects: config.AgentProjectsConfig{
-				List: []config.ProjectConfig{{Target: "o/b"}},
-			}},
-			{Name: "opus", Model: "cli/claude/opus", Fallbacks: []string{"cli/codex"}, Projects: config.AgentProjectsConfig{
-				List: []config.ProjectConfig{{Target: "o/a"}},
-			}},
+			{Name: "shared", Model: "cli/codex", Projects: config.AgentProjectsConfig{{Target: "o/b"}}},
+			{Name: "opus", Model: "cli/claude/opus", Fallbacks: []string{"cli/codex"}, Projects: config.AgentProjectsConfig{{Target: "o/a"}}},
 			{Name: "high", Model: "cli/codex:high"},
 		},
 		Projects: config.ProjectsConfig{Concurrency: 2, Interval: "1m"},
@@ -127,8 +123,8 @@ func TestManagerAgentModelsDefaultFromModelsSection(t *testing.T) {
 	m := newTestManager(t)
 	m.Reconcile(&config.Config{
 		Agents: []config.AgentConfig{
-			{Name: "plain", Projects: config.AgentProjectsConfig{List: []config.ProjectConfig{{Target: "o/a"}}}},
-			{Name: "api", Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/claude/opus"}, Projects: config.AgentProjectsConfig{List: []config.ProjectConfig{{Target: "o/b"}}}},
+			{Name: "plain", Projects: config.AgentProjectsConfig{{Target: "o/a"}}},
+			{Name: "api", Model: "anthropic/claude-sonnet-5-5", Fallbacks: []string{"cli/claude/opus"}, Projects: config.AgentProjectsConfig{{Target: "o/b"}}},
 		},
 		Models: config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/gemini/pro", Fallbacks: []string{"cli/codex"}}},
 	})
