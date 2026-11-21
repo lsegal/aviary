@@ -283,7 +283,8 @@ func resolveAllowedAgentPath(ctx context.Context, rawPath, operation string) (st
 		if access.static == nil {
 			return "", nil, fmt.Errorf("%s path is outside the job's granted directory: %s", operation, resolved)
 		}
-		return "", nil, fmt.Errorf("%s path is outside the filesystem allowlist: %s", operation, resolved)
+		_, rule := access.static.Decide(resolved)
+		return "", nil, fmt.Errorf("%s refused by Aviary: the agent's Filesystem Allowed Paths %s: %s", operation, refusingRule(rule), resolved)
 	}
 	return resolved, access, nil
 }

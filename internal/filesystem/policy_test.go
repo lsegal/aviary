@@ -107,3 +107,35 @@ func TestPolicyFromAgentNilSafe(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, policy.Allows(allowed))
 }
+
+func TestPolicyDecideNamesTheRule(t *testing.T) {
+	workspace := t.TempDir()
+	policy, err := NewPolicy([]string{"./**", "!./secret/**"}, workspace)
+	require.NoError(t, err)
+
+	denied, err := ResolvePath("./secret/plan.md", workspace)
+	require.NoError(t, err)
+	allowed, rule := policy.Decide(denied)
+	assert.False(t, allowed)
+	assert.Equal(t, "!./secret/**", rule)
+
+	outside, err := ResolvePath(filepath.Join(t.TempDir(), "x"), workspace)
+	require.NoError(t, err)
+	allowed, rule = policy.Decide(outside)
+	assert.False(t, allowed)
+	assert.Empty(t, rule)
+}
+
+func TestExpandRulesForAnotherEnforcer(t *testing.T) {
+	workspace := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(workspace, "docs"), 0o700))
+	rules, err := ExpandRules([]string{"./docs/**", "!./docs/secret.md", "./docs", "", "@/**"}, workspace)
+	require.NoError(t, err)
+	docs := filepath.Join(workspace, "docs")
+	assert.Equal(t, []ExpandedRule{
+		{Pattern: filepath.Join(docs, "**"), Dir: docs},
+		{Pattern: filepath.Join(docs, "secret.md"), Dir: docs, Negated: true},
+		{Pattern: docs, Dir: docs},
+		{Pattern: filepath.Join(config.BaseDir(), "**"), Dir: config.BaseDir()},
+	}, rules)
+}

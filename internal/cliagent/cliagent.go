@@ -95,6 +95,13 @@ type Options struct {
 	// provider definition declares them. They widen which directories are in
 	// scope, never what the approval mode allows there.
 	ExtraDir []string
+	// Permissions are the CLI's native allow and deny arguments carrying the
+	// agent's exec and filesystem rules, as its CLI provider definition
+	// translates them for the approval mode.
+	Permissions []string
+	// RefusalNote, when set, is added to a CLI tool's error when the CLI's
+	// own permission check refused the call, naming that layer.
+	RefusalNote string
 	// ResumeID is the CLI-native session ID to resume. Empty starts a new
 	// session; the new ID is reported with an EventSession event.
 	ResumeID string

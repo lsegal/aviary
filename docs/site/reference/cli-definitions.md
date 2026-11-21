@@ -81,6 +81,7 @@ Anything wrong with an entry is an error naming the agent and the field: a field
 | `defaultModel` | string | no | none | The model used when none is named. See [`defaultModel`](#defaultmodel). |
 | `approval` | map | no | none | The CLI's flags for each approval mode. See [`approval` and `extraDir`](#approval-and-extradir). |
 | `extraDir` | map | no | none | The flags that add one more directory to the CLI's scope. See [`approval` and `extraDir`](#approval-and-extradir). |
+| `permissions` | map | no | none | The flags that pass an agent's exec and filesystem rules to the CLI. See [`permissions`](#permissions). |
 | `output` | object | yes | | How stdout is decoded. See [`output`](#output). |
 | `missingSession` | string[] | no | none | Extra phrases that mean the session to resume is gone. See [`missingSession`](#missingsession). |
 | `wakeup` | object | no | none | How the CLI ends a turn asking to be woken later. See [Deferred turns](/guide/projects#deferred-turns). |
@@ -163,6 +164,19 @@ So `{when: model, args: [--model, "{model}"]}` passes a model only when one was 
 
 `extraDir` maps the same modes to the flags that add one more directory to the CLI's scope, with `{dir}`, `{dirQuoted}` (a quoted TOML string) or `{dirPosix}` (`C:\a` becomes `/c/a`) standing for it. Chat turns use it to keep the agent's own directory in scope wherever it works.
 
+### `permissions`
+
+`permissions` maps the same modes, with the same fallback, to the flags that pass each of a chat agent's [exec and filesystem rules](/reference/config#agents-permissions) on to the CLI's own allow and deny rules. Each mode lists up to four templates, each rendered once per rule:
+
+| Field | Rendered for | Placeholders |
+| --- | --- | --- |
+| `allowCommand` | each `exec.allowed_commands` rule | `{commandSpec}`: `(pattern)`, or nothing for `*` |
+| `denyCommand` | each `!` command rule | `{commandSpec}` |
+| `allowPath` | each `filesystem.allowed_paths` rule | `{path}` and `{pathPosix}` (the expanded pattern), `{dir}` and `{dirPosix}` (the directory its globs sit under) |
+| `denyPath` | each `!` path rule | the same as `allowPath` |
+
+A template left out passes nothing for that kind of rule. `claude` declares the allows for `auto` only and the denies for every mode, as `[--allowedTools, "Bash{commandSpec}"]` and `[--disallowedTools, "Edit(/{pathPosix})"]`.
+
 ### `minVersion`
 
 An argv is written against a particular release of its CLI. When an older one is installed, the flags do not exist yet and the run dies on an unrecognized-argument error that says nothing about the version. With `minVersion: "0.58.0"`, Aviary runs `binary --version` before each dispatch and compares it:
@@ -177,11 +191,17 @@ Versions are compared component by component, so `0.9.0` is older than `0.58.0`,
 
 Some CLIs keep their settings, sign-in and sessions in one directory and write bookkeeping into a settings file there; Codex records every workspace it runs with write access in as a trusted project in `config.toml`. `configHome` launches such a CLI against an overlay of that directory kept in Aviary's data directory: each `private` file is a copy, so the CLI reads your settings but its writes stay in the overlay, and every other entry links back to yours, so sign-in and sessions are shared.
 
+Claude Code, for another, ignores the permission allow entries of a workspace it has not recorded as trusted in `.claude.json`, even under `-p`, and a job's fresh clone never is. `configHome.trust` records every workspace a launch runs in as trusted in the overlay's copy instead, so the workspace's settings apply in every approval mode while your own `.claude.json` is left untouched.
+
 | Field | Description |
 | --- | --- |
 | `configHome.env` | The variable the CLI reads its directory from, such as `CODEX_HOME`. |
 | `configHome.default` | The directory used when that variable is unset; a leading `~/` is your home directory. |
 | `configHome.private` | Files directly inside the directory that each launch gets its own copy of. |
+| `configHome.outside` | Optional. Maps a `private` file to where it lives while the variable is unset, when that is outside the directory; Claude Code keeps `~/.claude.json` beside `~/.claude`. |
+| `configHome.storageEnv` | Optional. A variable set to your own value of `configHome.env`, empty when unset, for a CLI that keys stored sign-in to its directory, such as `CLAUDE_SECURESTORAGE_CONFIG_DIR` for Claude Code's macOS keychain entry. |
+| `configHome.trust.file` | Optional. The `private` JSON file the CLI records trusted workspaces in. |
+| `configHome.trust.path` | The keys, from the top of that file, to the value set to `true` for a trusted workspace; `{dir}` stands for the workspace's absolute path with forward slashes. |
 
 ### `session`
 

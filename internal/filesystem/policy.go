@@ -44,17 +44,70 @@ func NewPolicy(patterns []string, baseDir string) (*Policy, error) {
 
 // Allows reports whether the resolved path is allowed by the ordered rule set.
 func (p *Policy) Allows(resolvedPath string) bool {
+	allowed, _ := p.Decide(resolvedPath)
+	return allowed
+}
+
+// Decide reports whether the resolved path is allowed and the rule that
+// decided it, as written: the last rule that matches. The rule is empty when
+// none matches.
+func (p *Policy) Decide(resolvedPath string) (bool, string) {
 	if p == nil {
-		return false
+		return false, ""
 	}
 	path := normalizePath(resolvedPath)
-	allowed := false
+	allowed, decided := false, ""
 	for _, rule := range p.rules {
 		if rule.matcher.MatchString(path) {
-			allowed = !rule.negated
+			allowed, decided = !rule.negated, strings.TrimSpace(rule.raw)
 		}
 	}
-	return allowed
+	return allowed, decided
+}
+
+// ExpandedRule is an allowlist rule with its pattern expanded to an absolute
+// path, and Dir the directory its globs sit under.
+type ExpandedRule struct {
+	Pattern string
+	Dir     string
+	Negated bool
+}
+
+// ExpandRules expands each of the ordered rules the way NewPolicy does, to
+// pass them on to another enforcer such as a CLI session's own permission
+// rules. Patterns keep their case and the OS's separators.
+func ExpandRules(patterns []string, baseDir string) ([]ExpandedRule, error) {
+	var rules []ExpandedRule
+	for _, raw := range patterns {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		negated := strings.HasPrefix(trimmed, "!")
+		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "!"))
+		expanded, err := expandPath(trimmed, true, baseDir)
+		if err != nil {
+			return nil, fmt.Errorf("invalid allowlist rule %q: %w", raw, err)
+		}
+		expanded = filepath.Clean(expanded)
+		rules = append(rules, ExpandedRule{Pattern: expanded, Dir: globDir(expanded), Negated: negated})
+	}
+	return rules, nil
+}
+
+// globDir is the deepest directory in pattern with no glob in it: pattern
+// itself when it names an existing directory, or else its parent.
+func globDir(pattern string) string {
+	parts := splitPathParts(pattern)
+	for i, part := range parts {
+		if strings.ContainsAny(part, "*?[") {
+			return joinPathParts(parts[:i])
+		}
+	}
+	if info, err := os.Stat(pattern); err == nil && info.IsDir() {
+		return pattern
+	}
+	return filepath.Dir(pattern)
 }
 
 // MayAllowWithin reports whether the policy could allow dir itself or any path

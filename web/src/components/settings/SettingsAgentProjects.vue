@@ -14,7 +14,9 @@
 						<button type="button" class="min-w-0 flex-1 truncate text-left font-mono text-sm text-gray-900 dark:text-white"
 							:aria-pressed="t === selected" @click="selected = t">{{ t }}</button>
 						<router-link :to="projectPath(agent.name, t)" class="text-xs text-blue-600 hover:underline dark:text-blue-400">Board</router-link>
-						<button v-if="!savedTargets.includes(t)" type="button" :class="ICON_BTN" :aria-label="`Remove ${t}`"
+						<button v-if="savedTargets.includes(t)" type="button" :class="ICON_BTN" :aria-label="`Delete ${t}`"
+							title="Delete project" @click="deleting = t">✕</button>
+						<button v-else type="button" :class="ICON_BTN" :aria-label="`Remove ${t}`"
 							title="Not saved yet" @click="removeProject(t)">✕</button>
 					</li>
 				</ul>
@@ -111,13 +113,13 @@
 			</div>
 		</section>
 
-		<DeleteProjectSection v-if="selected && savedTargets.includes(selected)" :target="selected" @deleted="onDeleted" />
-
 		<section :class="CARD">
 			<h3 :class="CARD_HEAD">YAML <span :class="CARD_NOTE">Only what differs from defaults ends up in aviary.yaml</span></h3>
 			<pre data-testid="agent-project-yaml"
 				class="overflow-x-auto rounded-b-xl bg-gray-50 px-4 py-3 font-mono text-xs text-gray-800 dark:bg-gray-900 dark:text-gray-200">{{ yaml || "# Every setting is a default, so nothing is written." }}</pre>
 		</section>
+
+		<DeleteProjectDialog :target="deleting" @close="deleting = ''" @deleted="onDeleted" />
 	</div>
 </template>
 
@@ -147,7 +149,7 @@ import {
 } from "../../lib/projectSettings";
 import { projectPath } from "../../lib/projects";
 import { type AgentEntry, useSettingsStore } from "../../stores/settings";
-import DeleteProjectSection from "../projects/DeleteProjectSection.vue";
+import DeleteProjectDialog from "../projects/DeleteProjectDialog.vue";
 
 const props = defineProps<{
 	/** The agent whose projects are edited; its projects field is updated in place. */
@@ -271,8 +273,12 @@ const savedTargets = computed(() =>
 	),
 );
 
-async function onDeleted() {
-	removeProject(selected.value);
+// The saved project whose ✕ opened the delete confirmation.
+const deleting = ref("");
+
+async function onDeleted(target: string) {
+	deleting.value = "";
+	removeProject(target);
 	await settingsStore.fetchConfig();
 }
 

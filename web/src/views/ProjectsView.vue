@@ -103,8 +103,12 @@
 
 						<div class="flex flex-wrap items-center gap-3 text-sm" data-testid="job-toolbar">
 							<div class="relative min-w-0 flex-1 sm:max-w-xs">
+								<span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400 dark:text-gray-500"
+									aria-hidden="true" data-testid="search-icon">
+									<MagnifyingGlassIcon class="h-4 w-4" />
+								</span>
 								<input v-model="search" type="search" aria-label="Search jobs" placeholder="Search jobs, logs, #issue, #PR, session…"
-									class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
+									class="field-input pl-9!" />
 							</div>
 							<span v-if="searching" class="text-gray-500 dark:text-gray-400" data-testid="search-count">
 								{{ total }} of {{ unfilteredTotal }} {{ unfilteredTotal === 1 ? "job matches" : "jobs match" }}
@@ -158,6 +162,7 @@
 </template>
 
 <script setup lang="ts">
+import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
