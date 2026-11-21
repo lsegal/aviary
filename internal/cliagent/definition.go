@@ -224,6 +224,14 @@ func (s *definitionSession) wiring() (args, env []string, cleanup func(), err er
 			AuthEnv:  mcpAuthEnv,
 			Timeout:  MCPToolTimeout,
 		}
+		if ext, ok := s.definition.MCPAllowFileExtension(); ok {
+			path, remove, err := writeTempFile("aviary-mcp-allow-*"+ext, s.definition.MCPAllowFile(values))
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("writing the MCP allow file: %w", err)
+			}
+			cleanups = append(cleanups, remove)
+			values.AllowFile = path
+		}
 		if s.definition.MCPWritesFile() {
 			data, err := s.definition.MCPFile(values)
 			if err != nil {

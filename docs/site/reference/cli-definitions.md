@@ -192,6 +192,7 @@ A mode may also list `enforce`: flags, with no placeholders, that replace the mo
 | `args` | string[] | Arguments added to `args.run` and `args.resume` where their `{approval}` argument stands, so both templates need one. |
 | `env` | map of string | Extra environment for the turn. |
 | `file` | object | A JSON document written to a temporary file for each turn and removed afterwards. `{mcpFile}` names its path in `args` or `env`. A string that is exactly `{mcpTimeoutMs}` or `{mcpTimeoutSec}` is written as a number. |
+| `allowFile` | object | A text file written to a temporary file for each turn and removed afterwards, for a CLI whose read-only mode refuses the registered server's tools unless a file of its own, such as a policy, allows them. `lines` (required) are its content, one string per line, and may use the placeholders below other than the file paths. `extension`, such as `.toml`, ends its path, for a CLI that only reads files with one. `{mcpAllowFile}` names its path in `args`, `env` or `file`. |
 | `toolPrefix` | string | Required. How the CLI's output names a tool from the registered server, such as `mcp_{mcpName}_`. Aviary's MCP boundary reports those calls itself, so the chat leaves them out of what it reads from the CLI's output instead of reporting them twice. |
 
 Their strings may use these placeholders, and must use `{mcpUrl}` and one of the two token variables:
@@ -204,6 +205,7 @@ Their strings may use these placeholders, and must use `{mcpUrl}` and one of the
 | `{mcpAuthEnv}` | `AVIARY_MCP_AUTHORIZATION`, the variable holding the whole `Bearer <token>` header value, for a CLI that only expands a variable standing for a whole setting |
 | `{mcpTimeoutMs}`, `{mcpTimeoutSec}` | how long the CLI should wait on one tool call (30 minutes) |
 | `{mcpFile}` | the path `file` was written to |
+| `{mcpAllowFile}` | the path `allowFile` was written to |
 
 ::: v-pre
 A placeholder sits inside the CLI's own variable syntax, so `"Bearer ${{mcpTokenEnv}}"` renders as `Bearer ${AVIARY_MCP_TOKEN}`.
@@ -224,14 +226,26 @@ The built-in `gemini` definition declares both. It writes the server to a settin
         "trust": true,
         "timeout": "{mcpTimeoutMs}"
       }
-    }
+    },
+    "policyPaths": ["{mcpAllowFile}", "~/.gemini/policies"]
+  },
+  "allowFile": {
+    "extension": ".toml",
+    "lines": [
+      "[[rule]]",
+      "toolName = \"*\"",
+      "mcpName = \"{mcpName}\"",
+      "decision = \"allow\"",
+      "priority = 100",
+      "modes = [\"plan\"]"
+    ]
   },
   "toolPrefix": "mcp_{mcpName}_"
 },
 "systemPrompt": {"env": {"GEMINI_SYSTEM_MD": "{systemPromptFile}"}}
 ```
 
-`trust` skips Gemini CLI's own confirmation, since Aviary checks every call at its MCP boundary. Gemini CLI's read-only `plan` mode, used when the agent's built-in tools are off, still refuses MCP tools it does not know to be read-only.
+`trust` skips Gemini CLI's own confirmation, since Aviary checks every call at its MCP boundary. Gemini CLI's read-only `plan` mode, used when the agent's built-in tools are off, ignores `trust` and refuses MCP tools it does not know to be read-only, so the `allowFile` policy, loaded through `policyPaths`, allows the registered server's tools in `plan` mode. Gemini CLI's own write and shell tools stay refused there. A `policyPaths` setting replaces Gemini CLI's default user policy directory, so the definition lists `~/.gemini/policies` too, keeping your own policies in force.
 
 A CLI that takes per-run settings as arguments uses `args` instead. The built-in `muse` definition does, since Muse Code takes one JSON setting per `-c` flag and expands a variable only when it stands for a whole value:
 
@@ -247,7 +261,7 @@ A CLI that takes per-run settings as arguments uses `args` instead. The built-in
 "systemPrompt": {"args": ["-c", "run.system_prompt_append={systemPromptJSON}"]}
 ```
 
-Muse Code loads MCP servers only in a trusted workspace, so the block adds `--trust-workspace`, which also loads the workspace's own skills and rules for the turn. It offers the server's tools as `mcp__aviary.<tool>` and reports a call as `mcp__aviary__<tool>`. `run.system_prompt_append` adds the prompt after Muse Code's built-in instructions instead of replacing them; Muse Code has no setting that reads the prompt from a file and does not expand variables in it, so the prompt goes on the command line, as it does for `codex`.
+Muse Code loads MCP servers only in a trusted workspace, so the block adds `--trust-workspace`, which also loads the workspace's own skills and rules for the turn. It offers the server's tools as `mcp__aviary.<tool>` and reports a call as `mcp__aviary__<tool>`. `run.system_prompt_append` adds the prompt after Muse Code's built-in instructions instead of replacing them; Muse Code has no setting that reads the prompt from a file and does not expand variables in it, so the prompt goes on the command line, as it does for `codex`. Muse Code's read-only mode, the built-in `:read-only` permission profile used when the agent's built-in tools are off, runs MCP calls, while its sandbox refuses writes.
 
 ### `minVersion`
 
