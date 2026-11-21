@@ -29,7 +29,7 @@ import (
 
 // Watch is a set of targets watched for the life of the server without being
 // saved to aviary.yaml, as `aviary watch` starts them. Settings overrides the
-// agents' projects settings for the whole engine while the watch runs; only
+// shared projects settings for the whole engine while the watch runs; only
 // its non-zero fields apply.
 type Watch struct {
 	Targets []string `json:"targets"`
@@ -52,9 +52,10 @@ type Manager struct {
 	// engines.
 	refreshMu sync.Mutex
 	mu        sync.Mutex
-	// cfg is every agent's projects merged for the engine, and owners maps
-	// each saved target to the agent that owns it.
+	// cfg is the shared projects settings, list is every agent's projects,
+	// and owners maps each saved target to the agent that owns it.
 	cfg     config.ProjectsConfig
+	list    []config.ProjectConfig
 	owners  map[string]string
 	browser config.BrowserConfig
 	// agents holds the Aviary agents and models: section; a project's jobs
@@ -198,11 +199,12 @@ func (m *Manager) generalApprovalLocked() clidefs.ApprovalMode {
 // each one owns, the models: section, and the approval: section. A
 // project's jobs run on its owning agent's model and fallbacks.
 func (m *Manager) Reconcile(cfg *config.Config) {
-	settings := cfg.ProjectSettings()
-	m.reports.configure(settings)
+	list := cfg.ProjectList()
+	m.reports.configure(list)
 	m.mu.Lock()
 	m.agents = &config.Config{Agents: slices.Clone(cfg.Agents), Models: cfg.Models, Approval: cfg.Approval}
-	m.cfg = settings
+	m.cfg = cfg.Projects
+	m.list = list
 	m.owners = cfg.ProjectOwners()
 	m.mu.Unlock()
 	_ = m.refresh()
@@ -303,10 +305,10 @@ func (s engineSettings) restartKey() string {
 // settingsLocked resolves the engine settings from the config and watches.
 func (m *Manager) settingsLocked() (engineSettings, error) {
 	cfg := m.cfg
-	targets := cfg.Targets()
+	targets := config.AgentProjectsConfig{List: m.list}.Targets()
 	watchAgents := map[string]string{}
 	for _, watch := range m.watches {
-		cfg = config.MergeProjects(cfg, watch.Settings)
+		cfg = cfg.Override(watch.Settings)
 		for _, target := range watch.Targets {
 			if !slices.Contains(targets, target) {
 				targets = append(targets, target)

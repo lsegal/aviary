@@ -24,7 +24,7 @@ A job is named by its issue `number`. `target` is needed only when several proje
 | `project_issue_create` | `aviary project issue create` | |
 | `project_check` | `aviary project check` | read-only |
 
-Settings have no tool of their own. A project and its settings live in the `projects:` section of the agent that owns it in `aviary.yaml` ([`agents[].projects`](/reference/config#agents-projects)), read and written with `config_get` and `config_save`, and are applied to the running engine when the file changes.
+Settings have no tool of their own. A project lives in the `projects:` list of the agent that owns it in `aviary.yaml` ([`agents[].projects`](/reference/config#agents-projects)), and the settings every project shares live in the top-level `projects:` section ([`projects`](/reference/config#projects)). Both are read and written with `config_get` and `config_save`, and are applied to the running engine when the file changes.
 
 ---
 
@@ -78,7 +78,7 @@ Watch a project. A saved project is added to its agent's `projects:` list.
 - `agent` (required unless `runtime` is set): the Aviary agent that owns the project; its model and fallbacks are the jobs' provider and model defaults. A target another agent already owns is refused. For a runtime watch it names the agent the watch runs under; left out, a runtime watch uses the target's owning agent, or `models.defaults`.
 - `reports` (optional, saved projects only): send this project's job events through an Aviary agent's channels, as `{agent, targets, events}`. See [Reports](/guide/projects#reports).
 - `runtime` (optional): watch until the server stops without writing `aviary.yaml`, as `aviary watch` does.
-- `settings` (optional, runtime only): projects settings that override the agents' `projects:` settings while the watch runs.
+- `settings` (optional, runtime only): projects settings that override the shared `projects:` settings while the watch runs.
 
 ## project_remove
 

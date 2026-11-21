@@ -43,7 +43,7 @@ func TestProjectsDeliveryInterval(t *testing.T) {
 }
 
 func TestProjectsTargetsDropDuplicates(t *testing.T) {
-	p := ProjectsConfig{List: []ProjectConfig{{Target: "o/r"}, {Target: " o/r "}, {Target: ""}, {Target: "o/s"}}}
+	p := AgentProjectsConfig{List: []ProjectConfig{{Target: "o/r"}, {Target: " o/r "}, {Target: ""}, {Target: "o/s"}}}
 	if got := strings.Join(p.Targets(), ","); got != "o/r,o/s" {
 		t.Fatalf("targets = %s", got)
 	}
@@ -70,20 +70,20 @@ func TestProjectsSectionOnlyHoldsChangedValues(t *testing.T) {
 	if strings.Contains(string(data), "projects") {
 		t.Fatalf("an agent without projects wrote a projects section:\n%s", data)
 	}
-	cfg.Agents[0].Projects.NoMerge = true
+	cfg.Projects.NoMerge = true
 	if err := Save(path, &cfg); err != nil {
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(path)
-	if !strings.Contains(string(data), "    projects:\n      no_merge: true\n") {
+	if !strings.Contains(string(data), "\nprojects:\n  no_merge: true\n") || strings.Contains(string(data), "    projects:") {
 		t.Fatalf("config = \n%s", data)
 	}
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !loaded.Agents[0].Projects.NoMerge || loaded.Agents[0].Projects.IsZero() {
-		t.Fatalf("loaded projects = %+v", loaded.Agents[0].Projects)
+	if !loaded.Projects.NoMerge || loaded.Projects.IsZero() {
+		t.Fatalf("loaded projects = %+v", loaded.Projects)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestValidateProjectReports(t *testing.T) {
 func TestProjectReportsRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "aviary.yaml")
 	cfg := Default()
-	cfg.Agents = []AgentConfig{{Name: "bot", Model: "m", Projects: ProjectsConfig{List: []ProjectConfig{
+	cfg.Agents = []AgentConfig{{Name: "bot", Model: "m", Projects: AgentProjectsConfig{List: []ProjectConfig{
 		{Target: "acme/quiet"},
 		{Target: "acme/app", Reports: &ProjectReportsConfig{Agent: "bot", Targets: []string{"slack:main:C1"}, Events: []string{"failed"}}},
 	}}}}
@@ -166,7 +166,8 @@ func TestProjectToolsByPreset(t *testing.T) {
 }
 
 // TestProjectsLiveUnderTheirAgent checks the engine sees every agent's
-// projects with their owners, and a top-level projects: section is not read.
+// projects with their owners, under the one shared top-level projects:
+// settings; settings left in an agent's section are not read.
 func TestProjectsLiveUnderTheirAgent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "aviary.yaml")
 	yaml := `agents:
@@ -184,6 +185,7 @@ func TestProjectsLiveUnderTheirAgent(t *testing.T) {
       list:
         - target: acme/docs
 projects:
+  concurrency: 5
   list:
     - target: acme/legacy
 `
@@ -194,12 +196,11 @@ projects:
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := cfg.ProjectSettings()
-	if got := settings.Targets(); !slices.Equal(got, []string{"acme/app", "acme/docs"}) {
+	if got := (AgentProjectsConfig{List: cfg.ProjectList()}).Targets(); !slices.Equal(got, []string{"acme/app", "acme/docs"}) {
 		t.Fatalf("targets = %v", got)
 	}
-	if settings.Concurrency != 4 || !settings.NoMerge {
-		t.Fatalf("merged settings = %+v", settings)
+	if cfg.Projects.Concurrency != 5 || cfg.Projects.NoMerge {
+		t.Fatalf("shared settings = %+v", cfg.Projects)
 	}
 	if cfg.ProjectOwner("acme/app") != "coder" || cfg.ProjectOwner("acme/docs") != "docs" || cfg.ProjectOwner("acme/legacy") != "" {
 		t.Fatalf("owners = %v", cfg.ProjectOwners())
@@ -208,8 +209,8 @@ projects:
 
 func TestValidateRejectsAProjectOwnedTwice(t *testing.T) {
 	cfg := &Config{Agents: []AgentConfig{
-		{Name: "a", Model: "cli/claude/opus", Projects: ProjectsConfig{List: []ProjectConfig{{Target: "o/r"}}}},
-		{Name: "b", Model: "cli/claude/opus", Projects: ProjectsConfig{List: []ProjectConfig{{Target: "o/r"}}}},
+		{Name: "a", Model: "cli/claude/opus", Projects: AgentProjectsConfig{List: []ProjectConfig{{Target: "o/r"}}}},
+		{Name: "b", Model: "cli/claude/opus", Projects: AgentProjectsConfig{List: []ProjectConfig{{Target: "o/r"}}}},
 	}}
 	for _, issue := range Validate(cfg, nil) {
 		if issue.Field == "agents[1].projects.list[0]" && issue.Level == LevelError {
@@ -221,9 +222,9 @@ func TestValidateRejectsAProjectOwnedTwice(t *testing.T) {
 
 func TestValidateWarnsOnATaskForAnotherAgentsProject(t *testing.T) {
 	cfg := &Config{Agents: []AgentConfig{
-		{Name: "a", Model: "cli/claude/opus", Projects: ProjectsConfig{List: []ProjectConfig{{Target: "o/a"}}},
+		{Name: "a", Model: "cli/claude/opus", Projects: AgentProjectsConfig{List: []ProjectConfig{{Target: "o/a"}}},
 			Tasks: []TaskConfig{{Name: "mine", Schedule: "0 3 * * *", Project: "o/a", Prompt: "x"}}},
-		{Name: "b", Model: "cli/claude/opus", Projects: ProjectsConfig{List: []ProjectConfig{{Target: "o/b"}}},
+		{Name: "b", Model: "cli/claude/opus", Projects: AgentProjectsConfig{List: []ProjectConfig{{Target: "o/b"}}},
 			Tasks: []TaskConfig{{Name: "theirs", Schedule: "0 3 * * *", Project: "o/a", Prompt: "x"}}},
 	}}
 	var fields []string

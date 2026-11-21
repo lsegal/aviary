@@ -19,9 +19,9 @@ A target is one of:
 - a Discussions URL, optionally narrowed to one category
 - the `projects:` and `discussions:` shorthands, which default to the current checkout's repository
 
-Several targets share one concurrency limit, and work is drawn from them in turn.
+Every target of every agent shares one concurrency limit, and work is drawn from them in turn.
 
-To watch a project permanently, add it to an agent. A project belongs to exactly one Aviary agent: it is listed in that agent's `projects:` section of `aviary.yaml`, and managed on the agent's **Projects** settings tab (Settings → Agents → *agent* → Projects, `/settings/agents/<agent>/projects`), where its projects are added, configured and removed. **Delete project** there stops watching a saved project and stops its in-flight jobs, after a confirmation; the repository and clones on disk are left alone. The board shows each project's agent and links there. Or run:
+To watch a project permanently, add it to an agent. A project belongs to exactly one Aviary agent: it is listed in that agent's `projects:` section of `aviary.yaml`, and managed on the agent's **Projects** settings tab (Settings → Agents → *agent* → Projects, `/settings/agents/<agent>/projects`), where its projects are added and removed and their reports set. **Delete project** there stops watching a saved project and stops its in-flight jobs, after a confirmation; the repository and clones on disk are left alone. The board shows each project's agent and links there. Or run:
 
 ```bash
 aviary project add owner/repo --agent coder
@@ -36,7 +36,12 @@ agents:
         - target: owner/repo
 ```
 
-There is no top-level `projects:` section. See [`agents[].projects`](/reference/config#agents-projects) for every setting.
+The settings every project runs under, such as concurrency, the ready label, the issue filter and merging, are not the agent's: they are one shared set in the top-level `projects:` section, edited on **Settings → Projects** (`/settings/projects`). See [`projects`](/reference/config#projects) for every setting.
+
+```yaml
+projects:
+  concurrency: 4   # jobs at once across every agent's projects
+```
 
 ## Which issues run
 
@@ -103,7 +108,7 @@ On a finished or paused job, a mention goes to the Projects agent instead, as `l
 
 **Prompt chat** on the board opens a side panel, or a bottom drawer on phones, for chatting with the built-in `projects` Aviary agent. Each prompt carries the board's project and a live snapshot of this instance (its watched projects and the agent each belongs to, issue and job counts, and a summary of every job), so a question like "status of issues?" is answered for the board it was opened from. It can retry, pause, resume or stop jobs, run an unblock round, and file issues through `gh-create`. Asked to update an issue or pull request, it posts one comment mentioning the author, which the job working it also hears, and replies with the comment's URL; it never edits an issue's body or title. It is limited to the `project_*` tools and refuses anything outside this instance. Images work in both directions. **Summarize** on a job card asks it to summarize that job's session log.
 
-The agent keeps its conversations as ordinary Aviary sessions; mentions routed to it land in its `main` session. Its model comes from `chat_model` and `chat_fallbacks` in an agent's `projects:` settings, or `models.defaults` when unset. An agent named `projects` in `agents:` replaces the built-in one.
+The agent keeps its conversations as ordinary Aviary sessions; mentions routed to it land in its `main` session. Its model comes from `chat_model` and `chat_fallbacks` in the shared `projects:` settings, or `models.defaults` when unset. An agent named `projects` in `agents:` replaces the built-in one.
 
 ## Keeping jobs moving
 

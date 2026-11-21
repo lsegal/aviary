@@ -13,6 +13,7 @@ search:    { ... }
 scheduler: { ... }
 skills:    { ... }
 approval:  { ... }
+projects:  { ... }
 coding_skills: { ... }
 ```
 
@@ -79,7 +80,7 @@ agents:
 | `working_dir` | string | | Default working directory for file-path resolution. Supports `~` and environment variables. Defaults to the agent's data directory. |
 | `rules` | string | | Inline markdown rules or a path to a file (e.g. `"./RULES.md"`) injected at the top of every system prompt. Paths are resolved relative to `working_dir`. |
 | `verbose` | bool | `false` | Emit a brief status message before each tool call when responding via a channel |
-| `projects` | object | | The GitHub [projects](#agents-projects) this agent owns and their settings |
+| `projects` | object | | The GitHub [projects](#agents-projects) this agent owns |
 
 ### agents[].permissions
 
@@ -253,11 +254,7 @@ tasks:
 
 ### agents[].projects
 
-The [Projects](/guide/projects) this agent owns. A project belongs to exactly one agent: it is listed under that agent, its jobs run on that agent's model and fallbacks, and it is managed on the agent's **Projects** settings tab (`/settings/agents/<agent>/projects`). There is no top-level `projects:` section; one in `aviary.yaml` is ignored. Listing the same target under two agents is a validation error.
-
-Every field is optional and holds only a value that differs from its default. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
-
-One engine runs every agent's projects, so the settings below `list` are merged across agents in `agents:` order, a later agent's non-zero value winning.
+The [Projects](/guide/projects) this agent owns. A project belongs to exactly one agent: it is listed under that agent, its jobs run on that agent's model and fallbacks, and the list is managed on the agent's **Projects** settings tab (`/settings/agents/<agent>/projects`). Listing the same target under two agents is a validation error. The settings every project runs under are the shared top-level [`projects`](#projects) section, not the agent's.
 
 ```yaml
 agents:
@@ -271,8 +268,6 @@ agents:
           reports:                   # off unless set
             agent: assistant
             targets: [slack:main:C0123456789]
-      concurrency: 4
-      no_merge: true
 ```
 
 | Field | Type | Default | Description |
@@ -281,26 +276,6 @@ agents:
 | `list[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
 | `list[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `<channel type>:<configured channel id>:<delivery id>` or `session:<name>` |
 | `list[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
-| `concurrency` | int | `3` | Jobs that run at once across every project |
-| `interval` | duration | `30s` | Time between GitHub polls |
-| `delivery` | string | `poll` | `poll` or `webhook` (ngrok tunnel and repository webhooks) |
-| `ready_label` | string | `ready` | Label a repository issue needs; an empty string turns it off |
-| `ready_state` | string | `Todo` or `Ready` | Project board status that marks an item ready |
-| `filter` | string[] | `assignee:@me` | Issue search filter |
-| `all_issues` | bool | `false` | Drop the issue filter; the ready label still applies |
-| `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
-| `approval_mode` | string | `approval.mode` | Projects' [approval-mode](#approval) override for the CLI runs it launches: `read-only`, `auto`, or `full` |
-| `yolo` | bool | `false` | The `full` approval mode, used when `approval_mode` is unset |
-| `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
-| `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |
-| `unblock_interval` | duration | `15m` | How often the stuck-job watchdog runs; `0` turns it off |
-| `unblock_agent`, `unblock_model` | string | the coding agent | Agent spec and model for the watchdog's unblock call |
-| `chat_model`, `chat_fallbacks` | string, string[] | `models.defaults` | Model and fallbacks of the built-in `projects` agent behind the board's prompt chat |
-| `temp_dirs` | string[] | system temp | Absolute directories job clones go in, tried in order |
-| `webhook.listen` | string | `:0` | Webhook listener address |
-| `webhook.path` | string | `/webhook` | Webhook path |
-| `webhook.secret` | string | | Webhook signature secret, plain or a credential reference in the form `auth:<key>` (see `aviary auth set`) |
-| `webhook.ngrok_binary` | string | `ngrok` | ngrok executable; fetched through `npx` when not installed |
 
 ---
 
@@ -440,6 +415,43 @@ coding_skills:
 
 ---
 
+## projects
+
+The one set of [Projects](/guide/projects) settings, shared by every project of every agent and edited on **Settings → Projects** (`/settings/projects`). One engine runs every agent's projects under them: `concurrency`, for example, is how many jobs run at once in total, across every agent's projects. The projects themselves are listed under the agents that own them; see [`agents[].projects`](#agents-projects).
+
+Every field is optional and holds only a value that differs from its default. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
+
+```yaml
+projects:
+  concurrency: 4
+  no_merge: true
+```
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `concurrency` | int | `3` | Jobs that run at once across every project |
+| `interval` | duration | `30s` | Time between GitHub polls |
+| `delivery` | string | `poll` | `poll` or `webhook` (ngrok tunnel and repository webhooks) |
+| `ready_label` | string | `ready` | Label a repository issue needs; an empty string turns it off |
+| `ready_state` | string | `Todo` or `Ready` | Project board status that marks an item ready |
+| `filter` | string[] | `assignee:@me` | Issue search filter |
+| `all_issues` | bool | `false` | Drop the issue filter; the ready label still applies |
+| `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
+| `approval_mode` | string | `approval.mode` | Projects' [approval-mode](#approval) override for the CLI runs it launches: `read-only`, `auto`, or `full` |
+| `yolo` | bool | `false` | The `full` approval mode, used when `approval_mode` is unset |
+| `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
+| `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |
+| `unblock_interval` | duration | `15m` | How often the stuck-job watchdog runs; `0` turns it off |
+| `unblock_agent`, `unblock_model` | string | the coding agent | Agent spec and model for the watchdog's unblock call |
+| `chat_model`, `chat_fallbacks` | string, string[] | `models.defaults` | Model and fallbacks of the built-in `projects` agent behind the board's prompt chat |
+| `temp_dirs` | string[] | system temp | Absolute directories job clones go in, tried in order |
+| `webhook.listen` | string | `:0` | Webhook listener address |
+| `webhook.path` | string | `/webhook` | Webhook path |
+| `webhook.secret` | string | | Webhook signature secret, plain or a credential reference in the form `auth:<key>` (see `aviary auth set`) |
+| `webhook.ngrok_binary` | string | `ngrok` | ngrok executable; fetched through `npx` when not installed |
+
+---
+
 ## approval
 
 How much CLI providers may do without asking. Aviary owns the mode: every CLI launch (chat turns, Projects jobs, one-shot prompts) works out its surface's mode and translates it into that CLI's own permission flags at launch. Aviary never creates or edits a CLI's settings files to set it, so the CLI behaves as configured when you use it yourself.
@@ -448,10 +460,8 @@ How much CLI providers may do without asking. Aviary owns the mode: every CLI la
 approval:
   mode: auto        # the general setting
   chat: read-only   # override for chat turns
-agents:
-  - name: coder
-    projects:
-      approval_mode: full  # override for Projects jobs
+projects:
+  approval_mode: full  # override for Projects jobs
 ```
 
 | Field | Type | Default | Description |
@@ -459,7 +469,7 @@ agents:
 | `mode` | string | `auto` | The general setting, used by every surface without its own override |
 | `chat` | string | `mode` | Override for agent chat turns run through a CLI provider: the web UI chat, including the Projects board's prompt chat |
 
-An agent's `projects.approval_mode` (or `projects.yolo`, which means `full`) is the Projects override; see [`agents[].projects`](#agents-projects).
+`projects.approval_mode` (or `projects.yolo`, which means `full`) is the Projects override; see [`projects`](#projects).
 
 | Mode | Meaning |
 | --- | --- |

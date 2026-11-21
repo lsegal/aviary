@@ -892,7 +892,7 @@ func TestManager_Reconcile_ProjectsAgent(t *testing.T) {
 	mgr := newTestManager(t)
 	defer mgr.Stop()
 
-	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "coder", Model: "cli/claude/opus", Projects: config.ProjectsConfig{ChatModel: "anthropic/claude-sonnet-5-5"}}}})
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "coder", Model: "cli/claude/opus"}}, Projects: config.ProjectsConfig{ChatModel: "anthropic/claude-sonnet-5-5"}})
 	runner, ok := mgr.Get(config.ProjectsAgentName)
 	require.True(t, ok)
 	assert.Equal(t, "anthropic/claude-sonnet-5-5", runner.Agent().Model)

@@ -52,7 +52,7 @@ projects: and discussions: shorthands.
 
 Nothing is written to aviary.yaml: the watch lasts until Ctrl+C. When the
 Aviary server is running the watch is added to it; otherwise the server is
-started in the foreground for the watch. Flags override the agents' projects settings
+started in the foreground for the watch. Flags override the shared projects settings
 of aviary.yaml while the watch runs. Use 'aviary project add' to watch a
 project permanently.`,
 	RunE: runWatch,

@@ -56,7 +56,7 @@ type projectAddArgs struct {
 	Runtime bool   `json:"runtime,omitempty" jsonschema:"Watch until the server stops without writing aviary.yaml, as aviary watch does"`
 	// Reports opts a saved project in to job reports.
 	Reports *config.ProjectReportsConfig `json:"reports,omitempty" jsonschema:"Send this project's job events (merged, failed, waiting) through an Aviary agent's channels; leave out for no reports"`
-	// Settings overrides the agents' projects settings for a runtime watch.
+	// Settings overrides the shared projects settings for a runtime watch.
 	Settings *config.ProjectsConfig `json:"settings,omitempty" jsonschema:"For a runtime watch, projects settings that override aviary.yaml while it runs"`
 }
 
@@ -369,7 +369,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_github_use_polling",
-		Description: "Read GitHub through gh polling instead of Aviary's browser: saves delivery: poll to the projects settings of every agent that owns projects in aviary.yaml",
+		Description: "Read GitHub through gh polling instead of Aviary's browser: saves delivery: poll to the shared projects settings in aviary.yaml",
 		Annotations: mutatingTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult("project_github_use_polling", func(m *projects.Manager) (map[string]any, error) {
@@ -377,16 +377,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 			if err != nil {
 				return nil, err
 			}
-			changed := false
-			for i := range cfg.Agents {
-				if len(cfg.Agents[i].Projects.List) > 0 {
-					cfg.Agents[i].Projects.Delivery = projects.DeliveryPoll
-					changed = true
-				}
-			}
-			if !changed {
-				return nil, errors.New("no agent owns a project; add one to an agent first, or watch with --delivery poll")
-			}
+			cfg.Projects.Delivery = projects.DeliveryPoll
 			if err := config.Save("", cfg); err != nil {
 				return nil, err
 			}

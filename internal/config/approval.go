@@ -34,7 +34,7 @@ func (c *Config) ProjectsApprovalMode() clidefs.ApprovalMode {
 	if c == nil {
 		return clidefs.DefaultApprovalMode
 	}
-	return c.ProjectSettings().EffectiveApprovalMode(c.Approval.Mode)
+	return c.Projects.EffectiveApprovalMode(c.Approval.Mode)
 }
 
 // EffectiveApprovalMode resolves the Projects surface's approval mode against
