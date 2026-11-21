@@ -12,9 +12,9 @@ watch ─► pick up ─► claim ─► clone, branch, draft PR ─► implemen
 
 A project is a watched target that belongs to one Aviary agent: a repository (`owner/repo`), a GitHub Project board, or a Discussions board. The agent's model and fallbacks decide which provider the project's jobs run on.
 
-- **Configure:** the agent's **GitHub Projects** page (Agents → *agent* → GitHub Projects in the sidebar), `aviary project add owner/repo --agent coder`, or the agent's `projects:` section in `aviary.yaml` ([`agents[].projects`](/reference/config#agents-projects)). `aviary watch owner/repo` watches a target for the life of the command without saving anything.
+- **Configure:** the agent's tab in **System → Projects** (`/system/projects?agent=<agent>`), `aviary project add owner/repo --agent coder`, or the agent's `projects:` section in `aviary.yaml` ([`agents[].projects`](/reference/config#agents-projects)). `aviary watch owner/repo` watches a target for the life of the command without saving anything.
 - **Delivery:** `poll` (the default) reads GitHub through `gh` every `interval`; `webhook` adds repository webhooks through an ngrok tunnel and still polls as a fallback.
-- **Observe:** each project's board opens beneath its agent's GitHub Projects page; `aviary project status` reports every project.
+- **Observe:** the agent's **GitHub Projects** page is one board of all its projects' jobs, and each project's own board opens beneath it; `aviary project status` reports every project.
 
 ## 2. An issue matches and is picked up
 

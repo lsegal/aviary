@@ -254,7 +254,7 @@ tasks:
 
 ### agents[].projects
 
-The [Projects](/guide/projects) this agent owns. A project belongs to exactly one agent: it is listed under that agent, its jobs run on that agent's model and fallbacks, and the list is managed on the agent's **GitHub Projects** page (`/agents/<agent>/projects`). Listing the same target under two agents is a validation error. The settings every project runs under are the shared top-level [`projects`](#projects) section, not the agent's.
+The [Projects](/guide/projects) this agent owns. A project belongs to exactly one agent: it is listed under that agent, its jobs run on that agent's model and fallbacks, and the list is managed on the agent's tab in **System → Projects** (`/system/projects?agent=<agent>`). Listing the same target under two agents is a validation error. The settings every project runs under are the shared top-level [`projects`](#projects) section, not the agent's.
 
 ```yaml
 agents:

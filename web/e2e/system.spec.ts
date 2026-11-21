@@ -148,6 +148,20 @@ test("system skills can disable and enable installed skills", async ({
 	await expect(
 		page.getByRole("heading", { name: "Skills", exact: true }),
 	).toBeVisible();
+	// The skills browser sits on the same page as both installed lists.
+	const discovery = page.getByTestId("skills-discovery");
+	await expect(discovery).toContainText("Looking for more skills?");
+	await expect(discovery).toContainText("npx skills find notion");
+	await expect(
+		discovery.getByRole("link", { name: "Open skills.sh" }),
+	).toHaveAttribute("href", "https://skills.sh/");
+	await expect(
+		page.getByRole("region", { name: "Installed in providers" }),
+	).toBeVisible();
+	const stats = page.getByTestId("skill-stats");
+	await expect(stats).toContainText("Installed2");
+	await expect(stats).toContainText("Enabled1");
+	await expect(stats).toContainText("Showing2");
 	const gogcli = page
 		.getByRole("region", { name: "Available to Aviary agents" })
 		.locator("div.rounded-xl")

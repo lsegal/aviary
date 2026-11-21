@@ -29,13 +29,13 @@ test("a single agent's pages are the sidebar's top level", async ({ page }) => {
 	await expect(sidebar.getByTestId("sidebar-agents")).toHaveCount(0);
 	await expect(sidebar.getByTestId("sidebar-agent-list")).toHaveCount(0);
 	await expect(sole.getByRole("link", { name: "assistant" })).toHaveCount(0);
-	for (const label of ["Chat", "Settings", "Tasks", "GitHub Projects"]) {
+	for (const label of ["Chats", "Settings", "Tasks", "GitHub Projects"]) {
 		await expect(
 			sole.getByRole("link", { name: label, exact: true }),
 		).toBeVisible();
 	}
 	await expect(
-		sole.getByRole("link", { name: "Chat", exact: true }),
+		sole.getByRole("link", { name: "Chats", exact: true }),
 	).toHaveAttribute("href", "/agents/assistant/chat");
 
 	// System follows the agent's pages and + Add Agent comes last.

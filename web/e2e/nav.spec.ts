@@ -63,7 +63,7 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 	]);
 });
 
-test("an agent's pages are Chat, GitHub Projects, Tasks, Files and Settings", async ({
+test("an agent's pages are Chats, GitHub Projects, Tasks, Files and Settings", async ({
 	page,
 }) => {
 	await mockMCP(page, {
@@ -80,7 +80,7 @@ test("an agent's pages are Chat, GitHub Projects, Tasks, Files and Settings", as
 	// With one agent its pages are the sidebar's top level (#538).
 	const agent = page.getByTestId("sidebar-sole-agent");
 	await expect(agent.getByRole("link")).toHaveText([
-		"Chat",
+		"Chats",
 		"GitHub Projects",
 		"Tasks",
 		"Files",

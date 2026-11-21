@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
@@ -320,7 +319,6 @@ func registerProjectCheckTool(s *sdkmcp.Server) {
 			"Read-only; writes nothing.",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectCheckArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		slog.Info("mcp: tool call", "component", "projects", "tool", "project_check", "target", args.Target)
 		res, err := runProjectCheck(ctx, args)
 		if err != nil {
 			return nil, struct{}{}, err
