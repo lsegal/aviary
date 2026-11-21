@@ -64,6 +64,12 @@ func TestChatContextNamesBoardTargetsAndLiveJobs(t *testing.T) {
 	if got := snapshot["jobs"].(map[string]any)["paused"]; got != float64(1) {
 		t.Errorf("jobs.paused = %v, want 1", got)
 	}
+	if got := snapshot["issue_filter"]; got != defaultIssueFilter {
+		t.Errorf("issue_filter = %v, want %q", got, defaultIssueFilter)
+	}
+	if _, ok := snapshot["ready_label"]; ok {
+		t.Error("the snapshot reports a ready label pickup does not use")
+	}
 	if _, ok := snapshot["recent_logs"]; ok {
 		t.Error("the snapshot carries project_status's logs")
 	}

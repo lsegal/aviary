@@ -37,7 +37,7 @@ agents:
       - target: owner/repo
 ```
 
-The settings every project runs under, such as concurrency, the ready label, the issue filter and merging, are not the agent's: they are one shared set in the top-level `projects:` section, edited on **System → Projects** (`/system/projects`). See [`projects`](/reference/config#projects) for every setting.
+The settings every project runs under, such as concurrency, the issue filter and merging, are not the agent's: they are one shared set in the top-level `projects:` section, edited on **System → Projects** (`/system/projects`). See [`projects`](/reference/config#projects) for every setting.
 
 ```yaml
 projects:
@@ -46,7 +46,7 @@ projects:
 
 ## Which issues run
 
-A repository issue is picked up when it is open, carries the ready label (`ready` by default), and matches the issue filter (`assignee:@me` by default). On a project board, the item's status must be the ready state, which is `Todo` or `Ready` unless you set one. Board items move to `In Progress` when work starts and `Done` when it finishes.
+A repository issue is picked up when it is open and matches the issue filter (`assignee:@me` by default); no label is needed. The board header shows the filter in use, such as "Issues matching `assignee:@me`", or "All open issues" when `all_issues` drops it. On a project board, the item's status must be the ready state, which is `Todo` or `Ready` unless you set one. Board items move to `In Progress` when work starts and `Done` when it finishes.
 
 - Issues labeled `critical`, then `high`, run before everything else, across all projects.
 - An issue with open sub-issues is a tracking issue and is skipped.

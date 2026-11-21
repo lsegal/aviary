@@ -16,7 +16,7 @@ const STATUS = {
 	concurrency: 4,
 	delivery: "poll",
 	poll_interval: "30s",
-	ready_label: "ready",
+	issue_filter: "assignee:@me",
 	quotas: {},
 	clis: [],
 	agents: ["claude"],
