@@ -11,10 +11,8 @@
 					class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
 					Scheduled
 				</span>
-				<span v-if="job.startedAt" class="text-gray-400">{{ age(job.startedAt, now) }}</span>
-				<span class="ml-auto truncate font-mono text-gray-500 dark:text-gray-400">
-					{{ [job.skill, job.cli].filter(Boolean).join(" · ") }}
-				</span>
+				<span v-if="job.startedAt" data-testid="job-time" class="ml-auto whitespace-nowrap text-gray-400"
+					:title="`Started ${new Date(job.startedAt).toLocaleString()}`">{{ age(job.startedAt, now) }}</span>
 			</div>
 			<h3 class="text-base font-semibold leading-snug text-gray-900 dark:text-white">
 				<router-link :to="runPath" class="hover:underline">
@@ -73,8 +71,12 @@
 				@click="emit('stop', job)">
 				<StopIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
-			<span v-if="job.cloneDir" class="min-w-0 flex-1 truncate text-right font-mono text-xs text-gray-400"
-				:title="job.cloneDir">{{ job.cloneDir }}</span>
+			<div class="flex min-w-0 flex-1 flex-col items-end text-right font-mono text-xs">
+				<span v-if="agentLabel" data-testid="job-agent" class="max-w-full truncate text-gray-500 dark:text-gray-400"
+					:title="agentLabel">{{ agentLabel }}</span>
+				<span v-if="job.cloneDir" data-testid="job-clone" class="max-w-full truncate text-gray-400"
+					:title="job.cloneDir">{{ job.cloneDir }}</span>
+			</div>
 		</div>
 	</article>
 </template>
@@ -118,6 +120,10 @@ const runPath = computed(() =>
 );
 const projectBoardPath = computed(() =>
 	projectPath(owner.value, props.job.target),
+);
+
+const agentLabel = computed(() =>
+	[props.job.skill, props.job.cli].filter(Boolean).join(" · "),
 );
 
 const waitingText = computed(() => waitText(props.job, props.now));
