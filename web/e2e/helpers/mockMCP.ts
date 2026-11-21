@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import toolArguments from "./toolArguments.json";
+import toolArguments from "./toolArguments.json" with { type: "json" };
 
 /** Common argument shapes for MCP tool handlers used in tests. */
 export interface AgentFileArgs {
@@ -63,7 +63,7 @@ function isMCPStreamFixture(value: unknown): value is MCPStreamFixture {
  * tool does not declare, which the server rejects. toolArguments.json is kept
  * current by TestToolArgumentsFileIsCurrent in internal/mcp.
  */
-function undeclaredArguments(
+export function undeclaredArguments(
 	tool: string,
 	args: Record<string, unknown> = {},
 ): string[] {

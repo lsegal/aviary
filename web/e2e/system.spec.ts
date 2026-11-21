@@ -47,8 +47,8 @@ test.beforeEach(async ({ page }) => {
 		tool_list: [
 			{ name: "agent_list", description: "List configured agents." },
 			{
-				name: "task_run",
-				description: "Run a scheduled task immediately.",
+				name: "task_update",
+				description: "Update a scheduled task.",
 				inputSchema: {
 					type: "object",
 					required: ["name"],
@@ -57,17 +57,16 @@ test.beforeEach(async ({ page }) => {
 							type: "string",
 							description: "Task name to run immediately.",
 						},
-						force: {
+						enabled: {
 							type: "boolean",
-							description:
-								"Force execution even if the task is already active.",
+							description: "Whether the task runs on its schedule.",
 						},
 					},
 				},
 			},
 			{ name: "config_get", description: "Read the active configuration." },
 		],
-		task_run: async (args) => {
+		task_update: async (args?: Record<string, unknown>) => {
 			await new Promise((resolve) => setTimeout(resolve, 150));
 			return {
 				ok: true,
@@ -86,7 +85,7 @@ test("system tools shows grouped MCP tools and active skills", async ({
 		page.getByRole("heading", { name: "System Tools" }),
 	).toBeVisible();
 	await expect(page.getByText("agent_list")).toBeVisible();
-	await expect(page.getByText("task_run")).toBeVisible();
+	await expect(page.getByText("task_update")).toBeVisible();
 	await expect(
 		page.getByRole("heading", { name: "Activated Skills" }),
 	).toBeVisible();
@@ -98,11 +97,11 @@ test("system tools can run a tool from the menu and show output", async ({
 }) => {
 	await page.goto("/system/tools");
 
-	await page.getByTestId("run-tool-task_run").click();
+	await page.getByTestId("run-tool-task_update").click();
 
 	await expect(page.getByRole("heading", { name: "Run Tool" })).toBeVisible();
 	await expect(
-		page.getByRole("paragraph").filter({ hasText: "task_run" }),
+		page.getByRole("paragraph").filter({ hasText: "task_update" }),
 	).toBeVisible();
 	await expect(
 		page.getByPlaceholder("Task name to run immediately."),
@@ -117,11 +116,11 @@ test("system tools can run a tool from the menu and show output", async ({
 		'"name":"nightly"',
 	);
 	await expect(page.getByTestId("tool-run-output")).toContainText(
-		'"force":true',
+		'"enabled":true',
 	);
 
 	await page.getByRole("button", { name: "Close" }).click();
-	await page.getByTestId("run-tool-task_run").click();
+	await page.getByTestId("run-tool-task_update").click();
 
 	await expect(
 		page.getByPlaceholder("Task name to run immediately."),
