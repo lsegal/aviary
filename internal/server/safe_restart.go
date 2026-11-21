@@ -175,7 +175,9 @@ func (s *Server) startRestart(when string, upgrade bool, version string) (safere
 	saferestart.Hold(true)
 	st := s.RestartStatus()
 	publishRestartStatus(st)
-	go s.runRestart(when, cancel)
+	// Read the poll interval here, not in the goroutine, which can outlive
+	// whoever started the restart.
+	go s.runRestart(when, cancel, idlePoll)
 	return st, nil
 }
 
@@ -221,9 +223,9 @@ func (s *Server) cancelRestart() (saferestart.Status, error) {
 	return st, nil
 }
 
-func (s *Server) runRestart(when string, cancel <-chan struct{}) {
+func (s *Server) runRestart(when string, cancel <-chan struct{}, poll time.Duration) {
 	if when == saferestart.WhenIdle {
-		ticker := time.NewTicker(idlePoll)
+		ticker := time.NewTicker(poll)
 		defer ticker.Stop()
 		for len(saferestart.RunningJobs()) > 0 {
 			select {
