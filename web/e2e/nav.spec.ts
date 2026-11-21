@@ -84,7 +84,9 @@ test("the System section collapses to its header and stays collapsed across page
 	await toggle.click();
 	await expect(toggle).toHaveAttribute("aria-expanded", "false");
 	await expect(list).toHaveCount(0);
-	await expect(page.getByTestId("sidebar-nav").getByRole("link", { name: "Settings" })).toHaveCount(0);
+	await expect(
+		page.getByTestId("sidebar-nav").getByRole("link", { name: "Settings" }),
+	).toHaveCount(0);
 	// The header stands in for the current System page while collapsed.
 	await expect(header).toHaveClass(/bg-white/);
 
