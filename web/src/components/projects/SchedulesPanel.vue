@@ -59,6 +59,7 @@ import {
 	type ProjectSchedule,
 	until,
 } from "../../lib/projects";
+import type { TriggerFields } from "../../lib/trigger";
 import ScheduleEditor from "./ScheduleEditor.vue";
 
 // Task ids are always "agent/task", so "new" never names one.
@@ -75,7 +76,7 @@ const props = defineProps<{
 	setEnabled: (s: ProjectSchedule, enabled: boolean) => Promise<void>;
 	remove: (s: ProjectSchedule) => Promise<void>;
 	runNow: (s: ProjectSchedule) => Promise<void>;
-	preview: (s: ProjectSchedule) => Promise<string[]>;
+	preview: (s: TriggerFields) => Promise<string[]>;
 }>();
 
 /** The schedule id the editor shows, settable from the "Up next" strip. */

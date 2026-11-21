@@ -1179,3 +1179,80 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 		],
 	});
 });
+
+test("tasks use the shared trigger editor and save a daily trigger without cron", async ({
+	page,
+}) => {
+	let savedConfig: unknown = null;
+	const previews: Record<string, unknown>[] = [];
+	await mockMCP(page, {
+		config_get: CONFIG,
+		config_save: (args) => {
+			savedConfig = JSON.parse(String(args?.config ?? "{}"));
+			return "ok";
+		},
+		auth_list: ["anthropic:default", "brave_api_key"],
+		session_list: [],
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		agent_file_list: [],
+		task_preview: (args) => {
+			previews.push(args ?? {});
+			return {
+				description: "preview",
+				next: [
+					"2026-11-22T17:00:00Z",
+					"2026-11-23T17:00:00Z",
+					"2026-11-24T17:00:00Z",
+				],
+			};
+		},
+	});
+
+	await page.goto("/agents/assistant/tasks");
+	const editor = page.getByTestId("trigger-editor");
+
+	// A hand-written cron expression opens on the Cron tab, unchanged.
+	await expect(editor.getByRole("radio", { name: "Cron" })).toHaveAttribute(
+		"aria-checked",
+		"true",
+	);
+	await expect(editor.getByLabel("Cron expression")).toHaveValue("0 * * * * *");
+	await expect(editor.getByTestId("trigger-preview").locator("li")).toHaveCount(
+		3,
+	);
+
+	await editor.getByRole("radio", { name: "Daily" }).click();
+	await editor.getByLabel("At").fill("09:00");
+	await editor.getByLabel("Timezone").fill("America/Los_Angeles");
+	await editor
+		.getByLabel("If the last run is still going")
+		.selectOption("skip");
+	await expect
+		.poll(() => previews.at(-1))
+		.toMatchObject({
+			trigger: "daily",
+			at: "09:00",
+			timezone: "America/Los_Angeles",
+		});
+
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect(page.getByTitle("Settings saved")).toBeVisible();
+	const task = (
+		savedConfig as { agents: { tasks: Record<string, unknown>[] }[] }
+	).agents[0].tasks[0];
+	expect(task).toMatchObject({
+		trigger: "daily",
+		at: "09:00",
+		timezone: "America/Los_Angeles",
+		overlap: "skip",
+	});
+	expect(task.schedule).toBeUndefined();
+});
