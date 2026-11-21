@@ -4,6 +4,13 @@
 			These settings apply to every project of every agent. Each project belongs to an agent and is added on
 			that agent's GitHub Projects page.
 		</p>
+	<section v-if="instanceID" :class="CARD" data-testid="projects-instance-id">
+		<div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+			<span class="text-sm font-semibold text-gray-900 dark:text-white">Instance ID</span>
+			<code class="rounded-md bg-gray-100 px-2 py-1 font-mono text-lg font-bold tracking-wider text-gray-900 dark:bg-gray-800 dark:text-white">{{ instanceID }}</code>
+			<span :class="CARD_NOTE">This instance signs its GitHub claims as <code class="font-mono">/aviary:{{ instanceID }}</code>. It is kept across restarts.</span>
+		</div>
+	</section>
 	<section :class="CARD" data-testid="project-settings">
 		<h3 :class="CARD_HEAD">
 			Settings <span :class="CARD_NOTE">One set for every project of every agent. Grey tags mark defaults that aren't saved</span>
@@ -136,7 +143,10 @@
 <script setup lang="ts">
 import { SwitchRoot, SwitchThumb } from "radix-vue";
 import { computed, h, inject, ref, watch } from "vue";
-import { useProjectClones } from "../../composables/useProjectSettings";
+import {
+	useProjectClones,
+	useProjectInstanceID,
+} from "../../composables/useProjectSettings";
 import { APPROVAL_MODES } from "../../lib/approval";
 import {
 	cloneState,
@@ -203,6 +213,7 @@ function DefaultTag(p: { on: boolean }) {
 DefaultTag.props = ["on"];
 
 const clones = useProjectClones();
+const instanceID = useProjectInstanceID();
 
 const section = computed<ProjectsSection>(() => settings.draft.projects ?? {});
 

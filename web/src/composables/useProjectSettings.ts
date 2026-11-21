@@ -7,7 +7,7 @@ import {
 	type ProjectCheckResult,
 	type ProjectClone,
 } from "../lib/projectSettings";
-import { parseToolJSON } from "../lib/projects";
+import { normalizeStatus, parseToolJSON } from "../lib/projects";
 import { useMCP } from "./useMCP";
 
 /**
@@ -70,6 +70,26 @@ export function useProjectClones() {
 		load,
 		clear,
 	};
+}
+
+/**
+ * This Aviary instance's Projects identity, the persisted ID it signs its
+ * GitHub claims with. It does not change while the server runs, so it is read
+ * once rather than polled.
+ */
+export function useProjectInstanceID() {
+	const { callTool } = useMCP();
+	const instanceID = ref("");
+	onMounted(async () => {
+		try {
+			instanceID.value = normalizeStatus(
+				parseToolJSON(await callTool("project_status", {})),
+			).instanceID;
+		} catch {
+			// Projects is unavailable; the card stays hidden.
+		}
+	});
+	return instanceID;
 }
 
 /** project_check for a target, re-run (debounced) as the target changes. */

@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 const STATUS = {
+	identity: "7F3CA91B",
 	ready_label: "ready",
 	projects: [{ name: "lsegal/aviary", running: 0, waiting: 0, jobs: 0 }],
 };
@@ -624,6 +625,15 @@ test("clones show what's in use and unused ones can be cleared", async ({
 		"Removed 1 clone, reclaimed 150 MB, kept 2.",
 	);
 	expect(calls.project_clone_clear).toEqual([{}]);
+});
+
+test("System → Projects shows this instance's ID", async ({ page }) => {
+	await setup(page);
+	await page.goto("/system/projects");
+	const card = page.getByTestId("projects-instance-id");
+	await expect(card).toContainText("Instance ID");
+	await expect(card.locator("code").first()).toHaveText("7F3CA91B");
+	await expect(card).toContainText("/aviary:7F3CA91B");
 });
 
 test("an unreadable work state shows an error instead of clones", async ({
