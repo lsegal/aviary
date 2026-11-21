@@ -9,7 +9,14 @@
 					</p>
 					<div class="flex flex-wrap items-center gap-2">
 						<h2 data-testid="job-detail-title" class="min-w-0 break-words text-lg font-bold text-gray-900 dark:text-white">
-							{{ job?.scheduled ? "" : `#${number} ` }}{{ job?.title ?? "" }}
+							<template v-if="!job?.scheduled">
+								<a v-if="issueURL" :href="issueURL" target="_blank" rel="noreferrer" data-testid="job-detail-issue-link"
+									:title="`Open issue #${number} on GitHub`" class="text-blue-600 hover:underline dark:text-blue-400">#{{ number }}</a>
+								<template v-else>#{{ number }}</template>
+								<template v-if="job?.pr"> •
+									<a :href="prURL" target="_blank" rel="noreferrer" data-testid="job-detail-pr-link"
+										:title="`Open PR ${prLabel} on GitHub`" class="text-blue-600 hover:underline dark:text-blue-400">PR {{ prLabel }}</a></template>{{ " " }}
+							</template>{{ job?.title ?? "" }}
 						</h2>
 						<JobStatusPill v-if="job" :state="job.state" />
 						<span v-if="job?.scheduled"
@@ -20,21 +27,13 @@
 				</div>
 				<div data-testid="job-detail-actions" class="flex min-w-0 shrink-0 items-center gap-2 @2xl:justify-end">
 					<template v-if="job">
-						<a v-if="issueURL" :href="issueURL" target="_blank" rel="noreferrer" :title="`Open issue #${job.number} on GitHub`"
-							class="inline-flex h-8 min-w-0 items-center rounded-lg border border-gray-200 px-3 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-							<span class="truncate"><span class="sr-only @md:not-sr-only">Issue </span>#{{ job.number }} ↗</span>
-						</a>
-						<a v-if="job.pr" :href="prURL" target="_blank" rel="noreferrer" :title="`Open PR ${prLabel} on GitHub`"
-							class="inline-flex h-8 min-w-0 items-center rounded-lg border border-gray-200 px-3 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-							<span class="truncate"><span class="sr-only @md:not-sr-only">PR </span>{{ prLabel }} ↗</span>
-						</a>
 						<button type="button" data-testid="raw-output-toggle" :aria-pressed="showRaw"
 							:aria-label="showRaw ? 'Hide raw output' : 'Show raw output'"
 							:title="showRaw ? 'Hide the raw CLI output' : 'Show the raw CLI output'"
-							class="inline-flex h-8 shrink-0 items-center justify-center rounded-lg border gap-1 px-2 text-sm"
+							class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border"
 							:class="showRaw ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
 							@click="showRaw = !showRaw">
-							<CodeBracketIcon aria-hidden="true" class="h-4 w-4" /><span class="hidden @xl:inline @2xl:hidden @4xl:inline">Raw output</span>
+							<CodeBracketIcon aria-hidden="true" class="h-4 w-4" />
 						</button>
 						<button type="button" :disabled="busy || !job.actions.retry"
 							aria-label="Retry" :title="job.actions.retryUnavailable || 'Retry this job'"
@@ -45,7 +44,7 @@
 							@click="run(stop)"><StopIcon aria-hidden="true" class="h-4 w-4" /></button>
 					</template>
 					<router-link :to="boardPath" data-testid="job-detail-close" aria-label="Close job details" title="Back to the board"
-						class="inline-flex h-8 shrink-0 items-center justify-center rounded-lg border ml-auto w-8 border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 @2xl:ml-0"><XMarkIcon aria-hidden="true" class="h-4 w-4" /></router-link>
+						class="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 @2xl:ml-1"><XMarkIcon aria-hidden="true" class="h-4 w-4" /></router-link>
 				</div>
 			</div>
 		</header>
