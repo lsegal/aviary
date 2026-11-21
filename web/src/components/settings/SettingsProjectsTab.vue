@@ -1,8 +1,8 @@
 <template>
 	<section v-show="activeTab === 'projects'" class="space-y-5 pb-8" data-testid="projects-settings-tab">
 		<p class="text-xs text-gray-500 dark:text-gray-400">
-			Every agent's projects, and the settings every project of every agent runs under. Each agent's GitHub
-			Projects page is the board of its projects' jobs.
+			Every agent's projects, and the settings every project of every agent runs under. Each agent's Code Loop
+			page is the board of its projects' jobs.
 		</p>
 	<section v-if="instanceID" :class="CARD" data-testid="projects-instance-id">
 		<div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">

@@ -530,7 +530,7 @@
           "enum": ["read-only", "auto", "full"],
           "x-label": "Approval mode",
           "x-order": 13,
-          "description": "Projects' approval-mode override for the CLI runs it launches. Empty follows approval.mode."
+          "description": "Code Loop's approval-mode override for the CLI runs it launches. Empty follows approval.mode."
         },
         "yolo": {
           "type": "boolean",

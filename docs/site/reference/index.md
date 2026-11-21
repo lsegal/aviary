@@ -20,5 +20,5 @@
 - [Files And Notes Tools](./mcp/files-and-notes)
 - [Auth Tools](./mcp/auth)
 - [Server And Config Tools](./mcp/server-and-config)
-- [Projects Tools](./mcp/projects)
+- [Code Loop Tools](./mcp/projects)
 - [Usage And Skills Tools](./mcp/usage-and-skills)

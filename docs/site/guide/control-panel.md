@@ -37,7 +37,7 @@ The board's state chips (Starting, Paused, Running, Done, Failed) each toggle on
 
 ### Code Loop Settings (`/projects/settings`)
 
-Opened from the **Settings** gear on any Code Loop board. Every agent's projects, one tab per agent (`/projects/settings?agent=<agent>`): add and remove them, set their reports, and see the models their jobs run on. Below them, the one set of [Projects](/guide/projects) settings, shared by every project of every agent: how many jobs run at once across all of them, how GitHub is read, which issues are picked up, merging and changelogs, the approval mode, and where clones go. It also lists the job clones on disk, in a list that scrolls once it grows long.
+Opened from the **Settings** gear on any Code Loop board. Every agent's projects, one tab per agent (`/projects/settings?agent=<agent>`): add and remove them, set their reports, and see the models their jobs run on. Below them, the one set of [Code Loop](/guide/projects) settings, shared by every project of every agent: how many jobs run at once across all of them, how GitHub is read, which issues are picked up, merging and changelogs, the approval mode, and where clones go. It also lists the job clones on disk, in a list that scrolls once it grows long.
 
 ### Scheduled Tasks (`/agents/<agent>/tasks`)
 
@@ -95,7 +95,7 @@ Token analytics for the last 30 days (or a custom range):
 
 - Input and output tokens per day, per agent, per model, and per provider.
 - Total cost estimates when provider pricing is available.
-- A **Projects** summary for the same range: how many project issues jobs worked on, how many of those merged, how many ended failed (an issue that failed and was then retried to a merge counts as merged), the total wall time project job runs took, and the code those jobs changed: the lines added (+) and removed (−) by the pull requests that merged in the range. A table below breaks the same figures down per project repository. A job that opened no pull request adds no lines.
+- A **Code Loop** summary for the same range: how many project issues jobs worked on, how many of those merged, how many ended failed (an issue that failed and was then retried to a merge counts as merged), the total wall time project job runs took, and the code those jobs changed: the lines added (+) and removed (−) by the pull requests that merged in the range. A table below breaks the same figures down per project repository. A job that opened no pull request adds no lines.
 
 ### Tools (`/system/tools`)
 

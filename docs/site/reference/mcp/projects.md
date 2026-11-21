@@ -1,6 +1,6 @@
-# Projects Tools
+# Code Loop Tools
 
-The `project_*` tools manage [Projects](/guide/projects). Every tool is also an `aviary project` subcommand that takes the same arguments as `--<field> <value>` flags. A leading positional argument fills the subcommand's main field, such as the job number or the target. The tools need a running Aviary server.
+The `project_*` tools manage [Code Loop](/guide/projects). Every tool is also an `aviary project` subcommand that takes the same arguments as `--<field> <value>` flags. A leading positional argument fills the subcommand's main field, such as the job number or the target. The tools need a running Aviary server.
 
 A job is named by its issue `number`. `target` is needed only when several projects have a job with that number.
 
@@ -88,7 +88,7 @@ Stop watching a project, removing it from the agent that owns it. Running jobs a
 
 ## project_clone_list, project_clone_clear
 
-List every clone Projects made for a job, with its repository, issue, pull request and on-disk size, and whether a job still uses it, plus `totalSize` across the listing. Sizes are measured concurrently for at most a few seconds; a clone not measured in time has no `size` and is counted in `unmeasured`. Clear removes the unused ones and reports the space reclaimed.
+List every clone Code Loop made for a job, with its repository, issue, pull request and on-disk size, and whether a job still uses it, plus `totalSize` across the listing. Sizes are measured concurrently for at most a few seconds; a clone not measured in time has no `size` and is counted in `unmeasured`. Clear removes the unused ones and reports the space reclaimed.
 
 ## project_unblock_run
 

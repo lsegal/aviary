@@ -1,6 +1,6 @@
 # The Code Loop on GitHub
 
-This page follows one issue through its whole life in [Projects](./projects): from the moment a repository is watched to the merged pull request that closes the issue. Each stage says what happens, where it is configured, and where you watch it in Aviary.
+This page follows one issue through its whole life in [Code Loop](./projects): from the moment a repository is watched to the merged pull request that closes the issue. Each stage says what happens, where it is configured, and where you watch it in Aviary.
 
 The loop has two halves. Aviary decides **which** issue runs, **on which provider**, and **when**, and keeps the job alive. The [`gh-fix`](./skills/gh-fix) skill, running inside the provider, does the work on GitHub: the branch, the draft pull request, the fix, CI and the merge.
 
@@ -69,7 +69,7 @@ Inside the clone, `gh-fix` reproduces the problem when it can, makes the smalles
 While it works it pushes a checkpoint commit at least every five minutes, marked so CI skips it, and checks off the plan. The final commit carries `Closes #<N>`, and the pull request is marked ready for review.
 
 - **Configure:** the provider's [approval mode](/reference/config#approval) (`projects.approval_mode`, or `approval.mode`) decides how much the CLI may do unattended; each [CLI provider definition](/reference/cli-definitions) translates it into the CLI's own flags.
-- **Observe:** the job's live session log on the board, and its structured transcript (messages, tool calls, shell commands, file changes). **Summarize** on a job card asks the Projects agent for a summary.
+- **Observe:** the job's live session log on the board, and its structured transcript (messages, tool calls, shell commands, file changes). **Summarize** on a job card asks the Code Loop agent for a summary.
 
 ## 6. CI runs and failures are repaired
 
@@ -97,7 +97,7 @@ When every required check passes on the head that was tested, `gh-fix` merges wi
 
 Comments by allowed commenters (`allowed_commenters`, the signed-in `gh` user by default) on the issue or its pull request are instructions. New comments, edits to the issue description, and closures are relayed into the running session, so you steer a job by commenting on GitHub. Comments by anyone else are treated as information, not instructions.
 
-A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass on that instance. On a finished or paused job, the mention goes to the Projects agent, which decides whether to retry or resume it. See [Steering jobs](./projects#steering-jobs).
+A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass on that instance. On a finished or paused job, the mention goes to the Code Loop agent, which decides whether to retry or resume it. See [Steering jobs](./projects#steering-jobs).
 
 ### Prompt chat
 
@@ -118,7 +118,7 @@ A project can also run prompts on a timer, such as a nightly triage that labels 
 
 ## Where to go next
 
-- [Projects](./projects) covers every setting the loop reads.
+- [Code Loop](./projects) covers every setting the loop reads.
 - [CLI provider definitions](/reference/cli-definitions) describes how Aviary launches each CLI a job runs on, and how to add one.
 - [`gh-fix`](./skills/gh-fix) describes the skill's side of the loop.
-- [Projects tools](/reference/mcp/projects) lists the MCP tools and `aviary project` commands that drive it.
+- [Code Loop tools](/reference/mcp/projects) lists the MCP tools and `aviary project` commands that drive it.

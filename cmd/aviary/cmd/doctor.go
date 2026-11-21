@@ -181,7 +181,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	// Agents gated out of Projects dispatch are listed with the reason, so a
 	// job that fails to start on one is explained before it is dispatched.
 	_, _ = fmt.Fprintln(os.Stdout)
-	_, _ = fmt.Fprintln(os.Stdout, "Projects agents")
+	_, _ = fmt.Fprintln(os.Stdout, "Code Loop agents")
 	_, _ = fmt.Fprintln(os.Stdout, "───────────────")
 	if registryErr != nil {
 		_, _ = fmt.Fprintf(os.Stdout, "  [ERROR] %v\n", registryErr)
