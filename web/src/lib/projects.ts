@@ -29,7 +29,14 @@ export const BOARD_STATES: BoardState[] = [
 	"failed",
 ];
 
-export type BoardFilter = "all" | BoardState;
+/**
+ * The board states a comma-separated list such as the board's ?state= query
+ * names, in board order; unknown names are dropped and none means no filter.
+ */
+export function parseBoardStates(v: unknown): BoardState[] {
+	const names = typeof v === "string" ? v.split(",") : [];
+	return BOARD_STATES.filter((s) => names.includes(s));
+}
 
 /** The state of a job's pull request, empty while it has none. */
 export type PullRequestState = "" | "draft" | "open" | "merged";

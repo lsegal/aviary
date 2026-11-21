@@ -120,12 +120,14 @@
 								</button>
 							</div>
 							<template v-if="view === 'board'">
-								<div role="tablist" aria-label="Job filter" class="flex max-w-full overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-									<button v-for="f in FILTERS" :key="f.key" type="button" role="tab" :aria-selected="filter === f.key"
-										class="shrink-0 px-3 py-1.5" :class="filter === f.key ? FILTER_ACTIVE[f.key] : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800'"
-										@click="filter = f.key">
-										{{ f.key === "all" && total ? `${f.label} ${total}` : f.label }}
+								<div role="group" aria-label="Job filter" class="flex max-w-full flex-wrap items-center gap-1.5">
+									<button v-for="state in BOARD_STATES" :key="state" type="button" :aria-pressed="states.includes(state)"
+										class="shrink-0 rounded-full border px-3 py-1" :class="states.includes(state) ? FILTER_ACTIVE[state] : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'"
+										@click="toggleState(state)">
+										{{ stateLabel(state) }}<span v-if="status" class="ml-1.5 tabular-nums opacity-75">{{ status.states[state] }}</span>
 									</button>
+									<button v-if="states.length" type="button" class="px-1 text-gray-500 hover:text-gray-800 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
+										@click="setStates([])">Clear</button>
 								</div>
 								<button type="button" data-testid="kanban-toggle" :aria-pressed="kanban"
 									:aria-label="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
@@ -137,6 +139,10 @@
 								</button>
 								<span v-if="searching" class="text-gray-500 dark:text-gray-400" data-testid="search-count">
 									{{ total }} of {{ unfilteredTotal }} {{ unfilteredTotal === 1 ? "job matches" : "jobs match" }}
+								</span>
+								<span v-else class="text-gray-500 dark:text-gray-400" data-testid="job-total">
+									<template v-if="states.length">{{ total }} of {{ allJobs }} {{ allJobs === 1 ? "job" : "jobs" }}</template>
+									<template v-else>{{ total }} {{ total === 1 ? "job" : "jobs" }}</template>
 								</span>
 								<nav v-if="!kanban && (searching || pageCount > 1)" class="flex items-center gap-3 sm:ml-auto" aria-label="Job pages">
 									<button type="button" aria-label="Previous page" title="Previous page" class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -163,7 +169,7 @@
 
 						<template v-else>
 						<div v-if="loading && !jobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
-						<KanbanBoard v-else-if="kanban" :jobs="jobs" :filter="filter" :now="now" :schedules="boardSchedules"
+						<KanbanBoard v-else-if="kanban" :jobs="jobs" :states="states" :now="now" :schedules="boardSchedules"
 							:schedule-to="aggregate ? undefined : scheduleTo" />
 						<div v-else-if="!jobs.length && !boardSchedules.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
 							<p>No jobs match “<b class="text-gray-800 dark:text-gray-100">{{ search.trim() }}</b>”.</p>
@@ -239,10 +245,10 @@ import {
 import {
 	age,
 	BOARD_STATES,
-	type BoardFilter,
 	type BoardState,
 	type ProjectJob,
 	type ProjectSchedule,
+	parseBoardStates,
 	projectPath,
 	scheduleMatches,
 	stateLabel,
@@ -252,18 +258,13 @@ import {
 import { shortVersion } from "../lib/version";
 import { useSettingsStore } from "../stores/settings";
 
-const FILTERS: { key: BoardFilter; label: string }[] = [
-	{ key: "all", label: "All" },
-	...BOARD_STATES.map((key) => ({ key, label: stateLabel(key) })),
-];
-// A selected state tab takes that state's color; Starting is orange.
-const FILTER_ACTIVE: Record<BoardFilter, string> = {
-	all: "bg-gray-900 text-white dark:bg-white dark:text-gray-900",
-	starting: "bg-orange-500 text-white",
-	paused: "bg-amber-500 text-white",
-	running: "bg-blue-600 text-white",
-	done: "bg-green-600 text-white",
-	failed: "bg-red-600 text-white",
+// A selected state chip fills with that state's color; Starting is orange.
+const FILTER_ACTIVE: Record<BoardState, string> = {
+	starting: "border-orange-500 bg-orange-500 text-white",
+	paused: "border-amber-500 bg-amber-500 text-white",
+	running: "border-blue-600 bg-blue-600 text-white",
+	done: "border-green-600 bg-green-600 text-white",
+	failed: "border-red-600 bg-red-600 text-white",
 };
 
 type ProjectView = "board" | "schedules";
@@ -312,7 +313,44 @@ const settingsPath = computed(() =>
 		? agentProjectsSettingsPath(routeAgent.value)
 		: projectSettingsPath(settingsStore.config, project.value),
 );
-const filter = ref<BoardFilter>("all");
+// The selected states filter the board; none shows every state. They live
+// in the URL as ?state=running,failed, so a link opens the same filter, and
+// each board remembers its own in localStorage, so leaving the board, opening
+// a job and reloading keep them. A URL's states win over remembered ones.
+const states = computed(() => parseBoardStates(route.query.state));
+const statesKey = computed(
+	() => `aviary.projects.states.${project.value || `agent:${routeAgent.value}`}`,
+);
+function setStates(next: BoardState[]) {
+	const state = parseBoardStates(next.join(",")).join(",");
+	if (state) localStorage.setItem(statesKey.value, state);
+	else localStorage.removeItem(statesKey.value);
+	void router.replace({ query: { ...route.query, state: state || undefined } });
+}
+function toggleState(state: BoardState) {
+	setStates(
+		states.value.includes(state)
+			? states.value.filter((s) => s !== state)
+			: [...states.value, state],
+	);
+}
+watch(
+	() => [statesKey.value, route.query.state],
+	() => {
+		if (typeof route.query.state === "string") {
+			const state = states.value.join(",");
+			if (state) localStorage.setItem(statesKey.value, state);
+			else localStorage.removeItem(statesKey.value);
+			return;
+		}
+		const saved = parseBoardStates(localStorage.getItem(statesKey.value));
+		if (saved.length)
+			void router.replace({
+				query: { ...route.query, state: saved.join(",") },
+			});
+	},
+	{ immediate: true },
+);
 // The search narrows the jobs within the filter, across every field and the
 // whole list rather than one page.
 const search = ref("");
@@ -336,7 +374,7 @@ const {
 	importProfile,
 	retry,
 	stop,
-} = useProjectBoard(targets, filter, search, kanban);
+} = useProjectBoard(targets, states, search, kanban);
 const {
 	schedules,
 	upcoming,
@@ -353,12 +391,12 @@ const {
 } = useProjectSchedules(project);
 
 // The project's scheduled tasks are their own kind of box on the board: in
-// the list, under All, and in the kanban's Scheduled column. A state filter
-// shows jobs only.
+// the list, with no states selected, and in the kanban's Scheduled column.
+// Selected states show jobs only.
 const boardSchedules = computed(() =>
-	filter.value === "all"
-		? schedules.value.filter((s) => scheduleMatches(s, search.value))
-		: [],
+	states.value.length
+		? []
+		: schedules.value.filter((s) => scheduleMatches(s, search.value)),
 );
 // A scheduled box opens its detail view on the board, at ?scheduled=<id>.
 function scheduleTo(s: ProjectSchedule) {
@@ -386,8 +424,9 @@ const selectedSchedule = computed({
 	},
 });
 function setView(next: ProjectView) {
+	const state = route.query.state;
 	void router.replace({
-		query: next === "board" ? {} : { tab: next },
+		query: { ...(next === "board" ? {} : { tab: next }), state },
 	});
 }
 function openSchedule(id: string) {
@@ -425,6 +464,10 @@ const online = computed(
 		(status.value?.deliveryOnline ?? true) && !status.value?.github?.signedOut,
 );
 const pageCount = computed(() => Math.ceil(total.value / JOBS_PAGE_SIZE));
+// Every job on the board, whatever the selected states.
+const allJobs = computed(() =>
+	BOARD_STATES.reduce((n, s) => n + (status.value?.states[s] ?? 0), 0),
+);
 
 // Each board state's stat card, in its pill's colors; Starting is orange.
 const STATE_CARD: Record<BoardState, string> = {

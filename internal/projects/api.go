@@ -143,11 +143,11 @@ func boardStateCounts(jobs []JobSnapshot, targets []string) map[string]int {
 }
 
 // ListJobs is project_job_list: every job, running and errored ones first,
-// filtered by projects, engine status, board state and a search query, and
+// filtered by projects, engine status, board states and a search query, and
 // paged. No targets means every project. total counts the jobs that match
 // them all; with a query, unfiltered_total counts those matching all but the
 // query.
-func (m *Manager) ListJobs(targets []string, status, state, query string, offset, limit int) map[string]any {
+func (m *Manager) ListJobs(targets []string, status string, states []string, query string, offset, limit int) map[string]any {
 	if limit <= 0 {
 		limit = defaultJobListLimit
 	}
@@ -161,7 +161,7 @@ func (m *Manager) ListJobs(targets []string, status, state, query string, offset
 		if status != "" && job.Status != status {
 			continue
 		}
-		if state != "" && job.BoardState() != state {
+		if len(states) > 0 && !slices.Contains(states, job.BoardState()) {
 			continue
 		}
 		unfiltered++
