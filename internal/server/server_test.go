@@ -24,6 +24,7 @@ import (
 	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/projects"
 	"github.com/lsegal/aviary/internal/store"
 )
 
@@ -1431,6 +1432,41 @@ func TestLogHubSinceKeepsQuietComponent(t *testing.T) {
 	require.Len(t, lines, 1)
 	assert.True(t, strings.HasSuffix(lines[0], " third"))
 	assert.Equal(t, 23, next)
+}
+
+// TestProjectStatusLogsSurviveOtherComponents checks project_status reads the
+// engine's lines back from the log hub even after other components log far
+// more records than the hub keeps, as running jobs streaming output do.
+func TestProjectStatusLogsSurviveOtherComponents(t *testing.T) {
+	hub := newLogHub(10)
+	previous := slog.Default()
+	slog.SetDefault(slog.New(hub))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	m, err := projects.NewManager(t.TempDir())
+	require.NoError(t, err)
+	m.SetLogSource(hub.since)
+
+	m.Log("poll #1 found 3 open issue(s)")
+	m.Log("issue #7 picked up")
+	for i := 0; i < 50; i++ {
+		slog.Info("job output", "component", "agent")
+	}
+
+	status := m.Status(t.Context(), 0, nil)
+	logs := status["recent_logs"].([]string)
+	require.Len(t, logs, 2)
+	assert.True(t, strings.HasSuffix(logs[0], " poll #1 found 3 open issue(s)"))
+	assert.True(t, strings.HasSuffix(logs[1], " issue #7 picked up"))
+	offset := status["log_offset"].(int)
+	assert.Equal(t, 52, offset)
+
+	m.Log("issue #7 started")
+	slog.Info("job output", "component", "agent")
+	status = m.Status(t.Context(), offset, nil)
+	logs = status["recent_logs"].([]string)
+	require.Len(t, logs, 1)
+	assert.True(t, strings.HasSuffix(logs[0], " issue #7 started"))
+	assert.Equal(t, 54, status["log_offset"])
 }
 
 // hubLen counts the records held across every component's ring. The caller
