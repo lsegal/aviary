@@ -865,12 +865,10 @@ function onChatInputKeydown(e: KeyboardEvent) {
 	// In a multi-line draft the arrows move the caret between lines first.
 	const el = e.target as HTMLTextAreaElement;
 	if (el.selectionStart !== el.selectionEnd) return;
-	if (e.key === "ArrowUp" && el.value.slice(0, el.selectionStart).includes("
-"))
-		return;
-	if (e.key === "ArrowDown" && el.value.slice(el.selectionEnd).includes("
-"))
-		return;
+	const before = el.value.slice(0, el.selectionStart);
+	const after = el.value.slice(el.selectionEnd);
+	if (e.key === "ArrowUp" && before.includes("\n")) return;
+	if (e.key === "ArrowDown" && after.includes("\n")) return;
 
 	if (e.key === "ArrowUp") {
 		e.preventDefault();
