@@ -750,6 +750,19 @@ type pendingIssue struct {
 	// claim rather than leave the ticket owned by an idle instance (issue
 	// #434).
 	claim *ownershipTarget
+	// fresh marks a first-time pickup: no local record, no session, and no
+	// direct mention. Like a contested candidate, it is claimed only once it
+	// holds an agent slot.
+	fresh bool
+}
+
+// needsSlotToClaim reports whether dispatching pending posts or relies on a
+// new ownership claim, which it may only do once it holds an agent slot
+// (issue #652). Resumes and retries of work this instance already owns keep
+// waiting in the queue for a slot, as do direct mentions and woken paused
+// work, which are this instance's to act on.
+func (p pendingIssue) needsSlotToClaim() bool {
+	return p.fresh || (p.contested && !p.session.Resume)
 }
 
 // releasePendingClaim withdraws the ownership claim a won handshake already
@@ -860,8 +873,32 @@ func (w *Engine) standDownForStandingClaims(ctx context.Context, checker WorkClo
 // unconditionally on startup took work another instance was running (issue
 // #514).
 func (w *Engine) negotiateContestedIssues(ctx context.Context, checker WorkClosureChecker, newIssues []pendingIssue, seen map[string]bool, aggressive bool) []pendingIssue {
+	result, _ := w.negotiateContestedIssuesWithin(ctx, checker, newIssues, seen, aggressive, maxConcurrencyPermits)
+	return result
+}
+
+// negotiateContestedIssuesWithin is negotiateContestedIssues limited to room
+// new claims: a handshake or a rescinded-claim pickup each take one, and a
+// candidate past the limit is left unclaimed and seen, so a later poll with a
+// free agent slot negotiates for it as contested work. Claiming work with no
+// slot to run it left the ticket owned by an idle instance and turned away
+// instances that could have run it (issue #652). Claims this instance already
+// holds take no room and pass through. It also reports whether any candidate
+// was left for lack of room.
+func (w *Engine) negotiateContestedIssuesWithin(ctx context.Context, checker WorkClosureChecker, newIssues []pendingIssue, seen map[string]bool, aggressive bool, room int) ([]pendingIssue, bool) {
 	if w.Comments == nil || len(newIssues) == 0 {
-		return newIssues
+		return newIssues, false
+	}
+	var remaining atomic.Int64
+	remaining.Store(int64(room))
+	var full atomic.Bool
+	takeRoom := func(issue Issue) bool {
+		if remaining.Add(-1) >= 0 {
+			return true
+		}
+		full.Store(true)
+		w.logChanged("capacity-"+issueKey(issue), "full", "issue #%d not claimed: every agent slot is busy; leaving it for a later poll or another instance", issue.Number)
+		return false
 	}
 	keep := make([]bool, len(newIssues))
 	contested := make([]Issue, 0, len(newIssues))
@@ -929,6 +966,9 @@ func (w *Engine) negotiateContestedIssues(ctx context.Context, checker WorkClosu
 				// nobody holds it since, so it is free: claim it now and
 				// dispatch, with no handshake or staleness wait (issue #420).
 				if standing.Rescinded {
+					if !takeRoom(issue) {
+						return
+					}
 					if err := w.Comments.PostComment(ctx, target.Repo, target.Number, claimComment(w.Identity, target.Continue)); err != nil {
 						w.logf("issue #%d ownership was rescinded but claiming it failed: %v", issue.Number, err)
 						return
@@ -990,6 +1030,9 @@ func (w *Engine) negotiateContestedIssues(ctx context.Context, checker WorkClosu
 			// without this issue: once the handshake settles, the next poll
 			// reads its own claim (or its handshake record) and dispatches
 			// without asking again.
+			if !takeRoom(issue) {
+				return
+			}
 			key := issueKey(issue)
 			if !w.beginNegotiation(key) {
 				return
@@ -1034,7 +1077,7 @@ func (w *Engine) negotiateContestedIssues(ctx context.Context, checker WorkClosu
 			seen[issueKey(pending.issue)] = true
 		}
 	}
-	return filtered
+	return filtered, full.Load()
 }
 
 // pollDiscussions dispatches the gh-discuss skill for newly discovered
@@ -2193,6 +2236,11 @@ func (w *Engine) Run(ctx context.Context) error {
 	// pause it again: the retry overrides what it waited on.
 	// Only the run loop's own goroutine reads or writes it.
 	retriedPaused := make(map[string]bool)
+	// deferredForCapacity records that the last poll left new work unclaimed
+	// because every agent slot was busy, so the run loop polls again as soon
+	// as a slot frees instead of waiting out the interval (issue #652).
+	// Only the run loop's own goroutine reads or writes it.
+	deferredForCapacity := false
 	// retryAfterStop holds running jobs a web UI retry stopped, to requeue
 	// once their run exits. serveJobAction answers dashboard job actions, both
 	// from the run loop and while a poll waits for a slot.
@@ -2574,7 +2622,8 @@ func (w *Engine) Run(ctx context.Context) error {
 					session = AgentSession{}
 					contested = false
 				}
-				newIssues = append(newIssues, pendingIssue{issue: issue, contested: contested, session: session, mentioned: addressed, woken: wasPaused})
+				fresh := !hadLocalRecord && !contested && !directMention && !wasPaused && !session.Resume
+				newIssues = append(newIssues, pendingIssue{issue: issue, contested: contested, session: session, mentioned: addressed, woken: wasPaused, fresh: fresh})
 			}
 		}
 		// Paused work whose issue the poll no longer lists cannot be woken by
@@ -2632,7 +2681,16 @@ func (w *Engine) Run(ctx context.Context) error {
 			}
 		}
 		newIssues = w.standDownForStandingClaims(ctx, closureChecker, newIssues, seen)
-		newIssues = w.negotiateContestedIssues(ctx, closureChecker, newIssues, seen, n == 1)
+		// New pickups are claimed only as far as there are free agent slots
+		// to run them; contested ones claim during negotiation, so they get
+		// whatever room the fresh ones leave.
+		room := len(sem.tokens)
+		for _, pending := range newIssues {
+			if pending.fresh {
+				room--
+			}
+		}
+		newIssues, deferredForCapacity = w.negotiateContestedIssuesWithin(ctx, closureChecker, newIssues, seen, n == 1, room)
 		workMu.Lock()
 		inFlight := activeCountsByTarget(active, parseIssueWorkKey)
 		workMu.Unlock()
@@ -2654,6 +2712,31 @@ func (w *Engine) Run(ctx context.Context) error {
 		for _, pending := range newIssues {
 			issue := pending.issue
 			session := pending.session
+			// A new pickup takes its slot before anything announces it, so a
+			// full instance leaves the issue unclaimed for a later poll or
+			// another instance rather than claiming it and showing it as
+			// Starting while nothing runs (issue #652).
+			held := false
+			if pending.needsSlotToClaim() {
+				if !sem.tryAcquire() {
+					key := issueKey(issue)
+					deferredForCapacity = true
+					w.logChanged("capacity-"+key, "full", "issue #%d not claimed: every agent slot is busy; leaving it for a later poll or another instance", issue.Number)
+					if pending.fresh {
+						// Unseen, the next poll finds it as new work again.
+						delete(seen, key)
+					}
+					w.releasePendingClaim(ctx, pending, "every agent slot is busy, so it was not dispatched")
+					continue
+				}
+				held = true
+				w.forgetLogged("capacity-" + issueKey(issue))
+			}
+			releaseHeld := func() {
+				if held {
+					sem.release()
+				}
+			}
 			if !session.Resume {
 				session.Agent = ""
 				if identified, ok := w.runner().(TargetAgentIdentifier); ok {
@@ -2667,6 +2750,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				if agentAssignsSessionID(session.Agent) {
 					session.ID, err = newSessionID()
 					if err != nil {
+						releaseHeld()
 						w.releasePendingClaim(ctx, pending, "creating its session identifier failed, so it was never dispatched")
 						return err
 					}
@@ -2680,6 +2764,7 @@ func (w *Engine) Run(ctx context.Context) error {
 			fork, forkErr := w.forkFor(ctx, issueRepository(issue.Target, issue))
 			if forkErr != nil {
 				w.logf("issue #%d not dispatched; failed to read write permission on its repository: %v", issue.Number, forkErr)
+				releaseHeld()
 				w.releasePendingClaim(ctx, pending, "reading write permission on its repository failed, so it was never dispatched")
 				continue
 			}
@@ -2700,6 +2785,7 @@ func (w *Engine) Run(ctx context.Context) error {
 			if w.Status != nil {
 				if err := w.Status.SetIssueStatus(ctx, issue.Target, issue, "In Progress"); err != nil {
 					w.logf("issue #%d not dispatched; failed to set project status: %v", issue.Number, err)
+					releaseHeld()
 					w.releasePendingClaim(ctx, pending, "setting the project status failed, so it was never dispatched")
 					continue
 				}
@@ -2736,27 +2822,32 @@ func (w *Engine) Run(ctx context.Context) error {
 			err = saveScopedWorkState(w.StatePath, work, targets)
 			workMu.Unlock()
 			if err != nil {
+				releaseHeld()
 				return err
 			}
-			tasks.mu.Lock()
-			tasks.queued++
-			queued = tasks.queued
-			running = tasks.running
-			tasks.mu.Unlock()
-			w.logf("issue #%d queued (tasks: %d running, %d queued)", issue.Number, running, queued)
-			publish()
-			paused, err := acquireDispatchSlot(key)
-			if err != nil || paused {
+			if !held {
+				tasks.mu.Lock()
+				tasks.queued++
+				queued = tasks.queued
+				running = tasks.running
+				tasks.mu.Unlock()
+				w.logf("issue #%d queued (tasks: %d running, %d queued)", issue.Number, running, queued)
+				publish()
+				paused, err := acquireDispatchSlot(key)
+				if err != nil || paused {
+					tasks.mu.Lock()
+					tasks.queued--
+					tasks.mu.Unlock()
+					if err != nil {
+						return ctx.Err()
+					}
+					continue
+				}
 				tasks.mu.Lock()
 				tasks.queued--
 				tasks.mu.Unlock()
-				if err != nil {
-					return ctx.Err()
-				}
-				continue
 			}
 			tasks.mu.Lock()
-			tasks.queued--
 			tasks.running++
 			queued = tasks.queued
 			running = tasks.running
@@ -3850,11 +3941,20 @@ func (w *Engine) Run(ctx context.Context) error {
 		w.logf("watching paused work every %s", pausedTick)
 	}
 	for {
+		var slotFreed <-chan struct{}
+		if deferredForCapacity {
+			slotFreed = sem.freed
+		}
 		select {
 		case request := <-w.settingsRequestsChan():
 			request.done <- w.applySettingsRequest(request.update, sem)
 		case request := <-w.jobActionRequests():
 			serveJobAction(request, false)
+		case <-slotFreed:
+			deferredForCapacity = false
+			if err := poll(nil); err != nil && ctx.Err() == nil {
+				reportPollError("free slot", err)
+			}
 		case request := <-w.projectTaskRequests():
 			startScheduled(request)
 		case <-ctx.Done():

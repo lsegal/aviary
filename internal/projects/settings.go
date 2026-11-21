@@ -31,12 +31,34 @@ type concurrencySemaphore struct {
 	limit  int
 	debt   int
 	tokens chan struct{}
+	// freed is signalled whenever a slot returns to the pool, so a poll that
+	// left new work unclaimed for lack of a slot can run again as soon as one
+	// is free (issue #652).
+	freed chan struct{}
 }
 
 func newConcurrencySemaphore(limit int) *concurrencySemaphore {
-	s := &concurrencySemaphore{tokens: make(chan struct{}, maxConcurrencyPermits)}
+	s := &concurrencySemaphore{tokens: make(chan struct{}, maxConcurrencyPermits), freed: make(chan struct{}, 1)}
 	s.resize(limit)
 	return s
+}
+
+// tryAcquire takes a free slot without waiting, and reports whether it did.
+func (s *concurrencySemaphore) tryAcquire() bool {
+	select {
+	case <-s.tokens:
+		return true
+	default:
+		return false
+	}
+}
+
+// signalFreed notes that a slot became free.
+func (s *concurrencySemaphore) signalFreed() {
+	select {
+	case s.freed <- struct{}{}:
+	default:
+	}
 }
 
 // acquire blocks until a slot is available or ctx is done.
@@ -60,6 +82,7 @@ func (s *concurrencySemaphore) release() {
 	}
 	s.mu.Unlock()
 	s.tokens <- struct{}{}
+	s.signalFreed()
 }
 
 // resize changes the number of available slots. Growing mints new tokens
@@ -75,6 +98,7 @@ func (s *concurrencySemaphore) resize(newLimit int) {
 		for i := 0; i < delta; i++ {
 			s.tokens <- struct{}{}
 		}
+		s.signalFreed()
 		return
 	}
 	for i := 0; i < -delta; i++ {
