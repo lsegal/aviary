@@ -1,4 +1,4 @@
-// Package process starts the subprocesses Projects owns, such as CLI providers
+// Package process starts the subprocesses Aviary owns, such as CLI providers
 // and the ngrok tunnel, and makes sure none of them outlives Aviary.
 package process
 

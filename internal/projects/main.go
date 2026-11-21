@@ -1777,13 +1777,7 @@ func launchEnv(definition clidefs.Definition) []string {
 }
 
 func newAgentCommand(ctx context.Context, binary string, args ...string) *exec.Cmd {
-	binary, args, shimErr := agentShimArgv(binary, args)
-	cmd := exec.CommandContext(ctx, binary, args...)
-	if shimErr != nil {
-		// Start reports it, so every caller fails the call loudly instead of
-		// the agent answering a truncated prompt.
-		cmd.Err = shimErr
-	}
+	cmd := process.Command(ctx, binary, args...)
 	// Cancelling the run ends the agent's whole process tree, not just the
 	// agent, and Wait stops waiting on its output pipes soon after. A tree the
 	// shutdown checkpoint paused cannot exit by itself, so killing only the

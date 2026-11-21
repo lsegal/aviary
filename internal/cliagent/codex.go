@@ -11,11 +11,11 @@ import (
 	"mime"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/transcript"
 )
 
@@ -109,7 +109,7 @@ func (s *codexSession) Send(ctx context.Context, turn Turn, onEvent func(Event))
 		images = append(images, path)
 	}
 
-	cmd := exec.CommandContext(ctx, s.opts.binary(), codexArgs(s.opts, s.threadID, images)...) //nolint:gosec // binary is a fixed backend name
+	cmd := process.Command(ctx, s.opts.binary(), codexArgs(s.opts, s.threadID, images)...)
 	cmd.Dir = s.opts.WorkDir
 	cmd.Env = cliEnv(s.opts)
 	text := turn.Text

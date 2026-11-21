@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/transcript"
 )
 
@@ -106,7 +107,7 @@ func cliEnv(opts Options) []string {
 }
 
 func (s *claudeSession) start() (*claudeProc, error) {
-	cmd := exec.Command(s.opts.binary(), claudeArgs(s.opts, s.sessionID)...) //nolint:gosec // binary is a fixed backend name
+	cmd := process.Command(context.Background(), s.opts.binary(), claudeArgs(s.opts, s.sessionID)...)
 	cmd.Dir = s.opts.WorkDir
 	cmd.Env = cliEnv(s.opts)
 	stdin, err := cmd.StdinPipe()
