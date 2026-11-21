@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/lsegal/aviary/internal/projects/core"
 )
 
 // cloneReuseBudget bounds how long preparing a reused clone may take, fetch
@@ -145,4 +147,24 @@ func quoteConfigValue(value string) string {
 		return value
 	}
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value) + `"`
+}
+
+// checkoutState says where job's clone stands for the job detail view:
+// "none" before the job has one, "present" while it exists, "reused" once a
+// later job was handed it (that job is returned), and "removed" once it is
+// gone from disk.
+func checkoutState(job core.JobSnapshot, jobs []core.JobSnapshot) (string, *core.JobSnapshot) {
+	if job.CheckoutDirectory == "" {
+		return "none", nil
+	}
+	for i, other := range jobs {
+		if other.CheckoutDirectory != "" && cloneKey(other.CheckoutDirectory) == cloneKey(job.CheckoutDirectory) &&
+			(other.Target != job.Target || other.Number != job.Number) && other.Started.After(job.Started) {
+			return "reused", &jobs[i]
+		}
+	}
+	if !isDir(job.CheckoutDirectory) {
+		return "removed", nil
+	}
+	return "present", nil
 }

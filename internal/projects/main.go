@@ -1567,8 +1567,15 @@ func jobPrompt(r CommandRunner, issue Issue, session AgentSession) string {
 		prompt += "\n\nKeep your responses concise. Do not include code diffs or large code blocks; summarize the changes and tests instead."
 		// The clone must live under a sanctioned temp directory,
 		// so the run names the one it chose rather than leaving it to the agent.
-		if _, inCheckout := sessionRunDir(session); session.RunDir != "" && !inCheckout && !isDiscussionTarget(target) {
+		_, inCheckout := sessionRunDir(session)
+		if session.RunDir != "" && !inCheckout && !isDiscussionTarget(target) {
 			prompt += "\n\nClone directory: " + session.RunDir
+		}
+		// A clone an earlier job left has already been reset to a fresh clone
+		// of the default branch, so the agent works in it rather than cloning
+		// again (#622).
+		if session.ReusedClone && inCheckout && !isDiscussionTarget(target) {
+			prompt += "\n\nReuse clone: " + session.CheckoutDirectory
 		}
 	} else if session.Update != "" {
 		// The session is being resumed to relay a change made to the issue

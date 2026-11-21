@@ -100,8 +100,9 @@ func (w *Engine) leaseReusableClone(key, repo string) string {
 	}
 	w.clones.leaseMu.Lock()
 	defer w.clones.leaseMu.Unlock()
+	// Only booked clones are candidates; scanning the temp directories for
+	// leftovers is left to listing, off the dispatch path.
 	usage := w.cloneUsage()
-	reg.adopt(usage.roots, usage.work)
 	rec, ok := pickReusableClone(reg, repo, usage)
 	if !ok {
 		return ""
