@@ -2,8 +2,8 @@
 	<div class="flex min-h-0 flex-1 flex-col" data-testid="job-detail">
 		<header data-testid="job-detail-header" class="@container border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-6">
 			<!-- The title column flexes and wraps; the actions keep one row, beside the title on wide panes and under it on narrow ones. -->
-			<div class="flex flex-col gap-3 @3xl:flex-row @3xl:items-start">
-				<div class="min-w-0 @3xl:flex-1">
+			<div class="flex flex-col gap-3 @2xl:flex-row @2xl:items-start">
+				<div class="min-w-0 @2xl:flex-1">
 					<p class="text-xs text-gray-500">
 						<router-link :to="boardPath" data-testid="job-detail-board-link" class="text-blue-600 hover:underline">Board</router-link> /
 					</p>
@@ -18,7 +18,7 @@
 						</span>
 					</div>
 				</div>
-				<div data-testid="job-detail-actions" class="flex min-w-0 shrink-0 items-center gap-2 @3xl:justify-end">
+				<div data-testid="job-detail-actions" class="flex min-w-0 shrink-0 items-center gap-2 @2xl:justify-end">
 					<template v-if="job">
 						<a v-if="issueURL" :href="issueURL" target="_blank" rel="noreferrer" :title="`Open issue #${job.number} on GitHub`"
 							class="inline-flex h-8 min-w-0 items-center rounded-lg border border-gray-200 px-3 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
@@ -34,7 +34,7 @@
 							class="inline-flex h-8 shrink-0 items-center justify-center rounded-lg border gap-1 px-2 text-sm"
 							:class="showRaw ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
 							@click="showRaw = !showRaw">
-							<CodeBracketIcon aria-hidden="true" class="h-4 w-4" /><span class="hidden @xl:inline">Raw output</span>
+							<CodeBracketIcon aria-hidden="true" class="h-4 w-4" /><span class="hidden @xl:inline @2xl:hidden @4xl:inline">Raw output</span>
 						</button>
 						<button type="button" :disabled="busy || !job.actions.retry"
 							aria-label="Retry" :title="job.actions.retryUnavailable || 'Retry this job'"
@@ -45,7 +45,7 @@
 							@click="run(stop)"><StopIcon aria-hidden="true" class="h-4 w-4" /></button>
 					</template>
 					<router-link :to="boardPath" data-testid="job-detail-close" aria-label="Close job details" title="Back to the board"
-						class="inline-flex h-8 shrink-0 items-center justify-center rounded-lg border ml-auto w-8 border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 @3xl:ml-0"><XMarkIcon aria-hidden="true" class="h-4 w-4" /></router-link>
+						class="inline-flex h-8 shrink-0 items-center justify-center rounded-lg border ml-auto w-8 border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 @2xl:ml-0"><XMarkIcon aria-hidden="true" class="h-4 w-4" /></router-link>
 				</div>
 			</div>
 		</header>
