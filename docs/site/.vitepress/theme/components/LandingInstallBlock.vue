@@ -150,3 +150,117 @@ watch(activeKey, (_value, oldValue) => {
 		</div>
 	</div>
 </template>
+
+<style scoped>
+.landing-install {
+	overflow: hidden;
+	border: 1px solid var(--rule-strong);
+	border-radius: 14px;
+	background: var(--paper);
+	box-shadow: var(--shadow-sm);
+}
+
+.landing-install-tabs {
+	display: flex;
+	gap: 2px;
+	padding: 6px;
+	border-bottom: 1px solid var(--rule);
+	background: color-mix(in oklab, var(--bg-soft) 60%, transparent);
+}
+
+.landing-install-tab {
+	flex: 1;
+	padding: 8px 12px;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--ink-2);
+	font: inherit;
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+	transition:
+		background-color 0.15s ease,
+		color 0.15s ease;
+}
+
+.landing-install-tab:hover {
+	color: var(--ink);
+}
+
+.landing-install-tab.active {
+	background: var(--paper);
+	color: var(--ink);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.landing-install-command {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 14px 16px;
+	color: var(--ink);
+	font-family: var(--mono);
+	font-size: 13.5px;
+}
+
+.landing-install-command .prompt {
+	color: var(--brand);
+	font-weight: 600;
+}
+
+.landing-install-command .command {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.landing-install-command .caret {
+	display: inline-block;
+	width: 8px;
+	height: 1em;
+	margin-left: 2px;
+	background: var(--brand);
+	vertical-align: -2px;
+	animation: blink 1.05s step-end infinite;
+}
+
+.landing-install-copy {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	border: 1px solid var(--rule);
+	border-radius: 8px;
+	background: transparent;
+	color: var(--ink-2);
+	cursor: pointer;
+	transition:
+		color 0.15s ease,
+		border-color 0.15s ease,
+		background-color 0.15s ease;
+}
+
+.landing-install-copy:hover {
+	border-color: var(--rule-strong);
+	background: color-mix(in oklab, var(--bg-soft) 45%, transparent);
+	color: var(--ink);
+}
+
+.landing-install-copy.copied {
+	border-color: #2eb67d;
+	color: #2eb67d;
+}
+
+.landing-install-minimal .landing-install-command {
+	padding-block: 12px;
+}
+
+@keyframes blink {
+	50% {
+		opacity: 0;
+	}
+}
+</style>

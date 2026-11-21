@@ -1,6 +1,6 @@
 <template>
 	<section data-testid="kanban" aria-label="Jobs by state" class="flex gap-3 overflow-x-auto pb-2">
-		<div v-if="!states.length && scheduleTo" data-testid="kanban-column" data-state="scheduled"
+		<div v-if="showScheduled && scheduleTo" data-testid="kanban-column" data-state="scheduled"
 			class="flex min-w-44 flex-1 basis-0 flex-col rounded-xl border border-violet-200 bg-violet-50/40 dark:border-violet-900 dark:bg-violet-950/20">
 			<h3 class="flex items-center gap-2 border-b border-violet-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-violet-700 dark:border-violet-900 dark:text-violet-300">
 				<span class="h-2 w-2 rounded-full bg-violet-500" />
@@ -66,10 +66,12 @@ import { projectOwner } from "../../lib/projectSettings";
 import {
 	age,
 	BOARD_STATES,
+	type BoardFilter,
 	type BoardState,
 	formatFire,
 	githubURL,
 	jobPath,
+	jobStates,
 	type ProjectJob,
 	type ProjectSchedule,
 	stateLabel,
@@ -83,8 +85,8 @@ import PullRequestLink from "./PullRequestLink.vue";
 const props = withDefaults(
 	defineProps<{
 		jobs: ProjectJob[];
-		/** The selected states; none shows every state. */
-		states: BoardState[];
+		/** The selected filters; none shows every column. */
+		filters: BoardFilter[];
 		now: number;
 		/** The project's scheduled tasks, shown in their own Scheduled column. */
 		schedules?: ProjectSchedule[];
@@ -102,12 +104,17 @@ const DOTS: Record<BoardState, string> = {
 	failed: "bg-red-500",
 };
 
-// Selected states narrow the board to their columns.
+// Selected filters narrow the board to their columns.
+const showScheduled = computed(
+	() => !props.filters.length || props.filters.includes("scheduled"),
+);
 const columns = computed(() =>
-	(props.states.length ? props.states : BOARD_STATES).map((state) => ({
-		state,
-		jobs: props.jobs.filter((j) => j.state === state),
-	})),
+	(props.filters.length ? jobStates(props.filters) : BOARD_STATES).map(
+		(state) => ({
+			state,
+			jobs: props.jobs.filter((j) => j.state === state),
+		}),
+	),
 );
 
 const settings = useSettingsStore();

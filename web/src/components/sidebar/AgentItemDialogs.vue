@@ -26,6 +26,19 @@
 						<label for="agent-task-prompt" class="field-label mt-3">{{ form.type === "script" ? "Script" : "Prompt" }}</label>
 						<textarea id="agent-task-prompt" v-model="form.prompt" rows="6" class="field-input font-mono text-xs"
 							:placeholder="form.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'" />
+						<template v-if="dialog.mode === 'create'">
+							<label for="agent-task-send-to" class="field-label mt-3">Send To</label>
+							<select id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
+								aria-describedby="agent-task-send-to-help" class="field-input">
+								<option value="">Task session only</option>
+								<option v-for="s in channelSessions" :key="s.id" :value="`session:${s.id}`">
+									{{ chatDisplayName(s) }} · {{ s.channels?.join(", ") }}
+								</option>
+							</select>
+							<p id="agent-task-send-to-help" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+								Runs always show their output in the task's own session; a channel session also gets a copy.
+							</p>
+						</template>
 						<div v-if="dialog.mode === 'create'" class="mt-3 flex items-start gap-3"
 							:class="dialog.project ? 'opacity-60' : ''">
 							<input id="agent-task-precompute" v-model="form.precompute" type="checkbox"
@@ -120,6 +133,10 @@ import {
 } from "../../lib/trigger";
 import { agentFilePath, useAgentFilesStore } from "../../stores/agentFiles";
 import {
+	chatDisplayName,
+	useChatSessionsStore,
+} from "../../stores/chatSessions";
+import {
 	type AgentTask,
 	agentTaskPath,
 	agentTaskType,
@@ -130,6 +147,7 @@ import TriggerEditor from "../TriggerEditor.vue";
 const { dialog, close } = useAgentItemDialogs();
 const settings = useSettingsStore();
 const files = useAgentFilesStore();
+const chatSessions = useChatSessionsStore();
 const route = useRoute();
 const router = useRouter();
 const { callTool } = useMCP();
@@ -144,6 +162,8 @@ const form = reactive({
 	type: "prompt",
 	agent: "",
 	precompute: true,
+	/** Where runs forward their output: "" or session:<id> of a channel session. */
+	target: "",
 });
 // Remounts the trigger editor for each dialog, so its preview starts afresh.
 const editorKey = ref(0);
@@ -162,6 +182,28 @@ const agentChoices = computed(() => {
 	const d = dialog.value;
 	if (!d) return [];
 	return [...new Set([d.agent, ...(d.agents ?? [])].filter(Boolean))];
+});
+
+/** The agent a new task is created under. */
+const taskAgent = computed(() => {
+	const d = dialog.value;
+	if (d?.kind !== "task" || d.mode !== "create") return "";
+	return d.project ? form.agent || d.agent : d.agent;
+});
+
+/** The task agent's chats that forward to a channel, offered as Send To. */
+const channelSessions = computed(() =>
+	chatSessions
+		.sessions(taskAgent.value)
+		.filter((s) => (s.channels?.length ?? 0) > 0),
+);
+
+// Each dialog opening reloads the chats, so a newly bound channel shows up;
+// picking another agent clears a Send To that named one of the old agent's.
+watch([dialog, taskAgent], ([, agent], [, prev]) => {
+	if (!agent) return;
+	if (prev && agent !== prev) form.target = "";
+	void chatSessions.load(agent).catch(() => {});
 });
 
 const formOpen = computed(
@@ -189,7 +231,7 @@ const description = computed(() => {
 	if (d.mode !== "create")
 		return `Renames ${d.name} or changes its trigger and prompt.`;
 	return d.project
-		? `A scheduled task that runs its prompt against ${d.project}. It is listed in Scheduled Tasks, and this project's Schedules section edits the rest of its settings.`
+		? `A scheduled task that runs its prompt against ${d.project}. It is listed in Scheduled Tasks, and its box on this project's board edits the rest of its settings.`
 		: `A scheduled task for ${d.agent}. The Scheduled Tasks page edits the rest of its settings.`;
 });
 
@@ -212,6 +254,7 @@ watch(dialog, (d) => {
 	form.agent = d?.agent ?? "";
 	form.precompute =
 		!d?.project && settings.config?.scheduler?.precompute_tasks !== false;
+	form.target = "";
 });
 
 /**
@@ -255,7 +298,7 @@ async function submitTask(agent: string, mode: "create" | "edit", from = "") {
 				type: project ? "project" : "prompt",
 				...(project ? { project } : {}),
 				watch: "",
-				target: "",
+				target: form.target,
 				run_once: false,
 				from_file: true,
 				prompt: form.prompt,

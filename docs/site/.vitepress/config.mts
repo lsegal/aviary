@@ -50,9 +50,9 @@ export default defineConfig({
 					title,
 					description,
 					image: new URL("logo-social.png", baseUrl).toString(),
-					width: "512",
-					height: "512",
-					alt: "Aviary logo on white background",
+					width: "1200",
+					height: "630",
+					alt: "Aviary logo and tagline on a white card",
 				};
 		const head: HeadConfig[] = [
 			["link", { rel: "icon", type: "image/png", href: logoPath }],

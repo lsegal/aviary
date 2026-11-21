@@ -116,13 +116,11 @@ watch(
 		} else draft.value = { ...draft.value, history: next.history };
 	},
 );
-// The editor shows the schedule at ?tab=schedules&schedule=<id>, so picking
-// another schedule or tab leaves it as surely as another page does.
+// The editor shows the schedule at ?scheduled=<id>, so picking another
+// schedule or going back to the board leaves it as surely as another page does.
 useUnsavedChanges(() => editable(draft.value) !== saved.value, {
 	keeps: (to, from) =>
-		to.path === from.path &&
-		to.query.tab === from.query.tab &&
-		to.query.schedule === from.query.schedule,
+		to.path === from.path && to.query.scheduled === from.query.scheduled,
 });
 const busy = ref(false);
 const error = ref("");

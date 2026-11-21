@@ -380,11 +380,6 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		await refresh();
 	}
 
-	async function setEnabled(s: ProjectSchedule, enabled: boolean) {
-		await callTool("task_update", { name: s.id, enabled });
-		await refresh();
-	}
-
 	async function remove(s: ProjectSchedule) {
 		await callTool("task_delete", { name: s.id });
 		await refresh();
@@ -397,18 +392,6 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 
 	const preview = useTriggerPreview();
 
-	/**
-	 * The next count fires of a saved schedule, as the scheduler itself
-	 * predicts them (it knows whether a run-once task already fired).
-	 */
-	async function predict(s: ProjectSchedule, count = 5): Promise<string[]> {
-		const result = parseToolJSON(
-			await callTool("task_preview", { name: s.id, count }),
-		);
-		const next = (result as { next?: unknown }).next;
-		return Array.isArray(next) ? next.map(String) : [];
-	}
-
 	return {
 		schedules,
 		upcoming,
@@ -417,10 +400,8 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		loaded,
 		refresh,
 		save,
-		setEnabled,
 		remove,
 		runNow,
 		preview,
-		predict,
 	};
 }

@@ -2,6 +2,7 @@ import DefaultTheme from "vitepress/theme";
 import { h } from "vue";
 import ConversationStopDemo from "./components/ConversationStopDemo.vue";
 import LandingHomePage from "./components/LandingHomePage.vue";
+import ProjectsPage from "./components/ProjectsPage.vue";
 import SiteEffects from "./components/SiteEffects.vue";
 import SkillLandingPage from "./components/skills/SkillLandingPage.vue";
 import SkillsIndexPage from "./components/skills/SkillsIndexPage.vue";
@@ -18,6 +19,7 @@ export default {
 		DefaultTheme.enhanceApp?.({ app });
 		app.component("ConversationStopDemo", ConversationStopDemo);
 		app.component("LandingHomePage", LandingHomePage);
+		app.component("ProjectsPage", ProjectsPage);
 		app.component("SkillLandingPage", SkillLandingPage);
 		app.component("SkillsIndexPage", SkillsIndexPage);
 	},

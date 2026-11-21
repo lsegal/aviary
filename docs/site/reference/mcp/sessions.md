@@ -125,6 +125,21 @@ Stop all in-progress work for a specific session.
 
 ---
 
+## session_turn
+
+Get what a session's running turn has streamed so far. The control panel uses it to restore a chat's typing indicator, tool calls, and partial reply when it opens mid-turn. The `/api/ws` stream sends the same state as `session_turn` events while the turn runs.
+
+**Arguments:**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent` | string | yes | Agent name |
+| `session_id` | string | yes | Session ID |
+
+**Returns:** JSON object with `agent_id`, `session_id`, `processing` (true while a turn runs), and `items`, in streamed order. Each item has one of `text` (partial reply text), `media_url`, or `tool` (`id`, `name`, `args`, `result`, `error`, `done`). Items are empty once the turn ends.
+
+---
+
 ## session_remove
 
 Permanently delete a session and all of its messages.

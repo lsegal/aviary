@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -937,6 +938,11 @@ type sessionStopArgs struct {
 	Session   string `json:"session,omitempty"`
 }
 
+type sessionTurnArgs struct {
+	Agent     string `json:"agent"`
+	SessionID string `json:"session_id"`
+}
+
 type sessionSetTargetArgs struct {
 	Agent       string `json:"agent"`
 	SessionID   string `json:"session_id"`
@@ -1140,6 +1146,9 @@ func registerSessionTools(s *sdkmcp.Server) {
 			LastMessageAt string `json:"last_message_at,omitempty"`
 			IsProcessing  bool   `json:"is_processing"`
 			Deletable     bool   `json:"deletable"`
+			// Channels names the channel types the session forwards its
+			// replies to, such as "slack", making it a channel session.
+			Channels []string `json:"channels,omitempty"`
 		}
 		out := make([]sessionDTO, 0, len(sessions))
 		for _, sess := range sessions {
@@ -1159,6 +1168,13 @@ func registerSessionTools(s *sdkmcp.Server) {
 			}
 			if sess.LastMessageAt != nil {
 				dto.LastMessageAt = sess.LastMessageAt.Format(time.RFC3339Nano)
+			}
+			if chs, err := store.ReadSessionChannels(sess.AgentID, sess.ID); err == nil {
+				for _, ch := range chs.Channels {
+					if ch.Type != "" && !slices.Contains(dto.Channels, ch.Type) {
+						dto.Channels = append(dto.Channels, ch.Type)
+					}
+				}
 			}
 			out = append(out, dto)
 		}
@@ -1191,6 +1207,25 @@ func registerSessionTools(s *sdkmcp.Server) {
 		Name:        "session_history",
 		Description: "Read session history. Prefer order=desc and limit=20 to recover recent context in group chats or resumed sessions.",
 	}, sessionHistoryHandler)
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "session_turn",
+		Description: "Get what a session's running turn has streamed so far: whether it is processing, its tool calls with their status, and its partial text",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionTurnArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		agentName := strings.TrimSpace(args.Agent)
+		sid := strings.TrimSpace(args.SessionID)
+		if agentName == "" {
+			return nil, struct{}{}, fmt.Errorf("agent is required")
+		}
+		if sid == "" {
+			return nil, struct{}{}, fmt.Errorf("session_id is required")
+		}
+		agentID, _, err := resolveAgentIdentity(agentName)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(agent.GetActiveTurn(agentID, sid))
+	})
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "session_stop",

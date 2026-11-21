@@ -39,7 +39,7 @@
 			</dd>
 		</dl>
 		<div class="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
-			<router-link :to="to" aria-label="Details" title="Open this schedule's details"
+			<router-link :to="to" aria-label="Edit schedule" title="Edit this schedule"
 				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
 				<ArrowsPointingOutIcon aria-hidden="true" class="h-4 w-4" />
 			</router-link>
