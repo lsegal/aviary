@@ -11,7 +11,9 @@ Log in with the bearer token from `~/.config/aviary/token`.
 The sidebar has two top-level sections:
 
 - **Agents** — always expanded, listing every configured agent, with **+ Add Agent** at the end. Each agent's pages open under it: **Chat**, **Code Loop**, **Scheduled Tasks**, **Files** and **Agent Settings**. Moving from one agent to another keeps you on the same page.
-- **System** — the instance's own pages: **Overview**, **Settings**, **Projects**, **Providers & Auth** and **Usage**, then **More** for Tools, Skills, Sessions, Models, Logs and Daemons.
+- **System** — the instance's overview, and under it the instance's own pages: **Usage**, **Tools**, **Skills**, **Sessions**, **Models**, **Logs** and **Daemons**. The section starts collapsed; the overview lists every System page as a card.
+
+The **gear** at the bottom left opens a menu of **Settings**, **Restart** (a safe restart that waits for running jobs) and **Logout**.
 
 ---
 
@@ -79,9 +81,9 @@ The home screen. It shows:
 
 ### Settings (`/system/settings`)
 
-Covers the `server`, `models`, `browser`, `scheduler`, and `search` config sections. Port and TLS changes require a server restart to take effect.
+Opened from the sidebar's gear menu, with two tabs. **General** covers the `server`, `models`, `browser`, `scheduler`, and `search` config sections. Port and TLS changes require a server restart to take effect.
 
-### Providers & Auth (`/system/providers`)
+### Settings → Providers & Authentication (`/system/providers`)
 
 Manages API credentials and OAuth sessions:
 

@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { systemList } from "./helpers/sidebar";
 
 const STATUS = {
 	identity: "7F3CA91B",
@@ -709,9 +710,8 @@ test("Code Loop settings live under the projects section, not System", async ({
 		"Code Loop Settings",
 	);
 	await expect(page.getByTestId("project-settings")).toBeVisible();
-	await page.getByTestId("sidebar-system-more").click();
 	await expect(
-		page.getByTestId("sidebar-system-list").getByRole("link", {
+		(await systemList(page)).getByRole("link", {
 			name: "Projects",
 			exact: true,
 		}),

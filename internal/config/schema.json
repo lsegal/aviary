@@ -463,7 +463,7 @@
           "enum": ["read-only", "auto", "full"],
           "x-label": "Chat approval mode",
           "x-order": 2,
-          "description": "Override for CLI-backed chat turns (web UI chat and the Projects prompt chat). Empty follows mode."
+          "description": "Override for CLI-backed chat turns (web UI chat and the Code Loop prompt chat). Empty follows mode."
         }
       }
     },

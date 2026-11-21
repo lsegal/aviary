@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { systemList } from "./helpers/sidebar";
 
 test.beforeEach(async ({ page }) => {
 	await setAuthToken(page);
@@ -544,9 +545,7 @@ test("system skills shows its skills when opened from another settings page", as
 	page,
 }) => {
 	await page.goto("/system/settings");
-	await page.getByTestId("sidebar-system-more").click();
-	await page
-		.getByTestId("sidebar-system-list")
+	await (await systemList(page))
 		.getByRole("link", { name: "Skills", exact: true })
 		.click();
 

@@ -2,7 +2,7 @@
 
 Aviary reaches some providers through their own CLI, such as Claude Code, Codex or Gemini CLI. Aviary has no CLI-specific launch code: every CLI provider is described by a **definition**, a document that says which executable to run, the argv for a fresh run, a resume and a vision call, the environment the child process gets, how its session ID comes to exist, how its output is decoded, how Aviary's approval modes map to its flags, where its quota is read, and which skills.sh target its skills install for.
 
-Aviary ships definitions for the CLIs below and reads more from `models.cli_definitions` in `aviary.yaml`, so supporting another CLI is configuration, not a new release. Every surface that launches a CLI reads the same definitions: chat turns on an agent whose model is a CLI model, [Code Loop](/guide/projects) jobs, the Code Loop prompt chat and watchdog, and System → Providers & Auth.
+Aviary ships definitions for the CLIs below and reads more from `models.cli_definitions` in `aviary.yaml`, so supporting another CLI is configuration, not a new release. Every surface that launches a CLI reads the same definitions: chat turns on an agent whose model is a CLI model, [Code Loop](/guide/projects) jobs, the Code Loop prompt chat and watchdog, and Settings → Providers & Authentication.
 
 This page is the reference for that schema. To see how a definition is used in the issue-to-merge loop, read [The code loop on GitHub](/guide/code-loop).
 
@@ -31,7 +31,7 @@ A CLI with no resumable session is not a degraded one. When its run exits early,
 
 ### Reporting on the CLIs
 
-`aviary models clis` (the `provider_cli_list` tool), System → Providers & Auth and `aviary doctor` report every definition in force: whether its CLI is installed and where, its version, whether it is signed in, its quota, and the models it accepts as fully qualified `cli/<name>/<model>` names. A CLI that is not installed is still listed.
+`aviary models clis` (the `provider_cli_list` tool), Settings → Providers & Authentication and `aviary doctor` report every definition in force: whether its CLI is installed and where, its version, whether it is signed in, its quota, and the models it accepts as fully qualified `cli/<name>/<model>` names. A CLI that is not installed is still listed.
 
 The models are asked of each CLI rather than carried in Aviary, since a list written down is stale the day a vendor ships: `opencode` and `agy` run their own `models` command, `codex` runs `codex debug models`, `gemini` and `cline` answer over their agent-client protocol (`--acp`), and `muse` answers `model/list` over `muse serve`. Claude Code has no way to be asked, so `claude` reports the aliases and ids its definition knows and says the CLI may accept others. A CLI signed out of its provider lists nothing, and the report names the command that could not list it.
 
@@ -69,7 +69,7 @@ Anything wrong with an entry is an error naming the agent and the field: a field
 | Field | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `name` | string | no | the key | The name used in models; when given it must match the key. Letters, digits, dot, dash and underscore only. |
-| `binary` | string | yes | | The executable, a path or a name looked up on `PATH`. System → Providers & Auth and `aviary doctor` probe the same executable jobs run. |
+| `binary` | string | yes | | The executable, a path or a name looked up on `PATH`. Settings → Providers & Authentication and `aviary doctor` probe the same executable jobs run. |
 | `inProcess` | bool | no | `false` | Runs the turn on an Aviary agent inside the server. Such a definition declares no `args` or `output`, and `session.assign` must be `none`. |
 | `minVersion` | string | no | none | The lowest CLI version the argv works with. See [`minVersion`](#minversion). |
 | `args` | object | yes | | The argv templates. See [`args`](#args). |
@@ -423,7 +423,7 @@ If `robo whoami` exits non-zero when signed out and `robo models` prints one mod
         models: ["{binary}", models]
 ```
 
-The models then appear in System → Providers & Auth and `aviary models clis` as names you can paste into an agent's model. Add `signedIn` if `whoami` exits zero while signed out, `modelPattern` if the list is decorated, `modelsJSON` for JSON output, and `modelsStdin` for a CLI that only answers over a stdio protocol.
+The models then appear in Settings → Providers & Authentication and `aviary models clis` as names you can paste into an agent's model. Add `signedIn` if `whoami` exits zero while signed out, `modelPattern` if the list is decorated, `modelsJSON` for JSON output, and `modelsStdin` for a CLI that only answers over a stdio protocol.
 
 ### 9. Install the skills for it
 
@@ -462,7 +462,7 @@ cli_definitions: agent "robo": unknown field "arg"
 cli_definitions: agent "robo": field "args.run"[2].args: unknown placeholder {prmpt}; known placeholders are {approval}, {image}, {level}, {model}, {prompt}, {session}, {sessionName}, {settings}
 ```
 
-Run `aviary doctor` after every edit; it loads the same definitions jobs and System → Providers & Auth do.
+Run `aviary doctor` after every edit; it loads the same definitions jobs and Settings → Providers & Authentication do.
 
 **A dispatch failed naming a version.** The definition's `minVersion` is newer than the installed CLI. Upgrade it, or set `binary` to a newer install. A warning that the version could not be read means the run went ahead; if it then fails on an unrecognized argument, check the version by hand.
 
