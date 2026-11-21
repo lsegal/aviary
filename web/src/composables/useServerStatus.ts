@@ -23,6 +23,15 @@ export interface RestartStatus {
 	emulated?: boolean;
 	message?: string;
 	error?: string;
+	autoUpdate?: AutoUpdateStatus;
+}
+
+/** Mirrors saferestart.AutoUpdate: an automatic update not applied yet. */
+export interface AutoUpdateStatus {
+	version?: string;
+	state?: "waiting-jobs" | "waiting-restart" | "applying";
+	jobs?: number;
+	error?: string;
 }
 
 export type RestartWhen = "now" | "idle";

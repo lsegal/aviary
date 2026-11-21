@@ -120,6 +120,47 @@ func TestConfigHomeValidate(t *testing.T) {
 	assert.NoError(t, (&ConfigHome{Env: "X", Default: "~/.x", Private: []string{"config.toml"}}).validate())
 }
 
+// TestCodexOwnHomeEnvEmptiesConfig shows chat launches run codex against an
+// overlay whose config.toml is aviary's own and empty, so the user's settings
+// are not read, while sign-in is shared and the per-launch profiles aviary
+// writes there are left alone by later refreshes (#573).
+func TestCodexOwnHomeEnvEmptiesConfig(t *testing.T) {
+	home, base := t.TempDir(), t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(home, "config.toml"), []byte("model = \"gpt-5\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(home, "auth.json"), []byte("token"), 0o600))
+	t.Setenv("CODEX_HOME", home)
+	codex, ok := MustBuiltin().Lookup("codex")
+	require.True(t, ok)
+
+	env, err := codex.OwnHomeEnv(base)
+	require.NoError(t, err)
+	require.Len(t, env, 1)
+	overlay, ok := strings.CutPrefix(env[0], "CODEX_HOME=")
+	require.True(t, ok, env[0])
+	config, err := os.ReadFile(filepath.Join(overlay, "config.toml"))
+	require.NoError(t, err)
+	assert.Empty(t, config)
+	auth, err := os.ReadFile(filepath.Join(overlay, "auth.json"))
+	require.NoError(t, err)
+	assert.Equal(t, "token", string(auth))
+
+	// What codex and aviary write during a launch.
+	require.NoError(t, os.WriteFile(filepath.Join(overlay, "config.toml"), []byte("[projects.\"/work\"]\n"), 0o600))
+	profile := filepath.Join(overlay, LaunchFilePrefix+"1.config.toml")
+	require.NoError(t, os.WriteFile(profile, []byte("developer_instructions = \"x\"\n"), 0o600))
+
+	_, err = codex.OwnHomeEnv(base)
+	require.NoError(t, err)
+	config, err = os.ReadFile(filepath.Join(overlay, "config.toml"))
+	require.NoError(t, err)
+	assert.Empty(t, config, "each launch starts from empty settings")
+	assert.FileExists(t, profile, "a running launch keeps its profile")
+	assert.NoFileExists(t, filepath.Join(home, LaunchFilePrefix+"1.config.toml"), "profiles never reach the user's directory")
+	user, err := os.ReadFile(filepath.Join(home, "config.toml"))
+	require.NoError(t, err)
+	assert.Equal(t, "model = \"gpt-5\"\n", string(user))
+}
+
 // trustHome is a ConfigHome shaped like Claude's: the settings file lives
 // beside the directory until X_HOME names one.
 func trustHome(t *testing.T) (ConfigHome, string) {

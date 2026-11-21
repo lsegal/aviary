@@ -1,5 +1,5 @@
 <template>
-	<div class="min-h-[60vh] space-y-5 p-5" data-testid="agent-projects">
+	<div class="space-y-5 p-4" data-testid="agent-projects">
 		<section :class="CARD" data-testid="agent-project-list">
 			<h3 :class="CARD_HEAD">
 				Projects <span :class="CARD_NOTE">GitHub projects {{ agentLabel }} owns. Their jobs run on {{ agentLabel }}'s model and fallbacks</span>
@@ -36,8 +36,8 @@
 					</p>
 				</form>
 				<p class="text-xs text-gray-500 dark:text-gray-400">Save Changes writes the projects to {{ agentLabel }} in aviary.yaml; the running watch picks them up right away.
-					Every project runs under the shared settings in
-					<router-link to="/system/projects" data-testid="shared-settings-link" class="text-blue-600 hover:underline dark:text-blue-400">System → Projects</router-link>.</p>
+					Every project runs under the shared settings below.
+					<router-link :to="`/agents/${encodeURIComponent(agent.name)}/projects`" data-testid="agent-board-link" class="text-blue-600 hover:underline dark:text-blue-400">Open {{ agentLabel }}'s board</router-link>.</p>
 			</div>
 		</section>
 

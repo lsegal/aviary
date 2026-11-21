@@ -18,13 +18,18 @@ const (
 
 // Session represents a conversation with an agent.
 type Session struct {
-	ID        string      `json:"id,omitempty"`
-	AgentID   string      `json:"agent_id,omitempty"`
-	Name      string      `json:"name,omitempty"`    // human-readable name; "main" for the default session
-	TaskID    string      `json:"task_id,omitempty"` // set for task sessions
-	Type      SessionType `json:"type,omitempty"`    // main, channel, task, or user (default)
-	CreatedAt time.Time   `json:"created_at"`
-	UpdatedAt time.Time   `json:"updated_at"`
+	ID      string      `json:"id,omitempty"`
+	AgentID string      `json:"agent_id,omitempty"`
+	Name    string      `json:"name,omitempty"`    // human-readable name; "main" for the default session
+	TaskID  string      `json:"task_id,omitempty"` // set for task sessions
+	Type    SessionType `json:"type,omitempty"`    // main, channel, task, or user (default)
+	// Title is the display name generated from the first prompt or set by a
+	// rename; empty until then. Name stays the session's lookup key.
+	Title string `json:"title,omitempty"`
+	// LastMessageAt is when the last user or assistant message was sent.
+	LastMessageAt *time.Time `json:"last_message_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 // MessageRole identifies who sent a message.

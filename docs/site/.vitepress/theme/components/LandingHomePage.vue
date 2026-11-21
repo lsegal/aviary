@@ -749,13 +749,7 @@ onBeforeUnmount(() => {
 				<div>
 					<div class="landing-footer-brand">
 						<span class="mark" aria-hidden="true">
-							<svg viewBox="0 0 40 40">
-								<g fill="var(--brand)">
-									<path d="M7 24 C 12 18, 18 15, 22 21 C 18 20, 12 22, 7 24 Z" />
-									<path d="M22 21 C 26 15, 33 18, 37 24 C 32 23, 27 22, 22 21 Z" />
-									<path d="M12 26 C 18 24, 26 27, 32 25 C 29 31, 23 34, 17 31 C 14 30, 12 28, 12 26 Z" />
-								</g>
-							</svg>
+							<img :src="withBase('/logo.png')" alt="" />
 						</span>
 						<span class="name">Aviary</span>
 					</div>
@@ -2152,6 +2146,12 @@ onBeforeUnmount(() => {
 	place-items: center;
 	width: 36px;
 	height: 36px;
+}
+
+.landing-footer-brand .mark img {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
 }
 
 .landing-footer-brand .name {

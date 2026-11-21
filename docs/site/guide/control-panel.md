@@ -31,7 +31,7 @@ The primary conversational interface. Which agent you talk to is the agent you o
 
 ### GitHub Projects (`/agents/<agent>/projects`)
 
-The [projects](/guide/projects) the agent owns, configured and watched in one place. The page adds, configures and removes the agent's projects; each project's board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`), and the sidebar lists them with live job counts. **+ Add project** in the sidebar adds one to the agent.
+One board of the jobs of every [project](/guide/projects) the agent owns: the same search, state filters and job cards as a single project's board, with each card naming its project. The page holds no settings; its **Settings** button opens the agent's projects in System → Projects. Each project's own board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`), and the sidebar lists them with live job counts. **+ Add project** in the sidebar adds one to the agent.
 
 ### Tasks (`/agents/<agent>/tasks`)
 
@@ -70,7 +70,7 @@ Covers the `server`, `models`, `browser`, `scheduler`, and `search` config secti
 
 ### Projects (`/system/projects`)
 
-The one set of [Projects](/guide/projects) settings, shared by every project of every agent: how many jobs run at once across all of them, how GitHub is read, which issues are picked up, merging and changelogs, the approval mode, and where clones go. It also lists the job clones on disk. An agent's GitHub Projects page only lists the projects it owns.
+Every agent's projects, one tab per agent (`/system/projects?agent=<agent>`): add and remove them, set their reports, and see the models their jobs run on. Below them, the one set of [Projects](/guide/projects) settings, shared by every project of every agent: how many jobs run at once across all of them, how GitHub is read, which issues are picked up, merging and changelogs, the approval mode, and where clones go. It also lists the job clones on disk.
 
 ### Providers & Auth (`/system/providers`)
 

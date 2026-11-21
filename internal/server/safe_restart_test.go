@@ -265,3 +265,126 @@ func TestSafeRestart_GitModeRefusalIsReported(t *testing.T) {
 		t.Fatalf("log = %v held = %v, want nothing done", *log, saferestart.Held())
 	}
 }
+
+// runUpdater runs the self-updater until the test ends.
+func runUpdater(t *testing.T, srv *Server, auto bool) {
+	t.Helper()
+	srv.cfg.Server.AutoUpdate = auto
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		srv.runSelfUpdater(ctx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+}
+
+func gitModeCheck(behind int) update.CheckResult {
+	return update.CheckResult{
+		CurrentVersion:   "9af6a62",
+		LatestVersion:    "b9a9522",
+		UpgradeAvailable: behind > 0,
+		UpgradeSupported: true,
+		Git:              &update.GitState{Dir: "/src/aviary", Branch: "main", Upstream: "origin/main", Behind: behind},
+	}
+}
+
+func TestSelfUpdater_GitModeWaitsForJobsThenPulls(t *testing.T) {
+	srv, p, _ := setupSafeRestart(t, "dev", update.CheckResult{})
+	p.setJobs([]saferestart.Job{{Source: "test", ID: "job-1"}, {Source: "test", ID: "job-2"}})
+	gitCheckout = func() string { return "/src/aviary" }
+	var mu sync.Mutex
+	behind, pulls := 2, 0
+	versionCheck = func(context.Context, *http.Client) (update.CheckResult, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return gitModeCheck(behind), nil
+	}
+	gitPull = func(context.Context, string) (update.GitPullResult, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		pulls++
+		behind = 0
+		return update.GitPullResult{From: "9af6a62", To: "b9a9522", Commits: 2}, nil
+	}
+	runUpdater(t, srv, true)
+
+	require.Eventually(t, func() bool {
+		auto := srv.RestartStatus().AutoUpdate
+		return auto != nil && auto.State == saferestart.AutoWaitingJobs && auto.Jobs == 2
+	}, 2*time.Second, 5*time.Millisecond, "the update says it waits for 2 jobs")
+	assert.False(t, saferestart.Held(), "waiting for jobs does not hold new ones")
+
+	p.setJobs(nil)
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return pulls == 1
+	}, 2*time.Second, 5*time.Millisecond, "the update pulls once the jobs finish, without waiting a whole check interval")
+	require.Eventually(t, func() bool { return srv.RestartStatus().AutoUpdate == nil }, 2*time.Second, 5*time.Millisecond)
+}
+
+func TestSelfUpdater_WaitsForPendingRestart(t *testing.T) {
+	srv, _, _ := setupSafeRestart(t, "dev", update.CheckResult{})
+	gitCheckout = func() string { return "/src/aviary" }
+	versionCheck = func(context.Context, *http.Client) (update.CheckResult, error) { return gitModeCheck(2), nil }
+	srv.restart.mu.Lock()
+	srv.restart.status = saferestart.Status{Phase: saferestart.PhaseWaiting}
+	srv.restart.mu.Unlock()
+	runUpdater(t, srv, true)
+
+	require.Eventually(t, func() bool {
+		auto := srv.RestartStatus().AutoUpdate
+		return auto != nil && auto.State == saferestart.AutoWaitingRestart
+	}, 2*time.Second, 5*time.Millisecond)
+}
+
+func TestSelfUpdater_ReportsFailedPull(t *testing.T) {
+	srv, p, _ := setupSafeRestart(t, "dev", update.CheckResult{})
+	gitCheckout = func() string { return "/src/aviary" }
+	versionCheck = func(context.Context, *http.Client) (update.CheckResult, error) { return gitModeCheck(2), nil }
+	gitPull = func(context.Context, string) (update.GitPullResult, error) {
+		return update.GitPullResult{}, errors.New("git pull --ff-only --quiet: exit status 1: fatal: unable to access remote")
+	}
+	runUpdater(t, srv, true)
+
+	require.Eventually(t, func() bool {
+		auto := srv.RestartStatus().AutoUpdate
+		return auto != nil && strings.Contains(auto.Error, "unable to access remote")
+	}, 2*time.Second, 5*time.Millisecond, "a failed pull is reported with its error")
+
+	// The failure stays visible while the next attempt waits for jobs.
+	srv.setAutoUpdate(nil)
+	srv.setAutoUpdate(&saferestart.AutoUpdate{Version: "b9a9522", Error: "boom"})
+	p.setJobs([]saferestart.Job{{Source: "test", ID: "job-1"}})
+	srv.setAutoUpdateState("b9a9522", saferestart.AutoWaitingJobs, 1)
+	auto := srv.RestartStatus().AutoUpdate
+	require.NotNil(t, auto)
+	assert.Equal(t, "boom", auto.Error)
+	assert.Equal(t, saferestart.AutoWaitingJobs, auto.State)
+}
+
+func TestSelfUpdater_OffLeavesUpdateAlone(t *testing.T) {
+	srv, _, _ := setupSafeRestart(t, "dev", update.CheckResult{})
+	gitCheckout = func() string { return "/src/aviary" }
+	checked := make(chan struct{}, 1)
+	versionCheck = func(context.Context, *http.Client) (update.CheckResult, error) {
+		select {
+		case checked <- struct{}{}:
+		default:
+		}
+		return gitModeCheck(2), nil
+	}
+	gitPull = func(context.Context, string) (update.GitPullResult, error) {
+		t.Error("pulled with auto_update off")
+		return update.GitPullResult{}, nil
+	}
+	runUpdater(t, srv, false)
+
+	<-checked
+	time.Sleep(50 * time.Millisecond)
+	assert.Nil(t, srv.RestartStatus().AutoUpdate)
+}

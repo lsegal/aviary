@@ -36,7 +36,7 @@ func TestListJobsSearchesEveryField(t *testing.T) {
 		{"351", "complete", []int{12}},
 		{"zzzzz", "", nil},
 	} {
-		list := m.ListJobs("o/r", tc.status, tc.query, 0, 0)
+		list := m.ListJobs([]string{"o/r"}, tc.status, tc.query, 0, 0)
 		if got := numbers(list); !slices.Equal(got, tc.want) {
 			t.Errorf("query %q status %q = %v, want %v", tc.query, tc.status, got, tc.want)
 		}
@@ -44,10 +44,26 @@ func TestListJobsSearchesEveryField(t *testing.T) {
 			t.Errorf("query %q total = %v, want %d", tc.query, list["total"], len(tc.want))
 		}
 	}
-	if got := m.ListJobs("o/r", "", "351", 0, 0)["unfiltered_total"]; got != 4 {
+	if got := m.ListJobs([]string{"o/r"}, "", "351", 0, 0)["unfiltered_total"]; got != 4 {
 		t.Errorf("unfiltered_total = %v, want 4", got)
 	}
-	if _, ok := m.ListJobs("o/r", "", "", 0, 0)["unfiltered_total"]; ok {
+	if _, ok := m.ListJobs([]string{"o/r"}, "", "", 0, 0)["unfiltered_total"]; ok {
 		t.Error("unfiltered_total set without a query")
+	}
+}
+
+func TestListJobsCoversSeveralProjects(t *testing.T) {
+	m := newTestManager(t)
+	m.snapshot.Store(&core.Snapshot{Jobs: []core.JobSnapshot{
+		{Number: 1, Target: "o/r", Status: "active"},
+		{Number: 2, Target: "x/y", Status: "active"},
+		{Number: 3, Target: "z/z", Status: "active"},
+	}})
+	count := func(targets []string) any { return m.ListJobs(targets, "", "", 0, 0)["total"] }
+	if got := count([]string{"o/r", "x/y"}); got != 2 {
+		t.Errorf("two projects total = %v, want 2", got)
+	}
+	if got := count(nil); got != 3 {
+		t.Errorf("no projects total = %v, want every job (3)", got)
 	}
 }

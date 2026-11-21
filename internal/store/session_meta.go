@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -24,9 +25,16 @@ type CLISessionMeta struct {
 
 // SessionMeta is the sidecar metadata stored alongside a session JSONL file.
 type SessionMeta struct {
+	// Title is the session's display name: generated from its first prompt or
+	// set by a rename. The session's own name stays its lookup key.
+	Title        string            `json:"title,omitempty"`
 	Conversation *ConversationMeta `json:"conversation,omitempty"`
 	CLI          *CLISessionMeta   `json:"cli,omitempty"`
 }
+
+// sessionMetaMu serializes read-modify-write updates of session sidecars, so
+// a title change cannot drop a concurrently saved conversation ID.
+var sessionMetaMu sync.Mutex
 
 // ReadSessionMeta loads the sidecar metadata for a session. Returns a zero
 // SessionMeta (not an error) when the file does not exist.
@@ -41,7 +49,12 @@ func ReadSessionMeta(path string) (SessionMeta, error) {
 	return meta, nil
 }
 
-// WriteSessionMeta atomically writes meta to path.
-func WriteSessionMeta(path string, meta SessionMeta) error {
+// UpdateSessionMeta applies update to the sidecar at path and writes it back
+// atomically, serialized against every other update.
+func UpdateSessionMeta(path string, update func(*SessionMeta)) error {
+	sessionMetaMu.Lock()
+	defer sessionMetaMu.Unlock()
+	meta, _ := ReadSessionMeta(path)
+	update(&meta)
 	return WriteJSON(path, meta)
 }
