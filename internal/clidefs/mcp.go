@@ -28,11 +28,26 @@ type MCP struct {
 	// strings take the same placeholders; a string that is exactly
 	// {mcpTimeoutMs} or {mcpTimeoutSec} is written as a number.
 	File map[string]any `json:"file,omitempty"`
+	// AllowFile, when declared, is a text file written next to File for
+	// each turn, whose path {mcpAllowFile} stands for in Args, Env and File.
+	// It is for a CLI whose read-only mode refuses the registered server's
+	// tools unless a file of its own, such as a policy, allows them.
+	AllowFile *MCPAllowFile `json:"allowFile,omitempty"`
 	// ToolPrefix is how the CLI's output names a tool served by the
 	// registered server, such as "mcp_{mcpName}_". Those calls are reported
 	// by Aviary's MCP boundary, so the chat leaves them out of what it maps
 	// from the CLI's output rather than reporting them twice.
 	ToolPrefix string `json:"toolPrefix"`
+}
+
+// MCPAllowFile is the mcp block's allowFile: the lines of a text file and
+// the extension its path ends in, for a CLI that only reads files with one.
+// Its lines take the mcp block's placeholders, other than the file paths.
+type MCPAllowFile struct {
+	// Extension ends the file's path, such as ".toml".
+	Extension string `json:"extension,omitempty"`
+	// Lines are the file's content, one line each.
+	Lines []string `json:"lines"`
 }
 
 // SystemPrompt says how an interactive chat hands the CLI the agent's system
@@ -56,12 +71,20 @@ const (
 	placeholderMCPTimeoutMs  = "mcpTimeoutMs"
 	placeholderMCPTimeoutSec = "mcpTimeoutSec"
 	placeholderMCPFile       = "mcpFile"
+	placeholderMCPAllowFile  = "mcpAllowFile"
 	placeholderSystemPrompt  = "systemPromptFile"
 )
 
 var mcpPlaceholders = []string{
 	placeholderMCPName, placeholderMCPURL, placeholderMCPTokenEnv, placeholderMCPAuthEnv,
-	placeholderMCPTimeoutMs, placeholderMCPTimeoutSec, placeholderMCPFile,
+	placeholderMCPTimeoutMs, placeholderMCPTimeoutSec, placeholderMCPFile, placeholderMCPAllowFile,
+}
+
+// mcpAllowFilePlaceholders are the placeholders an allowFile's lines may
+// use: the mcp block's, other than the file paths.
+var mcpAllowFilePlaceholders = []string{
+	placeholderMCPName, placeholderMCPURL, placeholderMCPTokenEnv, placeholderMCPAuthEnv,
+	placeholderMCPTimeoutMs, placeholderMCPTimeoutSec,
 }
 
 // MCPValues are what one chat substitutes into the definition's mcp block.
@@ -76,8 +99,9 @@ type MCPValues struct {
 	TokenEnv, AuthEnv string
 	// Timeout is how long the CLI waits on one tool call.
 	Timeout time.Duration
-	// File is the path the rendered settings file was written to.
-	File string
+	// File is the path the rendered settings file was written to, and
+	// AllowFile the path the rendered allowFile was written to.
+	File, AllowFile string
 }
 
 func (v MCPValues) value(name string) (string, bool) {
@@ -96,6 +120,8 @@ func (v MCPValues) value(name string) (string, bool) {
 		return strconv.FormatInt(int64(v.Timeout/time.Second), 10), true
 	case placeholderMCPFile:
 		return v.File, true
+	case placeholderMCPAllowFile:
+		return v.AllowFile, true
 	}
 	return "", false
 }
@@ -111,6 +137,24 @@ func (d Definition) TakesSystemPrompt() bool { return d.SystemPrompt != nil }
 // MCPWritesFile reports whether the definition's mcp block declares a
 // settings file.
 func (d Definition) MCPWritesFile() bool { return d.MCP != nil && d.MCP.File != nil }
+
+// MCPAllowFileExtension returns the extension the mcp block's allowFile path
+// ends in, and whether it declares one.
+func (d Definition) MCPAllowFileExtension() (string, bool) {
+	if d.MCP == nil || d.MCP.AllowFile == nil {
+		return "", false
+	}
+	return d.MCP.AllowFile.Extension, true
+}
+
+// MCPAllowFile renders the mcp block's allowFile, or nothing when it declares
+// none.
+func (d Definition) MCPAllowFile(values MCPValues) []byte {
+	if d.MCP == nil || d.MCP.AllowFile == nil {
+		return nil
+	}
+	return []byte(strings.Join(substituteAll(d.MCP.AllowFile.Lines, values.value), "\n") + "\n")
+}
 
 // MCPArgs renders the mcp block's arguments.
 func (d Definition) MCPArgs(values MCPValues) []string {
@@ -319,6 +363,9 @@ func (d Definition) validateMCP() error {
 	if m.File == nil && direct[placeholderMCPFile] {
 		return fmt.Errorf(`field "mcp" uses {%s} but declares no "mcp.file"`, placeholderMCPFile)
 	}
+	if err := validateMCPAllowFile(m.AllowFile, direct[placeholderMCPAllowFile] || fileUsed[placeholderMCPAllowFile]); err != nil {
+		return err
+	}
 	all := map[string]bool{}
 	for name := range direct {
 		all[name] = true
@@ -333,6 +380,26 @@ func (d Definition) validateMCP() error {
 		return fmt.Errorf(`field "mcp" must pass the bearer token through the variable {%s} or {%s} names`, placeholderMCPTokenEnv, placeholderMCPAuthEnv)
 	}
 	return nil
+}
+
+func validateMCPAllowFile(a *MCPAllowFile, named bool) error {
+	if a == nil {
+		if named {
+			return fmt.Errorf(`field "mcp" uses {%s} but declares no "mcp.allowFile"`, placeholderMCPAllowFile)
+		}
+		return nil
+	}
+	if !named {
+		return fmt.Errorf(`field "mcp.allowFile" is never handed to the CLI: name its path with {%s} in "mcp.args", "mcp.env" or "mcp.file"`, placeholderMCPAllowFile)
+	}
+	if len(a.Lines) == 0 {
+		return fmt.Errorf(`field "mcp.allowFile.lines" is required`)
+	}
+	if a.Extension != "" && (!strings.HasPrefix(a.Extension, ".") || strings.ContainsAny(a.Extension, `/\*`)) {
+		return fmt.Errorf(`field "mcp.allowFile.extension": %q must start with "." and name no directory`, a.Extension)
+	}
+	_, err := placeholdersIn("mcp.allowFile.lines", a.Lines, mcpAllowFilePlaceholders)
+	return err
 }
 
 func (d Definition) validateSystemPrompt() error {
