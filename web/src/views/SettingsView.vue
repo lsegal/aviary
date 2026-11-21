@@ -197,13 +197,21 @@
 			<AlertDialogContent
 				class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
 				<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
-					Remove session?
+					<template v-if="removeKind === 'clear'">
+						Clear <span class="break-all">{{ removeTarget ? chatDisplayName(removeTarget) : '' }}</span>?
+					</template>
+					<template v-else>Remove session?</template>
 				</AlertDialogTitle>
 				<AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-					This will permanently delete
-					<span
-						class="break-all font-medium text-gray-900 dark:text-white">{{ removeTarget ? chatDisplayName(removeTarget) : '' }}</span>
-					and all its messages. This cannot be undone.
+					<template v-if="removeKind === 'clear'">
+						This removes all messages in this chat. The chat itself stays. This cannot be undone.
+					</template>
+					<template v-else>
+						This will permanently delete
+						<span
+							class="break-all font-medium text-gray-900 dark:text-white">{{ removeTarget ? chatDisplayName(removeTarget) : '' }}</span>
+						and all its messages. This cannot be undone.
+					</template>
 				</AlertDialogDescription>
 				<div ref="removeSessionBtns" class="mt-6 flex justify-end gap-3">
 					<AlertDialogCancel
@@ -213,7 +221,7 @@
 					<AlertDialogAction
 						class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
 						@click="confirmRemoveSession">
-						Remove
+						{{ removeKind === 'clear' ? 'Clear' : 'Remove' }}
 					</AlertDialogAction>
 				</div>
 			</AlertDialogContent>
@@ -357,7 +365,7 @@ import {
 	useAgentFilesStore,
 } from "../stores/agentFiles";
 import { useAuthStore } from "../stores/auth";
-import { chatDisplayName } from "../stores/chatSessions";
+import { chatDisplayName, useChatSessionsStore } from "../stores/chatSessions";
 import {
 	type AgentChannel,
 	type AgentEntry,
@@ -384,6 +392,8 @@ interface SessionRow {
 	title?: string;
 	updated_at: string;
 	is_processing?: boolean;
+	/** False for Main Chat and other chats that can only be cleared. */
+	deletable?: boolean;
 }
 
 interface RuntimeAgent {
@@ -497,6 +507,7 @@ watch(
 const store = useSettingsStore();
 const agentFilesStore = useAgentFilesStore();
 const { callTool, listTools } = useMCP();
+const chatSessions = useChatSessionsStore();
 const { availableModelOptions, credentials, refreshCredentials } =
 	useAvailableModels();
 const authStore = useAuthStore();
@@ -982,7 +993,14 @@ watch(sessionAgent, (val) => {
 	else sessions.value = [];
 });
 const removeTarget = ref<SessionRow | null>(null);
+// Chats the server will not delete, such as Main Chat, are cleared instead.
+const removeKind = ref<"remove" | "clear">("remove");
 const removeTargetOpen = ref(false);
+function askRemoveSession(s: SessionRow) {
+	removeKind.value = s.deletable ? "remove" : "clear";
+	removeTarget.value = s;
+	removeTargetOpen.value = true;
+}
 const removeSessionBtns = ref<HTMLElement>();
 watch(removeTargetOpen, (v) => {
 	if (v)
@@ -3108,10 +3126,14 @@ async function confirmRemoveSession() {
 	removeTargetOpen.value = false;
 	if (!sess) return;
 	try {
-		await callTool("session_remove", {
-			agent: sessionAgent.value,
-			session_id: sess.id,
-		});
+		if (removeKind.value === "clear") {
+			await chatSessions.clear(sessionAgent.value, sess.id);
+		} else {
+			await callTool("session_remove", {
+				agent: sessionAgent.value,
+				session_id: sess.id,
+			});
+		}
 		await loadSessions();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
@@ -3564,7 +3586,9 @@ const settingsContext = proxyRefs({
 	removeAllowFrom,
 	removeChannel,
 	removeTarget,
+	removeKind,
 	removeTargetOpen,
+	askRemoveSession,
 	renamingTask,
 	saveAgentFile,
 	secretName,

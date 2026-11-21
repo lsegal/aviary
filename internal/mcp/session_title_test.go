@@ -209,3 +209,72 @@ func TestCleanSessionTitle(t *testing.T) {
 		assert.Equal(t, want, cleanSessionTitle(in), "input %q", in)
 	}
 }
+
+func TestSessionClear_KeepsSessionAndRefusesDeletingMain(t *testing.T) {
+	c := setupTitleTest(t, func(context.Context, string, string) (string, error) { return "", nil })
+	sm := agent.NewSessionManager()
+	_, err := sm.GetOrCreate("assistant")
+	require.NoError(t, err)
+	require.NoError(t, agent.AppendMessageToSession("assistant", "main", "user", "hi"))
+	require.NoError(t, agent.AppendMessageToSession("assistant", "main", "assistant", "hello"))
+	require.NoError(t, sm.Rename("assistant", "main", "Home base"))
+	require.NoError(t, store.UpdateSessionMeta(store.SessionMetaPath("assistant", "main"), func(meta *store.SessionMeta) {
+		meta.CLI = &store.CLISessionMeta{Backend: "claude", ID: "cli-1"}
+	}))
+	channels := store.SessionChannelsPath("assistant", "main")
+	require.NoError(t, os.WriteFile(channels, []byte(`[]`), 0o600))
+	sess, err := sm.Create("assistant")
+	require.NoError(t, err)
+
+	type listedSession struct {
+		ID            string `json:"id"`
+		Name          string `json:"name"`
+		Title         string `json:"title"`
+		LastMessageAt string `json:"last_message_at"`
+		Deletable     bool   `json:"deletable"`
+	}
+	list := func() []listedSession {
+		res, err := c.CallTool(context.Background(), "session_list", map[string]any{"agent": "assistant"})
+		require.NoError(t, err)
+		var listed []listedSession
+		require.NoError(t, json.Unmarshal([]byte(extractText(res)), &listed))
+		return listed
+	}
+	listed := list()
+	require.Len(t, listed, 2)
+	assert.False(t, listed[0].Deletable)
+	assert.NotEmpty(t, listed[0].LastMessageAt)
+	assert.Equal(t, sess.ID, listed[1].ID)
+	assert.True(t, listed[1].Deletable)
+
+	res, err := c.CallTool(context.Background(), "session_remove", map[string]any{"agent": "assistant", "session_id": "main"})
+	require.NoError(t, err)
+	assert.True(t, res.IsError)
+	assert.Contains(t, extractText(res), "cannot be deleted")
+	res, err = c.CallTool(context.Background(), "session_messages", map[string]any{"agent": "assistant", "session_id": "main"})
+	require.NoError(t, err)
+	assert.Contains(t, extractText(res), "hello")
+
+	res, err = c.CallTool(context.Background(), "session_clear", map[string]any{"agent": "assistant", "session_id": "main"})
+	require.NoError(t, err)
+	assert.False(t, res.IsError, extractText(res))
+
+	res, err = c.CallTool(context.Background(), "session_messages", map[string]any{"agent": "assistant", "session_id": "main"})
+	require.NoError(t, err)
+	var msgs []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(extractText(res)), &msgs))
+	assert.Empty(t, msgs)
+	listed = list()
+	require.Len(t, listed, 2)
+	assert.Equal(t, listedSession{ID: "main", Name: "main", Title: "Home base"}, listed[0])
+	assert.Equal(t, sess.ID, listed[1].ID)
+	meta, err := store.ReadSessionMeta(store.SessionMetaPath("assistant", "main"))
+	require.NoError(t, err)
+	assert.Nil(t, meta.CLI)
+	_, statErr := os.Stat(channels)
+	assert.NoError(t, statErr)
+
+	res, err = c.CallTool(context.Background(), "session_clear", map[string]any{"agent": "assistant", "session_id": "missing"})
+	require.NoError(t, err)
+	assert.True(t, res.IsError)
+}
