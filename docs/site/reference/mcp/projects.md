@@ -38,9 +38,9 @@ Instance identity, watched projects with issue counts, job counts, the jobs in e
 
 Every job, running and errored jobs first, with the actions each accepts.
 
-**Arguments:** `target`, `status` (such as `active`, `waiting`, `queued`, `paused`, `failed`, `complete`), `query` (text matched case-insensitively against every field: issue and pull request numbers, title, repository, status, skill, agent and model, session ID, schedule ID, wait reason, and output), `offset`, `limit` (default 50), all optional.
+**Arguments:** `target`, `status` (such as `active`, `waiting`, `queued`, `paused`, `failed`, `complete`), `states` (board states, any of `starting`, `paused`, `running`, `done`, `failed`; a job in any of them is listed), `query` (text matched case-insensitively against every field: issue and pull request numbers, title, repository, status, skill, agent and model, session ID, schedule ID, wait reason, and output), `offset`, `limit` (default 50), all optional.
 
-**Returns:** `jobs`, `total`, `offset`, `limit`. With a `query`, `total` counts the matches and `unfiltered_total` counts the jobs matching `target` and `status` alone.
+**Returns:** `jobs`, `total`, `offset`, `limit`. With a `query`, `total` counts the matches and `unfiltered_total` counts the jobs matching `target`, `status` and `states` alone.
 
 ## project_job_get
 
