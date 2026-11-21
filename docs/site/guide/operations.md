@@ -57,7 +57,7 @@ Or use **System → Sessions** in the control panel to delete sessions across al
 
 ## Scheduled Tasks and Jobs
 
-Tasks trigger automatically on their configured schedule. Use the Jobs dashboard (System → Jobs, `/system/jobs`) or the MCP tools to monitor and intervene.
+Tasks trigger automatically on their configured schedule. Use an agent's Scheduled Tasks page (`/agents/<agent>/tasks`) or the MCP tools to monitor and intervene.
 
 **Check pending jobs:**
 
@@ -199,5 +199,5 @@ Updating, manually or automatically, runs `git pull --ff-only` in the checkout a
 
 1. Confirm `enabled: true` on the task (or that `enabled` is absent, which defaults to true).
 2. Check the cron expression with a cron validator — Aviary accepts 5-field and 6-field (leading seconds) expressions plus shortcuts like `@daily`.
-3. Check the Jobs dashboard for `failed` status — the job may have run but errored.
+3. Check the agent's Scheduled Tasks page for a failed last run — the job may have run but errored.
 4. If `precompute_tasks` is enabled, check for a pending or failed compile attempt for the task.
