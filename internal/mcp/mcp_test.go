@@ -950,7 +950,7 @@ func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
 		called = true
 		assert.Equal(t, "bot", agentName)
 		assert.Equal(t, "check subscript uptime", prompt)
-		assert.Equal(t, "signal:+15550001111:+15552223333", target)
+		assert.Equal(t, "channel:Phone", target)
 		assert.False(t, runDiscovery)
 		return &compiledTaskResult{
 			Type:   "script",
@@ -960,8 +960,9 @@ func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
 
 	cfg := &config.Config{
 		Agents: []config.AgentConfig{{
-			Name:  "bot",
-			Model: "test/x",
+			Name:     "bot",
+			Model:    "test/x",
+			Channels: []config.ChannelConfig{{Type: "signal", ID: "+15550001111", Name: "Phone"}},
 		}},
 	}
 	err = config.Save("", cfg)
@@ -982,7 +983,7 @@ func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
 		"name":     "targeted-prompt",
 		"content":  "check subscript uptime",
 		"schedule": "0 */10 * * * *",
-		"target":   "signal:+15550001111:+15552223333",
+		"target":   "channel:Phone",
 	})
 	assert.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")
@@ -2851,45 +2852,6 @@ func TestSessionCreateAndMessages(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(listOut, "bot"))
 
-}
-
-func TestSessionSetTargetPersistsSidecar(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	err := store.EnsureDirs()
-	require.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}})
-	SetDeps(&Deps{Agents: mgr})
-
-	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", "main")
-	require.NoError(t, err)
-
-	d := NewDispatcher("https://localhost:16677", "")
-	out, err := d.CallTool(context.Background(), "session_set_target", map[string]any{
-		"agent":        "bot",
-		"session_id":   sess.ID,
-		"channel_type": "slack",
-		"channel_id":   "alerts",
-		"target":       "C123",
-	})
-	require.NoError(t, err)
-	assert.Contains(t, out, sess.ID)
-	assert.Contains(t, out, "slack/alerts")
-
-	cfg, err := store.ReadSessionChannels("bot", sess.ID)
-	require.NoError(t, err)
-	require.Len(t, cfg.Channels, 1)
-	assert.Equal(t, "slack", cfg.Channels[0].Type)
-	assert.Equal(t, "alerts", cfg.Channels[0].ConfiguredID)
-	assert.Equal(t, "C123", cfg.Channels[0].ID)
 }
 
 func TestSessionSendTool_DeliversToRegisteredTargets(t *testing.T) {

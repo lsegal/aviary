@@ -17,13 +17,32 @@ const router = createRouter({
 			component: () => import("../views/OverviewView.vue"),
 			meta: { requiresAuth: true, forceOnboarding: true },
 		},
+		// Channels moved out of Agent Settings into their own sidebar section.
+		{
+			path: "/agents/:agent/settings/channels",
+			redirect: (to) =>
+				`/agents/${encodeURIComponent(String(to.params.agent))}/channels`,
+		},
 		// Everything an agent owns lives under its entry in the sidebar.
 		// One record for every SettingsView-backed agent page, so moving between
 		// them (or adding an agent from /agents) keeps the unsaved draft.
 		{
-			path: "/agents/:agent?/:subtab(settings|files|tasks)?/:section(permissions|channels)?",
+			path: "/agents/:agent?/:subtab(settings|files|tasks)?/:section(permissions)?",
 			component: SettingsView,
 			meta: { requiresAuth: true, view: "settings" },
+		},
+		// A channel's settings form, opened from its view's gear or its
+		// sidebar "…" Edit; the only place a channel is edited.
+		{
+			path: "/agents/:agent/channels/:channel/settings",
+			component: SettingsView,
+			meta: { requiresAuth: true, view: "settings" },
+		},
+		// The agent's channels, and one channel's conversation.
+		{
+			path: "/agents/:agent/channels/:channel?",
+			component: () => import("../views/ChannelView.vue"),
+			meta: { requiresAuth: true },
 		},
 		{
 			path: "/agents/:agent/chat/:sessionId?",

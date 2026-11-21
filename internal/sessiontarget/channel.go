@@ -141,3 +141,67 @@ func ReleaseChannel(a config.AgentConfig, idx int, mode string) error {
 	}
 	return nil
 }
+
+// RekeyChannels moves the sessions of channels whose type stayed but whose ID
+// changed between prev and next, matched by their position in each agent's
+// channel list: the channel's own session moves to its new name, and its
+// conversations record the new configured ID. Without this, editing a
+// channel's ID (a Signal channel's phone number) would orphan its session.
+func RekeyChannels(prev, next *config.Config) error {
+	if prev == nil || next == nil {
+		return nil
+	}
+	sm := agent.NewSessionManager()
+	for _, na := range next.Agents {
+		var pa *config.AgentConfig
+		for i := range prev.Agents {
+			if prev.Agents[i].Name == na.Name {
+				pa = &prev.Agents[i]
+			}
+		}
+		if pa == nil {
+			continue
+		}
+		for j, nc := range na.Channels {
+			if j >= len(pa.Channels) {
+				break
+			}
+			pc := pa.Channels[j]
+			if pc.Type != nc.Type || strings.TrimSpace(pc.ID) == strings.TrimSpace(nc.ID) || strings.TrimSpace(nc.ID) == "" {
+				continue
+			}
+			// Another channel still uses the old ID.
+			if na.ChannelByKey(pc.Type, pc.ID) >= 0 {
+				continue
+			}
+			oldIdx := pa.ChannelByKey(pc.Type, pc.ID)
+			owned, err := ChannelSessions(*pa, oldIdx)
+			if err != nil {
+				return err
+			}
+			for _, sess := range owned {
+				if sess.Name == pc.SessionName() {
+					if store.FindSessionPath(na.Name, nc.SessionName()) == "" {
+						if _, err := sm.Rekey(na.Name, sess.ID, nc.SessionName()); err != nil {
+							return err
+						}
+					}
+					continue
+				}
+				cfg, err := store.ReadSessionChannels(na.Name, sess.ID)
+				if err != nil || len(cfg.Channels) == 0 {
+					continue
+				}
+				for k := range cfg.Channels {
+					if cfg.Channels[k].Type == pc.Type && cfg.Channels[k].ConfiguredID == strings.TrimSpace(pc.ID) {
+						cfg.Channels[k].ConfiguredID = strings.TrimSpace(nc.ID)
+					}
+				}
+				if err := store.WriteSessionChannels(cfg); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}

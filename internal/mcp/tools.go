@@ -1698,7 +1698,7 @@ func normalizeTaskSchedule(schedule string) string {
 }
 
 func defaultScheduledTaskRoute(ctx context.Context, cfg *config.Config, agentName string) string {
-	channelType, configuredID, channelID, ok := agent.ChannelSessionFromContext(ctx)
+	channelType, configuredID, _, ok := agent.ChannelSessionFromContext(ctx)
 	if !ok {
 		sessionID, _ := agent.SessionIDFromContext(ctx)
 		sessionAgentID, _ := agent.SessionAgentIDFromContext(ctx)
@@ -1714,18 +1714,9 @@ func defaultScheduledTaskRoute(ctx context.Context, cfg *config.Config, agentNam
 		if ac.Name != agentName {
 			continue
 		}
-		for _, ch := range ac.Channels {
-			if ch.Type != channelType || ch.ID != configuredID {
-				continue
-			}
-			// The channel's own conversation is the channel; any other
-			// conversation it received keeps its own session.
-			if strings.TrimSpace(ch.DeliverTo) == strings.TrimSpace(channelID) {
-				return config.ChannelTarget(ch.EffectiveName())
-			}
-			if sessionID, _ := agent.SessionIDFromContext(ctx); strings.TrimSpace(sessionID) != "" {
-				return "session:" + strings.TrimSpace(sessionID)
-			}
+		// A task asked for from a channel delivers to that channel.
+		if idx := ac.ChannelByKey(channelType, configuredID); idx >= 0 {
+			return config.ChannelTarget(ac.Channels[idx].EffectiveName())
 		}
 		return ""
 	}
@@ -3049,6 +3040,9 @@ func registerServerTools(s *sdkmcp.Server) {
 		}
 		if err := store.UpdateChannelMetadataState(prevCfg, &cfg, time.Now().UTC()); err != nil {
 			return nil, struct{}{}, err
+		}
+		if err := sessiontarget.RekeyChannels(prevCfg, &cfg); err != nil {
+			return nil, struct{}{}, fmt.Errorf("moving channel sessions: %w", err)
 		}
 		// Apply saved tasks now rather than on the config watcher's debounced
 		// reload, so a task_list right after the save already lists their
