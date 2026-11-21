@@ -48,6 +48,9 @@ var codexBuiltinFeatures = []string{"shell_tool", "unified_exec", "view_image", 
 // instructions go on the command line.
 func codexArgs(opts Options, threadID, profile string, images []string) []string {
 	args := []string{"exec"}
+	if profile != "" {
+		args = append(args, "--profile", profile) // exec resume takes no --profile of its own
+	}
 	if threadID != "" {
 		args = append(args, "resume")
 	}
@@ -57,9 +60,7 @@ func codexArgs(opts Options, threadID, profile string, images []string) []string
 		"--model", opts.Model,
 		"-c", "approval_policy="+tomlString("never"),
 	)
-	if profile != "" {
-		args = append(args, "--profile", profile)
-	} else {
+	if profile == "" {
 		args = append(args, "--ignore-user-config")
 	}
 	if opts.Ephemeral {

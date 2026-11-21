@@ -100,7 +100,7 @@ func fakeClaude() {
 func fakeCodex() {
 	args := os.Args[1:]
 	thread := "thread-new"
-	if len(args) > 1 && args[1] == "resume" {
+	if slices.Contains(args, "resume") {
 		thread = args[len(args)-2]
 	}
 	prompt, _ := bufio.NewReader(os.Stdin).ReadString(0)
@@ -272,6 +272,8 @@ func TestCodexArgs(t *testing.T) {
 	assert.Equal(t, "aviary-1", args[slices.Index(args, "--profile")+1])
 	assert.NotContains(t, args, "--ignore-user-config")
 	assert.NotContains(t, strings.Join(args, " "), "developer_instructions")
+	args = codexArgs(Options{Model: "gpt", SystemPrompt: "rules"}, "thread-1", "aviary-1", nil)
+	assert.Equal(t, []string{"exec", "--profile", "aviary-1", "resume"}, args[:4], "exec resume takes --profile only before it")
 
 	args = codexArgs(Options{Model: "gpt", BuiltinTools: true, Approval: []string{"-c", `sandbox_mode="workspace-write"`}}, "thread-1", "", nil)
 	joined = strings.Join(args, " ")
@@ -543,6 +545,9 @@ func TestCodexSession_LongSystemPrompt(t *testing.T) {
 	r, err := s.Send(context.Background(), Turn{Text: "system"}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "thread=thread-new images=0 prompt="+opts.SystemPrompt, r.Text, "codex read the whole system prompt")
+	r, err = s.Send(context.Background(), Turn{Text: "system"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "thread=thread-new images=0 prompt="+opts.SystemPrompt, r.Text, "a resumed turn reads it too")
 	removeProfile()
 	entries, err := os.ReadDir(home)
 	require.NoError(t, err)
