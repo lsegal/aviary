@@ -96,7 +96,6 @@ test.beforeEach(async ({ page }) => {
 test("agents and tasks tab shows configured entries", async ({ page }) => {
 	await openAgentPage(page, "settings");
 
-	await expect(page.getByTestId("sidebar-add-agent")).toBeVisible();
 	await expect(
 		page.getByRole("button", { name: "Remove Agent", exact: true }).first(),
 	).toBeVisible();

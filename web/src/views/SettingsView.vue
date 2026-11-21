@@ -1791,6 +1791,7 @@ function emptyConfig(): AppConfig {
 			tls: { cert: "", key: "" },
 			external_access: false,
 			no_tls: false,
+			auto_update: true,
 		},
 		agents: [],
 		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
@@ -1808,6 +1809,10 @@ function hydrateDraftConfig(config: AppConfig): AppConfig {
 	}
 	if (hydrated.browser.reuse_tabs === undefined) {
 		hydrated.browser.reuse_tabs = true;
+	}
+	// Unset means on, as on the server.
+	if (hydrated.server.auto_update === undefined) {
+		hydrated.server.auto_update = true;
 	}
 	hydrated.approval = {
 		mode: hydrated.approval?.mode ?? "",
@@ -2852,6 +2857,8 @@ function normalizedDraftConfig(): AppConfig {
 		normalized.scheduler.precompute_tasks === false ? false : undefined;
 	normalized.browser.reuse_tabs =
 		normalized.browser.reuse_tabs === false ? false : undefined;
+	normalized.server.auto_update =
+		normalized.server.auto_update === false ? false : undefined;
 	const approval = {
 		mode: normalized.approval?.mode || undefined,
 		chat: normalized.approval?.chat || undefined,
