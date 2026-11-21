@@ -50,9 +50,9 @@
 						<label for="agent-task-send-to" class="field-label mt-3">Send To</label>
 						<AppCombobox id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
 							aria-describedby="agent-task-send-to-help" :options="sendToOptions"
-							empty-text="No matching sessions" />
+							empty-text="No matching channels" />
 						<p id="agent-task-send-to-help" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-							Runs always show their output in the task's own session; a channel session also gets a copy.
+							Runs always show their output in the task's own session; a channel also gets a copy in its conversation.
 						</p>
 						<div v-if="dialog.mode === 'create'" class="mt-3 flex items-start gap-3"
 							:class="canPrecompute ? '' : 'opacity-60'">
@@ -139,6 +139,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
 import { useMCP } from "../../composables/useMCP";
 import { useTriggerPreview } from "../../composables/useTriggerPreview";
+import { channelName, channelTarget } from "../../lib/channels";
 import { projectTargets } from "../../lib/projectSettings";
 import {
 	applyTaskTrigger,
@@ -146,10 +147,6 @@ import {
 	taskTriggerFields,
 } from "../../lib/trigger";
 import { agentFilePath, useAgentFilesStore } from "../../stores/agentFiles";
-import {
-	chatDisplayName,
-	useChatSessionsStore,
-} from "../../stores/chatSessions";
 import {
 	type AgentTask,
 	type AgentTaskType,
@@ -170,7 +167,6 @@ type TargetKind = "agent" | "project";
 const { dialog, close } = useAgentItemDialogs();
 const settings = useSettingsStore();
 const files = useAgentFilesStore();
-const chatSessions = useChatSessionsStore();
 const route = useRoute();
 const router = useRouter();
 const { callTool } = useMCP();
@@ -188,7 +184,7 @@ const form = reactive({
 	agent: "",
 	project: "",
 	precompute: true,
-	/** Where runs forward their output: "" or session:<id> of a channel session. */
+	/** Where runs forward their output: "" or channel:<name>. */
 	target: "",
 });
 // Remounts the trigger editor for each dialog, so its preview starts afresh.
@@ -280,42 +276,40 @@ watch(
 	},
 );
 
-/** An edited task's delivery target that is not a channel session offered. */
+/** An edited task's delivery target that is not a channel offered. */
 const otherTarget = computed(() => {
 	const t = form.target;
-	if (!t || channelSessions.value.some((s) => `session:${s.id}` === t))
+	if (!t || taskChannels.value.some((c) => channelTarget(channelName(c)) === t))
 		return "";
 	return dialog.value?.mode === "edit" ? t : "";
 });
+
+/** The task agent's channels, offered by name as Send To. */
+const taskChannels = computed(
+	() =>
+		settings.config?.agents
+			.find((a) => a.name === taskAgent.value)
+			?.channels?.filter((c) => c.type && c.id) ?? [],
+);
 
 /** The agent whose model and tools the task's feedback is analyzed with. */
 const feedbackAgent = computed(
 	() => taskAgent.value || dialog.value?.agent || "",
 );
-
-/** The task agent's chats that forward to a channel, offered as Send To. */
-const channelSessions = computed(() =>
-	chatSessions
-		.sessions(taskAgent.value)
-		.filter((s) => (s.channels?.length ?? 0) > 0),
-);
 const sendToOptions = computed<SelectOption[]>(() => [
 	{ value: "", label: "Task session only" },
-	...channelSessions.value.map((s) => ({
-		value: `session:${s.id}`,
-		label: `${chatDisplayName(s)} · ${s.channels?.join(", ")}`,
+	...taskChannels.value.map((c) => ({
+		value: channelTarget(channelName(c)),
+		label: `${channelName(c)} · ${c.type}`,
 	})),
 	...(otherTarget.value
 		? [{ value: otherTarget.value, label: otherTarget.value }]
 		: []),
 ]);
 
-// Each dialog opening reloads the chats, so a newly bound channel shows up;
-// picking another agent clears a Send To that named one of the old agent's.
-watch([dialog, taskAgent], ([, agent], [, prev]) => {
-	if (!agent) return;
+// Another agent clears a Send To that named one of the old agent's channels.
+watch(taskAgent, (agent, prev) => {
 	if (prev && agent !== prev) form.target = "";
-	void chatSessions.load(agent).catch(() => {});
 });
 
 const formOpen = computed(

@@ -116,7 +116,7 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 		task.Missed = strings.ToLower(task.Missed)
 
 		if task.Target != "" && !config.ValidTaskTarget(task.Target) {
-			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", session:<name-or-id>, or <channel>:<configured-id>:<target>", task.Target)
+			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", session:<name-or-id>, or channel:<channel name>", task.Target)
 		}
 		if strings.EqualFold(task.Type, "project") && task.Project == "" {
 			return nil, struct{}{}, fmt.Errorf("project tasks require a project")

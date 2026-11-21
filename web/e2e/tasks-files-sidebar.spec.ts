@@ -16,7 +16,12 @@ interface Task {
 }
 
 interface Config {
-	agents: Array<{ name: string; model: string; tasks: Task[] }>;
+	agents: Array<{
+		name: string;
+		model: string;
+		tasks: Task[];
+		channels?: Array<{ type: string; id: string; name?: string }>;
+	}>;
 	[key: string]: unknown;
 }
 
@@ -31,7 +36,14 @@ async function mockAgent(
 	extra: Record<string, unknown> = {},
 ) {
 	let config: Config = {
-		agents: [{ name: "assistant", model: "x/y", tasks }],
+		agents: [
+			{
+				name: "assistant",
+				model: "x/y",
+				tasks,
+				channels: [{ type: "slack", id: "standup", name: "Team standup" }],
+			},
+		],
 		...extra,
 	};
 	const saved: Config[] = [];
@@ -72,14 +84,6 @@ async function mockAgent(
 				agent_id: "assistant",
 				name: "main",
 				created_at: new Date().toISOString(),
-			},
-			{
-				id: "sess_slack",
-				agent_id: "assistant",
-				name: "sess_slack",
-				title: "Team standup",
-				created_at: new Date().toISOString(),
-				channels: ["slack"],
 			},
 		],
 		auth_list: [],
@@ -264,7 +268,7 @@ test("the add-task modal's precompute choice follows the setting and applies to 
 	expect(converted).toEqual([{ agent: "assistant", task: "compiled" }]);
 });
 
-test("the add-task modal's Send To forwards runs to a channel session, shown as Send Via in the editor", async ({
+test("the add-task modal's Send To forwards runs to a channel by name, shown as Send Via in the editor", async ({
 	page,
 }) => {
 	const { saved } = await mockAgent(page, [], FILES);
@@ -276,7 +280,7 @@ test("the add-task modal's Send To forwards runs to a channel session, shown as 
 
 	const dialog = page.getByRole("dialog", { name: "Add task" });
 	const sendTo = dialog.getByLabel("Send To");
-	// Only chats bound to a channel are offered, by name, after the default.
+	// The agent's channels are offered by name after the default.
 	await expectValue(sendTo, "");
 	expect(await optionLabels(sendTo)).toEqual([
 		"Task session only",
@@ -288,7 +292,7 @@ test("the add-task modal's Send To forwards runs to a channel session, shown as 
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
 	expect(saved.at(-1)?.agents[0].tasks).toMatchObject([
-		{ name: "standup-digest", target: "session:sess_slack" },
+		{ name: "standup-digest", target: "channel:Team standup" },
 	]);
 
 	// The task's editor shows the same delivery in Send Via.
@@ -296,9 +300,8 @@ test("the add-task modal's Send To forwards runs to a channel session, shown as 
 	const main = page.locator("main");
 	await expectValue(
 		main.getByRole("combobox", { name: "Send Via" }),
-		"session",
+		"channel:Team standup",
 	);
-	await expectValue(main.getByTestId("session-select"), "sess_slack");
 
 	// Left at the default, a new task forwards nowhere, as before.
 	await sidebarRow(page, "tasks").hover();

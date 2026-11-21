@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -134,6 +133,7 @@ func Register(s *sdkmcp.Server) {
 	registerAgentTools(s)
 	registerRulesTools(s)
 	registerSessionTools(s)
+	registerChannelTools(s)
 	registerSessionSendTool(s)
 	registerTaskTools(s)
 	registerAgentContextTools(s)
@@ -887,28 +887,6 @@ type sessionTurnArgs struct {
 	SessionID string `json:"session_id"`
 }
 
-type sessionSetTargetArgs struct {
-	Agent       string `json:"agent"`
-	SessionID   string `json:"session_id"`
-	ChannelType string `json:"channel_type"`
-	ChannelID   string `json:"channel_id"`
-	Target      string `json:"target"`
-}
-
-func resolveSessionTargetIdentity(agentName, sessionID string) (agentID, resolvedAgentName string, err error) {
-	agentID, resolvedAgentName, err = resolveAgentIdentity(agentName)
-	if err != nil {
-		return "", "", err
-	}
-	if strings.TrimSpace(sessionID) == "" {
-		return "", "", fmt.Errorf("session_id is required")
-	}
-	if store.FindSessionPath(agentID, sessionID) == "" {
-		return "", "", fmt.Errorf("session %q not found for agent %q", sessionID, resolvedAgentName)
-	}
-	return agentID, resolvedAgentName, nil
-}
-
 func registerSessionTools(s *sdkmcp.Server) {
 	sessionHistoryHandler := func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionMessagesArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		if strings.TrimSpace(args.Agent) == "" {
@@ -1019,7 +997,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "session_list",
-		Description: "List an agent's chats, leaving out hidden sessions such as the Projects prompt chat",
+		Description: "List an agent's chats, leaving out hidden sessions such as the Projects prompt chat and the sessions of the agent's channels (see channel_sessions)",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionAgentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "chat_session", "tool", "session_list", "agent", args.Agent)
 		if args.Agent == "" {
@@ -1090,13 +1068,20 @@ func registerSessionTools(s *sdkmcp.Server) {
 			LastMessageAt string `json:"last_message_at,omitempty"`
 			IsProcessing  bool   `json:"is_processing"`
 			Deletable     bool   `json:"deletable"`
-			// Channels names the channel types the session forwards its
-			// replies to, such as "slack", making it a channel session.
-			Channels []string `json:"channels,omitempty"`
+		}
+		// A channel's sessions live under its Channels entry, not Chats.
+		var agentCfg config.AgentConfig
+		if cfg, err := config.Load(""); err == nil {
+			for _, a := range cfg.Agents {
+				if strings.EqualFold(a.Name, agentID) {
+					agentCfg = a
+					agentCfg.Name = agentID
+				}
+			}
 		}
 		out := make([]sessionDTO, 0, len(sessions))
 		for _, sess := range sessions {
-			if sess == nil || sess.Type == domain.SessionTypeHidden {
+			if sess == nil || sess.Type == domain.SessionTypeHidden || sessiontarget.ChannelOwner(agentCfg, sess) >= 0 {
 				continue
 			}
 			dto := sessionDTO{
@@ -1112,13 +1097,6 @@ func registerSessionTools(s *sdkmcp.Server) {
 			}
 			if sess.LastMessageAt != nil {
 				dto.LastMessageAt = sess.LastMessageAt.Format(time.RFC3339Nano)
-			}
-			if chs, err := store.ReadSessionChannels(sess.AgentID, sess.ID); err == nil {
-				for _, ch := range chs.Channels {
-					if ch.Type != "" && !slices.Contains(dto.Channels, ch.Type) {
-						dto.Channels = append(dto.Channels, ch.Type)
-					}
-				}
 			}
 			out = append(out, dto)
 		}
@@ -1277,57 +1255,6 @@ func registerSessionTools(s *sdkmcp.Server) {
 		}
 		return text(fmt.Sprintf("session %q renamed to %q", sid, strings.TrimSpace(args.Name)))
 	})
-
-	addTool(s, &sdkmcp.Tool{
-		Name:        "session_set_target",
-		Description: "Set the configured channel target for a session and persist it in the session sidecar",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args sessionSetTargetArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		agentNameArg := strings.TrimSpace(args.Agent)
-		sessionID := strings.TrimSpace(args.SessionID)
-		channelType := strings.TrimSpace(args.ChannelType)
-		configuredID := strings.TrimSpace(args.ChannelID)
-		targetID := strings.TrimSpace(args.Target)
-		if agentNameArg == "" {
-			return nil, struct{}{}, fmt.Errorf("agent is required")
-		}
-		if sessionID == "" {
-			return nil, struct{}{}, fmt.Errorf("session_id is required")
-		}
-		if channelType == "" {
-			return nil, struct{}{}, fmt.Errorf("channel_type is required")
-		}
-		if configuredID == "" {
-			return nil, struct{}{}, fmt.Errorf("channel_id is required")
-		}
-		if targetID == "" {
-			return nil, struct{}{}, fmt.Errorf("target is required")
-		}
-
-		agentID, agentName, err := resolveSessionTargetIdentity(agentNameArg, sessionID)
-		if err != nil {
-			return nil, struct{}{}, err
-		}
-
-		d := GetDeps()
-		var channelMgr *channels.Manager
-		if d != nil {
-			channelMgr = d.Channels
-		}
-		target := store.SessionChannel{
-			Type:         channelType,
-			ConfiguredID: configuredID,
-			ID:           targetID,
-		}
-		if err := sessiontarget.Set(agentID, agentName, sessionID, target, channelMgr); err != nil {
-			return nil, struct{}{}, fmt.Errorf("setting session target: %w", err)
-		}
-
-		msg := fmt.Sprintf("session %q will deliver output via %s/%s to %s", sessionID, channelType, configuredID, targetID)
-		if channelMgr == nil {
-			msg += " after the channel manager loads the sidecar"
-		}
-		return text(msg)
-	})
 }
 
 func isStopCommand(message string) bool {
@@ -1431,7 +1358,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, or <channel>:<configured-id>:<target> (e.g. slack:workspace:C123456) — an agent name like \"assistant\" is not a valid target. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction. Instead of schedule, a recurring task may use trigger=interval with every=<duration> (e.g. 30m, 2h, 1d), trigger=daily with at=HH:MM (comma-separate several times), trigger=weekly with days=mon,wed and at=HH:MM, or trigger=once with start_at. timezone=<IANA zone> sets the zone triggers are evaluated in; set it only when the user names a zone. overlap=skip drops a fire while the previous run is still active (default queue); missed=run_once runs one catch-up fire for runs missed while Aviary was stopped or the machine slept (default skip). Use task_preview to check the next fires. type=project runs content as a Projects job on the board of project=<watched project> (owner/repo) in an isolated clone, with cli=<model spec such as claude:opus> or the project's agent; it needs a schedule trigger.",
+		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, or channel:<channel name> (e.g. channel:Team Slack), which lands in that channel's own session — an agent name like \"assistant\" is not a valid target. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction. Instead of schedule, a recurring task may use trigger=interval with every=<duration> (e.g. 30m, 2h, 1d), trigger=daily with at=HH:MM (comma-separate several times), trigger=weekly with days=mon,wed and at=HH:MM, or trigger=once with start_at. timezone=<IANA zone> sets the zone triggers are evaluated in; set it only when the user names a zone. overlap=skip drops a fire while the previous run is still active (default queue); missed=run_once runs one catch-up fire for runs missed while Aviary was stopped or the machine slept (default skip). Use task_preview to check the next fires. type=project runs content as a Projects job on the board of project=<watched project> (owner/repo) in an isolated clone, with cli=<model spec such as claude:opus> or the project's agent; it needs a schedule trigger.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
@@ -1490,7 +1417,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 		}
 		target := normalizeTaskTarget(args.Target)
 		if target != "" && !config.ValidTaskTarget(target) {
-			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", session:<name-or-id>, or <channel>:<configured-id>:<target>", args.Target)
+			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", session:<name-or-id>, or channel:<channel name>", args.Target)
 		}
 		effectiveTarget := target
 		if recurring {
@@ -1764,7 +1691,7 @@ func normalizeTaskSchedule(schedule string) string {
 }
 
 func defaultScheduledTaskRoute(ctx context.Context, cfg *config.Config, agentName string) string {
-	channelType, configuredID, channelID, ok := agent.ChannelSessionFromContext(ctx)
+	channelType, configuredID, _, ok := agent.ChannelSessionFromContext(ctx)
 	if !ok {
 		sessionID, _ := agent.SessionIDFromContext(ctx)
 		sessionAgentID, _ := agent.SessionAgentIDFromContext(ctx)
@@ -1780,10 +1707,9 @@ func defaultScheduledTaskRoute(ctx context.Context, cfg *config.Config, agentNam
 		if ac.Name != agentName {
 			continue
 		}
-		for _, ch := range ac.Channels {
-			if ch.Type == channelType && ch.ID == configuredID {
-				return fmt.Sprintf("%s:%s:%s", channelType, configuredID, channelID)
-			}
+		// A task asked for from a channel delivers to that channel.
+		if idx := ac.ChannelByKey(channelType, configuredID); idx >= 0 {
+			return config.ChannelTarget(ac.Channels[idx].EffectiveName())
 		}
 		return ""
 	}
@@ -3109,6 +3035,9 @@ func registerServerTools(s *sdkmcp.Server) {
 		}
 		if err := store.UpdateChannelMetadataState(prevCfg, &cfg, time.Now().UTC()); err != nil {
 			return nil, struct{}{}, err
+		}
+		if err := sessiontarget.RekeyChannels(prevCfg, &cfg); err != nil {
+			return nil, struct{}{}, fmt.Errorf("moving channel sessions: %w", err)
 		}
 		// Apply saved tasks now rather than on the config watcher's debounced
 		// reload, so a task_list right after the save already lists their

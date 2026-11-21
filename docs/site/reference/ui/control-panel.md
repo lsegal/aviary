@@ -11,9 +11,10 @@ Each agent's pages, in sidebar order:
 | Chat | `/agents/<agent>/chat/:sessionId?` | Real-time conversation and session management with that agent. |
 | Code Loop | `/agents/<agent>/projects` | One board of the jobs of every project the agent owns, with no settings; each project's board at `/agents/<agent>/projects/<owner%2Frepo>` and its job runs under `/jobs/<number>`. |
 | Code Loop Settings | `/projects/settings` | Opened from the boards' Settings gear: each agent's projects (add, remove, reports), the Code Loop settings every agent's GitHub projects share (concurrency, delivery, issue selection, merging), and the job clones on disk. |
+| Channels | `/agents/<agent>/channels/:channel?` | The agent's Slack, Discord and Signal channels; a channel's conversation in the chat UI, and its settings at `/agents/<agent>/channels/<name>/settings`. `/agents/<agent>/settings/channels` redirects here. |
 | Scheduled Tasks | `/agents/<agent>/tasks` | Run stats and analytics (job queue, compile attempts), and the agent's tasks as cards or a list with quick actions; `?task=<name>` opens a task's editor. |
 | Files | `/agents/<agent>/files` | The agent's root markdown files. |
-| Settings | `/agents/<agent>/settings` | General (name, model, fallbacks, working directory), Permissions (`/settings/permissions`) and Channels (`/settings/channels`) tabs. |
+| Settings | `/agents/<agent>/settings` | General (name, model, fallbacks, working directory), and Permissions (`/settings/permissions`) sections. |
 
 `/agents` opens the first agent's chat; `/agents?add=1` adds an agent.
 

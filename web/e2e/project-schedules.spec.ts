@@ -152,7 +152,11 @@ async function setup(
 		// System → Watches.
 		config_get: {
 			agents: [
-				{ name: "assistant", model: "cli/codex/gpt-5.5" },
+				{
+					name: "assistant",
+					model: "cli/codex/gpt-5.5",
+					channels: [{ type: "discord", id: "ops", name: "ops" }],
+				},
 				...(opts.owner
 					? [
 							{
@@ -216,13 +220,6 @@ async function setup(
 		session_list: (args?: Args) =>
 			args?.agent === "assistant"
 				? [
-						{
-							id: "sess_discord",
-							agent_id: "assistant",
-							name: "ops",
-							created_at: minutesFromNow(-60),
-							channels: ["discord"],
-						},
 						{
 							id: "sess_plain",
 							agent_id: "assistant",
@@ -549,7 +546,7 @@ test("the header Schedule button creates a project scheduled task through the sh
 		"data-state",
 		"project",
 	);
-	// Send To offers the agent's channel sessions by name.
+	// Send To offers the agent's channels by name.
 	const sendTo = dialog.getByLabel("Send To");
 	expect(await optionLabels(sendTo)).toEqual([
 		"Task session only",
@@ -570,7 +567,7 @@ test("the header Schedule button creates a project scheduled task through the sh
 			project: "lsegal/aviary",
 			schedule: "0 * * * *",
 			prompt: "Rerun flaky CI jobs on open PRs.",
-			target: "session:sess_discord",
+			target: "channel:ops",
 			enabled: true,
 		}),
 	]);
