@@ -495,6 +495,10 @@ In a chat turn, Aviary's own MCP tools are always pre-approved for the CLI, so a
 
 A chat turn's CLI runs in the agent's `working_dir` and always also has the agent's own directory (its `MEMORY.md` and `memory/`) in scope, so the agent can keep its memory wherever it works. Each definition's `extraDir` field grants that directory per mode, with the same fallback as `approval`: Claude gets `--add-dir` and, outside `read-only`, an `Edit` allow rule for that directory; Codex gets the directory as a writable root of its workspace sandbox. The grant covers only that directory and never changes the mode, so `read-only` still refuses writes there. A `cli_definitions` entry names the directory as `{dir}`, as `{dirQuoted}` (a quoted TOML string), or as `{dirPosix}` (`C:\a` becomes `/c/a`).
 
+When a chat turn's CLI has its own tools, the agent's `exec.allowed_commands` and `filesystem.allowed_paths` reach it too, as the CLI's own allow and deny rules, so a command or path the agent allows is not then refused by the CLI. Each definition's `permissions` field declares the translation per mode. Claude gets, outside `read-only`, an allow rule for the `Bash` and `PowerShell` tools per command rule (`*` allows every command) and `--add-dir` plus an `Edit` allow rule per path rule. In every mode, including `full`, a `!` rule becomes a `--disallowedTools` rule, which Claude enforces even with its permission checks off. Claude weighs a deny above every allow, so a deny followed by a narrower allow is more restrictive in the CLI than in Aviary, never less.
+
+A refusal names the layer and rule behind it. Aviary's own tools answer, for example, `write refused by Aviary: the agent's Filesystem Allowed Paths deny it with rule "!@/token"`. A refusal from the CLI's own permission check gets a note saying it came from the CLI, under which chat approval mode, and that no rule from the agent's permissions allowed it.
+
 A `cli_definitions` entry declares its own mapping under `approval` and renders it with an argument that is exactly `{approval}` in its templates:
 
 ```yaml

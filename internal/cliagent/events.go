@@ -22,7 +22,7 @@ type toolTranslator struct {
 
 // cliRefusalPhrases are the CLI's own wording for a call its permission
 // check refused, as it reports them in a tool result.
-var cliRefusalPhrases = []string{"haven't granted", "requires approval", "has been denied"}
+var cliRefusalPhrases = []string{"haven't granted", "requires approval", "has been denied", "denied by your permission settings"}
 
 // isCLIRefusal reports whether a tool error is the CLI's permission refusal.
 func isCLIRefusal(output string) bool {
