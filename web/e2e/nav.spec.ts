@@ -69,7 +69,7 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 	]);
 });
 
-test("an agent's pages are Chats, GitHub Projects, Scheduled Tasks, Files and Settings", async ({
+test("an agent's pages are Chats, GitHub Projects, Scheduled Tasks, Files and Agent Settings", async ({
 	page,
 }) => {
 	await mockMCP(page, {
@@ -92,23 +92,57 @@ test("an agent's pages are Chats, GitHub Projects, Scheduled Tasks, Files and Se
 		"GitHub Projects",
 		"Scheduled Tasks",
 		"Files",
-		"Settings",
+		"Agent Settings",
 	]);
 	// The agent comes from the sidebar: the chat has no agent switch.
 	await expect(page.getByRole("button", { name: "assistant" })).toHaveCount(0);
 
-	await agent.getByRole("link", { name: "Settings", exact: true }).click();
+	await agent
+		.getByRole("link", { name: "Agent Settings", exact: true })
+		.click();
 	await expect(page).toHaveURL("/agents/assistant/settings");
-	for (const tab of ["General", "Permissions", "Channels"]) {
+	await expect(page.getByTestId("settings-title")).toHaveText(
+		"assistant · Agent Settings",
+	);
+	// One page of stacked sections, with no tab bar (#684).
+	await expect(
+		page.getByRole("navigation", { name: "Agent settings" }),
+	).toHaveCount(0);
+	for (const section of ["General", "Permissions", "Channels", "Danger Zone"]) {
 		await expect(
-			page
-				.getByRole("navigation", { name: "Agent settings" })
-				.getByRole("button", {
-					name: tab,
-					exact: true,
-				}),
+			page.getByRole("heading", { name: section, exact: true }),
 		).toBeVisible();
 	}
+});
+
+test("each agent's sidebar item reads Agent Settings", async ({ page }) => {
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		session_list: [],
+		config_get: {
+			agents: [
+				{ name: "assistant", model: "anthropic/claude-sonnet-4-5" },
+				{ name: "coder", model: "anthropic/claude-sonnet-4-5" },
+			],
+		},
+	});
+	await page.goto("/agents/coder/chat");
+
+	const agents = page.getByTestId("sidebar-agent-list");
+	const settings = agents.getByRole("link", {
+		name: "Agent Settings",
+		exact: true,
+	});
+	await expect(settings).toHaveAttribute("href", "/agents/coder/settings");
+	await expect(
+		agents.getByRole("link", { name: "Settings", exact: true }),
+	).toHaveCount(0);
+	await settings.click();
+	await expect(page.getByTestId("settings-title")).toHaveText(
+		"coder · Agent Settings",
+	);
 });
 
 test('the Add agent "+" opens a new agent\'s settings', async ({ page }) => {
