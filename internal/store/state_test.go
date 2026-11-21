@@ -95,3 +95,32 @@ func TestUpdateChannelMetadataStateMatchesReorderedChannelsByID(t *testing.T) {
 	assert.Equal(t, originalEnabledAt, state.Channels["bot/slack/alerts"].EnabledAt)
 	assert.Equal(t, now, state.Channels["bot/slack/support"].EnabledAt)
 }
+
+func TestInstanceIDIsGeneratedOnceAndRemembered(t *testing.T) {
+	setupStoreDir(t)
+
+	id, err := InstanceID()
+	assert.NoError(t, err)
+	assert.Regexp(t, `^[0-9A-F]{8}$`, id)
+
+	again, err := InstanceID()
+	assert.NoError(t, err)
+	assert.Equal(t, id, again)
+
+	state, err := ReadAppState()
+	assert.NoError(t, err)
+	assert.Equal(t, id, state.InstanceID)
+}
+
+func TestInstanceIDSurvivesChannelMetadataUpdates(t *testing.T) {
+	setupStoreDir(t)
+
+	id, err := InstanceID()
+	assert.NoError(t, err)
+	enabled := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Channels: []config.ChannelConfig{{Type: "slack", ID: "alerts"}}}}}
+	assert.NoError(t, UpdateChannelMetadataState(&config.Config{}, enabled, time.Now().UTC()))
+
+	again, err := InstanceID()
+	assert.NoError(t, err)
+	assert.Equal(t, id, again)
+}
