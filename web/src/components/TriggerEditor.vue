@@ -138,7 +138,7 @@ function set<K extends keyof TriggerFields>(key: K, v: TriggerFields[K]) {
 	emit("update:modelValue", { ...props.modelValue, [key]: v });
 }
 function setInput(key: keyof TriggerFields, e: Event) {
-	set(key, (e.target as HTMLInputElement | HTMLSelectElement).value as never);
+	set(key, (e.target as HTMLInputElement).value as never);
 }
 
 const days = computed(() =>
