@@ -106,8 +106,7 @@ test("typing analyzes the prompt once after a pause and shows a deterministic ve
 	// A slow analyzer keeps Checking… on screen long enough to see.
 	const calls = await mockAnalyzer(
 		page,
-		() =>
-			new Promise<Analysis>((r) => setTimeout(() => r(DETERMINISTIC), 800)),
+		() => new Promise<Analysis>((r) => setTimeout(() => r(DETERMINISTIC), 800)),
 	);
 	const dialog = await openAddTask(page);
 	const feedback = dialog.getByTestId("task-cost-feedback");
