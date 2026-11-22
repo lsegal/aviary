@@ -256,8 +256,17 @@ test("an analyzer failure shows Couldn't analyze, and Retry re-runs the check", 
 	const feedback = dialog.getByTestId("task-cost-feedback");
 	await expect(feedback).toHaveAttribute("data-state", "error");
 	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
-		"Couldn't analyze",
+		"Couldn't analyze this task.",
 	);
+	await expect(feedback.getByTestId("task-cost-error")).toHaveText(
+		"provider unavailable",
+	);
+	const retry = feedback.getByRole("button", { name: "Retry analysis" });
+	await expect(retry).toBeVisible();
+	// The message and the Retry control are separate, so they never read as
+	// one phrase such as "Couldn't analyze Retry".
+	await expect(feedback).not.toContainText(/analyze\s*Retry/i);
+	await expect(feedback.locator("p", { has: retry })).toHaveCount(0);
 
 	fail = false;
 	await feedback.getByTestId("task-cost-retry").click();
@@ -266,6 +275,30 @@ test("an analyzer failure shows Couldn't analyze, and Retry re-runs the check", 
 	);
 	expect(calls).toHaveLength(2);
 	expect(calls[1]).toMatchObject({ content: "Check https://example.com" });
+});
+
+test("a superseded analysis does not show the error state", async ({
+	page,
+}) => {
+	await mockAnalyzer(page, async (args) => {
+		if (args.content === "Check https://example.com") {
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+			throw new Error("analysis superseded by a newer request");
+		}
+		return DETERMINISTIC;
+	});
+	const dialog = await openAddTask(page);
+	await dialog.getByLabel("Task name").fill("uptime");
+	const prompt = dialog.getByLabel("Prompt");
+	await prompt.fill("Check https://example.com");
+	const feedback = dialog.getByTestId("task-cost-feedback");
+	await page.waitForTimeout(1400);
+	await prompt.fill("Check https://example.com/status");
+	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
+		"This task can run deterministically",
+	);
+	await page.waitForTimeout(500);
+	await expect(feedback).toHaveAttribute("data-state", "ready");
 });
 
 test("saving is not blocked by an analysis in flight", async ({ page }) => {
