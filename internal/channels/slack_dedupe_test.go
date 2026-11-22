@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/config"
+
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
 	"github.com/stretchr/testify/assert"

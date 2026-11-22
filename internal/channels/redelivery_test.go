@@ -3,8 +3,9 @@ package channels
 import (
 	"testing"
 
-	"github.com/bwmarrin/discordgo"
 	"github.com/lsegal/aviary/internal/config"
+
+	"github.com/bwmarrin/discordgo"
 	"github.com/stretchr/testify/assert"
 )
 
