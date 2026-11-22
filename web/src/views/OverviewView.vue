@@ -211,9 +211,13 @@
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <router-link v-for="page in systemPages" :key="page.key" :to="page.to"
             :data-testid="`overview-system-card-${page.key}`"
-            class="flex flex-col rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
-            <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ page.label }}</span>
-            <span class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ page.description }}</span>
+            :aria-label="page.label" :aria-describedby="`overview-system-desc-${page.key}`"
+            class="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
+            <SystemPageIcon :page-key="page.key" tile />
+            <span class="flex min-w-0 flex-col">
+              <span data-testid="overview-system-card-title" class="text-sm font-semibold text-gray-900 dark:text-white">{{ page.label }}</span>
+              <span :id="`overview-system-desc-${page.key}`" class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ page.description }}</span>
+            </span>
           </router-link>
         </div>
       </section>
@@ -224,11 +228,16 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import SystemPageIcon from "../components/SystemPageIcon.vue";
 import { Skeleton } from "../components/ui/skeleton";
 import { useProjectList } from "../composables/useProjects";
 import { projectOwner } from "../lib/projectSettings";
 import { projectPath } from "../lib/projects";
-import { SYSTEM_PAGES, type SystemPage } from "../lib/systemNav";
+import {
+	SYSTEM_PAGES,
+	type SystemPage,
+	WATCH_IDENTITY,
+} from "../lib/systemNav";
 import { useOverviewStore } from "../stores/overview";
 import { agentTaskPath, useSettingsStore } from "../stores/settings";
 
@@ -247,6 +256,7 @@ const systemPages = computed<SystemPage[]>(() => [
 			label: `Watch: ${p.name}`,
 			to: projectPath("", p.name),
 			description: "A runtime watch no agent owns.",
+			...WATCH_IDENTITY,
 		})),
 ]);
 onMounted(() => store.fetchAll());
