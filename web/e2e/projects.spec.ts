@@ -876,8 +876,18 @@ for (const colorScheme of ["light", "dark"] as const) {
 
 		// Every text element in the rich view contrasts with the surface.
 		const contrasts = await rich.evaluate((root) => {
-			const rgb = (c: string) =>
-				(c.match(/[\d.]+/g) ?? []).slice(0, 4).map(Number);
+			// Computed colors may be oklch(); a canvas pixel normalizes them.
+			const ctx = document
+				.createElement("canvas")
+				.getContext("2d", { willReadFrequently: true });
+			if (!ctx) throw new Error("no canvas");
+			const rgb = (c: string) => {
+				ctx.clearRect(0, 0, 1, 1);
+				ctx.fillStyle = c;
+				ctx.fillRect(0, 0, 1, 1);
+				const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+				return [r, g, b, a / 255];
+			};
 			// Composite a translucent color over the opaque one under it.
 			const over = (top: number[], under: number[]) => {
 				const a = top[3] ?? 1;
