@@ -103,9 +103,7 @@ test("a deep link to a System page opens the System section on that page", async
 	await expect(page.getByTestId("sidebar-system-logs")).toHaveClass(
 		/font-semibold/,
 	);
-	await expect(page.getByTestId("sidebar-system")).not.toHaveClass(
-		/bg-white/,
-	);
+	await expect(page.getByTestId("sidebar-system")).not.toHaveClass(/bg-white/);
 
 	await page.reload();
 	await expect(toggle).toHaveAttribute("aria-expanded", "true");
