@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	slackHeadingRE    = regexp.MustCompile(`^[ \t]*#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*$`)
+	slackHeadingRE    = regexp.MustCompile(`^[ \t]*#{1,6}[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$`)
 	slackBulletRE     = regexp.MustCompile(`^([ \t]*)[-*+][ \t]+(.*)$`)
 	slackImageRE      = regexp.MustCompile(`!\[([^\]\n]*)\]\(((?:https?|mailto):[^\s)]+)\)`)
 	slackLinkRE       = regexp.MustCompile(`\[([^\]\n]+)\]\(((?:https?|mailto):[^\s)]+)\)`)

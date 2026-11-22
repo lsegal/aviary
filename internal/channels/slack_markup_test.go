@@ -22,6 +22,7 @@ func TestSlackMrkdwn(t *testing.T) {
 		{"bold link", "**[docs](https://x.io)**", "*<https://x.io|docs>*"},
 		{"heading", "# Summary", "*Summary*"},
 		{"heading with bold", "## **Result** ##", "*Result*"},
+		{"heading keeps trailing hash in word", "### Learn C#", "*Learn C#*"},
 		{"bullets", "- one\n- two", "• one\n• two"},
 		{"nested bullets", "- one\n  - two\n    - three\n* four", "• one\n    ◦ two\n        ▪ three\n• four"},
 		{"numbered list kept", "1. first\n2. second", "1. first\n2. second"},
