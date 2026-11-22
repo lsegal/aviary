@@ -388,29 +388,131 @@ test("a System page keeps its icon in the rail and header, but not the sidebar l
 	expect(await railIcon.locator("svg").innerHTML()).toBe(cardIcon);
 });
 
-test("stat cards are compact on phones and unchanged on desktop (#923)", async ({
+const box = async (locator: import("@playwright/test").Locator) => {
+	const b = await locator.boundingBox();
+	if (!b) throw new Error("element has no bounding box");
+	return b;
+};
+
+const padding = (locator: import("@playwright/test").Locator) =>
+	locator.evaluate((el) => getComputedStyle(el).paddingTop);
+
+const overflows = (locator: import("@playwright/test").Locator) =>
+	locator.evaluateAll((els) =>
+		els
+			.flatMap((el) => [el, ...el.querySelectorAll("*")])
+			.filter((el) => el.scrollWidth > el.clientWidth + 1)
+			.map((el) => el.textContent?.trim()),
+	);
+
+const MANY_AGENT_STATES = [
+	"idle",
+	"running",
+	"stopped",
+	"error",
+	"starting",
+	"paused",
+].map((state, i) => ({ name: `agent-${i}`, state }));
+
+for (const { name, width } of [
+	{ name: "desktop", width: 1280 },
+	{ name: "tablet", width: 800 },
+	{ name: "mobile", width: 375 },
+]) {
+	test(`status cards are compact and unclipped on ${name} (#925)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		await mockMCP(page, {
+			agent_list: MANY_AGENT_STATES,
+			job_list: JOBS,
+			config_validate: [],
+		});
+		await page.goto("/system/overview");
+
+		const cards = page.getByTestId("overview-stat-cards").locator(":scope > *");
+		await expect(cards).toHaveCount(4);
+		await expect(cards.first().getByText("1 starting")).toBeVisible();
+		for (const card of await cards.all()) {
+			expect(await padding(card)).toBe("16px");
+			expect((await box(card)).height).toBeGreaterThanOrEqual(44);
+		}
+		const value = cards.first().locator("span").nth(1);
+		expect(await value.evaluate((el) => getComputedStyle(el).fontSize)).toBe(
+			"24px",
+		);
+		expect(await overflows(cards)).toEqual([]);
+	});
+}
+
+test("System cards are compact on mobile only, leaving page headers full size (#925)", async ({
 	page,
 }) => {
+	await page.setViewportSize({ width: 375, height: 900 });
+	await mockMCP(page, {
+		agent_list: [{ name: "bot", state: "idle" }],
+		job_list: [],
+		config_validate: [],
+	});
+	await page.goto("/system/overview");
+
+	const cards = page
+		.getByTestId("overview-system-pages")
+		.locator(
+			"[data-testid^='overview-system-card-']:not([data-testid$='-title'])",
+		);
+	await expect(cards).toHaveCount(7);
+	const card = cards.first();
+	const tile = card.getByTestId("system-page-icon");
+	expect(await padding(card)).toBe("16px");
+	expect((await box(tile)).width).toBe(28);
+	for (const c of await cards.all()) {
+		expect((await box(c)).height).toBeGreaterThanOrEqual(44);
+	}
+	expect(await overflows(cards)).toEqual([]);
+
+	await page.setViewportSize({ width: 1280, height: 900 });
+	expect(await padding(card)).toBe("20px");
+	expect((await box(tile)).width).toBe(36);
+
+	await page.setViewportSize({ width: 375, height: 900 });
+	await card.click();
+	await expect(page).toHaveURL("/system/usage");
+	const header = page.locator("main").getByTestId("system-page-icon").first();
+	expect((await box(header)).width).toBe(36);
+});
+
+test("loading skeleton matches the compact status cards (#925)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1280, height: 900 });
+	let release = () => {};
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
 	await mockMCP(page, {
 		agent_list: AGENTS,
 		job_list: JOBS,
 		config_validate: [],
 	});
-	const cardSizes = () =>
-		page
-			.locator("main a[href='/agents']", { hasText: "Agents" })
-			.evaluate((card) => {
-				const css = getComputedStyle(card);
-				const value = card.children[1] as HTMLElement;
-				return {
-					padding: `${css.paddingTop} ${css.paddingLeft}`,
-					value: getComputedStyle(value).fontSize,
-				};
-			});
-	await page.setViewportSize({ width: 390, height: 844 });
+	await page.route("/mcp", async (route) => {
+		await held;
+		await route.fallback();
+	});
 	await page.goto("/system/overview");
-	await expect(page.getByText("Config Validation")).toBeVisible();
-	expect(await cardSizes()).toEqual({ padding: "12px 16px", value: "24px" });
-	await page.setViewportSize({ width: 1280, height: 900 });
-	expect(await cardSizes()).toEqual({ padding: "20px 20px", value: "30px" });
+
+	const skeleton = page.getByTestId("overview-stat-skeleton").first();
+	await expect(skeleton).toBeVisible();
+	expect(await padding(skeleton)).toBe("16px");
+	const skeletonHeight = (await box(skeleton)).height;
+
+	release();
+	const card = page
+		.getByTestId("overview-stat-cards")
+		.locator(":scope > *")
+		.first();
+	await expect(card).toBeVisible();
+	expect(
+		Math.abs((await box(card)).height - skeletonHeight),
+	).toBeLessThanOrEqual(4);
 });
