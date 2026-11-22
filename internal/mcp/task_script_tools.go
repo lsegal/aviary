@@ -11,6 +11,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/cliagent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
@@ -430,7 +431,12 @@ func compileTools(ctx context.Context, agentName string) ([]agent.ToolInfo, erro
 	return tools, nil
 }
 
+// compileTaskProvider returns the provider that runs model's text
+// completions: its model API, or its CLI for a CLI-backed model.
 func compileTaskProvider(model string) (llm.Provider, error) {
+	if cliagent.IsCLIModel(model) {
+		return cliTextProvider{model: model}, nil
+	}
 	store, err := authStore()
 	if err != nil {
 		return nil, err

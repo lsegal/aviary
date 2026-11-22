@@ -13,10 +13,14 @@
 					<span class="text-gray-400"> · </span>
 					<span data-testid="task-cost-monthly">{{ monthly }}</span>
 				</template>
-				<button v-if="state === 'error'" type="button" data-testid="task-cost-retry"
-					class="ml-2 text-blue-600 hover:underline dark:text-blue-400" @click="retry">Retry</button>
 			</p>
 			<p v-if="note" data-testid="task-cost-note" class="text-gray-500 dark:text-gray-400">{{ note }}</p>
+			<template v-if="state === 'error'">
+				<p data-testid="task-cost-error" class="break-words text-gray-500 dark:text-gray-400">{{ errorMessage }}</p>
+				<button type="button" data-testid="task-cost-retry"
+					class="mt-1 rounded border border-gray-300 px-2 py-0.5 text-blue-600 hover:bg-gray-50 dark:border-gray-600 dark:text-blue-400 dark:hover:bg-gray-800"
+					@click="retry">Retry analysis</button>
+			</template>
 		</div>
 	</div>
 </template>
@@ -75,6 +79,7 @@ const editor = `task-editor-${Math.random().toString(36).slice(2)}`;
 type State = "idle" | "checking" | "ready" | "error" | "script" | "project";
 const state = ref<State>("idle");
 const result = ref<TaskAnalysis | null>(null);
+const errorMessage = ref("");
 let timer: ReturnType<typeof setTimeout> | undefined;
 // Only the latest request may set the result; older ones are discarded.
 let seq = 0;
@@ -116,9 +121,15 @@ async function analyze() {
 		if (id !== seq) return;
 		result.value = parsed;
 		state.value = "ready";
-	} catch {
+	} catch (e) {
 		if (id !== seq) return;
+		const message = e instanceof Error ? e.message : String(e);
+		// The server cancels an analysis this editor replaced; the newer
+		// request's result is the one to show.
+		if (message.includes("superseded by a newer request")) return;
+		console.warn("task_analyze failed:", message);
 		result.value = null;
+		errorMessage.value = message || "The analysis failed.";
 		state.value = "error";
 	}
 }
@@ -213,7 +224,7 @@ const headline = computed(() => {
 		case "checking":
 			return "Checking…";
 		case "error":
-			return "Couldn't analyze";
+			return "Couldn't analyze this task.";
 		case "script":
 			return "Runs a script";
 		case "project":

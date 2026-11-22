@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -234,10 +235,27 @@ func registerTaskAnalyzeTool(s *sdkmcp.Server) {
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskAnalyzeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		result, err := analyzeTaskForEditor(ctx, args)
 		if err != nil {
+			logTaskAnalyzeFailure(args, err)
 			return nil, struct{}{}, err
 		}
 		return jsonResult(result)
 	})
+}
+
+// errTaskAnalysisSuperseded is returned to an analysis cancelled because the
+// same editor asked for a newer one.
+var errTaskAnalysisSuperseded = errors.New("analysis superseded by a newer request")
+
+// logTaskAnalyzeFailure logs a failed task_analyze call. A superseded
+// analysis is expected while typing, so it is logged at debug level only.
+func logTaskAnalyzeFailure(args taskAnalyzeArgs, err error) {
+	level := slog.LevelWarn
+	if errors.Is(err, errTaskAnalysisSuperseded) {
+		level = slog.LevelDebug
+	}
+	slog.Log(context.Background(), level, "task_analyze failed", "component", "task_compile",
+		"agent", strings.TrimSpace(args.Agent), "editor", strings.TrimSpace(args.Editor),
+		"type", strings.TrimSpace(args.Type), "err", err)
 }
 
 // analyzeTaskForEditor builds task_analyze's result for args.
@@ -277,7 +295,7 @@ func analyzeTaskForEditor(ctx context.Context, args taskAnalyzeArgs) (*taskAnaly
 		recordTaskEditorUsage(agentName, analyzed, err)
 		if err != nil {
 			if runCtx.Err() != nil && ctx.Err() == nil {
-				return nil, fmt.Errorf("analysis superseded by a newer request")
+				return nil, errTaskAnalysisSuperseded
 			}
 			return nil, err
 		}
