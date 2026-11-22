@@ -106,13 +106,7 @@
 									<p class="truncate whitespace-nowrap text-2xl font-bold" data-testid="stat-value">{{ s.value }}<span v-if="s.suffix" class="ml-1 text-sm font-normal opacity-70">{{ s.suffix }}</span></p>
 								</div>
 							</section>
-							<!-- The compact row stays one line and scrolls sideways instead of wrapping. -->
-							<section v-else id="job-counts" class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap text-xs" aria-label="Job counts" data-testid="stat-row">
-								<span v-for="s in statCards" :key="s.label" class="inline-flex shrink-0 items-baseline gap-1 rounded-full border px-2.5 py-0.5" :class="s.cls"
-									:title="s.suffix ? `${s.label}: ${s.value} ${s.suffix}` : `${s.label}: ${s.value}`" data-testid="stat-chip">
-									<b class="tabular-nums">{{ s.chip }}</b><span class="opacity-80">{{ s.chipLabel }}</span>
-								</span>
-							</section>
+							<StatChipRow v-else id="job-counts" aria-label="Job counts" :cards="statCards" />
 							<button type="button" data-testid="stats-toggle" aria-controls="job-counts" :aria-expanded="!statsCompact"
 								:aria-label="statsCompact ? 'Show job counts as cards' : 'Show job counts as a compact row'"
 								:title="statsCompact ? 'Show job counts as cards' : 'Show job counts as a compact row'"
@@ -278,6 +272,9 @@ import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
 import ProjectLogsPanel from "../components/projects/ProjectLogsPanel.vue";
 import ScheduledCard from "../components/projects/ScheduledCard.vue";
 import ScheduleEditor from "../components/projects/ScheduleEditor.vue";
+import StatChipRow, {
+	type StatChip,
+} from "../components/projects/StatChipRow.vue";
 import UpNextStrip from "../components/projects/UpNextStrip.vue";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import {
@@ -608,16 +605,7 @@ const STATE_CARD: Record<BoardState, string> = {
 };
 
 // Each card also has a short chip form for the compact row.
-const statCards = computed<
-	{
-		label: string;
-		value: number;
-		suffix?: string;
-		chip: string;
-		chipLabel: string;
-		cls: string;
-	}[]
->(() => {
+const statCards = computed<StatChip[]>(() => {
 	const s = status.value;
 	if (!s) return [];
 	return [
