@@ -559,3 +559,132 @@ test("system skills shows its skills when opened from another settings page", as
 		page.getByRole("heading", { name: "Server", exact: true }),
 	).toBeHidden();
 });
+
+async function mockServerSettings(
+	page: Page,
+	server: Record<string, unknown> = {},
+): Promise<{ saved: () => Record<string, unknown> | null }> {
+	let savedConfig: Record<string, unknown> | null = null;
+	await setAuthToken(page);
+	await mockMCP(page, {
+		config_get: {
+			server: {
+				port: 16677,
+				tls: { cert: "", key: "" },
+				external_access: false,
+				no_tls: false,
+				...server,
+			},
+			agents: [],
+			models: { providers: {}, defaults: { model: "", fallbacks: [] } },
+			browser: { binary: "", cdp_port: 9222, reuse_tabs: true },
+			scheduler: { concurrency: "" },
+			skills: {},
+		},
+		config_save: (args) => {
+			savedConfig = JSON.parse(String(args?.config ?? "{}")) as Record<
+				string,
+				unknown
+			>;
+			return {};
+		},
+		skills_list: [],
+		tool_list: [],
+	});
+	return { saved: () => savedConfig };
+}
+
+function disableTokenAuthCheckbox(page: Page) {
+	return page.getByRole("checkbox", { name: /Disable token authentication/i });
+}
+
+test("checking Disable token authentication asks for confirmation first (#877)", async ({
+	page,
+}) => {
+	const { saved } = await mockServerSettings(page);
+	await page.goto("/system/settings");
+
+	const checkbox = disableTokenAuthCheckbox(page);
+	await expect(checkbox).not.toBeChecked();
+	await expect(
+		page.getByText("anyone who can reach the server can use it"),
+	).toBeVisible();
+
+	await checkbox.click();
+	const modal = page.getByTestId("disable-token-auth-modal");
+	await expect(modal).toBeVisible();
+	await expect(modal).toContainText(
+		"anyone who can reach the service can use it without a token",
+	);
+	await expect(modal).toContainText(
+		'The risk is greater when "Expose service externally" is on or TLS is disabled.',
+	);
+	await expect(checkbox).not.toBeChecked();
+
+	await modal.getByRole("button", { name: "Cancel" }).click();
+	await expect(modal).toBeHidden();
+	await expect(checkbox).not.toBeChecked();
+
+	await checkbox.click();
+	await page
+		.getByTestId("disable-token-auth-modal")
+		.getByRole("button", { name: "Disable token authentication" })
+		.click();
+	await expect(page.getByTestId("disable-token-auth-modal")).toBeHidden();
+	await expect(checkbox).toBeChecked();
+	await expect(
+		page.getByText("Changing server settings will restart the service."),
+	).toBeVisible();
+
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect.poll(saved).toMatchObject({
+		server: { disable_token_auth: true },
+	});
+});
+
+test("dismissing the Disable token authentication modal changes nothing (#877)", async ({
+	page,
+}) => {
+	const { saved } = await mockServerSettings(page, { external_access: true });
+	await page.goto("/system/settings");
+
+	const checkbox = disableTokenAuthCheckbox(page);
+	await checkbox.click();
+	const modal = page.getByTestId("disable-token-auth-modal");
+	await expect(modal).toBeVisible();
+	await expect(page.getByTestId("disable-token-auth-extra-risk")).toContainText(
+		"exposed externally",
+	);
+	await page.keyboard.press("Escape");
+	await expect(modal).toBeHidden();
+	await expect(checkbox).not.toBeChecked();
+
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect.poll(saved).not.toBeNull();
+	expect(
+		(saved()?.server as Record<string, unknown> | undefined)
+			?.disable_token_auth,
+	).toBeUndefined();
+});
+
+test("unchecking Disable token authentication needs no confirmation (#877)", async ({
+	page,
+}) => {
+	const { saved } = await mockServerSettings(page, {
+		disable_token_auth: true,
+	});
+	await page.goto("/system/settings");
+
+	const checkbox = disableTokenAuthCheckbox(page);
+	await expect(checkbox).toBeChecked();
+	await checkbox.click();
+	await expect(page.getByTestId("disable-token-auth-modal")).toHaveCount(0);
+	await expect(checkbox).not.toBeChecked();
+
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect.poll(saved).not.toBeNull();
+	expect(
+		(saved()?.server as Record<string, unknown> | undefined)
+			?.disable_token_auth,
+	).toBeUndefined();
+});

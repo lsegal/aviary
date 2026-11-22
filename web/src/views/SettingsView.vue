@@ -2861,6 +2861,8 @@ function normalizedDraftConfig(): AppConfig {
 		normalized.browser.reuse_tabs === false ? false : undefined;
 	normalized.server.auto_update =
 		normalized.server.auto_update === false ? false : undefined;
+	normalized.server.disable_token_auth =
+		normalized.server.disable_token_auth === true ? true : undefined;
 	const approval = {
 		mode: normalized.approval?.mode || undefined,
 		chat: normalized.approval?.chat || undefined,
