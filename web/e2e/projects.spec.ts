@@ -2955,6 +2955,32 @@ test("job count stat boxes reflow without wrapping mid-value", async ({
 	}
 });
 
+test("expanded job count cards fit one row at desktop widths (#923)", async ({
+	page,
+}) => {
+	await setup(page, () => ({
+		...STATUS,
+		jobs: { ...STATUS.jobs, running: 10, merged_24h: 61 },
+		concurrency: 20,
+	}));
+	for (const width of [1280, 1440]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		const cards = page.getByTestId("stat-card");
+		await expect(cards).toHaveCount(7);
+		const boxes = await cards.evaluateAll((els) =>
+			els.map((el) => {
+				const box = el.getBoundingClientRect();
+				return { top: Math.round(box.top), height: box.height };
+			}),
+		);
+		expect(new Set(boxes.map((b) => b.top)).size, `rows at ${width}px`).toBe(1);
+		for (const box of boxes) {
+			expect(box.height, `card height at ${width}px`).toBeLessThanOrEqual(60);
+		}
+	}
+});
+
 test("job counts fold into one compact row on phones (#910)", async ({
 	page,
 }) => {

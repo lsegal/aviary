@@ -104,10 +104,10 @@
 						<div v-if="status" class="flex min-w-0 gap-2" :class="statsCompact ? 'items-center' : 'items-start'">
 							<!-- Columns follow the width the board actually has, not the viewport, so
 								the cards reflow onto more rows instead of squeezing their values. -->
-							<section v-if="!statsCompact" id="job-counts" class="grid min-w-0 flex-1 grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-3" aria-label="Job counts">
-								<div v-for="s in statCards" :key="s.label" class="min-w-0 rounded-xl border px-4 py-3" :class="s.cls" data-testid="stat-card">
+							<section v-if="!statsCompact" id="job-counts" class="grid min-w-0 flex-1 grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-2" aria-label="Job counts">
+								<div v-for="s in statCards" :key="s.label" class="min-w-0 rounded-lg border px-3 py-1.5" :class="s.cls" data-testid="stat-card">
 									<p class="truncate text-xs font-semibold uppercase tracking-wide opacity-80" :title="s.label" data-testid="stat-label">{{ s.label }}</p>
-									<p class="truncate whitespace-nowrap text-2xl font-bold" data-testid="stat-value">{{ s.value }}<span v-if="s.suffix" class="ml-1 text-sm font-normal opacity-70">{{ s.suffix }}</span></p>
+									<p class="truncate whitespace-nowrap text-xl font-bold" data-testid="stat-value">{{ s.value }}<span v-if="s.suffix" class="ml-1 text-sm font-normal opacity-70">{{ s.suffix }}</span></p>
 								</div>
 							</section>
 							<StatChipRow v-else id="job-counts" aria-label="Job counts" :cards="statCards" />
