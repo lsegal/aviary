@@ -59,7 +59,8 @@ const actions: SidebarItemAction[] = [
 ];
 
 function select(key: string, name: string) {
-	if (key === "settings") void router.push(channelSettingsPath(props.agent, name));
+	if (key === "settings")
+		void router.push(channelSettingsPath(props.agent, name));
 	else if (key === "rename") void startRename(name);
 	else open({ mode: "remove", agent: props.agent, channel: name });
 }
