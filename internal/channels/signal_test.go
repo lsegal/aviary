@@ -148,6 +148,8 @@ type fakeDaemon struct {
 	rpc               []map[string]interface{} // captured all rpc requests
 	results           map[string]any
 	omitResultMethods map[string]bool
+	delays            map[string]time.Duration
+	events            []string // "recv:<method>" and "done:<method>", in order
 	stopCh            chan struct{}
 }
 
@@ -160,6 +162,7 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 		listener:          ln,
 		results:           map[string]any{},
 		omitResultMethods: map[string]bool{},
+		delays:            map[string]time.Duration{},
 		stopCh:            make(chan struct{}),
 	}
 	go fd.acceptLoop()
@@ -207,7 +210,10 @@ func (fd *fakeDaemon) handleConn(conn net.Conn) {
 		reqID := req["id"]
 		fd.mu.Lock()
 		fd.rpc = append(fd.rpc, req)
+		fd.events = append(fd.events, "recv:"+method)
+		delay := fd.delays[method]
 		fd.mu.Unlock()
+		time.Sleep(delay)
 
 		// Capture outbound RPC requests used by tests.
 		if method == "send" || method == "sendReaction" || method == "sendReceipt" {
@@ -229,6 +235,7 @@ func (fd *fakeDaemon) handleConn(conn net.Conn) {
 		if result, ok := fd.results[method]; ok {
 			resp["result"] = result
 		}
+		fd.events = append(fd.events, "done:"+method)
 		fd.mu.Unlock()
 		b, _ := json.Marshal(resp)
 		b = append(b, '\n')
@@ -287,6 +294,18 @@ func (fd *fakeDaemon) SetResult(method string, result any) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 	fd.results[method] = result
+}
+
+func (fd *fakeDaemon) SetDelay(method string, d time.Duration) {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	fd.delays[method] = d
+}
+
+func (fd *fakeDaemon) Events() []string {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	return append([]string(nil), fd.events...)
 }
 
 func (fd *fakeDaemon) SetOmitResult(method string, omit bool) {
@@ -574,6 +593,30 @@ func TestSignalChannel_Send_FormatsSignalMarkup(t *testing.T) {
 	}
 	assert.Equal(t, "bold and italic", got)
 	assert.Equal(t, []any{"0:4:BOLD", "9:6:ITALIC"}, styles)
+}
+
+func TestSignalChannel_SendWaitsForTypingInFlight(t *testing.T) {
+	fd := newFakeDaemon(t)
+	defer fd.Close()
+	fd.SetDelay("sendTyping", 100*time.Millisecond)
+
+	ch := NewSignalChannel("+1", "", nil, true, false, false, false, "m", nil)
+	ch.addrMu.Lock()
+	ch.addr = fd.Addr()
+	ch.addrMu.Unlock()
+
+	typed := make(chan error, 1)
+	go func() { typed <- ch.SendTyping("+15550001111", false) }()
+	assert.Eventually(t, func() bool { return len(fd.Events()) > 0 }, time.Second, time.Millisecond)
+	assert.NoError(t, ch.Send("+15550001111", "reply"))
+	assert.NoError(t, <-typed)
+	assert.NoError(t, ch.SendTyping("+15550001111", true))
+
+	assert.Equal(t, []string{
+		"recv:sendTyping", "done:sendTyping",
+		"recv:send", "done:send",
+		"recv:sendTyping", "done:sendTyping",
+	}, fd.Events(), "a typing start in flight lands before the reply")
 }
 
 func TestSignalChannel_SendMedia_FormatsSignalMarkup(t *testing.T) {
