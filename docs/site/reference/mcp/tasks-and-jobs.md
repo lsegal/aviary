@@ -83,7 +83,7 @@ Schedule a one-time or recurring task.
 | `run_once` | bool | | Fire only once |
 | `overlap` | string | | `queue` (default) or `skip` while a previous run is active |
 | `missed` | string | | `skip` (default) or `run_once` for fires missed while stopped or asleep |
-| `precompile` | bool | | Override automatic prompt-task precompilation for this task. Set to `false` to keep it as a prompt task. |
+| `precompile` | bool | | Override automatic precompilation for this task. Set to `false` to keep a prompt task as a prompt task, or a project task always on the model. A precompiled project task keeps its prompt; see [Precompiled project tasks](/guide/scheduled-tasks#precompiled-project-tasks). |
 | `run_discovery` | bool | | Run the task immediately to discover its compiled form |
 
 **Returns:** JSON job object (for one-time tasks) or compilation result (for recurring tasks with precompute enabled).
@@ -98,7 +98,7 @@ Schedule a one-time or recurring task.
 
 Change fields of an existing task. Only the fields passed change; an empty string clears a field.
 
-**Arguments:** `name` (required; `agent/task` or a task name), `agent`, and any of `enabled`, `content`, `target`, `schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`, `watch`, `project`, `model`.
+**Arguments:** `name` (required; `agent/task` or a task name), `agent`, and any of `enabled`, `content`, `target`, `schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`, `watch`, `project`, `model`, `precompile` (project tasks only: turns the precompiled script on or off).
 
 **Side effects:** Writes the task's markdown file in the agent's `tasks/` directory and reloads the scheduler.
 

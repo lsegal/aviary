@@ -1017,3 +1017,77 @@ func TestWorkerPool_ExecuteProjectJob(t *testing.T) {
 	}
 	assert.ErrorContains(t, p.executeJob(context.Background(), job), "agent exited 1")
 }
+
+func TestWorkerPool_ExecutePrecompiledProjectJob(t *testing.T) {
+	setupSchedulerDataDir(t)
+	precompile := true
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m", Tasks: []config.TaskConfig{
+		{Name: "stale", Type: "project", Every: "1h", Project: "o/r", Prompt: "Label stale issues", Precompile: &precompile},
+		{Name: "plain", Type: "project", Every: "1h", Project: "o/r", Prompt: "Label stale issues"},
+	}}}})
+	q := NewJobQueue()
+	p := NewWorkerPool(q, mgr, 1)
+	checkout := t.TempDir()
+	// The runner stands in for Code Loop: it runs the compiled script when
+	// there is one, and the model when the script did not complete.
+	modelRuns := 0
+	var cloned bool
+	p.projectRunner = func(ctx context.Context, run ProjectRun) (string, error) {
+		if run.RunCompiled != nil {
+			out, err := run.RunCompiled(ctx, func(context.Context) (string, error) { cloned = true; return checkout, nil }, func(string, ...any) {})
+			if err == nil {
+				return out, nil
+			}
+		}
+		modelRuns++
+		return "model summary", nil
+	}
+	var compiledFor []string
+	script, compileErr := `print("Labeled 2 stale issues")`, error(nil)
+	p.projectCompiler = func(_ context.Context, agentName, taskName string) (string, error) {
+		compiledFor = append(compiledFor, agentName+"/"+taskName)
+		return script, compileErr
+	}
+	output := func(job *domain.Job) string {
+		persisted, err := store.ReadJSON[domain.Job](store.FindJobPath(job.ID))
+		require.NoError(t, err)
+		return persisted.Output
+	}
+
+	job, err := q.EnqueueWithType("alpha/stale", "project", "alpha", "Label stale issues", "", "", 1, "", "")
+	require.NoError(t, err)
+	require.NoError(t, p.executeJob(context.Background(), job))
+	assert.Equal(t, []string{"alpha/stale"}, compiledFor)
+	assert.True(t, cloned)
+	assert.Zero(t, modelRuns, "a deterministic project task runs no model")
+	assert.Equal(t, "Labeled 2 stale issues", output(job))
+
+	// A script that fails falls back to the model, and the run says why.
+	script = `error("gh exited 1")`
+	require.NoError(t, p.executeJob(context.Background(), job))
+	assert.Equal(t, 1, modelRuns)
+	assert.Contains(t, output(job), "Precompiled script failed, so the model ran the task:")
+	assert.Contains(t, output(job), "gh exited 1")
+	assert.Contains(t, output(job), "model summary")
+
+	// So does a compile that fails.
+	script, compileErr = "", errors.New("provider unavailable")
+	require.NoError(t, p.executeJob(context.Background(), job))
+	assert.Equal(t, 2, modelRuns)
+	assert.Contains(t, output(job), "provider unavailable")
+
+	// A prompt that is not deterministic just runs on the model.
+	compileErr = nil
+	require.NoError(t, p.executeJob(context.Background(), job))
+	assert.Equal(t, 3, modelRuns)
+	assert.Equal(t, "model summary", output(job))
+
+	// A task without precompile never compiles.
+	compiledFor = nil
+	plain, err := q.EnqueueWithType("alpha/plain", "project", "alpha", "Label stale issues", "", "", 1, "", "")
+	require.NoError(t, err)
+	require.NoError(t, p.executeJob(context.Background(), plain))
+	assert.Empty(t, compiledFor)
+	assert.Equal(t, 4, modelRuns)
+}

@@ -255,7 +255,7 @@ test("each verdict shows its icon, text and token estimate", async ({
 		"≈ 2.3k tokens/run",
 	);
 	await expect(feedback.getByTestId("task-cost-note")).toHaveText(
-		"Won't be precompiled: open-ended search",
+		"Can't precompile: open-ended search",
 	);
 
 	await prompt.fill("unbounded");
@@ -337,7 +337,7 @@ test("saving is not blocked by an analysis in flight", async ({ page }) => {
 	await expect(dialog).toBeHidden();
 });
 
-test("the task editor shows script and project tasks without calling the analyzer", async ({
+test("the task editor shows script tasks without calling the analyzer", async ({
 	page,
 }) => {
 	const calls = await mockAnalyzer(page, () => DETERMINISTIC, [
@@ -352,17 +352,43 @@ test("the task editor shows script and project tasks without calling the analyze
 	expect(calls).toHaveLength(0);
 
 	// Changing the type re-runs the check.
-	await taskType(page).selectOption("project");
-	await expect(feedback).toHaveAttribute("data-state", "project");
-	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
-		"Project tasks are never precomputed",
-	);
 	await taskType(page).selectOption("prompt");
 	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
 		"This task can run deterministically",
 	);
 	expect(calls).toHaveLength(1);
 	expect(calls[0]).toMatchObject({ type: "prompt", precompile: false });
+});
+
+test("the task editor analyzes a project task as its script runs, in the project's clone", async ({
+	page,
+}) => {
+	const calls = await mockAnalyzer(page, () => DETERMINISTIC, [
+		{
+			name: "stale",
+			type: "project",
+			project: "o/r",
+			prompt: "Label stale issues",
+			precompile: true,
+		},
+	]);
+	await page.goto("/agents/assistant/tasks?task=stale");
+	const feedback = page.getByTestId("task-cost-feedback");
+	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
+		"This task can run deterministically",
+	);
+	await expect(feedback.getByTestId("task-cost-estimate")).toHaveText(
+		"≈ 0 tokens/run",
+	);
+	await expect(feedback.getByTestId("task-cost-note")).toContainText(
+		"runs in a clone of the project with no model calls",
+	);
+	expect(calls).toHaveLength(1);
+	expect(calls[0]).toMatchObject({
+		type: "project",
+		project: "o/r",
+		precompile: true,
+	});
 });
 
 function taskType(page: Page): Locator {

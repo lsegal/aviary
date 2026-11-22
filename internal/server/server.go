@@ -143,6 +143,9 @@ func New(cfg *config.Config, token string) *Server {
 	}
 	if s.sched != nil && s.projects != nil {
 		s.sched.SetProjectRunner(s.projects.RunProjectTask)
+		s.sched.SetProjectTaskCompiler(func(ctx context.Context, agentName, taskName string) (string, error) {
+			return mcp.EnsureProjectTaskCompiled(ctx, agentName, taskName, "run")
+		})
 	}
 
 	// Inject deps into MCP tool handlers.

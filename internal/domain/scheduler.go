@@ -40,6 +40,11 @@ type ScheduledTask struct {
 	// project agent's model for its runs; an empty Model uses the agent's own.
 	Project string `json:"project,omitempty"`
 	Model   string `json:"model,omitempty"`
+	// Precompile is set on a project task whose runs try its compiled script
+	// first, and Compiled when it has one, its prompt having passed the
+	// determinism gate.
+	Precompile bool `json:"precompile,omitempty"`
+	Compiled   bool `json:"compiled,omitempty"`
 	// Enabled is false for a task turned off in config, which never fires.
 	Enabled   bool      `json:"enabled"`
 	CreatedAt time.Time `json:"created_at"`

@@ -388,6 +388,10 @@ func (s *Scheduler) ListTasks() []domain.ScheduledTask {
 			Model:     tc.Model,
 			Enabled:   config.BoolOr(tc.Enabled, true),
 		}
+		if strings.EqualFold(task.Type, "project") {
+			task.Precompile = config.BoolOr(tc.Precompile, false)
+			task.Compiled = task.Precompile && strings.TrimSpace(tc.Compiled) != ""
+		}
 		if fields := TaskFields(tc); fields.HasTrigger() {
 			task.TriggerType = domain.TriggerType(fields.InferKind())
 			if spec, err := schedule.Parse(fields); err == nil {
@@ -532,6 +536,12 @@ func resolveWatchGlob(agentID, glob string) string {
 // which runs each fire's prompt as a board job.
 func (s *Scheduler) SetProjectRunner(fn ProjectRunner) {
 	s.pool.projectRunner = fn
+}
+
+// SetProjectTaskCompiler registers what compiles precompiled project tasks
+// before their runs; without one they always run on the model.
+func (s *Scheduler) SetProjectTaskCompiler(fn ProjectTaskCompiler) {
+	s.pool.projectCompiler = fn
 }
 
 // SetTaskOutputDelivery registers an optional function used to deliver

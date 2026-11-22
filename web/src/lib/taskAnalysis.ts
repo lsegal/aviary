@@ -3,8 +3,7 @@ export type TaskVerdict =
 	| "deterministic"
 	| "partial"
 	| "nondeterministic"
-	| "script"
-	| "project";
+	| "script";
 
 /** One run's estimated token use, and cost when the model's pricing is known. */
 export interface TaskRunEstimate {

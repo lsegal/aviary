@@ -27,24 +27,10 @@ func executeScriptJob(ctx context.Context, job *domain.Job, cfg *config.AgentCon
 	if script == "" {
 		return scriptExecutionResult{}, fmt.Errorf("script task %q has no script content", job.TaskID)
 	}
-	baseToolClient, err := agent.NewToolClient(ctx)
-	if err != nil {
-		return scriptExecutionResult{}, err
-	}
-	toolClient := &scriptToolClient{base: baseToolClient, ctx: ctx}
-	defer toolClient.Close() //nolint:errcheck
-
 	var logs jobLogBuilder
-	output, err := scriptruntime.RunLua(ctx, script, scriptruntime.Options{
-		ToolClient: toolClient,
-		Environment: scriptruntime.Environment{
-			AgentID:   job.AgentID,
-			SessionID: job.SessionID,
-			TaskID:    job.TaskID,
-			JobID:     job.ID,
-		},
-		Logf: logs.Addf,
-	})
+	scriptJob := *job
+	scriptJob.Script = script
+	output, err := executeScriptJobOutput(ctx, &scriptJob, logs.Addf)
 	if output != "" {
 		if job.ReplyAgentID != "" && job.ReplySessionID != "" {
 			if replyErr := agent.AppendReplyToSession(job.ReplyAgentID, job.ReplySessionID, output); replyErr != nil {
@@ -59,6 +45,27 @@ func executeScriptJob(ctx context.Context, job *domain.Job, cfg *config.AgentCon
 		return scriptExecutionResult{Output: output, Logs: logs.String()}, fmt.Errorf("running lua script task: %w", err)
 	}
 	return scriptExecutionResult{Output: output, Logs: logs.String()}, nil
+}
+
+// executeScriptJobOutput runs job.Script as job's agent, with the tools of the
+// agent ctx names, and returns what it printed.
+func executeScriptJobOutput(ctx context.Context, job *domain.Job, logf func(format string, args ...any)) (string, error) {
+	baseToolClient, err := agent.NewToolClient(ctx)
+	if err != nil {
+		return "", err
+	}
+	toolClient := &scriptToolClient{base: baseToolClient, ctx: ctx}
+	defer toolClient.Close() //nolint:errcheck
+	return scriptruntime.RunLua(ctx, job.Script, scriptruntime.Options{
+		ToolClient: toolClient,
+		Environment: scriptruntime.Environment{
+			AgentID:   job.AgentID,
+			SessionID: job.SessionID,
+			TaskID:    job.TaskID,
+			JobID:     job.ID,
+		},
+		Logf: logf,
+	})
 }
 
 type scriptToolClient struct {

@@ -17,6 +17,7 @@ import (
 func commandEnv(ctx context.Context, extra map[string]string) []string {
 	env := append([]string{}, os.Environ()...)
 	applyEnvFile(ctx, &env)
+	applyEnvMap(&env, agent.CommandEnvFromContext(ctx))
 	applyEnvMap(&env, extra)
 	return env
 }

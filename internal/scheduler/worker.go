@@ -42,6 +42,8 @@ type WorkerPool struct {
 	onAttemptDone func(job domain.Job, duration time.Duration)
 	// projectRunner runs a "project" task's prompt as a Code Loop board job.
 	projectRunner ProjectRunner
+	// projectCompiler compiles precompiled project tasks.
+	projectCompiler ProjectTaskCompiler
 }
 
 // ProjectRun is one fire of a "project" task: its prompt, run as a job on the
@@ -57,7 +59,24 @@ type ProjectRun struct {
 	Model  string
 	Prompt string
 	Fire   time.Time
+	// RunCompiled is set for a task with precompile on. The runner calls it
+	// before starting the agent, with clone, which makes a fresh clone of
+	// Project and returns its path; the runner removes the clone afterwards.
+	// RunCompiled runs the task's compiled script there and returns its
+	// output. When it fails, the runner logs why and runs the prompt on the
+	// agent instead; ErrProjectTaskNotCompiled means the prompt is not
+	// deterministic, which is no failure.
+	RunCompiled func(ctx context.Context, clone func(context.Context) (string, error), logf func(format string, args ...any)) (string, error)
 }
+
+// ErrProjectTaskNotCompiled is RunCompiled's error for a task whose prompt did
+// not pass the determinism gate, so each run uses the model.
+var ErrProjectTaskNotCompiled = errors.New("the task's prompt is not deterministic enough to compile")
+
+// ProjectTaskCompiler returns a precompiled project task's current script,
+// compiling it first when its prompt, project or tools changed; "" means its
+// prompt is not deterministic.
+type ProjectTaskCompiler func(ctx context.Context, agentName, taskName string) (string, error)
 
 // ProjectRunner runs a project task and waits for its agent to exit. It
 // returns the run's one-line summary, and an error when the run failed or
@@ -417,6 +436,7 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 		return errors.New("project tasks need the Code Loop engine, which is not running")
 	}
 	run := ProjectRun{TaskID: job.TaskID, Name: jobSessionName(job), Prompt: job.Prompt, Fire: time.Now()}
+	precompile := false
 	if cfg != nil {
 		for _, task := range cfg.Tasks {
 			if task.Name == run.Name {
@@ -424,6 +444,7 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 				if strings.TrimSpace(run.Prompt) == "" {
 					run.Prompt = task.Prompt
 				}
+				precompile = config.BoolOr(task.Precompile, false)
 				break
 			}
 		}
@@ -431,7 +452,28 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 	if run.Project == "" {
 		return fmt.Errorf("project task %q names no project", job.TaskID)
 	}
+	var compiledErr error
+	if precompile && p.projectCompiler != nil && cfg != nil {
+		jobCtx := ctx
+		run.RunCompiled = func(runCtx context.Context, clone func(context.Context) (string, error), logf func(string, ...any)) (string, error) {
+			// The script runs as the job's agent, in its task session, which
+			// the job's context names; the runner's context only stops it.
+			scriptCtx, cancel := context.WithCancelCause(jobCtx)
+			defer cancel(nil)
+			stop := context.AfterFunc(runCtx, func() { cancel(context.Cause(runCtx)) })
+			defer stop()
+			output, err := p.runCompiledProjectTask(scriptCtx, job, cfg.Name, run, clone, logf)
+			compiledErr = err
+			return output, err
+		}
+	}
 	summary, err := p.projectRunner(ctx, run)
+	if compiledErr != nil && !errors.Is(compiledErr, ErrProjectTaskNotCompiled) {
+		// The fallback is part of the run's result, not only the board log.
+		note := "Precompiled script failed, so the model ran the task: " + compiledErr.Error()
+		summary = strings.TrimSpace(note + "\n" + summary)
+		slog.Warn("job: precompiled project task fell back to the model", "id", job.ID, "task", job.TaskID, "err", compiledErr)
+	}
 	if summary != "" {
 		if persistErr := p.queue.UpdateOutput(job.ID, summary); persistErr != nil {
 			slog.Warn("job: failed to persist output", "id", job.ID, "err", persistErr)
@@ -441,6 +483,30 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 		}
 	}
 	return err
+}
+
+// runCompiledProjectTask runs a precompiled project task's script in checkout,
+// a fresh clone of its project, with the same environment the task's agent
+// gets: its tools and exec permissions, the clone granted to them and their
+// default directory, and the clone and repository in the command env.
+func (p *WorkerPool) runCompiledProjectTask(ctx context.Context, job *domain.Job, agentName string, run ProjectRun, clone func(context.Context) (string, error), logf func(string, ...any)) (string, error) {
+	script, err := p.projectCompiler(ctx, agentName, run.Name)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(script) == "" {
+		return "", ErrProjectTaskNotCompiled
+	}
+	checkout, err := clone(ctx)
+	if err != nil {
+		return "", fmt.Errorf("cloning %s: %w", run.Project, err)
+	}
+	logf("running the precompiled script in %s", checkout)
+	ctx = agent.WithFilesystemGrant(ctx, checkout)
+	ctx = agent.WithCommandEnv(ctx, map[string]string{"AVIARY_CHECKOUT_DIRECTORY": checkout, "GH_REPO": run.Project})
+	scriptJob := *job
+	scriptJob.Script = script
+	return executeScriptJobOutput(ctx, &scriptJob, logf)
 }
 
 // SetTaskOutputDelivery configures the callback used to forward completed task output.

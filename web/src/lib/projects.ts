@@ -789,6 +789,10 @@ export interface ProjectSchedule extends TriggerFields {
 	model: string;
 	prompt: string;
 	enabled: boolean;
+	/** Whether runs try the task's compiled script in the clone before the model. */
+	precompile: boolean;
+	/** Whether the task has a compiled script, its prompt having passed the determinism gate. */
+	compiled: boolean;
 	trigger: ScheduleTrigger;
 	description: string;
 	nextRun: string;
@@ -816,6 +820,8 @@ export function normalizeSchedule(v: unknown): ProjectSchedule {
 		model: str(raw.model),
 		prompt: str(raw.prompt),
 		enabled: raw.enabled !== false,
+		precompile: raw.precompile === true,
+		compiled: raw.compiled === true,
 		trigger: normalizeTrigger(raw),
 		schedule: str(raw.schedule),
 		every: str(raw.every),

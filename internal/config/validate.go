@@ -253,6 +253,9 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 			if taskType != "project" && (t.Project != "" || t.Model != "") {
 				v.errorf(tf, "project and model are only supported for project tasks")
 			}
+			if taskType != "project" && (t.Precompile != nil || t.Compiled != "" || t.CompiledKey != "") {
+				v.errorf(tf, "precompile, compiled and compiled_key are only supported for project tasks; prompt tasks are compiled into script tasks")
+			}
 			if model := strings.TrimSpace(t.Model); model != "" && taskType == "project" {
 				v.checkProjectTaskModel(tf+".model", model)
 			}

@@ -155,19 +155,41 @@ func TestTaskAnalyzeCachesByInputAndRecordsEditorUsage(t *testing.T) {
 	assert.Equal(t, 30, records[0].OutputTokens)
 }
 
-func TestTaskAnalyzeScriptAndProjectSkipAnalyzer(t *testing.T) {
+func TestTaskAnalyzeScriptSkipsAnalyzer(t *testing.T) {
 	calls := stubTaskAnalyzer(t, sampleTaskAnalyses)
 	script, err := analyzeTaskForEditor(context.Background(), taskAnalyzeArgs{Agent: "bot", Content: "print('hi')", Type: "script"})
 	require.NoError(t, err)
 	assert.Equal(t, taskVerdictScript, script.Verdict)
 	assert.True(t, script.Estimate.Available)
 	assert.Zero(t, script.Estimate.MaxTokens)
-
-	project, err := analyzeTaskForEditor(context.Background(), taskAnalyzeArgs{Agent: "bot", Content: "triage", Type: "project"})
-	require.NoError(t, err)
-	assert.Equal(t, taskVerdictProject, project.Verdict)
-	assert.False(t, project.Estimate.Available)
 	assert.Zero(t, *calls)
+}
+
+func TestTaskAnalyzeProjectRunsAnalyzerWithClone(t *testing.T) {
+	const prompt = "rerun failed CI jobs on open PRs"
+	analyses := map[string]*compileTaskAnalysis{
+		projectTaskCompilePrompt(prompt, "acme/app"):              sampleTaskAnalyses["check https://example.com and print its status"],
+		projectTaskCompilePrompt("triage new issues", "acme/app"): sampleTaskAnalyses["fetch the release notes and summarize them"],
+	}
+	calls := stubTaskAnalyzer(t, analyses)
+
+	det, err := analyzeTaskForEditor(context.Background(), taskAnalyzeArgs{Agent: "bot", Content: prompt, Type: "project", Project: "acme/app", Precompile: true})
+	require.NoError(t, err)
+	assert.Equal(t, taskVerdictDeterministic, det.Verdict)
+	assert.True(t, det.WillPrecompile)
+	assert.True(t, det.Estimate.Available)
+	assert.Zero(t, det.Estimate.MaxTokens)
+
+	partial, err := analyzeTaskForEditor(context.Background(), taskAnalyzeArgs{Agent: "bot", Content: "triage new issues", Type: "project", Project: "acme/app", Precompile: true, Model: "claude:opus"})
+	require.NoError(t, err)
+	assert.Equal(t, taskVerdictPartial, partial.Verdict)
+	assert.False(t, partial.WillPrecompile)
+	assert.Equal(t, "claude:opus", partial.Model)
+	assert.Positive(t, partial.Estimate.MaxTokens)
+	assert.Equal(t, 2, *calls)
+
+	_, err = analyzeTaskForEditor(context.Background(), taskAnalyzeArgs{Agent: "bot", Content: prompt, Type: "project"})
+	require.ErrorContains(t, err, "project is required")
 }
 
 func TestTaskAnalyzeToolViaDispatcher(t *testing.T) {

@@ -153,6 +153,24 @@ func FilesystemGrantFromContext(ctx context.Context) (string, bool) {
 	return v, true
 }
 
+type commandEnvKey struct{}
+
+// WithCommandEnv sets environment variables for the commands tool calls made
+// with ctx start, on top of aviary's own environment and the agent's .env, as
+// a precompiled project task's script gets AVIARY_CHECKOUT_DIRECTORY.
+func WithCommandEnv(ctx context.Context, env map[string]string) context.Context {
+	if len(env) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, commandEnvKey{}, env)
+}
+
+// CommandEnvFromContext returns the variables WithCommandEnv set, if any.
+func CommandEnvFromContext(ctx context.Context) map[string]string {
+	env, _ := ctx.Value(commandEnvKey{}).(map[string]string)
+	return env
+}
+
 // WithWriteGuard marks ctx as a model-driven tool call, where file_write must
 // not overwrite an existing file the session has not read.
 func WithWriteGuard(ctx context.Context) context.Context {

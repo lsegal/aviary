@@ -1358,7 +1358,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, or channel:<channel name> (e.g. channel:Team Slack), which lands in that channel's own session — an agent name like \"assistant\" is not a valid target. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction. Instead of schedule, a recurring task may use trigger=interval with every=<duration> (e.g. 30m, 2h, 1d), trigger=daily with at=HH:MM (comma-separate several times), trigger=weekly with days=mon,wed and at=HH:MM, or trigger=once with start_at. timezone=<IANA zone> sets the zone triggers are evaluated in; set it only when the user names a zone. overlap=skip drops a fire while the previous run is still active (default queue); missed=run_once runs one catch-up fire for runs missed while Aviary was stopped or the machine slept (default skip). Use task_preview to check the next fires. type=project runs content as a Code Loop job on the board of project=<watched project> (owner/repo) in an isolated clone, with cli=<model spec such as claude:opus> or the project's agent; it needs a schedule trigger.",
+		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, or channel:<channel name> (e.g. channel:Team Slack), which lands in that channel's own session — an agent name like \"assistant\" is not a valid target. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled; a project task keeps its prompt and, when precompiled, runs its compiled script in the clone, falling back to the model if the script fails. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction. Instead of schedule, a recurring task may use trigger=interval with every=<duration> (e.g. 30m, 2h, 1d), trigger=daily with at=HH:MM (comma-separate several times), trigger=weekly with days=mon,wed and at=HH:MM, or trigger=once with start_at. timezone=<IANA zone> sets the zone triggers are evaluated in; set it only when the user names a zone. overlap=skip drops a fire while the previous run is still active (default queue); missed=run_once runs one catch-up fire for runs missed while Aviary was stopped or the machine slept (default skip). Use task_preview to check the next fires. type=project runs content as a Code Loop job on the board of project=<watched project> (owner/repo) in an isolated clone, with cli=<model spec such as claude:opus> or the project's agent; it needs a schedule trigger.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
@@ -1559,6 +1559,9 @@ func registerTaskTools(s *sdkmcp.Server) {
 				Project:  strings.TrimSpace(args.Project),
 				Model:    strings.TrimSpace(args.Model),
 			}
+			if taskType == "project" {
+				nextTask.Precompile = &shouldPrecompute
+			}
 			// Check whether a task with this name already exists (for action message).
 			updated := false
 			for _, t := range loadedCfg.Agents[agentIdx].Tasks {
@@ -1589,10 +1592,14 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if updated {
 				action = "updated"
 			}
-			if nextTask.Schedule != "" {
-				return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.", taskName, action, args.Agent, nextTask.Schedule))
+			compileNote := ""
+			if taskType == "project" && shouldPrecompute {
+				compileNote = projectTaskCompileNote(ctx, args.Agent, taskName)
 			}
-			return text(fmt.Sprintf("Scheduled task %q %s for agent %q: %s.", taskName, action, args.Agent, spec.Describe()))
+			if nextTask.Schedule != "" {
+				return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.%s", taskName, action, args.Agent, nextTask.Schedule, compileNote))
+			}
+			return text(fmt.Sprintf("Scheduled task %q %s for agent %q: %s.%s", taskName, action, args.Agent, spec.Describe(), compileNote))
 		}
 		agentID := args.Agent
 		taskID := strings.TrimSpace(args.Name)
@@ -3375,12 +3382,25 @@ func registerServerTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "config_task_convert_to_script",
-		Description: "Attempt to compile a PROMPT-type task to a Lua script asynchronously; returns a compile ID immediately",
+		Description: "Attempt to compile a PROMPT-type task to a Lua script asynchronously; returns a compile ID immediately. For a project task with precompile on, compiles its script beside its prompt instead, keeping it a project task.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args configTaskConvertToScriptArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "settings", "tool", "config_task_convert_to_script", "agent", args.Agent, "task", args.Task)
 		cfg, err := config.Load("")
 		if err != nil {
 			return nil, struct{}{}, err
+		}
+		// A project task keeps its prompt and stores its compiled script
+		// beside it, so a run whose script fails falls back to the model.
+		if _, _, task, findErr := findConfiguredTask(args.Agent, args.Task); findErr == nil && strings.EqualFold(task.Type, "project") {
+			if !EffectiveProjectTaskPrecompile(task) {
+				return nil, struct{}{}, fmt.Errorf("project task %q does not have precompile turned on", args.Task)
+			}
+			go func() {
+				if _, err := EnsureProjectTaskCompiled(context.Background(), args.Agent, args.Task, "manual"); err != nil {
+					slog.Warn("task_compile: project task compile failed", "component", "task_compile", "agent", args.Agent, "task", args.Task, "error", err)
+				}
+			}()
+			return text(fmt.Sprintf("compiling project task %q", args.Task))
 		}
 		agentIdx := -1
 		for i, a := range cfg.Agents {
@@ -3634,6 +3654,20 @@ func registerServerTools(s *sdkmcp.Server) {
 		}()
 		return text(tracker.record.ID)
 	})
+}
+
+// projectTaskCompileNote compiles a just-saved project task and describes the
+// outcome for task_schedule's reply. A failed compile does not fail the save:
+// the task's runs try again and use the model until it compiles.
+func projectTaskCompileNote(ctx context.Context, agentName, taskName string) string {
+	script, err := EnsureProjectTaskCompiled(ctx, agentName, taskName, "schedule")
+	switch {
+	case err != nil:
+		return " Precompile failed, so runs use the model until it compiles: " + err.Error()
+	case script == "":
+		return " Its prompt is not deterministic, so runs use the model."
+	}
+	return " Precompiled: runs execute the compiled script in the clone without the model."
 }
 
 // ── Usage tools ──────────────────────────────────────────────────────────────

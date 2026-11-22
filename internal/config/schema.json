@@ -283,6 +283,9 @@
                 "script": { "type": "string" },
                 "target": { "type": "string" },
                 "project": { "type": "string" },
+                "precompile": { "type": "boolean", "description": "Project tasks only: compile the prompt into a script that runs in the job's clone without the model when it is deterministic. Unset follows scheduler.precompute_tasks." },
+                "compiled": { "type": "string", "description": "Project tasks only: the compiled Lua script, written by Aviary." },
+                "compiled_key": { "type": "string", "description": "Project tasks only: identifies the prompt, project and tools the compiled script was built from, written by Aviary." },
                 "cli": { "type": "string" }
               },
               "allOf": [

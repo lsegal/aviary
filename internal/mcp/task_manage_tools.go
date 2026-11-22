@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -36,6 +37,8 @@ type taskUpdateArgs struct {
 	Watch    *string `json:"watch,omitempty"`
 	Project  *string `json:"project,omitempty"`
 	Model    *string `json:"model,omitempty"`
+	// Precompile turns a project task's precompiled script on or off.
+	Precompile *bool `json:"precompile,omitempty"`
 }
 
 type taskDeleteArgs struct {
@@ -77,7 +80,7 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 	registerTaskUpcomingTool(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_update",
-		Description: "Change fields of an existing scheduled task. name may be <agent>/<task> or a task name (add agent to disambiguate). Only the fields you pass change; pass an empty string to clear a field. Trigger fields: schedule (cron), trigger (once|interval|daily|weekly|cron), every, at (HH:MM), days (mon,wed), timezone (IANA), start_at, run_once, overlap (queue|skip), missed (skip|run_once). Project tasks also take project (watched owner/repo) and cli (model spec). Use enabled=false to pause a task without deleting it.",
+		Description: "Change fields of an existing scheduled task. name may be <agent>/<task> or a task name (add agent to disambiguate). Only the fields you pass change; pass an empty string to clear a field. Trigger fields: schedule (cron), trigger (once|interval|daily|weekly|cron), every, at (HH:MM), days (mon,wed), timezone (IANA), start_at, run_once, overlap (queue|skip), missed (skip|run_once). Project tasks also take project (watched owner/repo), model (model spec), and precompile (run a compiled script in the clone when the prompt is deterministic, falling back to the model). Use enabled=false to pause a task without deleting it.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpdateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		_, agentCfg, task, err := findConfiguredTask(args.Agent, args.Name)
 		if err != nil {
@@ -110,6 +113,16 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 		set(&task.Model, args.Model)
 		if args.RunOnce != nil {
 			task.RunOnce = *args.RunOnce
+		}
+		if args.Precompile != nil {
+			if !strings.EqualFold(task.Type, "project") {
+				return nil, struct{}{}, fmt.Errorf("precompile is only supported for project tasks; prompt tasks are compiled into script tasks")
+			}
+			precompile := *args.Precompile
+			task.Precompile = &precompile
+			if !precompile {
+				task.Compiled, task.CompiledKey = "", ""
+			}
 		}
 		task.Trigger = strings.ToLower(task.Trigger)
 		task.Overlap = strings.ToLower(task.Overlap)
@@ -149,6 +162,16 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 		}
 		if err := reloadTaskConfig(); err != nil {
 			return nil, struct{}{}, err
+		}
+		if EffectiveProjectTaskPrecompile(task) {
+			// Compile ahead of the next run, which would otherwise compile
+			// first; a task whose inputs did not change keeps its script.
+			agentName, taskName := agentCfg.Name, task.Name
+			go func() {
+				if _, err := EnsureProjectTaskCompiled(context.Background(), agentName, taskName, "update"); err != nil {
+					slog.Warn("task_compile: project task compile failed", "component", "task_compile", "agent", agentName, "task", taskName, "error", err)
+				}
+			}()
 		}
 		return text(fmt.Sprintf("Task %q updated for agent %q.", task.Name, agentCfg.Name))
 	})

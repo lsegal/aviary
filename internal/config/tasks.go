@@ -35,6 +35,9 @@ type taskFileFrontmatter struct {
 	Project     string `yaml:"project,omitempty"`
 	Model       string `yaml:"model,omitempty"`
 	IdleTimeout string `yaml:"idle_timeout,omitempty"`
+	Precompile  *bool  `yaml:"precompile,omitempty"`
+	Compiled    string `yaml:"compiled,omitempty"`
+	CompiledKey string `yaml:"compiled_key,omitempty"`
 	// LegacyRunAgent and LegacyCLI read the old keys of Model (see
 	// LegacyTaskModel). They are never written: saving a task moves the
 	// value to model.
@@ -87,6 +90,9 @@ func ParseMarkdownTask(defaultName string, data []byte) (TaskConfig, error) {
 	task.Project = fm.Project
 	task.Model = fm.Model
 	task.IdleTimeout = fm.IdleTimeout
+	task.Precompile = fm.Precompile
+	task.Compiled = fm.Compiled
+	task.CompiledKey = fm.CompiledKey
 	if task.Model == "" {
 		task.Model = LegacyTaskModel(fm.LegacyRunAgent, fm.LegacyCLI)
 	}
@@ -135,6 +141,9 @@ func SaveMarkdownTask(dir string, task TaskConfig) (string, error) {
 		Project:     task.Project,
 		Model:       task.Model,
 		IdleTimeout: task.IdleTimeout,
+		Precompile:  task.Precompile,
+		Compiled:    task.Compiled,
+		CompiledKey: task.CompiledKey,
 	}
 	// Only include name in frontmatter when it differs from the filename stem.
 	stem := strings.TrimSuffix(filename, ".md")

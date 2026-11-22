@@ -1744,3 +1744,30 @@ func TestServerConfig_DisableTokenAuth(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, string(out), "disable_token_auth")
 }
+
+func TestProjectTaskPrecompileRoundTripsAndIsProjectOnly(t *testing.T) {
+	dir := t.TempDir()
+	on := true
+	task := TaskConfig{
+		Name: "stale", Type: "project", Project: "acme/app", Trigger: "daily", At: "09:00",
+		Prompt: "Label stale issues", Precompile: &on, Compiled: "print(\"labeled\")\nprint(\"done\")", CompiledKey: "abc123",
+	}
+	path, err := SaveMarkdownTask(dir, task)
+	require.NoError(t, err)
+	loaded, err := LoadMarkdownTask(path)
+	require.NoError(t, err)
+	require.NotNil(t, loaded.Precompile)
+	assert.True(t, *loaded.Precompile)
+	assert.Equal(t, task.Compiled, loaded.Compiled)
+	assert.Equal(t, "abc123", loaded.CompiledKey)
+	assert.Equal(t, "Label stale issues", loaded.Prompt)
+
+	cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{
+		task,
+		{Name: "report", Every: "1h", Prompt: "report", Precompile: &on},
+	}}}}
+	issues := Validate(cfg, nil)
+	assert.True(t, hasIssue(issues, "precompile, compiled and compiled_key are only supported for project tasks"))
+	cfg.Agents[0].Tasks = cfg.Agents[0].Tasks[:1]
+	assert.False(t, hasIssue(Validate(cfg, nil), "precompile"))
+}

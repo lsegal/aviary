@@ -21,7 +21,16 @@
 				placeholder="Triage issues opened since the last run and label them." />
 			<span class="text-xs text-gray-500">Runs in an isolated clone of {{ draft.project }} in place of /gh-fix.</span>
 		</label>
-		<TaskCostFeedback :agent="draft.agent" :prompt="draft.prompt" type="project" :model="draft.model" />
+		<TaskCostFeedback :agent="draft.agent" :prompt="draft.prompt" type="project" :project="draft.project"
+			:model="draft.model" :trigger="draft" :precompile="draft.precompile" />
+		<div class="flex items-start gap-2 text-sm">
+			<input id="schedule-precompile" v-model="draft.precompile" type="checkbox" name="precompile"
+				aria-describedby="schedule-precompile-help" class="mt-0.5 rounded" />
+			<div>
+				<label for="schedule-precompile" class="text-gray-700 dark:text-gray-200">Try to precompute task</label>
+				<p id="schedule-precompile-help" data-testid="schedule-precompile-help" class="text-xs text-gray-500">{{ precompileHelp }}</p>
+			</div>
+		</div>
 		<div data-testid="schedule-model" class="block text-sm">
 			<span class="font-medium text-gray-700 dark:text-gray-200">Model override (optional)</span>
 			<div class="mt-1">
@@ -69,7 +78,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useAvailableModels } from "../../composables/useAvailableModels";
 import { useUnsavedChanges } from "../../composables/useUnsavedChanges";
 import {
@@ -123,6 +132,14 @@ watch(
 useUnsavedChanges(() => editable(draft.value) !== saved.value, {
 	keeps: (to, from) =>
 		to.path === from.path && to.query.scheduled === from.query.scheduled,
+});
+/** What precompiling does for this schedule, and whether its script exists yet. */
+const precompileHelp = computed(() => {
+	if (!draft.value.precompile)
+		return "Compile a deterministic prompt into a script that runs in the clone without the model";
+	if (props.schedule.precompile && props.schedule.compiled)
+		return "Precompiled: runs execute its script in the clone with no model calls, and fall back to the model if it fails";
+	return "Compiled on save when the prompt is deterministic; runs fall back to the model if its script fails";
 });
 const busy = ref(false);
 const error = ref("");
