@@ -2841,6 +2841,12 @@ test("job count stat boxes reflow without wrapping mid-value", async ({
 	for (const width of [375, 768, 1024, 1280, 1440]) {
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		// Phones open on the compact row; expanding it keeps the cards from
+		// then on.
+		if (width < 768) {
+			await expect(page.getByTestId("stat-row")).toBeVisible();
+			await page.getByTestId("stats-toggle").click();
+		}
 		const stats = page.getByRole("region", { name: "Job counts" });
 		await expect(stats).toContainText("10of 20 busy");
 		await expect(stats).toContainText("Merged (24h)61");
@@ -2917,6 +2923,86 @@ test("job count stat boxes reflow without wrapping mid-value", async ({
 			}
 		}
 	}
+});
+
+test("job counts fold into one compact row on phones (#910)", async ({
+	page,
+}) => {
+	await setup(page, () => ({
+		...STATUS,
+		jobs: { ...STATUS.jobs, merged_24h: 65 },
+		concurrency: 20,
+	}));
+	const colors = (testid: string) =>
+		page.getByTestId(testid).evaluateAll((els) =>
+			els.map((el) => {
+				const css = getComputedStyle(el);
+				return [css.color, css.backgroundColor, css.borderColor].join(" ");
+			}),
+		);
+	for (const scheme of ["light", "dark"] as const) {
+		await page.emulateMedia({ colorScheme: scheme });
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		await page.evaluate(() =>
+			localStorage.removeItem("aviary.projects.statsCompact"),
+		);
+		await page.reload();
+		const row = page.getByTestId("stat-row");
+		await expect(row).toBeVisible();
+		await expect(page.getByTestId("stat-card")).toHaveCount(0);
+		const chips = page.getByTestId("stat-chip");
+		await expect(chips).toHaveText([
+			/^\d+\/20slots$/,
+			/^\d+starting$/,
+			/^\d+paused$/,
+			/^\d+running$/,
+			/^\d+done$/,
+			/^\d+failed$/,
+			"65merged 24h",
+		]);
+		const layout = await row.evaluate((section) => {
+			const tops = [...section.children].map((chip) =>
+				Math.round(chip.getBoundingClientRect().top),
+			);
+			const chip = section.children[0].getBoundingClientRect();
+			return {
+				tops: new Set(tops).size,
+				height: section.getBoundingClientRect().height,
+				chipHeight: chip.height,
+				pageOverflow: document.documentElement.scrollWidth > window.innerWidth,
+				scrolls: getComputedStyle(section).overflowX,
+			};
+		});
+		expect(layout.tops, "chips on one line").toBe(1);
+		expect(layout.height).toBeLessThanOrEqual(layout.chipHeight + 20);
+		expect(layout.pageOverflow, "page overflow").toBe(false);
+		expect(layout.scrolls).toBe("auto");
+		// Each chip keeps its card's colors.
+		const chipColors = await colors("stat-chip");
+		const toggle = page.getByTestId("stats-toggle");
+		await expect(toggle).toHaveAttribute("aria-expanded", "false");
+		await toggle.click();
+		await expect(row).toHaveCount(0);
+		await expect(page.getByTestId("stat-card")).toHaveCount(7);
+		await expect(toggle).toHaveAttribute("aria-expanded", "true");
+		expect(await colors("stat-card"), `${scheme} colors`).toEqual(chipColors);
+		// The choice survives a reload, both ways.
+		await page.reload();
+		await expect(page.getByTestId("stat-card")).toHaveCount(7);
+		await toggle.click();
+		await expect(row).toBeVisible();
+		await page.reload();
+		await expect(row).toBeVisible();
+	}
+	// Wide boards keep the cards until the user picks the row.
+	await page.evaluate(() =>
+		localStorage.removeItem("aviary.projects.statsCompact"),
+	);
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await page.reload();
+	await expect(page.getByTestId("stat-card")).toHaveCount(7);
+	await expect(page.getByTestId("stat-row")).toHaveCount(0);
 });
 
 for (const { name, width } of [
