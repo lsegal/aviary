@@ -240,3 +240,20 @@ test("with several agents the phone main nav stays on one row", async ({
 	await menu.getByRole("menuitem", { name: "System" }).click();
 	await expect(page).toHaveURL("/system/overview");
 });
+
+test("a server without token authentication skips the login prompt (#877)", async ({
+	page,
+}) => {
+	await page.addInitScript(() => localStorage.removeItem("aviary_token"));
+	await page.route("/api/health", (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ ok: true, version: "dev", auth_disabled: true }),
+		}),
+	);
+	await page.goto("/system/overview");
+	await expect(page).toHaveURL("/system/overview");
+	await page.goto("/login");
+	await expect(page).not.toHaveURL(/\/login$/);
+});

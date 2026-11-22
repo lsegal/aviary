@@ -1727,3 +1727,20 @@ func TestProjectModelSpec(t *testing.T) {
 	_, _, ok = ProjectModelSpec(cfg, "", "anthropic/claude-opus-4-5")
 	assert.False(t, ok, "a provider model needs an agent to run on")
 }
+
+func TestServerConfig_DisableTokenAuth(t *testing.T) {
+	var cfg Config
+	require.NoError(t, yaml.Unmarshal([]byte("server:\n  port: 16677\n"), &cfg))
+	assert.False(t, cfg.Server.DisableTokenAuth, "token auth stays on when unset")
+
+	require.NoError(t, yaml.Unmarshal([]byte("server:\n  external_access: true\n  disable_token_auth: true\n"), &cfg))
+	assert.True(t, cfg.Server.DisableTokenAuth)
+
+	out, err := yaml.Marshal(cfg.Server)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "disable_token_auth: true")
+
+	out, err = yaml.Marshal(ServerConfig{})
+	require.NoError(t, err)
+	assert.NotContains(t, string(out), "disable_token_auth")
+}

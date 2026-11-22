@@ -144,7 +144,7 @@ func TestBearerMiddleware(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	h := BearerMiddleware(token, next)
+	h := BearerMiddleware(token, nil, next)
 
 	t.Run("valid bearer", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -181,9 +181,87 @@ func TestBearerMiddleware(t *testing.T) {
 	})
 }
 
+func TestBearerMiddleware_DisableTokenAuth(t *testing.T) {
+	token := "aviary_tok_test"
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	disabled := false
+	h := BearerMiddleware(token, func() bool { return disabled }, next)
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusUnauthorized, rr.Code, "no token is rejected while token auth is on")
+
+	disabled = true
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	assert.Equal(t, http.StatusOK, rr.Code, "no token is accepted while token auth is off")
+
+	rr = httptest.NewRecorder()
+	wrong := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	wrong.Header.Set("Authorization", "Bearer wrong")
+	h.ServeHTTP(rr, wrong)
+	assert.Equal(t, http.StatusOK, rr.Code, "a wrong token is ignored while token auth is off")
+
+	disabled = false
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	assert.Equal(t, http.StatusUnauthorized, rr.Code, "token checks return once token auth is back on")
+}
+
+func TestServerRoutes_DisableTokenAuth(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		disabled bool
+		want     int
+	}{
+		{"token auth on", false, http.StatusUnauthorized},
+		{"token auth off", true, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{token: "aviary_tok_routes", mux: http.NewServeMux()}
+			s.authDisabled.Store(tc.disabled)
+			s.mux.Handle("/api/logs/history", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})))
+			s.mux.HandleFunc("/api/health", healthHandler(s.authDisabled.Load))
+
+			rr := httptest.NewRecorder()
+			s.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/logs/history", nil))
+			assert.Equal(t, tc.want, rr.Code)
+
+			rr = httptest.NewRecorder()
+			s.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/health", nil))
+			var health healthPayload
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &health))
+			assert.Equal(t, tc.disabled, health.AuthDisabled)
+		})
+	}
+}
+
+func TestLoginHandler_DisableTokenAuth(t *testing.T) {
+	h := LoginHandler("aviary_tok_secret", func() bool { return true })
+	body, _ := json.Marshal(map[string]string{"token": ""})
+	req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Empty(t, rr.Result().Cookies(), "no session cookie is needed without token auth")
+}
+
+func TestWsHandler_DisableTokenAuth(t *testing.T) {
+	h := wsHandler("secret-token", func() bool { return true })
+	rr := httptest.NewRecorder()
+	h(rr, httptest.NewRequest(http.MethodGet, "/api/ws", nil))
+	assert.NotEqual(t, http.StatusUnauthorized, rr.Code)
+}
+
 func TestLoginHandler(t *testing.T) {
 	token := "aviary_tok_secret"
-	h := LoginHandler(token)
+	h := LoginHandler(token, nil)
 
 	t.Run("method not allowed", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/login", nil)
@@ -271,7 +349,7 @@ func TestPIDLifecycle(t *testing.T) {
 func TestHealthHandler(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	rr := httptest.NewRecorder()
-	healthHandler(rr, req)
+	healthHandler(nil)(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var payload struct {
@@ -404,7 +482,7 @@ func TestIntegration_TokenAndBearer(t *testing.T) {
 	assert.NoError(t, err)
 
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := BearerMiddleware(tok, next)
+	h := BearerMiddleware(tok, nil, next)
 
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -809,6 +887,15 @@ func TestServerSettingsChanged(t *testing.T) {
 
 	})
 
+	t.Run("disable_token_auth changed", func(t *testing.T) {
+		other := &config.Config{}
+		other.Server.Port = 16677
+		other.Server.DisableTokenAuth = true
+		assert.True(t, serverSettingsChanged(base, other))
+		assert.True(t, serverSettingsChanged(other, base))
+
+	})
+
 	t.Run("external_access changed", func(t *testing.T) {
 		other := &config.Config{}
 		other.Server.Port = 16677
@@ -1163,7 +1250,7 @@ func (fi *memFileInfo) Sys() any           { return nil }
 // ── Additional coverage tests ─────────────────────────────────────────────────
 
 func TestWsHandler_Unauthorized(t *testing.T) {
-	h := wsHandler("secret-token")
+	h := wsHandler("secret-token", nil)
 
 	// No auth at all → 401.
 	req := httptest.NewRequest(http.MethodGet, "/api/ws", nil)
@@ -1184,7 +1271,7 @@ func TestWsHandler_ValidCookieAuthUpgradeFails(_ *testing.T) {
 	// httptest.ResponseRecorder does not implement http.Hijacker.
 	// The handler should not panic and should return (upgrade error is silently swallowed).
 	token := "aviary_tok_wstest"
-	h := wsHandler(token)
+	h := wsHandler(token, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/ws", nil)
 	req.AddCookie(&http.Cookie{Name: "aviary_session", Value: token})
@@ -1202,7 +1289,7 @@ func TestWsHandler_ValidCookieAuthUpgradeFails(_ *testing.T) {
 
 func TestWsHandler_ValidQueryTokenUpgradeFails(_ *testing.T) {
 	token := "aviary_tok_wstest2"
-	h := wsHandler(token)
+	h := wsHandler(token, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/ws?token="+token, nil)
 	req.Header.Set("Upgrade", "websocket")
@@ -1980,7 +2067,7 @@ func TestBearerMiddleware_EmptyToken(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	h := BearerMiddleware("valid-tok", next)
+	h := BearerMiddleware("valid-tok", nil, next)
 
 	// Request with empty bearer header.
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

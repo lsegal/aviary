@@ -61,6 +61,9 @@ type ServerConfig struct {
 	TLS            *TLSConfig `yaml:"tls,omitempty"             json:"tls,omitempty"`
 	ExternalAccess bool       `yaml:"external_access,omitempty" json:"external_access,omitempty"` // bind to 0.0.0.0 instead of 127.0.0.1
 	NoTLS          bool       `yaml:"no_tls,omitempty"          json:"no_tls,omitempty"`          // disable TLS (plain HTTP)
+	// DisableTokenAuth turns off bearer-token checks on the HTTP, WebSocket,
+	// and MCP endpoints, so anyone who can reach the server can use it.
+	DisableTokenAuth bool `yaml:"disable_token_auth,omitempty" json:"disable_token_auth,omitempty"`
 	// FailedTaskTimeout is the maximum age of a pending run checkpoint before
 	// the agent gives up and notifies the session instead of resuming.
 	// Accepts Go duration strings like "6h", "30m". Defaults to 6h if unset.

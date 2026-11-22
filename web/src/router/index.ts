@@ -127,6 +127,14 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
 	const auth = useAuthStore();
+	// A server running without token authentication needs no login.
+	if (
+		(to.meta.requiresAuth || to.path === "/login") &&
+		!auth.isLoggedIn &&
+		(await auth.checkAuthDisabled())
+	) {
+		if (to.path === "/login") return "/agents";
+	}
 	if (to.meta.requiresAuth && !auth.isLoggedIn) {
 		return "/login";
 	}

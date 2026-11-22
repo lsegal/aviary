@@ -147,8 +147,11 @@
 									<span class="ml-1 text-xs text-gray-400 dark:text-gray-500">(applies updates as soon as they are available)</span>
 								</span>
 							</label>
+							<DisableTokenAuthToggle :model-value="!!draft.server.disable_token_auth"
+								:external-access="draft.server.external_access" :no-tls="draft.server.no_tls"
+								@update:model-value="(v: boolean) => { draft.server.disable_token_auth = v }" />
 						</div>
-						<p v-if="draft.server.external_access || draft.server.no_tls"
+						<p v-if="draft.server.external_access || draft.server.no_tls || draft.server.disable_token_auth"
 							class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
 							Changing server settings will restart the service.
 						</p>
@@ -162,11 +165,18 @@ import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
 import { AppSelect } from "../ui/select";
 import { settingsViewContextKey } from "./context";
+import DisableTokenAuthToggle from "./DisableTokenAuthToggle.vue";
 import SettingsAgentList from "./SettingsAgentList.vue";
 
 export default defineComponent({
 	name: "SettingsGeneralTab",
-	components: { AppSelect, ModelSelector, SecretSelect, SettingsAgentList },
+	components: {
+		AppSelect,
+		DisableTokenAuthToggle,
+		ModelSelector,
+		SecretSelect,
+		SettingsAgentList,
+	},
 	setup() {
 		const settings = inject(settingsViewContextKey);
 		if (!settings) {

@@ -22,6 +22,10 @@
 					"type": "boolean",
 					"description": "Disable TLS and serve plain HTTP. Intended for trusted local or reverse-proxy environments."
 				},
+				"disable_token_auth": {
+					"type": "boolean",
+					"description": "Skip bearer-token checks on the HTTP, WebSocket, and MCP endpoints, so anyone who can reach the server can use it. Not recommended."
+				},
 				"auto_update": {
 					"type": "boolean",
 					"default": true,

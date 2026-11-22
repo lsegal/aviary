@@ -17,6 +17,7 @@ export interface ServerConfig {
 	tls: TLSConfig;
 	external_access: boolean;
 	no_tls: boolean;
+	disable_token_auth?: boolean;
 	auto_update?: boolean;
 }
 

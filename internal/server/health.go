@@ -19,6 +19,9 @@ type healthPayload struct {
 	OK      bool   `json:"ok"`
 	Version string `json:"version"`
 	GOOS    string `json:"goos"`
+	// AuthDisabled tells the web UI the server needs no token, so it can
+	// skip the login prompt.
+	AuthDisabled bool `json:"auth_disabled,omitempty"`
 }
 
 type wsEvent struct {
@@ -106,9 +109,16 @@ var wsUpgrader = websocket.Upgrader{
 
 // healthHandler handles GET /api/health.
 // Public — no authentication required. Returns current version and status.
-func healthHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(healthPayload{OK: true, Version: update.CurrentVersion(), GOOS: runtime.GOOS})
+func healthHandler(authDisabled func() bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(healthPayload{
+			OK:           true,
+			Version:      update.CurrentVersion(),
+			GOOS:         runtime.GOOS,
+			AuthDisabled: tokenAuthDisabled(authDisabled),
+		})
+	}
 }
 
 // wsHandler returns a handler for GET /api/ws.
@@ -118,10 +128,11 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 // On connect it immediately sends a healthPayload message, then repeats every
 // 30 s so the client can confirm the server is still alive. The connection is
 // closed when the client disconnects.
-func wsHandler(token string) http.HandlerFunc {
+func wsHandler(token string, authDisabled func() bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Auth: session cookie (preferred) or explicit query param.
-		authed := false
+		// Auth: session cookie (preferred) or explicit query param, unless
+		// token authentication is disabled.
+		authed := tokenAuthDisabled(authDisabled)
 		if c, err := r.Cookie("aviary_session"); err == nil && c.Value == token {
 			authed = true
 		}

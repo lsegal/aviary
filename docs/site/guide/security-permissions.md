@@ -38,6 +38,7 @@ The Aviary server is the control plane. If it is exposed too broadly, every down
 ### Network Exposure
 
 - Keep TLS enabled. Do not set `server.no_tls: true` unless you are in a tightly controlled local-only environment.
+- Keep token authentication on. `server.disable_token_auth: true` (Settings > Server > Disable token authentication) lets anyone who can reach the server use it without a token; never combine it with `external_access` or `no_tls` on an untrusted network.
 - Prefer binding Aviary to localhost and reaching it through a secure tunnel, VPN, or trusted reverse proxy when remote access is required.
 - If you expose Aviary on a LAN or WAN, use a real certificate and key via `server.tls.cert` and `server.tls.key` instead of relying on the generated local certificate.
 - Limit inbound network access with host firewall rules, security groups, or reverse-proxy allowlists.
