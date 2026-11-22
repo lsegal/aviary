@@ -135,11 +135,17 @@ type Args = Record<string, unknown>;
 
 async function setup(
 	page: Page,
-	opts: { upcoming?: unknown[]; owner?: string } = {},
+	opts: {
+		upcoming?: unknown[];
+		owner?: string;
+		tasks?: unknown[];
+		jobs?: unknown[];
+		job?: unknown;
+	} = {},
 ) {
 	await setAuthToken(page);
 	const calls: Record<string, Args[]> = {};
-	const tasks: unknown[] = [...TASKS];
+	const tasks: unknown[] = [...(opts.tasks ?? TASKS)];
 	const record = (tool: string) => (args?: Args) => {
 		calls[tool] ??= [];
 		calls[tool].push(args ?? {});
@@ -189,8 +195,11 @@ async function setup(
 			return "ok";
 		},
 		project_status: STATUS,
-		project_job_list: { jobs: [SCHEDULED_JOB], total: 1 },
-		project_job_get: {
+		project_job_list: {
+			jobs: opts.jobs ?? [SCHEDULED_JOB],
+			total: (opts.jobs ?? [SCHEDULED_JOB]).length,
+		},
+		project_job_get: opts.job ?? {
 			...SCHEDULED_JOB,
 			scrollback: "Reading the issues opened since 02:00 yesterday…",
 			events: [],
@@ -282,6 +291,8 @@ test("board shows scheduled job cards and the up next strip", async ({
 test("board lists scheduled tasks as their own boxes with run details", async ({
 	page,
 }) => {
+	page.on("console", (m) => console.log("CONSOLE", m.type(), m.text()));
+	page.on("pageerror", (e) => console.log("PAGEERR", e.message));
 	await setup(page);
 	await page.goto("/system/watches/lsegal%2Faviary");
 
@@ -302,6 +313,35 @@ test("board lists scheduled tasks as their own boxes with run details", async ({
 	await expect(boxes.nth(1).getByTestId("scheduled-next")).toHaveText("paused");
 	await expect(boxes.nth(1).getByTestId("scheduled-last")).toHaveText("never");
 
+	// A recurring schedule's run in flight shows once, as the control that
+	// opens the run, beside its next fire time and its last finished result.
+	const running = nightly.getByTestId("scheduled-running");
+	await expect(running).toHaveText(/^\s*Running now · [12]m\s*$/);
+	await expect(nightly).toHaveText(
+		/^(?:(?!running).)*running(?:(?!running).)*$/is,
+	);
+	await expect(
+		nightly.getByRole("link", { name: "Edit schedule" }),
+	).toHaveCount(0);
+	// It shows the run's output like an issue card does.
+	await expect(nightly.getByTestId("scheduled-output")).toHaveText(
+		"Reading the issues opened since 02:00 yesterday…",
+	);
+	await expect(nightly.getByTestId("output-mode")).toBeVisible();
+	await running.click();
+	await expect(page).toHaveURL(new RegExp(`/jobs/${FIRE}`));
+	await page.goto("/system/watches/lsegal%2Faviary");
+	await expect(boxes).toHaveCount(2);
+	// A schedule with no run has no output, no running control and the
+	// expand link to its editor.
+	const weekly = boxes.nth(1);
+	await expect(weekly.getByTestId("scheduled-running")).toHaveCount(0);
+	await expect(weekly.getByTestId("scheduled-output")).toHaveCount(0);
+	await expect(weekly.getByTestId("output-mode")).toHaveCount(0);
+	await expect(
+		weekly.getByRole("link", { name: "Edit schedule" }),
+	).toBeVisible();
+
 	// The search narrows scheduled boxes with the jobs; a state filter hides them.
 	await page.getByLabel("Search jobs").fill("dependencies");
 	await expect(boxes).toHaveCount(1);
@@ -313,6 +353,146 @@ test("board lists scheduled tasks as their own boxes with run details", async ({
 		.click();
 	await expect(boxes).toHaveCount(0);
 });
+
+test("scheduled cards are compact: trigger and next run share one line (#875)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/system/watches/lsegal%2Faviary");
+	const weekly = page.getByTestId("scheduled-card").nth(1);
+	await expect(weekly.getByTestId("scheduled-trigger")).toBeVisible();
+	const details = await weekly
+		.getByTestId("scheduled-run-details")
+		.boundingBox();
+	const trigger = await weekly.getByTestId("scheduled-trigger").boundingBox();
+	const next = await weekly.getByTestId("scheduled-next").boundingBox();
+	expect(details!.height).toBeLessThan(24);
+	expect(Math.abs(trigger!.y - next!.y)).toBeLessThan(4);
+	// The last result sits in the footer row, beside the expand link.
+	const last = await weekly.getByTestId("scheduled-last").boundingBox();
+	const expand = await weekly
+		.getByRole("link", { name: "Edit schedule" })
+		.boundingBox();
+	expect(
+		Math.abs(last!.y + last!.height / 2 - (expand!.y + expand!.height / 2)),
+	).toBeLessThan(4);
+	// Header, title, prompt, one details line and the footer: no tall
+	// label/value grid.
+	expect((await weekly.boundingBox())!.height).toBeLessThan(170);
+});
+
+// A one-time schedule moves through these states: armed, fired and running
+// (the scheduler lists no next run once it fires), then finished.
+const ONCE_AT = minutesFromNow(-1);
+const onceTask = (fields: Record<string, unknown>) =>
+	schedule({
+		id: "assistant/one-off",
+		name: "one-off",
+		prompt: "Summarize this week's merged pull requests.",
+		enabled: true,
+		trigger_type: "once",
+		start_at: ONCE_AT,
+		description: "once at 2026-11-21 19:11 (Local)",
+		...fields,
+	});
+const ONCE_JOB = {
+	...SCHEDULED_JOB,
+	key: "lsegal/aviary#1795424500",
+	number: 1795424500,
+	title: "one-off",
+	schedule_id: "assistant/one-off",
+	scrollback: "Collecting merged pull requests…",
+	events: [{ kind: "message", text: "Found 12 merged pull requests." }],
+};
+
+for (const tc of [
+	{
+		state: "before",
+		task: onceTask({ next_run: minutesFromNow(30), history: [] }),
+		jobs: [],
+		next: /^next in (29|30)m$/,
+		running: false,
+	},
+	{
+		state: "during",
+		task: onceTask({
+			history: [{ fire_time: ONCE_AT, reason: "schedule", status: "running" }],
+		}),
+		jobs: [ONCE_JOB],
+		next: null,
+		running: true,
+	},
+	{
+		state: "after",
+		task: onceTask({
+			history: [
+				{
+					fire_time: ONCE_AT,
+					reason: "schedule",
+					status: "completed",
+					summary: "Posted the weekly summary",
+				},
+			],
+		}),
+		jobs: [{ ...ONCE_JOB, status: "completed", state: "done", actions: {} }],
+		next: /^no next run$/,
+		running: false,
+	},
+]) {
+	test(`a one-time schedule's next run ${tc.state} its run (#875)`, async ({
+		page,
+	}) => {
+		await setup(page, { tasks: [tc.task], jobs: tc.jobs, job: tc.jobs[0] });
+		await page.goto("/system/watches/lsegal%2Faviary");
+		const card = page.getByTestId("scheduled-card");
+		await expect(card).toHaveCount(1);
+		await expect(card.getByTestId("scheduled-trigger")).toHaveText(
+			"once at 2026-11-21 19:11 (Local)",
+		);
+		await expect(card).not.toContainText("none");
+		if (tc.next)
+			await expect(card.getByTestId("scheduled-next")).toHaveText(tc.next);
+		else await expect(card.getByTestId("scheduled-next")).toHaveCount(0);
+		await expect(card.getByTestId("scheduled-running")).toHaveCount(
+			tc.running ? 1 : 0,
+		);
+
+		const kanbanNext = async () => {
+			await page.getByTestId("kanban-toggle").click();
+			const text = await page
+				.getByTestId("kanban-scheduled-next")
+				.textContent();
+			await page.getByTestId("kanban-toggle").click();
+			return text?.trim();
+		};
+		if (tc.state === "during") {
+			await expect(card.getByTestId("scheduled-running")).toHaveText(
+				/^\s*Running now · \d+[sm]\s*$/,
+			);
+			await expect(card.getByTestId("scheduled-last")).toHaveCount(0);
+			// The run's output shows in rich and raw mode, like an issue card.
+			await expect(card.getByTestId("scheduled-output-rich")).toContainText(
+				"Found 12 merged pull requests.",
+			);
+			await card.getByRole("button", { name: "Raw output" }).click();
+			await expect(card.getByTestId("scheduled-output")).toHaveText(
+				"Collecting merged pull requests…",
+			);
+			await card.getByRole("button", { name: "Rich output" }).click();
+			expect(await kanbanNext()).toBe("Running now");
+		}
+		if (tc.state === "after") {
+			await expect(card.getByTestId("scheduled-last")).toContainText(
+				"Posted the weekly summary",
+			);
+			expect(await kanbanNext()).toBe("No next run");
+		}
+		if (tc.state === "before") {
+			await expect(card.getByTestId("scheduled-last")).toHaveText("never");
+			await expect(card.getByTestId("scheduled-output")).toHaveCount(0);
+		}
+	});
+}
 
 test("kanban shows a Scheduled column of compact scheduled boxes", async ({
 	page,

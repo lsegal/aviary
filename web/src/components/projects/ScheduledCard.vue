@@ -1,5 +1,5 @@
 <template>
-	<article data-testid="scheduled-card"
+	<article data-testid="scheduled-card" :class="{ 'self-start': !job }"
 		class="flex max-h-[50vh] min-w-0 flex-col overflow-hidden rounded-xl border border-violet-200 bg-white dark:border-violet-900 dark:bg-gray-900">
 		<div class="shrink-0 space-y-1 px-4 pb-2.5 pt-3">
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
@@ -83,6 +83,8 @@ import { useSettingsStore } from "../../stores/settings";
 import JobOutputPane from "./JobOutputPane.vue";
 import JobOutputToggle from "./JobOutputToggle.vue";
 
+// Without output to fill it, the box keeps its own height (self-start)
+// instead of stretching to its grid row's tallest card.
 const props = defineProps<{
 	schedule: ProjectSchedule;
 	now: number;
