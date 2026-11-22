@@ -43,6 +43,7 @@ func Validate(cfg *Config, authGet func(key string) (string, error)) []Issue {
 	v.checkModels(cfg.Models)
 	v.checkBrowser(cfg.Browser)
 	v.checkScheduler(cfg.Scheduler)
+	v.checkTranscription(cfg.Transcription)
 	v.checkProjects(cfg.Agents)
 	v.checkApproval(cfg.Approval, cfg.Projects.ApprovalMode)
 	return v.issues
@@ -71,6 +72,28 @@ func (v *validator) checkApproval(a ApprovalConfig, projects clidefs.ApprovalMod
 			v.errorf(field, "%v", err)
 		}
 	}
+}
+
+// checkTranscription validates TranscriptionConfig.
+func (v *validator) checkTranscription(t TranscriptionConfig) {
+	if engine := strings.TrimSpace(t.Engine); engine != "" && engine != "local" {
+		v.errorf("transcription.engine", "unknown engine %q; only \"local\" is supported", engine)
+	}
+	if lang := strings.TrimSpace(t.Language); lang != "" && lang != "auto" && !isLanguageCode(lang) {
+		v.errorf("transcription.language", "language %q must be \"auto\" or an ISO 639-1 code such as \"en\"", lang)
+	}
+}
+
+func isLanguageCode(s string) bool {
+	if len(s) < 2 || len(s) > 3 {
+		return false
+	}
+	for _, r := range s {
+		if r < 'a' || r > 'z' {
+			return false
+		}
+	}
+	return true
 }
 
 // checkServer validates ServerConfig.
