@@ -199,6 +199,28 @@ test("a stale in-flight analysis never replaces a newer one, and analyzed text i
 	expect(calls).toHaveLength(2);
 });
 
+test("estimates that round to the same value show one value", async ({
+	page,
+}) => {
+	await mockAnalyzer(page, () => ({
+		verdict: "nondeterministic",
+		will_precompile: false,
+		reason: "open-ended search",
+		estimate: {
+			available: true,
+			min_tokens: 10100,
+			max_tokens: 10400,
+			min_cost_usd: 0.0301,
+			max_cost_usd: 0.0304,
+		},
+	}));
+	const dialog = await openAddTask(page);
+	await dialog.getByLabel("Prompt").fill("say hello");
+	await expect(
+		dialog.getByTestId("task-cost-feedback").getByTestId("task-cost-estimate"),
+	).toHaveText("≈ 10k tokens/run ($0.030)");
+});
+
 test("each verdict shows its icon, text and token estimate", async ({
 	page,
 }) => {

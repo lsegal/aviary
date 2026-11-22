@@ -79,14 +79,15 @@ export function formatMonthlyEstimate(
 }
 
 function formatRange(e: TaskRunEstimate, times: number, per: string): string {
-	const min = e.min_tokens * times;
-	const max = e.max_tokens * times;
-	const tokens =
-		min === max
-			? formatTokens(max)
-			: `${formatTokens(min)}–${formatTokens(max)}`;
-	let text = `≈ ${tokens} tokens/${per}`;
+	let text = `≈ ${span(formatTokens, e.min_tokens * times, e.max_tokens * times)} tokens/${per}`;
 	if (e.min_cost_usd != null && e.max_cost_usd != null)
-		text += ` (${formatUSD(e.min_cost_usd * times)}–${formatUSD(e.max_cost_usd * times)})`;
+		text += ` (${span(formatUSD, e.min_cost_usd * times, e.max_cost_usd * times)})`;
 	return text;
+}
+
+/** "min–max", or one value when both format the same, such as "10k". */
+function span(format: (n: number) => string, min: number, max: number): string {
+	const lo = format(min);
+	const hi = format(max);
+	return lo === hi ? hi : `${lo}–${hi}`;
 }
