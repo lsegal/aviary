@@ -3,8 +3,9 @@
     class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" :class="identity.tileClass">
     <component :is="identity.icon" class="h-5 w-5" :class="identity.iconClass" />
   </span>
-  <component :is="identity.icon" v-else-if="identity" aria-hidden="true" data-testid="system-page-icon"
-    class="shrink-0" :class="identity.iconClass" />
+  <span v-else-if="identity" aria-hidden="true" data-testid="system-page-icon" class="inline-flex shrink-0">
+    <component :is="identity.icon" class="h-full w-full" :class="identity.iconClass" />
+  </span>
 </template>
 
 <script setup lang="ts">

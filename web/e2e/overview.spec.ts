@@ -310,7 +310,7 @@ test("cards below the overview list every System page (#822)", async ({
 	await page.goto("/system/overview");
 
 	const pages = page.getByTestId("overview-system-pages");
-	await expect(pages.getByRole("link").locator("span:first-child")).toHaveText([
+	await expect(pages.getByTestId("overview-system-card-title")).toHaveText([
 		"Usage",
 		"Tools",
 		"Skills",
@@ -321,4 +321,70 @@ test("cards below the overview list every System page (#822)", async ({
 	]);
 	await pages.getByTestId("overview-system-card-logs").click();
 	await expect(page).toHaveURL("/system/logs");
+});
+
+test("each System card shows its own decorative icon (#896)", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: [{ name: "bot", state: "idle" }],
+		job_list: [],
+		config_validate: [],
+	});
+	await page.goto("/system/overview");
+
+	const keys = [
+		"usage",
+		"tools",
+		"skills",
+		"sessions",
+		"models",
+		"logs",
+		"daemons",
+	];
+	const icons: string[] = [];
+	for (const key of keys) {
+		const card = page.getByTestId(`overview-system-card-${key}`);
+		const tile = card.getByTestId("system-page-icon");
+		await expect(tile).toHaveAttribute("aria-hidden", "true");
+		await expect(tile.locator("svg")).toBeVisible();
+		icons.push(await tile.locator("svg").innerHTML());
+		// The icon is decorative, so the card's name is its visible title.
+		const title = card.getByTestId("overview-system-card-title");
+		await expect(card).toHaveAccessibleName((await title.textContent()) ?? "");
+	}
+	expect(new Set(icons).size).toBe(keys.length);
+});
+
+test("a System page keeps its icon in the sidebar, rail and header (#896)", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: [{ name: "bot", state: "idle" }],
+		job_list: [],
+		config_validate: [],
+	});
+	await page.goto("/system/overview");
+	const cardIcon = await page
+		.getByTestId("overview-system-card-usage")
+		.locator("svg")
+		.innerHTML();
+
+	await page.getByTestId("sidebar-system-toggle").click();
+	const sidebarIcon = page
+		.getByTestId("sidebar-system-usage")
+		.getByTestId("system-page-icon");
+	await expect(sidebarIcon).toHaveAttribute("aria-hidden", "true");
+	expect(await sidebarIcon.locator("svg").innerHTML()).toBe(cardIcon);
+
+	await page.getByTestId("sidebar-system-usage").click();
+	await expect(page).toHaveURL("/system/usage");
+	const header = page.locator("main").getByTestId("system-page-icon").first();
+	expect(await header.locator("svg").innerHTML()).toBe(cardIcon);
+
+	await page.keyboard.press("ControlOrMeta+b");
+	const railIcon = page
+		.getByTestId("sidebar-rail-system-usage")
+		.getByTestId("system-page-icon");
+	expect(await railIcon.locator("svg").innerHTML()).toBe(cardIcon);
 });
