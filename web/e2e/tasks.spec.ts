@@ -390,7 +390,11 @@ test.describe("the run details drawer on desktop", () => {
 
 		await page.getByTestId("details-panel").getByText("✕").click();
 		await expect(page.getByTestId("details-panel")).toHaveCount(0);
-		await page.locator("tbody tr").filter({ hasText: "weekly-cleanup" }).first().click();
+		await page
+			.locator("tbody tr")
+			.filter({ hasText: "weekly-cleanup" })
+			.first()
+			.click();
 		await expect.poll(() => panelWidth(page)).toBe(684);
 
 		await page.reload();
