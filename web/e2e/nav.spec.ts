@@ -62,29 +62,24 @@ test("sidebar lists Agents then System, with no Settings top level", async ({
 test("the System section collapses to its header and stays collapsed across pages", async ({
 	page,
 }) => {
-	await page.goto("/system/logs");
+	await page.goto("/agents");
 
 	const header = page.getByTestId("sidebar-system");
 	const toggle = page.getByTestId("sidebar-system-toggle");
 	const list = page.getByTestId("sidebar-system-list");
 	await expect(toggle).toHaveAttribute("aria-expanded", "false");
-	// The header stands in for the current System page while collapsed.
-	await expect(header).toHaveClass(/bg-white/);
+	await expect(header).not.toHaveClass(/bg-white/);
 
 	await toggle.click();
 	await expect(toggle).toHaveAttribute("aria-expanded", "true");
 	await expect(list.getByRole("link", { name: "Daemons" })).toBeVisible();
-	await expect(header).not.toHaveClass(/bg-white/);
 
 	await toggle.click();
 	await expect(toggle).toHaveAttribute("aria-expanded", "false");
 	await expect(list).toHaveCount(0);
 
-	// The state outlives route changes, and the header still navigates.
-	await page.getByTestId("sidebar-agents").click();
-	await expect(page).toHaveURL("/agents");
-	await expect(header).not.toHaveClass(/bg-white/);
-	await expect(list).toHaveCount(0);
+	// The overview is the header's own page, so it doesn't open the section,
+	// and the state outlives route changes.
 	await header.click();
 	await expect(page).toHaveURL("/system/overview");
 	await expect(list).toHaveCount(0);
@@ -95,6 +90,90 @@ test("the System section collapses to its header and stays collapsed across page
 	await expect(toggle).toHaveAttribute("aria-expanded", "true");
 	await expect(list.getByRole("link", { name: "Daemons" })).toBeVisible();
 	await expect(header).toHaveClass(/bg-white/);
+});
+
+// The current System page shows in the sidebar however it was reached (#928).
+test("a deep link to a System page opens the System section on that page", async ({
+	page,
+}) => {
+	await page.goto("/system/logs");
+
+	const toggle = page.getByTestId("sidebar-system-toggle");
+	await expect(toggle).toHaveAttribute("aria-expanded", "true");
+	await expect(page.getByTestId("sidebar-system-logs")).toHaveClass(
+		/font-semibold/,
+	);
+	await expect(page.getByTestId("sidebar-system")).not.toHaveClass(
+		/bg-white/,
+	);
+
+	await page.reload();
+	await expect(toggle).toHaveAttribute("aria-expanded", "true");
+	await expect(page.getByTestId("sidebar-system-logs")).toHaveClass(
+		/font-semibold/,
+	);
+});
+
+test("navigating to a System page opens the System section, including back and forward", async ({
+	page,
+}) => {
+	await page.goto("/system/overview");
+	const toggle = page.getByTestId("sidebar-system-toggle");
+	await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+	// An overview card is an in-app link to the page.
+	await page.getByTestId("overview-system-card-usage").click();
+	await expect(page).toHaveURL("/system/usage");
+	await expect(toggle).toHaveAttribute("aria-expanded", "true");
+	await expect(page.getByTestId("sidebar-system-usage")).toHaveClass(
+		/font-semibold/,
+	);
+
+	// Leaving System leaves the section as it was; collapse it from there.
+	await page.getByTestId("sidebar-agents").click();
+	await expect(page).toHaveURL("/agents");
+	await expect(toggle).toHaveAttribute("aria-expanded", "true");
+	await toggle.click();
+	await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+	await page.goBack();
+	await expect(page).toHaveURL("/system/usage");
+	await expect(toggle).toHaveAttribute("aria-expanded", "true");
+	await expect(page.getByTestId("sidebar-system-usage")).toHaveClass(
+		/font-semibold/,
+	);
+
+	await page.goForward();
+	await expect(page).toHaveURL("/agents");
+	await toggle.click();
+	await expect(toggle).toHaveAttribute("aria-expanded", "false");
+	await page.goBack();
+	await expect(toggle).toHaveAttribute("aria-expanded", "true");
+});
+
+test("a manually collapsed System section stays collapsed until another System page", async ({
+	page,
+}) => {
+	await page.goto("/system/logs");
+	const header = page.getByTestId("sidebar-system");
+	const toggle = page.getByTestId("sidebar-system-toggle");
+	const list = page.getByTestId("sidebar-system-list");
+	await expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+	await toggle.click();
+	await expect(toggle).toHaveAttribute("aria-expanded", "false");
+	await expect(list).toHaveCount(0);
+	// The header stands in for the hidden current page.
+	await expect(header).toHaveClass(/bg-white/);
+
+	await header.click();
+	await expect(page).toHaveURL("/system/overview");
+	await page.getByTestId("overview-system-card-daemons").click();
+	await expect(page).toHaveURL("/system/daemons");
+	await expect(toggle).toHaveAttribute("aria-expanded", "true");
+	await expect(page.getByTestId("sidebar-system-daemons")).toHaveClass(
+		/font-semibold/,
+	);
 });
 
 test("an agent's pages are Chats, Code Loop, Channels, Scheduled Tasks, Files and Agent Settings", async ({
