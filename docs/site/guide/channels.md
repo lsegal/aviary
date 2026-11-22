@@ -51,7 +51,7 @@ Shared channel behavior:
 - `disabled_tools` can only restrict what the agent already has permission to use.
 - `allow_from` controls which senders and group contexts are allowed to reach the agent.
 - Channel-level `model` and `fallbacks` override the agent defaults for messages arriving through that channel.
-- `show_typing` applies to Signal typing notifications and Slack assistant status indicators. Discord does not support it.
+- `show_typing` applies to Signal typing notifications and the Slack "is working" agent session indicator. Discord does not support it.
 
 ## Slack
 
@@ -97,13 +97,26 @@ At that point you have the two Slack secrets Aviary needs.
 Your Slack app should also have:
 
 - Socket Mode enabled
-- Event Subscriptions enabled, including both channel/direct message events and the `app_mention` event
+- Event Subscriptions enabled, including channel and direct message events, the `app_mention` event, and the `agent_session_stopped` event
 - The app installed to the workspace
 - The bot invited to any channels you want it to read or answer in
 
 If the bot should respond when you type something like `@Aviary hi` in a channel, Slack must be configured to deliver `app_mention` events to the app.
 
 If you want the bot to work in a channel like `#alerts`, invite it there in Slack the same way you would invite a teammate.
+
+### Enable The Stop Control
+
+While Aviary works on a reply in a Slack thread, it marks that thread's [agent session](https://docs.slack.dev/ai/agent-sessions/) as processing. Slack then shows "is working" with a **Stop** control. Pressing **Stop** cancels the run in that thread only. Runs in other threads, channels, and DMs keep going. Aviary keeps any partial reply, adds "Stopped." to it, and clears the working status. The next message in the thread starts a normal new run.
+
+To turn this on:
+
+1. In the Slack app settings, open the **Agent** tab and switch the app from the assistant view to the agent view (`agent_view`). Slack only offers Stop for agent sessions. This switch cannot be undone, and an existing app may need its manifest re-applied and admin re-approval.
+2. Under **Event Subscriptions** → **Subscribe to bot events**, add `agent_session_stopped`.
+3. Make sure the bot has the `chat:write` scope. Both `agents.sessions.setStatus` and `agent_session_stopped` use it.
+4. Reinstall the app to the workspace if Slack asks you to.
+
+Without the `agent_session_stopped` subscription, Slack still shows the working indicator, but hovering it says "Stop isn't available for this agent". Aviary logs Slack's `missing_agent_session_stopped_event_subscription` warning to the Slack channel log when this happens.
 
 ### What Goes Into Aviary
 
@@ -132,7 +145,7 @@ Slack-specific notes:
 
 - `allow_from[].from` accepts raw Slack user IDs or human-friendly names such as `alice` or `@alice`.
 - `allow_from[].allowed_groups` accepts raw Slack channel IDs or human-friendly names such as `alerts` or `#alerts`.
-- Slack apps connected through Events API and Socket Mode cannot emit classic typing notifications, but Aviary uses Slack assistant thread status indicators when `show_typing` is enabled.
+- Slack apps connected through Events API and Socket Mode cannot emit classic typing notifications. When `show_typing` is enabled, Aviary marks the thread's Slack agent session as processing instead, which shows "is working" with a Stop control. See [Enable The Stop Control](#enable-the-stop-control).
 - `users:read` is required if you want Aviary to resolve Slack user names and support name-based routing instead of raw user IDs only.
 - In the control panel, a Slack channel's settings include a **Browse Channels** action that validates the bot token and lists channels visible to the app.
 
