@@ -890,13 +890,55 @@ export function until(iso: string, now = Date.now()): string {
 	return `in ${age(new Date(now - (t - now)).toISOString(), now)}`;
 }
 
-const FINISHED_RUNS = ["completed", "failed", "canceled", "skipped"];
+const ACTIVE_RUNS = ["queued", "running", "retrying"];
 
-/** The schedule's latest finished run, or its latest run when none finished. */
-export function lastScheduleRun(s: ProjectSchedule): ScheduleRun | undefined {
-	return (
-		s.history.find((r) => FINISHED_RUNS.includes(r.status)) ?? s.history[0]
-	);
+/** The schedule's run in flight: its latest run while it is not done. */
+export function activeScheduleRun(
+	s: Pick<ProjectSchedule, "history">,
+): ScheduleRun | undefined {
+	const latest = s.history[0];
+	return latest && ACTIVE_RUNS.includes(latest.status) ? latest : undefined;
+}
+
+/** The schedule's latest run that is done, whatever its outcome. */
+export function lastScheduleRun(
+	s: Pick<ProjectSchedule, "history">,
+): ScheduleRun | undefined {
+	return s.history.find((r) => !ACTIVE_RUNS.includes(r.status));
+}
+
+/**
+ * What a schedule's card says about its next run. The scheduler reports no
+ * next run for a one-time trigger once it fires, so while that run is in
+ * flight the card says it is running rather than that nothing is next;
+ * "none" means it has finished and nothing else is scheduled.
+ */
+export type ScheduleNext =
+	| { kind: "paused" }
+	| { kind: "next"; at: string }
+	| { kind: "running" }
+	| { kind: "none" };
+
+export function scheduleNext(
+	s: Pick<ProjectSchedule, "enabled" | "nextRun" | "history">,
+): ScheduleNext {
+	if (!s.enabled) return { kind: "paused" };
+	if (s.nextRun) return { kind: "next", at: s.nextRun };
+	if (activeScheduleRun(s)) return { kind: "running" };
+	return { kind: "none" };
+}
+
+/** The board job of a schedule's latest run, if the board has it. */
+export function scheduleJob(
+	jobs: ProjectJob[],
+	scheduleID: string,
+): ProjectJob | undefined {
+	let latest: ProjectJob | undefined;
+	for (const job of jobs) {
+		if (!job.scheduled || job.scheduleID !== scheduleID) continue;
+		if (!latest || job.number > latest.number) latest = job;
+	}
+	return latest;
 }
 
 /** The dot color of a schedule run's status. */
