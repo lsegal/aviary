@@ -124,7 +124,9 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 				for _, mediaURL := range m.MediaURLs {
 					if mimeType, data, ok := ParseImageDataURL(mediaURL); ok {
 						blocks = append(blocks, anthropic.NewImageBlockBase64(mimeType, data))
-					} else if !strings.HasPrefix(mediaURL, "data:") {
+					} else if _, data, ok := ParseDocumentDataURL(mediaURL); ok {
+						blocks = append(blocks, anthropic.NewDocumentBlock(anthropic.Base64PDFSourceParam{Data: data}))
+					} else if !strings.HasPrefix(mediaURL, "data:") && !strings.HasPrefix(mediaURL, "file:") {
 						blocks = append(blocks, anthropic.NewImageBlock(anthropic.URLImageSourceParam{URL: mediaURL}))
 					}
 				}

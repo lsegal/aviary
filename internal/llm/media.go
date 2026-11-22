@@ -211,3 +211,13 @@ func ContentTypeFromName(name string) string {
 	mediaType, _, _ := strings.Cut(mime.TypeByExtension(ext), ";")
 	return strings.ToLower(strings.TrimSpace(mediaType))
 }
+
+// isImageMediaURL reports whether mediaURL is an image data URL or a remote
+// URL, which providers that take only images as media accept.
+func isImageMediaURL(mediaURL string) bool {
+	if _, _, ok := ParseImageDataURL(mediaURL); ok {
+		return true
+	}
+	lower := strings.ToLower(strings.TrimSpace(mediaURL))
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
