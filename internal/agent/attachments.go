@@ -117,7 +117,7 @@ func inlineTextAttachment(path string) (string, error) {
 		return "", fmt.Errorf("not UTF-8 text")
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "<attachment name=%q path=%q>\n", attachmentDisplayName(path), path)
+	fmt.Fprintf(&b, "<attachment name=%q path=\"%s\">\n", attachmentDisplayName(path), path)
 	b.Write(data)
 	if len(data) > 0 && data[len(data)-1] != '\n' {
 		b.WriteString("\n")
