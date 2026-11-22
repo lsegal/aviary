@@ -491,6 +491,10 @@
 		"trigger_type",
 		"type"
 	],
+	"task_session": [
+		"agent",
+		"name"
+	],
 	"task_stop": [
 		"job_id",
 		"name"

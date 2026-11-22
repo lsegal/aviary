@@ -1062,6 +1062,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 			AgentID       string `json:"agent_id"`
 			Name          string `json:"name,omitempty"`
 			TaskID        string `json:"task_id,omitempty"`
+			Type          string `json:"type,omitempty"`
 			Title         string `json:"title,omitempty"`
 			CreatedAt     string `json:"created_at"`
 			UpdatedAt     string `json:"updated_at"`
@@ -1069,7 +1070,8 @@ func registerSessionTools(s *sdkmcp.Server) {
 			IsProcessing  bool   `json:"is_processing"`
 			Deletable     bool   `json:"deletable"`
 		}
-		// A channel's sessions live under its Channels entry, not Chats.
+		// A channel's sessions live under its Channels entry, and a task's
+		// under its Scheduled Tasks entry, not Chats.
 		var agentCfg config.AgentConfig
 		if cfg, err := config.Load(""); err == nil {
 			for _, a := range cfg.Agents {
@@ -1081,7 +1083,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 		}
 		out := make([]sessionDTO, 0, len(sessions))
 		for _, sess := range sessions {
-			if sess == nil || sess.Type == domain.SessionTypeHidden || sessiontarget.ChannelOwner(agentCfg, sess) >= 0 {
+			if sess == nil || sess.Type == domain.SessionTypeHidden || sessiontarget.ChannelOwner(agentCfg, sess) >= 0 || agent.TaskSessionOwner(agentCfg, sess) >= 0 {
 				continue
 			}
 			dto := sessionDTO{
@@ -1089,6 +1091,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 				AgentID:      sess.AgentID,
 				Name:         sess.Name,
 				TaskID:       sess.TaskID,
+				Type:         string(sess.Type),
 				Title:        sess.Title,
 				CreatedAt:    sess.CreatedAt.Format(time.RFC3339Nano),
 				UpdatedAt:    sess.UpdatedAt.Format(time.RFC3339Nano),
@@ -3219,6 +3222,9 @@ func registerServerTools(s *sdkmcp.Server) {
 			// Update task name and write a new file using SaveMarkdownTask (which
 			// derives a safe filename). Then remove the old file.
 			taskCfg.Name = args.NewName
+			if err := agent.RenameTaskSession(args.Agent, args.Task, args.NewName); err != nil {
+				return nil, struct{}{}, fmt.Errorf("moving task session: %w", err)
+			}
 			newPath, serr := config.SaveMarkdownTask(tasksDir, taskCfg)
 			if serr != nil {
 				return nil, struct{}{}, fmt.Errorf("writing renamed task file: %w", serr)
@@ -3246,6 +3252,9 @@ func registerServerTools(s *sdkmcp.Server) {
 
 		// Inline task in aviary.yaml: just rename and save config
 		if taskIdx >= 0 {
+			if err := agent.RenameTaskSession(args.Agent, args.Task, args.NewName); err != nil {
+				return nil, struct{}{}, fmt.Errorf("moving task session: %w", err)
+			}
 			cfg.Agents[agentIdx].Tasks[taskIdx].Name = args.NewName
 			// Save config and run the same follow-up actions as config_save
 			if err := config.Save("", cfg); err != nil {

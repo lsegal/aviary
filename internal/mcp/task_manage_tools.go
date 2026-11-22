@@ -10,11 +10,27 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/schedule"
 	"github.com/lsegal/aviary/internal/scheduler"
 )
+
+// taskSessionArgs names the task whose session task_session returns.
+type taskSessionArgs struct {
+	Name  string `json:"name"`
+	Agent string `json:"agent,omitempty"`
+}
+
+// taskSessionDTO is a task's session, as task_session returns it.
+type taskSessionDTO struct {
+	ID           string `json:"id"`
+	AgentID      string `json:"agent_id"`
+	Name         string `json:"name"`
+	Title        string `json:"title"`
+	IsProcessing bool   `json:"is_processing"`
+}
 
 // taskUpdateArgs changes fields of an existing task. A nil field is left
 // unchanged; an empty string clears it.
@@ -201,6 +217,27 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 			d.Scheduler.Forget(agentCfg.Name + "/" + task.Name)
 		}
 		return text(fmt.Sprintf("Task %q deleted from agent %q.", task.Name, agentCfg.Name))
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "task_session",
+		Description: "Get a scheduled task's chat session, which every run of the task shares, creating it when the task has not run yet. name may be <agent>/<task> or a task name (add agent to disambiguate). The session is titled with the task's name.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskSessionArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		_, agentCfg, task, err := findConfiguredTask(args.Agent, args.Name)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		sess, err := agent.EnsureTaskSession(agentCfg.Name, task.Name)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(taskSessionDTO{
+			ID:           sess.ID,
+			AgentID:      agentCfg.Name,
+			Name:         sess.Name,
+			Title:        sess.Title,
+			IsProcessing: agent.IsSessionProcessing(agentCfg.Name, sess.ID),
+		})
 	})
 
 	addTool(s, &sdkmcp.Tool{
