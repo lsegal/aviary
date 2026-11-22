@@ -216,6 +216,11 @@
 									"enum": ["skip", "run_once"],
 									"default": "skip"
 								},
+								"idle_timeout": {
+									"type": "string",
+									"description": "How long a prompt run may go without output before it fails, e.g. 30m; \"0\" disables it.",
+									"default": "15m"
+								},
 								"watch": { "type": "string" },
 								"prompt": { "type": "string" },
 								"script": { "type": "string" },

@@ -304,37 +304,49 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 	var lastErr error
 	var reply strings.Builder
 	var logs jobLogBuilder
+	live := &liveJobOutput{jobID: job.ID, agentID: job.AgentID}
 	startedAt := time.Now().UTC()
-	done := make(chan struct{}, 1)
-	runner.Prompt(ctx, prompt, func(e agent.StreamEvent) {
+	idle := taskIdleTimeout(job, runner.Config())
+	runErr := runPromptWatched(ctx, idle, func(ctx context.Context, consume agent.StreamConsumer) {
+		runner.Prompt(ctx, prompt, consume)
+	}, func(e agent.StreamEvent) {
 		switch e.Type {
 		case agent.StreamEventText:
 			reply.WriteString(e.Text)
+			live.Text(e.Text)
 		case agent.StreamEventStatus:
 			logs.Addf("status: %s", e.Text)
+			live.Line("status: %s", e.Text)
+		case agent.StreamEventTool:
+			if e.Tool != nil && !e.Tool.Done {
+				live.Line("tool: %s", e.Tool.Name)
+			}
 		case agent.StreamEventMedia:
 			logs.Addf("media: %s", e.MediaURL)
-		case agent.StreamEventDone, agent.StreamEventStop:
-			if e.Type == agent.StreamEventStop {
-				logs.Addf("stopped")
-			}
-			select {
-			case done <- struct{}{}:
-			default:
-			}
+			live.Line("media: %s", e.MediaURL)
+		case agent.StreamEventDone:
+			live.Flush()
+		case agent.StreamEventStop:
+			logs.Addf("stopped")
+			live.Line("stopped")
 		case agent.StreamEventError:
 			lastErr = e.Err
 			logs.Addf("error: %v", e.Err)
-			select {
-			case done <- struct{}{}:
-			default:
-			}
+			live.Line("error: %v", e.Err)
 		}
 	})
-	select {
-	case <-done:
-	case <-ctx.Done():
-		return ctx.Err()
+	var stalled *jobStalledError
+	switch {
+	case errors.As(runErr, &stalled):
+		// The agent went quiet: stop it and fail the run with what it did.
+		if sessionID != "" {
+			agent.StopSession(job.AgentID, sessionID)
+		}
+		live.Line("error: %v", runErr)
+		logs.Addf("error: %v", runErr)
+		lastErr = runErr
+	case runErr != nil:
+		return runErr
 	}
 	if sessionID != "" {
 		sessionLogs, err := collectJobSessionToolLogs(job.AgentID, sessionID, startedAt, time.Now().UTC().Add(time.Second))

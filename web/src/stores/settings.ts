@@ -111,6 +111,8 @@ export interface AgentTask {
 	project?: string;
 	/** Overrides the project agent's model for a "project" task's runs; empty uses the agent's own. */
 	model?: string;
+	/** How long a prompt run may go without output before it fails, e.g. "30m"; "0" disables it. */
+	idle_timeout?: string;
 	from_file?: boolean;
 	file?: string;
 }

@@ -257,6 +257,14 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				v.checkProjectTaskModel(tf+".model", model)
 			}
 
+			if it := strings.TrimSpace(t.IdleTimeout); it != "" && it != "0" {
+				if d, err := time.ParseDuration(it); err != nil {
+					v.errorf(tf+".idle_timeout", "invalid duration %q: %v", t.IdleTimeout, err)
+				} else if d < 0 {
+					v.errorf(tf+".idle_timeout", "idle_timeout must not be negative")
+				}
+			}
+
 			if !validTaskTarget(t.Target) {
 				v.errorf(tf+".target", "invalid value %q; must be empty, \"silent\", session:<name-or-id>, or channel:<channel name>", t.Target)
 			} else if name, ok := ChannelTargetName(t.Target); ok && a.ChannelByName(name) < 0 {

@@ -337,7 +337,11 @@ func (s *Scheduler) recordAttempt(job domain.Job, duration time.Duration) {
 	case domain.JobStatusPending:
 		status = domain.TaskRunRetrying
 	}
-	s.state.finishRun(job.TaskID, job.ID, status, summarize(job.Output), duration)
+	summary := summarize(job.Output)
+	if (status == domain.TaskRunFailed || status == domain.TaskRunRetrying) && job.Error != "" {
+		summary = summarize(job.Error)
+	}
+	s.state.finishRun(job.TaskID, job.ID, status, summary, duration)
 }
 
 func taskType(tc config.TaskConfig) string {

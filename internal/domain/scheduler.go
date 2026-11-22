@@ -111,6 +111,9 @@ type Job struct {
 	ReplyAgentID   string     `json:"reply_agent_id,omitempty"`   // agent whose session to reply to
 	ReplySessionID string     `json:"reply_session_id,omitempty"` // session to send output back to
 	Output         string     `json:"output,omitempty"`
+	// Error is why the latest attempt failed, shown with the run; it is
+	// cleared when an attempt completes.
+	Error string `json:"error,omitempty"`
 	// ResumeNote is set when a safe restart interrupted the job. The resumed
 	// run receives it ahead of the original prompt in the same session.
 	ResumeNote string    `json:"resume_note,omitempty"`

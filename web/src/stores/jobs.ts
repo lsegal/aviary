@@ -12,6 +12,8 @@ export interface Job {
 	attempts: number;
 	max_retries: number;
 	output?: string;
+	/** Why the latest attempt failed; cleared when an attempt completes. */
+	error?: string;
 	locked_at?: string;
 	next_retry_at?: string;
 	scheduled_for?: string;
