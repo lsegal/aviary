@@ -60,7 +60,7 @@ Slack, Discord, and Signal handle files sent with a message the same way. Every 
 - Images up to 8 MB go to the model as images.
 - Every other file appears in the message as a placeholder with its name, type, size, and saved path, such as `[file attached: log.json (application/json, 1.2 MB) saved at /path/to/log.json]`. The agent can open it there with its file tools.
 - Text files (`text/*`, JSON, XML, YAML, CSV, logs) are also given to the model inline, up to 32 KB. Longer files are truncated with a pointer to the saved path.
-- PDFs go to the model as documents on providers that read them natively (Anthropic and Gemini). On other providers and CLI agents, the agent gets the saved path.
+- PDFs go to the model as documents on providers that read them natively: Anthropic, Gemini, and OpenAI (`openai` and `openai-codex`) models that take file input. On OpenAI-compatible endpoints such as Ollama and vLLM, older OpenAI models, and CLI agents, the agent gets the saved path.
 - Session history keeps the placeholder, not the file's contents.
 
 ## Slack

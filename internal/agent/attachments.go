@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,7 +61,7 @@ func resolveFileAttachments(message string, mediaURLs []string, isCLI bool) (str
 			if err != nil {
 				continue
 			}
-			media = append(media, "data:application/pdf;base64,"+base64.StdEncoding.EncodeToString(data))
+			media = append(media, "data:application/pdf;name="+url.PathEscape(attachmentDisplayName(path))+";base64,"+base64.StdEncoding.EncodeToString(data))
 		}
 	}
 	return b.String(), media
