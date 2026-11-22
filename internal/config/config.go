@@ -345,6 +345,10 @@ type TaskConfig struct {
 	// Model overrides the project agent's default model for a project task's
 	// runs; empty runs them with the agent's own model.
 	Model string `yaml:"model,omitempty"    json:"model,omitempty"`
+	// IdleTimeout is how long a prompt run may go without any output before
+	// it is stopped and marked failed, e.g. "30m". "0" disables it. Empty
+	// uses DefaultTaskIdleTimeout.
+	IdleTimeout string `yaml:"idle_timeout,omitempty" json:"idle_timeout,omitempty"`
 	// FromFile is set when the task was loaded from a markdown file rather than
 	// defined inline in aviary.yaml. It is intentionally excluded from YAML
 	// serialization so it never gets written back to the config file.
@@ -465,6 +469,27 @@ func (s ServerConfig) EffectiveFailedTaskTimeout() time.Duration {
 	d, err := time.ParseDuration(s.FailedTaskTimeout)
 	if err != nil || d <= 0 {
 		return DefaultFailedTaskTimeout
+	}
+	return d
+}
+
+// DefaultTaskIdleTimeout is how long a task run may go without output when
+// its idle_timeout is not set.
+const DefaultTaskIdleTimeout = 15 * time.Minute
+
+// EffectiveIdleTimeout returns the parsed IdleTimeout: zero when disabled,
+// DefaultTaskIdleTimeout when unset or invalid.
+func (t TaskConfig) EffectiveIdleTimeout() time.Duration {
+	v := strings.TrimSpace(t.IdleTimeout)
+	if v == "" {
+		return DefaultTaskIdleTimeout
+	}
+	if v == "0" {
+		return 0
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return DefaultTaskIdleTimeout
 	}
 	return d
 }

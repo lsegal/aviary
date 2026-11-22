@@ -17,23 +17,24 @@ import (
 // The task body (below the closing "---") is always the content field:
 // the prompt text for prompt tasks, the Lua source for script tasks.
 type taskFileFrontmatter struct {
-	Name     string `yaml:"name,omitempty"`
-	Enabled  *bool  `yaml:"enabled,omitempty"`
-	Type     string `yaml:"type,omitempty"`
-	Schedule string `yaml:"schedule,omitempty"`
-	StartAt  string `yaml:"start_at,omitempty"`
-	RunOnce  bool   `yaml:"run_once,omitempty"`
-	Trigger  string `yaml:"trigger,omitempty"`
-	Every    string `yaml:"every,omitempty"`
-	At       string `yaml:"at,omitempty"`
-	Days     string `yaml:"days,omitempty"`
-	Timezone string `yaml:"timezone,omitempty"`
-	Overlap  string `yaml:"overlap,omitempty"`
-	Missed   string `yaml:"missed,omitempty"`
-	Watch    string `yaml:"watch,omitempty"`
-	Target   string `yaml:"target,omitempty"`
-	Project  string `yaml:"project,omitempty"`
-	Model    string `yaml:"model,omitempty"`
+	Name        string `yaml:"name,omitempty"`
+	Enabled     *bool  `yaml:"enabled,omitempty"`
+	Type        string `yaml:"type,omitempty"`
+	Schedule    string `yaml:"schedule,omitempty"`
+	StartAt     string `yaml:"start_at,omitempty"`
+	RunOnce     bool   `yaml:"run_once,omitempty"`
+	Trigger     string `yaml:"trigger,omitempty"`
+	Every       string `yaml:"every,omitempty"`
+	At          string `yaml:"at,omitempty"`
+	Days        string `yaml:"days,omitempty"`
+	Timezone    string `yaml:"timezone,omitempty"`
+	Overlap     string `yaml:"overlap,omitempty"`
+	Missed      string `yaml:"missed,omitempty"`
+	Watch       string `yaml:"watch,omitempty"`
+	Target      string `yaml:"target,omitempty"`
+	Project     string `yaml:"project,omitempty"`
+	Model       string `yaml:"model,omitempty"`
+	IdleTimeout string `yaml:"idle_timeout,omitempty"`
 	// LegacyRunAgent and LegacyCLI read the old keys of Model (see
 	// LegacyTaskModel). They are never written: saving a task moves the
 	// value to model.
@@ -85,6 +86,7 @@ func ParseMarkdownTask(defaultName string, data []byte) (TaskConfig, error) {
 	task.Target = fm.Target
 	task.Project = fm.Project
 	task.Model = fm.Model
+	task.IdleTimeout = fm.IdleTimeout
 	if task.Model == "" {
 		task.Model = LegacyTaskModel(fm.LegacyRunAgent, fm.LegacyCLI)
 	}
@@ -116,22 +118,23 @@ func SaveMarkdownTask(dir string, task TaskConfig) (string, error) {
 	// Build frontmatter — only include fields that are set.
 	// Task content (prompt text or Lua script) always lives in the file body.
 	fm := taskFileFrontmatter{
-		Enabled:  task.Enabled,
-		Type:     task.Type,
-		Target:   task.Target,
-		Schedule: task.Schedule,
-		StartAt:  task.StartAt,
-		RunOnce:  task.RunOnce,
-		Trigger:  task.Trigger,
-		Every:    task.Every,
-		At:       task.At,
-		Days:     task.Days,
-		Timezone: task.Timezone,
-		Overlap:  task.Overlap,
-		Missed:   task.Missed,
-		Watch:    task.Watch,
-		Project:  task.Project,
-		Model:    task.Model,
+		Enabled:     task.Enabled,
+		Type:        task.Type,
+		Target:      task.Target,
+		Schedule:    task.Schedule,
+		StartAt:     task.StartAt,
+		RunOnce:     task.RunOnce,
+		Trigger:     task.Trigger,
+		Every:       task.Every,
+		At:          task.At,
+		Days:        task.Days,
+		Timezone:    task.Timezone,
+		Overlap:     task.Overlap,
+		Missed:      task.Missed,
+		Watch:       task.Watch,
+		Project:     task.Project,
+		Model:       task.Model,
+		IdleTimeout: task.IdleTimeout,
 	}
 	// Only include name in frontmatter when it differs from the filename stem.
 	stem := strings.TrimSuffix(filename, ".md")
