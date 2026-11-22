@@ -52,7 +52,7 @@ func TestResolveFileAttachments_PDFDocumentOrPath(t *testing.T) {
 
 	msg, media := resolveFileAttachments("summarize", []string{llm.FileURL(path)}, false)
 	assert.Equal(t, "summarize", msg)
-	assert.Equal(t, []string{"data:application/pdf;base64,JVBERi0xLjQ="}, media)
+	assert.Equal(t, []string{"data:application/pdf;name=report.pdf;base64,JVBERi0xLjQ="}, media)
 
 	// CLI agents take only images; the message's placeholder gives the path.
 	msg, media = resolveFileAttachments("summarize", []string{llm.FileURL(path)}, true)

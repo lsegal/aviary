@@ -18,9 +18,10 @@ import (
 
 // OpenAIProvider streams responses from OpenAI-compatible endpoints.
 type OpenAIProvider struct {
-	client  openai.Client
-	model   string
-	baseURL string
+	client    openai.Client
+	model     string
+	baseURL   string
+	fileInput bool
 }
 
 // NewOpenAIProvider creates a provider for an OpenAI-compatible API.
@@ -38,6 +39,9 @@ func NewOpenAIProvider(apiKey, model, baseURL string) *OpenAIProvider {
 		client:  openai.NewClient(opts...),
 		model:   model,
 		baseURL: baseURL,
+		// OpenAI-compatible endpoints often reject file content parts, so
+		// only the OpenAI API itself gets PDFs as files.
+		fileInput: baseURL == "" && openAIModelSupportsFileInput(model),
 	}
 }
 
@@ -62,6 +66,7 @@ type OpenAICodexProvider struct {
 	accountID   string
 	model       string
 	httpClient  *http.Client
+	fileInput   bool
 }
 
 // NewOpenAICodexProvider creates a provider using an OAuth Bearer token for
@@ -72,6 +77,7 @@ func NewOpenAICodexProvider(accessToken, model string) *OpenAICodexProvider {
 		accountID:   extractChatGPTAccountID(accessToken),
 		model:       model,
 		httpClient:  newDebugClient(nil),
+		fileInput:   openAIModelSupportsFileInput(model),
 	}
 }
 
@@ -114,6 +120,11 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		Type     string `json:"type"`
 		ImageURL string `json:"image_url"`
 	}
+	type inputFileContent struct {
+		Type     string `json:"type"`
+		Filename string `json:"filename"`
+		FileData string `json:"file_data"`
+	}
 	type inputMessage struct {
 		Role    string `json:"role"`
 		Content any    `json:"content"`
@@ -139,10 +150,11 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 					parts = append(parts, inputTextContent{Type: "input_text", Text: m.Content})
 				}
 				for _, mediaURL := range m.MediaURLs {
-					if !isImageMediaURL(mediaURL) {
-						continue
+					if isImageMediaURL(mediaURL) {
+						parts = append(parts, inputImageContent{Type: "input_image", ImageURL: mediaURL})
+					} else if filename, fileData, ok := openAIFileInput(mediaURL); ok && p.fileInput {
+						parts = append(parts, inputFileContent{Type: "input_file", Filename: filename, FileData: fileData})
 					}
-					parts = append(parts, inputImageContent{Type: "input_image", ImageURL: mediaURL})
 				}
 				input = append(input, inputMessage{Role: "user", Content: parts})
 				continue
@@ -390,12 +402,16 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 					parts = append(parts, openai.TextContentPart(m.Content))
 				}
 				for _, mediaURL := range m.MediaURLs {
-					if !isImageMediaURL(mediaURL) {
-						continue
+					if isImageMediaURL(mediaURL) {
+						parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
+							URL: mediaURL,
+						}))
+					} else if filename, fileData, ok := openAIFileInput(mediaURL); ok && p.fileInput {
+						parts = append(parts, openai.FileContentPart(openai.ChatCompletionContentPartFileFileParam{
+							Filename: openai.String(filename),
+							FileData: openai.String(fileData),
+						}))
 					}
-					parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
-						URL: mediaURL,
-					}))
 				}
 				messages = append(messages, openai.UserMessage(parts))
 				continue
@@ -554,6 +570,37 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 	}()
 
 	return ch, nil
+}
+
+// openAIFileInput returns the filename and file data OpenAI file input takes
+// for a PDF data URL. Unnamed PDFs are called "document.pdf".
+func openAIFileInput(mediaURL string) (filename string, fileData string, ok bool) {
+	mimeType, data, ok := ParseDocumentDataURL(mediaURL)
+	if !ok {
+		return "", "", false
+	}
+	filename = DataURLName(mediaURL)
+	if filename == "" {
+		filename = "document.pdf"
+	}
+	return filename, "data:" + mimeType + ";base64," + data, true
+}
+
+// openAIModelSupportsFileInput reports whether an OpenAI model reads PDF
+// file input. Models older than GPT-4o and the text-only mini reasoning
+// models do not.
+func openAIModelSupportsFileInput(model string) bool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if m == "gpt-4" || strings.HasPrefix(m, "gpt-4-") || strings.HasPrefix(m, "gpt-3") ||
+		strings.HasPrefix(m, "o1-mini") || strings.HasPrefix(m, "o1-preview") || strings.HasPrefix(m, "o3-mini") {
+		return false
+	}
+	for _, kind := range []string{"audio", "realtime", "transcribe", "tts"} {
+		if strings.Contains(m, kind) {
+			return false
+		}
+	}
+	return true
 }
 
 func mustJSONMap(v map[string]any) string {

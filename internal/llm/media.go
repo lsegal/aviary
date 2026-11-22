@@ -188,6 +188,25 @@ func ParseDocumentDataURL(mediaURL string) (mimeType string, data string, ok boo
 	return "application/pdf", payload, true
 }
 
+// DataURLName returns the percent-decoded name parameter of a data URL such
+// as "data:application/pdf;name=report.pdf;base64,...", or "" when it has none.
+func DataURLName(mediaURL string) string {
+	s := strings.TrimSpace(mediaURL)
+	if !strings.HasPrefix(strings.ToLower(s), "data:") {
+		return ""
+	}
+	head, _, _ := strings.Cut(s[len("data:"):], ",")
+	for _, p := range strings.Split(head, ";")[1:] {
+		p = strings.TrimSpace(p)
+		if strings.HasPrefix(strings.ToLower(p), "name=") {
+			if n, err := url.PathUnescape(p[len("name="):]); err == nil {
+				return n
+			}
+		}
+	}
+	return ""
+}
+
 // ContentTypeFromName guesses a MIME type from a file name's extension. It
 // returns "" when the extension is unknown.
 func ContentTypeFromName(name string) string {
