@@ -41,12 +41,12 @@ func startChannelTyping(ctx context.Context, ts channels.TypingSender, channel s
 		done:    make(chan struct{}),
 	}
 	t.refresh()
-	go t.keepalive(ctx)
+	go t.keepalive(ctx, channelTypingInterval)
 	return t
 }
 
-func (t *channelTyping) keepalive(ctx context.Context) {
-	ticker := time.NewTicker(channelTypingInterval)
+func (t *channelTyping) keepalive(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {

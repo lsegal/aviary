@@ -259,6 +259,11 @@ type SignalChannel struct {
 	addrMu sync.RWMutex
 	addr   string
 
+	// outMu orders messages and typing indicators. Each request runs on its
+	// own daemon connection, so without it a typing start still in flight
+	// could reach the recipient after the reply it preceded.
+	outMu sync.Mutex
+
 	// AgentName is the owning agent's name (set by the manager). Used to
 	// replace object-replacement characters in incoming messages with a
 	// human-readable agent identifier.
@@ -358,6 +363,8 @@ func (c *SignalChannel) OnGroupChatMessage(fn func(IncomingMessage)) {
 // channel must be a phone number in E.164 format (starts with "+") for direct
 // messages, or a base64-encoded group ID for group conversations.
 func (c *SignalChannel) Send(channel, text string) error {
+	c.outMu.Lock()
+	defer c.outMu.Unlock()
 	addr := c.getAddr()
 	if addr == "" {
 		return fmt.Errorf("signal: daemon not ready")
@@ -439,6 +446,8 @@ func (c *SignalChannel) Send(channel, text string) error {
 // messages, or a base64-encoded group ID for group conversations.
 // Pass stop=true to cancel the indicator.
 func (c *SignalChannel) SendTyping(channel string, stop bool) error {
+	c.outMu.Lock()
+	defer c.outMu.Unlock()
 	addr := c.getAddr()
 	if addr == "" {
 		return fmt.Errorf("signal: daemon not ready")
@@ -551,6 +560,8 @@ func (c *SignalChannel) sendReaction(channel, emoji, targetAuthor string, target
 // SendMedia sends a file attachment with an optional caption via signal-cli.
 // channel must be a phone number in E.164 format or a base64 group ID.
 func (c *SignalChannel) SendMedia(channel, caption, filePath string) error {
+	c.outMu.Lock()
+	defer c.outMu.Unlock()
 	addr := c.getAddr()
 	if addr == "" {
 		return fmt.Errorf("signal: daemon not ready")
