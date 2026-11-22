@@ -93,7 +93,7 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println(update.GitPullMessage(res))
+		fmt.Println(update.GitPullMessage(res, update.DevReloadPlan{GoChanged: true, RestartReason: "the server is not running"}))
 		return nil
 	}
 	if update.EmulationActive() {

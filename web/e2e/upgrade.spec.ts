@@ -178,6 +178,7 @@ function gitCheck(
 	dirty: boolean,
 	supervised = false,
 	jobs: typeof runningJobs = [],
+	hotReload = false,
 ) {
 	return {
 		currentVersion: "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -195,6 +196,7 @@ function gitCheck(
 			ahead: 0,
 			dirty,
 			supervised,
+			hotReload,
 		},
 		restart: { phase: "idle", jobs, held: false },
 	};
@@ -289,6 +291,49 @@ test("supervised dev checkout pulls, then safely restarts onto the pulled code",
 	await expect(page.getByTestId("update-notice").first()).toContainText(
 		"Aviary restarts to build and run the new code.",
 	);
+});
+
+test("dev checkout under forgo hot-reloads the pulled code without restarting", async ({
+	page,
+}) => {
+	const upgrades: Record<string, unknown>[] = [];
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		server_version_check: gitCheck(false, true, runningJobs.slice(0, 1), true),
+		server_upgrade: (args?: Record<string, unknown>) => {
+			upgrades.push(args ?? {});
+			return {
+				phase: "idle",
+				jobs: runningJobs.slice(0, 1),
+				held: false,
+				noop: true,
+				message:
+					"Pulled 1 commit(s) (1111111 → abc1234). The backend hot-reloads the new code, and restarts only if forgo cannot apply it.",
+			};
+		},
+	});
+	await page.goto("/system/overview");
+
+	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
+	const dialog = page.getByRole("dialog");
+	await expect(dialog).toContainText(
+		"hot-reloads the pulled code in place, so running jobs keep running",
+	);
+	await expect(dialog).toContainText(
+		"If a change can't be hot-reloaded, the restart stops this running job",
+	);
+	await dialog.getByRole("button", { name: "Now" }).click();
+
+	await expect(dialog).toBeHidden();
+	expect(upgrades).toEqual([
+		{ version: "abc1234bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", when: "now" },
+	]);
+	await expect(page.getByTestId("update-notice").first()).toContainText(
+		"The backend hot-reloads the new code",
+	);
+	await expect(page.getByRole("status")).toHaveCount(0);
 });
 
 test("dev checkout with local changes blocks the update and says why", async ({

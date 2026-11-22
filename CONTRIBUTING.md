@@ -78,7 +78,9 @@ This starts:
 - The Vite dev server at **http://localhost:5173** (hot-reload, no HTTPS)
 - The Aviary Go backend at **https://localhost:16677** (hot-reloads Go file changes via [`forgo run --watch`](https://github.com/lsegal/forgo))
 
-The first `pnpm dev` installs the [forgo](https://github.com/lsegal/forgo) toolchain into `~/.forgo` if it is not already on `PATH`. Set `FORGO_INSTALL_DIR` to install elsewhere or `FORGO_BIN` to point at an existing binary. Platforms without a forgo release fall back to plain `go run` (no reload on change).
+The first `pnpm dev` installs the [forgo](https://github.com/lsegal/forgo) toolchain into `~/.forgo` if it is not already on `PATH`. It also updates a forgo in `~/.forgo` older than the release dev updates need (`MIN_FORGO_VERSION` in `scripts/dev-go.mjs`), because older releases crash the backend after some hot reloads; a forgo set with `FORGO_BIN` or found on `PATH` only gets a warning. Set `FORGO_INSTALL_DIR` to install elsewhere or `FORGO_BIN` to point at an existing binary. Platforms without a forgo release fall back to plain `go run` (no reload on change).
+
+`pnpm dev` (or `pnpm dev:go` for the backend alone) is the supported way to run the dev backend: it runs it under forgo hot reload, so updating the checkout from Aviary's update notice is just a `git pull` that hot-reloads the backend without stopping running jobs. Aviary restarts the backend only when a pull can't be hot-reloaded, such as a `go.mod` change; see [Dev checkouts](docs/site/guide/operations.md#dev-checkouts).
 
 Open http://localhost:5173 in your browser. The Vite dev server proxies MCP and API requests to the Go backend.
 

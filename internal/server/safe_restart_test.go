@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -70,8 +72,18 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 	store.SetDataDir(t.TempDir())
 	origVersion, origCheck, origInstall, origExe, origPoll := buildinfo.Version, versionCheck, installRelease, executablePath, idlePoll
 	origCheckout, origPull := gitCheckout, gitPull
+	origPlan, origHotDir, origHotGen, origWait, origHotWait, origRefresh := planDevReload, hotReloadDir, hotReloadGen, waitHotReload, hotReloadWait, refreshAfterHotReload
 	buildinfo.Version = current
 	gitCheckout = func() string { return "" }
+	hotReloadDir = func() string { return "" }
+	planDevReload = func(_ context.Context, _, _, _ string, hot bool) (update.DevReloadPlan, error) {
+		if hot {
+			return update.DevReloadPlan{GoChanged: true}, nil
+		}
+		return update.DevReloadPlan{GoChanged: true, RestartReason: "forgo hot reload is not active"}, nil
+	}
+	hotReloadWait = update.HotReloadWait{Poll: 5 * time.Millisecond, Timeout: 2 * time.Second, Answer: time.Second, Settle: 20 * time.Millisecond}
+	refreshAfterHotReload = func() {}
 	versionCheck = func(context.Context, *http.Client) (update.CheckResult, error) { return check, nil }
 	var log []string
 	installRelease = func(_ context.Context, opts update.InstallOptions) (update.InstallResult, error) {
@@ -91,6 +103,7 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 	t.Cleanup(func() {
 		buildinfo.Version, versionCheck, installRelease, executablePath, idlePoll = origVersion, origCheck, origInstall, origExe, origPoll
 		gitCheckout, gitPull = origCheckout, origPull
+		planDevReload, hotReloadDir, hotReloadGen, waitHotReload, hotReloadWait, refreshAfterHotReload = origPlan, origHotDir, origHotGen, origWait, origHotWait, origRefresh
 		saferestart.MCPCalls = origGate
 		saferestart.Unregister("test")
 		saferestart.UnregisterSkillsUpdater("test")
@@ -266,7 +279,7 @@ func TestSafeRestart_GitModeUnsupervisedSaysRestartNeeded(t *testing.T) {
 	st, err := srv.requestRestart(context.Background(), saferestart.Request{When: saferestart.WhenNow, Upgrade: true})
 	require.NoError(t, err)
 	assert.True(t, st.Noop)
-	assert.Contains(t, st.Message, "Restart Aviary to run the new code.")
+	assert.Contains(t, st.Message, "Restart Aviary to run the new code (forgo hot reload is not active).")
 	assert.Equal(t, []string{"pull /src/aviary"}, *log, "re-executing would only run the old binary again")
 	assert.Equal(t, saferestart.PhaseIdle, srv.RestartStatus().Phase)
 	assert.False(t, saferestart.Held())
@@ -483,4 +496,131 @@ func TestAutoUpdateOnDefaultsOn(t *testing.T) {
 	if srv.autoUpdateOn() {
 		t.Fatal("auto_update: false should not update automatically")
 	}
+}
+
+// setupHotReload runs the dev update under a fake forgo control directory
+// whose next reload generation answers with the files in reply.
+func setupHotReload(t *testing.T, log *[]string, reply map[string]string) {
+	t.Helper()
+	hot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(hot, "agent"), []byte("pid 1\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(hot, "link-3"), []byte("patch 1 2\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(hot, "resp-3"), []byte("ok\n"), 0o600))
+	t.Setenv(update.HotReloadEnv, hot)
+	hotReloadDir, hotReloadGen, waitHotReload = update.HotReloadDir, update.HotReloadGeneration, update.WaitHotReload
+	refreshAfterHotReload = func() { *log = append(*log, "refresh") }
+	gitCheckout = func() string { return "/src/aviary" }
+	gitPull = func(_ context.Context, dir string) (update.GitPullResult, error) {
+		*log = append(*log, "pull "+dir)
+		// forgo reloads once the pull changes the sources.
+		go func() {
+			time.Sleep(20 * time.Millisecond)
+			for name, body := range reply {
+				_ = os.WriteFile(filepath.Join(hot, name), []byte(body), 0o600)
+			}
+		}()
+		return update.GitPullResult{From: "aaa1111", To: "bbb2222", Commits: 2, Supervised: true, HotReload: true}, nil
+	}
+}
+
+func waitForLog(t *testing.T, logs *syncBuffer, line string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for !strings.Contains(logs.String(), line) {
+		if time.Now().After(deadline) {
+			t.Fatalf("log never showed %q:\n%s", line, logs.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// Under forgo, a pull of Go changes goes live by hot reload: running jobs keep
+// running, nothing is held or checkpointed, and the backend never re-execs.
+func TestSafeRestart_GitModeHotReloadDoesNotRestart(t *testing.T) {
+	srv, p, log := setupSafeRestart(t, "dev", update.CheckResult{})
+	logs := captureLogs(t)
+	job := saferestart.Job{Source: "projects", ID: "o/r#1"}
+	p.setJobs([]saferestart.Job{job})
+	setupHotReload(t, log, map[string]string{"link-4": "patch 1 2\n", "resp-4": "ok\n"})
+
+	st, err := srv.requestRestart(context.Background(), saferestart.Request{When: saferestart.WhenNow, Upgrade: true})
+	require.NoError(t, err)
+	assert.True(t, st.Noop)
+	assert.Contains(t, st.Message, "hot-reloads the new code")
+	assert.False(t, saferestart.Held(), "a hot reload holds no jobs")
+
+	waitForLog(t, logs, "dev update applied via hot reload")
+	assert.Contains(t, logs.String(), "generation=4", "the verdict is about the reload after the pull, not an earlier one")
+	assert.NotContains(t, logs.String(), "needs a full restart")
+	assert.NotContains(t, logs.String(), "safe restart")
+	select {
+	case <-srv.reexecCh:
+		t.Fatal("a hot-reloaded dev update requested a re-exec")
+	case <-time.After(50 * time.Millisecond):
+	}
+	assert.Equal(t, []string{"pull /src/aviary", "refresh"}, *log, "no checkpoint; MCP tools are registered again")
+	held, markers := p.snapshot()
+	assert.Empty(t, held)
+	assert.Empty(t, markers)
+	assert.Equal(t, saferestart.PhaseIdle, srv.RestartStatus().Phase)
+}
+
+// When forgo refuses the reload, the backend would keep running old code, so
+// the existing safe restart runs and the log says why.
+func TestSafeRestart_GitModeRefusedHotReloadRestarts(t *testing.T) {
+	srv, p, log := setupSafeRestart(t, "dev", update.CheckResult{})
+	logs := captureLogs(t)
+	job := saferestart.Job{Source: "projects", ID: "o/r#1"}
+	p.setJobs([]saferestart.Job{job})
+	setupHotReload(t, log, map[string]string{"link-4": "refuse the type server.Server changed shape\n"})
+
+	st, err := srv.requestRestart(context.Background(), saferestart.Request{When: saferestart.WhenNow, Upgrade: true})
+	require.NoError(t, err)
+	assert.True(t, st.Noop)
+
+	waitReexec(t, srv)
+	assert.Contains(t, logs.String(), "dev update needs a full restart")
+	assert.Contains(t, logs.String(), "the type server.Server changed shape")
+	assert.NotContains(t, logs.String(), "applied via hot reload")
+	assert.Equal(t, []string{"pull /src/aviary", "checkpoint"}, *log)
+	_, markers := p.snapshot()
+	require.Len(t, markers, 1)
+	assert.Equal(t, []saferestart.Job{job}, markers[0].Jobs)
+}
+
+// A change hot reload cannot apply, such as go.mod, restarts right away
+// without waiting for forgo.
+func TestSafeRestart_GitModeGoModChangeRestarts(t *testing.T) {
+	srv, _, log := setupSafeRestart(t, "dev", update.CheckResult{})
+	logs := captureLogs(t)
+	setupHotReload(t, log, nil)
+	planDevReload = func(context.Context, string, string, string, bool) (update.DevReloadPlan, error) {
+		return update.DevReloadPlan{GoChanged: true, RestartReason: "go.mod changed"}, nil
+	}
+
+	st, err := srv.requestRestart(context.Background(), saferestart.Request{When: saferestart.WhenNow, Upgrade: true})
+	require.NoError(t, err)
+	assert.Contains(t, st.Message, "restarts to build and run the new code (go.mod changed)")
+	waitReexec(t, srv)
+	assert.Contains(t, logs.String(), `dev update needs a full restart" component=update reason="go.mod changed"`)
+}
+
+// A pull that changes no Go code needs neither a reload nor a restart.
+func TestSafeRestart_GitModeNoBackendChange(t *testing.T) {
+	srv, _, log := setupSafeRestart(t, "dev", update.CheckResult{})
+	setupHotReload(t, log, nil)
+	planDevReload = func(context.Context, string, string, string, bool) (update.DevReloadPlan, error) {
+		return update.DevReloadPlan{}, nil
+	}
+
+	st, err := srv.requestRestart(context.Background(), saferestart.Request{When: saferestart.WhenNow, Upgrade: true})
+	require.NoError(t, err)
+	assert.True(t, st.Noop)
+	assert.Contains(t, st.Message, "No backend code changed.")
+	select {
+	case <-srv.reexecCh:
+		t.Fatal("a pull without Go changes requested a re-exec")
+	case <-time.After(100 * time.Millisecond):
+	}
+	assert.Equal(t, []string{"pull /src/aviary"}, *log)
 }
