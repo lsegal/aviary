@@ -1,7 +1,9 @@
 import { defineConfig, type HeadConfig } from "vitepress";
 import {
 	checkSharePages,
+	defaultSharePage,
 	findSharePage,
+	shareTitle,
 	writeShareCards,
 } from "./skills/pages.mts";
 
@@ -36,24 +38,18 @@ export default defineConfig({
 			pageRoute(pageData.relativePath),
 			baseUrl,
 		).toString();
-		// Skill pages get their own generated 1200×630 card (#763).
-		const share = page
-			? {
-					title: `${page.title} · ${title}`,
-					description: page.description,
-					image: new URL(page.image, baseUrl).toString(),
-					width: "1200",
-					height: "630",
-					alt: page.imageAlt,
-				}
-			: {
-					title,
-					description,
-					image: new URL("logo-social.png", baseUrl).toString(),
-					width: "1200",
-					height: "630",
-					alt: "Aviary logo and tagline on a white card",
-				};
+		// Skill, home and Code Loop pages get their own generated 1200×630
+		// card; every other page gets the default card with its own title
+		// (#763, #888).
+		const card = page ?? defaultSharePage;
+		const share = {
+			title: shareTitle(page?.title ?? (pageData.title || title)),
+			description: page?.description ?? (pageData.description || description),
+			image: new URL(card.image, baseUrl).toString(),
+			width: "1200",
+			height: "630",
+			alt: card.imageAlt,
+		};
 		const head: HeadConfig[] = [
 			["link", { rel: "icon", type: "image/png", href: logoPath }],
 			["link", { rel: "canonical", href: pageUrl }],
