@@ -211,9 +211,11 @@ function card(input: ShareCard, logo: string, headlineSize: number): Node {
 							h(
 								"div",
 								{
+									marginLeft: 32,
 									fontFamily: "IBM Plex Mono",
 									fontSize: 22,
 									color: palette.ink2,
+									...ellipsis,
 								},
 								input.route,
 							),
