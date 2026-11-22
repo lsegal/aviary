@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -460,6 +461,7 @@ func (r *AgentRunner) promptCore(
 		// The model sees text attachments inline; the stored message keeps them
 		// as attachments.
 		modelMessage, modelMedia := llm.InlineTextAttachments(message, mediaURLs)
+		modelMessage, modelMedia = resolveFileAttachments(modelMessage, modelMedia, isCLI)
 
 		if isCLI {
 			r.runCLITurn(promptCtx, cliTurnInput{
@@ -968,11 +970,7 @@ func (r *AgentRunner) loadSessionConversationWithinBudget(sessionID string, maxM
 	priorLines := make([]string, 0, len(prior))
 	for _, msg := range prior {
 		ts := msg.Timestamp.Format("2006-01-02 15:04:05")
-		mediaMarker := "prior media attached"
-		if msg.Role == domain.MessageRoleUser {
-			mediaMarker = "prior image attached"
-		}
-		content := strings.TrimSpace(annotateHistoricalMedia(msg.Content, msg.MediaURLs, mediaMarker))
+		content := strings.TrimSpace(annotateHistoricalMedia(msg.Content, msg.MediaURLs, msg.Role == domain.MessageRoleUser))
 		if content == "" {
 			continue
 		}
@@ -1152,15 +1150,48 @@ func inferSessionPrivacy(channel *store.SessionChannel, sender *domain.MessageSe
 	return "private"
 }
 
-func annotateHistoricalMedia(content string, mediaURLs []string, marker string) string {
-	if len(mediaURLs) == 0 {
+// annotateHistoricalMedia marks a prior message's attachments by kind:
+// images as images and other files by name. Files the content already
+// describes with a "[file attached: name" placeholder are not marked again.
+func annotateHistoricalMedia(content string, mediaURLs []string, fromUser bool) string {
+	content = strings.TrimSpace(content)
+	var markers []string
+	for _, mediaURL := range mediaURLs {
+		name, isFile := historicalAttachmentName(mediaURL)
+		switch {
+		case !isFile && fromUser:
+			markers = append(markers, "[prior image attached]")
+		case !isFile:
+			markers = append(markers, "[prior media attached]")
+		case name == "":
+			markers = append(markers, "[prior file attached]")
+		case !strings.Contains(content, "[file attached: "+name):
+			markers = append(markers, "[prior file attached: "+name+"]")
+		}
+	}
+	markers = slices.Compact(markers)
+	if len(markers) == 0 {
 		return content
 	}
-	trimmed := strings.TrimSpace(content)
-	if trimmed == "" {
-		return "[" + marker + "]"
+	if content == "" {
+		return strings.Join(markers, "\n")
 	}
-	return trimmed + "\n[" + marker + "]"
+	return content + "\n" + strings.Join(markers, "\n")
+}
+
+// historicalAttachmentName reports whether mediaURL is a file attachment
+// rather than an image, and its name when known.
+func historicalAttachmentName(mediaURL string) (string, bool) {
+	if path, ok := llm.ParseFileURL(mediaURL); ok {
+		return attachmentDisplayName(path), true
+	}
+	if name, _, ok := llm.ParseTextDataURL(mediaURL); ok {
+		return name, true
+	}
+	if _, _, ok := llm.ParseDocumentDataURL(mediaURL); ok {
+		return "", true
+	}
+	return "", false
 }
 
 func listToolsSafe(ctx context.Context, toolClient ToolClient) ([]ToolInfo, error) {

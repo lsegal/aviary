@@ -3,7 +3,9 @@ package llm
 import (
 	"encoding/base64"
 	"fmt"
+	"mime"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -101,7 +103,7 @@ func ParseTextDataURL(mediaURL string) (name string, text string, ok bool) {
 		return "", "", false
 	}
 	params := strings.Split(s[len("data:"):comma], ";")
-	if !isTextMediaType(strings.ToLower(strings.TrimSpace(params[0]))) {
+	if !IsTextMediaType(strings.ToLower(strings.TrimSpace(params[0]))) {
 		return "", "", false
 	}
 	encoded := false
@@ -131,7 +133,8 @@ func ParseTextDataURL(mediaURL string) (name string, text string, ok bool) {
 	return name, data, true
 }
 
-func isTextMediaType(mediaType string) bool {
+// IsTextMediaType reports whether a MIME type holds readable text.
+func IsTextMediaType(mediaType string) bool {
 	if strings.HasPrefix(mediaType, "text/") {
 		return true
 	}
@@ -142,4 +145,69 @@ func isTextMediaType(mediaType string) bool {
 		return true
 	}
 	return strings.HasSuffix(mediaType, "+json") || strings.HasSuffix(mediaType, "+xml")
+}
+
+// FileURL returns a file:// URL for a local path. Channel attachments that
+// are not images are passed to the agent runner this way.
+func FileURL(path string) string {
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return (&url.URL{Scheme: "file", Path: p}).String()
+}
+
+// ParseFileURL returns the local path of a file:// URL.
+func ParseFileURL(mediaURL string) (string, bool) {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(mediaURL)), "file://") {
+		return "", false
+	}
+	u, err := url.Parse(strings.TrimSpace(mediaURL))
+	if err != nil || u.Path == "" {
+		return "", false
+	}
+	p := u.Path
+	// Windows paths look like /C:/dir/file.
+	if len(p) > 2 && p[0] == '/' && p[2] == ':' {
+		p = p[1:]
+	}
+	return filepath.FromSlash(p), true
+}
+
+// ParseDocumentDataURL extracts the payload of a PDF data URL, which
+// providers that read documents natively accept as a document.
+func ParseDocumentDataURL(mediaURL string) (mimeType string, data string, ok bool) {
+	s := strings.TrimSpace(mediaURL)
+	if !strings.HasPrefix(strings.ToLower(s), "data:application/pdf") {
+		return "", "", false
+	}
+	head, payload, found := strings.Cut(s, ",")
+	if !found || payload == "" || !strings.Contains(strings.ToLower(head), ";base64") {
+		return "", "", false
+	}
+	return "application/pdf", payload, true
+}
+
+// ContentTypeFromName guesses a MIME type from a file name's extension. It
+// returns "" when the extension is unknown.
+func ContentTypeFromName(name string) string {
+	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(name)))
+	switch ext {
+	case "":
+		return ""
+	case ".log", ".txt":
+		return "text/plain"
+	case ".yaml", ".yml":
+		return "application/yaml"
+	case ".md":
+		return "text/markdown"
+	case ".csv":
+		return "text/csv"
+	case ".json":
+		return "application/json"
+	case ".pdf":
+		return "application/pdf"
+	}
+	mediaType, _, _ := strings.Cut(mime.TypeByExtension(ext), ";")
+	return strings.ToLower(strings.TrimSpace(mediaType))
 }
