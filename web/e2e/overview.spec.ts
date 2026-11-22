@@ -356,7 +356,7 @@ test("each System card shows its own decorative icon (#896)", async ({
 	expect(new Set(icons).size).toBe(keys.length);
 });
 
-test("a System page keeps its icon in the sidebar, rail and header (#896)", async ({
+test("a System page keeps its icon in the rail and header, but not the sidebar list (#896, #902)", async ({
 	page,
 }) => {
 	await mockMCP(page, {
@@ -371,11 +371,10 @@ test("a System page keeps its icon in the sidebar, rail and header (#896)", asyn
 		.innerHTML();
 
 	await page.getByTestId("sidebar-system-toggle").click();
-	const sidebarIcon = page
-		.getByTestId("sidebar-system-usage")
-		.getByTestId("system-page-icon");
-	await expect(sidebarIcon).toHaveAttribute("aria-hidden", "true");
-	expect(await sidebarIcon.locator("svg").innerHTML()).toBe(cardIcon);
+	const sidebarList = page.getByTestId("sidebar-system-list");
+	await expect(sidebarList.getByTestId("sidebar-system-usage")).toBeVisible();
+	await expect(sidebarList.getByTestId("system-page-icon")).toHaveCount(0);
+	await expect(sidebarList.locator("svg")).toHaveCount(0);
 
 	await page.getByTestId("sidebar-system-usage").click();
 	await expect(page).toHaveURL("/system/usage");

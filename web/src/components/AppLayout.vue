@@ -219,7 +219,6 @@
           <router-link v-for="child in systemChildren" :key="child.key" :to="child.to"
             :data-testid="`sidebar-system-${child.key}`"
             :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
-            <SystemPageIcon :page-key="child.key" class="h-4 w-4" />
             <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
             <ProjectRunningBadge :running="child.running ?? 0" />
           </router-link>
