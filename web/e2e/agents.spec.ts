@@ -12,6 +12,7 @@ import {
 	openAgentPage,
 	openChannelSettings,
 	openGearMenuItem,
+	openTaskSettings,
 	systemList,
 } from "./helpers/sidebar";
 
@@ -118,8 +119,8 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 
 	// Tasks subtab
 	await agentPageLink(page, "Scheduled Tasks").click();
-	// The root page is the overview; a task opens for editing.
-	await page.getByTestId("task-row").first().click();
+	// The root page is the overview; a task's Settings opens it for editing.
+	await openTaskSettings(page);
 	await expect(
 		page.locator('input[placeholder="daily-briefing"]').first(),
 	).toHaveValue("daily-briefing");
@@ -822,8 +823,8 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 
 	await openAgentPage(page, "settings");
 	await agentPageLink(page, "Scheduled Tasks").click();
-	// The root page is the overview; a task opens for editing.
-	await page.getByTestId("task-row").first().click();
+	// The root page is the overview; a task's Settings opens it for editing.
+	await openTaskSettings(page);
 
 	const prompt = page.getByPlaceholder("Task prompt...").first();
 	await prompt.fill("line 1\n\nline 3\n");
@@ -846,8 +847,8 @@ test("saving settings preserves task prompt newlines", async ({ page }) => {
 test("tasks can be enabled from the settings UI", async ({ page }) => {
 	await openAgentPage(page, "settings");
 	await agentPageLink(page, "Scheduled Tasks").click();
-	// The root page is the overview; a task opens for editing.
-	await page.getByTestId("task-row").first().click();
+	// The root page is the overview; a task's Settings opens it for editing.
+	await openTaskSettings(page);
 
 	await expect(page.getByText("disabled", { exact: true })).toBeVisible();
 	const toggle = page
@@ -1115,10 +1116,7 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 	});
 
 	await page.goto("/agents/assistant/tasks");
-	await page
-		.getByTestId("sidebar-tasks")
-		.getByRole("link", { name: "nightly-triage" })
-		.click();
+	await openTaskSettings(page, "nightly-triage");
 
 	// A project that is no longer watched stays selected instead of clearing.
 	const project = page.getByRole("combobox", { name: "Project", exact: true });
@@ -1133,10 +1131,7 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 	await expect(model.getByRole("combobox")).toHaveValue("cli/claude/opus");
 
 	// Turning the first task into a project task offers the watched projects.
-	await page
-		.getByTestId("sidebar-tasks")
-		.getByRole("link", { name: "daily-briefing" })
-		.click();
+	await openTaskSettings(page, "daily-briefing");
 	await chooseOption(
 		page.getByRole("combobox", { name: "Task type" }),
 		"Project",
@@ -1221,10 +1216,7 @@ test("a task's session target is picked by name and saved by ID", async ({
 	});
 
 	await page.goto("/agents/assistant/tasks");
-	await page
-		.getByTestId("sidebar-tasks")
-		.getByRole("link", { name: "daily-briefing" })
-		.click();
+	await openTaskSettings(page, "daily-briefing");
 
 	// A saved session that no longer exists is shown as gone, not blank.
 	const session = page.getByRole("combobox", { name: "Session" });
@@ -1275,10 +1267,7 @@ test("a task saved with a session name selects that session", async ({
 	});
 
 	await page.goto("/agents/assistant/tasks");
-	await page
-		.getByTestId("sidebar-tasks")
-		.getByRole("link", { name: "daily-briefing" })
-		.click();
+	await openTaskSettings(page, "daily-briefing");
 	const session = page.getByRole("combobox", { name: "Session" });
 	await expectValue(session, "sess_main");
 	await expect(session).toHaveValue("Main Chat");

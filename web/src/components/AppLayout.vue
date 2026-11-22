@@ -148,7 +148,7 @@
             </div>
             <ChatSessionList v-if="child.key === 'chat'" :agent="soleAgent.name" />
             <AgentChannelList v-if="child.key === 'channels'" :agent="soleAgent.name" />
-            <AgentTaskList v-if="child.key === 'tasks' && tasksOpen" :agent="soleAgent.name" />
+            <AgentTaskList v-if="child.key === 'tasks'" :agent="soleAgent.name" />
             <AgentFileList v-if="child.key === 'files' && filesOpen" :agent="soleAgent.name" />
             <div v-if="child.key === 'projects'" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
               <router-link v-for="p in soleAgent.projects" :key="p.key" :to="p.to"
@@ -188,7 +188,7 @@
                 </div>
                 <ChatSessionList v-if="child.key === 'chat'" :agent="a.name" />
                 <AgentChannelList v-if="child.key === 'channels'" :agent="a.name" />
-                <AgentTaskList v-if="child.key === 'tasks' && tasksOpen" :agent="a.name" />
+                <AgentTaskList v-if="child.key === 'tasks'" :agent="a.name" />
                 <AgentFileList v-if="child.key === 'files' && filesOpen" :agent="a.name" />
                 <div v-if="child.key === 'projects'" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
                   <router-link v-for="p in a.projects" :key="p.key" :to="p.to"
@@ -390,7 +390,11 @@ import { shortVersion } from "../lib/version";
 import { type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
 import { useChatSessionsStore } from "../stores/chatSessions";
-import { agentTaskPath, useSettingsStore } from "../stores/settings";
+import {
+	activeTaskName,
+	taskSessionPath,
+	useSettingsStore,
+} from "../stores/settings";
 import SidebarRowAction from "./SidebarRowAction.vue";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
 import MobileMainNav, { type MobileNavItem } from "./MobileMainNav.vue";
@@ -749,8 +753,12 @@ const projectsOpen = computed(() =>
 	/^\/agents\/[^/]+\/projects(\/|$)/.test(route.path),
 );
 
-// An agent's Scheduled Tasks and Files list their items on their own pages.
-const tasksOpen = computed(() => /^\/agents\/[^/]+\/tasks\/?$/.test(route.path));
+// The sidebar always lists an agent's Scheduled Tasks, like its Channels;
+// the narrow-screen second row lists them on the Tasks page and task
+// sessions. Files list their items only on their own page.
+const tasksOpen = computed(() =>
+	/^\/agents\/[^/]+\/tasks(\/|$)/.test(route.path),
+);
 const filesOpen = computed(() => /^\/agents\/[^/]+\/files\/?$/.test(route.path));
 // An agent's Channels pages: its channels' views and settings.
 const channelsOpen = computed(() =>
@@ -791,14 +799,14 @@ function agentItems(agent: string): NavChild[] {
 	if (tasksOpen.value) {
 		const tasks =
 			settingsStore.config?.agents.find((a) => a.name === agent)?.tasks ?? [];
-		const q = route.query.task;
+		const active = activeTaskName(route, agent);
 		return tasks
 			.filter((t) => t.name)
 			.map((t) => ({
 				key: `task:${t.name}`,
 				label: t.name,
-				to: router.resolve(agentTaskPath(agent, t.name)).fullPath,
-				active: q === t.name,
+				to: router.resolve(taskSessionPath(agent, t.name)).fullPath,
+				active: active === t.name,
 			}));
 	}
 	if (filesOpen.value) {

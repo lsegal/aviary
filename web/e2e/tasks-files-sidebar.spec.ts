@@ -49,6 +49,7 @@ async function mockAgent(
 	const saved: Config[] = [];
 	const converted: Record<string, unknown>[] = [];
 	const previews: Record<string, unknown>[] = [];
+	const taskSessions: Record<string, unknown>[] = [];
 	const store = new Map(Object.entries(files));
 	await setAuthToken(page);
 	await mockMCP(page, {
@@ -77,6 +78,22 @@ async function mockAgent(
 				new Date(Date.now() + h * 3_600_000).toISOString();
 			return { description: "preview", next: [at(1), at(2), at(3)] };
 		},
+		task_session: (args?: Record<string, unknown>) => {
+			taskSessions.push(args ?? {});
+			const name = String(args?.name);
+			return { id: name, agent_id: "assistant", name, title: name };
+		},
+		session_messages: (args?: Record<string, unknown>) =>
+			args?.session_id === "main"
+				? []
+				: [
+						{
+							id: "m1",
+							role: "assistant",
+							content: `${String(args?.session_id)}: all green`,
+							timestamp: new Date().toISOString(),
+						},
+					],
 		job_list: [],
 		session_list: [
 			{
@@ -105,7 +122,7 @@ async function mockAgent(
 			return "ok";
 		},
 	});
-	return { saved, store, converted, previews };
+	return { saved, store, converted, previews, taskSessions };
 }
 
 const FILES = {
@@ -122,6 +139,11 @@ function sidebarRow(page: Page, key: "tasks" | "files") {
 
 function taskRows(page: Page) {
 	return page.getByTestId("sidebar-tasks").getByTestId("task-row");
+}
+
+/** The open task's name in its settings editor. */
+function taskNameField(page: Page) {
+	return page.locator("main").locator('input[placeholder="daily-briefing"]');
 }
 
 function fileRows(page: Page) {
@@ -214,11 +236,12 @@ test("the add-task modal sets every trigger type, timezone and policy, and they 
 		await expect(page).toHaveURL(new RegExp(`\\?task=${name}$`));
 		await expectTrigger(page.locator("main"), c);
 
-		// Reopening it in the edit modal keeps every field.
-		const row = taskRows(page).filter({ hasText: name });
-		await row.hover();
-		await row.getByTestId("task-menu-button").click();
-		await page.getByRole("menuitem", { name: "Edit" }).click();
+		// Reopening it in the Tasks overview's edit modal keeps every field.
+		await page.goto("/agents/assistant/tasks");
+		await page
+			.getByRole("group", { name: `${name} actions` })
+			.getByRole("button", { name: "Edit" })
+			.click();
 		const edit = page.getByRole("dialog", { name: "Edit task" });
 		await expectTrigger(edit, c);
 		await edit.getByRole("button", { name: "Cancel" }).click();
@@ -358,7 +381,60 @@ test("the Files + creates a file that joins the sidebar, and the page has no fil
 	expect(store.has("PROFILE.md")).toBe(true);
 });
 
-test("the … menu edits and deletes tasks", async ({ page }) => {
+test("Scheduled Tasks lists its tasks on every page and a row opens the task's session", async ({
+	page,
+}) => {
+	const { taskSessions } = await mockAgent(
+		page,
+		[
+			{ name: "daily-briefing", schedule: "0 9 * * *", prompt: "Brief" },
+			{ name: "cleanup", schedule: "0 0 * * *", prompt: "Clean" },
+		],
+		FILES,
+	);
+	await page.goto("/agents/assistant/chat");
+	await expect(taskRows(page)).toHaveText(["daily-briefing", "cleanup"]);
+
+	const cleanup = taskRows(page).filter({ hasText: "cleanup" });
+	await cleanup.getByTestId("sidebar-item-link").click();
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/cleanup$/);
+	await expect(page.getByTestId("task-title")).toHaveText("cleanup");
+	await expect(page.getByText("cleanup: all green")).toBeVisible();
+	expect(taskSessions.at(-1)).toEqual({ agent: "assistant", name: "cleanup" });
+	await expect(cleanup).toHaveClass(/(^|\s)bg-gray-100/);
+	await expect(
+		taskRows(page).filter({ hasText: "daily-briefing" }),
+	).not.toHaveClass(/(^|\s)bg-gray-100/);
+
+	// The gear opens the task's settings, where the row stays active.
+	await page.getByTestId("task-settings-link").click();
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\?task=cleanup$/);
+	await expect(taskNameField(page).first()).toHaveValue("cleanup");
+	await expect(taskRows(page)).toHaveText(["daily-briefing", "cleanup"]);
+	await expect(cleanup).toHaveClass(/(^|\s)bg-gray-100/);
+});
+
+test("a renamed task's session takes the new name", async ({ page }) => {
+	await mockAgent(
+		page,
+		[{ name: "cleanup", schedule: "0 0 * * *", prompt: "Clean" }],
+		FILES,
+	);
+	await page.goto("/agents/assistant/tasks?task=cleanup");
+	const name = taskNameField(page).first();
+	await name.fill("nightly-cleanup");
+	await name.blur();
+	await expect(taskRows(page)).toHaveText(["nightly-cleanup"]);
+
+	await taskRows(page).getByTestId("sidebar-item-link").click();
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/nightly-cleanup$/);
+	await expect(page.getByTestId("task-title")).toHaveText("nightly-cleanup");
+	await expect(page.getByText("nightly-cleanup: all green")).toBeVisible();
+});
+
+test("the … menu opens a task's settings and deletes tasks", async ({
+	page,
+}) => {
 	const { saved } = await mockAgent(
 		page,
 		[
@@ -367,41 +443,23 @@ test("the … menu edits and deletes tasks", async ({ page }) => {
 		],
 		FILES,
 	);
-	await page.goto("/agents/assistant/tasks?task=cleanup");
+	await page.goto("/agents/assistant/tasks/daily-briefing");
 
 	const cleanup = taskRows(page).filter({ hasText: "cleanup" });
 	await cleanup.hover();
 	await cleanup.getByTestId("task-menu-button").click();
-	await page.getByRole("menuitem", { name: "Edit" }).click();
+	await expect(page.getByRole("menuitem")).toHaveText(["Settings", "Delete"]);
+	await page.getByRole("menuitem", { name: "Settings" }).click();
 
-	const dialog = page.getByRole("dialog", { name: "Edit task" });
-	await expect(dialog.getByLabel("Task name")).toHaveValue("cleanup");
-	await expect(dialog.getByRole("radio", { name: "Cron" })).toHaveAttribute(
-		"aria-checked",
-		"true",
-	);
-	await expect(dialog.getByLabel("Cron expression")).toHaveValue("0 0 * * *");
-	await dialog.getByLabel("Task name").fill("nightly-cleanup");
-	await dialog.getByLabel("Cron expression").fill("30 1 * * *");
-	await dialog.getByRole("button", { name: "Save" }).click();
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\?task=cleanup$/);
+	await expect(page.getByRole("dialog")).toHaveCount(0);
+	await expect(taskNameField(page).first()).toHaveValue("cleanup");
 
-	await expect(dialog).toBeHidden();
-	await expect(taskRows(page)).toHaveText([
-		"daily-briefing",
-		"nightly-cleanup",
-	]);
-	// The open task follows its rename.
-	await expect(page).toHaveURL(/\?task=nightly-cleanup$/);
-	expect(saved.at(-1)?.agents[0].tasks[1]).toMatchObject({
-		schedule: "30 1 * * *",
-	});
-
-	const renamed = taskRows(page).filter({ hasText: "nightly-cleanup" });
-	await renamed.hover();
-	await renamed.getByTestId("task-menu-button").click();
+	await cleanup.hover();
+	await cleanup.getByTestId("task-menu-button").click();
 	await page.getByRole("menuitem", { name: "Delete" }).click();
 	const confirm = page.getByRole("alertdialog", { name: "Delete task?" });
-	await expect(confirm).toContainText("nightly-cleanup");
+	await expect(confirm).toContainText("cleanup");
 	await confirm.getByRole("button", { name: "Delete" }).click();
 
 	await expect(taskRows(page)).toHaveText(["daily-briefing"]);
