@@ -62,6 +62,10 @@ var (
 	// modelBaseURL serves ggml model files as ggml-<name>.bin.
 	modelBaseURL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
 	httpClient   = http.DefaultClient
+	// systemModelDirs hold models installed outside the data directory, such
+	// as the one baked into the Docker image, so a volume mounted over the
+	// data directory does not hide them.
+	systemModelDirs = []string{"/usr/local/share/whisper", "/usr/share/whisper"}
 	// packageInstall installs packages with the platform package manager.
 	packageInstall = installPackages
 )
@@ -79,27 +83,54 @@ func ModelsDir() string {
 // ModelPath is where model is stored. A model given as a path to a file is
 // used as is.
 func ModelPath(model string) string {
-	if strings.ContainsAny(model, `/\`) || strings.HasSuffix(model, ".bin") {
+	if isModelFile(model) {
 		return model
 	}
-	return filepath.Join(ModelsDir(), "ggml-"+model+".bin")
+	return filepath.Join(ModelsDir(), modelFileName(model))
+}
+
+func isModelFile(model string) bool {
+	return strings.ContainsAny(model, `/\`) || strings.HasSuffix(model, ".bin")
+}
+
+func modelFileName(model string) string { return "ggml-" + model + ".bin" }
+
+// findModel returns the path of model and whether it exists: ModelPath when
+// the file is there, otherwise the first system model directory holding it.
+func findModel(model string) (string, bool) {
+	path := ModelPath(model)
+	if isModelFileOnDisk(path) {
+		return path, true
+	}
+	if isModelFile(model) {
+		return path, false
+	}
+	for _, dir := range systemModelDirs {
+		if sys := filepath.Join(dir, modelFileName(model)); isModelFileOnDisk(sys) {
+			return sys, true
+		}
+	}
+	return path, false
+}
+
+func isModelFileOnDisk(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir() && info.Size() > 0
 }
 
 // Detect finds whisper-cli, ffmpeg, and model, first in Aviary's own deps
-// directory and then on PATH.
+// directory and then on PATH (binaries) or in the system model directories
+// (models).
 func Detect(model string) Status {
 	if model == "" {
 		model = DefaultModel
 	}
-	st := Status{
+	path, downloaded := findModel(model)
+	return Status{
 		Whisper: findBinary("whisper-cli", whisperNames...),
 		FFmpeg:  findBinary("ffmpeg", "ffmpeg"),
-		Model:   Model{Name: model, Path: ModelPath(model)},
+		Model:   Model{Name: model, Path: path, Downloaded: downloaded},
 	}
-	if info, err := os.Stat(st.Model.Path); err == nil && !info.IsDir() && info.Size() > 0 {
-		st.Model.Downloaded = true
-	}
-	return st
 }
 
 func findBinary(display string, names ...string) Binary {

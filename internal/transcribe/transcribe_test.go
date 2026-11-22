@@ -22,7 +22,22 @@ import (
 func useTempDataDir(t *testing.T) {
 	t.Helper()
 	store.SetDataDir(t.TempDir())
-	t.Cleanup(func() { store.SetDataDir("") })
+	origDirs := systemModelDirs
+	systemModelDirs = nil
+	t.Cleanup(func() {
+		store.SetDataDir("")
+		systemModelDirs = origDirs
+	})
+}
+
+// useSystemModelDir adds a temporary system model directory holding model.
+func useSystemModelDir(t *testing.T, model string) string {
+	t.Helper()
+	dir := t.TempDir()
+	systemModelDirs = append(systemModelDirs, dir)
+	path := filepath.Join(dir, "ggml-"+model+".bin")
+	require.NoError(t, os.WriteFile(path, []byte("ggml"), 0o600))
+	return path
 }
 
 // stubPath makes lookPath find only the given names.
@@ -228,6 +243,32 @@ func TestDetect_ModelPath(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("ggml"), 0o600))
 	st := Detect(path)
 	assert.True(t, st.Model.Downloaded)
+	assert.Equal(t, path, st.Model.Path)
+}
+
+func TestDetect_FallsBackToSystemModelDir(t *testing.T) {
+	useTempDataDir(t)
+	path := useSystemModelDir(t, "base.en")
+	st := Detect("")
+	assert.True(t, st.Model.Downloaded)
+	assert.Equal(t, path, st.Model.Path)
+}
+
+func TestDetect_PrefersDataDirModelOverSystemModelDir(t *testing.T) {
+	useTempDataDir(t)
+	useSystemModelDir(t, "base.en")
+	writeModel(t, "base.en")
+	st := Detect("")
+	assert.True(t, st.Model.Downloaded)
+	assert.Equal(t, ModelPath("base.en"), st.Model.Path)
+}
+
+func TestDetect_ModelFileDoesNotFallBackToSystemModelDir(t *testing.T) {
+	useTempDataDir(t)
+	useSystemModelDir(t, "custom")
+	path := filepath.Join(t.TempDir(), "ggml-custom.bin")
+	st := Detect(path)
+	assert.False(t, st.Model.Downloaded)
 	assert.Equal(t, path, st.Model.Path)
 }
 
