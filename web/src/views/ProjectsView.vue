@@ -95,14 +95,33 @@
 
 						<UpNextStrip v-if="!aggregate" :runs="upcoming" :now="now" @open="openSchedule" />
 
-						<!-- Columns follow the width the board actually has, not the viewport, so
-							the cards reflow onto more rows instead of squeezing their values. -->
-						<section v-if="status" class="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-3" aria-label="Job counts">
-							<div v-for="s in statCards" :key="s.label" class="min-w-0 rounded-xl border px-4 py-3" :class="s.cls" data-testid="stat-card">
-								<p class="truncate text-xs font-semibold uppercase tracking-wide opacity-80" :title="s.label" data-testid="stat-label">{{ s.label }}</p>
-								<p class="truncate whitespace-nowrap text-2xl font-bold" data-testid="stat-value">{{ s.value }}<span v-if="s.suffix" class="ml-1 text-sm font-normal opacity-70">{{ s.suffix }}</span></p>
-							</div>
-						</section>
+						<!-- The counts show as full cards or as one compact row of chips, the
+							default below md, and a toggle switches between them. -->
+						<div v-if="status" class="flex min-w-0 gap-2" :class="statsCompact ? 'items-center' : 'items-start'">
+							<!-- Columns follow the width the board actually has, not the viewport, so
+								the cards reflow onto more rows instead of squeezing their values. -->
+							<section v-if="!statsCompact" id="job-counts" class="grid min-w-0 flex-1 grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-3" aria-label="Job counts">
+								<div v-for="s in statCards" :key="s.label" class="min-w-0 rounded-xl border px-4 py-3" :class="s.cls" data-testid="stat-card">
+									<p class="truncate text-xs font-semibold uppercase tracking-wide opacity-80" :title="s.label" data-testid="stat-label">{{ s.label }}</p>
+									<p class="truncate whitespace-nowrap text-2xl font-bold" data-testid="stat-value">{{ s.value }}<span v-if="s.suffix" class="ml-1 text-sm font-normal opacity-70">{{ s.suffix }}</span></p>
+								</div>
+							</section>
+							<!-- The compact row stays one line and scrolls sideways instead of wrapping. -->
+							<section v-else id="job-counts" class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap text-xs" aria-label="Job counts" data-testid="stat-row">
+								<span v-for="s in statCards" :key="s.label" class="inline-flex shrink-0 items-baseline gap-1 rounded-full border px-2.5 py-0.5" :class="s.cls"
+									:title="s.suffix ? `${s.label}: ${s.value} ${s.suffix}` : `${s.label}: ${s.value}`" data-testid="stat-chip">
+									<b class="tabular-nums">{{ s.chip }}</b><span class="opacity-80">{{ s.chipLabel }}</span>
+								</span>
+							</section>
+							<button type="button" data-testid="stats-toggle" aria-controls="job-counts" :aria-expanded="!statsCompact"
+								:aria-label="statsCompact ? 'Show job counts as cards' : 'Show job counts as a compact row'"
+								:title="statsCompact ? 'Show job counts as cards' : 'Show job counts as a compact row'"
+								class="shrink-0 rounded-lg border border-gray-200 p-1 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+								@click="statsChoice = !statsCompact">
+								<ChevronDownIcon v-if="statsCompact" aria-hidden="true" class="h-4 w-4" />
+								<ChevronUpIcon v-else aria-hidden="true" class="h-4 w-4" />
+							</button>
+						</div>
 
 						<section v-if="status?.clis.length" class="flex flex-wrap items-center gap-2 text-xs" aria-label="CLI providers">
 							<span class="font-medium text-gray-600 dark:text-gray-300">CLI providers</span>
@@ -241,6 +260,7 @@ import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRig
 import ChevronDownIcon from "@heroicons/vue/24/outline/ChevronDownIcon";
 import ChevronLeftIcon from "@heroicons/vue/24/outline/ChevronLeftIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
+import ChevronUpIcon from "@heroicons/vue/24/outline/ChevronUpIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
 import FunnelIcon from "@heroicons/vue/24/outline/FunnelIcon";
@@ -587,8 +607,16 @@ const STATE_CARD: Record<BoardState, string> = {
 		"border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
 };
 
+// Each card also has a short chip form for the compact row.
 const statCards = computed<
-	{ label: string; value: number; suffix?: string; cls: string }[]
+	{
+		label: string;
+		value: number;
+		suffix?: string;
+		chip: string;
+		chipLabel: string;
+		cls: string;
+	}[]
 >(() => {
 	const s = status.value;
 	if (!s) return [];
@@ -597,20 +625,46 @@ const statCards = computed<
 			label: "Slots",
 			value: s.slotsUsed,
 			suffix: `of ${s.slotsTotal} busy`,
+			chip: `${s.slotsUsed}/${s.slotsTotal}`,
+			chipLabel: "slots",
 			cls: "border-gray-200 text-gray-900 dark:border-gray-800 dark:text-white",
 		},
 		...BOARD_STATES.map((state) => ({
 			label: stateLabel(state),
 			value: s.states[state],
+			chip: String(s.states[state]),
+			chipLabel: stateLabel(state).toLowerCase(),
 			cls: STATE_CARD[state],
 		})),
 		{
 			label: "Merged (24h)",
 			value: s.merged24h,
+			chip: String(s.merged24h),
+			chipLabel: "merged 24h",
 			cls: "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900 dark:bg-purple-950/40 dark:text-purple-300",
 		},
 	];
 });
+// The counts default to the compact row below md and to the cards from md
+// up, following the viewport until the user picks one; the pick survives
+// reloads.
+const STATS_COMPACT_KEY = "aviary.projects.statsCompact";
+const savedStats = localStorage.getItem(STATS_COMPACT_KEY);
+const statsChoice = ref<boolean | null>(
+	savedStats === null ? null : savedStats === "1",
+);
+watch(statsChoice, (compact) => {
+	if (compact !== null)
+		localStorage.setItem(STATS_COMPACT_KEY, compact ? "1" : "0");
+});
+const wideQuery = window.matchMedia("(min-width: 768px)");
+const wide = ref(wideQuery.matches);
+function onWideChange(e: MediaQueryListEvent) {
+	wide.value = e.matches;
+}
+onMounted(() => wideQuery.addEventListener("change", onWideChange));
+onUnmounted(() => wideQuery.removeEventListener("change", onWideChange));
+const statsCompact = computed(() => statsChoice.value ?? !wide.value);
 
 const busyJob = ref("");
 async function onAction(
