@@ -89,7 +89,7 @@ type Manager struct {
 	// polled each project; see stateCache.
 	cache   *stateCache
 	reports *reporter
-	quotas   atomic.Pointer[map[string]string]
+	quotas  atomic.Pointer[map[string]string]
 
 	// loginRetry is the pending retry of an engine start whose gh login
 	// lookup failed, and loginRetryDelay the wait before the next one.

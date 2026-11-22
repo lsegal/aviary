@@ -743,6 +743,36 @@ test("board shows status, ordered job cards and live output", async ({
 	await expect(running).not.toHaveText(first ?? "", { timeout: 5_000 });
 });
 
+test("a board shown from the restart cache says it is refreshing until a live poll (#921)", async ({
+	page,
+}) => {
+	let stale = true;
+	await setup(page, () =>
+		stale
+			? {
+					...STATUS,
+					stale: true,
+					stale_targets: ["lsegal/aviary"],
+					cached_at: minutesAgo(3),
+				}
+			: STATUS,
+	);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+
+	const indicator = page.getByTestId("stale-indicator");
+	await expect(indicator).toContainText("refreshing… last updated 3m ago");
+	// The cached board still renders its stats and cards meanwhile.
+	await expect(page.getByRole("region", { name: "Job counts" })).toContainText(
+		"Merged (24h)3",
+	);
+	await expect(
+		page.getByText("Cap scheduler retry backoff at 10 minutes").first(),
+	).toBeVisible();
+
+	stale = false;
+	await expect(indicator).toHaveCount(0);
+});
+
 test("long wrapped output never grows a card past half the viewport (#718)", async ({
 	page,
 }) => {

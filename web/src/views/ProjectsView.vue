@@ -37,6 +37,10 @@
 								<template v-else>All open issues</template>
 								<template v-if="status.delivery"> · {{ status.delivery }}</template>
 								<template v-if="status.lastChecked"> · checked {{ age(status.lastChecked, now) }} ago</template>
+								<span v-if="status.stale" data-testid="stale-indicator" class="text-gray-400 dark:text-gray-500"
+									title="Showing the state saved before the last restart until the first live poll confirms it">
+									· refreshing…<template v-if="status.cachedAt"> last updated {{ age(status.cachedAt, now) }} ago</template>
+								</span>
 								<template v-if="status.interval"> · every {{ status.interval }}</template>
 							</p>
 						</div>
