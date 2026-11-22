@@ -3,6 +3,7 @@ import { installUnsavedChanges } from "../composables/useUnsavedChanges";
 import { needsOnboarding } from "../lib/onboarding";
 import { useAuthStore } from "../stores/auth";
 import { prefetchSettingsViewWhenIdle, SettingsView } from "./settingsView";
+
 const ProjectsView = () => import("../views/ProjectsView.vue");
 const ProjectJobDetail = () =>
 	import("../components/projects/ProjectJobDetail.vue");

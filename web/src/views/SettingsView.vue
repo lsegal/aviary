@@ -59,6 +59,7 @@
 
 				<div
 					v-if="loading"
+					data-testid="settings-loading"
 					class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"
 				>
 					<div class="mb-6 flex items-center gap-3">
