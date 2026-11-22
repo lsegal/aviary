@@ -388,6 +388,10 @@ func (s *Scheduler) ListTasks() []domain.ScheduledTask {
 			Model:     tc.Model,
 			Enabled:   config.BoolOr(tc.Enabled, true),
 		}
+		if strings.EqualFold(task.Type, "project") {
+			task.Precompile = config.BoolOr(tc.Precompile, false)
+			task.Compiled = task.Precompile && strings.TrimSpace(tc.Compiled) != ""
+		}
 		if fields := TaskFields(tc); fields.HasTrigger() {
 			task.TriggerType = domain.TriggerType(fields.InferKind())
 			if spec, err := schedule.Parse(fields); err == nil {

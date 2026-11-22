@@ -221,6 +221,19 @@ async function setup(
 				],
 			};
 		},
+		// Project tasks are analyzed as their compiled script would run.
+		task_analyze: (args?: Args) => {
+			record("task_analyze")(args);
+			return {
+				verdict: "deterministic",
+				will_precompile: args?.precompile === true,
+				reason: "fixed gh commands",
+				estimate:
+					args?.precompile === true
+						? { available: true, min_tokens: 0, max_tokens: 0 }
+						: { available: true, min_tokens: 4600, max_tokens: 12400 },
+			};
+		},
 		task_update: record("task_update"),
 		task_schedule: record("task_schedule"),
 		config_task_convert_to_script: record("config_task_convert_to_script"),
@@ -551,13 +564,31 @@ test("a scheduled card opens its editor within the project page", async ({
 	await expect(editor.getByTestId("trigger-preview").locator("li")).toHaveCount(
 		3,
 	);
-	// Project tasks are never precomputed, so the feedback is informational.
+	// The analyzer previews the task as its script would run in the clone.
 	const feedback = editor.getByTestId("task-cost-feedback");
-	await expect(feedback).toHaveAttribute("data-state", "project");
-	await expect(feedback).toContainText("Project tasks are never precomputed");
-	await expect(feedback).toContainText(
-		"Estimate unavailable: depends on the work the Code Loop job does",
+	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
+		"This task can run deterministically",
 	);
+	await expect(feedback.getByTestId("task-cost-estimate")).not.toHaveText(
+		"≈ 0 tokens/run",
+	);
+	expect(calls.task_analyze?.at(-1)).toMatchObject({
+		agent: "assistant",
+		type: "project",
+		project: "lsegal/aviary",
+		precompile: false,
+	});
+	// Turning precompile on shows the cost of the compiled script's runs.
+	const precompile = editor.getByLabel("Try to precompute task");
+	await expect(precompile).not.toBeChecked();
+	await precompile.check();
+	await expect(feedback.getByTestId("task-cost-estimate")).toHaveText(
+		"≈ 0 tokens/run",
+	);
+	await expect(feedback.getByTestId("task-cost-note")).toContainText(
+		"runs in a clone of the project with no model calls",
+	);
+	await precompile.uncheck();
 	const runs = editor.getByTestId("schedule-runs").locator("li");
 	await expect(runs).toHaveCount(2);
 	await expect(runs.first()).toContainText("running");
@@ -664,7 +695,15 @@ test("a scheduled card's editor edits, runs and deletes its schedule", async ({
 			model: "cli/codex/gpt-5.5",
 			project: "lsegal/aviary",
 			enabled: true,
+			precompile: false,
 		});
+
+	// Precompile is saved with the rest of the schedule.
+	await editor.getByLabel("Try to precompute task").check();
+	await editor.getByRole("button", { name: "Save" }).click();
+	await expect
+		.poll(() => calls.task_update?.at(-1))
+		.toMatchObject({ name: "assistant/nightly-triage", precompile: true });
 
 	await editor.getByRole("button", { name: "Run now" }).click();
 	await expect
@@ -717,15 +756,23 @@ test("the header Schedule button creates a project scheduled task through the sh
 	await dialog.getByRole("radio", { name: "Cron" }).click();
 	await dialog.getByLabel("Cron expression").fill("0 * * * *");
 	await dialog.getByLabel("Prompt").fill("Rerun flaky CI jobs on open PRs.");
-	// Project tasks run as Code Loop jobs, so the dialog offers precompute but
-	// it cannot apply to them.
+	// Project tasks precompile like agent tasks: on by default, with the
+	// same live feedback.
 	const precompute = dialog.getByLabel("Try to precompute task");
-	await expect(precompute).toBeDisabled();
-	await expect(precompute).not.toBeChecked();
-	await expect(dialog.getByTestId("task-cost-feedback")).toHaveAttribute(
-		"data-state",
-		"project",
+	await expect(precompute).toBeEnabled();
+	await expect(precompute).toBeChecked();
+	const feedback = dialog.getByTestId("task-cost-feedback");
+	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
+		"This task can run deterministically",
 	);
+	await expect(feedback.getByTestId("task-cost-estimate")).toHaveText(
+		"≈ 0 tokens/run",
+	);
+	expect(calls.task_analyze?.at(-1)).toMatchObject({
+		type: "project",
+		project: "lsegal/aviary",
+		precompile: true,
+	});
 	// Send To offers the agent's channels by name.
 	const sendTo = dialog.getByLabel("Send To");
 	expect(await optionLabels(sendTo)).toEqual([
@@ -735,7 +782,10 @@ test("the header Schedule button creates a project scheduled task through the sh
 	await chooseOption(sendTo, "ops · discord");
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
-	expect(calls.config_task_convert_to_script).toBeUndefined();
+	// Saving compiles the project task's script in the background.
+	expect(calls.config_task_convert_to_script).toEqual([
+		{ agent: "assistant", task: "hourly-ci-watch" },
+	]);
 
 	const config = JSON.parse(String(calls.config_save?.[0]?.config)) as {
 		agents: { name: string; tasks: unknown[] }[];
@@ -749,6 +799,7 @@ test("the header Schedule button creates a project scheduled task through the sh
 			prompt: "Rerun flaky CI jobs on open PRs.",
 			target: "channel:ops",
 			enabled: true,
+			precompile: true,
 		}),
 	]);
 	expect(calls.task_schedule).toBeUndefined();

@@ -46,7 +46,8 @@
 						<textarea id="agent-task-prompt" v-model="form.prompt" rows="6" class="field-input font-mono text-xs"
 							:placeholder="form.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'" />
 						<TaskCostFeedback :agent="feedbackAgent" :prompt="form.prompt" :type="taskType"
-							:target="form.target" :trigger="form.trigger" :precompile="dialog.mode === 'create' && canPrecompute && form.precompute" />
+							:target="form.target" :project="form.project" :trigger="form.trigger"
+							:precompile="showPrecompute && canPrecompute && form.precompute" />
 						<label for="agent-task-send-to" class="field-label mt-3">Send To</label>
 						<AppCombobox id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
 							aria-describedby="agent-task-send-to-help" :options="sendToOptions"
@@ -54,7 +55,7 @@
 						<p id="agent-task-send-to-help" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
 							Runs always show their output in the task's own session; a channel also gets a copy in its conversation.
 						</p>
-						<div v-if="dialog.mode === 'create'" class="mt-3 flex items-start gap-3"
+						<div v-if="showPrecompute" class="mt-3 flex items-start gap-3"
 							:class="canPrecompute ? '' : 'opacity-60'">
 							<input id="agent-task-precompute" v-model="form.precompute" type="checkbox"
 								:disabled="!canPrecompute" aria-describedby="agent-task-precompute-help"
@@ -250,17 +251,36 @@ const taskType = computed(
 	(): AgentTaskType => (form.targetKind === "project" ? "project" : form.type),
 );
 
-/** Precompute compiles prompt tasks of an agent into scripts. */
-const canPrecompute = computed(() => taskType.value === "prompt");
+/**
+ * Precompute compiles a prompt task of an agent into a script once, on
+ * create. A project task keeps its prompt and its precompile setting, which
+ * every save can change, and runs its compiled script in the clone.
+ */
+const canPrecompute = computed(
+	() => taskType.value === "prompt" || taskType.value === "project",
+);
+const showPrecompute = computed(
+	() => dialog.value?.mode === "create" || taskType.value === "project",
+);
 const precomputeHelp = computed(() => {
 	if (taskType.value === "project")
-		return "Project tasks run as Code Loop jobs, so they are never precomputed";
+		return "Compile a deterministic prompt into a script that runs in the project's clone without the model; a run whose script fails falls back to the model";
 	if (taskType.value === "script") return "Script tasks are already scripts";
 	return "Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs";
 });
+/**
+ * The precompile choice a task opens with: a saved project task's own, where
+ * unset is off as it is when the task runs, else the default.
+ */
+function initialPrecompute(task?: AgentTask): boolean {
+	if (task && taskType.value === "project") return task.precompile === true;
+	return (
+		canPrecompute.value &&
+		settings.config?.scheduler?.precompute_tasks !== false
+	);
+}
 watch(canPrecompute, (can) => {
-	form.precompute =
-		can && settings.config?.scheduler?.precompute_tasks !== false;
+	form.precompute = can && initialPrecompute(editedTask());
 });
 
 // A project task runs a prompt on a time trigger, so choosing Project makes
@@ -364,8 +384,7 @@ watch(dialog, (d) => {
 	form.targetKind = project ? "project" : "agent";
 	form.agent = d?.agent ?? "";
 	form.project = task ? (task.project ?? "") : (d?.project ?? "");
-	form.precompute =
-		!project && settings.config?.scheduler?.precompute_tasks !== false;
+	form.precompute = initialPrecompute(task);
 	form.target = task?.target ?? "";
 });
 
@@ -404,10 +423,21 @@ function withForm(task: AgentTask, trigger: TriggerFields): AgentTask {
 		prompt: form.prompt,
 		target: form.target,
 	};
-	if (taskType.value === "project") next.project = form.project;
-	else {
+	if (taskType.value === "project") {
+		next.project = form.project;
+		// Unset is off, so an unchanged task saves unchanged.
+		if (form.precompute) next.precompile = true;
+		else {
+			delete next.precompile;
+			delete next.compiled;
+			delete next.compiled_key;
+		}
+	} else {
 		delete next.project;
 		delete next.model;
+		delete next.precompile;
+		delete next.compiled;
+		delete next.compiled_key;
 	}
 	return withTrigger(next, trigger);
 }
@@ -460,6 +490,21 @@ async function submitTask(mode: "create" | "edit", from = "") {
 		await settings.renameTask(agent, from, name);
 		if (wasShowing) await router.replace(agentTaskPath(agent, name));
 	}
+	// A precompiled project task compiles again in the background when its
+	// prompt, project or tools changed; its runs compile first otherwise.
+	if (taskType.value === "project" && form.precompute && form.prompt.trim()) {
+		await callTool("config_task_convert_to_script", {
+			agent,
+			task: name,
+		}).catch((e) => console.error("precompute task", e));
+	}
+}
+
+/** The saved task the open dialog edits, if any. */
+function editedTask(): AgentTask | undefined {
+	const d = dialog.value;
+	if (d?.kind !== "task" || d.mode !== "edit" || !d.name) return undefined;
+	return agentTasks(d.agent).find((t) => t.name === d.name);
 }
 
 async function submitFile(agent: string, mode: "create" | "edit", from = "") {

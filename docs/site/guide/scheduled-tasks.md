@@ -267,6 +267,18 @@ scheduler:
   precompute_tasks: false
 ```
 
+### Precompiled project tasks
+
+[Project tasks](#scheduled-prompts) can be precompiled too. Turn on **Try to precompute task** in the **Add task** dialog or in the project board's schedule editor, or pass `precompile=true` to `task_schedule` or `task_update`. New project tasks follow `precompute_tasks`; a project task without `precompile` set stays on the model. Both editors show the same live feedback for project tasks as for agent tasks: ✔ deterministic, ◐ partial, or ✖ not deterministic, with the per-run token estimate and the monthly projection.
+
+A project task is not rewritten into a script task. It keeps its prompt and stores the compiled script beside it (`compiled` and `compiled_key` in its definition, written by Aviary). The prompt is analyzed and compiled against the tools of the agent the task belongs to, with the clone it runs in described. Each run then:
+
+1. Recompiles first if the prompt, the project, or the agent's tools (including its allowed exec commands) changed since the last compile. A prompt that is not deterministic is not analyzed again until one of them changes.
+2. Makes a fresh clone of the project under Code Loop's clone directories and runs the script there, as the task's agent. Its tool calls are granted the clone, `exec` runs in it by default with gh's authentication, and `AVIARY_CHECKOUT_DIRECTORY` and `GH_REPO` name the clone and the repository. The clone is removed when the script ends.
+3. Falls back to a normal model run on the project's agent if the script, the clone, or the compile fails. The run's result starts with why the script failed, and the board job's log records it too.
+
+Run results, run history, usage, and Send To delivery are the same as for a project task that is not precompiled. A deterministic run records no model usage. A task whose work needs judgment, such as editing code and opening pull requests, is reported as not deterministic, with the analyzer's reason, and keeps running on the model.
+
 ## Example: Rain Alert Monitor
 
 Consider a request like:

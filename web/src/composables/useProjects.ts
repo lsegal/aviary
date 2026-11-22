@@ -380,6 +380,7 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 			model: s.model.trim(),
 			project: s.project,
 			enabled: s.enabled,
+			precompile: s.precompile,
 		});
 		await refresh();
 	}

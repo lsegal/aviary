@@ -111,6 +111,12 @@ export interface AgentTask {
 	project?: string;
 	/** Overrides the project agent's model for a "project" task's runs; empty uses the agent's own. */
 	model?: string;
+	/** Whether a "project" task's runs try its compiled script in the clone before the model. */
+	precompile?: boolean;
+	/** The "project" task's compiled script, written by Aviary. */
+	compiled?: string;
+	/** What the compiled script was compiled from, written by Aviary. */
+	compiled_key?: string;
 	/** How long a prompt run may go without output before it fails, e.g. "30m"; "0" disables it. */
 	idle_timeout?: string;
 	from_file?: boolean;

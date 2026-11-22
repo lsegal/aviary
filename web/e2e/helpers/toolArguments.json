@@ -431,6 +431,7 @@
 		"editor",
 		"model",
 		"precompile",
+		"project",
 		"target",
 		"type"
 	],
@@ -510,6 +511,7 @@
 		"model",
 		"name",
 		"overlap",
+		"precompile",
 		"project",
 		"run_once",
 		"schedule",

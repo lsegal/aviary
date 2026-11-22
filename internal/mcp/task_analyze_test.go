@@ -168,7 +168,7 @@ func TestTaskAnalyzeScriptSkipsAnalyzer(t *testing.T) {
 func TestTaskAnalyzeProjectRunsAnalyzerWithClone(t *testing.T) {
 	const prompt = "rerun failed CI jobs on open PRs"
 	analyses := map[string]*compileTaskAnalysis{
-		projectTaskCompilePrompt(prompt, "acme/app"): sampleTaskAnalyses["check https://example.com and print its status"],
+		projectTaskCompilePrompt(prompt, "acme/app"):              sampleTaskAnalyses["check https://example.com and print its status"],
 		projectTaskCompilePrompt("triage new issues", "acme/app"): sampleTaskAnalyses["fetch the release notes and summarize them"],
 	}
 	calls := stubTaskAnalyzer(t, analyses)

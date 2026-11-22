@@ -55,6 +55,8 @@ const props = withDefaults(
 		/** The task type: prompt, script, or project. */
 		type?: string;
 		target?: string;
+		/** A project task's watched project, which its script runs in a clone of. */
+		project?: string;
 		model?: string;
 		/** The task's trigger as edited, for the monthly projection. */
 		trigger?: TriggerFields | null;
@@ -66,6 +68,7 @@ const props = withDefaults(
 	{
 		type: "prompt",
 		target: "",
+		project: "",
 		model: "",
 		trigger: null,
 		precompile: false,
@@ -76,7 +79,7 @@ const props = withDefaults(
 const { callTool } = useMCP();
 const editor = `task-editor-${Math.random().toString(36).slice(2)}`;
 
-type State = "idle" | "checking" | "ready" | "error" | "script" | "project";
+type State = "idle" | "checking" | "ready" | "error" | "script";
 const state = ref<State>("idle");
 const result = ref<TaskAnalysis | null>(null);
 const errorMessage = ref("");
@@ -89,6 +92,7 @@ const input = computed(() => ({
 	content: props.prompt.trim(),
 	type: props.type || "prompt",
 	target: props.target,
+	project: props.type === "project" ? props.project : "",
 	model: props.model,
 	precompile: props.precompile,
 }));
@@ -111,6 +115,7 @@ async function analyze() {
 			content: args.content,
 			type: args.type,
 			...(args.target ? { target: args.target } : {}),
+			...(args.project ? { project: args.project } : {}),
 			...(args.model ? { model: args.model } : {}),
 			precompile: args.precompile,
 			editor,
@@ -139,16 +144,12 @@ watch(
 	() => {
 		clearTimer();
 		seq++;
-		const { agent, content, type } = input.value;
+		const { agent, content, type, project } = input.value;
 		if (type === "script") {
 			state.value = "script";
 			return;
 		}
-		if (type === "project") {
-			state.value = "project";
-			return;
-		}
-		if (!agent || !content) {
+		if (!agent || !content || (type === "project" && !project)) {
 			state.value = "idle";
 			return;
 		}
@@ -208,7 +209,6 @@ const icon = computed(() => {
 		return { glyph: "…", class: "text-gray-400 animate-pulse" };
 	if (state.value === "error") return { glyph: "!", class: "text-amber-500" };
 	if (state.value === "script") return { glyph: "✔", class: "text-green-600" };
-	if (state.value === "project") return { glyph: "ℹ", class: "text-gray-400" };
 	switch (result.value?.verdict) {
 		case "deterministic":
 			return { glyph: "✔", class: "text-green-600" };
@@ -227,8 +227,6 @@ const headline = computed(() => {
 			return "Couldn't analyze this task.";
 		case "script":
 			return "Runs a script";
-		case "project":
-			return "Project tasks are never precomputed";
 	}
 	switch (result.value?.verdict) {
 		case "deterministic":
@@ -242,8 +240,6 @@ const headline = computed(() => {
 
 const estimate = computed(() => {
 	if (state.value === "script") return "0 tokens/run";
-	if (state.value === "project")
-		return "Estimate unavailable: depends on the work the Code Loop job does";
 	if (state.value !== "ready" || !result.value) return "";
 	return formatEstimate(result.value.estimate);
 });
@@ -258,6 +254,10 @@ const note = computed(() => {
 	if (state.value !== "ready" || !r) return "";
 	switch (r.verdict) {
 		case "deterministic":
+			if (props.type === "project")
+				return r.will_precompile
+					? "It will be precompiled into a script that runs in a clone of the project with no model calls; a run whose script fails falls back to the model."
+					: "Precompiling it would let runs skip the model in the project's clone; until then each run uses the model.";
 			return r.will_precompile
 				? "It will be precompiled into a script, so runs need no model calls."
 				: "Precompiling it into a script would let runs skip the model; until then each run uses the model.";
@@ -266,7 +266,7 @@ const note = computed(() => {
 			return `${steps ? `${capitalize(steps)} needs the model, so` : "Some steps need the model, so"} the task is not precompiled and runs through the model.`;
 		}
 		default:
-			return r.reason ? `Won't be precompiled: ${r.reason}` : "";
+			return r.reason ? `Can't precompile: ${r.reason}` : "";
 	}
 });
 

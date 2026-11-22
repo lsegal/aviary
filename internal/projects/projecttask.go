@@ -159,7 +159,7 @@ var cloneProjectRepository = func(ctx context.Context, repository, dir string) e
 // output to the job's log. It reports whether the script completed; when it
 // did not, the log says why and the caller runs the prompt on the agent.
 func (w *Engine) runCompiledProjectTask(ctx context.Context, key string, run scheduler.ProjectRun, repository string, output io.Writer, updateSession func(AgentSession)) bool {
-	logf := func(format string, args ...any) { fmt.Fprintf(output, format+"\n", args...) }
+	logf := func(format string, args ...any) { _, _ = fmt.Fprintf(output, format+"\n", args...) }
 	var checkout string
 	defer func() {
 		if checkout != "" {
