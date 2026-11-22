@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/scheduler"
 )
@@ -138,6 +141,70 @@ func (w *Engine) runProjectTask(ctx context.Context, run scheduler.ProjectRun, r
 	// The run itself watches ctx, so its result always arrives.
 	result := <-request.done
 	return result.summary, result.err
+}
+
+// cloneProjectRepository clones repository into dir, an empty directory, with
+// gh's own authentication, as a project task's agent clones it; tests
+// replace it.
+var cloneProjectRepository = func(ctx context.Context, repository, dir string) error {
+	cmd := process.Command(ctx, "gh", "repo", "clone", repository, dir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("gh repo clone: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// runCompiledProjectTask runs a precompiled project task's script in a fresh
+// clone of its repository, under one of the engine's clone roots, writing its
+// output to the job's log. It reports whether the script completed; when it
+// did not, the log says why and the caller runs the prompt on the agent.
+func (w *Engine) runCompiledProjectTask(ctx context.Context, key string, run scheduler.ProjectRun, repository string, output io.Writer, updateSession func(AgentSession)) bool {
+	logf := func(format string, args ...any) { fmt.Fprintf(output, format+"\n", args...) }
+	var checkout string
+	defer func() {
+		if checkout != "" {
+			if err := os.RemoveAll(checkout); err != nil {
+				w.logf("scheduled run %s: removing its clone %s: %v", key, checkout, err)
+			}
+		}
+	}()
+	clone := func(ctx context.Context) (string, error) {
+		root, err := w.CloneRoot()
+		if err != nil {
+			return "", err
+		}
+		dir, err := os.MkdirTemp(root, "aviary-schedule-")
+		if err != nil {
+			return "", err
+		}
+		checkout = dir
+		if repository == "" {
+			repository = run.Project
+		}
+		if err := cloneProjectRepository(ctx, repository, dir); err != nil {
+			return "", err
+		}
+		updateSession(AgentSession{CheckoutDirectory: dir})
+		return dir, nil
+	}
+	result, err := run.RunCompiled(ctx, clone, logf)
+	switch {
+	case err == nil:
+		if result = strings.TrimSpace(result); result != "" {
+			logf("%s", result)
+		}
+		w.jobSystem(key, "scheduled run finished its precompiled script without the model")
+		return true
+	case errors.Is(err, scheduler.ErrProjectTaskNotCompiled):
+		w.jobSystem(key, "the prompt is not deterministic, so the model runs it")
+	case ctx.Err() != nil:
+		// A stopped run does not fall back; the caller reports the stop.
+		return false
+	default:
+		logf("precompiled script failed, so the model runs the task: %v", err)
+		w.jobSystem(key, "precompiled script failed, falling back to the model: "+clidoctor.FirstLine(err.Error()))
+	}
+	return false
 }
 
 // projectTaskOutcome turns how a project task's agent exited into the summary

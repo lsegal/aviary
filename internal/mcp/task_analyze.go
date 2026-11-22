@@ -27,7 +27,6 @@ const (
 	taskVerdictPartial          = "partial"
 	taskVerdictNonDeterministic = "nondeterministic"
 	taskVerdictScript           = "script"
-	taskVerdictProject          = "project"
 )
 
 // taskEditorUsageSessionID is the session task_analyze records its own token
@@ -51,6 +50,7 @@ type taskAnalyzeArgs struct {
 	Type       string `json:"type,omitempty" schema:"enum=prompt|script|project"`
 	Target     string `json:"target,omitempty"`
 	Model      string `json:"model,omitempty"`
+	Project    string `json:"project,omitempty"`
 	Precompile bool   `json:"precompile,omitempty"`
 	Editor     string `json:"editor,omitempty"`
 }
@@ -231,7 +231,7 @@ func (c *taskAnalysisCache) start(ctx context.Context, editor string) (context.C
 func registerTaskAnalyzeTool(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_analyze",
-		Description: "Preview, without compiling, saving, or scheduling anything, whether a task's prompt passes the same determinism gate precompilation uses, and estimate the tokens and cost of each run. type=script tasks report 0 tokens without analysis; type=project tasks are never precomputed. precompile=true reports the cost when the task is precompiled on save. editor identifies the calling editor: its analysis token use is recorded under it, and a new call cancels its previous one.",
+		Description: "Preview, without compiling, saving, or scheduling anything, whether a task's prompt passes the same determinism gate precompilation uses, and estimate the tokens and cost of each run. type=script tasks report 0 tokens without analysis; type=project tasks need project=<watched project> and are analyzed as their script would run, in a clone of it. precompile=true reports the cost when the task is precompiled on save. editor identifies the calling editor: its analysis token use is recorded under it, and a new call cancels its previous one.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskAnalyzeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		result, err := analyzeTaskForEditor(ctx, args)
 		if err != nil {
@@ -267,13 +267,6 @@ func analyzeTaskForEditor(ctx context.Context, args taskAnalyzeArgs) (*taskAnaly
 			Reason:   "Runs a script",
 			Estimate: taskRunEstimate{Available: true},
 		}, nil
-	case "project":
-		return &taskAnalysisResult{
-			Verdict:  taskVerdictProject,
-			Reason:   "Project tasks run as Code Loop jobs, so they are never precomputed",
-			Model:    strings.TrimSpace(args.Model),
-			Estimate: taskRunEstimate{Reason: "depends on the work the Code Loop job does"},
-		}, nil
 	}
 	agentName := strings.TrimSpace(args.Agent)
 	prompt := strings.TrimSpace(args.Content)
@@ -284,14 +277,22 @@ func analyzeTaskForEditor(ctx context.Context, args taskAnalyzeArgs) (*taskAnaly
 		return nil, fmt.Errorf("content is required")
 	}
 	target := strings.TrimSpace(args.Target)
+	// A project task is analyzed as it is compiled: with its clone described.
+	analyzedPrompt := prompt
+	if strings.TrimSpace(args.Type) == "project" {
+		if strings.TrimSpace(args.Project) == "" {
+			return nil, fmt.Errorf("project is required for project tasks")
+		}
+		analyzedPrompt = projectTaskCompilePrompt(prompt, args.Project)
+	}
 
-	key := taskAnalysisKey(agentName, prompt, target)
+	key := taskAnalysisKey(agentName, analyzedPrompt, target)
 	analyzed, cached := taskAnalyses.get(key)
 	if !cached {
 		runCtx, release := taskAnalyses.start(ctx, strings.TrimSpace(args.Editor))
 		defer release()
 		var err error
-		analyzed, err = resolveTaskAnalyzer()(runCtx, agentName, prompt, target)
+		analyzed, err = resolveTaskAnalyzer()(runCtx, agentName, analyzedPrompt, target)
 		recordTaskEditorUsage(agentName, analyzed, err)
 		if err != nil {
 			if runCtx.Err() != nil && ctx.Err() == nil {

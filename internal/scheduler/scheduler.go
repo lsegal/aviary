@@ -534,6 +534,12 @@ func (s *Scheduler) SetProjectRunner(fn ProjectRunner) {
 	s.pool.projectRunner = fn
 }
 
+// SetProjectTaskCompiler registers what compiles precompiled project tasks
+// before their runs; without one they always run on the model.
+func (s *Scheduler) SetProjectTaskCompiler(fn ProjectTaskCompiler) {
+	s.pool.projectCompiler = fn
+}
+
 // SetTaskOutputDelivery registers an optional function used to deliver
 // completed task output to configured task channels.
 func (s *Scheduler) SetTaskOutputDelivery(fn func(agentName, route, text string) error) {

@@ -26,8 +26,15 @@ import (
 // Unlike a prompt task, which becomes a script task once compiled, a project
 // task keeps its prompt, so a run whose script fails falls back to it.
 
-// compileToolsFunc lists the tools a task compiles against; tests replace it.
-var compileToolsFunc = compileTools
+// compileToolsFunc, when set, replaces compileTools in tests.
+var compileToolsFunc func(ctx context.Context, agentName string) ([]agent.ToolInfo, error)
+
+func resolveCompileTools() func(ctx context.Context, agentName string) ([]agent.ToolInfo, error) {
+	if compileToolsFunc != nil {
+		return compileToolsFunc
+	}
+	return compileTools
+}
 
 // projectTaskCompilePrompt is what a project task's prompt is analyzed and
 // compiled as: the prompt, plus where its script runs.
@@ -78,7 +85,7 @@ func EnsureProjectTaskCompiled(ctx context.Context, agentName, taskName, trigger
 	if !EffectiveProjectTaskPrecompile(task) {
 		return "", nil
 	}
-	tools, err := compileToolsFunc(ctx, agentCfg.Name)
+	tools, err := resolveCompileTools()(ctx, agentCfg.Name)
 	if err != nil {
 		return "", fmt.Errorf("listing agent %q's tools: %w", agentCfg.Name, err)
 	}

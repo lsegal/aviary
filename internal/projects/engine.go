@@ -3999,7 +3999,11 @@ func (w *Engine) Run(ctx context.Context) error {
 					jobMu.Unlock()
 					publish()
 				}
-				if runErr == nil {
+				compiled := false
+				if runErr == nil && run.RunCompiled != nil {
+					compiled = w.runCompiledProjectTask(runCtx, key, run, request.repository, output, updateSession)
+				}
+				if runErr == nil && !compiled {
 					switch runner := w.runner().(type) {
 					case SessionAgentOutputRunner:
 						runErr = runner.RunSessionWithOutput(runCtx, issue, session, updateSession, output)
