@@ -12,6 +12,7 @@
               </p>
             </div>
           </div>
+          <SystemSettingsLink />
         </div>
 
         <div class="mb-6 grid gap-3 sm:grid-cols-3">
@@ -119,6 +120,7 @@
 import { computed, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import SystemPageIcon from "../components/SystemPageIcon.vue";
+import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { useProviderStatus } from "../composables/useProviderAuth";
 import {
 	formatTokenCount,

@@ -16,6 +16,7 @@
             :disabled="loading" @click="fetchDaemons">
             {{ loading ? "Loading…" : "Refresh" }}
           </button>
+          <SystemSettingsLink />
         </div>
       </div>
 
@@ -178,6 +179,7 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import SystemPageIcon from "../components/SystemPageIcon.vue";
+import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { Skeleton } from "../components/ui/skeleton";
 import { useAuthStore } from "../stores/auth";
 
