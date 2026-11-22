@@ -43,7 +43,6 @@ type compiledTaskStep struct {
 }
 
 type compileTaskAnalysis struct {
-	ShouldCompile          bool               `json:"should_compile"`
 	NeedsDiscovery         bool               `json:"needs_discovery,omitempty"`
 	Reason                 string             `json:"reason,omitempty"`
 	UnboundedInput         bool               `json:"unbounded_input,omitempty"`
@@ -251,7 +250,6 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 		"task_compile: analysis completed",
 		"component", "task_compile",
 		"agent", agentName,
-		"should_compile", analysis.ShouldCompile,
 		"needs_discovery", analysis.NeedsDiscovery,
 		"deterministic_step_count", analysis.DeterministicStepCount,
 		"reason", strings.TrimSpace(analysis.Reason),
@@ -264,7 +262,6 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 			"task_compile: compilation declined",
 			"component", "task_compile",
 			"agent", agentName,
-			"should_compile", analysis.ShouldCompile,
 			"needs_discovery", analysis.NeedsDiscovery,
 			"deterministic_step_count", analysis.DeterministicStepCount,
 			"reason", result.Reason,
@@ -373,12 +370,20 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 
 // taskDeterminismSystemPrompt instructs the determinism analyzer that gates
 // precompilation, and the task editors' live preview of that gate.
-const taskDeterminismSystemPrompt = "You are Aviary's task determinism analyzer. Break the task into concrete execution steps. For each step, decide whether it is deterministic from the prompt plus the available tool catalog. A step is deterministic when it can be executed with fixed arguments and bounded tool calls, even if the observed external result changes from run to run. For example, checking a URL with a fixed tool call, reading a fixed inbox query, downloading a fixed file, or visiting a fixed page with a grounded selector are deterministic observation steps. Do not confuse changing external data with nondeterminism. A step is nondeterministic only when it requires fuzzy judgment, semantic interpretation, hidden selectors, open-ended search, or discovery of missing parameters/capabilities. A notify step is deterministic whenever it can be implemented as print(...) or a fixed message template derived only from deterministic step outputs. When a non-empty task output target is provided, any script output emitted via print(...) will be delivered to that target by Aviary automatically. Treat that routed notification delivery as deterministic and preferred; do not require session_send for that case. If the task needs discovery that is not explicitly allowed, set needs_discovery=true. Set unbounded_input=true when the amount of data a run reads or fetches has no fixed bound (for example, every new email, an arbitrary web page, or a whole feed), so the size of a model run cannot be estimated. Only allow script compilation when the task contains more than one deterministic step and the overall workflow can be fully expressed in Aviary's Lua runtime with available tools. Prefer using the named tools in the catalog as evidence of capability; do not claim capabilities are missing when a listed tool clearly covers the step. Reply with JSON only using this schema: {\"should_compile\":bool,\"needs_discovery\":bool,\"reason\":string,\"unbounded_input\":bool,\"deterministic_step_count\":number,\"steps\":[{\"kind\":\"deterministic|agent_run|notify|unknown\",\"deterministic\":bool,\"tool\":\"optional tool name\",\"description\":\"short description\"}]}. Do not invent tools."
+const taskDeterminismSystemPrompt = "You are Aviary's task determinism analyzer. Break the task into concrete execution steps. For each step, decide whether it is deterministic from the prompt plus the available tool catalog. A step is deterministic when it can be executed with fixed arguments and bounded tool calls, even if the observed external result changes from run to run. For example, checking a URL with a fixed tool call, reading a fixed inbox query, downloading a fixed file, or visiting a fixed page with a grounded selector are deterministic observation steps. Do not confuse changing external data with nondeterminism. A step is nondeterministic only when it requires fuzzy judgment, semantic interpretation, hidden selectors, open-ended search, or discovery of missing parameters/capabilities. A notify step is deterministic whenever it can be implemented as print(...) or a fixed message template derived only from deterministic step outputs. When a non-empty task output target is provided, any script output emitted via print(...) will be delivered to that target by Aviary automatically. Treat that routed notification delivery as deterministic and preferred; do not require session_send for that case. Whether a target is set, and where output is delivered, has no bearing on determinism; never mention the output target in the reason. If the task needs discovery that is not explicitly allowed, set needs_discovery=true. Set unbounded_input=true when the amount of data a run reads or fetches has no fixed bound (for example, every new email, an arbitrary web page, or a whole feed), so the size of a model run cannot be estimated. A step whose capability neither the tool catalog nor Aviary's Lua runtime covers is nondeterministic. A task whose steps are all deterministic, including a task with a single step such as printing a fixed message, is compiled into a script. Prefer using the named tools in the catalog as evidence of capability; do not claim capabilities are missing when a listed tool clearly covers the step. Reply with JSON only using this schema: {\"needs_discovery\":bool,\"reason\":string,\"unbounded_input\":bool,\"steps\":[{\"kind\":\"deterministic|agent_run|notify|unknown\",\"deterministic\":bool,\"tool\":\"optional tool name\",\"description\":\"short description\"}]}. Do not invent tools."
 
-// allowsCompile reports whether the analysis passes the precompile gate: more
-// than one deterministic step, a compile recommendation, and no discovery.
+// allowsCompile reports whether the analysis passes the precompile gate: at
+// least one step, every step deterministic, and no discovery.
 func (a *compileTaskAnalysis) allowsCompile() bool {
-	return a.DeterministicStepCount > 1 && a.ShouldCompile && !a.NeedsDiscovery
+	if len(a.Steps) == 0 || a.NeedsDiscovery {
+		return false
+	}
+	for _, step := range a.Steps {
+		if !step.Deterministic {
+			return false
+		}
+	}
+	return true
 }
 
 // analyzeTaskDeterminism runs the determinism analysis stage of task
@@ -394,11 +399,11 @@ func analyzeTaskDeterminism(ctx context.Context, provider llm.Provider, model, p
 	if err := json.Unmarshal([]byte(extractJSONObject(text)), &analysis); err != nil {
 		return nil, fmt.Errorf("parsing compiler analysis: %w", err)
 	}
-	if analysis.DeterministicStepCount == 0 {
-		for _, step := range analysis.Steps {
-			if step.Deterministic {
-				analysis.DeterministicStepCount++
-			}
+	// The count follows the steps, so the gate never disagrees with them.
+	analysis.DeterministicStepCount = 0
+	for _, step := range analysis.Steps {
+		if step.Deterministic {
+			analysis.DeterministicStepCount++
 		}
 	}
 	return &analysis, nil

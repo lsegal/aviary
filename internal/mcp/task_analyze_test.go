@@ -50,33 +50,40 @@ func stubTaskAnalyzer(t *testing.T, analyses map[string]*compileTaskAnalysis) *i
 
 var sampleTaskAnalyses = map[string]*compileTaskAnalysis{
 	"check https://example.com and print its status": {
-		ShouldCompile:          true,
-		DeterministicStepCount: 2,
-		Reason:                 "fixed URL check and fixed message",
+		Reason: "fixed URL check and fixed message",
 		Steps: []compiledTaskStep{
 			{Kind: "deterministic", Deterministic: true, Tool: "web_get", Description: "fetch the URL"},
 			{Kind: "notify", Deterministic: true, Description: "print the status"},
 		},
 	},
 	"fetch the release notes and summarize them": {
-		ShouldCompile:          false,
-		DeterministicStepCount: 1,
-		Reason:                 "summarizing needs judgment",
+		Reason: "summarizing needs judgment",
 		Steps: []compiledTaskStep{
 			{Kind: "deterministic", Deterministic: true, Tool: "web_get", Description: "fetch the release notes"},
 			{Kind: "agent_run", Deterministic: false, Description: "summarizing the results"},
 		},
 	},
 	"find something interesting to tell me": {
-		ShouldCompile:  false,
 		NeedsDiscovery: true,
 		Reason:         "open-ended search",
 		Steps: []compiledTaskStep{
 			{Kind: "agent_run", Deterministic: false, Description: "find something interesting"},
 		},
 	},
+	"Say hello": {
+		Reason: "a single fixed notify step that can be implemented as print(\"Hello\")",
+		Steps: []compiledTaskStep{
+			{Kind: "notify", Deterministic: true, Description: "print a fixed greeting"},
+		},
+	},
+	"look busy": {
+		NeedsDiscovery: true,
+		Reason:         "needs discovery",
+		Steps: []compiledTaskStep{
+			{Kind: "deterministic", Deterministic: true, Description: "check something"},
+		},
+	},
 	"summarize every new email": {
-		ShouldCompile:  false,
 		UnboundedInput: true,
 		Reason:         "summaries need judgment",
 		Steps: []compiledTaskStep{
@@ -182,9 +189,64 @@ func TestTaskAnalyzeToolViaDispatcher(t *testing.T) {
 	assert.True(t, res.WillPrecompile)
 }
 
+func TestTaskAnalyzePrecompilesSingleDeterministicStep(t *testing.T) {
+	stubTaskAnalyzer(t, sampleTaskAnalyses)
+
+	res, err := analyzeTaskForEditor(context.Background(), taskAnalyzeArgs{Agent: "bot", Content: "Say hello", Precompile: true})
+	require.NoError(t, err)
+	assert.Equal(t, taskVerdictDeterministic, res.Verdict)
+	assert.True(t, res.WillPrecompile)
+	assert.Zero(t, res.Estimate.MaxTokens)
+
+	unsaved, err := analyzeTaskForEditor(context.Background(), taskAnalyzeArgs{Agent: "bot", Content: "Say hello"})
+	require.NoError(t, err)
+	assert.Equal(t, taskVerdictDeterministic, unsaved.Verdict)
+	assert.False(t, unsaved.WillPrecompile)
+}
+
+func TestTaskAnalyzeAllDeterministicStepsAreNeverNondeterministic(t *testing.T) {
+	stubTaskAnalyzer(t, sampleTaskAnalyses)
+
+	for prompt, analysis := range sampleTaskAnalyses {
+		allDeterministic := len(analysis.Steps) > 0
+		for _, step := range analysis.Steps {
+			allDeterministic = allDeterministic && step.Deterministic
+		}
+		if !allDeterministic || analysis.NeedsDiscovery {
+			continue
+		}
+		res, err := analyzeTaskForEditor(context.Background(), taskAnalyzeArgs{Agent: "bot", Content: prompt, Precompile: true})
+		require.NoError(t, err)
+		assert.Equal(t, taskVerdictDeterministic, res.Verdict, prompt)
+		assert.True(t, res.WillPrecompile, prompt)
+	}
+
+	discovery, err := analyzeTaskForEditor(context.Background(), taskAnalyzeArgs{Agent: "bot", Content: "look busy", Precompile: true})
+	require.NoError(t, err)
+	assert.Equal(t, taskVerdictNonDeterministic, discovery.Verdict, "discovery is nondeterminism even when every listed step is deterministic")
+	assert.False(t, discovery.WillPrecompile)
+}
+
+func TestTaskDeterminismPromptHasNoStepThresholdOrTargetReason(t *testing.T) {
+	assert.NotContains(t, taskDeterminismSystemPrompt, "more than one deterministic step")
+	assert.NotContains(t, taskDeterminismSystemPrompt, "should_compile")
+	assert.Contains(t, taskDeterminismSystemPrompt, "never mention the output target in the reason")
+}
+
+func TestAnalyzeTaskDeterminismCountsStepsNotTheModelsCount(t *testing.T) {
+	provider := &recordingProvider{events: []llm.Event{
+		{Type: llm.EventTypeText, Text: `{"deterministic_step_count":5,"steps":[{"kind":"notify","deterministic":true}]}`},
+		{Type: llm.EventTypeDone},
+	}}
+	analysis, err := analyzeTaskDeterminism(context.Background(), provider, "test/model", "Say hello", "", nil, false)
+	require.NoError(t, err)
+	assert.Equal(t, 1, analysis.DeterministicStepCount)
+	assert.True(t, analysis.allowsCompile())
+}
+
 func TestAnalyzeTaskDeterminismParsesAndCountsUsage(t *testing.T) {
 	provider := &recordingProvider{events: []llm.Event{
-		{Type: llm.EventTypeText, Text: "```json\n{\"should_compile\":true,\"unbounded_input\":false,\"steps\":[{\"kind\":\"deterministic\",\"deterministic\":true},{\"kind\":\"notify\",\"deterministic\":true}]}\n```"},
+		{Type: llm.EventTypeText, Text: "```json\n{\"unbounded_input\":false,\"steps\":[{\"kind\":\"deterministic\",\"deterministic\":true},{\"kind\":\"notify\",\"deterministic\":true}]}\n```"},
 		{Type: llm.EventTypeUsage, Usage: &llm.Usage{InputTokens: 50, OutputTokens: 7}},
 		{Type: llm.EventTypeDone},
 	}}
@@ -222,7 +284,7 @@ func TestCompileTaskProviderRunsCLIModelsThroughTheirCLI(t *testing.T) {
 	var gotModel, gotSystem, gotPrompt string
 	completeCLIText = func(_ context.Context, model, system, prompt string) (string, error) {
 		gotModel, gotSystem, gotPrompt = model, system, prompt
-		return `{"should_compile":true,"steps":[{"kind":"deterministic","deterministic":true},{"kind":"notify","deterministic":true}]}`, nil
+		return `{"steps":[{"kind":"deterministic","deterministic":true},{"kind":"notify","deterministic":true}]}`, nil
 	}
 
 	provider, err := compileTaskProvider("claude/opus")
