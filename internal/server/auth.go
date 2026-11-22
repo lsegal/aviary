@@ -72,8 +72,16 @@ func LoadToken() (string, error) {
 //   - aviary_session cookie
 //   - ?token=<token> query param (for APIs like EventSource that cannot set
 //     custom headers)
-func BearerMiddleware(token string, next http.Handler) http.Handler {
+//
+// When authDisabled reports true (server.disable_token_auth), every request
+// is let through without a token.
+func BearerMiddleware(token string, authDisabled func() bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if tokenAuthDisabled(authDisabled) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Check Authorization header.
 		if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 			if strings.TrimPrefix(auth, "Bearer ") == token {
@@ -101,11 +109,23 @@ func BearerMiddleware(token string, next http.Handler) http.Handler {
 	})
 }
 
+// tokenAuthDisabled reports whether token checks are turned off.
+func tokenAuthDisabled(authDisabled func() bool) bool {
+	return authDisabled != nil && authDisabled()
+}
+
 // LoginHandler handles POST /api/login — validates token, sets session cookie.
-func LoginHandler(token string) http.HandlerFunc {
+// When token authentication is disabled, any login succeeds without setting
+// a session cookie.
+func LoginHandler(token string, authDisabled func() bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if tokenAuthDisabled(authDisabled) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprintln(w, `{"ok":true}`)
 			return
 		}
 		// Accept token from JSON body, form value, or Authorization header.

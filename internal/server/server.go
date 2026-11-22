@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/slack-go/slack"
@@ -43,6 +44,7 @@ var ErrRestartRequired = errors.New("server restart required")
 type Server struct {
 	cfg               *config.Config
 	token             string
+	authDisabled      atomic.Bool
 	mux               *http.ServeMux
 	httpSrv           *http.Server
 	runCtx            context.Context
@@ -71,6 +73,7 @@ func New(cfg *config.Config, token string) *Server {
 		hardRestartCh:     make(chan struct{}, 1),
 		reexecCh:          make(chan struct{}, 1),
 	}
+	s.authDisabled.Store(cfg.Server.DisableTokenAuth)
 	configureCLIProviders(cfg)
 	configureRestartGate(cfg)
 	// Create auth store first — needed for both MCP deps and LLM token refresh.
@@ -259,6 +262,7 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 	deps := mcp.GetDeps()
 	deps.Browser = s.brw
 	s.cfg = newCfg
+	s.authDisabled.Store(newCfg.Server.DisableTokenAuth)
 	if serverSettingsChanged(oldCfg, newCfg) {
 		slog.Info("server: settings changed, rotating listener")
 		select {
@@ -274,24 +278,24 @@ func (s *Server) registerRoutes() {
 	mcpHandler := mcp.HTTPHandler(mcpSrv)
 
 	// Login does not require auth.
-	s.mux.HandleFunc("/api/login", LoginHandler(s.token))
+	s.mux.HandleFunc("/api/login", LoginHandler(s.token, s.authDisabled.Load))
 
 	// Health check (public) and WebSocket keepalive (auth via session cookie / ?token=).
-	s.mux.HandleFunc("/api/health", healthHandler)
-	s.mux.HandleFunc("/api/ws", wsHandler(s.token))
+	s.mux.HandleFunc("/api/health", healthHandler(s.authDisabled.Load))
+	s.mux.HandleFunc("/api/ws", wsHandler(s.token, s.authDisabled.Load))
 
 	// MCP endpoint: wrapped in bearer middleware.
-	s.mux.Handle("/mcp", BearerMiddleware(s.token, mcpHandler))
-	s.mux.Handle("/mcp/", BearerMiddleware(s.token, mcpHandler))
+	s.mux.Handle("/mcp", BearerMiddleware(s.token, s.authDisabled.Load, mcpHandler))
+	s.mux.Handle("/mcp/", BearerMiddleware(s.token, s.authDisabled.Load, mcpHandler))
 
 	// Log stream SSE endpoint + history REST endpoint.
-	s.mux.Handle("/api/logs", BearerMiddleware(s.token, http.HandlerFunc(logsHandler)))
-	s.mux.Handle("/api/logs/history", BearerMiddleware(s.token, http.HandlerFunc(logsHistoryHandler)))
+	s.mux.Handle("/api/logs", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(logsHandler)))
+	s.mux.Handle("/api/logs/history", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(logsHistoryHandler)))
 
 	// Daemons status + log-stream endpoints.
-	s.mux.Handle("/api/daemons", BearerMiddleware(s.token, http.HandlerFunc(s.daemonsHandler)))
-	s.mux.Handle("/api/daemons/logs", BearerMiddleware(s.token, http.HandlerFunc(s.daemonLogsHandler)))
-	s.mux.Handle("/api/daemons/restart", BearerMiddleware(s.token, http.HandlerFunc(s.daemonRestartHandler)))
+	s.mux.Handle("/api/daemons", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.daemonsHandler)))
+	s.mux.Handle("/api/daemons/logs", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.daemonLogsHandler)))
+	s.mux.Handle("/api/daemons/restart", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.daemonRestartHandler)))
 
 	// Web UI: SPA served from embedded web/dist.
 	s.mux.Handle("/", webFileServer())
@@ -1030,6 +1034,7 @@ func serverSettingsChanged(oldCfg, newCfg *config.Config) bool {
 	return oldCfg.Server.Port != newCfg.Server.Port ||
 		config.EffectiveServerExternalAccess(oldCfg.Server) != config.EffectiveServerExternalAccess(newCfg.Server) ||
 		oldCfg.Server.NoTLS != newCfg.Server.NoTLS ||
+		oldCfg.Server.DisableTokenAuth != newCfg.Server.DisableTokenAuth ||
 		tlsConfigChanged(oldCfg.Server.TLS, newCfg.Server.TLS)
 }
 
