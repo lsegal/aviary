@@ -89,7 +89,7 @@ func ModelPath(model string) string {
 // directory and then on PATH.
 func Detect(model string) Status {
 	if model == "" {
-		model = DefaultModel
+		model = defaultModel()
 	}
 	st := Status{
 		Whisper: findBinary("whisper-cli", whisperNames...),

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -15,6 +16,20 @@ import (
 
 // DefaultModel is the whisper.cpp model used when none is configured.
 const DefaultModel = "base.en"
+
+// ModelEnv names the environment variable that sets the model used when
+// aviary.yaml configures none. The Docker image points it at its bundled
+// model file.
+const ModelEnv = "AVIARY_CONFIG_TRANSCRIPTION_MODEL"
+
+// defaultModel is the model used when none is configured: ModelEnv when set,
+// otherwise DefaultModel.
+func defaultModel() string {
+	if model := strings.TrimSpace(os.Getenv(ModelEnv)); model != "" {
+		return model
+	}
+	return DefaultModel
+}
 
 // InstallHint tells a user how to install what transcription needs.
 const InstallHint = "run `aviary deps install`, or Install on the System > Tools page"
@@ -76,7 +91,7 @@ func SettingsFrom(cfg config.TranscriptionConfig) Settings {
 		s.Engine = "local"
 	}
 	if s.Model == "" {
-		s.Model = DefaultModel
+		s.Model = defaultModel()
 	}
 	if s.Language == "" {
 		s.Language = "auto"
