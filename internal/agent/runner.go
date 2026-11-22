@@ -414,6 +414,11 @@ func (r *AgentRunner) promptCore(
 					systemPrompt += "\n\n" + block
 				}
 			}
+			if chType, _, _, ok := ChannelSessionFromContext(promptCtx); ok {
+				if guidance := channelFormattingGuidance(chType); guidance != "" {
+					systemPrompt += "\n\n" + guidance
+				}
+			}
 			if r.isTaskSession(sessionID) {
 				systemPrompt = "IMPORTANT: This is a non-interactive job run. Do not stop to ask questions or follow-ups unless the request explicitly asks you to do so.\n\n" + systemPrompt
 			}

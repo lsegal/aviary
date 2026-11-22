@@ -221,3 +221,74 @@ func TestUpcomingLimitsPerTask(t *testing.T) {
 	assert.Equal(t, 3, perTask["alpha/fast"])
 	assert.Equal(t, 2, perTask["alpha/slow"])
 }
+
+// listedTask returns key's entry in ListTasks.
+func listedTask(t *testing.T, s *Scheduler, key string) domain.ScheduledTask {
+	t.Helper()
+	for _, task := range s.ListTasks() {
+		if task.ID == key {
+			return task
+		}
+	}
+	t.Fatalf("task %q not listed", key)
+	return domain.ScheduledTask{}
+}
+
+// fireArmed runs key's armed timer as if it went off on time.
+func fireArmed(t *testing.T, s *Scheduler, key string) {
+	t.Helper()
+	s.mu.Lock()
+	a := s.armed[key]
+	s.mu.Unlock()
+	require.NotNil(t, a)
+	s.onTimer(key, a.gen)
+}
+
+func TestListTasksNextRunAroundAFire(t *testing.T) {
+	t.Run("once", func(t *testing.T) {
+		setupSchedulerDataDir(t)
+		now := time.Date(2026, 11, 21, 19, 0, 0, 0, time.UTC)
+		s := newPolicyScheduler(t, &now)
+		at := now.Add(11 * time.Minute)
+		s.Reconcile(singleTask(config.TaskConfig{Name: "t", RunOnce: true, StartAt: at.Format(time.RFC3339), Prompt: "p"}))
+		key := "alpha/t"
+
+		before := listedTask(t, s, key)
+		require.NotNil(t, before.NextRun)
+		assert.True(t, at.Equal(*before.NextRun))
+
+		now = at
+		fireArmed(t, s, key)
+
+		// The fired one-time trigger has no next run; its run in flight is
+		// in the history, which is what the board shows while it runs.
+		during := listedTask(t, s, key)
+		assert.Nil(t, during.NextRun)
+		require.NotEmpty(t, during.History)
+		assert.Equal(t, domain.TaskRunQueued, during.History[len(during.History)-1].Status)
+		assert.NotContains(t, s.armed, key)
+	})
+
+	t.Run("recurring", func(t *testing.T) {
+		setupSchedulerDataDir(t)
+		now := time.Date(2026, 11, 21, 19, 0, 0, 0, time.UTC)
+		s := newPolicyScheduler(t, &now)
+		s.Reconcile(singleTask(config.TaskConfig{Name: "t", Every: "1h", Prompt: "p"}))
+		key := "alpha/t"
+
+		before := listedTask(t, s, key)
+		require.NotNil(t, before.NextRun)
+		fired := *before.NextRun
+
+		now = fired
+		fireArmed(t, s, key)
+
+		// A recurring trigger re-arms as it fires, so its next fire time is
+		// listed while the run it just started is still in flight.
+		during := listedTask(t, s, key)
+		require.NotNil(t, during.NextRun)
+		assert.True(t, fired.Add(time.Hour).Equal(*during.NextRun), "next run %s", during.NextRun)
+		require.NotEmpty(t, during.History)
+		assert.Equal(t, domain.TaskRunQueued, during.History[len(during.History)-1].Status)
+	})
+}
