@@ -348,6 +348,17 @@ type TaskConfig struct {
 	// Model overrides the project agent's default model for a project task's
 	// runs; empty runs them with the agent's own model.
 	Model string `yaml:"model,omitempty"    json:"model,omitempty"`
+	// Precompile asks for a project task's prompt to be compiled into a
+	// script that runs in the job's clone without the model. Unset follows
+	// scheduler.precompute_tasks. Prompt tasks are compiled once on create
+	// and become script tasks instead, so only project tasks keep this.
+	Precompile *bool `yaml:"precompile,omitempty" json:"precompile,omitempty"`
+	// Compiled is the project task's compiled Lua script, empty when its
+	// prompt did not pass the determinism gate, and CompiledKey identifies
+	// the prompt, project and tool set it was compiled from, so a change to
+	// any of them recompiles it.
+	Compiled    string `yaml:"compiled,omitempty"     json:"compiled,omitempty"`
+	CompiledKey string `yaml:"compiled_key,omitempty" json:"compiled_key,omitempty"`
 	// IdleTimeout is how long a prompt run may go without any output before
 	// it is stopped and marked failed, e.g. "30m". "0" disables it. Empty
 	// uses DefaultTaskIdleTimeout.
