@@ -490,26 +490,6 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 		}
 	}
 
-	var stopTyping context.CancelFunc
-	if ts, ok := ch.(channels.TypingSender); ok && ts.ShowTyping() {
-		_ = ts.SendTyping(msg.Channel, false)
-		typingCtx, cancel := context.WithCancel(ctx)
-		stopTyping = cancel
-		go func() {
-			ticker := time.NewTicker(10 * time.Second)
-			defer ticker.Stop()
-			defer ts.SendTyping(msg.Channel, true) //nolint:errcheck
-			for {
-				select {
-				case <-typingCtx.Done():
-					return
-				case <-ticker.C:
-					_ = ts.SendTyping(msg.Channel, false)
-				}
-			}
-		}()
-	}
-
 	// Let the platform stop this run (e.g. Slack's native Stop control).
 	// Cancelling runCtx cancels the run the same way agent.StopSession does,
 	// but only for this channel thread, not other threads sharing the session.
@@ -521,6 +501,11 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 			unregister()
 			cancelRun()
 		}
+	}
+
+	var typing *channelTyping
+	if ts, ok := ch.(channels.TypingSender); ok && ts.ShowTyping() {
+		typing = startChannelTyping(runCtx, ts, msg.Channel)
 	}
 
 	var clearAssistantStatus func()
@@ -537,8 +522,8 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 	}
 	finish := func() {
 		endRun()
-		if stopTyping != nil {
-			stopTyping()
+		if typing != nil {
+			typing.Stop()
 		}
 		if clearAssistantStatus != nil {
 			clearAssistantStatus()
