@@ -161,8 +161,6 @@
 									<template v-if="filters.length">{{ shownTotal }} of {{ allItems }} {{ allItems === 1 ? noun : `${noun}s` }}</template>
 									<template v-else>{{ shownTotal }} {{ shownTotal === 1 ? noun : `${noun}s` }}</template>
 								</span>
-								<router-link v-if="!aggregate && scheduleAgent" :to="agentTaskPath(scheduleAgent)" data-testid="manage-scheduled-tasks"
-									class="text-blue-600 hover:underline dark:text-blue-400">Manage in Scheduled Tasks</router-link>
 								<nav v-if="!kanban && (searching || pageCount > 1)" class="flex items-center gap-3 sm:ml-auto" aria-label="Job pages">
 									<button type="button" aria-label="Previous page" title="Previous page" class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 										:disabled="page === 0" @click="page--">
@@ -293,7 +291,7 @@ import {
 	targetURL,
 } from "../lib/projects";
 import { shortVersion } from "../lib/version";
-import { agentTaskPath, useSettingsStore } from "../stores/settings";
+import { useSettingsStore } from "../stores/settings";
 
 // A selected state chip fills with that state's color; Starting is orange.
 const FILTER_ACTIVE: Record<BoardFilter, string> = {

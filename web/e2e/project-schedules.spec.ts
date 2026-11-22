@@ -1129,7 +1129,7 @@ test("a mobile agent board's Filter panel has no Scheduled option", async ({
 	);
 });
 
-test("the Board | Schedules toggle is gone and the board links to Scheduled Tasks", async ({
+test("the Board | Schedules toggle and Scheduled Tasks link are gone", async ({
 	page,
 }) => {
 	await setup(page);
@@ -1139,9 +1139,16 @@ test("the Board | Schedules toggle is gone and the board links to Scheduled Task
 		page.getByRole("tablist", { name: "Project views" }),
 	).toHaveCount(0);
 	await expect(page.getByRole("tab", { name: /^Schedules/ })).toHaveCount(0);
+	// The sidebar's Scheduled Tasks page lists every agent task (#906).
 	await expect(
 		page.getByRole("link", { name: "Manage in Scheduled Tasks" }),
-	).toHaveAttribute("href", "/agents/assistant/tasks");
+	).toHaveCount(0);
+	await expect(page.getByTestId("manage-scheduled-tasks")).toHaveCount(0);
+	await expect(
+		page
+			.getByTestId("sidebar-nav")
+			.locator('a[href="/agents/assistant/tasks"]'),
+	).toHaveCount(1);
 });
 
 for (const query of ["tab=schedules", "view=schedules"])
