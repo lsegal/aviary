@@ -146,7 +146,11 @@ test("records, transcribes, and inserts the transcript for review", async ({
 	]);
 	// Nothing was sent: the user reviews and sends it.
 	expect(runs).toHaveLength(0);
-	expect(await page.evaluate(() => (window as any).__micStops)).toBe(1);
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { __micStops: number }).__micStops,
+		),
+	).toBe(1);
 });
 
 test("inserts the transcript at the caret", async ({ page }) => {
@@ -176,7 +180,11 @@ test("Cancel discards the recording", async ({ page }) => {
 	await expect(mic).toHaveAccessibleName("Record voice message");
 	await expect(input).toHaveValue("");
 	expect(uploads).toBe(0);
-	expect(await page.evaluate(() => (window as any).__micStops)).toBe(1);
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { __micStops: number }).__micStops,
+		),
+	).toBe(1);
 });
 
 test("explains a denied microphone permission", async ({ page }) => {
@@ -260,8 +268,7 @@ test("shows a failed transcription", async ({ page }) => {
 test("chat history shows the full voice transcript with an audio player", async ({
 	page,
 }) => {
-	const transcript =
-		"So here is a long voice note. ".repeat(20).trim() + " The end.";
+	const transcript = `${"So here is a long voice note. ".repeat(20).trim()} The end.`;
 	const path = "/data/media/incoming/signal/1_voice.ogg";
 	await setAuthToken(page);
 	await mockMCP(page, {
