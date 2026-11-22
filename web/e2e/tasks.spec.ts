@@ -314,3 +314,66 @@ test("System → Jobs redirects to Scheduled Tasks and has no nav entry", async 
 	);
 	await expect(page.locator('a[href="/system/jobs"]')).toHaveCount(0);
 });
+
+test("an open running job leaves Running and shows why it failed", async ({
+	page,
+}) => {
+	await page.clock.install();
+	const running = job(7, "daily-report", "in_progress", 60_000);
+	let current: Record<string, unknown> = running;
+	await setAuthToken(page);
+	await mockMCP(page, {
+		agent_list: [
+			{ id: "assistant", name: "assistant", model: "x/y", state: "idle" },
+		],
+		config_get: {
+			agents: [
+				{
+					name: "assistant",
+					model: "x/y",
+					tasks: [
+						{
+							name: "daily-report",
+							trigger: "daily",
+							at: "02:00",
+							prompt: "write the report",
+						},
+					],
+				},
+			],
+		},
+		config_validate: [],
+		auth_list: [],
+		tool_list: [],
+		session_list: [],
+		job_query: () => [current],
+		job_logs: "error: run timed out: no output received for 15m0s",
+		task_compile_query: [],
+		task_preview: { description: "daily at 02:00 (UTC)", next: [] },
+	});
+	await page.goto("/agents/assistant/tasks");
+	await page.getByTestId("more-analytics-toggle").click();
+	await page
+		.getByTestId("job-queue")
+		.getByText("assistant/daily-report")
+		.click();
+
+	await expect(page.getByText("Waiting for output…")).toBeVisible();
+	await expect(
+		page.getByText(
+			"A run with no output for 15m is stopped and marked failed.",
+		),
+	).toBeVisible();
+
+	current = {
+		...running,
+		status: "failed",
+		error: "run timed out: no output received for 15m0s",
+	};
+	await page.clock.fastForward(16_000);
+
+	await expect(page.getByTestId("job-error")).toContainText(
+		"run timed out: no output received for 15m0s",
+	);
+	await expect(page.getByText("Waiting for output…")).toHaveCount(0);
+});
