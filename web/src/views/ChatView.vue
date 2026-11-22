@@ -76,9 +76,9 @@
 										</a>
 									</template>
 									<span v-if="item.msg.text && item.msg.role === 'user'"
-										class="whitespace-pre-wrap">{{ item.msg.text }}</span>
+										class="whitespace-pre-wrap [&_a]:underline [&_a]:underline-offset-2" v-html="renderLinkedText(item.msg.text)" />
 									<span v-if="item.msg.text && item.msg.role === 'assistant' && item.msg.isError"
-										class="whitespace-pre-wrap font-mono text-sm">{{ item.msg.text }}</span>
+										class="whitespace-pre-wrap font-mono text-sm [&_a]:underline" v-html="renderLinkedText(item.msg.text)" />
 									<div v-if="item.msg.text && item.msg.role === 'assistant' && !item.msg.isError"
 										class="prose dark:prose-invert max-w-none" v-html="renderMarkdown(item.msg.text)" />
 									<span v-if="item.isLastInGroup && item.msg.timestamp"
@@ -92,7 +92,7 @@
 									class="relative z-[1] -mt-2 mr-6 flex justify-end">
 									<div
 										class="inline-flex max-w-lg flex-col items-start gap-1 rounded-b-xl rounded-tl-xl border border-red-200 bg-red-50 px-3 py-1.5 text-left text-red-700 shadow-sm dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-										<span class="whitespace-pre-wrap font-mono text-sm">{{ item.error.text }}</span>
+										<span class="whitespace-pre-wrap font-mono text-sm [&_a]:underline" v-html="renderLinkedText(item.error.text)" />
 										<div class="flex items-center gap-1.5 self-end text-xs text-red-400 dark:text-red-500">
 											<span v-if="item.error.timestamp">
 												{{ formatTime(item.error.timestamp) }}{{ item.error.model ? ' | ' + item.error.model : '' }}
@@ -172,7 +172,7 @@ import {
 } from "../components/chat/drafts";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
-import { renderMarkdown } from "../lib/markdown";
+import { renderLinkedText, renderMarkdown } from "../lib/markdown";
 import { useAgentsStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
 import {
