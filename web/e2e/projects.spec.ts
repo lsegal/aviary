@@ -3031,6 +3031,78 @@ test("job counts fold into one compact row on phones (#910)", async ({
 	await expect(page.getByTestId("stat-row")).toHaveCount(0);
 });
 
+test("an overflowing compact row keeps its scrollbar off the chips and fades its cut edge (#917)", async ({
+	page,
+}) => {
+	await setup(page, () => ({
+		...STATUS,
+		jobs: { ...STATUS.jobs, merged_24h: 65 },
+		concurrency: 20,
+	}));
+	const row = page.getByTestId("stat-row");
+	const mask = () => row.evaluate((el) => getComputedStyle(el).maskImage);
+	for (const width of [320, 1280]) {
+		await page.setViewportSize({ width, height: 844 });
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		await page.evaluate(() =>
+			localStorage.setItem("aviary.projects.statsCompact", "1"),
+		);
+		await page.reload();
+		await expect(row).toBeVisible();
+		const layout = await row.evaluate((section: HTMLElement) => {
+			const box = section.getBoundingClientRect();
+			const chips = [...section.children].map((chip) =>
+				chip.getBoundingClientRect(),
+			);
+			const scrollbar = section.offsetHeight - section.clientHeight;
+			return {
+				overflows: section.scrollWidth > section.clientWidth,
+				tops: new Set(chips.map((chip) => Math.round(chip.top))).size,
+				// Nothing is clipped vertically.
+				clipped: chips.some(
+					(chip) => chip.top < box.top || chip.bottom > box.bottom,
+				),
+				// Space between the chips' bottom borders and where the
+				// scrollbar starts, overlay or not.
+				gap:
+					box.bottom -
+					scrollbar -
+					Math.max(...chips.map((chip) => chip.bottom)),
+			};
+		});
+		expect(layout.tops, `one line at ${width}px`).toBe(1);
+		expect(layout.clipped, `clipped at ${width}px`).toBe(false);
+		expect(layout.gap, `scrollbar gap at ${width}px`).toBeGreaterThanOrEqual(4);
+		if (!layout.overflows) {
+			expect(await mask(), `no fade at ${width}px`).toBe("none");
+			continue;
+		}
+		// Only the right edge fades at the start, both edges mid-way, and only
+		// the left once scrolled to the end.
+		const fades = async () => {
+			const m = await mask();
+			return {
+				left: /^linear-gradient\(to right, rgba\(0, 0, 0, 0\)/.test(m),
+				right: /rgba\(0, 0, 0, 0\)\)$/.test(m),
+			};
+		};
+		expect(await fades()).toEqual({ left: false, right: true });
+		await row.evaluate((el) => {
+			el.scrollLeft = 20;
+		});
+		await expect.poll(fades).toEqual({ left: true, right: true });
+		await row.evaluate((el) => {
+			el.scrollLeft = el.scrollWidth;
+		});
+		await expect.poll(fades).toEqual({ left: true, right: false });
+	}
+	// The narrow phone has to overflow for this test to mean anything.
+	await page.setViewportSize({ width: 320, height: 844 });
+	await expect
+		.poll(() => row.evaluate((el) => el.scrollWidth > el.clientWidth))
+		.toBe(true);
+});
+
 for (const { name, width } of [
 	{ name: "desktop", width: 1440 },
 	{ name: "narrow desktop", width: 1024 },
