@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -263,5 +265,112 @@ func TestJobActionsForScheduledJobs(t *testing.T) {
 	}
 	if issue := core.JobActionsFor(JobSnapshot{Kind: core.JobKindIssue, Status: "active"}); !issue.Pause {
 		t.Fatal("issue jobs lost Pause")
+	}
+}
+
+// stubProjectClone makes cloneProjectRepository record the repository instead
+// of running gh, and points the engine's clones at a temp directory.
+func stubProjectClone(t *testing.T, w *Engine) (root string, cloned *[]string) {
+	t.Helper()
+	root = t.TempDir()
+	w.clones.mu.Lock()
+	w.clones.tempDirs = []string{root}
+	w.clones.mu.Unlock()
+	var repositories []string
+	prev := cloneProjectRepository
+	cloneProjectRepository = func(_ context.Context, repository, dir string) error {
+		repositories = append(repositories, repository)
+		return os.WriteFile(filepath.Join(dir, "README.md"), []byte("cloned"), 0o600)
+	}
+	t.Cleanup(func() { cloneProjectRepository = prev })
+	return root, &repositories
+}
+
+func TestEngineRunsPrecompiledProjectTaskWithoutTheAgent(t *testing.T) {
+	runner := &scheduledRunner{started: make(chan Issue, 1)}
+	w, ctx := startScheduledEngine(t, runner)
+	root, cloned := stubProjectClone(t, w)
+	fire := time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC)
+	var checkout string
+	run := scheduler.ProjectRun{TaskID: "bot/stale", Name: "stale", Project: "o/r", Prompt: "Label stale issues", Fire: fire,
+		RunCompiled: func(ctx context.Context, clone func(context.Context) (string, error), logf func(string, ...any)) (string, error) {
+			dir, err := clone(ctx)
+			if err != nil {
+				return "", err
+			}
+			checkout = dir
+			if _, err := os.Stat(filepath.Join(dir, "README.md")); err != nil {
+				t.Errorf("the script does not run in the clone: %v", err)
+			}
+			logf("labeled #3")
+			return "Labeled 1 stale issue", nil
+		}}
+
+	summary, err := w.runProjectTask(ctx, run, "o/r", AgentSession{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary != "Labeled 1 stale issue" {
+		t.Fatalf("summary = %q", summary)
+	}
+	select {
+	case issue := <-runner.started:
+		t.Fatalf("the agent ran a precompiled task: %+v", issue)
+	default:
+	}
+	if len(*cloned) != 1 || (*cloned)[0] != "o/r" {
+		t.Fatalf("cloned %v", *cloned)
+	}
+	if filepath.Dir(checkout) != root {
+		t.Fatalf("clone %s is not under the clone root %s", checkout, root)
+	}
+	if _, err := os.Stat(checkout); !os.IsNotExist(err) {
+		t.Fatalf("the clone was left behind: %v", err)
+	}
+	job, ok := scheduledJob(w, int(fire.Unix()))
+	if !ok || job.Status != "complete" || !strings.Contains(job.Log, "labeled #3") {
+		t.Fatalf("job = %+v", job)
+	}
+}
+
+func TestEnginePrecompiledProjectTaskFallsBackToTheAgent(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		err     error
+		failure bool
+	}{
+		{name: "script failure", err: errors.New("lua: exec gh: exit status 1"), failure: true},
+		{name: "not deterministic", err: scheduler.ErrProjectTaskNotCompiled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &scheduledRunner{started: make(chan Issue, 1)}
+			w, ctx := startScheduledEngine(t, runner)
+			stubProjectClone(t, w)
+			fire := time.Date(2026, 11, 21, 10, 0, 0, 0, time.UTC)
+			run := scheduler.ProjectRun{TaskID: "bot/ci", Name: "ci", Project: "o/r", Prompt: "Rerun flaky CI", Fire: fire,
+				RunCompiled: func(ctx context.Context, clone func(context.Context) (string, error), _ func(string, ...any)) (string, error) {
+					if tc.failure {
+						if _, err := clone(ctx); err != nil {
+							return "", err
+						}
+					}
+					return "", tc.err
+				}}
+
+			summary, err := w.runProjectTask(ctx, run, "o/r", AgentSession{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if summary != "Opened issue #12 for the stale lockfile" {
+				t.Fatalf("summary = %q, want the agent's", summary)
+			}
+			if issue := <-runner.started; issue.Prompt != "Rerun flaky CI" {
+				t.Fatalf("agent got %+v", issue)
+			}
+			job, _ := scheduledJob(w, int(fire.Unix()))
+			if got := strings.Contains(job.Log, "precompiled script failed"); got != tc.failure {
+				t.Fatalf("log records the failure = %v, want %v:\n%s", got, tc.failure, job.Log)
+			}
+		})
 	}
 }
