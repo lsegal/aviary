@@ -41,9 +41,8 @@ type SlackChannel struct {
 	userNames       map[string]string
 	channelAliases  map[string]string
 	channelNames    map[string]string
-	seenMu          sync.Mutex
-	seenMessages    map[string]time.Time
-	seenEvents      map[string]time.Time
+	seenMessages    receipts
+	seenEvents      receipts
 	stopOnce        sync.Once
 	cancel          context.CancelFunc
 	logSinkMu       sync.RWMutex
@@ -417,7 +416,7 @@ func (c *SlackChannel) dispatch(evt socketmode.Event) func() {
 // event_id was already handled is dropped.
 func (c *SlackChannel) handleEventsAPI(req *socketmode.Request, eventsAPI slackevents.EventsAPIEvent) {
 	if callback, ok := eventsAPI.Data.(*slackevents.EventsAPICallbackEvent); ok && callback != nil {
-		if c.seenReceipt(&c.seenEvents, callback.EventID) {
+		if c.seenEvents.seen(callback.EventID) {
 			retry, reason := 0, ""
 			if req != nil {
 				retry, reason = req.RetryAttempt, req.RetryReason
@@ -599,54 +598,15 @@ func (c *SlackChannel) seenMessage(channelID, from, timestamp, clientMsgID, text
 	for _, key := range keys {
 		// Record every key, so a later copy matching only one of them is
 		// still recognized.
-		if c.seenReceipt(&c.seenMessages, key) {
+		if c.seenMessages.seen(key) {
 			seen = true
 		}
 	}
 	return seen
 }
 
-// slackReceiptTTL outlasts Slack's retry schedule (immediately, after one
-// minute, and after five minutes).
-const slackReceiptTTL = 15 * time.Minute
-
-const (
-	slackMaxReceipts    = 1024
-	slackEventQueueSize = 256
-)
-
-// seenReceipt reports whether key was recorded in receipts within
-// slackReceiptTTL, recording it when it was not.
-func (c *SlackChannel) seenReceipt(receipts *map[string]time.Time, key string) bool {
-	if key == "" {
-		return false
-	}
-	now := time.Now()
-	c.seenMu.Lock()
-	defer c.seenMu.Unlock()
-	if *receipts == nil {
-		*receipts = make(map[string]time.Time)
-	}
-	m := *receipts
-	if seenAt, ok := m[key]; ok && now.Sub(seenAt) < slackReceiptTTL {
-		return true
-	}
-	m[key] = now
-	if len(m) > slackMaxReceipts {
-		for k, seenAt := range m {
-			if now.Sub(seenAt) >= slackReceiptTTL {
-				delete(m, k)
-			}
-		}
-		for k := range m {
-			if len(m) <= slackMaxReceipts {
-				break
-			}
-			delete(m, k)
-		}
-	}
-	return false
-}
+// slackEventQueueSize bounds the events acked but not yet handled.
+const slackEventQueueSize = 256
 
 func (c *SlackChannel) normalizeMessageRepliedEvent(ctx context.Context, event *slackevents.MessageEvent) (*slackevents.MessageEvent, bool) {
 	if event == nil || event.SubType != slack.MsgSubTypeMessageReplied || event.Message == nil {

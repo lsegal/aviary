@@ -1748,6 +1748,18 @@ func TestHandleIncomingChannelMessage_PlatformStopCancelsRun(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 	_, unregistered := status.snapshotRegistrations()
 	assert.Equal(t, 1, unregistered)
+	if runner, ok := srv.agents.Get("bot"); ok {
+		runner.Wait()
+	}
+	lines := thread.snapshot()
+	assert.Equal(t, 1, strings.Count(lines[len(lines)-1], "Stopped."), "a stopped run reports Stopped. once")
+}
+
+func TestSlackStopNote(t *testing.T) {
+	assert.Equal(t, "\nStopped.", slackStopNote(agent.StreamEvent{Type: agent.StreamEventStop}))
+	interrupted := slackStopNote(agent.StreamEvent{Type: agent.StreamEventStop, Interrupted: true})
+	assert.NotContains(t, interrupted, "Stopped.", "Aviary's own restart is not a stop request")
+	assert.Contains(t, interrupted, "restart")
 }
 
 func TestSlackThreadStreamer_GroupsCompletedToolCallsInCollapsedBlock(t *testing.T) {

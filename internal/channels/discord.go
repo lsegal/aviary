@@ -29,6 +29,7 @@ type DiscordChannel struct {
 	handlerMu       sync.RWMutex
 	stopOnce        sync.Once
 	done            chan struct{}
+	seenMessages    receipts
 	logSinkMu       sync.RWMutex
 	logSink         *LogSink
 }
@@ -209,6 +210,12 @@ func (c *DiscordChannel) discordBotUserID() string {
 
 func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string) bool {
 	if msg == nil || msg.Author == nil || msg.Author.Bot || (strings.TrimSpace(msg.Content) == "" && len(msg.Attachments) == 0) {
+		return false
+	}
+	// Discord sends MESSAGE_UPDATE for changes other than an edit, such as a
+	// link's embed loading, and replays events when a session resumes. Only a
+	// message whose content changed starts another run.
+	if c.seenMessages.seen(fmt.Sprintf("%s\x00%s\x00%d\x00%s", msg.ChannelID, msg.ID, len(msg.Attachments), msg.Content)) {
 		return false
 	}
 
