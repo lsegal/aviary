@@ -74,3 +74,28 @@ body {
 		animation: none;
 	}
 }
+
+/* Chat Markdown stays inside its bubble: wide code blocks and tables scroll,
+   long URLs and paths break, and inline code drops Typography's backticks. */
+.chat-markdown {
+	overflow-wrap: anywhere;
+}
+
+.chat-markdown :where(pre, table) {
+	max-width: 100%;
+	overflow-x: auto;
+}
+
+.chat-markdown :where(pre) {
+	overflow-wrap: normal;
+}
+
+.chat-markdown :where(table) {
+	display: block;
+	overflow-wrap: normal;
+}
+
+.chat-markdown :where(code)::before,
+.chat-markdown :where(code)::after {
+	content: none;
+}
