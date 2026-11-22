@@ -341,11 +341,11 @@
 </template>
 
 <script lang="ts">
-import { ref } from "vue";
+import { createRouteExpandedGroupState } from "../composables/useRouteExpandedGroup";
 
 // Shared by every page's layout, so the System section's collapse stays as
-// toggled. It starts collapsed; the overview lists every System page.
-const systemCollapsedState = ref(true);
+// toggled. It starts collapsed and opens on reaching a System page.
+const systemGroupState = createRouteExpandedGroupState();
 </script>
 
 <script setup lang="ts">
@@ -368,6 +368,7 @@ import {
 	markRaw,
 	onBeforeUnmount,
 	onMounted,
+	ref,
 	watch,
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -385,6 +386,7 @@ import {
 } from "../composables/useSidebarLayout";
 import { agentFilePath, useAgentFilesStore } from "../stores/agentFiles";
 import { projectOwner } from "../lib/projectSettings";
+import { useRouteExpandedGroup } from "../composables/useRouteExpandedGroup";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
 import { type ProjectSummary, projectPath } from "../lib/projects";
@@ -892,9 +894,12 @@ const systemActive = computed(
 	() => route.path.startsWith("/system/") && !isSettingsPath(route.path),
 );
 
+// System opens on each System page it lists, so the active page shows.
 // Collapsed, only the System header shows; it then stands in for whichever
 // System page is current.
-const systemCollapsed = systemCollapsedState;
+const systemCollapsed = useRouteExpandedGroup(systemGroupState, () =>
+	systemActive.value ? currentSystemChild.value?.key : undefined,
+);
 const systemHeaderActive = computed(
 	() =>
 		route.path === "/system/overview" ||
