@@ -309,12 +309,10 @@
           data-testid="sidebar-rail-system">
           <ServerStackIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
-        <template v-if="systemActive">
-          <SidebarRailItem v-for="child in systemChildren" :key="child.key" :label="child.label" :to="child.to"
-            :active="isChildActive(child)" :badge="child.running" :data-testid="`sidebar-rail-system-${child.key}`">
-            <SystemPageIcon :page-key="child.key" class="h-5 w-5" />
-          </SidebarRailItem>
-        </template>
+        <SidebarRailItem v-if="currentSystemChild" :label="currentSystemChild.label" :to="currentSystemChild.to"
+          active :badge="currentSystemChild.running" :data-testid="`sidebar-rail-system-${currentSystemChild.key}`">
+          <SystemPageIcon :page-key="currentSystemChild.key" class="h-5 w-5" />
+        </SidebarRailItem>
       </div>
       <div class="mt-auto flex flex-col items-center gap-1 pt-2">
         <SidebarRailItem v-if="upgradeAvailable" :label="railUpdateLabel" dot="bg-yellow-400"
@@ -875,6 +873,12 @@ const systemChildren = computed<NavChild[]>(() => [
 	...SYSTEM_PAGES.map(({ key, label, to }) => ({ key, label, to })),
 	...watchChildren.value,
 ]);
+
+// The rail shows only the current System page under System, in its own
+// icon, so the rail keeps room to rest the pointer and peek the sidebar.
+const currentSystemChild = computed(() =>
+	systemChildren.value.find((child) => isChildActive(child)),
+);
 
 // Settings' tabs live under /system but open from the gear menu instead.
 const systemActive = computed(
