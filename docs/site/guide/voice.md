@@ -15,6 +15,10 @@ aviary deps install
 
 This installs `whisper-cli` (Homebrew package `whisper-cpp`) and `ffmpeg` with Homebrew, or with winget on Windows, and downloads the configured model (default `base.en`) to `deps/whisper/` under Aviary's data directory. You can also click **Install** under **Voice transcription** on the **System > Tools** page. On systems without Homebrew or winget, install the two programs yourself, either on your `PATH` or in `deps/bin/` under Aviary's data directory.
 
+### Docker
+
+The official Docker image already includes everything transcription needs, so it works out of the box with no install step and no network access: `whisper-cli` (built from whisper.cpp), `ffmpeg`, and the `base.en` model at `/opt/aviary/models/ggml-base.en.bin`. The image's `AVIARY_CONFIG_TRANSCRIPTION_MODEL` environment variable points at that file and is used whenever `aviary.yaml` sets no `transcription.model`. To use another model, set `transcription.model` to a model name (and run `aviary deps install` to download it) or to the path of a ggml model file, for example one mounted into the container.
+
 Check what is installed with `aviary deps status`, or on **System > Tools**, which shows each piece, its path, and the model name.
 
 ## Channel voice messages
