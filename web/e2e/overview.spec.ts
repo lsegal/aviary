@@ -387,3 +387,30 @@ test("a System page keeps its icon in the rail and header, but not the sidebar l
 		.getByTestId("system-page-icon");
 	expect(await railIcon.locator("svg").innerHTML()).toBe(cardIcon);
 });
+
+test("stat cards are compact on phones and unchanged on desktop (#923)", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: AGENTS,
+		job_list: JOBS,
+		config_validate: [],
+	});
+	const cardSizes = () =>
+		page
+			.locator("main a[href='/agents']", { hasText: "Agents" })
+			.evaluate((card) => {
+				const css = getComputedStyle(card);
+				const value = card.children[1] as HTMLElement;
+				return {
+					padding: `${css.paddingTop} ${css.paddingLeft}`,
+					value: getComputedStyle(value).fontSize,
+				};
+			});
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto("/system/overview");
+	await expect(page.getByText("Config Validation")).toBeVisible();
+	expect(await cardSizes()).toEqual({ padding: "12px 16px", value: "24px" });
+	await page.setViewportSize({ width: 1280, height: 900 });
+	expect(await cardSizes()).toEqual({ padding: "20px 20px", value: "30px" });
+});
