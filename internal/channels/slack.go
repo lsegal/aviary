@@ -47,6 +47,9 @@ type SlackChannel struct {
 	cancel          context.CancelFunc
 	logSinkMu       sync.RWMutex
 	logSink         *LogSink
+	runStopsMu      sync.Mutex
+	runStops        map[string]map[uint64]func()
+	nextRunStopID   uint64
 }
 
 // NewSlackChannel creates a SlackChannel.
@@ -193,22 +196,113 @@ func (c *SlackChannel) ShowAssistantStatus() bool {
 	return c.showStatus
 }
 
-// SendAssistantStatus updates Slack's native assistant thread status. Passing
-// an empty status clears any existing indicator.
-func (c *SlackChannel) SendAssistantStatus(channel, threadTS, status string) error {
+// SetAssistantProcessing sets the Slack agent session for a thread to
+// processing (Slack shows "is working" with a Stop control) or back to active.
+func (c *SlackChannel) SetAssistantProcessing(channel, threadTS, initiatorUserID string, processing bool) error {
 	resolvedChannel, err := c.resolveDeliveryTarget(context.Background(), channel)
 	if err != nil {
 		return err
 	}
 	threadTS = strings.TrimSpace(threadTS)
 	if threadTS == "" {
-		return fmt.Errorf("slack assistant status requires a thread timestamp")
+		return fmt.Errorf("slack agent session status requires a thread timestamp")
 	}
-	return c.client.SetAssistantThreadsStatusContext(context.Background(), slack.AssistantThreadsSetStatusParameters{
+	params := slack.AgentSessionSetStatusParameters{
+		Status:    slack.AgentSessionStatusActive,
 		ChannelID: resolvedChannel,
 		ThreadTS:  threadTS,
-		Status:    strings.TrimSpace(status),
-	})
+	}
+	if processing {
+		params.Status = slack.AgentSessionStatusProcessing
+		params.InitiatorUserID = strings.TrimSpace(initiatorUserID)
+	}
+	resp, err := c.client.SetAgentSessionStatusContext(context.Background(), params)
+	if err != nil {
+		return err
+	}
+	if warning := strings.TrimSpace(resp.Warning); warning != "" {
+		c.logf("slack: agents.sessions.setStatus warning channel=%s thread=%s warning=%s", resolvedChannel, threadTS, warning)
+	}
+	return nil
+}
+
+// RegisterRunStop registers a stop function for an in-flight run in a Slack
+// thread. Slack's Stop control (the agent_session_stopped event) calls every
+// stop function registered for that channel and thread.
+func (c *SlackChannel) RegisterRunStop(channel, threadTS string, stop func()) func() {
+	key := slackRunKey(channel, threadTS)
+	if key == "" || stop == nil {
+		return func() {}
+	}
+	c.runStopsMu.Lock()
+	if c.runStops == nil {
+		c.runStops = make(map[string]map[uint64]func())
+	}
+	c.nextRunStopID++
+	id := c.nextRunStopID
+	if c.runStops[key] == nil {
+		c.runStops[key] = make(map[uint64]func())
+	}
+	c.runStops[key][id] = stop
+	c.runStopsMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			c.runStopsMu.Lock()
+			defer c.runStopsMu.Unlock()
+			if stops := c.runStops[key]; stops != nil {
+				delete(stops, id)
+				if len(stops) == 0 {
+					delete(c.runStops, key)
+				}
+			}
+		})
+	}
+}
+
+// stopThreadRuns calls and removes every stop function registered for the
+// thread, returning how many runs were stopped.
+func (c *SlackChannel) stopThreadRuns(channel, threadTS string) int {
+	key := slackRunKey(channel, threadTS)
+	if key == "" {
+		return 0
+	}
+	c.runStopsMu.Lock()
+	stops := c.runStops[key]
+	delete(c.runStops, key)
+	c.runStopsMu.Unlock()
+	for _, stop := range stops {
+		stop()
+	}
+	return len(stops)
+}
+
+func slackRunKey(channel, threadTS string) string {
+	channel = strings.TrimSpace(channel)
+	threadTS = strings.TrimSpace(threadTS)
+	if channel == "" || threadTS == "" {
+		return ""
+	}
+	return channel + "|" + threadTS
+}
+
+// handleAgentSessionStopped handles a user pressing Stop on the "is working"
+// indicator. It cancels only the runs in that channel and thread, then moves
+// the agent session out of processing. A stop for a thread with no active run
+// only clears the status.
+func (c *SlackChannel) handleAgentSessionStopped(event *slackevents.AgentSessionStoppedEvent) {
+	if event == nil {
+		return
+	}
+	stopped := c.stopThreadRuns(event.Channel, event.ThreadTimestamp)
+	c.logf("slack: agent session stopped channel=%s thread=%s user=%s runs=%d", event.Channel, event.ThreadTimestamp, event.User, stopped)
+	if strings.TrimSpace(event.Channel) == "" || strings.TrimSpace(event.ThreadTimestamp) == "" {
+		return
+	}
+	if err := c.SetAssistantProcessing(event.Channel, event.ThreadTimestamp, "", false); err != nil {
+		c.logf("slack: failed to clear agent session status after stop: %v", err)
+	}
 }
 
 // Start connects via Socket Mode and blocks until ctx is cancelled.
@@ -295,6 +389,8 @@ func (c *SlackChannel) dispatch(evt socketmode.Event) {
 		c.handleMessageEvent(inner)
 	case *slackevents.AppMentionEvent:
 		c.handleAppMentionEvent(inner)
+	case *slackevents.AgentSessionStoppedEvent:
+		c.handleAgentSessionStopped(inner)
 	}
 }
 

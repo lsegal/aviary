@@ -71,10 +71,23 @@ type TypingSender interface {
 }
 
 // AssistantStatusSender is an optional interface implemented by channels that
-// support native assistant progress/status indicators.
+// show a native "working" indicator on a thread while an agent run is active.
 type AssistantStatusSender interface {
 	ShowAssistantStatus() bool
-	SendAssistantStatus(channel, threadTS, status string) error
+	// SetAssistantProcessing marks the thread's agent session as processing
+	// (processing=true) or moves it back to active (processing=false).
+	// initiatorUserID is the user who started the run, if known.
+	SetAssistantProcessing(channel, threadTS, initiatorUserID string, processing bool) error
+}
+
+// RunStopRegistrar is an optional interface implemented by channels that let
+// users stop an in-flight agent run from the platform itself, such as Slack's
+// native Stop control. The server registers a stop function for each run in a
+// thread, and the channel calls it when a user stops that thread.
+type RunStopRegistrar interface {
+	// RegisterRunStop registers stop for the run in channel/threadTS and
+	// returns a function that removes the registration.
+	RegisterRunStop(channel, threadTS string, stop func()) (unregister func())
 }
 
 // MediaSender is an optional interface implemented by channels that support

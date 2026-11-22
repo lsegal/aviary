@@ -173,7 +173,7 @@ channels:
 | `url` | string | | Channel transport address. For Slack this is the App-Level token (`xapp-...`) used by Socket Mode. For Signal this is the `signal-cli` daemon address. Discord does not use `url`. |
 | `model` | string | | Override model for all messages on this channel |
 | `fallbacks` | []string | | Override fallbacks for all messages on this channel |
-| `show_typing` | bool | `true` | Show a typing or progress indicator while processing on supported channels (Signal typing notifications and Slack assistant status indicators) |
+| `show_typing` | bool | `true` | Show a typing or progress indicator while processing on supported channels (Signal typing notifications and the Slack "is working" agent session indicator with its Stop control) |
 | `separate_top_level_sessions` | bool | `false` | For Slack, start a distinct session for each top-level message thread instead of sharing one channel session |
 | `react_to_emoji` | bool | `true` | Treat emoji reactions on the agent's own messages as prompts |
 | `reply_to_replies` | bool | `true` | Respond when someone replies to one of the agent's messages |
@@ -187,7 +187,7 @@ channels:
 - `id` is not a Slack workspace ID or channel ID. It is your Aviary integration name for that Slack connection.
 - `url` must contain the Slack App-Level token (`xapp-...`) when `type: slack`.
 - `token` must contain the Slack Bot token (`xoxb-...`) when `type: slack`.
-- Slack apps using Events API and Socket Mode cannot send classic typing indicators, but `show_typing` enables Slack assistant thread status updates while Aviary is working.
+- Slack apps using Events API and Socket Mode cannot send classic typing indicators, but `show_typing` marks the thread's Slack agent session as processing while Aviary is working, which also enables Slack's Stop control. See [Enable The Stop Control](/guide/channels#enable-the-stop-control).
 - Slack replies inside an existing thread are treated as replies and do not require an `@bot` mention or configured mention prefix.
 - Set `separate_top_level_sessions: true` to keep each new top-level Slack message and its thread replies in a separate session.
 - `users:read` is required on the Slack bot token if you want Aviary to resolve Slack user names for name-based routing.
