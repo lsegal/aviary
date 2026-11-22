@@ -47,7 +47,7 @@
 			</div>
 		</div>
 		<div v-if="rich" ref="outputEl" data-testid="job-output-rich"
-			class="min-h-0 flex-[1_1_7rem] overflow-y-auto border-t border-gray-100 px-4 py-3 dark:border-gray-800"
+			class="min-h-0 flex-[1_1_7rem] overflow-y-auto bg-slate-950 px-4 py-3 text-xs text-slate-200"
 			@scroll="onScroll">
 			<JobOutputRows :events="job.events" />
 		</div>

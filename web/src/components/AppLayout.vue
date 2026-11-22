@@ -150,7 +150,7 @@
             <AgentChannelList v-if="child.key === 'channels'" :agent="soleAgent.name" />
             <AgentTaskList v-if="child.key === 'tasks' && tasksOpen" :agent="soleAgent.name" />
             <AgentFileList v-if="child.key === 'files' && filesOpen" :agent="soleAgent.name" />
-            <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
+            <div v-if="child.key === 'projects'" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
               <router-link v-for="p in soleAgent.projects" :key="p.key" :to="p.to"
                 :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
                 <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
@@ -190,7 +190,7 @@
                 <AgentChannelList v-if="child.key === 'channels'" :agent="a.name" />
                 <AgentTaskList v-if="child.key === 'tasks' && tasksOpen" :agent="a.name" />
                 <AgentFileList v-if="child.key === 'files' && filesOpen" :agent="a.name" />
-                <div v-if="child.key === 'projects' && projectsOpen" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
+                <div v-if="child.key === 'projects'" class="space-y-1 pl-2" data-testid="sidebar-agent-projects">
                   <router-link v-for="p in a.projects" :key="p.key" :to="p.to"
                     :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
                     <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
@@ -736,7 +736,8 @@ const soleAgent = computed<AgentNav | undefined>(() =>
 		: undefined,
 );
 
-// The agent's projects list opens on its Code Loop pages and boards.
+// The sidebar always lists an agent's projects under Code Loop (#867); the
+// narrow-screen second row lists them only on its Code Loop pages and boards.
 const projectsOpen = computed(() =>
 	/^\/agents\/[^/]+\/projects(\/|$)/.test(route.path),
 );

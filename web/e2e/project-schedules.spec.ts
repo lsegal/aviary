@@ -810,6 +810,94 @@ test("the Scheduled chip counts, filters and persists with the job state chips",
 	await expect(jobs.getByRole("heading")).toHaveText("nightly-triage");
 });
 
+test("a mobile board folds the filter chips into a Filter button", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 375, height: 812 });
+	await setup(page);
+	await page.goto("/system/watches/lsegal%2Faviary");
+	const toolbar = page.getByTestId("job-toolbar");
+	const toggle = page.getByTestId("filter-toggle");
+	const group = page.getByRole("group", { name: "Job filter" });
+
+	// Collapsed: search, one Filter button, the layout toggle and the count.
+	await expect(
+		toolbar.getByRole("searchbox", { name: "Search jobs" }),
+	).toBeVisible();
+	await expect(toggle).toBeVisible();
+	await expect(toggle).toHaveAttribute("aria-expanded", "false");
+	await expect(toggle).toHaveText("Filter: All");
+	await expect(group).toBeHidden();
+	await expect(page.getByTestId("kanban-toggle")).toBeVisible();
+	await expect(page.getByTestId("job-total")).toHaveText("3 items");
+	// The search keeps a usable width; Filter, layout toggle and count share a row.
+	const searchBox = await toolbar
+		.getByRole("searchbox", { name: "Search jobs" })
+		.boundingBox();
+	expect(searchBox?.width ?? 0).toBeGreaterThan(200);
+	const rowOf = async (testId: string) => {
+		const box = await page.getByTestId(testId).boundingBox();
+		return Math.round((box?.y ?? 0) + (box?.height ?? 0) / 2);
+	};
+	const filterRow = await rowOf("filter-toggle");
+	expect(Math.abs((await rowOf("kanban-toggle")) - filterRow)).toBeLessThan(6);
+	expect(Math.abs((await rowOf("job-total")) - filterRow)).toBeLessThan(6);
+
+	// Opening lists the same chips and counts; toggling works as inline.
+	await toggle.click();
+	await expect(toggle).toHaveAttribute("aria-expanded", "true");
+	await expect(group).toBeVisible();
+	await expect(chip(page, "Scheduled")).toHaveText(/^Scheduled\s*2$/);
+	await chip(page, "Running").click();
+	await expect(page).toHaveURL(/[?&]state=running$/);
+	await expect(chip(page, "Running")).toHaveAttribute("aria-pressed", "true");
+	await chip(page, "Scheduled").click();
+	await expect(toggle).toHaveText(/^Filter: Scheduled 2, Running \d+$/);
+
+	// Esc closes the panel and returns focus to the button.
+	await page.keyboard.press("Escape");
+	await expect(group).toBeHidden();
+	await expect(toggle).toBeFocused();
+	await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+	// The keyboard opens it again; Clear empties the selection.
+	await page.keyboard.press("Enter");
+	await expect(group).toBeVisible();
+	await group.getByRole("button", { name: "Clear" }).click();
+	await expect(page).not.toHaveURL(/state=/);
+	await expect(toggle).toHaveText("Filter: All");
+
+	// A tap outside closes it.
+	await page.getByTestId("job-total").click();
+	await expect(group).toBeHidden();
+
+	// The selection persists across a reload.
+	await toggle.click();
+	await chip(page, "Running").click();
+	await page.reload();
+	await expect(toggle).toHaveText(/^Filter: Running \d+$/);
+
+	// Desktop widths show the inline chips and no Filter button.
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await expect(toggle).toBeHidden();
+	await expect(group).toBeVisible();
+	await expect(chip(page, "Running")).toHaveAttribute("aria-pressed", "true");
+});
+
+test("a mobile agent board's Filter panel has no Scheduled option", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 375, height: 812 });
+	await setup(page, { owner: "coder" });
+	await page.goto("/agents/coder/projects");
+	await page.getByTestId("filter-toggle").click();
+	const group = page.getByRole("group", { name: "Job filter" });
+	await expect(group.getByRole("button", { name: /^Running/ })).toBeVisible();
+	await expect(group.getByRole("button", { name: /^Scheduled/ })).toHaveCount(
+		0,
+	);
+});
+
 test("the Board | Schedules toggle is gone and the board links to Scheduled Tasks", async ({
 	page,
 }) => {
