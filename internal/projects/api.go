@@ -32,6 +32,18 @@ func (m *Manager) currentSnapshot() core.Snapshot {
 	return core.Snapshot{}
 }
 
+// display is the state the read APIs show: the live snapshot, with the cache
+// standing in for each project the engine has not polled yet. Only reads use
+// it; every action goes through currentSnapshot, so cached state never starts,
+// claims or restarts a job.
+func (m *Manager) display() displayState {
+	m.mu.Lock()
+	settings, _ := m.settingsLocked()
+	m.mu.Unlock()
+	cached, cachedAt := m.cache.load()
+	return mergeCached(m.snapshot.Load(), cached, cachedAt, settings.Targets)
+}
+
 // inFlightStatuses are the job statuses that still hold work: running,
 // waiting out a scheduled wakeup, queued, or paused.
 var inFlightStatuses = []string{"active", "waiting", "queued", "paused"}
@@ -55,7 +67,8 @@ func (m *Manager) InFlightJobs(target string) []int {
 // Passing logOffset returns only the lines logged since that offset. Passing
 // targets counts board states over only their jobs, as project_job_list does.
 func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map[string]any {
-	snapshot := m.currentSnapshot()
+	display := m.display()
+	snapshot := display.Snapshot
 	m.mu.Lock()
 	settings, settingsErr := m.settingsLocked()
 	lastError := m.lastError
@@ -116,6 +129,14 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 	if !snapshot.LastPoll.IsZero() {
 		status["last_check"] = snapshot.LastPoll
 	}
+	// Projects the engine has not polled since it started show the cache,
+	// marked stale until their first live poll lands.
+	status["stale"] = display.anyStale(targets)
+	status["stale_targets"] = nonNil(display.Stale)
+	status["loading_targets"] = nonNil(display.Loading)
+	if !display.CachedAt.IsZero() {
+		status["cached_at"] = display.CachedAt
+	}
 	if settingsErr != nil {
 		status["error"] = settingsErr.Error()
 	} else if lastError != "" {
@@ -152,9 +173,10 @@ func (m *Manager) ListJobs(targets []string, status string, states []string, que
 		limit = defaultJobListLimit
 	}
 	query = strings.ToLower(strings.TrimSpace(query))
+	display := m.display()
 	var matched []map[string]any
 	unfiltered := 0
-	for _, job := range m.currentSnapshot().Jobs {
+	for _, job := range display.Jobs {
 		if len(targets) > 0 && !slices.Contains(targets, job.Target) {
 			continue
 		}
@@ -168,7 +190,7 @@ func (m *Manager) ListJobs(targets []string, status string, states []string, que
 		if query != "" && !jobMatches(job, query) {
 			continue
 		}
-		matched = append(matched, jobSummary(job))
+		matched = append(matched, displayJobSummary(display, job))
 	}
 	total := len(matched)
 	offset = min(max(offset, 0), total)
@@ -176,7 +198,10 @@ func (m *Manager) ListJobs(targets []string, status string, states []string, que
 	if page == nil {
 		page = []map[string]any{}
 	}
-	list := map[string]any{"jobs": page, "total": total, "offset": offset, "limit": limit}
+	list := map[string]any{"jobs": page, "total": total, "offset": offset, "limit": limit, "stale": display.anyStale(targets)}
+	if !display.CachedAt.IsZero() {
+		list["cached_at"] = display.CachedAt
+	}
 	if query != "" {
 		list["unfiltered_total"] = unfiltered
 	}
@@ -222,7 +247,8 @@ func jobMatches(job core.JobSnapshot, query string) bool {
 // scrollback. lines and events limit the scrollback lines and transcript
 // events returned; 0 uses the defaults and a negative value returns all.
 func (m *Manager) GetJob(target string, number, lines, events int) (map[string]any, error) {
-	jobs := m.currentSnapshot().Jobs
+	display := m.display()
+	jobs := display.Jobs
 	job, err := findJob(jobs, target, number)
 	if err != nil {
 		return nil, err
@@ -233,7 +259,7 @@ func (m *Manager) GetJob(target string, number, lines, events int) (map[string]a
 	if events == 0 {
 		events = defaultJobEventsLimit
 	}
-	detail := jobSummary(job)
+	detail := displayJobSummary(display, job)
 	detail["checkout_directory"] = job.CheckoutDirectory
 	state, holder := checkoutState(job, jobs)
 	detail["checkout_state"] = state
@@ -256,13 +282,16 @@ func (m *Manager) GetJob(target string, number, lines, events int) (map[string]a
 // ExplainJob is project_job_explain: why a job is where it is and what moves
 // it on.
 func (m *Manager) ExplainJob(target string, number int) (map[string]any, error) {
-	snapshot := m.currentSnapshot()
-	job, err := findJob(snapshot.Jobs, target, number)
+	display := m.display()
+	job, err := findJob(display.Jobs, target, number)
 	if err != nil {
 		return nil, err
 	}
-	detail := jobSummary(job)
-	detail["explanation"] = explainJob(job, snapshot)
+	detail := displayJobSummary(display, job)
+	detail["explanation"] = explainJob(job, display.Snapshot)
+	if display.jobStale(job) {
+		detail["explanation"] = "This is its state when Code Loop last ran, shown until the first poll since the restart confirms it. " + detail["explanation"].(string)
+	}
 	detail["last_output"] = lastLogLines(job.Log, explainOutputLines)
 	return detail, nil
 }
@@ -583,6 +612,28 @@ func jobSummary(job core.JobSnapshot) map[string]any {
 		summary["wake_at"] = job.WakeAt
 	}
 	return summary
+}
+
+// displayJobSummary is jobSummary for a job of display, which marks a job
+// shown from the cache as stale and offers no actions on it until a live poll
+// confirms its state.
+func displayJobSummary(display displayState, job core.JobSnapshot) map[string]any {
+	summary := jobSummary(job)
+	if display.jobStale(job) {
+		summary["stale"] = true
+		summary["actions"] = map[string]any{"retry": false, "pause": false, "resume": false, "stop": false}
+		summary["retry_unavailable"] = "Waiting for the first poll since the restart"
+	}
+	return summary
+}
+
+// nonNil returns list, or an empty list for nil, so JSON shows [] rather than
+// null.
+func nonNil(list []string) []string {
+	if list == nil {
+		return []string{}
+	}
+	return list
 }
 
 // lastLogLines returns the last n lines of a scrollback.
