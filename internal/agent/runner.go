@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lsegal/aviary/internal/buildinfo"
@@ -45,9 +46,16 @@ type AgentRunner struct {
 	mu       sync.Mutex
 	active   sync.WaitGroup
 	canceled bool
-	// liveCheckpoints holds the checkpoint paths of this runner's in-flight
-	// prompts, which checkpoint recovery must not re-issue. Guarded by mu.
-	liveCheckpoints map[string]struct{}
+	// interrupted is set when the runner was stopped by Aviary itself (a
+	// shutdown or restart) rather than by a stop request. Guarded by mu.
+	interrupted bool
+	// predecessor is the runner r replaced on a config change, still
+	// finishing its in-flight prompts. Stop and Wait reach it too. Guarded
+	// by mu.
+	predecessor *AgentRunner
+	// successor is the runner that replaced r, which takes r's new prompts.
+	// Guarded by mu.
+	successor *AgentRunner
 }
 
 type providerFactory interface {
@@ -140,10 +148,16 @@ func (r *AgentRunner) promptCore(
 	consumers ...StreamConsumer,
 ) {
 	r.mu.Lock()
+	if successor := r.successor; successor != nil && !r.canceled {
+		r.mu.Unlock()
+		successor.promptCore(ctx, message, mediaURLs, overrides, promptMsgID, checkpointPath, persistUserMessage, consumers...)
+		return
+	}
 	if r.canceled {
+		interrupted := r.interrupted
 		r.mu.Unlock()
 		for _, c := range consumers {
-			c(StreamEvent{Type: StreamEventStop, AgentID: r.agent.ID})
+			c(StreamEvent{Type: StreamEventStop, AgentID: r.agent.ID, Interrupted: interrupted})
 		}
 		return
 	}
@@ -318,8 +332,22 @@ func (r *AgentRunner) promptCore(
 			}
 		}()
 
+		// A turn reports its stop once, however many of its code paths
+		// notice the cancellation. A stop the runner's shutdown caused, not
+		// a stop request, is marked Interrupted.
+		var stopped atomic.Bool
 		emit := func(e StreamEvent) {
 			e.AgentID = r.agent.ID
+			if e.Type == StreamEventStop {
+				if !stopped.CompareAndSwap(false, true) {
+					return
+				}
+				select {
+				case <-serverStoppedCh:
+					e.Interrupted = r.wasInterrupted()
+				default:
+				}
+			}
 			turn.record(e)
 			for _, c := range consumers {
 				c(e)
@@ -720,6 +748,9 @@ func (r *AgentRunner) promptCore(
 }
 
 func (r *AgentRunner) recoverPrompt(ctx context.Context, checkpointID, checkpointPath string, cp RunCheckpoint, consumers ...StreamConsumer) {
+	// The consumer that streamed the original reply (a Slack thread, say) is
+	// gone, so the recovered reply is delivered to the session's channels.
+	cp.Overrides.SuppressDelivery = false
 	r.promptCore(ctx, cp.Message, cp.MediaURLs, cp.Overrides, checkpointID, checkpointPath, false, consumers...)
 }
 
@@ -1571,19 +1602,67 @@ func (r *AgentRunner) buildRulesPreamble() string {
 	return "<rules>\n" + sanitizeDelimitedContent(strings.Join(parts, "\n\n")) + "\n</rules>"
 }
 
-// Stop cancels all in-flight prompts for this agent.
-func (r *AgentRunner) Stop() {
+// Stop cancels all in-flight prompts for this agent, including those of a
+// runner it replaced.
+func (r *AgentRunner) Stop() { r.stop(false) }
+
+// Interrupt stops the runner the way Stop does, for Aviary's own shutdown or
+// restart rather than a stop request. Its prompts' stop events are marked
+// Interrupted, and their checkpoints are kept for recovery.
+func (r *AgentRunner) Interrupt() { r.stop(true) }
+
+func (r *AgentRunner) stop(interrupted bool) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	predecessor := r.predecessor
 	if !r.canceled {
 		r.canceled = true
+		r.interrupted = interrupted
 		close(r.stopCh)
 		r.stopCLIProcs()
 	}
+	r.mu.Unlock()
+	if predecessor != nil {
+		predecessor.stop(interrupted)
+	}
 }
 
-// Wait blocks until all active prompts finish.
-func (r *AgentRunner) Wait() { r.active.Wait() }
+func (r *AgentRunner) wasInterrupted() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.interrupted
+}
+
+// Wait blocks until all active prompts finish, including those of a runner
+// it replaced.
+func (r *AgentRunner) Wait() {
+	r.active.Wait()
+	r.mu.Lock()
+	predecessor := r.predecessor
+	r.mu.Unlock()
+	if predecessor != nil {
+		predecessor.Wait()
+	}
+}
+
+// succeed makes r the runner that replaces predecessor on a config change.
+// predecessor hands new prompts to r but finishes the ones in flight, so a
+// config change never cuts a running turn short; r forgets it once they end.
+func (r *AgentRunner) succeed(predecessor *AgentRunner) {
+	predecessor.mu.Lock()
+	predecessor.successor = r
+	predecessor.mu.Unlock()
+	r.mu.Lock()
+	r.predecessor = predecessor
+	r.mu.Unlock()
+	go func() {
+		predecessor.Wait()
+		r.mu.Lock()
+		if r.predecessor == predecessor {
+			r.predecessor = nil
+		}
+		r.mu.Unlock()
+	}()
+}
 
 // Agent returns the domain agent.
 func (r *AgentRunner) Agent() *domain.Agent { return r.agent }

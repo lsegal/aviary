@@ -607,7 +607,7 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 			finish()
 		case agent.StreamEventStop:
 			if slackStreamer != nil {
-				slackStreamer.Append("\nStopped.")
+				slackStreamer.Append(slackStopNote(e))
 				slackStreamer.Flush()
 			}
 			finish()
@@ -618,6 +618,16 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 			finish()
 		}
 	})
+}
+
+// slackStopNote is what a Slack thread shows when its run stops. Only a stop
+// request is reported as "Stopped."; a run Aviary's restart interrupted says
+// so, because it is resumed rather than abandoned.
+func slackStopNote(e agent.StreamEvent) string {
+	if e.Interrupted {
+		return "\nInterrupted by an Aviary restart; resuming when it is back."
+	}
+	return "\nStopped."
 }
 
 func (s *Server) findChannelConfig(agentName, channelType, configuredID string) (config.ChannelConfig, bool) {

@@ -1,6 +1,9 @@
 package agent
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 const (
 	maxCheckpointRecoveryRetries = 3
@@ -32,28 +35,34 @@ type RunCheckpoint struct {
 	LastRecoveredAt time.Time `json:"last_recovered_at,omitempty"`
 }
 
-// claimCheckpoint marks path as owned by one of r's in-flight prompts.
+// liveCheckpoints holds the checkpoint paths of in-flight prompts, which
+// checkpoint recovery must not re-issue. It is shared by every runner, because
+// a runner replaced by a config change finishes its in-flight prompts while
+// its successor recovers checkpoints from the same directory.
+var liveCheckpoints = struct {
+	mu    sync.Mutex
+	paths map[string]struct{}
+}{paths: map[string]struct{}{}}
+
+// claimCheckpoint marks path as owned by an in-flight prompt.
 func (r *AgentRunner) claimCheckpoint(path string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.liveCheckpoints == nil {
-		r.liveCheckpoints = map[string]struct{}{}
-	}
-	r.liveCheckpoints[path] = struct{}{}
+	liveCheckpoints.mu.Lock()
+	defer liveCheckpoints.mu.Unlock()
+	liveCheckpoints.paths[path] = struct{}{}
 }
 
 // releaseCheckpoint ends the claim on path once its prompt has finished.
 func (r *AgentRunner) releaseCheckpoint(path string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.liveCheckpoints, path)
+	liveCheckpoints.mu.Lock()
+	defer liveCheckpoints.mu.Unlock()
+	delete(liveCheckpoints.paths, path)
 }
 
-// ownsCheckpoint reports whether path belongs to one of r's in-flight
-// prompts rather than to an interrupted run.
+// ownsCheckpoint reports whether path belongs to an in-flight prompt, of r
+// or of a runner it replaced, rather than to an interrupted run.
 func (r *AgentRunner) ownsCheckpoint(path string) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	_, ok := r.liveCheckpoints[path]
+	liveCheckpoints.mu.Lock()
+	defer liveCheckpoints.mu.Unlock()
+	_, ok := liveCheckpoints.paths[path]
 	return ok
 }
