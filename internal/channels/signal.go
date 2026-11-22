@@ -238,6 +238,7 @@ type SignalChannel struct {
 	phone         string // registered Signal account phone number
 	uuid          string // Signal UUID for this account (populated after connect)
 	initAddr      string // configured TCP address; empty → managed daemon mode
+	seenMessages  receipts
 	allowFrom     []config.AllowFromEntry
 	model         string
 	fallbacks     []string
@@ -1033,6 +1034,11 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 	channelID := source
 	if isGroup {
 		channelID = dataMessage.GroupInfo.GroupID
+	}
+	// A message redelivered by the daemon (after a reconnect, say) carries
+	// the same envelope timestamp; an edit arrives with a new one.
+	if msgTimestamp > 0 && c.seenMessages.seen(fmt.Sprintf("%s\x00%s\x00%d\x00%s", source, channelID, msgTimestamp, dataMessage.Message)) {
+		return
 	}
 
 	receivedAt := time.Now().UTC()

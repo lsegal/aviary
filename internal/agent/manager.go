@@ -80,6 +80,7 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 		}
 	}()
 	for name, ac := range desired {
+		var predecessor *AgentRunner
 		effectiveModel := config.EffectiveAgentModel(*ac, cfg.Models)
 		effectiveFallbacks := config.EffectiveAgentFallbacks(*ac, cfg.Models)
 		if existing, ok := m.runners[name]; ok {
@@ -88,8 +89,12 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 				reflect.DeepEqual(existing.cfg, ac) {
 				continue
 			}
+			// The old runner finishes its in-flight prompts rather than
+			// being stopped, so a config change does not cut a running turn
+			// short (and have recovery replay it); new prompts reach the new
+			// runner.
 			slog.Info("agent updated", "name", name)
-			existing.Stop()
+			predecessor = existing
 		} else {
 			slog.Info("agent started", "name", name)
 		}
@@ -111,6 +116,9 @@ func (m *Manager) Reconcile(cfg *config.Config) {
 			}
 		}
 		runner := NewAgentRunner(a, ac, provider, m.factory)
+		if predecessor != nil {
+			runner.succeed(predecessor)
+		}
 		m.runners[name] = runner
 		m.recovery.Go(func() { m.recoverCheckpoints(runner) })
 	}
@@ -223,11 +231,12 @@ func (m *Manager) List() []*domain.Agent {
 // have finished.
 func (m *Manager) WaitRecovery() { m.recovery.Wait() }
 
-// Stop stops all agents.
+// Stop stops all agents for Aviary's shutdown or restart. Their in-flight
+// prompts are interrupted, not stopped by request, and resume on restart.
 func (m *Manager) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, r := range m.runners {
-		r.Stop()
+		r.Interrupt()
 	}
 }

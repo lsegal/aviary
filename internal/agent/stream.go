@@ -45,6 +45,9 @@ type StreamEvent struct {
 	File     *FileChangeEvent // set for StreamEventFile
 	MediaURL string           // set for StreamEventMedia (image data URL or remote URL)
 	Err      error            // set for StreamEventError
+	// Interrupted is set on a StreamEventStop that Aviary's own shutdown or
+	// restart caused, not a stop request. The prompt is kept for recovery.
+	Interrupted bool
 }
 
 // StreamConsumer receives StreamEvents.

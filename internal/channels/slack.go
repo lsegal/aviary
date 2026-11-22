@@ -41,8 +41,8 @@ type SlackChannel struct {
 	userNames       map[string]string
 	channelAliases  map[string]string
 	channelNames    map[string]string
-	seenMu          sync.Mutex
-	seenMessages    map[string]time.Time
+	seenMessages    receipts
+	seenEvents      receipts
 	stopOnce        sync.Once
 	cancel          context.CancelFunc
 	logSinkMu       sync.RWMutex
@@ -326,6 +326,20 @@ func (c *SlackChannel) Start(ctx context.Context) error {
 		c.logf("slack: identity cache ready")
 	}
 
+	// Events are acked as they arrive and handled in order on a separate
+	// goroutine, so slow handling (API lookups, file downloads) never delays
+	// the ack of a later event into a Slack retry.
+	work := make(chan func(), slackEventQueueSize)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case fn := <-work:
+				fn()
+			}
+		}
+	}()
 	go func() {
 		for {
 			select {
@@ -336,7 +350,13 @@ func (c *SlackChannel) Start(ctx context.Context) error {
 					c.logf("slack: event stream closed")
 					return
 				}
-				c.dispatch(evt)
+				if fn := c.dispatch(evt); fn != nil {
+					select {
+					case work <- fn:
+					case <-ctx.Done():
+						return
+					}
+				}
 			}
 		}
 	}()
@@ -360,7 +380,9 @@ func (c *SlackChannel) Stop() {
 	})
 }
 
-func (c *SlackChannel) dispatch(evt socketmode.Event) {
+// dispatch acks a Socket Mode request and returns the work that handles it,
+// or nil when there is nothing to handle.
+func (c *SlackChannel) dispatch(evt socketmode.Event) func() {
 	switch evt.Type {
 	case socketmode.EventTypeConnecting:
 		c.logf("slack: connecting")
@@ -374,15 +396,34 @@ func (c *SlackChannel) dispatch(evt socketmode.Event) {
 		c.logf("slack: disconnected")
 	}
 	if evt.Type != socketmode.EventTypeEventsAPI {
-		return
+		return nil
 	}
-	if err := c.sm.Ack(*evt.Request); err != nil {
-		c.logf("slack: failed to ack event: %v", err)
+	if evt.Request != nil {
+		if err := c.sm.Ack(*evt.Request); err != nil {
+			c.logf("slack: failed to ack event: %v", err)
+		}
 	}
 
 	eventsAPI, ok := evt.Data.(slackevents.EventsAPIEvent)
 	if !ok {
-		return
+		return nil
+	}
+	return func() { c.handleEventsAPI(evt.Request, eventsAPI) }
+}
+
+// handleEventsAPI handles one Events API delivery. Slack redelivers an event
+// it thinks went unacknowledged, with the same event_id, so a delivery whose
+// event_id was already handled is dropped.
+func (c *SlackChannel) handleEventsAPI(req *socketmode.Request, eventsAPI slackevents.EventsAPIEvent) {
+	if callback, ok := eventsAPI.Data.(*slackevents.EventsAPICallbackEvent); ok && callback != nil {
+		if c.seenEvents.seen(callback.EventID) {
+			retry, reason := 0, ""
+			if req != nil {
+				retry, reason = req.RetryAttempt, req.RetryReason
+			}
+			c.logf("slack: dropped duplicate event event_id=%s retry=%d reason=%s", callback.EventID, retry, reason)
+			return
+		}
 	}
 	switch inner := eventsAPI.InnerEvent.Data.(type) {
 	case *slackevents.MessageEvent:
@@ -420,6 +461,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	from := event.User
 	text := event.Text
 	botID := event.BotID
+	clientMsgID := event.ClientMsgID
 	var files []slack.File
 	var attachments []slack.Attachment
 	isEdited := event.IsEdited() || (event.SubType == "message_changed" && event.Message != nil)
@@ -435,6 +477,9 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 		}
 		if event.Message.BotID != "" {
 			botID = event.Message.BotID
+		}
+		if event.Message.ClientMsgID != "" {
+			clientMsgID = event.Message.ClientMsgID
 		}
 		files = event.Message.Files
 		attachments = event.Message.Attachments
@@ -462,7 +507,8 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	if threadTS == "" {
 		threadTS = rawTimestamp
 	}
-	if c.seenMessage(channelID, from, rawTimestamp, text) {
+	if c.seenMessage(channelID, from, rawTimestamp, clientMsgID, text) {
+		c.logf("slack: dropped duplicate message channel=%s ts=%s client_msg_id=%s", channelID, rawTimestamp, clientMsgID)
 		return
 	}
 	isThreadReply := strings.TrimSpace(threadTS) != "" && strings.TrimSpace(rawTimestamp) != "" && threadTS != rawTimestamp
@@ -535,37 +581,32 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 }
 
 // Slack can deliver the same mention as both a message and an app_mention
-// event. Keep a short-lived receipt so one user message starts one agent run.
-func (c *SlackChannel) seenMessage(channelID, from, timestamp, text string) bool {
-	if timestamp == "" {
-		return false
+// event, and can resend a message as a new event that shares its ts and
+// client_msg_id. Keep a short-lived receipt of each so one user message
+// starts one agent run. An edit keeps its ts but changes the text, so the
+// text is part of the receipt and an edit still starts a run.
+func (c *SlackChannel) seenMessage(channelID, from, timestamp, clientMsgID, text string) bool {
+	prefix := channelID + "\x00" + from + "\x00"
+	var keys []string
+	if timestamp != "" {
+		keys = append(keys, prefix+"ts\x00"+timestamp+"\x00"+text)
 	}
-	now := time.Now()
-	key := channelID + "\x00" + from + "\x00" + timestamp + "\x00" + text
-	c.seenMu.Lock()
-	defer c.seenMu.Unlock()
-	if c.seenMessages == nil {
-		c.seenMessages = make(map[string]time.Time)
+	if clientMsgID != "" {
+		keys = append(keys, prefix+"client\x00"+clientMsgID+"\x00"+text)
 	}
-	if seenAt, ok := c.seenMessages[key]; ok && now.Sub(seenAt) < 5*time.Minute {
-		return true
-	}
-	c.seenMessages[key] = now
-	if len(c.seenMessages) > 1024 {
-		for message, seenAt := range c.seenMessages {
-			if now.Sub(seenAt) >= 5*time.Minute {
-				delete(c.seenMessages, message)
-			}
-		}
-		for message := range c.seenMessages {
-			if len(c.seenMessages) <= 1024 {
-				break
-			}
-			delete(c.seenMessages, message)
+	seen := false
+	for _, key := range keys {
+		// Record every key, so a later copy matching only one of them is
+		// still recognized.
+		if c.seenMessages.seen(key) {
+			seen = true
 		}
 	}
-	return false
+	return seen
 }
+
+// slackEventQueueSize bounds the events acked but not yet handled.
+const slackEventQueueSize = 256
 
 func (c *SlackChannel) normalizeMessageRepliedEvent(ctx context.Context, event *slackevents.MessageEvent) (*slackevents.MessageEvent, bool) {
 	if event == nil || event.SubType != slack.MsgSubTypeMessageReplied || event.Message == nil {
