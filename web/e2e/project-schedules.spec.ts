@@ -830,6 +830,18 @@ test("a mobile board folds the filter chips into a Filter button", async ({
 	await expect(group).toBeHidden();
 	await expect(page.getByTestId("kanban-toggle")).toBeVisible();
 	await expect(page.getByTestId("job-total")).toHaveText("3 items");
+	// The search keeps a usable width; Filter, layout toggle and count share a row.
+	const searchBox = await toolbar
+		.getByRole("searchbox", { name: "Search jobs" })
+		.boundingBox();
+	expect(searchBox?.width ?? 0).toBeGreaterThan(200);
+	const rowOf = async (testId: string) => {
+		const box = await page.getByTestId(testId).boundingBox();
+		return Math.round((box?.y ?? 0) + (box?.height ?? 0) / 2);
+	};
+	const filterRow = await rowOf("filter-toggle");
+	expect(Math.abs((await rowOf("kanban-toggle")) - filterRow)).toBeLessThan(6);
+	expect(Math.abs((await rowOf("job-total")) - filterRow)).toBeLessThan(6);
 
 	// Opening lists the same chips and counts; toggling works as inline.
 	await toggle.click();
