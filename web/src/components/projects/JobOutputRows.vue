@@ -2,25 +2,25 @@
 	<ol class="min-w-0 space-y-1.5 text-xs" aria-label="Job output" data-testid="job-rich-output">
 		<template v-for="row in rows" :key="row.key">
 			<li v-if="row.kind === 'message'" data-row="message"
-				class="prose prose-sm min-w-0 max-w-none text-gray-800 [overflow-wrap:anywhere] prose-pre:overflow-x-hidden prose-pre:whitespace-pre-wrap prose-table:table-fixed dark:prose-invert dark:text-gray-100 [&_p]:my-1"
+				class="prose prose-sm prose-invert min-w-0 max-w-none text-slate-200 [overflow-wrap:anywhere] prose-pre:overflow-x-hidden prose-pre:whitespace-pre-wrap prose-table:table-fixed [&_p]:my-1"
 				v-html="renderMarkdown(row.text)" />
-			<li v-else-if="row.kind === 'note'" data-row="note" class="truncate text-gray-500 dark:text-gray-400"
+			<li v-else-if="row.kind === 'note'" data-row="note" class="truncate text-slate-400"
 				:title="row.text">{{ row.text }}</li>
 			<li v-else data-row="tool" :data-call-id="row.callID || undefined" :data-status="row.status"
-				class="flex min-w-0 items-center gap-2 rounded-md bg-gray-50 px-2 py-1 dark:bg-gray-800/60">
-				<component :is="row.icon" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-gray-400" />
-				<span class="min-w-0 flex-1 truncate font-mono text-gray-700 dark:text-gray-200" :title="row.text">{{
+				class="flex min-w-0 items-center gap-2 rounded-md bg-slate-800/60 px-2 py-1">
+				<component :is="row.icon" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-slate-400" />
+				<span class="min-w-0 flex-1 truncate font-mono text-slate-200" :title="row.text">{{
 					row.text }}</span>
 				<span v-if="row.status === 'running'" data-testid="tool-status"
-					class="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+					class="flex shrink-0 items-center gap-1 rounded-full bg-amber-950/60 px-1.5 py-0.5 font-medium text-amber-300">
 					<ArrowPathIcon aria-hidden="true" class="h-3 w-3 animate-spin" />running
 				</span>
 				<span v-else-if="row.status === 'error'" data-testid="tool-status" :title="row.error"
-					class="shrink-0 rounded-full bg-red-50 px-1.5 py-0.5 font-medium text-red-700 dark:bg-red-950/50 dark:text-red-300">
+					class="shrink-0 rounded-full bg-red-950/60 px-1.5 py-0.5 font-medium text-red-300">
 					✕ {{ row.badge || "error" }}
 				</span>
 				<span v-else data-testid="tool-status"
-					class="shrink-0 rounded-full bg-green-50 px-1.5 py-0.5 font-medium text-green-700 dark:bg-green-950/50 dark:text-green-300">
+					class="shrink-0 rounded-full bg-green-950/60 px-1.5 py-0.5 font-medium text-green-300">
 					✓ {{ row.badge || "ok" }}
 				</span>
 			</li>
@@ -54,6 +54,10 @@ type Row =
 			error?: string;
 	  };
 
+// Board cards draw these rows on the raw view's terminal surface
+// (bg-slate-950) in both app themes, so their colors are fixed for a dark
+// background.
+//
 // The card shows what the agent says and does. Reasoning and token usage
 // stay in the run view's timeline.
 const rows = computed(() =>
