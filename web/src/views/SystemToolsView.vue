@@ -26,6 +26,8 @@
           {{ errorMessage }}
         </div>
 
+        <TranscriptionStatusCard />
+
         <div v-if="loading && !availableTools.length" class="space-y-6 pb-8">
           <div class="mb-6 grid gap-3 sm:grid-cols-3">
             <div v-for="i in 3" :key="i" class="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
@@ -276,6 +278,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import SystemPageIcon from "../components/SystemPageIcon.vue";
+import TranscriptionStatusCard from "../components/TranscriptionStatusCard.vue";
 import { AppSelect } from "../components/ui/select";
 import { Skeleton } from "../components/ui/skeleton";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";

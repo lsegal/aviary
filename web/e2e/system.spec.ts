@@ -692,3 +692,76 @@ test("unchecking Disable token authentication needs no confirmation (#877)", asy
 			?.disable_token_auth,
 	).toBeUndefined();
 });
+
+test("system tools shows voice transcription deps and installs them", async ({
+	page,
+}) => {
+	const missing = {
+		enabled: true,
+		engine: "local",
+		language: "auto",
+		ready: false,
+		missing: ["whisper-cli", "whisper model base.en"],
+		install: "run `aviary deps install`, or Install on the System > Tools page",
+		status: {
+			whisper: { name: "whisper-cli", installed: false },
+			ffmpeg: {
+				name: "ffmpeg",
+				installed: true,
+				path: "/opt/homebrew/bin/ffmpeg",
+			},
+			model: {
+				name: "base.en",
+				downloaded: false,
+				path: "/data/deps/whisper/ggml-base.en.bin",
+			},
+		},
+	};
+	const installed = {
+		...missing,
+		ready: true,
+		missing: [],
+		install: undefined,
+		status: {
+			...missing.status,
+			whisper: {
+				name: "whisper-cli",
+				installed: true,
+				path: "/opt/homebrew/bin/whisper-cli",
+			},
+			model: { ...missing.status.model, downloaded: true },
+		},
+	};
+	const methods: string[] = [];
+	await page.route("**/api/transcription", (route) => {
+		methods.push(route.request().method());
+		return route.fulfill({
+			json: route.request().method() === "POST" ? installed : missing,
+		});
+	});
+	await page.goto("/system/tools");
+
+	const card = page.getByTestId("transcription-status");
+	await expect(card.getByTestId("transcription-engine")).toContainText(
+		"Missing",
+	);
+	await expect(card.getByTestId("transcription-model")).toContainText(
+		"Model base.en",
+	);
+	await expect(card.getByTestId("transcription-model")).toContainText(
+		"Missing",
+	);
+	await expect(card.getByTestId("transcription-ffmpeg")).toContainText(
+		"/opt/homebrew/bin/ffmpeg",
+	);
+
+	await card.getByTestId("transcription-install").click();
+	await expect(card.getByTestId("transcription-engine")).toContainText(
+		"Installed",
+	);
+	await expect(card.getByTestId("transcription-model")).toContainText(
+		"Downloaded",
+	);
+	await expect(card.getByTestId("transcription-install")).toHaveCount(0);
+	expect(methods).toEqual(["GET", "POST"]);
+});
