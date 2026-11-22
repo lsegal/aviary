@@ -22,6 +22,28 @@
 			</li>
 		</ul>
 		<p v-if="notice" role="alert" class="px-2 text-xs text-red-600 dark:text-red-400">{{ notice }}</p>
+		<div v-if="voice.error.value" role="alert" data-testid="voice-error"
+			class="flex items-start gap-2 px-2 text-xs text-red-600 dark:text-red-400">
+			<span class="flex-1 whitespace-pre-wrap">{{ voice.error.value }}</span>
+			<button type="button" aria-label="Dismiss" title="Dismiss"
+				class="shrink-0 rounded px-1 hover:bg-red-50 dark:hover:bg-red-950" @click="voice.dismiss()">✕</button>
+		</div>
+		<div v-if="voice.state.value === 'recording'" data-testid="voice-recording"
+			class="flex items-center gap-2 px-2 text-xs text-gray-700 dark:text-gray-200">
+			<span class="h-2 w-2 animate-pulse rounded-full bg-red-600" aria-hidden="true" />
+			<span>Recording <span data-testid="voice-elapsed" class="tabular-nums">{{ voice.elapsed.value }}</span></span>
+			<button type="button"
+				class="ml-auto rounded px-2 py-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+				@click="voice.cancel()">Cancel</button>
+		</div>
+		<div v-else-if="voice.state.value === 'transcribing'" data-testid="voice-transcribing" role="status"
+			class="flex items-center gap-2 px-2 text-xs text-gray-500 dark:text-gray-400">
+			<svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+				<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" class="opacity-25" />
+				<path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+			</svg>
+			Transcribing…
+		</div>
 		<div class="flex items-end gap-2">
 			<button type="button" :disabled="disabled" aria-label="Attach files" title="Attach files"
 				class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:pointer-events-none dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
@@ -38,6 +60,25 @@
 				class="max-h-48 min-h-9 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-2 text-sm leading-5 text-gray-900 placeholder-gray-400 focus:outline-none dark:text-white dark:placeholder-gray-500"
 				@update:model-value="emit('update:modelValue', $event)" @send="submit"
 				@paste="onPaste" />
+			<button type="button" data-testid="voice-button" :aria-label="micLabel" :title="micTitle"
+				:aria-disabled="micUnavailable ? 'true' : undefined" :aria-pressed="voice.state.value === 'recording'"
+				:disabled="disabled || voice.state.value === 'transcribing'"
+				class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:pointer-events-none disabled:opacity-40"
+				:class="voice.state.value === 'recording'
+					? 'bg-red-600 text-white hover:bg-red-500'
+					: micUnavailable
+						? 'cursor-not-allowed text-gray-300 dark:text-gray-600'
+						: 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'"
+				@click="voice.toggle()">
+				<svg v-if="voice.state.value === 'recording'" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4" aria-hidden="true">
+					<rect x="5" y="5" width="10" height="10" rx="1.5" />
+				</svg>
+				<svg v-else viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5" aria-hidden="true">
+					<path d="M7 4a3 3 0 0 1 6 0v6a3 3 0 1 1-6 0V4Z" />
+					<path
+						d="M5.5 9.643a.75.75 0 0 0-1.5 0V10c0 3.06 2.29 5.585 5.25 5.954V17.5h-1.5a.75.75 0 0 0 0 1.5h4.5a.75.75 0 0 0 0-1.5h-1.5v-1.546A6.001 6.001 0 0 0 16 10v-.357a.75.75 0 0 0-1.5 0V10a4.5 4.5 0 0 1-9 0v-.357Z" />
+				</svg>
+			</button>
 			<button v-if="showStop" type="button" aria-label="Stop response" title="Stop"
 				class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-600 text-white hover:bg-red-500 disabled:opacity-40"
 				:disabled="disabled" @click="emit('stop')">
@@ -58,9 +99,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
+import { useAuthStore } from "../../stores/auth";
 import { type ChatAttachment, readAttachment } from "./attachments";
 import ChatComposerInput from "./ChatComposerInput.vue";
+import {
+	insertAtCaret,
+	transcribeRecording,
+	useVoiceInput,
+} from "./voiceInput";
 
 const props = withDefaults(
 	defineProps<{
@@ -95,7 +142,39 @@ const hasContent = computed(
 // Typing during a reply turns Stop back into Send, so a follow-up can go out
 // while the agent is still replying.
 const showStop = computed(() => props.running && !hasContent.value);
-const canSend = computed(() => hasContent.value && !props.disabled);
+const auth = useAuthStore();
+// Voice input inserts the transcript at the caret for review; it never sends.
+const voice = useVoiceInput({
+	transcribe: (audio) => transcribeRecording(audio, auth.getToken()),
+	onTranscript: insertTranscript,
+});
+const micUnavailable = computed(() => voice.unsupportedReason.value !== "");
+const micLabel = computed(() =>
+	voice.state.value === "recording" ? "Stop recording" : "Record voice message",
+);
+const micTitle = computed(() => {
+	if (voice.unsupportedReason.value) return voice.unsupportedReason.value;
+	if (voice.state.value === "recording") return "Stop recording and transcribe";
+	if (voice.state.value === "transcribing") return "Transcribing…";
+	return "Record a voice message";
+});
+const canSend = computed(
+	() => hasContent.value && !props.disabled && !voice.busy.value,
+);
+
+function insertTranscript(text: string) {
+	const el = textarea.value;
+	const next = insertAtCaret(
+		props.modelValue,
+		text,
+		el?.selectionStart ?? null,
+	);
+	emit("update:modelValue", next.value);
+	void nextTick(() => {
+		el?.focus();
+		el?.setSelectionRange(next.caret, next.caret);
+	});
+}
 
 function submit() {
 	if (!canSend.value) return;
