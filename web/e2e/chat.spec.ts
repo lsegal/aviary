@@ -1229,3 +1229,53 @@ test("links in chat messages open in a new tab", async ({ page, context }) => {
 	await expect((await popup).locator("p")).toHaveText("external");
 	expect(page.url()).toBe(chatURL);
 });
+
+test("channel file attachments show their placeholder, not a broken link", async ({
+	page,
+}) => {
+	const png =
+		"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+	await mockMCP(page, {
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		session_list: [
+			{
+				id: "s1",
+				agent_id: "a1",
+				name: "main",
+				created_at: "2026-03-12T12:00:00Z",
+			},
+		],
+		config_validate: [],
+		session_messages: [
+			{
+				id: "m1",
+				session_id: "s1",
+				role: "user",
+				content:
+					"what is in this export?\n[file attached: chrome-net-export-log.json (application/json, 1.2 MB) saved at /data/media/incoming/signal/1_chrome-net-export-log.json]",
+				media_urls: [
+					png,
+					"file:///data/media/incoming/signal/1_chrome-net-export-log.json",
+				],
+				timestamp: "2026-03-12T12:00:00Z",
+			},
+		],
+	});
+	await page.goto("/agents/assistant/chat");
+
+	const message = page.getByTestId("chat-user-message");
+	await expect(message).toContainText(
+		"[file attached: chrome-net-export-log.json (application/json, 1.2 MB)",
+	);
+	await expect(message.locator("img")).toHaveCount(1);
+	await expect(message.getByText("Open attachment")).toHaveCount(0);
+	await expect(message.locator('a[href^="file:"]')).toHaveCount(0);
+});

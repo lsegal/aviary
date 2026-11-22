@@ -996,7 +996,9 @@ async function loadSessionMessages(force = false) {
 						id: m.id,
 						role: m.role,
 						text: m.content,
-						mediaURLs: m.media_urls,
+						// Channel files saved on the server arrive as file:// URLs,
+						// which the browser can't open; the message text names them.
+						mediaURLs: m.media_urls?.filter((u) => !u.startsWith("file:")),
 						timestamp: m.timestamp,
 						model: m.model,
 						isError: m.role === "assistant" && isErrorMessage(m.content),

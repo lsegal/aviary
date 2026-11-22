@@ -584,7 +584,8 @@ func TestDiscordChannel_IngestsImageAttachment(t *testing.T) {
 	assert.True(t, ok)
 
 	msg := waitMsg(t, msgs, time.Second)
-	assert.True(t, strings.HasPrefix(msg.MediaURL, "data:image/png;base64,"))
+	assert.Len(t, msg.Attachments, 1)
+	assert.True(t, strings.HasPrefix(msg.Attachments[0].DataURL, "data:image/png;base64,"))
 	entries, err := os.ReadDir(store.IncomingMediaDir("discord"))
 	assert.NoError(t, err)
 	assert.Len(t, entries, 1)
@@ -1022,7 +1023,8 @@ func TestSlackChannel_IngestsImageAttachment(t *testing.T) {
 	})
 
 	msg := waitMsg(t, msgs, time.Second)
-	assert.True(t, strings.HasPrefix(msg.MediaURL, "data:image/png;base64,"))
+	assert.Len(t, msg.Attachments, 1)
+	assert.True(t, strings.HasPrefix(msg.Attachments[0].DataURL, "data:image/png;base64,"))
 	entries, err := os.ReadDir(store.IncomingMediaDir("slack"))
 	assert.NoError(t, err)
 	assert.Len(t, entries, 1)

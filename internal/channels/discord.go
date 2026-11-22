@@ -226,7 +226,6 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 	if !msg.Timestamp.IsZero() {
 		receivedAt = msg.Timestamp.UTC()
 	}
-	mediaURL := firstDiscordImageDataURL(msg.Attachments)
 	wasMentioned := discordMentionsUser(msg.Mentions, botUserID)
 	senderName := strings.TrimSpace(msg.Author.GlobalName)
 	if senderName == "" {
@@ -262,11 +261,11 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 	if fn != nil {
 		im := IncomingMessage{
 			Type:          "discord",
+			Attachments:   discordAttachments(msg.Attachments),
 			From:          msg.Author.ID,
 			SenderName:    senderName,
 			Channel:       msg.ChannelID,
 			Text:          msg.Content,
-			MediaURL:      mediaURL,
 			ReceivedAt:    receivedAt,
 			RestrictTools: result.restrictTools,
 			DisabledTools: c.disabledTools,
@@ -287,25 +286,24 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 	return true
 }
 
-func firstDiscordImageDataURL(attachments []*discordgo.MessageAttachment) string {
+func discordAttachments(attachments []*discordgo.MessageAttachment) []Attachment {
+	var out []Attachment
 	for _, attachment := range attachments {
-		if attachment == nil || !looksLikeImage(attachment.ContentType, attachment.Filename) {
+		if attachment == nil {
 			continue
 		}
-		sourceURL := strings.TrimSpace(attachment.URL)
-		if sourceURL == "" {
-			sourceURL = strings.TrimSpace(attachment.ProxyURL)
-		}
+		sourceURL := firstNonEmpty(attachment.URL, attachment.ProxyURL)
 		if sourceURL == "" {
 			continue
 		}
-		mediaURL, err := ingestRemoteMedia(context.Background(), "discord", sourceURL, attachment.Filename, nil)
-		if err == nil {
-			return mediaURL
+		att, err := ingestRemoteMedia(context.Background(), "discord", sourceURL, attachment.Filename, attachment.ContentType, nil)
+		if err != nil {
+			slog.Warn("discord: failed to ingest attachment", "file", attachment.Filename, "err", err)
+			att = failedAttachment(attachment.Filename, attachment.ContentType, int64(attachment.Size), err)
 		}
-		slog.Warn("discord: failed to ingest image attachment", "file", attachment.Filename, "err", err)
+		out = append(out, att)
 	}
-	return ""
+	return out
 }
 
 func discordMentionsUser(mentions []*discordgo.User, userID string) bool {

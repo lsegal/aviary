@@ -884,6 +884,7 @@ type signalAttachment struct {
 	RemoteURL      string `json:"remoteUrl"`
 	RemoteURLAlt   string `json:"remoteURL"`
 	DownloadURL    string `json:"downloadUrl"`
+	Size           int64  `json:"size"`
 }
 
 // signalDataMessage is the dataMessage block inside a signal-cli receive envelope.
@@ -1096,7 +1097,7 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 			SenderName:    source,
 			Channel:       channelID,
 			Text:          msgText,
-			MediaURL:      c.firstSignalImageDataURL(dataMessage.Attachments, source, channelID, isGroup),
+			Attachments:   c.signalAttachments(dataMessage.Attachments, source, channelID, isGroup),
 			ReceivedAt:    receivedAt,
 			RestrictTools: result.restrictTools,
 			DisabledTools: c.disabledTools,
@@ -1130,42 +1131,50 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 	}
 }
 
-func (c *SignalChannel) firstSignalImageDataURL(attachments []signalAttachment, source, channelID string, isGroup bool) string {
+func (c *SignalChannel) signalAttachments(attachments []signalAttachment, source, channelID string, isGroup bool) []Attachment {
+	var out []Attachment
 	for _, attachment := range attachments {
-		name := signalAttachmentName(attachment.fileName(), attachment.storedPath(), attachment.localPath(), attachment.remoteURL())
-		contentType := attachment.mimeType()
-		if !looksLikeImage(contentType, name) {
+		out = append(out, c.ingestSignalAttachment(attachment, source, channelID, isGroup))
+	}
+	return out
+}
+
+func (c *SignalChannel) ingestSignalAttachment(attachment signalAttachment, source, channelID string, isGroup bool) Attachment {
+	name := signalAttachmentName(attachment.fileName(), attachment.storedPath(), attachment.localPath(), attachment.remoteURL())
+	contentType := attachment.mimeType()
+	lastErr := fmt.Errorf("no attachment source")
+	for _, localPath := range []string{attachment.localPath(), attachment.storedPath()} {
+		localPath = strings.TrimSpace(localPath)
+		if localPath == "" {
 			continue
 		}
-		for _, localPath := range []string{attachment.localPath(), attachment.storedPath()} {
-			localPath = strings.TrimSpace(localPath)
-			if localPath == "" {
-				continue
-			}
-			if mediaURL, err := ingestLocalMedia("signal", localPath, name, contentType); err == nil {
-				return mediaURL
-			}
+		att, err := ingestLocalMedia("signal", localPath, name, contentType)
+		if err == nil {
+			return att
 		}
-		if sourceURL := strings.TrimSpace(attachment.remoteURL()); sourceURL != "" {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			mediaURL, err := ingestRemoteMedia(ctx, "signal", sourceURL, name, nil)
-			cancel()
-			if err == nil {
-				return mediaURL
-			}
-			slog.Warn("signal: failed to ingest remote attachment", "url", sourceURL, "err", err)
-		}
-		if attachmentID := attachment.id(); attachmentID != "" {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			mediaURL, err := c.ingestSignalAttachmentByID(ctx, attachmentID, source, channelID, isGroup, name, contentType)
-			cancel()
-			if err == nil {
-				return mediaURL
-			}
-			slog.Warn("signal: failed to ingest attachment by id", "id", attachmentID, "err", err)
-		}
+		lastErr = err
 	}
-	return ""
+	if sourceURL := strings.TrimSpace(attachment.remoteURL()); sourceURL != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		att, err := ingestRemoteMedia(ctx, "signal", sourceURL, name, contentType, nil)
+		cancel()
+		if err == nil {
+			return att
+		}
+		lastErr = err
+		slog.Warn("signal: failed to ingest remote attachment", "url", sourceURL, "err", err)
+	}
+	if attachmentID := attachment.id(); attachmentID != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		att, err := c.ingestSignalAttachmentByID(ctx, attachmentID, source, channelID, isGroup, name, contentType)
+		cancel()
+		if err == nil {
+			return att
+		}
+		lastErr = err
+		slog.Warn("signal: failed to ingest attachment by id", "id", attachmentID, "err", err)
+	}
+	return failedAttachment(name, contentType, attachment.Size, lastErr)
 }
 
 func (a signalAttachment) mimeType() string {
@@ -1206,7 +1215,7 @@ func signalAttachmentName(values ...string) string {
 			return base
 		}
 	}
-	return "image"
+	return "attachment"
 }
 
 func firstMeaningfulString(values ...string) string {
@@ -1218,16 +1227,13 @@ func firstMeaningfulString(values ...string) string {
 	return ""
 }
 
-func (c *SignalChannel) ingestSignalAttachmentByID(ctx context.Context, attachmentID, source, channelID string, isGroup bool, fileName, contentType string) (string, error) {
+func (c *SignalChannel) ingestSignalAttachmentByID(ctx context.Context, attachmentID, source, channelID string, isGroup bool, fileName, contentType string) (Attachment, error) {
 	if strings.TrimSpace(c.phone) == "" {
-		return "", fmt.Errorf("signal account phone is required")
+		return Attachment{}, fmt.Errorf("signal account phone is required")
 	}
 	data, err := signalAttachmentFetcher(ctx, c, c.phone, attachmentID, source, channelID, isGroup)
 	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(contentType) == "" {
-		contentType = http.DetectContentType(data)
+		return Attachment{}, err
 	}
 	return persistIncomingMedia("signal", fileName, contentType, data)
 }

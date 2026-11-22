@@ -257,7 +257,11 @@ func (p *GeminiCodeAssistProvider) Stream(ctx context.Context, req Request) (<-c
 				parts = append(parts, part{Text: msg.Content})
 			}
 			for _, mediaURL := range msg.MediaURLs {
-				if mimeType, data, ok := ParseImageDataURL(mediaURL); ok {
+				mimeType, data, ok := ParseImageDataURL(mediaURL)
+				if !ok {
+					mimeType, data, ok = ParseDocumentDataURL(mediaURL)
+				}
+				if ok {
 					parts = append(parts, part{
 						InlineData: &inlineData{
 							MimeType: mimeType,

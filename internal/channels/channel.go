@@ -15,7 +15,7 @@ type IncomingMessage struct {
 	ThreadTS      string // optional platform thread timestamp/root ID
 	IsThreadReply bool   // true when the message is a reply inside a platform thread
 	Text          string
-	MediaURL      string // optional inline media for the LLM (typically a data URL)
+	Attachments   []Attachment // files attached to the message, in the order sent
 	ReceivedAt    time.Time
 	RestrictTools []string // per-entry tool allow-list override; nil means use agent defaults
 	DisabledTools []string // per-channel tool deny-list override; applied after the allow-list

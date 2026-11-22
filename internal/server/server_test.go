@@ -24,6 +24,7 @@ import (
 	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/projects"
 	"github.com/lsegal/aviary/internal/store"
 )
@@ -1632,11 +1633,17 @@ func TestHandleIncomingChannelMessage_PersistsIncomingMedia(t *testing.T) {
 	})
 
 	srv.handleIncomingChannelMessage(context.Background(), "bot", "slack", "alerts", stubChannel{}, channels.IncomingMessage{
-		Type:     "slack",
-		Channel:  "D123",
-		From:     "U123",
-		Text:     "describe this",
-		MediaURL: "data:image/png;base64,cG5n",
+		Type:    "slack",
+		Channel: "D123",
+		From:    "U123",
+		Text:    "describe this",
+		Attachments: []channels.Attachment{{
+			Name: "photo.png", ContentType: "image/png", Size: 3,
+			Path: "/tmp/photo.png", DataURL: "data:image/png;base64,cG5n",
+		}, {
+			Name: "log.json", ContentType: "application/json", Size: 2,
+			Path: "/tmp/log.json",
+		}},
 	})
 
 	sessions, err := agent.NewSessionManager().List("bot")
@@ -1669,8 +1676,8 @@ func TestHandleIncomingChannelMessage_PersistsIncomingMedia(t *testing.T) {
 		return false
 	}, time.Second, 25*time.Millisecond)
 	assert.True(t, found)
-	assert.Equal(t, "describe this", userMsg.Content)
-	assert.Equal(t, []string{"data:image/png;base64,cG5n"}, userMsg.MediaURLs)
+	assert.Equal(t, "describe this\n[file attached: log.json (application/json, 2 B) saved at /tmp/log.json]", userMsg.Content)
+	assert.Equal(t, []string{"data:image/png;base64,cG5n", llm.FileURL("/tmp/log.json")}, userMsg.MediaURLs)
 
 	if runner, ok := srv.agents.Get("bot"); ok {
 		runner.Wait()

@@ -395,7 +395,8 @@ func TestDispatch_IngestsImageAttachmentFromStoredFilename(t *testing.T) {
 
 	msg := waitMsg(t, msgs, time.Second)
 	assert.Equal(t, "see image", msg.Text)
-	assert.True(t, strings.HasPrefix(msg.MediaURL, "data:image/"))
+	assert.Len(t, msg.Attachments, 1)
+	assert.True(t, strings.HasPrefix(msg.Attachments[0].DataURL, "data:image/"))
 
 	entries, err := os.ReadDir(store.IncomingMediaDir("signal"))
 	assert.NoError(t, err)
@@ -420,7 +421,8 @@ func TestDispatch_AllowsImageOnlyMessageWithAlternateAttachmentFields(t *testing
 
 	msg := waitMsg(t, msgs, time.Second)
 	assert.Equal(t, "", msg.Text)
-	assert.True(t, strings.HasPrefix(msg.MediaURL, "data:image/png;base64,"))
+	assert.Len(t, msg.Attachments, 1)
+	assert.True(t, strings.HasPrefix(msg.Attachments[0].DataURL, "data:image/png;base64,"))
 }
 
 func TestDispatch_TextMessageStillProcessesWhenAttachmentFetchTimesOut(t *testing.T) {
@@ -445,7 +447,9 @@ func TestDispatch_TextMessageStillProcessesWhenAttachmentFetchTimesOut(t *testin
 
 	msg := waitMsg(t, msgs, 3*time.Second)
 	assert.Equal(t, "see this", msg.Text)
-	assert.Empty(t, msg.MediaURL)
+	assert.Len(t, msg.Attachments, 1)
+	assert.Empty(t, msg.Attachments[0].Path)
+	assert.Contains(t, msg.Attachments[0].Placeholder(), "could not be saved")
 	assert.Less(t, time.Since(start), 2500*time.Millisecond)
 }
 

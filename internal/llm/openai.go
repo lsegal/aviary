@@ -139,6 +139,9 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 					parts = append(parts, inputTextContent{Type: "input_text", Text: m.Content})
 				}
 				for _, mediaURL := range m.MediaURLs {
+					if !isImageMediaURL(mediaURL) {
+						continue
+					}
 					parts = append(parts, inputImageContent{Type: "input_image", ImageURL: mediaURL})
 				}
 				input = append(input, inputMessage{Role: "user", Content: parts})
@@ -387,6 +390,9 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 					parts = append(parts, openai.TextContentPart(m.Content))
 				}
 				for _, mediaURL := range m.MediaURLs {
+					if !isImageMediaURL(mediaURL) {
+						continue
+					}
 					parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
 						URL: mediaURL,
 					}))

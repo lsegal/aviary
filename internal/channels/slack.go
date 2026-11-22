@@ -550,7 +550,6 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 	c.handlerMu.RUnlock()
 
 	if fn != nil {
-		mediaURL := c.firstImageDataURL(files)
 		im := IncomingMessage{
 			Type:          "slack",
 			From:          from,
@@ -559,7 +558,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 			ThreadTS:      threadTS,
 			IsThreadReply: isThreadReply,
 			Text:          enrichedText,
-			MediaURL:      mediaURL,
+			Attachments:   c.slackAttachments(files),
 			ReceivedAt:    receivedAt,
 			RestrictTools: result.restrictTools,
 			DisabledTools: c.disabledTools,
@@ -673,31 +672,29 @@ func (c *SlackChannel) handleAppMentionEvent(event *slackevents.AppMentionEvent)
 	})
 }
 
-func (c *SlackChannel) firstImageDataURL(files []slack.File) string {
+func (c *SlackChannel) slackAttachments(files []slack.File) []Attachment {
+	var out []Attachment
 	for _, file := range files {
-		if !looksLikeImage(file.Mimetype, file.Name) {
-			continue
-		}
-		sourceURL := strings.TrimSpace(file.URLPrivateDownload)
-		if sourceURL == "" {
-			sourceURL = strings.TrimSpace(file.URLPrivate)
-		}
+		sourceURL := firstNonEmpty(file.URLPrivateDownload, file.URLPrivate)
 		if sourceURL == "" {
 			continue
 		}
-		mediaURL, err := ingestRemoteMedia(
+		name := firstNonEmpty(file.Name, file.Title)
+		att, err := ingestRemoteMedia(
 			context.Background(),
 			"slack",
 			sourceURL,
-			firstNonEmpty(file.Name, file.Title),
+			name,
+			file.Mimetype,
 			map[string]string{"Authorization": "Bearer " + c.botToken},
 		)
-		if err == nil {
-			return mediaURL
+		if err != nil {
+			slog.Warn("slack: failed to ingest attachment", "file", file.Name, "err", err)
+			att = failedAttachment(name, file.Mimetype, int64(file.Size), err)
 		}
-		slog.Warn("slack: failed to ingest image attachment", "file", file.Name, "err", err)
+		out = append(out, att)
 	}
-	return ""
+	return out
 }
 
 func (c *SlackChannel) enrichSlackMessageText(parent context.Context, text, channelID, timestamp, threadTS string, attachments []slack.Attachment) string {

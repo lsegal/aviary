@@ -40,7 +40,7 @@ Send a message to an agent and stream the response. This is the primary tool for
 | `session` | string | | Session name; defaults to `"main"` |
 | `session_id` | string | | Session ID to resume instead of looking up by name |
 | `file` | string | | Local file path to attach to the message |
-| `media_urls` | string[] | | Attachments: image URLs (data URLs or remote URLs) and text file data URLs (`data:text/plain;name=<file>;base64,...`), whose text is given to the model inline |
+| `media_urls` | string[] | | Attachments: image URLs (data URLs or remote URLs) and text file data URLs (`data:text/plain;name=<file>;base64,...`), whose text is given to the model inline. Channel attachments arrive as `file://` URLs under Aviary's media directory: text files are inlined (truncated past 32 KB), PDFs are sent as documents where the provider supports them, and other files are left for the agent to open by path |
 | `bare` | bool | | Skip system prompt, rules, memory, and tool preamble |
 | `history` | bool | | Include prior session messages (defaults to `true`, `false` when `bare=true`) |
 | `include_tool_progress` | bool | | Emit tool-call events in MCP progress notifications (for streaming UIs) |
