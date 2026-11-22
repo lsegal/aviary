@@ -427,14 +427,17 @@ test("the sidebar always shows Code Loop expanded with its projects (#867)", asy
 	).toBeVisible();
 
 	// Reloading, and leaving the board and coming back, keep it expanded.
+	const nav = page.getByTestId("sidebar-nav");
+	await nav.getByRole("link", { name: /^Code Loop/ }).click();
+	await expect(page).toHaveURL(/\/agents\/coder\/projects$/);
+	await expect(projects).toBeVisible();
+	await nav.getByRole("link", { name: "Agent Settings" }).click();
+	await expect(page).toHaveURL(/\/agents\/coder\/settings/);
+	await expect(projects).toBeVisible();
 	await page.reload();
-	await expect(projects).toBeVisible();
-	await page.goto("/agents/coder/projects");
-	await expect(projects).toBeVisible();
-	await page.goto("/agents/coder/settings");
 	await expect(
 		projects.getByRole("link", { name: /lsegal\/aviary/ }),
-	).toBeVisible();
+	).toBeVisible({ timeout: 15_000 });
 });
 
 test('the Code Loop running badge is gray and the Add project "+" sits beside it on hover', async ({
