@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -213,6 +214,9 @@ func TestDetect_PrefersAviaryDepsDir(t *testing.T) {
 	useTempDataDir(t)
 	stubPath(t, "whisper-cli")
 	bin := filepath.Join(DepsDir(), "bin", "whisper-cli")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
 	require.NoError(t, os.MkdirAll(filepath.Dir(bin), 0o755))
 	require.NoError(t, os.WriteFile(bin, []byte("#!/bin/sh"), 0o755))
 	assert.Equal(t, bin, Detect("").Whisper.Path)

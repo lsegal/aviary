@@ -170,16 +170,28 @@ func (s *Server) transcriptionHandler(w http.ResponseWriter, r *http.Request) {
 // so chat history can play voice messages. Only audio files under the
 // media directory are served.
 func mediaHandler(w http.ResponseWriter, r *http.Request) {
-	path := filepath.Clean(r.URL.Query().Get("path"))
 	root := filepath.Clean(store.MediaDir())
-	rel, err := filepath.Rel(root, path)
-	if err != nil || !filepath.IsAbs(path) || rel == "." || strings.HasPrefix(rel, "..") {
+	rel, err := filepath.Rel(root, filepath.Clean(r.URL.Query().Get("path")))
+	if err != nil || rel == "." || strings.Contains(rel, "..") || filepath.IsAbs(rel) || !channels.LooksLikeAudioFile(rel) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	if !channels.LooksLikeAudioFile(path) {
+	dir, err := os.OpenRoot(root)
+	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	http.ServeFile(w, r, path)
+	defer dir.Close() //nolint:errcheck
+	f, err := dir.Open(rel)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	defer f.Close() //nolint:errcheck
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 }
