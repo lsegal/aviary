@@ -102,6 +102,28 @@ aviary doctor [flags]
 
 ---
 
+## aviary deps
+
+Show or install the external programs voice transcription uses. See [Voice Messages](../guide/voice.md).
+
+### aviary deps status
+
+Show whether `whisper-cli`, the configured whisper model, and `ffmpeg` are installed, with their paths.
+
+```
+aviary deps status
+```
+
+### aviary deps install
+
+Install what is missing: `whisper-cli` and `ffmpeg` through Homebrew (or winget on Windows), and the configured whisper model, downloaded to `deps/whisper/` under Aviary's data directory. Exits with an error naming anything it could not install.
+
+```
+aviary deps install
+```
+
+---
+
 ## aviary install-skills
 
 Install the skills Aviary ships (`gh-create`, `gh-discuss`, `gh-fix` and `gh-safe-merge`) globally with `npx skills` (skills.sh): into `~/.agents/skills` and the skills directory of every CLI provider on the `PATH`. A release installs them from its own tag; a development build installs the copies bundled with it. Skills already installed are refreshed, so running it again is safe. Aviary runs the same install on its first launch. Requires Node.js.

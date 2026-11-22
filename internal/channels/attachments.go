@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lsegal/aviary/internal/llm"
+	"github.com/lsegal/aviary/internal/transcribe"
 )
 
 // Attachment is a file received with a channel message.
@@ -16,6 +17,10 @@ type Attachment struct {
 	Path        string // where the file was saved; empty when saving failed
 	DataURL     string // inline image data URL for the model; empty for other files
 	Err         string // why the file could not be saved, if it could not
+	// Transcript is set once an audio attachment is transcribed;
+	// TranscriptErr says why transcription failed.
+	Transcript    *transcribe.Transcript
+	TranscriptErr string
 }
 
 // Placeholder describes the attachment for the agent, for example
@@ -43,12 +48,17 @@ func (a Attachment) Placeholder() string {
 // Images go to the model as data URLs. Other files are described by a
 // placeholder line in the text and passed as file URLs, which the agent
 // runner inlines (text files) or sends as documents (PDFs) where it can.
+// Transcribed audio adds a "[voice message M:SS, transcribed]: …" line
+// before its placeholder.
 func PromptInput(text string, attachments []Attachment) (string, []string) {
 	var media, lines []string
 	for _, att := range attachments {
 		if att.DataURL != "" {
 			media = append(media, att.DataURL)
 			continue
+		}
+		if voice := att.VoiceLine(); voice != "" {
+			lines = append(lines, voice)
 		}
 		lines = append(lines, att.Placeholder())
 		if att.Path != "" {

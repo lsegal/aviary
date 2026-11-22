@@ -300,6 +300,12 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("/api/daemons/logs", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.daemonLogsHandler)))
 	s.mux.Handle("/api/daemons/restart", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.daemonRestartHandler)))
 
+	// Speech-to-text for the composer mic, its dependency status and
+	// install, and playback of saved voice messages.
+	s.mux.Handle("/api/transcribe", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.transcribeHandler)))
+	s.mux.Handle("/api/transcription", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.transcriptionHandler)))
+	s.mux.Handle("/api/media", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(mediaHandler)))
+
 	// Web UI: SPA served from embedded web/dist.
 	s.mux.Handle("/", webFileServer())
 }
@@ -573,6 +579,7 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 		rOpts.SuppressDelivery = true
 	}
 
+	msg.Attachments = s.transcribeAttachments(runCtx, msg.Attachments)
 	promptText, promptMedia := channels.PromptInput(msg.Text, msg.Attachments)
 	runner.PromptMediaWithOverrides(runCtx, promptText, promptMedia, rOpts, func(e agent.StreamEvent) {
 		switch e.Type {

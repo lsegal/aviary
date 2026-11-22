@@ -407,8 +407,32 @@ function formatTime(timestamp: string): string {
 	});
 }
 
+const SAVED_AUDIO_PREFIX = "/api/media?";
+
+/** Maps a saved channel audio file:// URL to a URL the browser can play. */
+function savedAudioURL(mediaURL: string): string {
+	if (!mediaURL.startsWith("file:")) return mediaURL;
+	let path: string;
+	try {
+		// Windows paths come through as /C:/...
+		path = decodeURIComponent(new URL(mediaURL).pathname).replace(
+			/^\/([A-Za-z]:)/,
+			"$1",
+		);
+	} catch {
+		return mediaURL;
+	}
+	if (!/\.(ogg|oga|opus|m4a|aac|mp3|wav|webm|flac|amr|caf)$/i.test(path))
+		return mediaURL;
+	const params = new URLSearchParams({ path });
+	const token = authStore.getToken();
+	if (token) params.set("token", token);
+	return SAVED_AUDIO_PREFIX + params.toString();
+}
+
 function mediaTypeFromURL(mediaURL: string): string {
 	const s = mediaURL.trim().toLowerCase();
+	if (s.startsWith(SAVED_AUDIO_PREFIX)) return "audio/*";
 	if (s.startsWith("data:")) {
 		const end = s.indexOf(";");
 		return end > 5 ? s.slice(5, end) : "";
@@ -999,7 +1023,10 @@ async function loadSessionMessages(force = false) {
 						text: m.content,
 						// Channel files saved on the server arrive as file:// URLs,
 						// which the browser can't open; the message text names them.
-						mediaURLs: m.media_urls?.filter((u) => !u.startsWith("file:")),
+						// Voice messages play through the server's media endpoint.
+						mediaURLs: m.media_urls
+							?.map(savedAudioURL)
+							.filter((u) => !u.startsWith("file:")),
 						timestamp: m.timestamp,
 						model: m.model,
 						isError: m.role === "assistant" && isErrorMessage(m.content),

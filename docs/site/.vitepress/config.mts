@@ -90,6 +90,7 @@ export default defineConfig({
 						{ text: "Getting Started", link: "/guide/getting-started" },
 						{ text: "Configuration", link: "/guide/configuration" },
 						{ text: "Channels", link: "/guide/channels" },
+						{ text: "Voice Messages", link: "/guide/voice" },
 						{
 							text: "Security & Permissions",
 							link: "/guide/security-permissions",

@@ -11,6 +11,7 @@ models:    { ... }
 browser:   { ... }
 search:    { ... }
 scheduler: { ... }
+transcription: { ... }
 skills:    { ... }
 approval:  { ... }
 projects:  { ... }
@@ -374,6 +375,27 @@ scheduler:
 | --- | --- | --- | --- |
 | `concurrency` | int or `"auto"` | `"auto"` | Maximum concurrent task jobs. `"auto"` uses `runtime.NumCPU()`. |
 | `precompute_tasks` | bool | `true` | Pre-compile prompt tasks when they are scheduled, rather than at run time |
+
+---
+
+## transcription
+
+Speech-to-text for channel voice messages and the chat composer's mic button. See [Voice Messages](../guide/voice.md).
+
+```yaml
+transcription:
+  enabled: true
+  engine: local
+  model: base.en
+  language: auto
+```
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | bool | `true` | Transcribe voice messages. When `false`, they reach the agent as plain file attachments and the mic button reports that transcription is off. |
+| `engine` | string | `"local"` | Transcription engine. `local` runs whisper.cpp's `whisper-cli`. |
+| `model` | string | `"base.en"` | whisper.cpp model name (`tiny`, `base`, `base.en`, `small`, `small.en`, `medium`, `large-v3`, …) or a path to a ggml model file. `aviary deps install` downloads named models. |
+| `language` | string | `"auto"` | Spoken language: `auto` to detect it, or an ISO 639-1 code such as `en`. |
 
 ---
 

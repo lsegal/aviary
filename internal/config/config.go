@@ -20,13 +20,15 @@ import (
 
 // Config is the top-level configuration for Aviary.
 type Config struct {
-	Server    ServerConfig           `yaml:"server"              json:"server"`
-	Agents    []AgentConfig          `yaml:"agents,omitempty"    json:"agents,omitempty"`
-	Models    ModelsConfig           `yaml:"models,omitempty"    json:"models,omitempty"`
-	Browser   BrowserConfig          `yaml:"browser,omitempty"   json:"browser,omitempty"`
-	Search    SearchConfig           `yaml:"search,omitempty"    json:"search,omitempty"`
-	Scheduler SchedulerConfig        `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
-	Skills    map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
+	Server    ServerConfig    `yaml:"server"              json:"server"`
+	Agents    []AgentConfig   `yaml:"agents,omitempty"    json:"agents,omitempty"`
+	Models    ModelsConfig    `yaml:"models,omitempty"    json:"models,omitempty"`
+	Browser   BrowserConfig   `yaml:"browser,omitempty"   json:"browser,omitempty"`
+	Search    SearchConfig    `yaml:"search,omitempty"    json:"search,omitempty"`
+	Scheduler SchedulerConfig `yaml:"scheduler,omitempty" json:"scheduler,omitempty"`
+	// Transcription turns voice messages and composer recordings into text.
+	Transcription TranscriptionConfig    `yaml:"transcription,omitempty" json:"transcription,omitzero"`
+	Skills        map[string]SkillConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
 	// Approval is how much CLI providers may do without asking; see
 	// ApprovalConfig.
 	Approval ApprovalConfig `yaml:"approval,omitempty" json:"approval,omitzero"`
@@ -438,6 +440,21 @@ type BrowserConfig struct {
 	ProfileDir string `yaml:"profile_directory,omitempty" json:"profile_directory,omitempty"`
 	Headless   bool   `yaml:"headless,omitempty"          json:"headless,omitempty"`
 	ReuseTabs  *bool  `yaml:"reuse_tabs,omitempty"        json:"reuse_tabs,omitempty"`
+}
+
+// TranscriptionConfig configures speech-to-text for voice messages.
+type TranscriptionConfig struct {
+	// Enabled turns transcription on; it defaults to true when unset. When
+	// off, voice messages reach the agent as plain file attachments.
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// Engine is the transcription engine; only "local" (whisper.cpp) is
+	// supported, and it is the default.
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty"`
+	// Model is a whisper.cpp model name such as "base.en", or a path to a
+	// ggml model file. Defaults to "base.en".
+	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+	// Language is "auto" or an ISO 639-1 code such as "en". Defaults to "auto".
+	Language string `yaml:"language,omitempty" json:"language,omitempty"`
 }
 
 // SearchConfig holds search backend settings.
