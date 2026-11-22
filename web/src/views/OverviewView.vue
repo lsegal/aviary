@@ -6,15 +6,12 @@
         <Skeleton class="h-7 w-32" />
         <Skeleton class="h-10 w-24 rounded-lg" />
       </div>
-      <div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div v-for="i in 4" :key="i"
-          class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-          <Skeleton class="mb-3 h-3 w-16" />
-          <Skeleton class="h-9 w-14" />
-          <div class="mt-3 space-y-2">
-            <Skeleton class="h-4 w-full" />
-            <Skeleton class="h-4 w-3/4" />
-          </div>
+      <div class="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div v-for="i in 4" :key="i" data-testid="overview-stat-skeleton"
+          class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+          <Skeleton class="mb-2 h-4 w-16" />
+          <Skeleton class="h-8 w-12" />
+          <Skeleton class="mt-1.5 h-5 w-3/4" />
         </div>
       </div>
       <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
@@ -46,14 +43,14 @@
       </div>
 
       <!-- Stat cards -->
-      <div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="overview-stat-cards">
         <!-- Agents -->
         <router-link to="/agents"
-          class="flex flex-col rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
+          class="flex flex-col rounded-xl border border-gray-200 bg-white p-4 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
           <span
-            class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Agents</span>
-          <span class="text-3xl font-bold text-gray-900 dark:text-white">{{ store.agents.length }}</span>
-          <div class="mt-2 flex flex-wrap gap-1">
+            class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Agents</span>
+          <span class="text-2xl font-bold text-gray-900 dark:text-white">{{ store.agents.length }}</span>
+          <div class="mt-1.5 flex flex-wrap gap-1">
             <span v-for="(count, state) in agentStateCounts" :key="state" :class="agentStateBadge(state)"
               class="rounded-full px-2 py-0.5 text-xs font-medium">{{ count }} {{ state }}</span>
             <span v-if="!store.agents.length" class="text-xs text-gray-400 dark:text-gray-500">none configured</span>
@@ -62,10 +59,10 @@
 
         <!-- Jobs -->
         <router-link :to="store.agents[0] ? agentTaskPath(store.agents[0].name) : '/agents'"
-          class="flex flex-col rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
-          <span class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Jobs</span>
-          <span class="text-3xl font-bold text-gray-900 dark:text-white">{{ store.jobs.length }}</span>
-          <div class="mt-2 flex flex-wrap gap-1">
+          class="flex flex-col rounded-xl border border-gray-200 bg-white p-4 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
+          <span class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Jobs</span>
+          <span class="text-2xl font-bold text-gray-900 dark:text-white">{{ store.jobs.length }}</span>
+          <div class="mt-1.5 flex flex-wrap gap-1">
             <span v-if="inProgressJobs > 0"
               class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">{{ inProgressJobs }}
               running</span>
@@ -78,30 +75,30 @@
 
         <!-- Sessions -->
         <router-link to="/system/sessions"
-          class="flex flex-col rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
+          class="flex flex-col rounded-xl border border-gray-200 bg-white p-4 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
           <span
-            class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Sessions</span>
-          <span class="text-3xl font-bold text-gray-900 dark:text-white">—</span>
-          <span class="mt-2 text-xs text-gray-400 dark:text-gray-500">history available in Sessions</span>
+            class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Sessions</span>
+          <span class="text-2xl font-bold text-gray-900 dark:text-white">—</span>
+          <span class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">history available in Sessions</span>
         </router-link>
 
         <!-- Config health -->
-        <div class="flex flex-col rounded-xl border p-5" :class="healthCardClass">
-          <span class="mb-3 text-xs font-semibold uppercase tracking-wide" :class="healthLabelClass">Config
+        <div class="flex flex-col rounded-xl border p-4" :class="healthCardClass">
+          <span class="mb-2 text-xs font-semibold uppercase tracking-wide" :class="healthLabelClass">Config
             Health</span>
           <div class="flex items-center gap-2">
-            <svg v-if="errorCount > 0 || warnCount > 0" class="h-5 w-5 shrink-0" :class="healthTextClass" fill="none"
+            <svg v-if="errorCount > 0 || warnCount > 0" class="h-4 w-4 shrink-0" :class="healthTextClass" fill="none"
               viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
               <path stroke-linecap="round" stroke-linejoin="round"
                 d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
             </svg>
-            <svg v-else class="h-5 w-5 shrink-0" :class="healthTextClass" fill="none" viewBox="0 0 24 24"
+            <svg v-else class="h-4 w-4 shrink-0" :class="healthTextClass" fill="none" viewBox="0 0 24 24"
               stroke="currentColor" stroke-width="2.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
             </svg>
-            <span class="text-lg font-bold" :class="healthTextClass">{{ healthLabel }}</span>
+            <span class="text-base font-bold" :class="healthTextClass">{{ healthLabel }}</span>
           </div>
-          <p class="mt-2 text-xs" :class="healthSubClass">
+          <p class="mt-1.5 text-xs" :class="healthSubClass">
             <template v-if="errorCount > 0 || warnCount > 0">
               <span v-if="errorCount > 0">{{ errorCount }} error{{ errorCount !== 1 ? 's' : '' }}</span>
               <span v-if="errorCount > 0 && warnCount > 0">, </span>
@@ -208,15 +205,15 @@
       <!-- Every System page, as in the sidebar's System section -->
       <section class="mt-8" data-testid="overview-system-pages">
         <h3 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">System</h3>
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
           <router-link v-for="page in systemPages" :key="page.key" :to="page.to"
             :data-testid="`overview-system-card-${page.key}`"
             :aria-label="page.label" :aria-describedby="`overview-system-desc-${page.key}`"
-            class="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
-            <SystemPageIcon :page-key="page.key" tile />
+            class="flex items-start gap-2.5 rounded-xl border border-gray-200 bg-white p-4 sm:gap-3 sm:p-5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700">
+            <SystemPageIcon :page-key="page.key" tile compact-on-mobile />
             <span class="flex min-w-0 flex-col">
-              <span data-testid="overview-system-card-title" class="text-sm font-semibold text-gray-900 dark:text-white">{{ page.label }}</span>
-              <span :id="`overview-system-desc-${page.key}`" class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ page.description }}</span>
+              <span data-testid="overview-system-card-title" class="text-[13px] font-semibold text-gray-900 sm:text-sm dark:text-white">{{ page.label }}</span>
+              <span :id="`overview-system-desc-${page.key}`" class="mt-0.5 text-xs text-gray-500 sm:mt-1 dark:text-gray-400">{{ page.description }}</span>
             </span>
           </router-link>
         </div>
