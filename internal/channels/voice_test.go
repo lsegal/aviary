@@ -135,7 +135,7 @@ func TestTranscribeAttachments_FailureKeepsMessageAndFile(t *testing.T) {
 	atts := TranscribeAttachments(context.Background(), engine, transcribe.Options{}, []Attachment{att})
 
 	text, media := PromptInput("listen", atts)
-	assert.Equal(t, "listen\n[voice message, not transcribed: transcription unavailable: whisper-cli missing; "+transcribe.InstallHint+"]\n"+att.Placeholder(), text)
+	assert.Equal(t, "listen\n[voice message, not transcribed: transcription unavailable: whisper-cli missing; "+transcribe.InstallHint+"; audio saved at "+att.Path+"]\n"+att.Placeholder(), text)
 	assert.Equal(t, []string{llm.FileURL(att.Path)}, media)
 }
 

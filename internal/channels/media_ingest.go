@@ -111,6 +111,7 @@ func persistIncomingMedia(channelType, fileName, contentType string, data []byte
 			contentType = normalizeContentType(http.DetectContentType(data))
 		}
 	}
+	fileName, contentType = detectAudioType(fileName, contentType, data)
 	dir := store.IncomingMediaDir(channelType)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Attachment{}, fmt.Errorf("creating incoming media directory: %w", err)

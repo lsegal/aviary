@@ -1159,6 +1159,10 @@ func (c *SignalChannel) ingestSignalAttachment(attachment signalAttachment, sour
 		if localPath == "" {
 			continue
 		}
+		if err := waitForSignalFile(localPath, attachment.Size); err != nil {
+			lastErr = err
+			continue
+		}
 		att, err := ingestLocalMedia("signal", localPath, name, contentType)
 		if err == nil {
 			return att
@@ -1177,7 +1181,7 @@ func (c *SignalChannel) ingestSignalAttachment(attachment signalAttachment, sour
 	}
 	if attachmentID := attachment.id(); attachmentID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		att, err := c.ingestSignalAttachmentByID(ctx, attachmentID, source, channelID, isGroup, name, contentType)
+		att, err := c.ingestSignalAttachmentByID(ctx, attachmentID, source, channelID, isGroup, name, contentType, attachment.Size)
 		cancel()
 		if err == nil {
 			return att
@@ -1186,6 +1190,30 @@ func (c *SignalChannel) ingestSignalAttachment(attachment signalAttachment, sour
 		slog.Warn("signal: failed to ingest attachment by id", "id", attachmentID, "err", err)
 	}
 	return failedAttachment(name, contentType, attachment.Size, lastErr)
+}
+
+// signalFileWait bounds how long an attachment file signal-cli is still
+// writing may take to reach its declared size.
+var signalFileWait = 2 * time.Second
+
+// waitForSignalFile waits until path holds the attachment's declared size,
+// so a file signal-cli is still writing is never read half-done. Without a
+// declared size, the file is used as is.
+func waitForSignalFile(path string, size int64) error {
+	deadline := time.Now().Add(signalFileWait)
+	for {
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		if size <= 0 || info.Size() >= size {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("attachment %s is incomplete: %d of %d bytes", filepath.Base(path), info.Size(), size)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func (a signalAttachment) mimeType() string {
@@ -1238,13 +1266,16 @@ func firstMeaningfulString(values ...string) string {
 	return ""
 }
 
-func (c *SignalChannel) ingestSignalAttachmentByID(ctx context.Context, attachmentID, source, channelID string, isGroup bool, fileName, contentType string) (Attachment, error) {
+func (c *SignalChannel) ingestSignalAttachmentByID(ctx context.Context, attachmentID, source, channelID string, isGroup bool, fileName, contentType string, size int64) (Attachment, error) {
 	if strings.TrimSpace(c.phone) == "" {
 		return Attachment{}, fmt.Errorf("signal account phone is required")
 	}
 	data, err := signalAttachmentFetcher(ctx, c, c.phone, attachmentID, source, channelID, isGroup)
 	if err != nil {
 		return Attachment{}, err
+	}
+	if size > 0 && int64(len(data)) < size {
+		return Attachment{}, fmt.Errorf("attachment %s is incomplete: got %d of %d bytes", attachmentID, len(data), size)
 	}
 	return persistIncomingMedia("signal", fileName, contentType, data)
 }

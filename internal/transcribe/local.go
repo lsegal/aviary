@@ -3,6 +3,7 @@ package transcribe
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,18 @@ import (
 	"strings"
 	"time"
 )
+
+// ErrUnreadableAudio reports audio that is empty, too short, or that
+// ffmpeg can't decode. whisper-cli is never run on it.
+var ErrUnreadableAudio = errors.New("audio was empty/corrupt")
+
+// ErrTranscriberFailed reports that whisper-cli exited with an error or
+// crashed. The wrapped detail is for logs, not for users.
+var ErrTranscriberFailed = errors.New("whisper-cli failed")
+
+// minWAVBytes is a 44-byte header plus 100 ms of 16 kHz mono 16-bit audio,
+// the shortest input whisper.cpp accepts.
+const minWAVBytes = 44 + 16000*2/10
 
 // runFunc runs a command and returns its combined output.
 type runFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
@@ -49,6 +62,11 @@ func (l *Local) Transcribe(ctx context.Context, audioPath string, opts Options) 
 	if run == nil {
 		run = runCommand
 	}
+	if info, err := os.Stat(audioPath); err != nil {
+		return Transcript{}, fmt.Errorf("%w: %w", ErrUnreadableAudio, err)
+	} else if info.Size() == 0 {
+		return Transcript{}, fmt.Errorf("%w: file is empty", ErrUnreadableAudio)
+	}
 	dir, err := os.MkdirTemp("", "aviary-transcribe-")
 	if err != nil {
 		return Transcript{}, err
@@ -57,15 +75,18 @@ func (l *Local) Transcribe(ctx context.Context, audioPath string, opts Options) 
 
 	wav := filepath.Join(dir, "audio.wav")
 	if out, err := run(ctx, st.FFmpeg.Path, ffmpegArgs(audioPath, wav)...); err != nil {
-		return Transcript{}, fmt.Errorf("converting audio with ffmpeg: %w: %s", err, firstLine(out))
+		return Transcript{}, fmt.Errorf("%w: ffmpeg: %w: %s", ErrUnreadableAudio, err, firstLine(out))
 	}
 	info, err := os.Stat(wav)
 	if err != nil {
-		return Transcript{}, fmt.Errorf("converting audio with ffmpeg: %w", err)
+		return Transcript{}, fmt.Errorf("%w: ffmpeg wrote no audio: %w", ErrUnreadableAudio, err)
+	}
+	if info.Size() < minWAVBytes {
+		return Transcript{}, fmt.Errorf("%w: ffmpeg wrote %s of audio", ErrUnreadableAudio, wavDuration(info.Size()))
 	}
 	prefix := filepath.Join(dir, "transcript")
 	if out, err := run(ctx, st.Whisper.Path, whisperArgs(st.Model.Path, wav, prefix, opts.Language)...); err != nil {
-		return Transcript{}, fmt.Errorf("running whisper-cli: %w: %s", err, firstLine(out))
+		return Transcript{}, fmt.Errorf("%w: %w: %s", ErrTranscriberFailed, err, firstLine(out))
 	}
 	data, err := os.ReadFile(prefix + ".json")
 	if err != nil {

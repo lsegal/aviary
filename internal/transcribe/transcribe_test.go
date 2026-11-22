@@ -3,6 +3,7 @@ package transcribe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -71,19 +72,28 @@ func fakeTools(t *testing.T, calls *[][]string) runFunc {
 	}
 }
 
+// writeAudio writes a nonempty input file for Local.
+func writeAudio(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	require.NoError(t, os.WriteFile(path, []byte("audio-bytes"), 0o600))
+	return path
+}
+
 func TestLocal_ConvertsWithFFmpegThenRunsWhisper(t *testing.T) {
 	for _, input := range []string{"note.ogg", "note.opus", "clip.m4a", "clip.aac", "rec.webm", "song.mp3", "raw.wav"} {
 		t.Run(input, func(t *testing.T) {
 			var calls [][]string
 			l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls)}
-			got, err := l.Transcribe(context.Background(), "/in/"+input, Options{Language: "de"})
+			in := writeAudio(t, input)
+			got, err := l.Transcribe(context.Background(), in, Options{Language: "de"})
 			require.NoError(t, err)
 			assert.Equal(t, Transcript{Text: "Hello world.", Language: "en", Duration: 12 * time.Second}, got)
 
 			require.Len(t, calls, 2)
 			ffmpeg, whisper := calls[0], calls[1]
 			assert.Equal(t, "/bin/ffmpeg", ffmpeg[0])
-			assert.Equal(t, "/in/"+input, ffmpeg[slices.Index(ffmpeg, "-i")+1])
+			assert.Equal(t, in, ffmpeg[slices.Index(ffmpeg, "-i")+1])
 			assert.Equal(t, "16000", ffmpeg[slices.Index(ffmpeg, "-ar")+1])
 			assert.Equal(t, "1", ffmpeg[slices.Index(ffmpeg, "-ac")+1])
 			assert.Equal(t, "/bin/whisper-cli", whisper[0])
@@ -112,14 +122,57 @@ func TestLocal_MissingToolsReturnsUnavailable(t *testing.T) {
 	assert.Contains(t, err.Error(), "aviary deps install")
 }
 
-func TestLocal_FFmpegFailureIsReported(t *testing.T) {
-	l := &Local{Resolve: readyStatus, run: func(context.Context, string, ...string) ([]byte, error) {
+func TestLocal_FFmpegFailureIsUnreadableAudio(t *testing.T) {
+	l := &Local{Resolve: readyStatus, run: func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		require.Equal(t, "/bin/ffmpeg", name, "whisper-cli must not run")
 		return []byte("Invalid data found when processing input\n"), errors.New("exit status 1")
 	}}
-	_, err := l.Transcribe(context.Background(), "/in/a.ogg", Options{})
-	require.Error(t, err)
+	_, err := l.Transcribe(context.Background(), writeAudio(t, "a.ogg"), Options{})
+	require.ErrorIs(t, err, ErrUnreadableAudio)
 	assert.NotErrorIs(t, err, ErrEngineUnavailable)
 	assert.Contains(t, err.Error(), "Invalid data found")
+}
+
+func TestLocal_EmptyInputSkipsTools(t *testing.T) {
+	in := filepath.Join(t.TempDir(), "empty.m4a")
+	require.NoError(t, os.WriteFile(in, nil, 0o600))
+	l := &Local{Resolve: readyStatus, run: func(context.Context, string, ...string) ([]byte, error) {
+		t.Fatal("nothing should run")
+		return nil, nil
+	}}
+	_, err := l.Transcribe(context.Background(), in, Options{})
+	require.ErrorIs(t, err, ErrUnreadableAudio)
+}
+
+func TestLocal_TinyAudioSkipsWhisper(t *testing.T) {
+	// A two-frame silent MP3 (864 B, 72 ms) converts to a WAV shorter than
+	// whisper.cpp's 100 ms minimum, and a corrupt input to just a header.
+	for _, wavBytes := range []int{0, 44, 44 + 72*32} {
+		t.Run(fmt.Sprint(wavBytes), func(t *testing.T) {
+			l := &Local{Resolve: readyStatus, run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+				require.Equal(t, "/bin/ffmpeg", name, "whisper-cli must not run")
+				return nil, os.WriteFile(args[len(args)-1], make([]byte, wavBytes), 0o600)
+			}}
+			_, err := l.Transcribe(context.Background(), writeAudio(t, "attachment.mp3"), Options{})
+			require.ErrorIs(t, err, ErrUnreadableAudio)
+		})
+	}
+}
+
+func TestLocal_WhisperCrashIsTranscriberFailed(t *testing.T) {
+	var calls [][]string
+	fake := fakeTools(t, &calls)
+	l := &Local{Resolve: readyStatus, run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if name == "/bin/whisper-cli" {
+			calls = append(calls, append([]string{name}, args...))
+			return []byte("read_audio_data: reading audio data from 'audio.wav'\n"), errors.New("exit status 11")
+		}
+		return fake(ctx, name, args...)
+	}}
+	_, err := l.Transcribe(context.Background(), writeAudio(t, "a.m4a"), Options{})
+	require.ErrorIs(t, err, ErrTranscriberFailed)
+	assert.NotErrorIs(t, err, ErrUnreadableAudio)
+	assert.Len(t, calls, 2)
 }
 
 func TestSettingsFrom(t *testing.T) {
