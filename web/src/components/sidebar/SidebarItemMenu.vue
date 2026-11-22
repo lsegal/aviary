@@ -48,6 +48,7 @@ const open = defineModel<boolean>("open", { default: false });
 
 // Clear empties an item rather than deleting it.
 function actionIcon(action: SidebarItemAction) {
+	if (action.icon) return action.icon;
 	if (action.key === "clear") return BackspaceIcon;
 	return action.danger ? TrashIcon : PencilIcon;
 }

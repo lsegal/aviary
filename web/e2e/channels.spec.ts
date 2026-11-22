@@ -255,7 +255,7 @@ test("a channel's view shows its conversation and its gear opens its settings", 
 	await expect(page.getByTestId("channel-owner")).toHaveText("assistant");
 });
 
-test("… Edit, Rename and Remove act on a channel", async ({ page }) => {
+test("… Rename, Settings and Delete act on a channel", async ({ page }) => {
 	const { calls } = await mockChannels(page, [
 		TEAM,
 		{ type: "signal", id: "+15551234567", name: "Phone" },
@@ -268,7 +268,16 @@ test("… Edit, Rename and Remove act on a channel", async ({ page }) => {
 		await page.getByRole("menuitem", { name: item }).click();
 	};
 
-	await menu("Team Slack", "Edit");
+	await row("Team Slack").getByTestId("channel-menu-button").click();
+	await expect(page.getByRole("menuitem")).toHaveText([
+		"Rename",
+		"Settings",
+		"Delete",
+	]);
+	await page.keyboard.press("Escape");
+	await expect(page.getByRole("menuitem")).toHaveCount(0);
+
+	await menu("Team Slack", "Settings");
 	await expect(page).toHaveURL(
 		/\/agents\/assistant\/channels\/Team%20Slack\/settings$/,
 	);
@@ -285,8 +294,8 @@ test("… Edit, Rename and Remove act on a channel", async ({ page }) => {
 	await expect(page).toHaveURL(/\/agents\/assistant\/channels\/Ops%20Slack$/);
 	await expect(page.getByTestId("channel-title")).toHaveText("Ops Slack");
 
-	// Remove confirms and asks what to do with the sessions.
-	await menu("Ops Slack", "Remove");
+	// Delete confirms and asks what to do with the sessions.
+	await menu("Ops Slack", "Delete");
 	const confirm = page.getByTestId("channel-remove-dialog");
 	await expect(confirm).toContainText("Remove channel?");
 	await expect(confirm.getByTestId("channel-remove-archive")).toBeChecked();
@@ -294,7 +303,7 @@ test("… Edit, Rename and Remove act on a channel", async ({ page }) => {
 	await expect(confirm).toHaveCount(0);
 	expect(calls.channel_remove).toBeUndefined();
 
-	await menu("Ops Slack", "Remove");
+	await menu("Ops Slack", "Delete");
 	await confirm.getByTestId("channel-remove-delete").check();
 	await confirm.getByRole("button", { name: "Remove" }).click();
 	expect(calls.channel_remove).toEqual([

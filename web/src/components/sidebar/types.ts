@@ -1,7 +1,11 @@
+import type { Component } from "vue";
+
 /** One entry of a sidebar item's "…" menu; danger entries delete or clear. */
 export interface SidebarItemAction {
 	key: string;
 	label: string;
+	/** Overrides the icon picked from the action's key and danger flag. */
+	icon?: Component;
 	danger?: boolean;
 	disabled?: boolean;
 	title?: string;

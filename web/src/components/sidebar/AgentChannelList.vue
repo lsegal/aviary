@@ -18,6 +18,7 @@
 </template>
 
 <script setup lang="ts">
+import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import { computed, nextTick, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useChannelDialogs } from "../../composables/useChannelDialogs";
@@ -52,13 +53,13 @@ const activeName = computed(() => {
 });
 
 const actions: SidebarItemAction[] = [
-	{ key: "edit", label: "Edit" },
 	{ key: "rename", label: "Rename" },
-	{ key: "delete", label: "Remove", danger: true },
+	{ key: "settings", label: "Settings", icon: Cog6ToothIcon },
+	{ key: "delete", label: "Delete", danger: true },
 ];
 
 function select(key: string, name: string) {
-	if (key === "edit") void router.push(channelSettingsPath(props.agent, name));
+	if (key === "settings") void router.push(channelSettingsPath(props.agent, name));
 	else if (key === "rename") void startRename(name);
 	else open({ mode: "remove", agent: props.agent, channel: name });
 }
