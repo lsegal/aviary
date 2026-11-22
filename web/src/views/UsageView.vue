@@ -35,6 +35,7 @@
           :disabled="store.loading" @click="store.fetch()">
           {{ store.loading ? "Loading..." : "Refresh" }}
         </button>
+        <SystemSettingsLink />
       </div>
 
       <div v-if="store.error"
@@ -273,6 +274,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import SystemPageIcon from "../components/SystemPageIcon.vue";
+import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { chatDisplayName, useChatSessionsStore } from "../stores/chatSessions";
 import { useUsageStore } from "../stores/usage";
 

@@ -49,6 +49,7 @@
             @click="logs.clearLogs()">
             Clear
           </button>
+          <SystemSettingsLink />
         </div>
       </div>
 
@@ -116,6 +117,7 @@
 import { nextTick, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import SystemPageIcon from "../components/SystemPageIcon.vue";
+import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { AppSelect, type SelectOption } from "../components/ui/select";
 import { type LogLevel, useLogs } from "../composables/useLogs";
 

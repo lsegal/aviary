@@ -12,14 +12,17 @@
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
-            :disabled="loading"
-            @click="loadCatalog"
-          >
-            {{ loading ? "Refreshing…" : "Refresh" }}
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+              :disabled="loading"
+              @click="loadCatalog"
+            >
+              {{ loading ? "Refreshing…" : "Refresh" }}
+            </button>
+            <SystemSettingsLink />
+          </div>
         </div>
 
         <div v-if="errorMessage" class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
@@ -278,6 +281,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import SystemPageIcon from "../components/SystemPageIcon.vue";
+import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import TranscriptionStatusCard from "../components/TranscriptionStatusCard.vue";
 import { AppSelect } from "../components/ui/select";
 import { Skeleton } from "../components/ui/skeleton";

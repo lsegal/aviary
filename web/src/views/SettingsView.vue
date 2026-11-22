@@ -42,6 +42,7 @@
 								class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
 								:disabled="saving || reverting" @click="saveAll()">{{ saving ? "Saving…" : "Save Changes" }}</button>
 							</template>
+							<SystemSettingsLink v-if="activeTab === 'sessions' || activeTab === 'skills'" />
 						</div>
 					</div>
 				</div>
@@ -347,6 +348,7 @@ import {
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import SystemPageIcon from "../components/SystemPageIcon.vue";
+import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { settingsViewContextKey } from "../components/settings/context";
 import SettingsAgentsTab from "../components/settings/SettingsAgentsTab.vue";
 import SettingsGeneralTab from "../components/settings/SettingsGeneralTab.vue";

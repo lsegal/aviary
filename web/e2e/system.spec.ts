@@ -765,3 +765,75 @@ test("system tools shows voice transcription deps and installs them", async ({
 	await expect(card.getByTestId("transcription-install")).toHaveCount(0);
 	expect(methods).toEqual(["GET", "POST"]);
 });
+
+test("every System page header links to Settings with a gear (#932)", async ({
+	page,
+}) => {
+	for (const path of [
+		"/system/overview",
+		"/system/usage",
+		"/system/tools",
+		"/system/skills",
+		"/system/sessions",
+		"/system/models",
+		"/system/logs",
+		"/system/daemons",
+	]) {
+		await page.goto(path);
+		const gear = page.getByTestId("system-settings-link");
+		await expect(gear, path).toBeVisible();
+		await expect(gear, path).toHaveAccessibleName("Settings");
+		await expect(gear, path).toHaveAttribute("title", "Settings");
+		await expect(gear, path).toHaveAttribute("href", "/system/settings");
+	}
+});
+
+test("the System gear opens Settings, which shows no gear (#932)", async ({
+	page,
+}) => {
+	await page.goto("/system/overview");
+	await page.getByRole("link", { name: "Settings", exact: true }).click();
+	await expect(page).toHaveURL(/\/system\/settings$/);
+	await expect(page.getByTestId("settings-title")).toHaveText("Settings");
+	await expect(page.getByRole("dialog")).toHaveCount(0);
+	await expect(page.getByTestId("system-settings-link")).toHaveCount(0);
+
+	await page.goto("/system/providers");
+	await expect(page.getByTestId("settings-title")).toBeVisible();
+	await expect(page.getByTestId("system-settings-link")).toHaveCount(0);
+});
+
+test("the System gear fits beside header actions on a phone (#932)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	for (const path of [
+		"/system/overview",
+		"/system/usage",
+		"/system/tools",
+		"/system/skills",
+		"/system/sessions",
+		"/system/models",
+		"/system/logs",
+		"/system/daemons",
+	]) {
+		await page.goto(path);
+		const gear = page.getByTestId("system-settings-link");
+		await expect(gear, path).toBeVisible();
+		const box = await gear.boundingBox();
+		if (!box) throw new Error(`${path}: no gear box`);
+		expect(box.x + box.width, path).toBeLessThanOrEqual(390);
+		const refresh = page.getByRole("button", { name: /^(Refresh|Loading)/ });
+		if (await refresh.count()) {
+			const r = await refresh.first().boundingBox();
+			if (!r) throw new Error(`${path}: no Refresh box`);
+			// The gear sits right of Refresh or on its own row, never on it.
+			const overlaps =
+				r.x < box.x + box.width &&
+				box.x < r.x + r.width &&
+				r.y < box.y + box.height &&
+				box.y < r.y + r.height;
+			expect(overlaps, path).toBe(false);
+		}
+	}
+});

@@ -30,11 +30,14 @@
     <div v-else class="px-6 py-6">
       <div class="mb-6 flex items-center justify-between">
         <h2 class="text-xl font-bold text-gray-900 dark:text-white">Overview</h2>
-        <button
-          class="rounded-lg bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-          :disabled="store.loading" @click="store.fetchAll()">
-          {{ store.loading ? 'Loading…' : 'Refresh' }}
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            class="rounded-lg bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            :disabled="store.loading" @click="store.fetchAll()">
+            {{ store.loading ? 'Loading…' : 'Refresh' }}
+          </button>
+          <SystemSettingsLink />
+        </div>
       </div>
 
       <div v-if="store.error"
@@ -226,6 +229,7 @@
 import { computed, onMounted } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import SystemPageIcon from "../components/SystemPageIcon.vue";
+import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { Skeleton } from "../components/ui/skeleton";
 import { useProjectList } from "../composables/useProjects";
 import { projectOwner } from "../lib/projectSettings";
