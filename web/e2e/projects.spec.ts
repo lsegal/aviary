@@ -2944,10 +2944,7 @@ test("expanded job count cards fit one row at desktop widths (#923)", async ({
 				return { top: Math.round(box.top), height: box.height };
 			}),
 		);
-		expect(
-			new Set(boxes.map((b) => b.top)).size,
-			`rows at ${width}px`,
-		).toBe(1);
+		expect(new Set(boxes.map((b) => b.top)).size, `rows at ${width}px`).toBe(1);
 		for (const box of boxes) {
 			expect(box.height, `card height at ${width}px`).toBeLessThanOrEqual(60);
 		}
