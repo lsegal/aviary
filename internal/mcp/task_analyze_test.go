@@ -1,8 +1,11 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"path/filepath"
 	"testing"
 
@@ -211,4 +214,58 @@ func TestEstimateTaskRunPricesCatalogModels(t *testing.T) {
 
 	unpriced := estimateTaskRun("fetch the release notes and summarize them", nil, steps, "openai-codex/gpt-6-sol")
 	assert.Nil(t, unpriced.MinCostUSD, "subscription-billed models show tokens only")
+}
+
+func TestCompileTaskProviderRunsCLIModelsThroughTheirCLI(t *testing.T) {
+	prev := completeCLIText
+	t.Cleanup(func() { completeCLIText = prev })
+	var gotModel, gotSystem, gotPrompt string
+	completeCLIText = func(_ context.Context, model, system, prompt string) (string, error) {
+		gotModel, gotSystem, gotPrompt = model, system, prompt
+		return `{"should_compile":true,"steps":[{"kind":"deterministic","deterministic":true},{"kind":"notify","deterministic":true}]}`, nil
+	}
+
+	provider, err := compileTaskProvider("claude/opus")
+	require.NoError(t, err)
+	analysis, err := analyzeTaskDeterminism(context.Background(), provider, "claude/opus", "check the aviary.com site", "", nil, false)
+	require.NoError(t, err)
+	assert.True(t, analysis.allowsCompile())
+	assert.Equal(t, "claude/opus", gotModel)
+	assert.Equal(t, taskDeterminismSystemPrompt, gotSystem)
+	assert.Contains(t, gotPrompt, "check the aviary.com site")
+
+	_, err = provider.Stream(context.Background(), llm.Request{Tools: []llm.ToolDefinition{{Name: "x"}}})
+	assert.Error(t, err)
+}
+
+func TestTaskAnalyzeLogsFailures(t *testing.T) {
+	stubTaskAnalyzer(t, sampleTaskAnalyses)
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+	var buf bytes.Buffer
+	prevLog := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prevLog) })
+
+	taskAnalyzerFunc = func(context.Context, string, string, string) (*taskAnalyzerResult, error) {
+		return nil, errors.New("provider unavailable")
+	}
+	d := NewDispatcher("https://localhost:16677", "")
+	text, isError, err := d.CallToolWithProgress(context.Background(), "task_analyze", map[string]any{
+		"agent": "bot", "content": "hello", "editor": "task-editor-1", "precompile": true,
+	}, nil)
+	require.NoError(t, err)
+	assert.True(t, isError)
+	assert.Equal(t, "provider unavailable", text)
+	logged := buf.String()
+	assert.Contains(t, logged, "level=WARN")
+	assert.Contains(t, logged, `msg="task_analyze failed"`)
+	assert.Contains(t, logged, "agent=bot")
+	assert.Contains(t, logged, "editor=task-editor-1")
+	assert.Contains(t, logged, `err="provider unavailable"`)
+
+	buf.Reset()
+	logTaskAnalyzeFailure(taskAnalyzeArgs{Agent: "bot", Editor: "task-editor-1"}, errTaskAnalysisSuperseded)
+	assert.NotContains(t, buf.String(), "task_analyze failed", "superseded analyses log below the default level")
 }
