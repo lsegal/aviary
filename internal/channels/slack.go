@@ -104,7 +104,7 @@ func (c *SlackChannel) Send(channel, text string) error {
 	if err != nil {
 		return err
 	}
-	_, _, err = c.client.PostMessage(resolvedChannel, slack.MsgOptionText(text, false))
+	_, _, err = c.client.PostMessage(resolvedChannel, slack.MsgOptionText(slackMrkdwn(text), false))
 	return err
 }
 
@@ -115,7 +115,7 @@ func (c *SlackChannel) SendAndGetID(channel, text string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	_, timestamp, err := c.client.PostMessage(resolvedChannel, slack.MsgOptionText(text, false))
+	_, timestamp, err := c.client.PostMessage(resolvedChannel, slack.MsgOptionText(slackMrkdwn(text), false))
 	return timestamp, err
 }
 
@@ -131,7 +131,7 @@ func (c *SlackChannel) SendThreadMessageAndGetID(channel, threadTS, text string)
 		return "", fmt.Errorf("slack thread timestamp is required")
 	}
 	opts := []slack.MsgOption{
-		slack.MsgOptionText(text, false),
+		slack.MsgOptionText(slackMrkdwn(text), false),
 		slack.MsgOptionTS(threadTS),
 	}
 	_, timestamp, err := c.client.PostMessage(
@@ -153,7 +153,7 @@ func (c *SlackChannel) SendThreadBlocksAndGetID(channel, threadTS, fallbackText 
 		return "", fmt.Errorf("slack thread timestamp is required")
 	}
 	opts := []slack.MsgOption{
-		slack.MsgOptionText(fallbackText, false),
+		slack.MsgOptionText(slackMrkdwn(fallbackText), false),
 		slack.MsgOptionBlocks(blocks...),
 		slack.MsgOptionTS(threadTS),
 	}
@@ -167,7 +167,7 @@ func (c *SlackChannel) EditMessage(channel, msgID, text string) error {
 	if err != nil {
 		return err
 	}
-	_, _, _, err = c.client.UpdateMessage(resolvedChannel, msgID, slack.MsgOptionText(text, false))
+	_, _, _, err = c.client.UpdateMessage(resolvedChannel, msgID, slack.MsgOptionText(slackMrkdwn(text), false))
 	return err
 }
 
@@ -181,7 +181,7 @@ func (c *SlackChannel) EditMessageBlocks(channel, msgID, fallbackText string, bl
 	_, _, _, err = c.client.UpdateMessage(
 		resolvedChannel,
 		msgID,
-		slack.MsgOptionText(fallbackText, false),
+		slack.MsgOptionText(slackMrkdwn(fallbackText), false),
 		slack.MsgOptionBlocks(blocks...),
 	)
 	return err
