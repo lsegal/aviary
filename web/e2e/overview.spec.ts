@@ -458,7 +458,9 @@ test("System cards are compact on mobile only, leaving page headers full size (#
 
 	const cards = page
 		.getByTestId("overview-system-pages")
-		.locator("[data-testid^='overview-system-card-']:not([data-testid$='-title'])");
+		.locator(
+			"[data-testid^='overview-system-card-']:not([data-testid$='-title'])",
+		);
 	await expect(cards).toHaveCount(7);
 	const card = cards.first();
 	const tile = card.getByTestId("system-page-icon");
@@ -475,6 +477,7 @@ test("System cards are compact on mobile only, leaving page headers full size (#
 
 	await page.setViewportSize({ width: 375, height: 900 });
 	await card.click();
+	await expect(page).toHaveURL("/system/usage");
 	const header = page.locator("main").getByTestId("system-page-icon").first();
 	expect((await box(header)).width).toBe(36);
 });
@@ -504,7 +507,12 @@ test("loading skeleton matches the compact status cards (#925)", async ({
 	const skeletonHeight = (await box(skeleton)).height;
 
 	release();
-	const card = page.getByTestId("overview-stat-cards").locator(":scope > *").first();
+	const card = page
+		.getByTestId("overview-stat-cards")
+		.locator(":scope > *")
+		.first();
 	await expect(card).toBeVisible();
-	expect(Math.abs((await box(card)).height - skeletonHeight)).toBeLessThanOrEqual(4);
+	expect(
+		Math.abs((await box(card)).height - skeletonHeight),
+	).toBeLessThanOrEqual(4);
 });
