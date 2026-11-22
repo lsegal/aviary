@@ -9,6 +9,8 @@ export interface ChatSession {
 	name: string;
 	/** Display name generated from the first prompt or set by a rename. */
 	title?: string;
+	/** main, channel, task, hidden or user. */
+	type?: string;
 	created_at: string;
 	last_message_at?: string;
 	is_processing?: boolean;
@@ -26,10 +28,12 @@ export function isMainChat(s: Pick<ChatSession, "name">): boolean {
 
 /** The name a chat shows in the Chats list. */
 export function chatDisplayName(
-	s: Pick<ChatSession, "id" | "name" | "title">,
+	s: Pick<ChatSession, "id" | "name" | "title" | "type">,
 ): string {
 	if (s.title) return s.title;
 	if (isMainChat(s)) return "Main Chat";
+	// A task's session is named after its task, even once the task is gone.
+	if (s.type === "task" && s.name) return s.name;
 	// A chat from session_create is named by its ID until it gets a title.
 	return s.name && s.name !== s.id ? s.name : "New chat";
 }

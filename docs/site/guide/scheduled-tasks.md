@@ -193,6 +193,7 @@ A running job streams its output, a line at a time, into the **Live Output** pan
 | `task_preview` | `aviary task preview [<name>] [--every 15m]` | Next fires of a saved task or unsaved trigger (default 3) |
 | `task_run` | `aviary task run <name>` | Run now, ignoring the overlap policy |
 | `task_delete` | `aviary task rm <name>` | Delete a task file and its history |
+| `task_session` | | The task's session, which every run shares, titled with the task's name |
 
 | `task_upcoming` | | Next fires across enabled tasks (default 5, at most 3 per task), optionally for one project |
 
@@ -223,6 +224,10 @@ Core's scheduler owns the schedule; Code Loop only runs each fire as a job. Each
 Project tasks are scheduled tasks like any other: there is one list of them, one scheduler that runs them, and they are created and edited under **Agents → *agent* → Scheduled Tasks**: set **Task type** to **Project**, then pick the watched project and, optionally, a **Model override**, the same model picker channels use, which the project's agent runs the task with instead of its own model.
 
 The project's **Schedules** tab is a second place to create and edit the same tasks. It lists the scheduled tasks that target the project with enable toggles and their last results. **New schedule** opens the same **Add task** dialog the **+** on **Scheduled Tasks** opens, with the task already set to type `project` and to target the project, so it creates a project scheduled task that also shows in **Scheduled Tasks**. Selecting a task edits every field with a preview of the next fires, the recent runs, Run now, Save, Delete, and a link to the task in **Scheduled Tasks**; the **Scheduled Tasks** editor links back to the project's Schedules tab. The board's **Up next** strip shows the project's next five runs, at most three per schedule, and hides when no schedule is enabled.
+
+### Task sessions
+
+Every run of a task shares one session, named and titled after the task. In the control panel it lives under the task in the sidebar's **Scheduled Tasks** section, not in **Chats**: clicking the task opens its session, and the gear at the top right opens the task's settings. Renaming the task moves its session, and its run history, to the new name. A deleted task's session stays in **Chats**.
 
 ## Output Delivery
 

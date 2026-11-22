@@ -11,7 +11,7 @@ export interface SidebarItemAction {
 	title?: string;
 }
 
-/** Edit and Delete, the "…" menu of chats, tasks and files. */
+/** Edit and Delete, the "…" menu of files. */
 export function editDeleteActions(
 	editLabel: string,
 	options: { locked?: boolean; lockedTitle?: string } = {},

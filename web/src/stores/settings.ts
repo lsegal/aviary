@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
+import type { RouteLocationNormalizedLoaded } from "vue-router";
 import { useMCP } from "../composables/useMCP";
 import type {
 	AgentProjectsSection,
@@ -193,10 +194,33 @@ export interface AppConfig {
 	projects?: ProjectsSection;
 }
 
-/** The Tasks page of an agent, optionally opened on one task. */
+/** The Tasks page of an agent, optionally opened on one task's settings. */
 export function agentTaskPath(agent: string, task = "") {
 	const path = `/agents/${encodeURIComponent(agent)}/tasks`;
 	return task ? { path, query: { task } } : { path };
+}
+
+/** A task's session, which every run of the task shares. */
+export function taskSessionPath(agent: string, task: string): string {
+	return `/agents/${encodeURIComponent(agent)}/tasks/${encodeURIComponent(task)}`;
+}
+
+/**
+ * The task whose session or settings are showing for agent, or "": its
+ * session view, or the Tasks page opened on its ?task.
+ */
+export function activeTaskName(
+	route: Pick<RouteLocationNormalizedLoaded, "path" | "query">,
+	agent: string,
+): string {
+	const base = `/agents/${encodeURIComponent(agent)}/tasks`;
+	if (route.path === base || route.path === `${base}/`) {
+		const q = route.query.task;
+		return typeof q === "string" ? q : "";
+	}
+	if (!route.path.startsWith(`${base}/`)) return "";
+	const rest = route.path.slice(base.length + 1).replace(/\/$/, "");
+	return rest.includes("/") ? "" : decodeURIComponent(rest);
 }
 
 /** Normalizes a task's type, which defaults to prompt. */

@@ -80,3 +80,17 @@ export async function openGearMenuItem(
 		.getByRole("menuitem", { name: item, exact: true })
 		.click();
 }
+
+/**
+ * Opens a task's settings through its sidebar row's "…" → Settings, by
+ * default the first task's. The row itself opens the task's session.
+ */
+export async function openTaskSettings(page: Page, task = "") {
+	const rows = page.getByTestId("sidebar-tasks").getByTestId("task-row");
+	const row = task
+		? rows.and(page.locator(`[data-task="${task}"]`))
+		: rows.first();
+	await row.hover();
+	await row.getByTestId("task-menu-button").click();
+	await page.getByRole("menuitem", { name: "Settings" }).click();
+}
