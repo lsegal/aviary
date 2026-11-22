@@ -389,6 +389,15 @@ async function openRunDetails(page: Page) {
 		.first()
 		.click();
 	await expect(page.getByTestId("details-panel")).toBeVisible();
+	// The drawer slides in from the right; its 8px resize handle only sits
+	// where a drag can hit it once the drawer is flush with the viewport edge.
+	const viewportWidth = page.viewportSize()?.width ?? 0;
+	await expect
+		.poll(async () => {
+			const box = await page.getByTestId("details-panel").boundingBox();
+			return Math.round((box?.x ?? 0) + (box?.width ?? 0));
+		})
+		.toBe(viewportWidth);
 }
 
 async function panelWidth(page: Page): Promise<number> {
