@@ -411,6 +411,35 @@ test("an agent's Code Loop in the sidebar list its projects with live counts", a
 	);
 });
 
+test("the sidebar always shows Code Loop expanded with its projects (#867)", async ({
+	page,
+}) => {
+	await setup(page);
+	// Off the Code Loop pages, Code Loop still lists every project.
+	await page.goto("/system/overview");
+	const projects = page.getByTestId("sidebar-agent-projects");
+	await expect(projects).toBeVisible();
+	await expect(
+		projects.getByRole("link", { name: /lsegal\/aviary/ }),
+	).toHaveAttribute("href", "/agents/coder/projects/lsegal%2Faviary");
+	await expect(
+		projects.getByRole("link", { name: /lsegal\/zvidlib/ }),
+	).toBeVisible();
+
+	// Reloading, and leaving the board and coming back, keep it expanded.
+	const nav = page.getByTestId("sidebar-nav");
+	await nav.getByRole("link", { name: /^Code Loop/ }).click();
+	await expect(page).toHaveURL(/\/agents\/coder\/projects$/);
+	await expect(projects).toBeVisible();
+	await nav.getByRole("link", { name: "Agent Settings" }).click();
+	await expect(page).toHaveURL(/\/agents\/coder\/settings/);
+	await expect(projects).toBeVisible();
+	await page.reload();
+	await expect(
+		projects.getByRole("link", { name: /lsegal\/aviary/ }),
+	).toBeVisible({ timeout: 15_000 });
+});
+
 test('the Code Loop running badge is gray and the Add project "+" sits beside it on hover', async ({
 	page,
 }) => {
