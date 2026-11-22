@@ -400,9 +400,7 @@ function onFilterOutside(e: PointerEvent) {
 		closeFilter();
 }
 onMounted(() => document.addEventListener("pointerdown", onFilterOutside));
-onUnmounted(() =>
-	document.removeEventListener("pointerdown", onFilterOutside),
-);
+onUnmounted(() => document.removeEventListener("pointerdown", onFilterOutside));
 function toggleState(state: BoardFilter) {
 	setStates(
 		filters.value.includes(state)
