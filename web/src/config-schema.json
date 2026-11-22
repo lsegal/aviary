@@ -310,6 +310,35 @@
 				}
 			}
 		},
+		"transcription": {
+			"type": "object",
+			"additionalProperties": false,
+			"description": "Speech-to-text for channel voice messages and the chat composer's mic button.",
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "Transcribe voice messages. When false, they reach the agent as plain file attachments."
+				},
+				"engine": {
+					"type": "string",
+					"enum": ["local"],
+					"default": "local",
+					"description": "Transcription engine. 'local' runs whisper.cpp's whisper-cli."
+				},
+				"model": {
+					"type": "string",
+					"default": "base.en",
+					"description": "whisper.cpp model name (tiny, base, base.en, small, small.en, medium, large-v3, ...) or a path to a ggml model file."
+				},
+				"language": {
+					"type": "string",
+					"default": "auto",
+					"pattern": "^(auto|[a-z]{2,3})$",
+					"description": "Spoken language: 'auto' to detect it, or an ISO 639-1 code such as 'en'."
+				}
+			}
+		},
 		"search": {
 			"type": "object",
 			"additionalProperties": false,
