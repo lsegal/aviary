@@ -2358,6 +2358,10 @@ func (w *Engine) Run(ctx context.Context) error {
 			jobMu.Lock()
 			issueCounts[target] = len(batch)
 			jobMu.Unlock()
+			// Publish each project's count as it lands, so a project shown
+			// from the cache after a restart turns live without waiting on
+			// slower ones (issue #921).
+			publish()
 			for i := range batch {
 				batch[i].Target = target
 				if batch[i].Repository == "" {

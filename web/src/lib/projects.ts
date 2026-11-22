@@ -82,6 +82,13 @@ export interface ProjectStatus {
 	delivery: string;
 	deliveryOnline: boolean;
 	lastChecked: string;
+	/**
+	 * Some of the board's projects show the state Code Loop cached before its
+	 * last restart, until the first live poll confirms them.
+	 */
+	stale: boolean;
+	/** When that cached state was saved; empty when nothing is cached. */
+	cachedAt: string;
 	interval: string;
 	/** The issue search that selects work; empty picks up every open issue. */
 	issueFilter: string;
@@ -522,6 +529,8 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		// Only webhook delivery reports whether its tunnel is up.
 		deliveryOnline: raw.webhook_online !== false,
 		lastChecked: str(raw.last_check),
+		stale: raw.stale === true,
+		cachedAt: str(raw.cached_at),
 		interval: str(raw.poll_interval),
 		issueFilter: str(raw.issue_filter),
 		allowedCommenters: arr(raw.allowed_commenters).map(str).filter(Boolean),

@@ -85,8 +85,11 @@ type Manager struct {
 	logSource atomic.Pointer[LogSource]
 
 	snapshot atomic.Pointer[core.Snapshot]
-	reports  *reporter
-	quotas   atomic.Pointer[map[string]string]
+	// cache is the last known state the read APIs show until the engine has
+	// polled each project; see stateCache.
+	cache   *stateCache
+	reports *reporter
+	quotas  atomic.Pointer[map[string]string]
 
 	// loginRetry is the pending retry of an engine start whose gh login
 	// lookup failed, and loginRetryDelay the wait before the next one.
@@ -158,6 +161,7 @@ func NewManager(stateDir string) (*Manager, error) {
 		stateDir:    stateDir,
 		identity:    identity,
 		transcripts: newTranscriptStore(filepath.Join(stateDir, "jobs")),
+		cache:       newStateCache(filepath.Join(stateDir, "cache.json")),
 		reports:     newReporter(),
 	}
 	return m, nil
@@ -266,6 +270,7 @@ func (m *Manager) Shutdown() {
 	m.running = nil
 	m.mu.Unlock()
 	m.stopRun(run)
+	m.cache.close()
 	process.ReapAll()
 }
 
@@ -880,6 +885,7 @@ func (m *Manager) latestQuotas() map[string]string {
 func (m *Manager) Snapshot(snapshot core.Snapshot) {
 	m.snapshot.Store(&snapshot)
 	m.reports.observe(snapshot)
+	m.cache.observe(snapshot)
 }
 
 // SetReportDelivery sets how projects that opted in to reports send them

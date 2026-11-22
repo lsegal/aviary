@@ -36,7 +36,7 @@ func (m *Manager) ChatContext(ctx context.Context, project string) string {
 		}
 	}
 
-	jobs := m.currentSnapshot().Jobs
+	jobs := m.display().Jobs
 	// The board's own jobs come first, so a cut keeps them.
 	ordered := make([]map[string]any, 0, len(jobs))
 	var others []map[string]any
