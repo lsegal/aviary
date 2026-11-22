@@ -595,7 +595,9 @@ async function mockServerSettings(
 }
 
 function disableTokenAuthCheckbox(page: Page) {
-	return page.getByRole("checkbox", { name: /Disable token authentication/i });
+	// The modal hides the page from the accessibility tree while open, so find
+	// the box by test id rather than by role.
+	return page.getByTestId("disable-token-auth");
 }
 
 test("checking Disable token authentication asks for confirmation first (#877)", async ({
@@ -659,12 +661,14 @@ test("dismissing the Disable token authentication modal changes nothing (#877)",
 	await expect(modal).toBeHidden();
 	await expect(checkbox).not.toBeChecked();
 
+	// Change something else so the save goes through, and confirm the
+	// dismissed modal left the setting out.
+	await page.getByRole("checkbox", { name: /Disable TLS/i }).check();
 	await page.getByRole("button", { name: "Save Changes" }).click();
 	await expect.poll(saved).not.toBeNull();
-	expect(
-		(saved()?.server as Record<string, unknown> | undefined)
-			?.disable_token_auth,
-	).toBeUndefined();
+	const server = saved()?.server as Record<string, unknown> | undefined;
+	expect(server?.no_tls).toBe(true);
+	expect(server?.disable_token_auth).toBeUndefined();
 });
 
 test("unchecking Disable token authentication needs no confirmation (#877)", async ({

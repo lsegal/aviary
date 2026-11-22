@@ -28,6 +28,7 @@ server:
   port: 16677
   external_access: false
   no_tls: false
+  disable_token_auth: false
   failed_task_timeout: "6h"
   tls:
     cert: /path/to/cert.pem
@@ -39,6 +40,7 @@ server:
 | `port` | int | `16677` | Port the server listens on |
 | `external_access` | bool | `false` | Bind to `0.0.0.0` instead of `127.0.0.1` |
 | `no_tls` | bool | `false` | Disable TLS and serve plain HTTP |
+| `disable_token_auth` | bool | `false` | Skip bearer-token checks on the HTTP, WebSocket, and MCP endpoints, so anyone who can reach the server can use it. Not recommended, especially with `external_access` on or `no_tls` set. The web UI skips its login prompt while this is on. Changing it restarts the service. |
 | `failed_task_timeout` | string | `"6h"` | Maximum age of a pending checkpoint before the agent gives up. Accepts Go duration strings (`"30m"`, `"6h"`, `"24h"`). |
 | `auto_update` | bool | `false` | Install new releases automatically as soon as they are available. Running jobs are checkpointed and resume after the restart. Dev builds in a git checkout fast-forward the checkout instead (see [Upgrades](/guide/operations#dev-checkouts)). |
 | `restart_call_grace` | string | `"1m"` | How long a pending restart keeps admitting new MCP tool calls while it waits for in-flight ones. Go duration string. |
