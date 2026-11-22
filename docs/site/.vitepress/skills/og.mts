@@ -5,17 +5,21 @@ import { Resvg } from "@resvg/resvg-js";
 import satori from "satori";
 import { headlineParts, repoRoot } from "./source.mts";
 
-// Renders the 1200×630 share cards for the /skills/ pages at build time,
-// in the landing pages' palette and type (#763).
+// Renders the 1200×630 share cards at build time (#763), in the site's
+// current palette and type from theme/custom.css (#780, #888).
 
 export const ogWidth = 1200;
 export const ogHeight = 630;
 
 export interface ShareCard {
+	// route is the page address shown in the card's top right.
+	route: string;
 	eyebrow: string;
+	// headline wraps its accent word in *asterisks*, as in landing.yaml.
 	headline: string;
-	tag: string;
-	footnote: string;
+	lede: string;
+	tag?: string;
+	footnote?: string;
 }
 
 const require = createRequire(import.meta.url);
@@ -66,138 +70,230 @@ function h(
 	return { type, props: { ...props, style, children } };
 }
 
+// The light theme's variables in theme/custom.css.
 const palette = {
-	bg: "#fbf3e6",
-	paper: "#fffaf0",
-	ink: "#1c120f",
-	ink2: "#5d4a42",
+	bg: "#ffffff",
+	bgAlt: "#fafafa",
+	ink: "#1d1a19",
+	ink2: "#57524f",
 	brand: "#b83a1d",
 	brand2: "#d54d21",
-	rule: "rgba(28, 18, 15, 0.12)",
+	brand3: "#7f1809",
+	brandSoft: "rgba(213, 77, 33, 0.12)",
+	ember: "#e06430",
 };
 
-function card(input: ShareCard, logo: string): Node {
-	const parts = headlineParts(input.headline);
+// Everything sits inside these margins, so nothing reaches the card's edge.
+const marginX = 72;
+const marginY = 56;
+const contentWidth = ogWidth - 2 * marginX;
+
+// The headline shrinks from the page's 80px title size until it fits in
+// headlineHeight; three lines at the smallest size still fit.
+const headlineSizes = [80, 76, 72, 68, 64, 60, 56, 52];
+const headlineLineHeight = 1.04;
+const headlineHeight = 176;
+
+function headlineNode(headline: string, size: number): Node {
+	const parts = headlineParts(headline);
+	// Each word is its own flex item so long headlines wrap instead of
+	// running off the card.
+	const words = [
+		...parts.before.split(/\s+/).map((text) => ({ text, accent: false })),
+		...parts.accent.split(/\s+/).map((text) => ({ text, accent: true })),
+		...parts.after.split(/\s+/).map((text) => ({ text, accent: false })),
+	].filter((word) => word.text);
+	return h(
+		"div",
+		{
+			display: "flex",
+			flexWrap: "wrap",
+			width: contentWidth,
+			columnGap: size * 0.26,
+			fontWeight: 600,
+			fontSize: size,
+			lineHeight: headlineLineHeight,
+			letterSpacing: size * -0.025,
+		},
+		words.map((word) =>
+			word.accent
+				? h(
+						"span",
+						{
+							backgroundImage: `linear-gradient(135deg, ${palette.brand2}, ${palette.brand3} 60%, ${palette.ember})`,
+							backgroundClip: "text",
+							color: "transparent",
+						},
+						word.text,
+					)
+				: h("span", {}, word.text),
+		),
+	);
+}
+
+async function headlineBox(headline: string, size: number) {
+	const svg = await satori(headlineNode(headline, size) as never, {
+		width: contentWidth,
+		height: 1000,
+		fonts: loadFonts(),
+	});
+	return new Resvg(svg).getBBox();
+}
+
+// fitHeadline picks the largest headline size whose wrapped text fits the
+// headline box, measured from the rendered glyphs' bounds.
+export async function fitHeadline(headline: string): Promise<number> {
+	for (const size of headlineSizes) {
+		const box = await headlineBox(headline, size);
+		if (!box) return size;
+		if (
+			box.x + box.width <= contentWidth &&
+			box.y + box.height <= headlineHeight
+		) {
+			return size;
+		}
+	}
+	throw new Error(`share card headline does not fit: ${headline}`);
+}
+
+const ellipsis = {
+	overflow: "hidden",
+	textOverflow: "ellipsis",
+	whiteSpace: "nowrap",
+};
+
+function card(input: ShareCard, logo: string, headlineSize: number): Node {
 	return h(
 		"div",
 		{
 			width: ogWidth,
 			height: ogHeight,
 			display: "flex",
+			flexDirection: "column",
 			backgroundColor: palette.bg,
-			backgroundImage:
-				"radial-gradient(circle at 18% 12%, rgba(214, 87, 31, 0.22), transparent 45%), radial-gradient(circle at 92% 0%, rgba(198, 140, 79, 0.28), transparent 40%)",
+			backgroundImage: `radial-gradient(circle at 20% -10%, rgba(214, 87, 31, 0.1), transparent 55%), radial-gradient(circle at 100% 10%, rgba(184, 58, 29, 0.06), transparent 50%), linear-gradient(180deg, ${palette.bg}, ${palette.bgAlt})`,
 			color: palette.ink,
 			fontFamily: "Space Grotesk",
 		},
-		h(
-			"div",
-			{
-				display: "flex",
-				flexDirection: "column",
-				justifyContent: "space-between",
-				width: ogWidth - 144,
-				height: ogHeight - 128,
-				margin: "64px 72px",
-			},
-			[
-				h(
-					"div",
-					{
-						display: "flex",
-						alignItems: "center",
-						justifyContent: "space-between",
-					},
-					[
-						h("div", { display: "flex", alignItems: "center", gap: 16 }, [
-							h("img", { width: 52, height: 52 }, undefined, {
-								src: logo,
-								width: 52,
-								height: 52,
-							}),
+		[
+			h(
+				"div",
+				{
+					display: "flex",
+					flexDirection: "column",
+					justifyContent: "space-between",
+					width: contentWidth,
+					height: ogHeight - 2 * marginY - 8,
+					margin: `${marginY}px ${marginX}px`,
+					marginBottom: marginY - 8,
+				},
+				[
+					h(
+						"div",
+						{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+						},
+						[
+							h("div", { display: "flex", alignItems: "center", gap: 14 }, [
+								h("img", { width: 48, height: 48 }, undefined, {
+									src: logo,
+									width: 48,
+									height: 48,
+								}),
+								h(
+									"div",
+									{ fontSize: 30, fontWeight: 600, color: palette.ink },
+									"Aviary",
+								),
+							]),
 							h(
 								"div",
 								{
-									fontSize: 32,
-									fontWeight: 600,
-									color: palette.brand,
-									letterSpacing: 1,
+									fontFamily: "IBM Plex Mono",
+									fontSize: 22,
+									color: palette.ink2,
 								},
-								"Aviary",
+								input.route,
 							),
-						]),
+						],
+					),
+					h("div", { display: "flex", flexDirection: "column" }, [
 						h(
 							"div",
 							{
 								fontFamily: "IBM Plex Mono",
 								fontSize: 22,
-								color: palette.ink2,
+								color: palette.brand,
+								letterSpacing: 3,
+								textTransform: "uppercase",
+								marginBottom: 18,
+								...ellipsis,
 							},
-							"aviary.bot/skills",
+							input.eyebrow,
 						),
-					],
-				),
-				h("div", { display: "flex", flexDirection: "column" }, [
+						headlineNode(input.headline, headlineSize),
+						h(
+							"div",
+							{
+								display: "block",
+								marginTop: 18,
+								fontSize: 27,
+								fontWeight: 600,
+								lineHeight: 1.35,
+								color: palette.ink2,
+								lineClamp: 2,
+							},
+							input.lede,
+						),
+					]),
 					h(
 						"div",
-						{
-							fontFamily: "IBM Plex Mono",
-							fontSize: 24,
-							color: palette.brand,
-							letterSpacing: 4,
-							textTransform: "uppercase",
-							marginBottom: 22,
-						},
-						input.eyebrow,
-					),
-					h(
-						"div",
-						{
-							display: "flex",
-							flexWrap: "wrap",
-							fontWeight: 600,
-							fontSize: 92,
-							lineHeight: 1.02,
-							letterSpacing: -2.3,
-						},
+						{ display: "flex", alignItems: "center", gap: 20, height: 44 },
 						[
-							parts.before
-								? h("span", { whiteSpace: "pre" }, parts.before)
+							input.tag
+								? h(
+										"div",
+										{
+											display: "flex",
+											flexShrink: 0,
+											padding: "6px 18px",
+											borderRadius: 999,
+											border: "2px solid rgba(184, 58, 29, 0.4)",
+											backgroundColor: palette.brandSoft,
+											color: palette.brand,
+											fontFamily: "IBM Plex Mono",
+											fontSize: 24,
+										},
+										input.tag,
+									)
 								: null,
-							parts.accent
-								? h("span", { color: palette.brand2 }, parts.accent)
-								: null,
-							parts.after
-								? h("span", { whiteSpace: "pre" }, parts.after)
+							input.footnote
+								? h(
+										"div",
+										{ fontSize: 24, color: palette.ink2, ...ellipsis },
+										input.footnote,
+									)
 								: null,
 						].filter(Boolean),
 					),
-				]),
-				h("div", { display: "flex", alignItems: "center", gap: 20 }, [
-					h(
-						"div",
-						{
-							display: "flex",
-							padding: "8px 20px",
-							borderRadius: 999,
-							border: "2px solid rgba(184, 58, 29, 0.4)",
-							backgroundColor: "rgba(213, 77, 33, 0.12)",
-							color: palette.brand,
-							fontFamily: "IBM Plex Mono",
-							fontSize: 26,
-						},
-						input.tag,
-					),
-					h("div", { fontSize: 24, color: palette.ink2 }, input.footnote),
-				]),
-			],
-		),
+				],
+			),
+			// The brand bar along the bottom edge, as on the static logo card.
+			h("div", {
+				width: ogWidth,
+				height: 8,
+				backgroundImage: `linear-gradient(90deg, ${palette.brand3}, ${palette.brand}, ${palette.ember})`,
+			}),
+		],
 	);
 }
 
 export async function renderShareCard(input: ShareCard): Promise<Buffer> {
 	const logo = `data:image/png;base64,${readFileSync(join(repoRoot, "docs/site/public/logo.png")).toString("base64")}`;
-	const svg = await satori(card(input, logo) as never, {
+	const size = await fitHeadline(input.headline);
+	const svg = await satori(card(input, logo, size) as never, {
 		width: ogWidth,
 		height: ogHeight,
 		fonts: loadFonts(),
