@@ -53,6 +53,16 @@ Shared channel behavior:
 - Channel-level `model` and `fallbacks` override the agent defaults for messages arriving through that channel.
 - `show_typing` applies to Signal typing notifications and the Slack "is working" agent session indicator. Discord does not support it.
 
+### Attachments
+
+Slack, Discord, and Signal handle files sent with a message the same way. Every attachment is saved under Aviary's data directory in `media/incoming/<channel type>/`, up to 50 MB each.
+
+- Images up to 8 MB go to the model as images.
+- Every other file appears in the message as a placeholder with its name, type, size, and saved path, such as `[file attached: log.json (application/json, 1.2 MB) saved at /path/to/log.json]`. The agent can open it there with its file tools.
+- Text files (`text/*`, JSON, XML, YAML, CSV, logs) are also given to the model inline, up to 32 KB. Longer files are truncated with a pointer to the saved path.
+- PDFs go to the model as documents on providers that read them natively (Anthropic and Gemini). On other providers and CLI agents, the agent gets the saved path.
+- Session history keeps the placeholder, not the file's contents.
+
 ## Slack
 
 Slack setup depends on five pieces:
