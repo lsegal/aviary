@@ -3,6 +3,7 @@
     <div class="flex flex-1 flex-col overflow-y-auto px-6 py-6">
       <!-- Header + Filters -->
       <div class="mb-6 flex flex-wrap items-center gap-3">
+        <SystemPageIcon page-key="usage" tile />
         <h2 class="mr-2 text-xl font-bold text-gray-900 dark:text-white">Usage</h2>
         <div class="flex overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
           <button
@@ -271,6 +272,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import SystemPageIcon from "../components/SystemPageIcon.vue";
 import { chatDisplayName, useChatSessionsStore } from "../stores/chatSessions";
 import { useUsageStore } from "../stores/usage";
 

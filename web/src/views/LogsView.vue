@@ -4,6 +4,7 @@
       <!-- Filter bar -->
       <div class="shrink-0 border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
         <div class="flex flex-wrap items-center gap-2">
+          <SystemPageIcon page-key="logs" tile />
           <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">Logs</span>
 
           <!-- Connection dot -->
@@ -114,6 +115,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import SystemPageIcon from "../components/SystemPageIcon.vue";
 import { AppSelect, type SelectOption } from "../components/ui/select";
 import { type LogLevel, useLogs } from "../composables/useLogs";
 

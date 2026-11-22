@@ -3,11 +3,14 @@
     <div class="h-full overflow-y-auto bg-gray-50/60 dark:bg-gray-950">
       <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 class="text-xl font-bold text-gray-900 dark:text-white">System Tools</h2>
-            <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-              Read-only catalog of MCP tool groups, individual tools, and currently activated skills.
-            </p>
+          <div class="flex items-start gap-3">
+            <SystemPageIcon page-key="tools" tile />
+            <div>
+              <h2 class="text-xl font-bold text-gray-900 dark:text-white">System Tools</h2>
+              <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
+                Read-only catalog of MCP tool groups, individual tools, and currently activated skills.
+              </p>
+            </div>
           </div>
           <button
             type="button"
@@ -272,6 +275,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import SystemPageIcon from "../components/SystemPageIcon.vue";
 import { AppSelect } from "../components/ui/select";
 import { Skeleton } from "../components/ui/skeleton";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";

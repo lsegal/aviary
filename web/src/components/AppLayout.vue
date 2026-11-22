@@ -74,8 +74,8 @@
       class="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-800 dark:bg-gray-950 lg:hidden">
       <nav class="group/row relative flex gap-2 overflow-x-auto pb-1" :class="mobileAdd ? 'pr-9' : ''">
         <router-link v-for="child in mobileChildren" :key="child.key" :to="child.to"
-          :class="mobileSubnavClass(child)">
-          {{ child.label }}<ProjectRunningBadge
+          :class="[mobileSubnavClass(child), 'inline-flex items-center gap-1.5']">
+          <SystemPageIcon v-if="systemActive" :page-key="child.key" class="h-4 w-4" />{{ child.label }}<ProjectRunningBadge
             :running="child.running ?? 0" class="ml-1.5" />
         </router-link>
         <SidebarRowAction v-if="mobileAdd" :label="rowAddLabel(mobileAdd.page)" data-testid="mobile-row-action" @click="openAdd(mobileAdd.page, mobileAdd.agent)" />
@@ -217,7 +217,9 @@
         </div>
         <div v-if="!systemCollapsed" class="mb-3 mt-1 space-y-1 pl-2" data-testid="sidebar-system-list">
           <router-link v-for="child in systemChildren" :key="child.key" :to="child.to"
+            :data-testid="`sidebar-system-${child.key}`"
             :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
+            <SystemPageIcon :page-key="child.key" class="h-4 w-4" />
             <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
             <ProjectRunningBadge :running="child.running ?? 0" />
           </router-link>
@@ -303,8 +305,13 @@
             </template>
           </template>
         </template>
-        <SidebarRailItem label="System" to="/system/overview" :active="systemActive" data-testid="sidebar-rail-system">
+        <SidebarRailItem label="System" to="/system/overview" :active="route.path === '/system/overview'"
+          data-testid="sidebar-rail-system">
           <ServerStackIcon aria-hidden="true" class="h-5 w-5" />
+        </SidebarRailItem>
+        <SidebarRailItem v-if="currentSystemChild" :label="currentSystemChild.label" :to="currentSystemChild.to"
+          active :badge="currentSystemChild.running" :data-testid="`sidebar-rail-system-${currentSystemChild.key}`">
+          <SystemPageIcon :page-key="currentSystemChild.key" class="h-5 w-5" />
         </SidebarRailItem>
       </div>
       <div class="mt-auto flex flex-col items-center gap-1 pt-2">
@@ -398,6 +405,7 @@ import ConnectionIndicator from "./ConnectionIndicator.vue";
 import AgentTaskList from "./sidebar/AgentTaskList.vue";
 import SidebarGearMenu from "./sidebar/SidebarGearMenu.vue";
 import SidebarRailItem from "./sidebar/SidebarRailItem.vue";
+import SystemPageIcon from "./SystemPageIcon.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 import VersionIndicator from "./VersionIndicator.vue";
 
@@ -853,7 +861,11 @@ async function newChat(agent: string) {
 const watchChildren = computed<NavChild[]>(() =>
 	projects.value
 		.filter((p) => !projectOwner(settingsStore.config, p.name))
-		.map((p) => ({ ...projectChild("", p), label: `Watch: ${p.name}` })),
+		.map((p) => ({
+			...projectChild("", p),
+			key: `watch:${p.name}`,
+			label: `Watch: ${p.name}`,
+		})),
 );
 
 // The System item is the overview, so its pages list without one.
@@ -861,6 +873,12 @@ const systemChildren = computed<NavChild[]>(() => [
 	...SYSTEM_PAGES.map(({ key, label, to }) => ({ key, label, to })),
 	...watchChildren.value,
 ]);
+
+// The rail shows only the current System page under System, in its own
+// icon, so the rail keeps room to rest the pointer and peek the sidebar.
+const currentSystemChild = computed(() =>
+	systemChildren.value.find((child) => isChildActive(child)),
+);
 
 // Settings' tabs live under /system but open from the gear menu instead.
 const systemActive = computed(

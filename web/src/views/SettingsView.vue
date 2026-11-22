@@ -5,7 +5,10 @@
 				<div v-if="!isAgentFilesPage"
 					class="sticky top-0 z-20 -mx-4 mb-6 border-b border-gray-200/80 bg-white/90 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6 dark:border-gray-800/80 dark:bg-gray-950/88">
 					<div class="flex items-center justify-between gap-3">
-						<h2 class="text-xl font-bold text-gray-900 dark:text-white" data-testid="settings-title">{{ pageTitle }}</h2>
+						<div class="flex min-w-0 items-center gap-3">
+							<SystemPageIcon v-if="activeTab === 'sessions' || activeTab === 'skills'" :page-key="activeTab" tile />
+							<h2 class="text-xl font-bold text-gray-900 dark:text-white" data-testid="settings-title">{{ pageTitle }}</h2>
+						</div>
 						<div class="flex items-center gap-2">
 							<transition name="save-indicator">
 								<div v-if="saveSuccessVisible" class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"
@@ -343,6 +346,7 @@ import {
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import SystemPageIcon from "../components/SystemPageIcon.vue";
 import { settingsViewContextKey } from "../components/settings/context";
 import SettingsAgentsTab from "../components/settings/SettingsAgentsTab.vue";
 import SettingsGeneralTab from "../components/settings/SettingsGeneralTab.vue";
