@@ -503,16 +503,39 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 		}()
 	}
 
+	// Let the platform stop this run (e.g. Slack's native Stop control).
+	// Cancelling runCtx cancels the run the same way agent.StopSession does,
+	// but only for this channel thread, not other threads sharing the session.
+	runCtx, cancelRun := context.WithCancel(msgCtx)
+	endRun := cancelRun
+	if rs, ok := ch.(channels.RunStopRegistrar); ok && strings.TrimSpace(msg.ThreadTS) != "" {
+		unregister := rs.RegisterRunStop(msg.Channel, msg.ThreadTS, cancelRun)
+		endRun = func() {
+			unregister()
+			cancelRun()
+		}
+	}
+
 	var clearAssistantStatus func()
 	if as, ok := ch.(channels.AssistantStatusSender); ok && as.ShowAssistantStatus() && strings.TrimSpace(msg.ThreadTS) != "" {
-		sendAssistantStatus := func(status string) {
-			if err := as.SendAssistantStatus(msg.Channel, msg.ThreadTS, slackAssistantStatusText(status)); err != nil {
+		setProcessing := func(processing bool) {
+			if err := as.SetAssistantProcessing(msg.Channel, msg.ThreadTS, msg.From, processing); err != nil {
 				slog.Debug("server: failed to update assistant status", "type", channelType, "channel", msg.Channel, "err", err)
 			}
 		}
-		sendAssistantStatus("thinking")
+		setProcessing(true)
 		clearAssistantStatus = func() {
-			sendAssistantStatus("")
+			setProcessing(false)
+		}
+	}
+	finish := func() {
+		endRun()
+		if stopTyping != nil {
+			stopTyping()
+		}
+		if clearAssistantStatus != nil {
+			clearAssistantStatus()
+			clearAssistantStatus = nil
 		}
 	}
 
@@ -558,69 +581,37 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 		rOpts.SuppressDelivery = true
 	}
 
-	runner.PromptMediaWithOverrides(msgCtx, msg.Text, mediaList(msg.MediaURL), rOpts, func(e agent.StreamEvent) {
+	runner.PromptMediaWithOverrides(runCtx, msg.Text, mediaList(msg.MediaURL), rOpts, func(e agent.StreamEvent) {
 		switch e.Type {
 		case agent.StreamEventText:
 			if slackStreamer != nil {
 				slackStreamer.Append(e.Text)
 			}
 		case agent.StreamEventTool:
-			if slackStreamer != nil && e.Tool != nil {
-				if status := slackToolStatusText(e.Tool); status != "" {
-					if as, ok := ch.(channels.AssistantStatusSender); ok && as.ShowAssistantStatus() && strings.TrimSpace(msg.ThreadTS) != "" {
-						if err := as.SendAssistantStatus(msg.Channel, msg.ThreadTS, status); err != nil {
-							slog.Debug("server: failed to update assistant status", "type", channelType, "channel", msg.Channel, "err", err)
-						}
-					}
-				}
-				if runner.IsVerbose() {
-					slackStreamer.UpsertToolOutput(e.Tool)
-				}
+			if slackStreamer != nil && e.Tool != nil && runner.IsVerbose() {
+				slackStreamer.UpsertToolOutput(e.Tool)
 			}
 		case agent.StreamEventStatus:
 			if slackStreamer == nil {
 				sendOrEditStatus(e.Text)
-			}
-			if as, ok := ch.(channels.AssistantStatusSender); ok && as.ShowAssistantStatus() && strings.TrimSpace(msg.ThreadTS) != "" {
-				if err := as.SendAssistantStatus(msg.Channel, msg.ThreadTS, slackAssistantStatusText(e.Text)); err != nil {
-					slog.Debug("server: failed to update assistant status", "type", channelType, "channel", msg.Channel, "err", err)
-				}
 			}
 		case agent.StreamEventError:
 			if slackStreamer != nil && e.Err != nil {
 				slackStreamer.Append("\nError: " + e.Err.Error())
 				slackStreamer.Flush()
 			}
-			if stopTyping != nil {
-				stopTyping()
-			}
-			if clearAssistantStatus != nil {
-				clearAssistantStatus()
-				clearAssistantStatus = nil
-			}
+			finish()
 		case agent.StreamEventStop:
 			if slackStreamer != nil {
 				slackStreamer.Append("\nStopped.")
 				slackStreamer.Flush()
 			}
-			if stopTyping != nil {
-				stopTyping()
-			}
-			if clearAssistantStatus != nil {
-				clearAssistantStatus()
-				clearAssistantStatus = nil
-			}
+			finish()
 		case agent.StreamEventDone:
 			if slackStreamer != nil {
 				slackStreamer.Flush()
 			}
-			if stopTyping != nil {
-				stopTyping()
-			}
-			if clearAssistantStatus != nil {
-				clearAssistantStatus()
-				clearAssistantStatus = nil
-			}
+			finish()
 		}
 	})
 }
@@ -916,62 +907,6 @@ func sameToolArgs(a, b map[string]any) bool {
 	left, leftErr := json.Marshal(a)
 	right, rightErr := json.Marshal(b)
 	return leftErr == nil && rightErr == nil && string(left) == string(right)
-}
-
-func slackToolStatusText(tool *agent.ToolEvent) string {
-	if tool == nil || tool.Result != "" || tool.Error != "" {
-		return ""
-	}
-	switch tool.Name {
-	case "agent_file_read":
-		file := toolArgString(tool.Args, "file", "path")
-		if file == "" {
-			return "is reading a file"
-		}
-		return "is reading " + file
-	default:
-		name := strings.TrimSpace(tool.Name)
-		if name == "" {
-			return ""
-		}
-		return "is using " + name
-	}
-}
-
-func toolArgString(args map[string]any, keys ...string) string {
-	for _, key := range keys {
-		value, ok := args[key]
-		if !ok {
-			continue
-		}
-		switch v := value.(type) {
-		case string:
-			if text := strings.TrimSpace(v); text != "" {
-				return text
-			}
-		case fmt.Stringer:
-			if text := strings.TrimSpace(v.String()); text != "" {
-				return text
-			}
-		}
-	}
-	return ""
-}
-
-func slackAssistantStatusText(status string) string {
-	status = strings.TrimSpace(status)
-	if status == "" {
-		return ""
-	}
-	status = strings.TrimPrefix(status, "I am ")
-	status = strings.TrimPrefix(status, "I'm ")
-	if status == "thinking" {
-		return "is thinking"
-	}
-	if strings.HasPrefix(status, "is ") {
-		return status
-	}
-	return "is " + status
 }
 
 func (s *Server) listen() (net.Listener, error) {

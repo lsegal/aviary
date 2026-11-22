@@ -39,15 +39,43 @@ type statusStubChannel struct {
 	stubChannel
 	mu       sync.Mutex
 	statuses []string
+	// stopOnRegister simulates a user pressing Stop as soon as the run starts.
+	stopOnRegister bool
+	registered     []string
+	unregistered   int
 }
 
 func (c *statusStubChannel) ShowAssistantStatus() bool { return true }
 
-func (c *statusStubChannel) SendAssistantStatus(_, _, status string) error {
+func (c *statusStubChannel) SetAssistantProcessing(_, _, initiator string, processing bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.statuses = append(c.statuses, status)
+	if processing {
+		c.statuses = append(c.statuses, "processing:"+initiator)
+	} else {
+		c.statuses = append(c.statuses, "active")
+	}
 	return nil
+}
+
+func (c *statusStubChannel) RegisterRunStop(channel, threadTS string, stop func()) func() {
+	c.mu.Lock()
+	c.registered = append(c.registered, channel+"|"+threadTS)
+	c.mu.Unlock()
+	if c.stopOnRegister {
+		stop()
+	}
+	return func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.unregistered++
+	}
+}
+
+func (c *statusStubChannel) snapshotRegistrations() ([]string, int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string{}, c.registered...), c.unregistered
 }
 
 func (c *statusStubChannel) snapshotStatuses() []string {
@@ -1586,8 +1614,53 @@ func TestHandleIncomingChannelMessage_SendsAssistantStatus(t *testing.T) {
 
 	assert.Eventually(t, func() bool {
 		statuses := ch.snapshotStatuses()
-		return len(statuses) >= 2 && statuses[0] == "is thinking" && statuses[len(statuses)-1] == ""
+		return len(statuses) >= 2 && statuses[0] == "processing:U123" && statuses[len(statuses)-1] == "active"
 	}, time.Second, 10*time.Millisecond)
+	assert.Eventually(t, func() bool {
+		registered, unregistered := ch.snapshotRegistrations()
+		return len(registered) == 1 && registered[0] == "D123|1710000000.123456" && unregistered == 1
+	}, time.Second, 10*time.Millisecond)
+}
+
+type stoppableThreadChannel struct {
+	*statusStubChannel
+	*recordingThreadChannel
+}
+
+func TestHandleIncomingChannelMessage_PlatformStopCancelsRun(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "stub"}}}
+	srv := New(cfg, "tok")
+	srv.agents.Reconcile(cfg)
+	t.Cleanup(func() {
+		if runner, ok := srv.agents.Get("bot"); ok {
+			runner.Wait()
+		}
+	})
+
+	status := &statusStubChannel{stopOnRegister: true}
+	thread := &recordingThreadChannel{}
+	ch := stoppableThreadChannel{statusStubChannel: status, recordingThreadChannel: thread}
+	srv.handleIncomingChannelMessage(context.Background(), "bot", "slack", "alerts", ch, channels.IncomingMessage{
+		Type:     "slack",
+		Channel:  "D123",
+		ThreadTS: "1710000000.123456",
+		From:     "U123",
+		Text:     "hello",
+	})
+
+	assert.Eventually(t, func() bool {
+		lines := thread.snapshot()
+		return len(lines) > 0 && strings.Contains(lines[len(lines)-1], "Stopped.")
+	}, time.Second, 10*time.Millisecond)
+	assert.Eventually(t, func() bool {
+		statuses := status.snapshotStatuses()
+		return len(statuses) == 2 && statuses[1] == "active"
+	}, time.Second, 10*time.Millisecond)
+	_, unregistered := status.snapshotRegistrations()
+	assert.Equal(t, 1, unregistered)
 }
 
 func TestSlackThreadStreamer_GroupsCompletedToolCallsInCollapsedBlock(t *testing.T) {
@@ -1640,16 +1713,6 @@ func TestSlackThreadStreamer_SendsOneCompletedAnswer(t *testing.T) {
 	streamer.Flush()
 
 	assert.Equal(t, []string{"first line\n  second line\nthird"}, ch.snapshot())
-}
-
-func TestSlackToolStatusText_FileRead(t *testing.T) {
-	status := slackToolStatusText(&agent.ToolEvent{
-		Name: "agent_file_read",
-		Args: map[string]any{"file": "README.md"},
-	})
-
-	assert.Equal(t, "is reading README.md", status)
-	assert.Equal(t, "", slackToolStatusText(&agent.ToolEvent{Name: "agent_file_read", Result: "contents"}))
 }
 
 func TestStageOutgoingMedia_CopiesToChannelDir(t *testing.T) {

@@ -1109,39 +1109,6 @@ func TestSlackChannel_SendResolvesUsernameToDM(t *testing.T) {
 	assert.Equal(t, "D123", postedChannel)
 }
 
-func TestSlackChannel_SendAssistantStatus(t *testing.T) {
-	var (
-		gotChannel string
-		gotThread  string
-		gotStatus  string
-	)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.NoError(t, r.ParseForm())
-		switch r.URL.Path {
-		case "/assistant.threads.setStatus":
-			gotChannel = r.Form.Get("channel_id")
-			gotThread = r.Form.Get("thread_ts")
-			gotStatus = r.Form.Get("status")
-			_, _ = w.Write([]byte(`{"ok":true}`))
-		default:
-			t.Fatalf("unexpected Slack API path: %s", r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
-	ch.client = slack.New("xoxb-token", slack.OptionAPIURL(server.URL+"/"))
-	ch.identityMu.Lock()
-	ch.channelAliases = map[string]string{"alerts": "C123"}
-	ch.identityMu.Unlock()
-
-	err := ch.SendAssistantStatus("#alerts", "1710000000.123456", "is thinking")
-	assert.NoError(t, err)
-	assert.Equal(t, "C123", gotChannel)
-	assert.Equal(t, "1710000000.123456", gotThread)
-	assert.Equal(t, "is thinking", gotStatus)
-}
-
 func TestNewChannel_Slack(t *testing.T) {
 	ch := newChannel(config.ChannelConfig{
 		Type:  "slack",

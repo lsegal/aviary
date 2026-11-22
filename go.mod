@@ -19,7 +19,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/openai/openai-go v1.12.0
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/slack-go/slack v0.35.0
+	github.com/slack-go/slack v0.36.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
@@ -249,7 +249,7 @@ require (
 	go.augendre.info/fatcontext v0.10.1 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20260811152304-ee035b5b010f // indirect
