@@ -10,7 +10,6 @@ import (
 	"unicode"
 
 	"github.com/lsegal/aviary/internal/agent"
-	"github.com/lsegal/aviary/internal/cliagent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/store"
@@ -87,9 +86,6 @@ func generateSessionTitle(ctx context.Context, agentName, prompt string) (string
 	model := config.EffectiveAgentModel(*agentCfg, cfg.Models)
 	if strings.TrimSpace(model) == "" {
 		return "", fmt.Errorf("agent %q has no model configured", agentName)
-	}
-	if cliagent.IsCLIModel(model) {
-		return agent.CompleteCLIText(ctx, model, sessionTitleSystem, prompt)
 	}
 	provider, err := compileTaskProvider(model)
 	if err != nil {

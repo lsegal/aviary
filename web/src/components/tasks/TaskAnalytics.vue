@@ -229,8 +229,16 @@
       leave-active-class="transition-all duration-150 ease-in"
       enter-from-class="opacity-0 translate-x-4"
       leave-to-class="opacity-0 translate-x-4">
-      <div v-if="selectedJob || selectedCompile"
+      <div v-if="selectedJob || selectedCompile" data-testid="details-panel" :style="detailsPanel.style.value"
     class="fixed inset-y-0 right-0 z-40 flex w-96 max-w-full flex-col border-l border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+        <div v-if="detailsPanel.desktop.value" data-testid="details-panel-resize" role="separator" tabindex="0"
+          aria-orientation="vertical" aria-label="Resize details panel" :aria-valuenow="detailsPanel.width.value"
+          :aria-valuemin="DETAILS_PANEL_MIN_WIDTH" :aria-valuemax="detailsPanel.maxWidth.value"
+          title="Drag to resize, double-click to reset"
+          class="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize transition-colors hover:bg-blue-500/30 focus-visible:bg-blue-500/40 focus-visible:outline-none"
+          :class="detailsPanel.resizing.value ? 'bg-blue-500/40' : ''"
+          @pointerdown="detailsPanel.startResize" @dblclick="detailsPanel.resetWidth()"
+          @keydown="detailsPanel.resizeByKey" />
         <!-- Panel header -->
         <div class="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
           <div v-if="selectedJob" class="flex items-center gap-2">
@@ -495,6 +503,10 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
+import {
+	DETAILS_PANEL_MIN_WIDTH,
+	useDetailsPanelLayout,
+} from "../../composables/useDetailsPanelLayout";
 import { useLogs } from "../../composables/useLogs";
 import type { Job, SessionMessage, TaskCompile } from "../../stores/jobs";
 import { formatDuration, jobDurationMs, useJobsStore } from "../../stores/jobs";
@@ -517,6 +529,7 @@ const emit = defineEmits<{ "update:task": [task: string] }>();
 const store = useJobsStore();
 const settings = useSettingsStore();
 const { entries } = useLogs();
+const detailsPanel = useDetailsPanelLayout();
 
 const statusFilter = ref<string>("all");
 const selectedJob = ref<Job | null>(null);
