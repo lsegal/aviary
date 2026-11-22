@@ -2,8 +2,8 @@ import { createRouter, createWebHistory } from "vue-router";
 import { installUnsavedChanges } from "../composables/useUnsavedChanges";
 import { needsOnboarding } from "../lib/onboarding";
 import { useAuthStore } from "../stores/auth";
+import { prefetchSettingsViewWhenIdle, SettingsView } from "./settingsView";
 
-const SettingsView = () => import("../views/SettingsView.vue");
 const ProjectsView = () => import("../views/ProjectsView.vue");
 const ProjectJobDetail = () =>
 	import("../components/projects/ProjectJobDetail.vue");
@@ -149,5 +149,6 @@ router.beforeEach(async (to) => {
 	}
 });
 installUnsavedChanges(router);
+void router.isReady().then(prefetchSettingsViewWhenIdle);
 
 export default router;

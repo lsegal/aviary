@@ -4,7 +4,8 @@ import { useAgentsStore } from "../stores/agents";
 // user's choice for this visit rather than a permanent opt-out of onboarding.
 const SKIP_KEY = "aviary_onboarding_skipped";
 
-// Once an agent has been seen, setup is complete and the gate stops asking.
+// Once an agent has been seen, setup is complete and the gate stops asking,
+// so later navigations never wait on the server (#897).
 let configured = false;
 
 export function skipOnboarding() {
@@ -20,8 +21,12 @@ export async function needsOnboarding(): Promise<boolean> {
 	if (configured || sessionStorage.getItem(SKIP_KEY)) return false;
 	const agents = useAgentsStore();
 	await agents.fetchAgents();
-	// Never trap the user in the wizard when the agent list cannot be read.
-	if (agents.error) return false;
+	// Never trap the user in the wizard when the agent list cannot be read,
+	// and stop asking rather than retrying it on every navigation.
+	if (agents.error) {
+		configured = true;
+		return false;
+	}
 	configured = agents.agents.length > 0;
 	return !configured;
 }
