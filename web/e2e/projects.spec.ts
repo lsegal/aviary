@@ -858,6 +858,85 @@ test("the rich/raw toggle applies to every card and survives a reload (#769)", a
 	await expect(page.getByTestId("job-output-rich")).toHaveCount(1);
 });
 
+for (const colorScheme of ["light", "dark"] as const) {
+	test(`the rich view uses the raw view's colors and stays readable in the ${colorScheme} theme (#873)`, async ({
+		page,
+	}) => {
+		await page.emulateMedia({ colorScheme });
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+		const rich = card.getByTestId("job-output-rich");
+		await expect(rich.locator('[data-row="tool"]').first()).toBeVisible();
+		const colors = (el: Element) => {
+			const s = getComputedStyle(el);
+			return { background: s.backgroundColor, color: s.color };
+		};
+		const richColors = await rich.evaluate(colors);
+
+		// Every text element in the rich view contrasts with the surface.
+		const contrasts = await rich.evaluate((root) => {
+			// Computed colors may be oklch(); a canvas pixel normalizes them.
+			const ctx = document
+				.createElement("canvas")
+				.getContext("2d", { willReadFrequently: true });
+			if (!ctx) throw new Error("no canvas");
+			const rgb = (c: string) => {
+				ctx.clearRect(0, 0, 1, 1);
+				ctx.fillStyle = c;
+				ctx.fillRect(0, 0, 1, 1);
+				const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+				return [r, g, b, a / 255];
+			};
+			// Composite a translucent color over the opaque one under it.
+			const over = (top: number[], under: number[]) => {
+				const a = top[3] ?? 1;
+				return [0, 1, 2].map((i) => top[i] * a + under[i] * (1 - a));
+			};
+			const lum = (c: number[]) => {
+				const [r, g, b] = c.map((v) => {
+					const s = v / 255;
+					return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+				});
+				return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+			};
+			const surface = (el: Element): number[] => {
+				const chain: Element[] = [];
+				for (let e: Element | null = el; e; e = e.parentElement) chain.push(e);
+				let bg = [255, 255, 255];
+				for (const e of chain.reverse()) {
+					const c = rgb(getComputedStyle(e).backgroundColor);
+					if ((c[3] ?? 1) > 0) bg = over(c, bg);
+				}
+				return bg;
+			};
+			const out: { text: string; ratio: number }[] = [];
+			for (const el of root.querySelectorAll("li, li *")) {
+				if (el.closest("pre")) continue;
+				const own = [...el.childNodes].some(
+					(n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim(),
+				);
+				if (!own) continue;
+				const bg = surface(el);
+				const fg = over(rgb(getComputedStyle(el).color), bg);
+				const [hi, lo] = [lum(fg), lum(bg)].sort((a, b) => b - a);
+				out.push({
+					text: (el.textContent ?? "").trim().slice(0, 40),
+					ratio: (hi + 0.05) / (lo + 0.05),
+				});
+			}
+			return out;
+		});
+		expect(contrasts.length).toBeGreaterThan(5);
+		expect(contrasts.filter((c) => c.ratio < 4.5)).toEqual([]);
+
+		await card.getByRole("button", { name: "Raw output" }).click();
+		const raw = card.getByTestId("job-output");
+		await expect(raw).toBeVisible();
+		expect(await raw.evaluate(colors)).toEqual(richColors);
+	});
+}
+
 test("a tool call's status updates in place without duplicate rows (#769)", async ({
 	page,
 }) => {
