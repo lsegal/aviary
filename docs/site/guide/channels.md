@@ -62,6 +62,7 @@ Slack, Discord, and Signal handle files sent with a message the same way. Every 
 - Text files (`text/*`, JSON, XML, YAML, CSV, logs) are also given to the model inline, up to 32 KB. Longer files are truncated with a pointer to the saved path.
 - PDFs go to the model as documents on providers that read them natively: Anthropic, Gemini, and OpenAI (`openai` and `openai-codex`) models that take file input. On OpenAI-compatible endpoints such as Ollama and vLLM, older OpenAI models, and CLI agents, the agent gets the saved path.
 - Session history keeps the placeholder, not the file's contents.
+- Voice notes and other audio are transcribed with a local whisper.cpp engine, and the transcript is added before the placeholder as `[voice message 0:12, transcribed]: …`. See [Voice Messages](./voice.md).
 
 ## Slack
 
