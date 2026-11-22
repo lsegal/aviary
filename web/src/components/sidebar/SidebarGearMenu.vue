@@ -2,7 +2,7 @@
 	<DropdownMenuRoot v-model:open="open">
 		<DropdownMenuTrigger asChild>
 			<button type="button" aria-label="Settings menu" title="Settings menu" data-testid="gear-menu-button"
-				:class="buttonClass">
+				:class="buttonClass" @pointerenter="prefetchSettingsView" @focus="prefetchSettingsView">
 				<Cog6ToothIcon aria-hidden="true" :class="rail ? 'h-5 w-5' : 'h-4 w-4'" />
 			</button>
 		</DropdownMenuTrigger>
@@ -28,7 +28,9 @@
 
 <script setup lang="ts">
 // The sidebar's gear (#822): a menu of Settings, the safe Restart, and
-// Logout, rather than a link straight to Settings.
+// Logout, rather than a link straight to Settings. Hovering, focusing or
+// opening it prefetches the Settings chunk so choosing Settings routes at
+// once (#897).
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowRightOnRectangleIcon from "@heroicons/vue/24/outline/ArrowRightOnRectangleIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
@@ -38,9 +40,10 @@ import {
 	DropdownMenuRoot,
 	DropdownMenuTrigger,
 } from "radix-vue";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { isSettingsPath } from "../../lib/systemNav";
+import { prefetchSettingsView } from "../../router/settingsView";
 import { useAuthStore } from "../../stores/auth";
 
 const props = defineProps<{
@@ -52,6 +55,9 @@ const props = defineProps<{
 const emit = defineEmits<{ restart: [] }>();
 
 const open = ref(false);
+watch(open, (isOpen) => {
+	if (isOpen) prefetchSettingsView();
+});
 const router = useRouter();
 const auth = useAuthStore();
 

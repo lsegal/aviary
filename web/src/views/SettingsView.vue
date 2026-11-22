@@ -1870,8 +1870,9 @@ async function preloadAgentFiles() {
 onMounted(async () => {
 	connectWs();
 	window.addEventListener("keydown", onWindowKeydown);
-	await loadConfig();
-	await refreshCredentials();
+	// Credentials (and the provider probing behind them) load beside the
+	// config, not after it, so neither waits on the other (#897).
+	await Promise.all([loadConfig(), refreshCredentials()]);
 	if (
 		activeTab.value === "sessions" &&
 		!sessionAgent.value &&
@@ -2001,10 +2002,22 @@ function updateCDPPortInput(event: Event) {
 	}
 }
 
+// loadConfig gates the page on the config alone: the tool list and
+// installed skills load beside it, and agent files after it, each with its
+// own loading state, so the forms appear as soon as the config does (#897).
 async function loadConfig() {
 	loading.value = true;
 	errorMessage.value = "";
 	okMessage.value = "";
+	// Fetch the available tool list once so the permissions UI can render.
+	if (!availableTools.value.length) {
+		void listTools()
+			.catch(() => [])
+			.then((tools) => {
+				availableTools.value = tools;
+			});
+	}
+	void loadInstalledSkills();
 	try {
 		await store.fetchConfig();
 		const cfg = hydrateDraftConfig(store.config ?? emptyConfig());
@@ -2030,13 +2043,8 @@ async function loadConfig() {
 			sessionAgent.value = draft.value.agents[0].name;
 		}
 		if (activeTab.value === "agents") {
-			await preloadAgentFiles();
+			void preloadAgentFiles();
 		}
-		// Fetch the available tool list once so the permissions UI can render.
-		if (!availableTools.value.length) {
-			availableTools.value = await listTools().catch(() => []);
-		}
-		await loadInstalledSkills();
 		lastSavedSnapshot.value = normalizedDraftSnapshot();
 	} catch (e) {
 		errorMessage.value = e instanceof Error ? e.message : String(e);
