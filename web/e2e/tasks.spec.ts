@@ -314,3 +314,126 @@ test("System → Jobs redirects to Scheduled Tasks and has no nav entry", async 
 	);
 	await expect(page.locator('a[href="/system/jobs"]')).toHaveCount(0);
 });
+
+// The run details drawer resizes from its left edge and remembers its width
+// per browser; narrow viewports keep the fixed layout (#878).
+
+async function openRunDetails(page: Page) {
+	await page.getByTestId("more-analytics-toggle").click();
+	await page
+		.locator("tbody tr")
+		.filter({ hasText: "weekly-cleanup" })
+		.first()
+		.click();
+	await expect(page.getByTestId("details-panel")).toBeVisible();
+}
+
+async function panelWidth(page: Page): Promise<number> {
+	const box = await page.getByTestId("details-panel").boundingBox();
+	return Math.round(box?.width ?? 0);
+}
+
+async function dragPanelEdge(page: Page, dx: number) {
+	const box = await page.getByTestId("details-panel-resize").boundingBox();
+	if (!box) throw new Error("no resize handle");
+	const x = box.x + box.width / 2;
+	const y = box.y + box.height / 2;
+	await page.mouse.move(x, y);
+	await page.mouse.down();
+	await page.mouse.move(x + dx / 2, y);
+	await page.mouse.move(x + dx, y);
+	await page.mouse.up();
+}
+
+test.describe("the run details drawer on desktop", () => {
+	test.use({ viewport: { width: 1280, height: 800 } });
+
+	test("drags wider and narrower within its bounds", async ({ page }) => {
+		await mockTasks(page);
+		await page.goto("/agents/assistant/tasks");
+		await openRunDetails(page);
+
+		const handle = page.getByTestId("details-panel-resize");
+		await expect(handle).toHaveAttribute("role", "separator");
+		await expect(handle).toHaveAttribute("aria-orientation", "vertical");
+		await expect(handle).toHaveAttribute("aria-label", "Resize details panel");
+		await expect(handle).toHaveCSS("cursor", "col-resize");
+		expect(await panelWidth(page)).toBe(384);
+
+		await dragPanelEdge(page, -200);
+		await expect.poll(() => panelWidth(page)).toBe(584);
+
+		// No wider than 75% of the viewport, no narrower than the default.
+		await dragPanelEdge(page, -1000);
+		await expect.poll(() => panelWidth(page)).toBe(960);
+		await dragPanelEdge(page, 1000);
+		await expect.poll(() => panelWidth(page)).toBe(384);
+
+		// The arrow keys move the edge too; Home and End jump to the bounds.
+		await handle.focus();
+		await page.keyboard.press("ArrowLeft");
+		await expect.poll(() => panelWidth(page)).toBe(400);
+		await page.keyboard.press("End");
+		await expect.poll(() => panelWidth(page)).toBe(960);
+		await page.keyboard.press("Home");
+		await expect.poll(() => panelWidth(page)).toBe(384);
+	});
+
+	test("remembers its width when reopened and after a reload", async ({
+		page,
+	}) => {
+		await mockTasks(page);
+		await page.goto("/agents/assistant/tasks");
+		await openRunDetails(page);
+		await dragPanelEdge(page, -300);
+		await expect.poll(() => panelWidth(page)).toBe(684);
+
+		await page.getByTestId("details-panel").getByText("✕").click();
+		await expect(page.getByTestId("details-panel")).toHaveCount(0);
+		await page
+			.locator("tbody tr")
+			.filter({ hasText: "weekly-cleanup" })
+			.first()
+			.click();
+		await expect.poll(() => panelWidth(page)).toBe(684);
+
+		await page.reload();
+		await openRunDetails(page);
+		await expect.poll(() => panelWidth(page)).toBe(684);
+	});
+
+	test("clamps a stored width wider than the viewport allows", async ({
+		page,
+	}) => {
+		await page.addInitScript(() =>
+			localStorage.setItem("aviary.detailsPanel.width", "5000"),
+		);
+		await mockTasks(page);
+		await page.goto("/agents/assistant/tasks");
+		await openRunDetails(page);
+		await expect.poll(() => panelWidth(page)).toBe(960);
+		const overflow = await page.evaluate(
+			() =>
+				document.documentElement.scrollWidth -
+				document.documentElement.clientWidth,
+		);
+		expect(overflow).toBeLessThanOrEqual(0);
+	});
+});
+
+test.describe("the run details drawer on a narrow viewport", () => {
+	test.use({ viewport: { width: 375, height: 740 } });
+
+	test("keeps its full-width layout with no resize handle", async ({
+		page,
+	}) => {
+		await page.addInitScript(() =>
+			localStorage.setItem("aviary.detailsPanel.width", "700"),
+		);
+		await mockTasks(page);
+		await page.goto("/agents/assistant/tasks");
+		await openRunDetails(page);
+		await expect(page.getByTestId("details-panel-resize")).toHaveCount(0);
+		expect(await panelWidth(page)).toBe(375);
+	});
+});
