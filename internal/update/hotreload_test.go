@@ -88,7 +88,11 @@ func TestWaitHotReload_LaterGenerationWins(t *testing.T) {
 		time.Sleep(30 * time.Millisecond)
 		writeCtl(t, dir, map[string]string{"link-2": "refuse the signature of server.New changed\n"})
 	}()
-	res := WaitHotReload(context.Background(), dir, 0, fastWait)
+	// A settle window far wider than the 30ms gap keeps a slow (-race) run
+	// from deciding on generation 1 before generation 2 shows up.
+	opts := fastWait
+	opts.Timeout, opts.Settle = 10*time.Second, time.Second
+	res := WaitHotReload(context.Background(), dir, 0, opts)
 	if res.Applied || res.Generation != 2 || !strings.Contains(res.Reason, "server.New") {
 		t.Fatalf("result = %+v, want generation 2's refusal", res)
 	}
