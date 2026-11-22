@@ -112,6 +112,16 @@ Delete a task definition and its run history. Running jobs keep running; use `ta
 
 ---
 
+## task_session
+
+Return a task's session, which every run of the task shares, creating it when the task has not run yet. The session is named and titled after the task, and a rename moves it to the new name.
+
+**Arguments:** `name` (required; `agent/task` or a task name), `agent`.
+
+**Returns:** `{ "id", "agent_id", "name", "title", "is_processing" }`.
+
+---
+
 ## task_preview
 
 Return the next fires of a saved task, or of an unsaved trigger.
