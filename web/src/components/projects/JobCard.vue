@@ -46,14 +46,7 @@
 				<span class="text-xs tabular-nums text-gray-500">{{ job.progressDone }}/{{ job.progressTotal }}</span>
 			</div>
 		</div>
-		<div v-if="rich" ref="outputEl" data-testid="job-output-rich"
-			class="min-h-0 flex-[1_1_7rem] overflow-y-auto border-t border-gray-100 px-4 py-3 dark:border-gray-800"
-			@scroll="onScroll">
-			<JobOutputRows :events="job.events" />
-		</div>
-		<pre v-else ref="outputEl" data-testid="job-output"
-			class="min-h-0 flex-[1_1_7rem] overflow-y-auto whitespace-pre-wrap break-all bg-slate-950 px-4 py-3 font-mono text-xs leading-relaxed text-slate-200"
-			@scroll="onScroll">{{ outputText }}</pre>
+		<JobOutputPane :job="job" />
 		<div class="flex shrink-0 flex-wrap items-center gap-2 border-t border-gray-100 px-3 py-2.5 dark:border-gray-800">
 			<router-link :to="runPath" aria-label="Details" title="Open this job's run view"
 				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
@@ -93,11 +86,7 @@ import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowsPointingOutIcon from "@heroicons/vue/24/outline/ArrowsPointingOutIcon";
 import SparklesIcon from "@heroicons/vue/24/outline/SparklesIcon";
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";
-import { computed, ref } from "vue";
-import {
-	useJobOutputMode,
-	useStickToBottom,
-} from "../../composables/useJobOutput";
+import { computed } from "vue";
 import { projectOwner } from "../../lib/projectSettings";
 import {
 	age,
@@ -108,7 +97,7 @@ import {
 	waitText,
 } from "../../lib/projects";
 import { useSettingsStore } from "../../stores/settings";
-import JobOutputRows from "./JobOutputRows.vue";
+import JobOutputPane from "./JobOutputPane.vue";
 import JobOutputToggle from "./JobOutputToggle.vue";
 import JobStatusPill from "./JobStatusPill.vue";
 import PullRequestLink from "./PullRequestLink.vue";
@@ -144,21 +133,4 @@ const waitingText = computed(() => waitText(props.job, props.now));
 const progressPct = computed(() =>
 	Math.round((props.job.progressDone / props.job.progressTotal) * 100),
 );
-
-const outputText = computed(() =>
-	props.job.output.length
-		? props.job.output.slice(-12).join("\n")
-		: "No output yet.",
-);
-
-// Rich output falls back to the scrollback for a job with no events.
-const mode = useJobOutputMode();
-const rich = computed(
-	() => mode.value === "rich" && props.job.events.length > 0,
-);
-const outputEl = ref<HTMLElement | null>(null);
-const { onScroll } = useStickToBottom(outputEl, () => [
-	props.job.events,
-	props.job.output,
-]);
 </script>

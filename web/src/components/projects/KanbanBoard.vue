@@ -16,8 +16,9 @@
 					</router-link>
 					<p data-testid="kanban-scheduled-next" class="tabular-nums text-violet-700 dark:text-violet-300"
 						:title="s.nextRun ? formatFire(s.nextRun) : ''">
-						<template v-if="!s.enabled">Paused</template>
+						<template v-if="scheduleNext(s).kind === 'paused'">Paused</template>
 						<template v-else-if="s.nextRun">Next {{ until(s.nextRun, now) }}</template>
+						<template v-else-if="scheduleNext(s).kind === 'running'">Running now</template>
 						<template v-else>No next run</template>
 					</p>
 					<p data-testid="kanban-scheduled-prompt" class="truncate text-gray-500 dark:text-gray-400" :title="s.prompt">
@@ -74,6 +75,7 @@ import {
 	jobStates,
 	type ProjectJob,
 	type ProjectSchedule,
+	scheduleNext,
 	stateLabel,
 	truncatePrompt,
 	until,
