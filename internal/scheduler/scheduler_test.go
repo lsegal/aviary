@@ -113,6 +113,7 @@ func TestJobQueue_FailWithRetryThenFailTerminal(t *testing.T) {
 	afterSecond, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
 	assert.NoError(t, err)
 	assert.Equal(t, domain.JobStatusFailed, afterSecond.Status)
+	assert.Equal(t, "boom2", afterSecond.Error, "the failure reason is kept for the run details panel")
 
 }
 

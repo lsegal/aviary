@@ -284,6 +284,13 @@
               <dd class="text-gray-600 dark:text-gray-400">{{ fmtTs(selectedJob.next_retry_at) }}</dd>
             </div>
           </dl>
+          <div v-if="selectedJob.error" role="alert" data-testid="job-error"
+            class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+            <p class="mb-0.5 text-[10px] font-semibold uppercase tracking-wide">
+              {{ selectedJob.status === 'failed' ? 'Error' : 'Last attempt failed' }}
+            </p>
+            <p class="whitespace-pre-wrap">{{ selectedJob.error }}</p>
+          </div>
         </div>
         <div v-else-if="selectedCompile" class="border-b border-gray-100 px-5 py-3 dark:border-gray-800">
           <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
@@ -362,7 +369,12 @@
           <!-- Running: live SSE log feed filtered by job_id -->
           <div v-if="selectedJob.status === 'in_progress'"
             class="flex-1 overflow-y-auto rounded-lg bg-gray-950 p-3 font-mono text-[11px] text-green-400">
-            <div v-if="!liveLines.length" class="text-gray-500">Waiting for output…</div>
+            <div v-if="!liveLines.length" class="text-gray-500">
+              <p>Waiting for output…</p>
+              <p v-if="selectedJobIdleTimeout" class="mt-1">
+                A run with no output for {{ selectedJobIdleTimeout }} is stopped and marked failed.
+              </p>
+            </div>
             <div v-for="(line, i) in liveLines" :key="i" class="whitespace-pre-wrap">{{ line }}</div>
             <div ref="liveBottom" />
           </div>
@@ -589,13 +601,37 @@ const jobsRangeLabel = computed(() => {
 	return `Showing ${start}-${end} of ${filteredJobs.value.length}`;
 });
 const visibleTaskCompiles = computed(() => store.taskCompiles.slice(0, 5));
-const selectedJobTaskType = computed(() => {
+const selectedJobTask = computed(() => {
 	const [agent, name] = (selectedJob.value?.task_id ?? "").split("/");
-	const task = settings.config?.agents
+	return settings.config?.agents
 		.find((a) => a.name === agent)
 		?.tasks?.find((t) => t.name === name);
-	return agentTaskType(task?.type);
 });
+const selectedJobTaskType = computed(() =>
+	agentTaskType(selectedJobTask.value?.type),
+);
+// The idle timeout the server applies to the selected run (default 15m);
+// empty when it is disabled.
+const selectedJobIdleTimeout = computed(() => {
+	const value = selectedJobTask.value?.idle_timeout?.trim() || "15m";
+	return /^0+(\.0*)?[a-zµ]*$/i.test(value) ? "" : value;
+});
+
+// The jobs list refreshes on its own; keep the open run current so it leaves
+// Running when the run finishes, fails or times out.
+watch(
+	() => store.jobs,
+	async (jobs) => {
+		const open = selectedJob.value;
+		if (!open) return;
+		const latest = jobs.find((j) => j.id === open.id);
+		if (!latest || latest === open) return;
+		const finished =
+			open.status === "in_progress" && latest.status !== "in_progress";
+		selectedJob.value = latest;
+		if (finished) await loadLogs(latest.id);
+	},
+);
 
 // Live output: SSE log entries filtered by selected job's ID.
 const liveLines = computed(() => {

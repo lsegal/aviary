@@ -171,6 +171,9 @@ func (q *JobQueue) Claim() (*domain.Job, error) {
 		}
 		if j.Attempts >= j.MaxRetries {
 			j.Status = domain.JobStatusFailed
+			if j.Error == "" {
+				j.Error = "no attempts remain"
+			}
 			j.LockedAt = nil
 			j.NextRetryAt = nil
 			j.UpdatedAt = now
@@ -264,6 +267,9 @@ func (q *JobQueue) Fail(id string, cause error) error {
 	now := time.Now()
 	job.UpdatedAt = now
 	job.LockedAt = nil
+	if cause != nil {
+		job.Error = cause.Error()
+	}
 
 	if job.Attempts >= job.MaxRetries {
 		job.Status = domain.JobStatusFailed
@@ -345,6 +351,7 @@ func (q *JobQueue) RecoverStuck() {
 		if j.Status == domain.JobStatusInProgress {
 			if j.Attempts >= j.MaxRetries {
 				j.Status = domain.JobStatusFailed
+				j.Error = "run interrupted: Aviary stopped while it was running and no attempts remain"
 				j.NextRetryAt = nil
 			} else {
 				j.Status = domain.JobStatusPending
@@ -431,6 +438,9 @@ func (q *JobQueue) updateStatus(id string, status domain.JobStatus) error {
 		return fmt.Errorf("reading job %s: %w", id, err)
 	}
 	job.Status = status
+	if status == domain.JobStatusCompleted {
+		job.Error = ""
+	}
 	job.LockedAt = nil
 	job.UpdatedAt = time.Now()
 	return store.WriteJSON(path, &job)

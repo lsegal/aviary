@@ -160,10 +160,11 @@ Instead of a cron expression, a task can pick its trigger with `trigger` (inferr
 
 Every trigger is evaluated in `timezone`, an IANA zone such as `America/Toronto` (default: the host's local zone). A wall-clock time skipped by a daylight-saving change fires at the first time after the jump. `start_at` also delays the first fire of a recurring trigger, and `run_once: true` makes any trigger fire once.
 
-Two policies control what happens when things do not go to plan:
+Three settings control what happens when things do not go to plan:
 
 - **`overlap`**: what a fire does while the previous run is still pending or running. `queue` (default) queues another run; `skip` drops the fire.
 - **`missed`**: what happens to fires that were due while Aviary was stopped or the machine slept. `skip` (default) drops them; `run_once` runs a single catch-up run, however many fires were missed. Aviary persists each task's last fire, and checks for overdue fires every 30 seconds so it notices a wake from sleep.
+- **`idle_timeout`**: how long a prompt run may go without any output (reply text, status or tool call) before Aviary stops it and marks the attempt failed with "agent did not start" or "run timed out: no output received for …". Defaults to `15m`; `"0"` disables it. A failed attempt is retried while attempts remain.
 
 ```yaml
 tasks:
@@ -174,10 +175,13 @@ tasks:
     timezone: America/Toronto
     overlap: skip
     missed: run_once
+    idle_timeout: 30m
     prompt: "Summarize what changed yesterday."
 ```
 
 Each task keeps a run history of its last 20 fires: fire time, what fired it, status, a one-line summary and duration. `task_list` returns it with the next run time.
+
+A running job streams its output, a line at a time, into the **Live Output** pane of the run details panel. When an attempt fails, the panel shows why, and the failure reason becomes the run-history summary.
 
 ### Managing schedules
 
