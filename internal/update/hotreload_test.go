@@ -123,6 +123,10 @@ func TestPlanDevReload(t *testing.T) {
 	}
 	write("skills/registry.go", "package skills\n\n//go:embed */*\nvar fs embed.FS\n")
 	write("skills/a/SKILL.md", "a")
+	write("support/support.go", "package support\n\n//go:embed a\nvar fs embed.FS\n")
+	write("support/a/a.txt", "a")
+	write("codingskills.go", "package aviary\n\n//go:embed .agents/skills/gh-fix\nvar fs embed.FS\n")
+	write(".agents/skills/gh-fix/SKILL.md", "a")
 	write("web/app.ts", "a")
 	gitT(t, checkout, "add", "-A")
 	gitT(t, checkout, "commit", "-q", "-m", "base")
@@ -149,7 +153,9 @@ func TestPlanDevReload(t *testing.T) {
 		{"go only", map[string]string{"internal/x/x.go": "package x\n"}, true, true, ""},
 		{"go without forgo", map[string]string{"internal/x/x.go": "package x\n"}, false, true, "forgo hot reload is not active"},
 		{"go.mod", map[string]string{"internal/x/x.go": "package x\n", "go.mod": "module github.com/lsegal/aviary\n\ngo 1.25\n"}, true, false, "go.mod changed"},
-		{"embedded file", map[string]string{"skills/a/SKILL.md": "b"}, true, false, "embedded file skills/a/SKILL.md changed"},
+		{"embedded file", map[string]string{"support/a/a.txt": "b"}, true, false, "embedded file support/a/a.txt changed"},
+		{"live skill markdown", map[string]string{"skills/a/SKILL.md": "b"}, true, false, ""},
+		{"live coding skill markdown", map[string]string{".agents/skills/gh-fix/SKILL.md": "b"}, true, false, ""},
 		{"frontend only", map[string]string{"web/app.ts": "b"}, false, false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

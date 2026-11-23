@@ -177,7 +177,8 @@ type DevReloadPlan struct {
 
 // PlanDevReload inspects the files changed between from and to in the dev
 // checkout dir. A change to go.mod or go.sum, or to a file a Go package embeds,
-// needs a restart, since forgo watches only Go sources. Otherwise Go changes
+// needs a restart, since forgo watches only Go sources. Embedded files a dev
+// build reads from the checkout (see DevAssets) are the exception. Otherwise Go changes
 // hot-reload when hotReload (forgo is active) is set, and need a restart when
 // it is not.
 func PlanDevReload(ctx context.Context, dir, from, to string, hotReload bool) (DevReloadPlan, error) {
@@ -201,7 +202,7 @@ func PlanDevReload(ctx context.Context, dir, from, to string, hotReload bool) (D
 		}
 	}
 	for _, f := range other {
-		if embeddedBy(dir, f) {
+		if !liveAsset(f) && embeddedBy(dir, f) {
 			plan.RestartReason = "embedded file " + f + " changed"
 			return plan, nil
 		}

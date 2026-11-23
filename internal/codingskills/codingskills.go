@@ -270,7 +270,7 @@ var (
 func Default() *Manager {
 	defaultOnce.Do(func() {
 		defaultManager = &Manager{
-			Bundle:  aviary.CodingSkills,
+			Bundle:  update.DevAssets(aviary.CodingSkills, "."),
 			Version: update.CurrentVersion,
 			CLIs:    builtinCLIs,
 			Run:     runNpx,
@@ -554,23 +554,27 @@ func (m *Manager) extractBundle() (string, func(), error) {
 		return "", nil, err
 	}
 	cleanup := func() { _ = os.RemoveAll(dir) }
-	err = fs.WalkDir(m.Bundle, aviary.CodingSkillsRoot, func(file string, entry fs.DirEntry, err error) error {
+	// Walk only the shipped skills: a dev bundle read from the checkout also
+	// holds the repository's own skills.
+	for _, name := range aviary.CodingSkillNames {
+		err = fs.WalkDir(m.Bundle, path.Join(aviary.CodingSkillsRoot, name), func(file string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			target := filepath.Join(dir, filepath.FromSlash(file))
+			if entry.IsDir() {
+				return os.MkdirAll(target, 0o755)
+			}
+			data, err := fs.ReadFile(m.Bundle, file)
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(target, data, 0o644)
+		})
 		if err != nil {
-			return err
+			cleanup()
+			return "", nil, err
 		}
-		target := filepath.Join(dir, filepath.FromSlash(file))
-		if entry.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		data, err := fs.ReadFile(m.Bundle, file)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, 0o644)
-	})
-	if err != nil {
-		cleanup()
-		return "", nil, err
 	}
 	return dir, cleanup, nil
 }
