@@ -144,6 +144,24 @@ A runtime watch started with `aviary watch` that no agent owns has its board her
 
 ---
 
+## Installing as an App
+
+The control panel can be installed as a standalone app, with its own icon and window and no browser toolbar. Browsers only offer to install a site served over HTTPS with a **trusted** certificate, so first make sure the device you install on trusts Aviary's certificate. The default self-signed certificate is not enough: Chrome then shows "Not secure" and reports that the app cannot be installed. Pick one of these:
+
+- **mkcert:** create a certificate with [mkcert](/guide/operations#trusted-certificates-with-mkcert) and install its root CA on each device, as described under [Trusting the certificate](/guide/operations#trusting-the-certificate).
+- **Tailscale HTTPS:** turn on [HTTPS certificates](https://tailscale.com/kb/1153/enabling-https) for your tailnet, run `tailscale cert <machine>.<tailnet>.ts.net`, point `server.tls.cert` and `server.tls.key` at the files it writes, and open Aviary at `https://<machine>.<tailnet>.ts.net:16677`. Alternatively, `tailscale serve` can terminate TLS in front of an Aviary started with `server.no_tls`.
+- **Reverse proxy:** put Aviary behind a proxy with a publicly trusted certificate (for example Caddy or nginx with Let's Encrypt) and set `server.no_tls: true` so the proxy terminates TLS.
+
+Then open the control panel at that address and install it:
+
+- **Android (Chrome):** open the menu and choose **Add to Home screen** → **Install**, or tap the install prompt when Chrome shows one.
+- **Desktop Chrome and Edge:** click the install icon at the right end of the address bar, or open the menu and choose **Cast, save, and share → Install page as app** (Chrome) or **Apps → Install this site as an app** (Edge).
+- **iOS and iPadOS (Safari):** tap **Share** → **Add to Home Screen**, keep the name **Aviary**, and tap **Add**.
+
+The installed app opens in its own window. Navigate with the sidebar (or the menu button on narrow screens); on Android the system back gesture also works. Links to other sites, such as GitHub issues or provider sign-in pages, open in your browser instead of replacing the app window.
+
+The app always loads the current control panel from the server, so after an upgrade it shows the new version on the next launch without clearing any cache. Its service worker caches nothing but a "server unreachable" page, which it shows when the app is opened while the Aviary server is stopped or the device can't reach it; tap **Try again** once the server is back. The service worker is only registered by the production server (`aviary serve`), not by `pnpm dev`.
+
 ## Keyboard Shortcuts
 
 | Shortcut | Action |

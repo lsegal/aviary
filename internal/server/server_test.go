@@ -1106,6 +1106,45 @@ func TestSPAHandler_ServeIndex_NoIndexHTML(t *testing.T) {
 
 }
 
+func TestSPAHandler_PWAFilesHeaders(t *testing.T) {
+	mfs := &memFS{files: map[string]string{
+		"/index.html":           "<html>index</html>",
+		"/sw.js":                "self.addEventListener('fetch', () => {});",
+		"/manifest.webmanifest": `{"name":"Aviary"}`,
+		"/offline.html":         "<html>Aviary server unreachable</html>",
+	}}
+	h := spaHandler{fs: mfs}
+
+	for _, tc := range []struct{ path, contentType, body string }{
+		{"/sw.js", "text/javascript; charset=utf-8", "addEventListener"},
+		{"/manifest.webmanifest", "application/manifest+json", "Aviary"},
+		{"/offline.html", "text/html; charset=utf-8", "unreachable"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			assert.Equal(t, http.StatusOK, rr.Code)
+			assert.Equal(t, tc.contentType, rr.Header().Get("Content-Type"))
+			assert.Equal(t, "no-cache", rr.Header().Get("Cache-Control"))
+			assert.Contains(t, rr.Body.String(), tc.body)
+		})
+	}
+}
+
+func TestSPAHandler_MissingStaticFilesNotFound(t *testing.T) {
+	mfs := &memFS{files: map[string]string{"/index.html": "<html>index</html>"}}
+	h := spaHandler{fs: mfs}
+
+	for _, path := range []string{"/sw.js", "/manifest.webmanifest", "/offline.html", "/assets/app-123.js", "/icons/icon-192.png"} {
+		t.Run(path, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+			assert.Equal(t, http.StatusNotFound, rr.Code)
+			assert.NotContains(t, rr.Body.String(), "index")
+		})
+	}
+}
+
 func TestWebFileServer_ReturnsHandler(t *testing.T) {
 	// webFileServer() should always return a non-nil handler even if
 	// webdist is empty or not embedded.
