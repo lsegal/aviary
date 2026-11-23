@@ -15,30 +15,13 @@
 			<router-link data-testid="schedule-task-link" :to="agentTaskPath(draft.agent, draft.name)"
 				class="text-blue-600 hover:underline dark:text-blue-400">Open in Scheduled Tasks</router-link>
 		</p>
-		<label class="block text-sm">
-			<span class="font-medium text-gray-700 dark:text-gray-200">Prompt</span>
-			<textarea v-model="draft.prompt" name="prompt" required rows="5" :class="INPUT"
-				placeholder="Triage issues opened since the last run and label them." />
-			<span class="text-xs text-gray-500">Runs in an isolated clone of {{ draft.project }} in place of /gh-fix.</span>
-		</label>
-		<TaskCostFeedback :agent="draft.agent" :prompt="draft.prompt" type="project" :project="draft.project"
-			:model="draft.model" :trigger="draft" :precompile="draft.precompile" />
-		<div class="flex items-start gap-2 text-sm">
-			<input id="schedule-precompile" v-model="draft.precompile" type="checkbox" name="precompile"
-				aria-describedby="schedule-precompile-help" class="mt-0.5 rounded" />
-			<div>
-				<label for="schedule-precompile" class="text-gray-700 dark:text-gray-200">Try to precompute task</label>
-				<p id="schedule-precompile-help" data-testid="schedule-precompile-help" class="text-xs text-gray-500">{{ precompileHelp }}</p>
-			</div>
-		</div>
-		<div data-testid="schedule-model" class="block text-sm">
-			<span class="font-medium text-gray-700 dark:text-gray-200">Model override (optional)</span>
-			<div class="mt-1">
-				<ModelSelector :model-value="draft.model" :options="availableModelOptions" placeholder="Default project agent model"
-					@update:model-value="draft.model = typeof $event === 'string' ? $event : ''" />
-			</div>
-			<span class="text-xs text-gray-500">The project's agent runs this task with this model instead of its own. Leave empty to use the agent's model.</span>
-		</div>
+		<TaskPromptSection v-model:prompt="draft.prompt" v-model:precompile="draft.precompile" v-model:model="draft.model"
+			id-prefix="schedule" :agent="draft.agent" type="project" :project="draft.project" :trigger="draft" :rows="5"
+			:precompile-help="precompileHelp" show-model model-placeholder="Default project agent model"
+			model-help="The project's agent runs this task with this model instead of its own. Leave empty to use the agent's model."
+			prompt-placeholder="Triage issues opened since the last run and label them.">
+			<template #hint>Runs in an isolated clone of {{ draft.project }} in place of /gh-fix.</template>
+		</TaskPromptSection>
 
 		<TriggerEditor :model-value="draft" :preview="preview" @update:model-value="Object.assign(draft, $event)" />
 
@@ -66,14 +49,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { useAvailableModels } from "../../composables/useAvailableModels";
+import { computed, ref, watch } from "vue";
 import { useUnsavedChanges } from "../../composables/useUnsavedChanges";
 import type { ProjectSchedule } from "../../lib/projects";
 import type { TriggerFields } from "../../lib/trigger";
 import { agentTaskPath } from "../../stores/settings";
-import ModelSelector from "../ModelSelector.vue";
-import TaskCostFeedback from "../TaskCostFeedback.vue";
+import TaskPromptSection from "../TaskPromptSection.vue";
 import TriggerEditor from "../TriggerEditor.vue";
 
 const props = defineProps<{
@@ -84,8 +65,6 @@ const props = defineProps<{
 	preview: (s: TriggerFields) => Promise<string[]>;
 }>();
 const emit = defineEmits<{ saved: [id: string]; deleted: [] }>();
-const { availableModelOptions, refreshCredentials } = useAvailableModels();
-onMounted(() => void refreshCredentials());
 
 const INPUT =
 	"mt-1 block w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:disabled:bg-gray-800";

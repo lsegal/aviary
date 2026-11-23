@@ -42,12 +42,9 @@
 						<div class="mt-3">
 							<TriggerEditor :key="editorKey" v-model="form.trigger" :preview="previewTrigger" :optional="form.targetKind !== 'project'" />
 						</div>
-						<label for="agent-task-prompt" class="field-label mt-3">{{ form.type === "script" ? "Script" : "Prompt" }}</label>
-						<textarea id="agent-task-prompt" v-model="form.prompt" rows="6" class="field-input font-mono text-xs"
-							:placeholder="form.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'" />
-						<TaskCostFeedback :agent="feedbackAgent" :prompt="form.prompt" :type="taskType"
-							:target="form.target" :project="form.project" :trigger="form.trigger"
-							:precompile="showPrecompute && canPrecompute && form.precompute" />
+						<TaskPromptSection v-model:prompt="form.prompt" v-model:precompile="form.precompute" id-prefix="agent-task"
+							class="mt-3" :agent="feedbackAgent" :type="taskType" :target="form.target" :project="form.project"
+							:trigger="form.trigger" :show-precompile="showPrecompute" />
 						<label for="agent-task-send-to" class="field-label mt-3">Send To</label>
 						<AppCombobox id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
 							aria-describedby="agent-task-send-to-help" :options="sendToOptions"
@@ -55,17 +52,6 @@
 						<p id="agent-task-send-to-help" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
 							Runs always show their output in the task's own session; a channel also gets a copy in its conversation.
 						</p>
-						<div v-if="showPrecompute" class="mt-3 flex items-start gap-3"
-							:class="canPrecompute ? '' : 'opacity-60'">
-							<input id="agent-task-precompute" v-model="form.precompute" type="checkbox"
-								:disabled="!canPrecompute" aria-describedby="agent-task-precompute-help"
-								class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800" />
-							<div>
-								<label for="agent-task-precompute" class="text-sm text-gray-700 dark:text-gray-300"
-									:class="canPrecompute ? 'cursor-pointer' : 'cursor-not-allowed'">Try to precompute task</label>
-								<p id="agent-task-precompute-help" class="text-xs text-gray-500 dark:text-gray-400">{{ precomputeHelp }}</p>
-							</div>
-						</div>
 					</template>
 					<p v-else class="mt-1 text-xs text-gray-400 dark:text-gray-500">
 						Root-level <span class="font-mono">.md</span> only; <span class="font-mono">.md</span> is added when missing.
@@ -155,7 +141,7 @@ import {
 	agentTaskType,
 	useSettingsStore,
 } from "../../stores/settings";
-import TaskCostFeedback from "../TaskCostFeedback.vue";
+import TaskPromptSection from "../TaskPromptSection.vue";
 import TriggerEditor from "../TriggerEditor.vue";
 import SegmentedControl, {
 	type SegmentedOption,
@@ -262,12 +248,6 @@ const canPrecompute = computed(
 const showPrecompute = computed(
 	() => dialog.value?.mode === "create" || taskType.value === "project",
 );
-const precomputeHelp = computed(() => {
-	if (taskType.value === "project")
-		return "Compile a deterministic prompt into a script that runs in the project's clone without the model; a run whose script fails falls back to the model";
-	if (taskType.value === "script") return "Script tasks are already scripts";
-	return "Compile deterministic prompt tasks into scripts before scheduling recurring or delayed runs";
-});
 /**
  * The precompile choice a task opens with: a saved project task's own, where
  * unset is off as it is when the task runs, else the default.

@@ -27,6 +27,7 @@
 						</div>
 						<p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ describe(w) }}</p>
 					</div>
+					<TaskPrecompileBadge :task="w" />
 					<button type="button" data-testid="workflow-edit" :class="SMALL_BTN" @click="startEdit(w)">Edit</button>
 					<button type="button" data-testid="workflow-delete" class="danger-btn" @click="remove(w)">Delete</button>
 				</li>
@@ -103,11 +104,6 @@
 
 			<div class="grid gap-3 lg:grid-cols-2">
 				<div>
-					<label class="field-label">Model override (optional)</label>
-					<ModelSelector :model-value="form.model" :options="availableModelOptions" placeholder="Default agent model"
-						@update:model-value="form.model = typeof $event === 'string' ? $event : ''" />
-				</div>
-				<div>
 					<label class="field-label">Send Via</label>
 					<AppSelect v-model="form.via" aria-label="Send Via" data-testid="workflow-send-via" :options="viaOptions" />
 				</div>
@@ -125,15 +121,14 @@
 				</div>
 			</div>
 
-			<div>
-				<label class="field-label" for="workflow-content">{{ form.type === "script" ? "Script" : "Prompt" }}</label>
-				<textarea id="workflow-content" v-model="form.content" data-testid="workflow-content" rows="10"
-					class="field-input min-h-[20vh] font-mono text-xs"
-					:placeholder="form.type === 'script' ? 'print(\'hello from lua\')' : 'Triage this crash report and reply with next steps.'" />
-				<p v-if="form.type !== 'script'" class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+			<TaskPromptSection v-model:prompt="form.content" v-model:precompile="form.precompile" v-model:model="form.model"
+				id-prefix="workflow" prompt-test-id="workflow-content" :agent="agent" :type="form.type" :target="target()"
+				trigger-type="message" :rows="10" prompt-class="min-h-[20vh]" :precompile-help="precompileHelp" show-model
+				prompt-placeholder="Triage this crash report and reply with next steps.">
+				<template v-if="form.type !== 'script'" #hint>
 					The triggering message and the messages just before it are added below the prompt.
-				</p>
-			</div>
+				</template>
+			</TaskPromptSection>
 
 			<p v-if="error" role="alert" class="text-sm text-red-600 dark:text-red-400">{{ error }}</p>
 			<div class="flex justify-end gap-3">
@@ -150,7 +145,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useAvailableModels } from "../../composables/useAvailableModels";
 import { useMCP } from "../../composables/useMCP";
 import { useTaskPause } from "../../composables/useTaskPause";
 import { channelName, channelTarget } from "../../lib/channels";
@@ -161,10 +155,11 @@ import {
 	taskSessionPath,
 	useSettingsStore,
 } from "../../stores/settings";
-import ModelSelector from "../ModelSelector.vue";
 import SessionSelect from "../SessionSelect.vue";
+import TaskPromptSection from "../TaskPromptSection.vue";
 import PausedChip from "../tasks/PausedChip.vue";
 import TaskEnabledSwitch from "../tasks/TaskEnabledSwitch.vue";
+import TaskPrecompileBadge from "../tasks/TaskPrecompileBadge.vue";
 import { AppCombobox, AppSelect } from "../ui/select";
 
 // A channel's workflows: tasks run by a matching message on the channel
@@ -178,7 +173,6 @@ const { callTool } = useMCP();
 const pause = useTaskPause();
 const route = useRoute();
 const router = useRouter();
-const { availableModelOptions, refreshCredentials } = useAvailableModels();
 
 const SMALL_BTN =
 	"rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800";
@@ -244,6 +238,22 @@ const form = reactive({
 	overlap: "queue",
 	content: "",
 	enabled: true,
+	precompile: false,
+});
+
+/** The workflow being edited as saved, for its compiled state. */
+const saved = computed(() =>
+	workflows.value.find((w) => w.name === original.value),
+);
+
+/** What precompiling does for this workflow, and whether its script exists yet. */
+const precompileHelp = computed(() => {
+	if (form.type === "script" || !form.precompile) return "";
+	const w = saved.value;
+	if (w?.precompile === true && w.precompile_note) return w.precompile_note;
+	if (w?.precompile === true && w.compiled)
+		return "Precompiled: each matching message runs its script with no model calls, and falls back to the model if it fails";
+	return "Compiled on save when the prompt is deterministic; runs fall back to the model if its script fails";
 });
 
 const otherChannels = computed(
@@ -278,6 +288,11 @@ function reset(w?: AgentTask) {
 	form.overlap = w?.overlap ?? "queue";
 	form.content = w?.prompt ?? "";
 	form.enabled = w ? w.enabled !== false : true;
+	// A saved workflow keeps its own choice, where unset is off as it runs;
+	// a new one follows scheduler.precompute_tasks, as new tasks do.
+	form.precompile = w
+		? w.precompile === true
+		: settings.config?.scheduler?.precompute_tasks !== false;
 	const target = w ? (w.target ?? "") : "reply";
 	form.session = target.startsWith("session:") ? target.slice(8) : "";
 	form.via = target.startsWith("session:") ? "session" : target;
@@ -303,6 +318,7 @@ async function save() {
 	busy.value = true;
 	error.value = "";
 	const newName = form.name.trim();
+	const precompiled = saved.value?.precompile === true;
 	try {
 		if (original.value && original.value !== newName) {
 			await settings.renameTask(props.agent, original.value, newName);
@@ -317,6 +333,11 @@ async function save() {
 				model: form.model,
 				target: target(),
 				overlap: form.overlap,
+				// Changing it starts the compiled script over, so an unchanged
+				// choice is left alone.
+				...(form.type === "prompt" && form.precompile !== precompiled
+					? { precompile: form.precompile }
+					: {}),
 			});
 		} else {
 			await callTool("task_schedule", {
@@ -331,6 +352,7 @@ async function save() {
 				model: form.model,
 				target: target(),
 				overlap: form.overlap,
+				...(form.type === "prompt" ? { precompile: form.precompile } : {}),
 			});
 			if (!form.enabled)
 				await callTool("task_update", {
@@ -424,10 +446,7 @@ function openFromRoute() {
 	void router.replace({ query });
 }
 
-onMounted(() => {
-	void refreshCredentials();
-	openFromRoute();
-});
+onMounted(openFromRoute);
 watch(workflows, () => {
 	if (!editing.value) openFromRoute();
 });

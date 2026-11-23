@@ -20,9 +20,10 @@
 						class="rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700 dark:bg-green-950/50 dark:text-green-300">
 						{{ status.activity === "running" ? "Running" : status.activity === "triggering" ? "Triggered" : "Active" }}
 					</span>
+					<TaskPrecompileBadge :task="workflow" />
 					<span v-if="status.last" data-testid="workflow-card-last" :data-last="status.last" class="text-[11px]"
-						:class="status.last === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'">
-						{{ status.last === "failed" ? "last run failed" : "last run ok" }}
+						:class="status.last === 'failed' ? 'text-red-600 dark:text-red-400' : status.last === 'fallback' ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'">
+						{{ LAST_TEXT[status.last] }}
 					</span>
 				</div>
 			</template>
@@ -37,6 +38,7 @@ import { computed } from "vue";
 import type { WorkflowStatus } from "../../composables/useWorkflowStatus";
 import { type AgentTask, taskSessionPath } from "../../stores/settings";
 import PausedChip from "../tasks/PausedChip.vue";
+import TaskPrecompileBadge from "../tasks/TaskPrecompileBadge.vue";
 
 // A workflow as a card: active or paused, its match, and its last run. While
 // it is triggering or running, a colored segment travels clockwise around the
@@ -48,6 +50,12 @@ const props = defineProps<{
 	status: WorkflowStatus;
 	compact?: boolean;
 }>();
+
+const LAST_TEXT = {
+	succeeded: "last run ok",
+	fallback: "last run fell back to the model",
+	failed: "last run failed",
+} as const;
 
 const TRIGGERING = "#f59e0b";
 const RUNNING = "#3b82f6";

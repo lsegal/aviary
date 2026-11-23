@@ -9,12 +9,17 @@
 					<span class="text-gray-400"> · </span>
 					<span data-testid="task-cost-estimate">{{ estimate }}</span>
 				</template>
+				<template v-if="withoutPrecompile">
+					<span class="text-gray-400"> · </span>
+					<span data-testid="task-cost-without-precompile">{{ withoutPrecompile }}</span>
+				</template>
 				<template v-if="monthly">
 					<span class="text-gray-400"> · </span>
 					<span data-testid="task-cost-monthly">{{ monthly }}</span>
 				</template>
 			</p>
 			<p v-if="note" data-testid="task-cost-note" class="text-gray-500 dark:text-gray-400">{{ note }}</p>
+			<p v-if="contextNote" data-testid="task-cost-context" class="text-gray-500 dark:text-gray-400">{{ contextNote }}</p>
 			<template v-if="state === 'error'">
 				<p data-testid="task-cost-error" class="break-words text-gray-500 dark:text-gray-400">{{ errorMessage }}</p>
 				<button type="button" data-testid="task-cost-retry"
@@ -26,7 +31,7 @@
 </template>
 
 <script lang="ts">
-import type { TaskAnalysis } from "../lib/taskAnalysis";
+import type { TaskAnalysis, TaskRunEstimate } from "../lib/taskAnalysis";
 
 /** Analyses by input, shared by every editor, so unchanged input is not re-analyzed. */
 const cache = new Map<string, TaskAnalysis>();
@@ -39,14 +44,17 @@ import { useTriggerRuns } from "../composables/useTriggerPreview";
 import {
 	formatEstimate,
 	formatMonthlyEstimate,
+	formatTokens,
 	parseTaskAnalysis,
+	type TaskTriggerType,
 } from "../lib/taskAnalysis";
 import type { TriggerFields } from "../lib/trigger";
 
 /**
- * Live feedback under a task's prompt: whether the precompile step would
- * compile it into a script, and what each run is estimated to cost, plus
- * what a month of runs costs when the task has a recurring trigger.
+ * Live feedback under a task's or workflow's prompt: whether the precompile
+ * step would compile it into a script, and what each run is estimated to
+ * cost, plus what a month of runs costs when the task has a recurring
+ * trigger. A workflow's runs also carry the message that triggered them.
  */
 const props = withDefaults(
 	defineProps<{
@@ -62,6 +70,8 @@ const props = withDefaults(
 		trigger?: TriggerFields | null;
 		/** Whether saving the editor precompiles the task. */
 		precompile?: boolean;
+		/** What starts the task's runs: a schedule, or a message for a workflow. */
+		triggerType?: TaskTriggerType;
 		/** How long typing must pause before the prompt is analyzed. */
 		debounceMs?: number;
 	}>(),
@@ -72,6 +82,7 @@ const props = withDefaults(
 		model: "",
 		trigger: null,
 		precompile: false,
+		triggerType: "schedule",
 		debounceMs: 1200,
 	},
 );
@@ -95,6 +106,7 @@ const input = computed(() => ({
 	project: props.type === "project" ? props.project : "",
 	model: props.model,
 	precompile: props.precompile,
+	trigger: props.triggerType,
 }));
 const inputKey = computed(() => JSON.stringify(input.value));
 
@@ -118,6 +130,7 @@ async function analyze() {
 			...(args.project ? { project: args.project } : {}),
 			...(args.model ? { model: args.model } : {}),
 			precompile: args.precompile,
+			...(args.trigger === "message" ? { trigger: args.trigger } : {}),
 			editor,
 		});
 		const parsed = parseTaskAnalysis(text);
@@ -244,6 +257,30 @@ const estimate = computed(() => {
 	return formatEstimate(result.value.estimate);
 });
 
+/** What each run would cost on the model, beside a precompiled task's 0 tokens. */
+const withoutPrecompile = computed(() => {
+	const e = result.value?.without_precompile;
+	if (state.value !== "ready" || !e?.available || e.max_tokens <= 0) return "";
+	return `${formatEstimate(e)} without precompile`;
+});
+
+/** How much of a workflow run's prompt is its trigger context. */
+const contextNote = computed(() => {
+	const r = result.value;
+	if (state.value !== "ready" || !r || props.triggerType !== "message")
+		return "";
+	const e: TaskRunEstimate | undefined = r.will_precompile
+		? r.without_precompile
+		: r.estimate;
+	if (!e?.max_context_tokens) return "";
+	const lo = formatTokens(e.min_context_tokens ?? 0);
+	const hi = formatTokens(e.max_context_tokens);
+	const range = lo === hi ? hi : `${lo}–${hi}`;
+	return r.will_precompile
+		? `On the model, each run would also carry the matched message and the messages before it (≈ ${range} tokens).`
+		: `Includes the matched message and the messages before it, ≈ ${range} tokens each model call.`;
+});
+
 const monthly = computed(() => {
 	if (state.value !== "ready" || !result.value) return "";
 	return formatMonthlyEstimate(result.value.estimate, runs.value);
@@ -254,6 +291,10 @@ const note = computed(() => {
 	if (state.value !== "ready" || !r) return "";
 	switch (r.verdict) {
 		case "deterministic":
+			if (props.triggerType === "message")
+				return r.will_precompile
+					? "It will be precompiled into a script that runs on each matching message with no model calls; a run whose script fails falls back to the model."
+					: "Precompiling it would let runs skip the model on each matching message; until then each run uses the model.";
 			if (props.type === "project")
 				return r.will_precompile
 					? "It will be precompiled into a script that runs in a clone of the project with no model calls; a run whose script fails falls back to the model."

@@ -826,7 +826,7 @@ test("a scheduled card's pencil opens its editor within the project page", async
 		precompile: false,
 	});
 	// Turning precompile on shows the cost of the compiled script's runs.
-	const precompile = editor.getByLabel("Try to precompute task");
+	const precompile = editor.getByLabel("Try to precompile");
 	await expect(precompile).not.toBeChecked();
 	await precompile.check();
 	await expect(feedback.getByTestId("task-cost-estimate")).toHaveText(
@@ -943,7 +943,7 @@ test("a scheduled card's editor edits, runs and deletes its schedule", async ({
 		});
 
 	// Precompile is saved with the rest of the schedule.
-	await editor.getByLabel("Try to precompute task").check();
+	await editor.getByLabel("Try to precompile").check();
 	await editor.getByRole("button", { name: "Save" }).click();
 	await expect
 		.poll(() => calls.task_update?.at(-1))
@@ -1002,7 +1002,7 @@ test("the header Schedule button creates a project scheduled task through the sh
 	await dialog.getByLabel("Prompt").fill("Rerun flaky CI jobs on open PRs.");
 	// Project tasks precompile like agent tasks: on by default, with the
 	// same live feedback.
-	const precompute = dialog.getByLabel("Try to precompute task");
+	const precompute = dialog.getByLabel("Try to precompile");
 	await expect(precompute).toBeEnabled();
 	await expect(precompute).toBeChecked();
 	const feedback = dialog.getByTestId("task-cost-feedback");

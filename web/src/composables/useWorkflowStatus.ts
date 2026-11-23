@@ -12,8 +12,11 @@ export type WorkflowActivity = "idle" | "triggering" | "running";
 
 export interface WorkflowStatus {
 	activity: WorkflowActivity;
-	/** How the latest finished run ended, if any run finished. */
-	last?: "succeeded" | "failed";
+	/**
+	 * How the latest finished run ended, if any run finished; fallback means
+	 * its precompiled script failed and the model ran it.
+	 */
+	last?: "succeeded" | "fallback" | "failed";
 	lastAt?: string;
 }
 
@@ -38,7 +41,12 @@ export function workflowStatuses(jobs: Job[]): Map<string, WorkflowStatus> {
 		else if (job.status === "pending" && s.activity !== "running")
 			s.activity = "triggering";
 		else if (job.status === "completed" || job.status === "failed") {
-			s.last = job.status === "completed" ? "succeeded" : "failed";
+			s.last =
+				job.status === "failed"
+					? "failed"
+					: job.script_error
+						? "fallback"
+						: "succeeded";
 			s.lastAt = job.updated_at;
 		}
 		out.set(job.task_id, s);

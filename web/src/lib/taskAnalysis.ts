@@ -13,7 +13,13 @@ export interface TaskRunEstimate {
 	max_tokens: number;
 	min_cost_usd?: number;
 	max_cost_usd?: number;
+	/** The part of each round's input that is a workflow's trigger context. */
+	min_context_tokens?: number;
+	max_context_tokens?: number;
 }
+
+/** What starts a task's runs: a schedule, or a channel message for a workflow. */
+export type TaskTriggerType = "schedule" | "message";
 
 /** task_analyze's preview of what precompiling a task would do. */
 export interface TaskAnalysis {
@@ -23,6 +29,8 @@ export interface TaskAnalysis {
 	model_steps?: string[];
 	model?: string;
 	estimate: TaskRunEstimate;
+	/** What each run would cost on the model, when the task will be precompiled. */
+	without_precompile?: TaskRunEstimate;
 }
 
 /** Parses task_analyze's result, or returns null when it is not one. */

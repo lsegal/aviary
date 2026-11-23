@@ -118,9 +118,9 @@ export interface AgentTask {
 	project?: string;
 	/** Overrides the project agent's model for a "project" task's runs; empty uses the agent's own. */
 	model?: string;
-	/** Whether a "project" task's runs try its compiled script in the clone before the model. */
+	/** Whether a "project" task's or prompt workflow's runs try its compiled script before the model. */
 	precompile?: boolean;
-	/** The "project" task's compiled script, written by Aviary. */
+	/** The "project" task's or prompt workflow's compiled script, written by Aviary. */
 	compiled?: string;
 	/** What the compiled script was compiled from, written by Aviary. */
 	compiled_key?: string;
@@ -215,6 +215,37 @@ export function agentTaskPath(agent: string, task = "") {
 /** Whether task is a workflow: run by a matching channel message, not a schedule. */
 export function isWorkflow(task: Pick<AgentTask, "trigger">): boolean {
 	return (task.trigger ?? "").trim().toLowerCase() === "message";
+}
+
+/**
+ * Whether task keeps its prompt when precompiled, with its compiled script
+ * beside it to fall back from: a project task or a prompt workflow.
+ */
+export function precompilesBesidePrompt(
+	task: Pick<AgentTask, "trigger" | "type">,
+): boolean {
+	const type = agentTaskType(task.type);
+	return type === "project" || (isWorkflow(task) && type === "prompt");
+}
+
+/**
+ * Where a precompiling task's script stands: compiled; compiling, not yet
+ * analyzed; not deterministic enough to compile; set aside after it failed,
+ * or precompile turned off for it; or "" for a task that does not precompile.
+ */
+export type PrecompileState =
+	| "compiled"
+	| "compiling"
+	| "not-deterministic"
+	| "set-aside"
+	| "";
+
+export function precompileState(task: AgentTask): PrecompileState {
+	if (!precompilesBesidePrompt(task)) return "";
+	if (task.precompile !== true) return task.precompile_note ? "set-aside" : "";
+	if (task.compiled?.trim()) return "compiled";
+	if (task.precompile_note) return "set-aside";
+	return task.compiled_key ? "not-deterministic" : "compiling";
 }
 
 /** A task's session, which every run of the task shares. */
