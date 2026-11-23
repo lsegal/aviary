@@ -201,7 +201,7 @@ async function load() {
 	// One at a time: the live server's MCP transport prefers sequential calls.
 	for (const c of props.channels) {
 		const name = channelName(c);
-		let got: ChannelActivity;
+		let got: Partial<ChannelActivity> | null = null;
 		try {
 			got = JSON.parse(
 				await callTool("channel_activity", {
@@ -209,11 +209,16 @@ async function load() {
 					channel: name,
 					limit: 5,
 				}),
-			) as ChannelActivity;
+			);
 		} catch {
-			got = { messages_24h: 0, messages: [] };
+			// Shown as a channel with no traffic.
 		}
-		activity.value = { ...activity.value, [name]: got };
+		const value: ChannelActivity = {
+			last_activity: got?.last_activity,
+			messages_24h: got?.messages_24h ?? 0,
+			messages: Array.isArray(got?.messages) ? got.messages : [],
+		};
+		activity.value = { ...activity.value, [name]: value };
 	}
 }
 
