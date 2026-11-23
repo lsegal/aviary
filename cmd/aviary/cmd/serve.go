@@ -25,13 +25,18 @@ import (
 
 var serveDaemon bool
 
+// startServer runs the server in the foreground; tests replace it.
+var startServer = runStart
+
 var serveCmd = &cobra.Command{
 	Use:   "serve [start|stop]",
 	Short: "Manage the Aviary server (start/stop)",
 	Long:  `Start or stop the Aviary server. Running 'aviary serve' with no subcommand starts the server.`,
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// Default to start when no subcommand provided.
 		if len(args) == 0 || args[0] == "start" {
+			// Errors from here on are runtime failures, not usage errors.
+			cmd.SilenceUsage = true
 			if serveDaemon {
 				// Launch background process and exit.
 				exe, err := os.Executable()
@@ -103,7 +108,7 @@ var serveCmd = &cobra.Command{
 				fmt.Printf("Aviary %s started in background (PID %d)\n", buildinfo.Version, proc.Pid)
 				return nil
 			}
-			return runStart(nil, nil)
+			return startServer(nil, nil)
 		}
 		if args[0] == "stop" {
 			return stopCmd.RunE(stopCmd, []string{})
@@ -242,7 +247,7 @@ func runStart(_ *cobra.Command, _ []string) error {
 		srv := server.New(cfg, tok)
 		err := srv.ListenAndServe(ctx)
 		if err == nil || ctx.Err() != nil {
-			return err
+			return shutdownErr(err)
 		}
 		if errors.Is(err, server.ErrReexecRequired) {
 			// Release the PID file first: the new process checks it on start.
@@ -266,6 +271,16 @@ func runStart(_ *cobra.Command, _ []string) error {
 		}
 		return err
 	}
+}
+
+// shutdownErr is what serving returns once a signal asked it to stop. A
+// restart the server was in the middle of is moot then, so its sentinel is
+// not an error.
+func shutdownErr(err error) error {
+	if errors.Is(err, server.ErrReexecRequired) || errors.Is(err, server.ErrRestartRequired) {
+		return nil
+	}
+	return err
 }
 
 // runStop is the former command implementation from stop.go.

@@ -442,6 +442,11 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			}
 			return err
 		}
+		if reexec || hardRestart {
+			// Never stay alive with the listener closed: a shutdown step
+			// that hangs ends the process instead of stranding the restart.
+			defer startRestartWatchdog()()
+		}
 
 		if !listenerRestart && s.sched != nil {
 			// Stop scheduling first so nothing is enqueued or started while

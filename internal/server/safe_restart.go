@@ -23,6 +23,32 @@ import (
 var ErrReexecRequired = errors.New("server re-exec required")
 
 var (
+	// restartWatchdog bounds how long ListenAndServe may take to shut down
+	// for a restart once it has stopped accepting requests.
+	restartWatchdog = time.Minute
+	// restartTimedOut ends a process whose restart shutdown hung.
+	restartTimedOut = exitStalledRestart
+)
+
+// startRestartWatchdog calls restartTimedOut unless the returned stop function
+// runs within restartWatchdog.
+func startRestartWatchdog() (stop func()) {
+	t := time.AfterFunc(restartWatchdog, restartTimedOut)
+	return func() { t.Stop() }
+}
+
+// exitStalledRestart exits non-zero, first asking the dev supervisor
+// (scripts/dev-go.mjs) to run the backend again so the restart still happens.
+func exitStalledRestart() {
+	slog.Error("server: restart did not finish shutting down, exiting", "component", "update", "timeout", restartWatchdog)
+	_ = RemovePID()
+	if update.RequestRebuild() {
+		slog.Info("server: restarting through the dev supervisor", "component", "update")
+	}
+	os.Exit(1)
+}
+
+var (
 	versionCheck   = update.Check
 	installRelease = update.Install
 	gitCheckout    = update.GitCheckout
