@@ -1,6 +1,6 @@
 <template>
 	<AppLayout>
-		<div ref="scrollRoot" :class="isAgentFilesPage ? 'flex h-full flex-col overflow-hidden' : 'h-full overflow-y-auto'">
+		<div ref="scrollRoot" data-testid="settings-scroll" :class="isAgentFilesPage ? 'flex h-full flex-col overflow-hidden' : 'h-full overflow-y-auto'">
 			<div :class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'mx-auto max-w-7xl px-4 py-6 sm:px-6'">
 				<SettingsPageHeader v-if="!isAgentFilesPage" :crumbs="pageHeader.crumbs" :back="pageHeader.back">
 					<template #icon>
