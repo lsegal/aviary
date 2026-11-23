@@ -316,10 +316,10 @@ test("with several agents the phone main nav stays on one row", async ({
 	);
 	expect(new Set(tops).size).toBe(1);
 
-	await nav.getByTestId("mobile-nav-more").click();
-	const menu = page.getByTestId("mobile-nav-menu");
-	await expect(menu.getByRole("menuitem", { name: "writer" })).toHaveCount(0);
-	await menu.getByRole("menuitem", { name: "System" }).click();
+	// Every agent stays in the row, which scrolls, with the active one shown.
+	await expect(nav.getByTestId("mobile-nav-more")).toHaveCount(0);
+	const system = nav.getByRole("link", { name: "System", exact: true });
+	await system.click();
 	await expect(page).toHaveURL("/system/overview");
 });
 

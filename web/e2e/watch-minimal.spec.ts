@@ -90,3 +90,44 @@ test("a watch session redirects pages outside Code Loop and tasks", async ({
 	await page.goto("/projects/settings");
 	await expect(page).toHaveURL("/projects/settings");
 });
+
+test("saved navigation preferences can't bring back pages minimal mode hides (#1003)", async ({
+	page,
+}) => {
+	await mockWatchSession(page);
+	// Chats first and Code Loop hidden, as saved by the full UI.
+	await page.route("/api/preferences/navigation", (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				order: { agentPages: ["chat", "tasks", "projects"] },
+				hidden: { agentPages: ["projects"] },
+			}),
+		}),
+	);
+	await page.goto("/agents/watch/tasks");
+	const sole = page.getByTestId("sidebar-sole-agent");
+	await expect(
+		sole.getByRole("link", { name: "Scheduled Tasks", exact: true }),
+	).toBeVisible();
+	await expect(
+		sole.getByRole("link", { name: "Chats", exact: true }),
+	).toHaveCount(0);
+	await expect(
+		sole.getByRole("link", { name: "Code Loop", exact: true }),
+	).toHaveCount(0);
+
+	// Showing hidden pages brings back only what minimal mode serves.
+	await page.getByTestId("sidebar-show-hidden").click();
+	await expect(
+		sole.getByRole("link", { name: "Code Loop", exact: true }),
+	).toBeVisible();
+	await expect(
+		sole.getByRole("link", { name: "Chats", exact: true }),
+	).toHaveCount(0);
+	const keys = await sole
+		.locator('[data-testid^="sidebar-row-"]')
+		.evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
+	expect(keys).toEqual(["sidebar-row-tasks", "sidebar-row-projects"]);
+});

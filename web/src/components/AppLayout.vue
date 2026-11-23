@@ -227,6 +227,11 @@
             <ProjectRunningBadge :running="child.running ?? 0" />
           </router-link>
         </div>
+        <button v-if="hiddenNavCount" type="button" data-testid="sidebar-show-hidden" :aria-pressed="nav.showHidden.value"
+          class="block w-full rounded-lg px-3 py-1.5 text-left text-xs text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+          @click="nav.showHidden.value = !nav.showHidden.value">
+          {{ nav.showHidden.value ? "Hide hidden pages" : `Show ${hiddenNavCount} hidden ${hiddenNavCount === 1 ? "page" : "pages"}` }}
+        </button>
       </div>
       <div class="mt-auto flex flex-col gap-2">
         <UpdateStatusBanner :restart="restart" @cancel="cancelRestart()" />
@@ -335,6 +340,7 @@
       <slot />
     </main>
 
+    <NavEditDialog :groups="navEditGroups" />
     <AgentItemDialogs />
     <ChannelDialogs />
     <ToastStack />
@@ -394,6 +400,8 @@ import {
 import { agentFilePath, useAgentFilesStore } from "../stores/agentFiles";
 import { projectOwner } from "../lib/projectSettings";
 import { useRouteExpandedGroup } from "../composables/useRouteExpandedGroup";
+import { useNavPrefs } from "../composables/useNavPrefs";
+import { arrangeNav, type NavList } from "../lib/navPrefs";
 import { MINIMAL_AGENT_PAGES } from "../lib/minimalMode";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
@@ -421,6 +429,7 @@ import SidebarGearMenu from "./sidebar/SidebarGearMenu.vue";
 import SidebarRailItem from "./sidebar/SidebarRailItem.vue";
 import SystemPageIcon from "./SystemPageIcon.vue";
 import ToastStack from "./ui/ToastStack.vue";
+import NavEditDialog, { type NavEditGroup } from "./nav/NavEditDialog.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 import VersionIndicator from "./VersionIndicator.vue";
 
@@ -440,6 +449,8 @@ interface NavChild {
 }
 
 interface AgentNav {
+	/** `agent:<name>`, the agent's place in the top-row order. */
+	key: string;
 	name: string;
 	label: string;
 	to: string;
@@ -683,6 +694,28 @@ onBeforeUnmount(() => {
 	closeSidebarPeek();
 });
 
+// The user's navigation order and visibility (#1003), shared by the
+// sidebar, the collapsed rail and the narrow-screen rows.
+const nav = useNavPrefs();
+// Pages that never show whatever the preferences say: those a minimal
+// `aviary watch` session leaves out (#991).
+const navForcedHidden = computed<ReadonlySet<string>>(() =>
+	minimal.value
+		? new Set([
+				...AGENT_PAGES.map((p) => p.key).filter(
+					(k) => !MINIMAL_AGENT_PAGES.has(k),
+				),
+				...SYSTEM_PAGES.map((p) => p.key),
+			])
+		: new Set(),
+);
+function arranged<T extends { key: string }>(items: T[], list: NavList): T[] {
+	return arrangeNav(items, list, nav.prefs.value, {
+		forcedHidden: navForcedHidden.value,
+		showHidden: nav.showHidden.value,
+	});
+}
+
 const settingsStore = useSettingsStore();
 if (!settingsStore.config && auth.isLoggedIn) void settingsStore.fetchConfig();
 const { projects } = useProjectList();
@@ -730,7 +763,7 @@ const agentNav = computed<AgentNav[]>(() => {
 	// An agent added but not saved yet routes as _N until it has a name.
 	const pending = routeAgent.value.startsWith("_") ? routeAgent.value : "";
 	if (pending) names.push(pending);
-	return names.map((name) => {
+	const agents = names.map((name) => {
 		const active = routeAgent.value === name;
 		const owned = pending === name ? [] : ownedProjects(name);
 		const running = owned.reduce((n, p) => n + p.running, 0);
@@ -745,18 +778,24 @@ const agentNav = computed<AgentNav[]>(() => {
 			running,
 			children:
 				active || names.length === 1
-				? AGENT_PAGES.filter(
-						(page) => !minimal.value || MINIMAL_AGENT_PAGES.has(page.key),
-					).map((page) => ({
-						key: page.key,
-						label: page.label,
-						to: agentPagePath(name, page.key),
-						running: page.key === "projects" ? running : undefined,
-					}))
+				? arranged(
+						AGENT_PAGES.map((page) => ({
+							key: page.key,
+							label: page.label,
+							to: agentPagePath(name, page.key),
+							running: page.key === "projects" ? running : undefined,
+						})),
+						"agentPages",
+					)
 				: [],
 			projects: owned.map((p) => projectChild(name, p)),
 		};
 	});
+	// Agents follow the user's top-row order, here as on the narrow screen.
+	return arranged(
+		agents.map((a) => ({ ...a, key: `agent:${a.name}` })),
+		"top",
+	);
 });
 
 // With exactly one agent its pages are the top level, with no Agents → name
@@ -902,16 +941,24 @@ const watchChildren = computed<NavChild[]>(() =>
 		})),
 );
 
-// The System item is the overview, so its pages list without one.
+// The System item is the overview, so its pages list without one. Pages
+// the user hid stay reachable from the overview's cards.
 const systemChildren = computed<NavChild[]>(() => [
-	...SYSTEM_PAGES.map(({ key, label, to }) => ({ key, label, to })),
+	...arranged(
+		SYSTEM_PAGES.map(({ key, label, to }) => ({ key, label, to })),
+		"systemPages",
+	),
 	...watchChildren.value,
 ]);
 
 // The rail shows only the current System page under System, in its own
 // icon, so the rail keeps room to rest the pointer and peek the sidebar.
-const currentSystemChild = computed(() =>
-	systemChildren.value.find((child) => isChildActive(child)),
+// A hidden page still shows there while it is open.
+const currentSystemChild = computed<NavChild | undefined>(() =>
+	[
+		...SYSTEM_PAGES.map(({ key, label, to }) => ({ key, label, to })),
+		...watchChildren.value,
+	].find((child) => isChildActive(child)),
 );
 
 // Settings' tabs live under /system but open from the gear menu instead.
@@ -970,8 +1017,13 @@ const mobileChildren = computed<NavChild[]>(() => {
 });
 
 // The narrow-screen main row: a sole agent's pages, or one pill per agent,
-// plus System. Agents are added from Settings. Items that do not fit go behind "…".
-const mobileMainItems = computed<MobileNavItem[]>(() => {
+// plus System, in the user's top-row order. Agents are added from Settings.
+// The row scrolls sideways when the items do not fit.
+const mobileMainItems = computed<MobileNavItem[]>(() =>
+	arranged(mobileMainDefaults.value, "top"),
+);
+
+const mobileMainDefaults = computed<MobileNavItem[]>(() => {
 	const system: MobileNavItem = {
 		key: "system",
 		label: "System",
@@ -994,13 +1046,59 @@ const mobileMainItems = computed<MobileNavItem[]>(() => {
 	}
 	return [
 		...agentNav.value.map((a) => ({
-			key: `agent:${a.name}`,
+			key: a.key,
 			label: a.label,
 			to: a.to,
 			active: a.active,
 		})),
 		...systemItems,
 	];
+});
+
+// Hidden pages the sidebar leaves out, for its Show hidden toggle.
+const hiddenNavCount = computed(() => {
+	const count = (list: NavList, keys: string[]) =>
+		keys.filter((k) => nav.isHidden(list, k) && !navForcedHidden.value.has(k))
+			.length;
+	return (
+		count(
+			"agentPages",
+			AGENT_PAGES.map((p) => p.key),
+		) +
+		count(
+			"systemPages",
+			SYSTEM_PAGES.map((p) => p.key),
+		)
+	);
+});
+
+// The Edit sidebar dialog's lists: the agent pages and System pages,
+// which can be hidden, and the top row, which keeps every item.
+const navEditGroups = computed<NavEditGroup[]>(() => {
+	const shown = (items: { key: string; label: string }[]) =>
+		items
+			.filter((i) => !navForcedHidden.value.has(i.key))
+			.map(({ key, label }) => ({ key, label }));
+	const groups: NavEditGroup[] = [
+		{
+			list: "agentPages",
+			title: soleAgent.value ? "Pages" : "Agent pages",
+			items: shown([...AGENT_PAGES]),
+			hideable: true,
+		},
+		{
+			list: "systemPages",
+			title: "System pages",
+			items: shown(SYSTEM_PAGES),
+			hideable: true,
+		},
+		{
+			list: "top",
+			title: soleAgent.value ? "Top buttons" : "Agents and top buttons",
+			items: shown(mobileMainDefaults.value),
+		},
+	];
+	return groups.filter((g) => g.items.length);
 });
 
 function mobileSubnavClass(child: NavChild): string {

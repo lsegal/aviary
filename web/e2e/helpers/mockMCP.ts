@@ -98,6 +98,21 @@ export async function mockMCP(page: Page, fixtures: ToolFixtures = {}) {
 		route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
 	);
 
+	// Navigation preferences (#1003), kept in memory as the server keeps
+	// them on disk, so they survive reloads. Specs can route the endpoint
+	// again to fail it or inspect saves.
+	let navPrefs = { order: {}, hidden: {} };
+	await page.route("/api/preferences/navigation", async (route) => {
+		const method = route.request().method();
+		if (method === "PUT") navPrefs = route.request().postDataJSON();
+		if (method === "DELETE") navPrefs = { order: {}, hidden: {} };
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify(navPrefs),
+		});
+	});
+
 	await page.route("/mcp", async (route) => {
 		const body = route.request().postDataJSON() as {
 			jsonrpc: string;
