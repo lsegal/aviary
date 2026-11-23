@@ -23,7 +23,7 @@ var projectToolNames = []string{
 	"project_job_retry", "project_job_pause", "project_job_resume", "project_job_stop",
 	"project_refresh", "project_add", "project_remove",
 	"project_clone_list", "project_clone_clear", "project_unblock_run",
-	"project_issue_comment", "project_issue_create",
+	"project_issue_comment", "project_issue_create", "project_issue_backfill_media",
 	"project_github_signin", "project_github_use_polling", "project_github_import",
 }
 
@@ -75,7 +75,8 @@ func TestProjectTools_NilDeps(t *testing.T) {
 		"project_job_pause": job, "project_job_resume": job, "project_job_stop": job,
 		"project_add": {"target": "o/r"}, "project_remove": {"target": "o/r"},
 		"project_issue_comment": {"number": 1, "text": "x"}, "project_issue_create": {"text": "x"},
-		"project_github_import": {"profile": "/p"},
+		"project_issue_backfill_media": {"numbers": []any{1}},
+		"project_github_import":        {"profile": "/p"},
 	}
 	for _, tool := range projectToolNames {
 		toolArgs := args[tool]

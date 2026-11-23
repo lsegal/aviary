@@ -297,6 +297,11 @@
 	],
 	"project_github_signin": [],
 	"project_github_use_polling": [],
+	"project_issue_backfill_media": [
+		"dry_run",
+		"numbers",
+		"repository"
+	],
 	"project_issue_comment": [
 		"attachments",
 		"number",

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -127,6 +128,10 @@ func (w *Engine) backfillIssueMedia(ctx context.Context, repository string, numb
 		file, err := agent.MediaFile(mediaURL)
 		if err != nil {
 			problems = append(problems, err.Error())
+			continue
+		}
+		if _, err := os.Stat(file); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %v", file, err))
 			continue
 		}
 		contentType := fileContentType(file)
