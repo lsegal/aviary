@@ -14,6 +14,7 @@ A job is named by its issue `number`. `target` is needed only when several proje
 | `project_job_pause` | `aviary project job pause` | |
 | `project_job_resume` | `aviary project job resume` | |
 | `project_job_stop` | `aviary project job stop` | destructive |
+| `project_job_dismiss` | `aviary project job dismiss` | |
 | `project_refresh` | `aviary project refresh` | |
 | `project_add` | `aviary project add` | |
 | `project_remove` | `aviary project remove` | destructive |
@@ -31,17 +32,25 @@ Settings have no tool of their own. A project lives in the `projects:` list of t
 
 ## project_status
 
-Instance identity, watched projects with issue counts, job counts, the jobs in each board state (`states`: `starting`, `paused`, `running`, `done`, `failed`), delivery mode, poll interval, the issue filter that selects work (`issue_filter`, empty when every open issue is picked up), last check, quota per CLI provider, the configured agent specs, and recent log lines.
+Instance identity, watched projects with issue counts, job counts, the jobs in each board state (`states`: `starting`, `paused`, `running`, `done`, `failed`; a schedule counts once, under `starting` or `running` while a run is in flight and under `failed` while its last run failed and was not dismissed, and never under `done`), delivery mode, poll interval, the issue filter that selects work (`issue_filter`, empty when every open issue is picked up), last check, quota per CLI provider, the configured agent specs, and recent log lines.
 
 **Arguments:** `log_offset` (optional): return only the lines logged after this offset. Each response's `log_offset` is the offset to pass next time. `aviary watch` tails the log this way. `targets` (optional): count `states` over only these projects' jobs, as `project_job_list` filters them; the board's stat cards pass the projects they show.
 
 ## project_job_list
 
-Every job, running and errored jobs first, with the actions each accepts.
+Every job, running and errored jobs first, with the actions each accepts. A scheduled task is one entry, never a job per fire: the entry is its latest run, and its `state` is `starting` or `running` while that run is in flight, `failed` while its last run failed and was not dismissed, and `scheduled` otherwise.
 
-**Arguments:** `target`, `status` (such as `active`, `waiting`, `queued`, `paused`, `failed`, `complete`), `states` (board states, any of `starting`, `paused`, `running`, `done`, `failed`; a job in any of them is listed), `query` (text matched case-insensitively against every field: issue and pull request numbers, title, repository, status, skill, agent and model, session ID, schedule ID, wait reason, and output), `offset`, `limit` (default 50), all optional.
+**Arguments:** `target`, `status` (such as `active`, `waiting`, `queued`, `paused`, `failed`, `complete`), `states` (board states, any of `starting`, `paused`, `running`, `done`, `failed`, or `scheduled` for a schedule between runs; a job in any of them is listed), `kinds` (any of `issue`, `discussion`, `schedule`), `query` (text matched case-insensitively against every field: issue and pull request numbers, title, repository, status, skill, agent and model, session ID, schedule ID, wait reason, and output), `offset`, `limit` (default 50), all optional.
 
-**Returns:** `jobs`, `total`, `offset`, `limit`. With a `query`, `total` counts the matches and `unfiltered_total` counts the jobs matching `target`, `status` and `states` alone.
+**Returns:** `jobs`, `total`, `offset`, `limit`. With a `query`, `total` counts the matches and `unfiltered_total` counts the jobs matching `target`, `status`, `states` and `kinds` alone.
+
+A schedule's entry also has:
+
+- `last_run`: its last finished run, with `number`, `status`, `result` (`succeeded`, `failed`, or `fallback` when its precompiled script failed and the model ran it), `summary` (one line of its output), `started`, `finished`, `duration_ms`, and `dismissed` when a failure was dismissed.
+- `next_run`: `at`, its next fire; `paused` when the task is paused; `queued` when a fire is waiting on the overlap policy for the run in flight.
+- `recent_runs`: up to 20 runs, newest first, in `last_run`'s shape. Each run's `number` is a job `project_job_get` reads, with its transcript.
+
+Each run is still kept as its own job, for run history and usage.
 
 ## project_job_get
 
@@ -57,9 +66,9 @@ Why a job is paused, blocked, waiting, queued, or looks stuck, what will wake it
 
 **Arguments:** `number`, `target`.
 
-## project_job_retry, project_job_pause, project_job_resume, project_job_stop
+## project_job_retry, project_job_pause, project_job_resume, project_job_stop, project_job_dismiss
 
-Retry requeues a job so `gh-fix` reruns it with its saved session. On a paused job it clears the pause first. Pause holds an active, waiting or queued job: a running agent is stopped and its work pushed. Resume clears a pause and requeues the job. Stop stops a job's agent and waits for it to exit, or clears a paused job and releases its claim. Each refuses what the job's status does not allow.
+Retry requeues a job so `gh-fix` reruns it with its saved session. On a paused job it clears the pause first. Pause holds an active, waiting or queued job: a running agent is stopped and its work pushed. Resume clears a pause and requeues the job. Stop stops a job's agent and waits for it to exit, or clears a paused job and releases its claim. Dismiss takes a schedule's failed runs off the `failed` state; its entry still reports the failure as its `last_run` until the next run. Each refuses what the job's status does not allow.
 
 **Arguments:** `number`, `target`.
 

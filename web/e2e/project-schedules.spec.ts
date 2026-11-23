@@ -1429,3 +1429,310 @@ test("an old Schedules URL for one schedule opens its editor on the board", asyn
 		page.getByTestId("schedule-editor").getByLabel("Name"),
 	).toHaveValue("nightly-triage");
 });
+
+// One card per scheduled task (#977): its runs update it in place instead of
+// each leaving a Done card of its own.
+const RUN_MINUTE = 60;
+const finishedRun = (
+	number: number,
+	minutesAgo: number,
+	result: string,
+	summary: string,
+) => ({
+	key: `lsegal/aviary#${number}`,
+	number,
+	status: result === "failed" ? "failed" : "complete",
+	state: result === "failed" ? "failed" : "done",
+	result,
+	summary,
+	started: minutesFromNow(-minutesAgo - 1),
+	finished: minutesFromNow(-minutesAgo),
+	duration_ms: RUN_MINUTE * 1000,
+});
+const RELEASE_TASK = schedule({
+	id: "assistant/release-aviary",
+	name: "release-aviary",
+	prompt: "Release aviary when main is ahead of the latest release.",
+	enabled: true,
+	trigger_type: "interval",
+	every: "5m",
+	description: "every 5m (Local)",
+	next_run: minutesFromNow(3),
+});
+const RELEASE_RUNS = [
+	finishedRun(
+		1795456753,
+		2,
+		"succeeded",
+		"main matches the latest release, so no release was started",
+	),
+	finishedRun(1795456453, 7, "fallback", "Released v0.7.8"),
+	finishedRun(1795456153, 12, "failed", "gh: HTTP 502"),
+	finishedRun(1795455853, 17, "succeeded", "Nothing to release"),
+];
+const releaseEntry = (fields: Record<string, unknown> = {}) => ({
+	key: `lsegal/aviary#${RELEASE_RUNS[0].number}`,
+	target: "lsegal/aviary",
+	number: RELEASE_RUNS[0].number,
+	title: "release-aviary",
+	status: "complete",
+	state: "scheduled",
+	kind: "schedule",
+	schedule_id: "assistant/release-aviary",
+	agent: "claude",
+	repository: "lsegal/aviary",
+	actions: { retry: true, pause: false, resume: false, stop: false },
+	started: RELEASE_RUNS[0].started,
+	last_run: RELEASE_RUNS[0],
+	next_run: { at: minutesFromNow(3), paused: false, queued: false },
+	recent_runs: RELEASE_RUNS,
+	...fields,
+});
+
+test.describe("one card per scheduled task (#977)", () => {
+	test("several completed runs leave one card with the last and next run, and no Done copies", async ({
+		page,
+	}) => {
+		const calls = await setup(page, {
+			tasks: [RELEASE_TASK],
+			entries: [releaseEntry()],
+			jobs: [ISSUE_JOB],
+		});
+		await page.goto("/system/watches/lsegal%2Faviary");
+		const card = page.getByTestId("scheduled-card");
+		await expect(card).toHaveCount(1);
+		// The runs are not job cards: only the issue's is.
+		await expect(page.getByTestId("job-card")).toHaveCount(1);
+		await expect(page.getByTestId("job-card")).toContainText("Fix the parser");
+		await expect(card.getByTestId("scheduled-state")).toHaveText("Scheduled");
+		await expect(card.getByTestId("scheduled-next")).toHaveText(
+			/^Next run in [23]m \(.+\)$/,
+		);
+		await expect(card.getByTestId("scheduled-last-result")).toHaveText("✓");
+		await expect(card.getByTestId("scheduled-last-time")).toHaveText(
+			/^Last run 2m ago · succeeded$/,
+		);
+		await expect(card.getByTestId("scheduled-last-summary")).toHaveText(
+			"main matches the latest release, so no release was started",
+		);
+		// The strip shows recent results, oldest first.
+		await expect(card.getByTestId("scheduled-strip")).toHaveText("✓✖⚠✓");
+		// The project's jobs are read apart from its schedules' entries.
+		expect(calls.project_job_list).toContainEqual(
+			expect.objectContaining({ kinds: ["issue", "discussion"] }),
+		);
+
+		// Done shows neither the schedule nor its runs.
+		const filter = page.getByRole("group", { name: "Job filter" });
+		await filter.getByRole("button", { name: /^Done/ }).click();
+		await expect(card).toHaveCount(0);
+		await expect(page.getByTestId("job-card")).toHaveCount(0);
+		await filter.getByRole("button", { name: /^Done/ }).click();
+
+		// So does the kanban: one Scheduled box and no Done column cards.
+		await page.getByTestId("kanban-toggle").click();
+		await expect(page.getByTestId("kanban-scheduled-card")).toHaveCount(1);
+		await expect(
+			page
+				.getByTestId("kanban-scheduled-card")
+				.getByTestId("kanban-scheduled-last"),
+		).toHaveText(/✓\s*Last run 2m ago/);
+		await expect(
+			page
+				.locator('[data-testid="kanban-column"][data-state="done"]')
+				.getByTestId("kanban-card"),
+		).toHaveCount(0);
+	});
+
+	test("a run shows Running on the same card, which then returns to Scheduled", async ({
+		page,
+	}) => {
+		const running = releaseEntry({
+			number: 1795457053,
+			key: "lsegal/aviary#1795457053",
+			status: "active",
+			state: "running",
+			started: minutesFromNow(-1),
+			actions: { retry: false, pause: false, resume: false, stop: true },
+			recent_runs: [
+				{
+					key: "lsegal/aviary#1795457053",
+					number: 1795457053,
+					status: "active",
+					state: "running",
+					started: minutesFromNow(-1),
+				},
+				...RELEASE_RUNS,
+			],
+		});
+		const entries: unknown[] = [running];
+		await setup(page, {
+			tasks: [RELEASE_TASK],
+			entries,
+			job: {
+				...running,
+				scrollback: "Comparing main with v0.7.8…",
+				events: [{ kind: "message", text: "Comparing main with v0.7.8…" }],
+			},
+		});
+		await page.goto("/system/watches/lsegal%2Faviary");
+		const card = page.getByTestId("scheduled-card");
+		await expect(card).toHaveCount(1);
+		await expect(card.getByTestId("scheduled-state")).toHaveText("Running");
+		await expect(card.getByTestId("scheduled-spinner")).toBeVisible();
+		await expect(card.getByTestId("scheduled-elapsed")).toHaveText(/^[12]m$/);
+		await expect(card.getByTestId("scheduled-output-rich")).toContainText(
+			"Comparing main with v0.7.8…",
+		);
+		// The last run stays on the card while the next one runs.
+		await expect(card.getByTestId("scheduled-last-time")).toHaveText(
+			/^Last run 2m ago/,
+		);
+		await expect(page.getByTestId("job-card")).toHaveCount(0);
+		// Running counts it; the card stays where it is.
+		const filter = page.getByRole("group", { name: "Job filter" });
+		await filter.getByRole("button", { name: /^Running/ }).click();
+		await expect(card).toHaveCount(1);
+		await filter.getByRole("button", { name: /^Running/ }).click();
+
+		// The run finishes: the same card is back to Scheduled with it as its
+		// last run, and nothing is left behind.
+		entries.splice(
+			0,
+			1,
+			releaseEntry({
+				number: 1795457053,
+				key: "lsegal/aviary#1795457053",
+				last_run: finishedRun(1795457053, 0, "succeeded", "Released v0.7.9"),
+				recent_runs: [
+					finishedRun(1795457053, 0, "succeeded", "Released v0.7.9"),
+					...RELEASE_RUNS,
+				],
+			}),
+		);
+		await expect(card.getByTestId("scheduled-state")).toHaveText("Scheduled");
+		await expect(card).toHaveCount(1);
+		await expect(card.getByTestId("scheduled-output-rich")).toHaveCount(0);
+		await expect(card.getByTestId("scheduled-last-summary")).toHaveText(
+			"Released v0.7.9",
+		);
+		await expect(page.getByTestId("job-card")).toHaveCount(0);
+	});
+
+	test("the detail view lists the run history, and a run opens its transcript", async ({
+		page,
+	}) => {
+		await setup(page, {
+			tasks: [RELEASE_TASK],
+			entries: [releaseEntry()],
+		});
+		await page.goto(
+			"/system/watches/lsegal%2Faviary?scheduled=assistant/release-aviary",
+		);
+		const runs = page
+			.getByTestId("schedule-detail")
+			.getByTestId("schedule-run");
+		await expect(runs).toHaveCount(4);
+		const first = runs.first();
+		await expect(first.getByTestId("schedule-run-result")).toHaveText("✓");
+		await expect(first.getByTestId("schedule-run-duration")).toHaveText(
+			"1m 0s",
+		);
+		await expect(first.getByTestId("schedule-run-summary")).toHaveText(
+			"main matches the latest release, so no release was started",
+		);
+		await expect(first.getByTestId("schedule-run-time")).not.toBeEmpty();
+		await expect(runs.nth(1).getByTestId("schedule-run-result")).toHaveText(
+			"⚠",
+		);
+		await expect(runs.nth(2).getByTestId("schedule-run-result")).toHaveText(
+			"✖",
+		);
+		await expect(runs.nth(2).getByTestId("schedule-run-summary")).toHaveText(
+			"gh: HTTP 502",
+		);
+		await runs.nth(2).getByRole("link").click();
+		await expect(page).toHaveURL(/\/jobs\/1795456153/);
+	});
+
+	test("a failed last run shows on the card and under Failed until dismissed", async ({
+		page,
+	}) => {
+		const failed = finishedRun(1795457053, 1, "failed", "gh: HTTP 502");
+		const calls = await setup(page, {
+			tasks: [RELEASE_TASK],
+			entries: [
+				releaseEntry({
+					number: 1795457053,
+					key: "lsegal/aviary#1795457053",
+					status: "failed",
+					state: "failed",
+					last_run: failed,
+					recent_runs: [failed, ...RELEASE_RUNS],
+				}),
+			],
+		});
+		await page.goto("/system/watches/lsegal%2Faviary");
+		const card = page.getByTestId("scheduled-card");
+		await expect(card.getByTestId("scheduled-failed")).toHaveText("Failed");
+		await expect(card.getByTestId("scheduled-last-result")).toHaveText("✖");
+		await expect(card.getByTestId("scheduled-last-summary")).toHaveText(
+			"gh: HTTP 502",
+		);
+		const filter = page.getByRole("group", { name: "Job filter" });
+		await filter.getByRole("button", { name: /^Failed/ }).click();
+		await expect(card).toHaveCount(1);
+		await card.getByTestId("scheduled-dismiss").click();
+		await expect
+			.poll(() => calls.project_job_dismiss?.[0])
+			.toEqual({ target: "lsegal/aviary", number: 1795457053 });
+	});
+
+	test("Paused and Queued take the next run's place", async ({ page }) => {
+		await setup(page, {
+			tasks: [
+				{ ...RELEASE_TASK, enabled: false },
+				schedule({
+					id: "assistant/sync",
+					name: "sync",
+					prompt: "Sync labels.",
+					enabled: true,
+					every: "1m",
+					description: "every 1m (Local)",
+					next_run: minutesFromNow(1),
+				}),
+			],
+			entries: [
+				releaseEntry({ next_run: { paused: true, queued: false } }),
+				releaseEntry({
+					key: "lsegal/aviary#1795457000",
+					number: 1795457000,
+					title: "sync",
+					schedule_id: "assistant/sync",
+					status: "active",
+					state: "running",
+					next_run: { at: minutesFromNow(1), paused: false, queued: true },
+					recent_runs: [
+						{
+							key: "lsegal/aviary#1795457000",
+							number: 1795457000,
+							status: "active",
+							state: "running",
+							started: minutesFromNow(-3),
+						},
+					],
+					last_run: undefined,
+				}),
+			],
+		});
+		await page.goto("/system/watches/lsegal%2Faviary");
+		const cards = page.getByTestId("scheduled-card");
+		await expect(cards).toHaveCount(2);
+		const release = cards.filter({ hasText: "release-aviary" });
+		await expect(release.getByTestId("scheduled-next")).toHaveText("Paused");
+		await expect(release.getByTestId("scheduled-next")).toHaveClass(/amber/);
+		await expect(
+			cards.filter({ hasText: "sync" }).getByTestId("scheduled-next"),
+		).toHaveText("Queued");
+	});
+});

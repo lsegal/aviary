@@ -20,7 +20,7 @@ import (
 
 var projectToolNames = []string{
 	"project_status", "project_job_list", "project_job_get", "project_job_explain",
-	"project_job_retry", "project_job_pause", "project_job_resume", "project_job_stop",
+	"project_job_retry", "project_job_pause", "project_job_resume", "project_job_stop", "project_job_dismiss",
 	"project_refresh", "project_add", "project_remove",
 	"project_clone_list", "project_clone_clear", "project_unblock_run",
 	"project_issue_comment", "project_issue_create", "project_issue_backfill_media",
@@ -72,7 +72,7 @@ func TestProjectTools_NilDeps(t *testing.T) {
 	job := map[string]any{"number": 1}
 	args := map[string]map[string]any{
 		"project_job_get": job, "project_job_explain": job, "project_job_retry": job,
-		"project_job_pause": job, "project_job_resume": job, "project_job_stop": job,
+		"project_job_pause": job, "project_job_resume": job, "project_job_stop": job, "project_job_dismiss": job,
 		"project_add": {"target": "o/r"}, "project_remove": {"target": "o/r"},
 		"project_issue_comment": {"number": 1, "text": "x"}, "project_issue_create": {"text": "x"},
 		"project_issue_backfill_media": {"numbers": []any{1}},
@@ -149,7 +149,7 @@ func TestProjectStatusAndJobsWithNothingWatched(t *testing.T) {
 	toolCallContains(t, d, "project_job_get", map[string]any{"number": 7}, "no job #7")
 	toolCallContains(t, d, "project_job_explain", map[string]any{"number": 7, "target": "o/r"}, "no job o/r#7")
 	toolCallContains(t, d, "project_job_get", map[string]any{"number": 0}, "job number is required")
-	for _, tool := range []string{"project_job_retry", "project_job_pause", "project_job_resume", "project_job_stop", "project_unblock_run"} {
+	for _, tool := range []string{"project_job_retry", "project_job_pause", "project_job_resume", "project_job_stop", "project_job_dismiss", "project_unblock_run"} {
 		toolCallContains(t, d, tool, map[string]any{"number": 7}, "no projects are being watched")
 	}
 	for _, tool := range []string{"project_refresh", "project_clone_list", "project_clone_clear"} {
