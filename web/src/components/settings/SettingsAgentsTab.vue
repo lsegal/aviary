@@ -263,8 +263,8 @@
 						<section v-if="selectedAgentSubtab === 'channels'" id="agent-settings-channels" data-agent-settings-section="channels"
 							data-testid="channel-settings"
 							aria-labelledby="agent-settings-channels-heading" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-							<div class="flex items-center justify-between border-b border-gray-200 px-5 py-2 dark:border-gray-700">
-								<div class="flex items-center gap-4">
+							<div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-4 py-2 sm:px-5 dark:border-gray-700">
+								<div class="flex flex-wrap items-center gap-x-4 gap-y-1">
 									<h3 id="agent-settings-channels-heading" class="py-1 text-sm font-semibold text-gray-800 dark:text-gray-200">Channel</h3>
 									<nav v-if="selectedChannel" role="tablist" aria-label="Channel settings" class="flex gap-1" data-testid="channel-settings-tabs">
 										<router-link v-for="t in CHANNEL_TABS" :key="t.value" role="tab" :data-testid="`channel-tab-${t.value}`"
@@ -279,10 +279,10 @@
 									data-testid="channel-open-conversation"
 									class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Open conversation</router-link>
 							</div>
-							<div v-if="selectedChannel && !channelNotFound && channelTab === 'workflows'" class="p-5">
+							<div v-if="selectedChannel && !channelNotFound && channelTab === 'workflows'" class="p-3 sm:p-5">
 								<ChannelWorkflows :agent="agent.name" :channel="selectedChannel" />
 							</div>
-							<div v-else class="space-y-4 p-5">
+							<div v-else class="space-y-4 p-3 sm:p-5">
 							<p v-if="channelNotFound || !selectedChannel"
 								class="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
 								No channel named {{ $route.params.channel }}.
@@ -290,7 +290,7 @@
 							<template v-else>
 							<template v-for="(ch, k) in agent.channels" :key="`ch-${i}-${k}`">
 							<div v-if="selectedChannelIdx === k"
-								class="space-y-3 rounded-lg border p-4 transition" :class="channelCardClass(ch)">
+								class="space-y-3 rounded-lg border p-3 transition sm:p-4" :class="channelCardClass(ch)">
 								<div class="flex flex-wrap items-center justify-between gap-3">
 									<div class="flex items-center gap-2">
 										<span :class="channelTypeIconClass(ch)">
