@@ -84,15 +84,15 @@ async function move(key: string, delta: number) {
 	await nextTick();
 	const button = delta < 0 ? "up" : "down";
 	listEl.value
-		?.querySelector<HTMLButtonElement>(`[data-key="${CSS.escape(key)}"] [data-testid="nav-edit-${button}"]`)
+		?.querySelector<HTMLButtonElement>(
+			`[data-key="${CSS.escape(key)}"] [data-testid="nav-edit-${button}"]`,
+		)
 		?.focus();
 }
 
 function startDrag(e: PointerEvent, key: string) {
 	if (e.button !== 0) return;
 	e.preventDefault();
-	const handle = e.currentTarget as HTMLElement;
-	handle.setPointerCapture(e.pointerId);
 	dragKey.value = key;
 	draft.value = rows.value.map((r) => r.key);
 	const onMove = (ev: PointerEvent) => {
@@ -110,16 +110,18 @@ function startDrag(e: PointerEvent, key: string) {
 		if (to !== from) draft.value = moveIndex(keys, from, to);
 	};
 	const stop = () => {
-		handle.removeEventListener("pointermove", onMove);
-		handle.removeEventListener("pointerup", stop);
-		handle.removeEventListener("pointercancel", stop);
+		window.removeEventListener("pointermove", onMove);
+		window.removeEventListener("pointerup", stop);
+		window.removeEventListener("pointercancel", stop);
 		if (draft.value) nav.setOrder(props.list, draft.value);
 		draft.value = null;
 		dragKey.value = "";
 	};
-	handle.addEventListener("pointermove", onMove);
-	handle.addEventListener("pointerup", stop);
-	handle.addEventListener("pointercancel", stop);
+	// On the window, not the handle: reordering moves the row's element,
+	// which would drop a pointer capture.
+	window.addEventListener("pointermove", onMove);
+	window.addEventListener("pointerup", stop);
+	window.addEventListener("pointercancel", stop);
 }
 
 const iconButton =

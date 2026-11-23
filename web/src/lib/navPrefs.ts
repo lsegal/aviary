@@ -33,9 +33,7 @@ export function isCustomized(prefs: NavPrefs): boolean {
 export function mergeOrder(defaults: string[], saved?: string[]): string[] {
 	if (!saved?.length) return [...defaults];
 	const known = new Set(defaults);
-	const result = saved.filter(
-		(k, i) => known.has(k) && saved.indexOf(k) === i,
-	);
+	const result = saved.filter((k, i) => known.has(k) && saved.indexOf(k) === i);
 	defaults.forEach((key, i) => {
 		if (result.includes(key)) return;
 		let at = 0;
