@@ -2,8 +2,10 @@
 	<SidebarItemList :items="channels" :item-key="(c) => channelName(c)" more-testid="sidebar-channels-more"
 		empty="No channels yet" data-testid="sidebar-channels">
 		<template #default="{ item: c }">
-			<SidebarItemRow data-testid="channel-row" :data-channel="channelName(c)" :to="channelPath(agent, channelName(c))"
-				:label="channelName(c)" :active="channelName(c) === activeName" :actions="actions" menu-testid="channel-menu-button"
+			<SidebarItemRow data-testid="channel-row" :data-channel="channelName(c)" :data-disabled="isDisabled(c)"
+				:to="channelPath(agent, channelName(c))" :label="channelName(c)" :active="channelName(c) === activeName"
+				:muted="isDisabled(c)" :tooltip="isDisabled(c) ? 'Disabled' : undefined" :actions="actionsFor(c)"
+				menu-testid="channel-menu-button"
 				:editing="editing === channelName(c)" @select="(key) => select(key, channelName(c))"
 				@dblclick="startRename(channelName(c))">
 				<template #editor>
@@ -12,23 +14,34 @@
 						class="m-0.5 min-w-0 flex-1 rounded-md border border-blue-500 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:outline-none dark:bg-gray-900 dark:text-white"
 						@keydown.enter.prevent="saveRename" @keydown.esc.prevent="cancelRename" @blur="saveRename" />
 				</template>
+				<template #meta>
+					<span v-if="isDisabled(c)" data-testid="channel-row-disabled" title="Disabled"
+						class="mr-1 inline-flex shrink-0 text-gray-400 dark:text-gray-500">
+						<NoSymbolIcon aria-hidden="true" class="h-3.5 w-3.5" />
+						<span class="sr-only">Disabled</span>
+					</span>
+				</template>
 			</SidebarItemRow>
 		</template>
 	</SidebarItemList>
 </template>
 
 <script setup lang="ts">
+import NoSymbolIcon from "@heroicons/vue/20/solid/NoSymbolIcon";
+import CheckCircleIcon from "@heroicons/vue/24/outline/CheckCircleIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
+import NoSymbolOutlineIcon from "@heroicons/vue/24/outline/NoSymbolIcon";
 import { computed, nextTick, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useChannelDialogs } from "../../composables/useChannelDialogs";
+import { useChannelEnabled } from "../../composables/useChannelEnabled";
 import { useMCP } from "../../composables/useMCP";
 import {
 	channelName,
 	channelPath,
 	channelSettingsPath,
 } from "../../lib/channels";
-import { useSettingsStore } from "../../stores/settings";
+import { type AgentChannel, useSettingsStore } from "../../stores/settings";
 import SidebarItemList from "./SidebarItemList.vue";
 import SidebarItemRow from "./SidebarItemRow.vue";
 import type { SidebarItemAction } from "./types";
@@ -40,11 +53,19 @@ const route = useRoute();
 const router = useRouter();
 const { callTool } = useMCP();
 const { open } = useChannelDialogs();
+const { setChannelEnabled, isPending } = useChannelEnabled();
 
-const channels = computed(
-	() =>
-		settings.config?.agents.find((a) => a.name === props.agent)?.channels ?? [],
-);
+const isDisabled = (c: AgentChannel) => c.enabled === false;
+
+// Disabled channels sort after the enabled ones, each kept in config order.
+const channels = computed(() => {
+	const all =
+		settings.config?.agents.find((a) => a.name === props.agent)?.channels ?? [];
+	return [
+		...all.filter((c) => !isDisabled(c)),
+		...all.filter((c) => isDisabled(c)),
+	];
+});
 
 // The channel whose conversation or settings are showing.
 const activeName = computed(() => {
@@ -52,14 +73,26 @@ const activeName = computed(() => {
 	return match ? decodeURIComponent(match[1]) : "";
 });
 
-const actions: SidebarItemAction[] = [
-	{ key: "rename", label: "Rename" },
-	{ key: "settings", label: "Settings", icon: Cog6ToothIcon },
-	{ key: "delete", label: "Delete", danger: true },
-];
+function actionsFor(c: AgentChannel): SidebarItemAction[] {
+	const disabled = isDisabled(c);
+	return [
+		{
+			key: "toggle",
+			label: disabled ? "Enable" : "Disable",
+			icon: disabled ? CheckCircleIcon : NoSymbolOutlineIcon,
+			disabled: isPending(props.agent, channelName(c)),
+		},
+		{ key: "rename", label: "Rename" },
+		{ key: "settings", label: "Settings", icon: Cog6ToothIcon },
+		{ key: "delete", label: "Delete", danger: true },
+	];
+}
 
 function select(key: string, name: string) {
-	if (key === "settings")
+	const c = channels.value.find((ch) => channelName(ch) === name);
+	if (key === "toggle") {
+		if (c) void setChannelEnabled(props.agent, name, isDisabled(c));
+	} else if (key === "settings")
 		void router.push(channelSettingsPath(props.agent, name));
 	else if (key === "rename") void startRename(name);
 	else open({ mode: "remove", agent: props.agent, channel: name });
