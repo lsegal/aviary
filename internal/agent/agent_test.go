@@ -926,6 +926,35 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	})
+
+	t.Run("usage is attributed to the workflow and its channel", func(t *testing.T) {
+		setTestDataDir(t)
+		assert.NoError(t, store.EnsureDirs())
+		sessionID := "sess-workflow-usage"
+		runner := NewAgentRunner(
+			&domain.Agent{ID: "a1", Model: "google/gemini-3-flash-preview"},
+			&config.AgentConfig{Name: "bot"},
+			&mockProvider{events: []llm.Event{{Type: llm.EventTypeError, Error: errors.New("429 rate limit")}}},
+			nil,
+		)
+		ctx := WithUsageChannel(WithTaskID(WithSessionID(context.Background(), sessionID), "bot/triage"), "Team Slack")
+		done := make(chan struct{})
+		runner.Prompt(ctx, "hi", func(e StreamEvent) {
+			if e.Type == StreamEventError {
+				close(done)
+			}
+		})
+		<-done
+		assert.Eventually(t, func() bool {
+			records, _ := store.ReadJSONL[domain.UsageRecord](store.UsagePath())
+			for _, rec := range records {
+				if rec.SessionID == sessionID {
+					return rec.Task == "bot/triage" && rec.Channel == "Team Slack"
+				}
+			}
+			return false
+		}, 2*time.Second, 10*time.Millisecond)
+	})
 }
 
 func TestAgentRunner_StopAndAccessors(t *testing.T) {
