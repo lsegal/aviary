@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // runFunc runs a command and returns its combined output.
@@ -59,9 +60,19 @@ func (l *Local) Transcribe(ctx context.Context, audioPath string, opts Options) 
 	if out, err := run(ctx, st.FFmpeg.Path, ffmpegArgs(audioPath, wav)...); err != nil {
 		return Transcript{}, fmt.Errorf("converting audio with ffmpeg: %w: %s", err, firstLine(out))
 	}
-	info, err := os.Stat(wav)
+	level, err := readWAVLevel(wav)
 	if err != nil {
 		return Transcript{}, fmt.Errorf("converting audio with ffmpeg: %w", err)
+	}
+	inputSize := int64(-1)
+	if info, err := os.Stat(audioPath); err == nil {
+		inputSize = info.Size()
+	}
+	slog.Debug("transcribe: converted audio", "component", "transcribe", "input", filepath.Base(audioPath), "input_bytes", inputSize,
+		"duration", level.Duration, "peak_dbfs", roundDB(dBFS(level.Peak)), "rms_dbfs", roundDB(dBFS(level.RMS)))
+	if reason := level.silent(); reason != "" {
+		slog.Debug("transcribe: no speech detected", "component", "transcribe", "reason", reason, "duration", level.Duration)
+		return Transcript{Duration: level.Duration, NoSpeech: true}, nil
 	}
 	prefix := filepath.Join(dir, "transcript")
 	if out, err := run(ctx, st.Whisper.Path, whisperArgs(st.Model.Path, wav, prefix, opts.Language)...); err != nil {
@@ -75,8 +86,20 @@ func (l *Local) Transcribe(ctx context.Context, audioPath string, opts Options) 
 	if err != nil {
 		return Transcript{}, err
 	}
-	t.Duration = wavDuration(info.Size())
+	t.Duration = level.Duration
+	slog.Debug("transcribe: whisper output", "component", "transcribe", "text", t.Text, "language", t.Language)
+	if isHallucination(t.Text) {
+		slog.Debug("transcribe: no speech detected", "component", "transcribe", "reason", "whisper returned a known silence hallucination", "text", t.Text)
+		return Transcript{Language: t.Language, Duration: t.Duration, NoSpeech: true}, nil
+	}
 	return t, nil
+}
+
+func roundDB(db float64) float64 {
+	if math.IsInf(db, 0) {
+		return -120
+	}
+	return math.Round(db*10) / 10
 }
 
 // ffmpegArgs converts any input whisper-cli can't read to 16 kHz mono
@@ -90,15 +113,6 @@ func whisperArgs(model, wav, prefix, language string) []string {
 		language = "auto"
 	}
 	return []string{"-m", model, "-f", wav, "-l", language, "-np", "-nt", "-oj", "-of", prefix}
-}
-
-// wavDuration is the length of 16 kHz mono 16-bit PCM with a 44-byte header.
-func wavDuration(size int64) time.Duration {
-	const header, bytesPerSecond = 44, 16000 * 2
-	if size <= header {
-		return 0
-	}
-	return time.Duration(size-header) * time.Second / bytesPerSecond
 }
 
 type whisperOutput struct {
@@ -117,7 +131,7 @@ func parseWhisperJSON(data []byte) (Transcript, error) {
 	}
 	parts := make([]string, 0, len(out.Transcription))
 	for _, seg := range out.Transcription {
-		if text := strings.TrimSpace(seg.Text); text != "" {
+		if text := strings.TrimSpace(seg.Text); text != "" && !isNonSpeechMarker(text) {
 			parts = append(parts, text)
 		}
 	}

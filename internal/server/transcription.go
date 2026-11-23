@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -55,6 +57,7 @@ type transcribeResponse struct {
 	Text       string   `json:"text,omitempty"`
 	Language   string   `json:"language,omitempty"`
 	DurationMS int64    `json:"duration_ms,omitempty"`
+	NoSpeech   bool     `json:"no_speech,omitempty"`
 	Error      string   `json:"error,omitempty"`
 	Missing    []string `json:"missing,omitempty"`
 	Install    string   `json:"install,omitempty"`
@@ -78,13 +81,7 @@ func (s *Server) transcribeHandler(w http.ResponseWriter, r *http.Request) {
 		writeTranscriptionJSON(w, http.StatusServiceUnavailable, transcribeResponse{Error: err.Error()})
 		return
 	}
-	ext := ".webm"
-	if exts := strings.TrimSpace(r.Header.Get("Content-Type")); strings.Contains(exts, "mp4") {
-		ext = ".m4a"
-	} else if strings.Contains(exts, "ogg") {
-		ext = ".ogg"
-	}
-	tmp, err := os.CreateTemp("", "aviary-recording-*"+ext)
+	tmp, err := os.CreateTemp("", "aviary-recording-*")
 	if err != nil {
 		writeTranscriptionJSON(w, http.StatusInternalServerError, transcribeResponse{Error: err.Error()})
 		return
@@ -103,7 +100,16 @@ func (s *Server) transcribeHandler(w http.ResponseWriter, r *http.Request) {
 		writeTranscriptionJSON(w, http.StatusRequestEntityTooLarge, transcribeResponse{Error: "the recording is larger than 50 MB"})
 		return
 	}
-	t, err := engine.Transcribe(r.Context(), tmp.Name(), transcribe.Options{Language: settings.Language})
+	contentType := r.Header.Get("Content-Type")
+	ext := recordingExt(tmp.Name(), contentType)
+	path := tmp.Name() + ext
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		writeTranscriptionJSON(w, http.StatusInternalServerError, transcribeResponse{Error: err.Error()})
+		return
+	}
+	defer os.Remove(path) //nolint:errcheck
+	slog.Debug("server: transcribing recording", "component", "transcribe", "content_type", contentType, "bytes", n, "format", ext)
+	t, err := engine.Transcribe(r.Context(), path, transcribe.Options{Language: settings.Language})
 	if err != nil {
 		resp := transcribeResponse{Error: err.Error()}
 		var unavailable *transcribe.UnavailableError
@@ -116,7 +122,44 @@ func (s *Server) transcribeHandler(w http.ResponseWriter, r *http.Request) {
 		writeTranscriptionJSON(w, http.StatusInternalServerError, resp)
 		return
 	}
-	writeTranscriptionJSON(w, http.StatusOK, transcribeResponse{Text: t.Text, Language: t.Language, DurationMS: t.Duration.Milliseconds()})
+	slog.Debug("server: transcribed recording", "component", "transcribe", "bytes", n, "duration", t.Duration, "no_speech", t.NoSpeech, "text", t.Text)
+	writeTranscriptionJSON(w, http.StatusOK, transcribeResponse{Text: t.Text, Language: t.Language, DurationMS: t.Duration.Milliseconds(), NoSpeech: t.NoSpeech})
+}
+
+// recordingExt picks the file extension ffmpeg should see for a recording,
+// from its magic bytes first and its Content-Type (parameters included)
+// second. Browsers send WebM/Opus (Chrome, Firefox), MP4/AAC (Safari), or Ogg.
+func recordingExt(path, contentType string) string {
+	head := make([]byte, 12)
+	if f, err := os.Open(path); err == nil {
+		n, _ := io.ReadFull(f, head)
+		head = head[:n]
+		_ = f.Close()
+	}
+	switch {
+	case bytes.HasPrefix(head, []byte{0x1A, 0x45, 0xDF, 0xA3}):
+		return ".webm"
+	case bytes.HasPrefix(head, []byte("OggS")):
+		return ".ogg"
+	case len(head) >= 8 && string(head[4:8]) == "ftyp":
+		return ".m4a"
+	case bytes.HasPrefix(head, []byte("RIFF")):
+		return ".wav"
+	case bytes.HasPrefix(head, []byte("ID3")):
+		return ".mp3"
+	}
+	mediaType, _, _ := mime.ParseMediaType(contentType)
+	switch {
+	case strings.Contains(mediaType, "mp4"), strings.Contains(mediaType, "aac"), strings.Contains(mediaType, "m4a"):
+		return ".m4a"
+	case strings.Contains(mediaType, "ogg"):
+		return ".ogg"
+	case strings.Contains(mediaType, "wav"):
+		return ".wav"
+	case strings.Contains(mediaType, "mpeg"):
+		return ".mp3"
+	}
+	return ".webm"
 }
 
 type transcriptionStatus struct {

@@ -64,6 +64,8 @@ func (c *Cache) key(audioPath string, opts Options) (string, error) {
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}
-	_, _ = io.WriteString(h, "\x00"+c.Model+"\x00"+opts.Language)
+	// The version drops transcripts stored before silence detection, which
+	// could hold Whisper's "you" for a silent recording.
+	_, _ = io.WriteString(h, "\x00"+c.Model+"\x00"+opts.Language+"\x00v2")
 	return hex.EncodeToString(h.Sum(nil)), nil
 }

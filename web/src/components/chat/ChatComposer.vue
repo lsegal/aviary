@@ -32,6 +32,14 @@
 			class="flex items-center gap-2 px-2 text-xs text-gray-700 dark:text-gray-200">
 			<span class="h-2 w-2 animate-pulse rounded-full bg-red-600" aria-hidden="true" />
 			<span>Recording <span data-testid="voice-elapsed" class="tabular-nums">{{ voice.elapsed.value }}</span></span>
+			<span v-if="voice.level.value !== null" data-testid="voice-level" role="meter" aria-label="Microphone level"
+				aria-valuemin="0" aria-valuemax="100" :aria-valuenow="micLevelPercent"
+				class="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+				<span class="block h-full rounded-full bg-green-500 transition-[width] duration-100"
+					:style="{ width: `${micLevelPercent}%` }" />
+			</span>
+			<span v-if="voice.micWarning.value" data-testid="voice-mic-warning" role="alert"
+				class="text-amber-700 dark:text-amber-400">{{ voice.micWarning.value }}</span>
 			<button type="button"
 				class="ml-auto rounded px-2 py-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
 				@click="voice.cancel()">Cancel</button>
@@ -148,6 +156,11 @@ const voice = useVoiceInput({
 	transcribe: (audio) => transcribeRecording(audio, auth.getToken()),
 	onTranscript: insertTranscript,
 });
+// The meter shows the square root of the peak level, so quiet speech still
+// moves it visibly.
+const micLevelPercent = computed(() =>
+	Math.min(100, Math.round(Math.sqrt(voice.level.value ?? 0) * 100)),
+);
 const micUnavailable = computed(() => voice.unsupportedReason.value !== "");
 const micLabel = computed(() =>
 	voice.state.value === "recording" ? "Stop recording" : "Record voice message",
