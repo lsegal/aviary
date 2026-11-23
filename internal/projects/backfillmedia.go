@@ -106,7 +106,8 @@ func issueFilingTurns(turns []agent.ToolCallTurn, repository string) map[int]age
 }
 
 // backfillIssueMedia posts the media of filing's request on repository#number
-// unless it has no media or the issue already has the comment.
+// unless it has no media or the issue already has the comment. The comment
+// mentions no one.
 func (w *Engine) backfillIssueMedia(ctx context.Context, repository string, number int, filing agent.ToolCallTurn, dryRun bool) BackfillResult {
 	result := BackfillResult{Number: number}
 	fail := func(status, reason string) BackfillResult {
@@ -148,9 +149,15 @@ func (w *Engine) backfillIssueMedia(ctx context.Context, repository string, numb
 		}
 		return fail(BackfillNoMedia, reason)
 	}
-	lister, ok := w.Comments.(core.CommentLister)
-	if !ok {
-		return fail(BackfillFailed, "this instance has no GitHub comment client to check for an earlier backfill comment; it needs gh installed and signed in (gh auth status)")
+	attachments, err := checkAttachments(result.Attachments)
+	if err != nil {
+		return fail(BackfillFailed, err.Error())
+	}
+	result.Attachments = attachments
+	lister, canList := w.Comments.(core.CommentLister)
+	poster, canAttach := w.Comments.(core.AttachmentCommentPoster)
+	if !canList || !canAttach {
+		return fail(BackfillFailed, fmt.Sprintf("this instance's comment client (%T) cannot list comments and upload attachments; it needs gh installed and signed in (gh auth status)", w.Comments))
 	}
 	comments, err := lister.ListComments(ctx, repository, number)
 	if err != nil {
@@ -165,10 +172,13 @@ func (w *Engine) backfillIssueMedia(ctx context.Context, repository string, numb
 		result.Status = BackfillWouldPost
 		return result
 	}
-	posted, err := w.PostIssueUpdate(ctx, core.IssueUpdate{Repository: repository, Number: number, Text: requestMediaText, Attachments: result.Attachments})
+	// The comment mentions no one: it is a record for the issue, not an
+	// update for a job, so it must not wake the job or Code Loop agent.
+	url, err := poster.PostCommentWithAttachments(ctx, repository, number, requestMediaText, result.Attachments)
 	if err != nil {
 		return fail(BackfillFailed, err.Error())
 	}
-	result.Status, result.URL, result.Attachments = BackfillPosted, posted.URL, posted.Attachments
+	w.logf("posted the request media of %s#%d with %d attachments: %s", repository, number, len(result.Attachments), url)
+	result.Status, result.URL = BackfillPosted, url
 	return result
 }

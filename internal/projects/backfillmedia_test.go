@@ -38,7 +38,8 @@ func TestIssueFilingTurns(t *testing.T) {
 	}
 }
 
-// The request's images are posted once with the marker; a rerun finds the
+// The request's images are posted once with the marker and no mentions, so
+// no job or agent wakes; a rerun finds the
 // comment and posts nothing, and a voice note is left out.
 func TestBackfillIssueMediaPostsOnce(t *testing.T) {
 	store.SetDataDir(t.TempDir())
@@ -66,7 +67,7 @@ func TestBackfillIssueMediaPostsOnce(t *testing.T) {
 		t.Errorf("skipped = %q", result.Skipped)
 	}
 	posted := comments.comments["o/r#5"]
-	if len(posted) != 1 || !strings.Contains(posted[0].Body, "originally sent with the request") || !strings.Contains(posted[0].Body, requestMediaMarker) {
+	if len(posted) != 1 || !strings.Contains(posted[0].Body, "originally sent with the request") || !strings.Contains(posted[0].Body, requestMediaMarker) || strings.Contains(posted[0].Body, "@") {
 		t.Fatalf("posted %+v", posted)
 	}
 

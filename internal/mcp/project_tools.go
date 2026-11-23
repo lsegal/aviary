@@ -444,7 +444,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_issue_backfill_media",
-		Description: "Post the screenshots and videos sent with the request that filed each issue, for issues filed before project_issue_create attached them: each issue is matched to the user message whose turn called project_issue_create and got its URL back, and that message's images and videos are posted as one comment per issue through project_issue_comment's update path; never edits issue bodies. Each issue's result says whether its comment was posted, was already there (a rerun posts nothing new), or why no media was found",
+		Description: "Post the screenshots and videos sent with the request that filed each issue, for issues filed before project_issue_create attached them: each issue is matched to the user message whose turn called project_issue_create and got its URL back, and that message's images and videos are posted as one comment per issue that mentions no one, so no job or agent is woken; never edits issue bodies. Each issue's result says whether its comment was posted, was already there (a rerun posts nothing new), or why no media was found",
 		Annotations: mutatingTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectIssueBackfillMediaArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {

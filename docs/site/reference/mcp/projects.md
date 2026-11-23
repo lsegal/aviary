@@ -129,7 +129,7 @@ Post the screenshots and videos sent with the request that filed each issue, for
 
 **Arguments:** `numbers`, and optional `repository` (defaults to the only watched repository) and `dry_run` (report what would be posted without posting).
 
-Each issue is matched to the user message whose turn called `project_issue_create` and got that issue's URL back, searched across every agent's session history. That message's images and videos (Signal media under `media/incoming/`, or web chat images saved from their data URLs under `media/turn/`) are posted as one comment, the way `project_issue_comment` posts an update. The result lists each issue with a `status`:
+Each issue is matched to the user message whose turn called `project_issue_create` and got that issue's URL back, searched across every agent's session history. That message's images and videos (Signal media under `media/incoming/`, or web chat images saved from their data URLs under `media/turn/`) are uploaded and posted as one comment, checked the way [Attachments](#attachments) describes. Unlike `project_issue_comment`, the comment mentions no one, so it does not wake the job or the Code Loop agent. The result lists each issue with a `status`:
 
 - `posted`: the comment was posted; `url` links it and `attachments` lists the files.
 - `would_post`: with `dry_run`, the comment would be posted with `attachments`.
