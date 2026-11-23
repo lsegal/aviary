@@ -10,7 +10,7 @@
 			<span class="tabular-nums text-gray-500 dark:text-gray-400" data-testid="task-run-log-elapsed">
 				{{ entry.result === "running" ? "elapsed" : "took" }} {{ runDurationText(entry, now) }}
 			</span>
-			<span class="text-gray-500 dark:text-gray-400">· {{ triggerLabel(entry.trigger) }}</span>
+			<span v-if="entry.trigger" class="text-gray-500 dark:text-gray-400">via {{ triggerLabel(entry.trigger) }}</span>
 			<div class="ml-auto flex items-center gap-1">
 				<slot name="actions" />
 				<button type="button" data-testid="task-run-log-copy" :aria-label="copied ? 'Copied' : 'Copy logs'"

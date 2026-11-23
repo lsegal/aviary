@@ -6,7 +6,7 @@
 		:style="fadeStyle" data-testid="stat-row" @scroll.passive="measure">
 		<component :is="s.filter ? 'button' : 'span'" v-for="s in cards" :key="s.label" :type="s.filter ? 'button' : undefined"
 			class="inline-flex shrink-0 items-baseline gap-1 rounded-full border px-2.5 py-0.5"
-			:class="[s.cls, s.filter ? 'hover:brightness-95' : '', s.active ? 'ring-2 ring-blue-500 ring-offset-1 dark:ring-offset-gray-900' : '']"
+			:class="[s.cls, s.filter ? 'hover:brightness-95' : '', s.active ? 'ring-2 ring-inset ring-blue-500' : '']"
 			:aria-pressed="s.filter ? Boolean(s.active) : undefined"
 			:title="s.suffix ? `${s.label}: ${s.value} ${s.suffix}` : `${s.label}: ${s.value}`" data-testid="stat-chip"
 			:data-filter="s.filter" @click="s.filter && emit('select', s.filter)">
