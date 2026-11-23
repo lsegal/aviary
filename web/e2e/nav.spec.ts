@@ -207,9 +207,7 @@ test("an agent's pages are Chats, Code Loop, Channels, Scheduled Tasks, Files an
 		.getByRole("link", { name: "Agent Settings", exact: true })
 		.click();
 	await expect(page).toHaveURL("/agents/assistant/settings");
-	await expect(page.getByTestId("settings-title")).toHaveText(
-		"assistant · Agent Settings",
-	);
+	await expect(page.getByTestId("settings-title")).toHaveText("Agent Settings");
 	// One page of stacked sections, with no tab bar (#684).
 	await expect(
 		page.getByRole("navigation", { name: "Agent settings" }),
@@ -246,9 +244,7 @@ test("each agent's sidebar item reads Agent Settings", async ({ page }) => {
 		agents.getByRole("link", { name: "Settings", exact: true }),
 	).toHaveCount(0);
 	await settings.click();
-	await expect(page.getByTestId("settings-title")).toHaveText(
-		"coder · Agent Settings",
-	);
+	await expect(page.getByTestId("settings-title")).toHaveText("Agent Settings");
 });
 
 test("System → Settings' + Add agent opens a new agent's settings", async ({

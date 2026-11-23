@@ -279,9 +279,7 @@ test("the menu renames and deletes the open file", async ({ page }) => {
 test("other agent pages keep the settings page header", async ({ page }) => {
 	await mockFiles(page, { "AGENTS.md": "# Agents" });
 	await page.goto("/agents/assistant/settings");
-	await expect(page.getByTestId("settings-title")).toHaveText(
-		"assistant · Agent Settings",
-	);
+	await expect(page.getByTestId("settings-title")).toHaveText("Agent Settings");
 	await expect(
 		page.locator("main").getByRole("button", { name: "Save Changes" }),
 	).toBeVisible();
