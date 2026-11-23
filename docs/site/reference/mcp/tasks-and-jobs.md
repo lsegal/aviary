@@ -209,9 +209,9 @@ List job history across all tasks.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `task` | string | | Filter by task name |
+| `task` | string | | Filter by task ID (`agent/task`) |
 
-**Returns:** JSON array of job objects.
+**Returns:** JSON array of job objects. A job a task fire created has a `trigger`: `schedule`, `missed` (a catch-up fire), `watch` or `manual`.
 
 ```json
 [
@@ -220,6 +220,7 @@ List job history across all tasks.
     "task": "daily-summary",
     "agent": "assistant",
     "status": "completed",
+    "trigger": "schedule",
     "created_at": "2026-03-22T09:00:00Z",
     "started_at": "2026-03-22T09:00:01Z",
     "finished_at": "2026-03-22T09:00:45Z"
