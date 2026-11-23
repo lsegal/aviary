@@ -168,6 +168,39 @@ export interface ProjectJob {
 	scheduled: boolean;
 	/** The `agent/task` key of the schedule a scheduled run fired from. */
 	scheduleID: string;
+	/**
+	 * A schedule's one board entry, which project_job_list reports in place of
+	 * a job per fire: this job is its latest run.
+	 */
+	schedule?: ScheduleEntry;
+}
+
+/** How a finished scheduled run ended; fallback means the model ran it after its precompiled script failed. */
+export type RunResult = "succeeded" | "failed" | "fallback";
+
+/** One scheduled run as its schedule's board entry lists it. */
+export interface ScheduleEntryRun {
+	number: number;
+	status: JobStatus;
+	state: BoardState;
+	startedAt: string;
+	finishedAt: string;
+	/** Empty while the run is in flight. */
+	result: RunResult | "";
+	summary: string;
+	durationMS: number;
+	dismissed: boolean;
+}
+
+/** A schedule's board entry: its state, last and next run, and recent runs. */
+export interface ScheduleEntry {
+	/** Starting or running while a run is in flight, failed while the last run failed, else scheduled. */
+	state: BoardState | "scheduled";
+	lastRun?: ScheduleEntryRun;
+	/** Undefined when the scheduler did not report the schedule. */
+	nextRun?: { at: string; paused: boolean; queued: boolean };
+	/** Newest first. */
+	recentRuns: ScheduleEntryRun[];
 }
 
 export type JobEvent =
@@ -341,7 +374,11 @@ export function normalizeJob(v: unknown): ProjectJob {
 		number,
 		title: str(raw.title),
 		status: normalizeJobStatus(raw.status),
-		state: normalizeBoardState(raw.state),
+		// A schedule between runs is in no job state: its latest run's own.
+		state:
+			str(raw.state) === "scheduled"
+				? normalizeBoardState(obj(arr(raw.recent_runs)[0]).state)
+				: normalizeBoardState(raw.state),
 		skill: SKILLS[str(raw.kind)] ?? str(raw.kind),
 		cli: model ? `${agent}/${model}` : agent,
 		issueURL,
@@ -370,6 +407,45 @@ export function normalizeJob(v: unknown): ProjectJob {
 		events: normalizeEvents(raw.events),
 		scheduled: str(raw.kind) === "schedule",
 		scheduleID: str(raw.schedule_id),
+		schedule: Array.isArray(raw.recent_runs)
+			? normalizeScheduleEntry(raw)
+			: undefined,
+	};
+}
+
+const RUN_RESULTS: RunResult[] = ["succeeded", "failed", "fallback"];
+
+function normalizeScheduleEntryRun(v: unknown): ScheduleEntryRun {
+	const raw = obj(v);
+	const result = str(raw.result) as RunResult;
+	return {
+		number: num(raw.number),
+		status: normalizeJobStatus(raw.status),
+		state: normalizeBoardState(raw.state),
+		startedAt: str(raw.started),
+		finishedAt: str(raw.finished),
+		result: RUN_RESULTS.includes(result) ? result : "",
+		summary: str(raw.summary),
+		durationMS: num(raw.duration_ms),
+		dismissed: raw.dismissed === true,
+	};
+}
+
+function normalizeScheduleEntry(raw: Raw): ScheduleEntry {
+	const state = str(raw.state);
+	const next = raw.next_run === undefined ? undefined : obj(raw.next_run);
+	return {
+		state: state === "scheduled" ? "scheduled" : normalizeBoardState(state),
+		lastRun:
+			raw.last_run === undefined
+				? undefined
+				: normalizeScheduleEntryRun(raw.last_run),
+		nextRun: next && {
+			at: str(next.at),
+			paused: next.paused === true,
+			queued: next.queued === true,
+		},
+		recentRuns: arr(raw.recent_runs).map(normalizeScheduleEntryRun),
 	};
 }
 
@@ -923,27 +999,150 @@ export function lastScheduleRun(
 }
 
 /**
- * What a schedule's card says about its next run. The scheduler reports no
- * next run for a one-time trigger once it fires, so while that run is in
- * flight the card says it is running rather than that nothing is next;
- * "none" means it has finished and nothing else is scheduled.
+ * What a schedule's card says about its next run. Paused and queued, a fire
+ * waiting on the overlap policy for the run in flight, take the place of its
+ * time. The scheduler reports no next run for a one-time trigger once it
+ * fires, so while that run is in flight the card says it is running rather
+ * than that nothing is next; "none" means it has finished and nothing else
+ * is scheduled.
  */
 export type ScheduleNext =
 	| { kind: "paused" }
+	| { kind: "queued" }
 	| { kind: "next"; at: string }
 	| { kind: "running" }
 	| { kind: "none" };
 
 export function scheduleNext(
 	s: Pick<ProjectSchedule, "enabled" | "nextRun" | "history">,
+	entry?: ScheduleEntry,
 ): ScheduleNext {
-	if (!s.enabled) return { kind: "paused" };
-	if (s.nextRun) return { kind: "next", at: s.nextRun };
-	if (activeScheduleRun(s)) return { kind: "running" };
+	if (!s.enabled || entry?.nextRun?.paused) return { kind: "paused" };
+	const active = s.history.filter((r) => ACTIVE_RUNS.includes(r.status));
+	const waiting = active.some((r) => r.status !== "running");
+	if (entry?.nextRun?.queued || (waiting && active.length > 1))
+		return { kind: "queued" };
+	const at = s.nextRun || entry?.nextRun?.at;
+	if (at) return { kind: "next", at };
+	if (activeScheduleRun(s) || scheduleRunning(entry))
+		return { kind: "running" };
 	return { kind: "none" };
 }
 
-/** The board job of a schedule's latest run, if the board has it. */
+/** Whether a schedule's board entry has a run in flight. */
+export function scheduleRunning(entry?: ScheduleEntry): boolean {
+	return entry?.state === "starting" || entry?.state === "running";
+}
+
+/** A schedule's last finished run as its card shows it. */
+export interface LastRun {
+	result: RunResult | "";
+	/** When it ended, or fired when the scheduler does not say. */
+	at: string;
+	summary: string;
+	status: string;
+}
+
+/**
+ * A schedule's last finished run: its board entry's when the board has its
+ * runs, else the scheduler's history's.
+ */
+export function scheduleLastRun(
+	s: Pick<ProjectSchedule, "history">,
+	entry?: ScheduleEntry,
+): LastRun | undefined {
+	const run = entry?.lastRun;
+	if (run)
+		return {
+			result: run.result,
+			at: run.finishedAt || run.startedAt,
+			summary: run.summary,
+			status: run.status,
+		};
+	const last = lastScheduleRun(s);
+	if (!last) return undefined;
+	return {
+		result: historyResult(last),
+		at: last.fireTime,
+		summary: firstLine(last.summary),
+		status: last.status,
+	};
+}
+
+// A history summary's fallback note, as core's scheduler appends it.
+const FALLBACK_NOTE = "fell back to the model";
+
+function historyResult(run: ScheduleRun): RunResult | "" {
+	switch (run.status) {
+		case "completed":
+			return run.summary.includes(FALLBACK_NOTE) ? "fallback" : "succeeded";
+		case "failed":
+		case "canceled":
+			return "failed";
+	}
+	return "";
+}
+
+function firstLine(text: string): string {
+	return (
+		text
+			.split("\n")
+			.map((l) => l.trim())
+			.find(Boolean) ?? ""
+	);
+}
+
+/** A run result's mark: ✓ succeeded, ✖ failed, ⚠ fell back to the model. */
+export function runResultIcon(result: RunResult | ""): string {
+	switch (result) {
+		case "succeeded":
+			return "✓";
+		case "failed":
+			return "✖";
+		case "fallback":
+			return "⚠";
+	}
+	return "•";
+}
+
+/** A run result's text color. */
+export function runResultClass(result: RunResult | ""): string {
+	switch (result) {
+		case "succeeded":
+			return "text-green-500";
+		case "failed":
+			return "text-red-500";
+		case "fallback":
+			return "text-amber-500";
+	}
+	return "text-gray-400";
+}
+
+/** A run result in words. */
+export function runResultLabel(result: RunResult | ""): string {
+	switch (result) {
+		case "succeeded":
+			return "Succeeded";
+		case "failed":
+			return "Failed";
+		case "fallback":
+			return "Fell back to the model";
+	}
+	return "";
+}
+
+/** A next fire as "in 3m (10:20)", in the browser's zone. */
+export function nextRunText(iso: string, now = Date.now()): string {
+	const t = Date.parse(iso);
+	if (Number.isNaN(t)) return "";
+	const clock = new Date(t).toLocaleTimeString(undefined, {
+		hour: "2-digit",
+		minute: "2-digit",
+	});
+	return `${until(iso, now)} (${clock})`;
+}
+
+/** The board entry of a schedule, if the board has its runs. */
 export function scheduleJob(
 	jobs: ProjectJob[],
 	scheduleID: string,

@@ -6,11 +6,22 @@
 		class="relative flex h-full max-h-[50vh] min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border border-violet-200 bg-white focus-within:ring-2 focus-within:ring-blue-500 hover:border-violet-400 hover:shadow-sm dark:border-violet-900 dark:bg-gray-900 dark:hover:border-violet-700">
 		<div class="shrink-0 space-y-1 px-4 pb-2.5 pt-3">
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-				<span class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+				<!-- One card per schedule: a run shows Running here in place, and
+					a failed last run shows Failed until the next success or a
+					dismissal. -->
+				<span v-if="running" data-testid="scheduled-state" data-state="running"
+					class="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+					<span aria-hidden="true" data-testid="scheduled-spinner"
+						class="h-3 w-3 animate-spin rounded-full border-2 border-blue-300 border-t-blue-600 dark:border-blue-800 dark:border-t-blue-300" />
+					Running
+				</span>
+				<span v-else data-testid="scheduled-state" data-state="scheduled"
+					class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
 					Scheduled
 				</span>
-				<span v-if="!schedule.enabled" class="rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-					Paused
+				<span v-if="failed" data-testid="scheduled-failed"
+					class="rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-700 dark:bg-red-950/50 dark:text-red-300">
+					Failed
 				</span>
 				<span class="ml-auto truncate font-mono text-gray-500 dark:text-gray-400">{{ schedule.id }}</span>
 			</div>
@@ -27,29 +38,42 @@
 				<template v-if="next.kind !== 'running'">
 					<span aria-hidden="true" class="text-gray-300 dark:text-gray-600">·</span>
 					<span data-testid="scheduled-next" class="shrink-0 whitespace-nowrap"
+						:class="next.kind === 'paused' ? 'rounded-full bg-amber-50 px-1.5 font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' : ''"
 						:title="next.kind === 'next' ? formatFire(next.at) : ''">
-						<template v-if="next.kind === 'paused'">paused</template>
-						<template v-else-if="next.kind === 'next'">next {{ until(next.at, now) }}</template>
-						<template v-else>no next run</template>
+						<template v-if="next.kind === 'paused'">Paused</template>
+						<template v-else-if="next.kind === 'queued'">Queued</template>
+						<template v-else-if="next.kind === 'next'">Next run {{ nextRunText(next.at, now) }}</template>
+						<template v-else>No next run</template>
 					</span>
 				</template>
 			</p>
+			<!-- The last finished run: its result and when it ended, with a
+				strip of recent results; the output area below shows its
+				summary. It stays while the next run is in flight. -->
+			<p v-if="last" data-testid="scheduled-last-run" class="flex min-w-0 items-center gap-1.5 text-xs text-gray-700 dark:text-gray-200">
+				<span data-testid="scheduled-last-result" :data-result="last.result" class="shrink-0 font-semibold"
+					:class="runResultClass(last.result)" :title="runResultLabel(last.result) || last.status">{{ runResultIcon(last.result) }}</span>
+				<span data-testid="scheduled-last-time" class="truncate" :title="formatFire(last.at)">Last run {{ age(last.at, now) }} ago<template v-if="runResultLabel(last.result)"> · {{ runResultLabel(last.result).toLowerCase() }}</template></span>
+				<span v-if="strip.length > 1" data-testid="scheduled-strip" aria-label="Recent results"
+					class="ml-auto shrink-0 font-mono tracking-tighter">
+					<span v-for="(r, i) in strip" :key="i" :class="runResultClass(r)">{{ runResultIcon(r) }}</span>
+				</span>
+			</p>
 		</div>
-		<!-- The output area a job card has: the latest run's output, or what
-			the schedule last did or does next when the board has no run. -->
-		<JobOutputPane v-if="job" :job="job" testid="scheduled-output" class="relative z-10" />
+		<!-- The output area a job card has: the run's live output while it
+			runs, or what the schedule last did or does next between runs. -->
+		<JobOutputPane v-if="running && job" :job="job" testid="scheduled-output" class="relative z-10" />
 		<div v-else data-testid="scheduled-empty"
 			class="flex min-h-0 flex-[1_1_7rem] items-center justify-center bg-slate-950 px-4 py-3 text-center text-xs text-slate-300">
 			<p data-testid="scheduled-last" class="flex min-w-0 items-center justify-center gap-1.5">
-				<template v-if="last">
-					<span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="scheduleRunDot(last.status)" />
-					<span class="truncate" :title="last.summary">{{ last.summary || last.status }}</span>
-					<span class="shrink-0 text-slate-500">· {{ age(last.fireTime, now) }} ago</span>
+				<template v-if="running">Waiting for output…</template>
+				<template v-else-if="last">
+					<span class="shrink-0 font-semibold" :class="runResultClass(last.result)">{{ runResultIcon(last.result) }}</span>
+					<span data-testid="scheduled-last-summary" class="truncate" :title="last.summary">{{ last.summary || runResultLabel(last.result) || last.status }}</span>
 				</template>
-				<template v-else-if="!active">
+				<template v-else>
 					Hasn't run yet<template v-if="next.kind === 'next'"> · next run {{ until(next.at, now) }}</template>
 				</template>
-				<template v-else>Waiting for output…</template>
 			</p>
 		</div>
 		<div class="relative z-10 flex shrink-0 cursor-auto flex-wrap items-center gap-2 border-t border-gray-100 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
@@ -58,13 +82,19 @@
 				<PencilIcon aria-hidden="true" class="h-4 w-4" />
 			</router-link>
 			<!-- The running state shows once: as the control that opens the run. -->
-			<router-link v-if="active" :to="runTo" data-testid="scheduled-running"
-				:title="job ? 'Open this run' : 'Open this task'"
+			<router-link v-if="running" :to="runTo" data-testid="scheduled-running"
+				:title="runOpen ? 'Open this run' : 'Open this task'"
 				class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950">
 				<span aria-hidden="true" class="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
-				{{ activeLabel }} · {{ age(active.fireTime, now) }}
+				{{ activeLabel }}<template v-if="runStarted"> · <span data-testid="scheduled-elapsed">{{ age(runStarted, now) }}</span></template>
 				<ArrowsPointingOutIcon aria-hidden="true" class="h-3.5 w-3.5" />
 			</router-link>
+			<button v-if="failed && job" type="button" :disabled="busy" data-testid="scheduled-dismiss"
+				title="Dismiss this failed run; the card still shows it until the next run"
+				class="shrink-0 rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
+				@click="emit('dismiss', job)">
+				Dismiss
+			</button>
 			<button type="button" :disabled="busy" aria-label="Run now" title="Run this schedule now"
 				class="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 				@click="emit('run', schedule)">
@@ -82,7 +112,7 @@
 				<PauseIcon v-if="schedule.enabled" aria-hidden="true" class="h-4 w-4" />
 				<PlayCircleIcon v-else aria-hidden="true" class="h-4 w-4" />
 			</button>
-			<JobOutputToggle v-if="job" />
+			<JobOutputToggle v-if="running && job" />
 			<div class="flex min-w-0 flex-1 flex-col items-end text-right font-mono text-xs">
 				<span v-if="agentLabel" data-testid="scheduled-agent" class="max-w-full truncate text-gray-500 dark:text-gray-400"
 					:title="agentLabel">{{ agentLabel }}</span>
@@ -106,11 +136,16 @@ import {
 	age,
 	formatFire,
 	jobPath,
-	lastScheduleRun,
+	nextRunText,
 	type ProjectJob,
 	type ProjectSchedule,
+	type RunResult,
+	runResultClass,
+	runResultIcon,
+	runResultLabel,
+	scheduleLastRun,
 	scheduleNext,
-	scheduleRunDot,
+	scheduleRunning,
 	triggerSummary,
 	truncatePrompt,
 	until,
@@ -126,7 +161,10 @@ const props = defineProps<{
 	now: number;
 	/** Where the box's Edit schedule link opens the schedule's editor. */
 	to: RouteLocationRaw;
-	/** The board job of the schedule's latest run, whose output the box shows. */
+	/**
+	 * The schedule's board entry, its latest run with its last and next run
+	 * and recent runs, whose output the box shows while it runs.
+	 */
 	job?: ProjectJob;
 	busy?: boolean;
 }>();
@@ -134,18 +172,40 @@ const emit = defineEmits<{
 	run: [schedule: ProjectSchedule];
 	settings: [schedule: ProjectSchedule];
 	toggle: [schedule: ProjectSchedule];
+	dismiss: [job: ProjectJob];
 }>();
 
+const entry = computed(() => props.job?.schedule);
 const trigger = computed(() => triggerSummary(props.schedule));
-const next = computed(() => scheduleNext(props.schedule));
+const next = computed(() => scheduleNext(props.schedule, entry.value));
 const active = computed(() => activeScheduleRun(props.schedule));
-const last = computed(() => lastScheduleRun(props.schedule));
+const last = computed(() => scheduleLastRun(props.schedule, entry.value));
+// A run in flight shows on this card in place, never as a card of its own.
+const running = computed(
+	() => scheduleRunning(entry.value) || (!entry.value && !!active.value),
+);
+const failed = computed(() => entry.value?.state === "failed");
+// The run's view opens while the board has the running run's job.
+const runOpen = computed(() => scheduleRunning(entry.value));
+const runStarted = computed(() =>
+	runOpen.value ? props.job?.startedAt : active.value?.fireTime,
+);
+// The most recent finished runs' results, oldest first.
+const strip = computed<RunResult[]>(() =>
+	(entry.value?.recentRuns ?? [])
+		.filter((r) => r.result)
+		.slice(0, 10)
+		.map((r) => r.result as RunResult)
+		.reverse(),
+);
 // The agent that runs the task and its model override, where a job card
 // names its skill and CLI.
 const agentLabel = computed(() =>
 	[props.schedule.agent, props.schedule.model].filter(Boolean).join(" · "),
 );
 const activeLabel = computed(() => {
+	if (entry.value?.state === "starting") return "Starting";
+	if (runOpen.value) return "Running now";
 	switch (active.value?.status) {
 		case "queued":
 			return "Queued";
@@ -162,13 +222,11 @@ const taskTo = computed(() =>
 );
 
 const settings = useSettingsStore();
-// The running control opens the run's view when the board has its job; an
-// earlier run's finished job is not the one running, so it opens the task's
+// The running control opens the running run's view; without it, the task's
 // page, whose session shows the run.
 const runTo = computed<RouteLocationRaw>(() => {
 	const job = props.job;
-	if (!job || job.state === "done" || job.state === "failed")
-		return taskTo.value;
+	if (!job || !runOpen.value) return taskTo.value;
 	return jobPath(
 		projectOwner(settings.config, job.target),
 		job.target,

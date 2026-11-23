@@ -1,5 +1,6 @@
 import { onMounted, onUnmounted, type Ref, ref, watch } from "vue";
 import {
+	BOARD_STATES,
 	type BoardState,
 	type JobDetail,
 	normalizeJobDetail,
@@ -86,13 +87,17 @@ export function useProjectList(interval = 10_000) {
  * projects. No projects means an empty board. A non-empty search narrows the
  * jobs to those with the text in any field, including their output, and
  * total then counts only the matches. In kanban mode it reads every job in
- * the filter instead, without their output.
+ * the filter instead, without their output. A schedule is one entry, never a
+ * job per fire, and lists only while it is in a job state, so a finished run
+ * is never done. With withSchedules, a project's board reads its schedules'
+ * entries apart from the jobs, as scheduleEntries, for its scheduled cards.
  */
 export function useProjectBoard(
 	targets: Ref<string[]>,
 	states: Ref<BoardState[]>,
 	search: Ref<string> = ref(""),
 	kanban: Ref<boolean> = ref(false),
+	withSchedules: Ref<boolean> = ref(false),
 ) {
 	const { callTool } = useMCP();
 	const status = ref<ProjectStatus | null>(null);
@@ -103,6 +108,8 @@ export function useProjectBoard(
 	const page = ref(0);
 	const error = ref("");
 	const loading = ref(true);
+	/** The board entries of the projects' schedules, one per schedule. */
+	const scheduleEntries = ref<ProjectJob[]>([]);
 
 	async function listJobs(projects: string[]) {
 		// The kanban view lays every job out in its state's column, so it
@@ -112,7 +119,9 @@ export function useProjectBoard(
 			parseToolJSON(
 				await callTool("project_job_list", {
 					targets: projects,
-					states: states.value.length ? states.value : undefined,
+					// Naming every job state leaves out schedules between runs.
+					states: states.value.length ? states.value : BOARD_STATES,
+					kinds: withSchedules.value ? ["issue", "discussion"] : undefined,
 					query: search.value.trim() || undefined,
 					offset: all ? 0 : page.value * JOBS_PAGE_SIZE,
 					limit: all ? ALL_JOBS_LIMIT : JOBS_PAGE_SIZE,
@@ -126,6 +135,19 @@ export function useProjectBoard(
 		};
 	}
 
+	async function listScheduleEntries(projects: string[]) {
+		if (!withSchedules.value) return [];
+		return normalizeJobList(
+			parseToolJSON(
+				await callTool("project_job_list", {
+					targets: projects,
+					kinds: ["schedule"],
+					limit: ALL_JOBS_LIMIT,
+				}),
+			),
+		).jobs;
+	}
+
 	// Typing fires a load per keystroke, so only the latest one may land.
 	let latest = 0;
 	async function load() {
@@ -134,22 +156,29 @@ export function useProjectBoard(
 		const key = projects.join(" ");
 		if (!projects.length) {
 			jobs.value = [];
+			scheduleEntries.value = [];
 			total.value = 0;
 			unfilteredTotal.value = 0;
 			loading.value = false;
 			return;
 		}
 		try {
-			const [statusText, list] = await Promise.all([
+			const [statusText, list, entries] = await Promise.all([
 				// The stat cards count the board's own projects, like its filters.
 				callTool("project_status", { targets: projects }),
 				listJobs(projects),
+				listScheduleEntries(projects),
 			]);
 			// Every visible list card shows its job's latest transcript events
-			// and terminal output, which stream while the job runs; kanban
-			// cards show none.
+			// and terminal output, which stream while the job runs; a
+			// scheduled card shows its run's only while it runs. Kanban cards
+			// show none.
+			const running = entries.filter(
+				(e) =>
+					e.schedule?.state === "starting" || e.schedule?.state === "running",
+			);
 			await Promise.all(
-				(kanban.value ? [] : list.jobs).map(async (j) => {
+				(kanban.value ? [] : [...list.jobs, ...running]).map(async (j) => {
 					try {
 						const detail = normalizeJobDetail(
 							parseToolJSON(
@@ -171,6 +200,7 @@ export function useProjectBoard(
 			if (key !== targets.value.join(" ") || call !== latest) return;
 			status.value = normalizeStatus(parseToolJSON(statusText));
 			jobs.value = list.jobs;
+			scheduleEntries.value = entries;
 			total.value = list.total;
 			unfilteredTotal.value = list.unfilteredTotal;
 			error.value = "";
@@ -184,7 +214,12 @@ export function useProjectBoard(
 	const { refresh } = usePoll(load, PROJECTS_POLL_MS);
 
 	watch(
-		[() => targets.value.join(" "), () => states.value.join(","), kanban],
+		[
+			() => targets.value.join(" "),
+			() => states.value.join(","),
+			kanban,
+			withSchedules,
+		],
 		() => {
 			page.value = 0;
 			loading.value = true;
@@ -200,7 +235,7 @@ export function useProjectBoard(
 	watch(page, () => void refresh());
 
 	async function action(
-		tool: "project_job_retry" | "project_job_stop",
+		tool: "project_job_retry" | "project_job_stop" | "project_job_dismiss",
 		job: ProjectJob,
 	) {
 		await callTool(tool, { target: job.target, number: job.number });
@@ -248,8 +283,11 @@ export function useProjectBoard(
 		signInToGitHub,
 		switchToPolling,
 		importProfile,
+		scheduleEntries,
 		retry: (job: ProjectJob) => action("project_job_retry", job),
 		stop: (job: ProjectJob) => action("project_job_stop", job),
+		/** Takes a schedule's failed last run off the Failed state. */
+		dismiss: (job: ProjectJob) => action("project_job_dismiss", job),
 	};
 }
 
