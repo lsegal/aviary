@@ -16,14 +16,8 @@
 </template>
 
 <script setup lang="ts">
-import {
-	computed,
-	nextTick,
-	onBeforeUnmount,
-	onMounted,
-	ref,
-	watch,
-} from "vue";
+import { nextTick, ref, watch } from "vue";
+import { useScrollFade } from "../../composables/useScrollFade";
 
 export interface StatChip {
 	label: string;
@@ -41,41 +35,14 @@ export interface StatChip {
 const props = defineProps<{ cards: StatChip[] }>();
 const emit = defineEmits<{ select: [filter: string] }>();
 
-const FADE = "1.5rem";
 const row = ref<HTMLElement>();
-const before = ref(false);
-const after = ref(false);
+const { fadeStyle, measure, observe } = useScrollFade(row);
 
-function measure() {
-	const el = row.value;
-	if (!el) return;
-	before.value = el.scrollLeft > 1;
-	after.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
-}
-
-const fadeStyle = computed(() => {
-	if (!before.value && !after.value) return undefined;
-	const start = before.value ? `transparent, #000 ${FADE}` : "#000";
-	const end = after.value ? `#000 calc(100% - ${FADE}), transparent` : "#000";
-	const mask = `linear-gradient(to right, ${start}, ${end})`;
-	return { maskImage: mask, WebkitMaskImage: mask };
-});
-
-let observer: ResizeObserver | undefined;
-onMounted(() => {
-	observer = new ResizeObserver(measure);
-	if (row.value) {
-		observer.observe(row.value);
-		for (const chip of row.value.children) observer.observe(chip);
-	}
-	measure();
-});
-onBeforeUnmount(() => observer?.disconnect());
 watch(
 	() => props.cards,
 	async () => {
 		await nextTick();
-		measure();
+		observe();
 	},
 	{ deep: true },
 );
