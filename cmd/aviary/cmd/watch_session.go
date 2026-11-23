@@ -1,0 +1,290 @@
+package cmd
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/lsegal/aviary/internal/browser"
+	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/server"
+	"github.com/lsegal/aviary/internal/store"
+)
+
+// watchDirPrefix starts the name of every temporary directory a watch
+// session runs in, followed by the owning process's PID, so a later session
+// can tell an abandoned one from a live one.
+const watchDirPrefix = "aviary-watch-"
+
+// watchAgentName is the agent a watch session's targets run under when no
+// agent of the user's own owns them.
+const watchAgentName = "watch"
+
+// defaultWatchPort is where a watch session's server looks for a free port
+// first.
+const defaultWatchPort = 16677
+
+// watchSession is one isolated `aviary watch` run: its own config and data
+// in a temporary directory, sharing only the user's browser profile and
+// provider credentials, which it reads in place.
+type watchSession struct {
+	// Dir is the temporary directory holding the session's config and data.
+	Dir string
+	// ConfigPath is the session's aviary.yaml inside Dir.
+	ConfigPath string
+	// Port is the port the session's server listens on.
+	Port int
+	// Agent is the agent the session's targets run under.
+	Agent string
+	// env holds the values the session's environment variables had before
+	// it set them, restored when it ends.
+	env map[string]*string
+}
+
+// setEnv sets an environment variable for the session, remembering the
+// value it replaces.
+func (s *watchSession) setEnv(key, value string) error {
+	if s.env == nil {
+		s.env = map[string]*string{}
+	}
+	if _, saved := s.env[key]; !saved {
+		if old, ok := os.LookupEnv(key); ok {
+			s.env[key] = &old
+		} else {
+			s.env[key] = nil
+		}
+	}
+	return os.Setenv(key, value)
+}
+
+// globalWatchSources are the user's own locations a watch session reads
+// from, resolved before the session points Aviary at its temporary
+// directory.
+type globalWatchSources struct {
+	configPath string
+	authDir    string
+	profileDir string
+}
+
+// resolveGlobalWatchSources finds the user's config, provider credentials
+// and browser profile. It only reads.
+func resolveGlobalWatchSources(configFlag string) (globalWatchSources, *config.Config, error) {
+	path := strings.TrimSpace(configFlag)
+	if path == "" {
+		path = config.DefaultPath()
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		return globalWatchSources{}, nil, fmt.Errorf("reading your Aviary config: %w", err)
+	}
+	profile := strings.TrimSpace(cfg.Browser.ProfileDir)
+	if profile == "" {
+		profile = browser.DefaultProfileDir()
+	}
+	return globalWatchSources{
+		configPath: path,
+		authDir:    store.SubDir(store.DirAuth),
+		profileDir: profile,
+	}, cfg, nil
+}
+
+// sweepStaleWatchDirs removes the temporary directories under parent that
+// earlier watch sessions left behind when they were killed or crashed: those
+// whose owning PID is no longer alive. Directories of live sessions stay.
+func sweepStaleWatchDirs(parent string) []string {
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return nil
+	}
+	var removed []string
+	for _, entry := range entries {
+		pid, ok := watchDirPID(entry.Name())
+		if !ok || !entry.IsDir() || pid == os.Getpid() || server.ProcessAlive(pid) {
+			continue
+		}
+		dir := filepath.Join(parent, entry.Name())
+		if err := os.RemoveAll(dir); err == nil {
+			removed = append(removed, dir)
+		}
+	}
+	return removed
+}
+
+// watchDirPID reads the owning PID from a watch session directory's name,
+// aviary-watch-<pid>-<random>.
+func watchDirPID(name string) (int, bool) {
+	rest, ok := strings.CutPrefix(name, watchDirPrefix)
+	if !ok {
+		return 0, false
+	}
+	digits, _, ok := strings.Cut(rest, "-")
+	if !ok {
+		return 0, false
+	}
+	pid, err := strconv.Atoi(digits)
+	if err != nil || pid <= 0 {
+		return 0, false
+	}
+	return pid, true
+}
+
+// newWatchSessionDir creates the session's temporary directory under parent.
+func newWatchSessionDir(parent string) (string, error) {
+	return os.MkdirTemp(parent, fmt.Sprintf("%s%d-", watchDirPrefix, os.Getpid()))
+}
+
+// freeWatchPort returns the first port from start up that nothing listens
+// on, on the loopback interface the session's server binds.
+func freeWatchPort(start int) (int, error) {
+	if start <= 0 {
+		start = defaultWatchPort
+	}
+	for port := start; port < start+100 && port <= 65535; port++ {
+		ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if err != nil {
+			continue
+		}
+		_ = ln.Close()
+		return port, nil
+	}
+	return 0, fmt.Errorf("no free port found in %d-%d", start, start+99)
+}
+
+// watchSessionAgent picks the agent of the user's config the targets run
+// under: the --agent one, else the one agent that owns them. It returns a
+// copy holding only what jobs run with, so none of the agent's channels,
+// tasks or other projects come along, or a model-less "watch" agent that
+// falls back to models.defaults when no agent owns the targets.
+func watchSessionAgent(global *config.Config, name string, targets []string) (config.AgentConfig, error) {
+	pick := func(agent config.AgentConfig) config.AgentConfig {
+		return config.AgentConfig{
+			Name:        agent.Name,
+			Model:       agent.Model,
+			Fallbacks:   slices.Clone(agent.Fallbacks),
+			Permissions: agent.Permissions,
+		}
+	}
+	if name = strings.TrimSpace(name); name != "" {
+		for _, agent := range global.Agents {
+			if agent.Name == name {
+				return pick(agent), nil
+			}
+		}
+		return config.AgentConfig{}, fmt.Errorf("--agent %q is not an agent in your Aviary config", name)
+	}
+	var owner *config.AgentConfig
+	for i, agent := range global.Agents {
+		owned := agent.Projects.Targets()
+		if !slices.ContainsFunc(targets, func(t string) bool { return slices.Contains(owned, t) }) {
+			continue
+		}
+		if owner != nil && owner.Name != agent.Name {
+			// Targets owned by different agents run under models.defaults.
+			owner = nil
+			break
+		}
+		owner = &global.Agents[i]
+	}
+	if owner != nil {
+		return pick(*owner), nil
+	}
+	return config.AgentConfig{Name: watchAgentName}, nil
+}
+
+// watchSessionConfig builds the session's own config from the user's: their
+// providers, browser, approval and Code Loop settings with the flags'
+// overrides, one agent owning the targets, and a server on port that needs
+// no token and serves plain HTTP on the loopback interface only.
+func watchSessionConfig(global *config.Config, sources globalWatchSources, agent config.AgentConfig, targets []string, settings config.ProjectsConfig, port int) *config.Config {
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port:             port,
+			NoTLS:            true,
+			DisableTokenAuth: true,
+			AutoUpdate:       new(bool),
+		},
+		Models:       global.Models,
+		Browser:      global.Browser,
+		Search:       global.Search,
+		Approval:     global.Approval,
+		CodingSkills: global.CodingSkills,
+		Projects:     global.Projects.Override(settings),
+	}
+	cfg.Browser.ProfileDir = sources.profileDir
+	for _, target := range targets {
+		agent.Projects = append(agent.Projects, config.ProjectConfig{Target: target})
+	}
+	cfg.Agents = []config.AgentConfig{agent}
+	return cfg
+}
+
+// startWatchSession creates the session's directory, points Aviary's config,
+// data and auth lookups at it and the shared credentials, and writes its
+// config. The caller removes s.Dir when the session ends.
+func startWatchSession(parent string, global *config.Config, sources globalWatchSources, agentName string, targets []string, settings config.ProjectsConfig) (*watchSession, error) {
+	agent, err := watchSessionAgent(global, agentName, targets)
+	if err != nil {
+		return nil, err
+	}
+	start := global.Server.Port
+	if start == 0 {
+		start = defaultWatchPort
+	}
+	port, err := freeWatchPort(start)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := newWatchSessionDir(parent)
+	if err != nil {
+		return nil, fmt.Errorf("creating the watch session directory: %w", err)
+	}
+	s := &watchSession{Dir: dir, ConfigPath: filepath.Join(dir, "aviary.yaml"), Port: port, Agent: agent.Name}
+	store.SetDataDir(dir)
+	store.SetAuthDir(sources.authDir)
+	config.SetDefaultPath(s.ConfigPath)
+	// Aviary commands the session's jobs run reach the session's server.
+	if err := s.setEnv("AVIARY_CONFIG_BASE_DIR", dir); err != nil {
+		return s, fmt.Errorf("setting the config base directory: %w", err)
+	}
+	if err := s.setEnv("AVIARY_PID_FILE", filepath.Join(dir, "aviary.pid")); err != nil {
+		return s, fmt.Errorf("setting the PID file: %w", err)
+	}
+	if err := store.EnsureDirs(); err != nil {
+		return s, fmt.Errorf("initializing the watch session directory: %w", err)
+	}
+	cfg := watchSessionConfig(global, sources, agent, targets, settings, port)
+	if err := config.Save(s.ConfigPath, cfg); err != nil {
+		return s, fmt.Errorf("writing the watch session config: %w", err)
+	}
+	return s, nil
+}
+
+// endWatchSession restores Aviary's own config and data lookups and removes
+// the session's directory.
+func endWatchSession(s *watchSession) error {
+	store.SetDataDir(dataDir)
+	store.SetAuthDir("")
+	config.SetDefaultPath("")
+	if s == nil {
+		return nil
+	}
+	for key, old := range s.env {
+		if old == nil {
+			_ = os.Unsetenv(key)
+		} else {
+			_ = os.Setenv(key, *old)
+		}
+	}
+	if s.Dir == "" {
+		return nil
+	}
+	if err := os.RemoveAll(s.Dir); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("removing the watch session directory %s: %w", s.Dir, err)
+	}
+	return nil
+}

@@ -6,15 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/logging"
+	internalmcp "github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/projects"
 	"github.com/lsegal/aviary/internal/server"
 )
@@ -34,6 +38,8 @@ type watchOptions struct {
 	noChangelog       bool
 	browserVision     bool
 	browserVisible    bool
+	noWebUI           bool
+	noTUI             bool
 }
 
 var watchOpts watchOptions
@@ -49,11 +55,33 @@ With no TARGET the current checkout's origin repository is watched. TARGET is
 OWNER/REPO, a repository URL, a Project board URL, a Discussions URL, or the
 projects: and discussions: shorthands.
 
-Nothing is written to aviary.yaml: the watch lasts until Ctrl+C. When the
-Aviary server is running the watch is added to it; otherwise the server is
-started in the foreground for the watch. Flags override the shared projects settings
-of aviary.yaml while the watch runs. Use 'aviary project add' to watch a
-project permanently.`,
+A watch is a one-off session that never changes your Aviary config. It runs
+its own Aviary server against a temporary config and data directory
+(aviary-watch-<PID>-* in the system temp directory), holding the session's
+config, state, sessions, jobs and clone bookkeeping. Only two things are
+shared with your own Aviary, both read in place and never copied:
+
+  - the browser profile, so your GitHub sign-in is reused;
+  - provider credentials: CLI provider sign-ins, auth: references and tokens.
+
+The session copies your providers, browser, approval and Code Loop settings;
+flags override the Code Loop settings. The targets run under --agent, else the
+agent of yours that owns them, else models.defaults. Use 'aviary project add'
+to watch a project permanently.
+
+The session's server listens on localhost only, on the first free port from
+your server port (default 16677) up, and serves a minimal web UI with no token
+prompt: Code Loop and Scheduled Tasks only. Chat, agent and channel settings,
+System pages and their API are unavailable. A full-screen TUI shows the same
+board in the terminal: status filters, scheduled tasks, board mode, job
+actions, live logs and stats. --no-webui serves no web UI, and --no-tui prints
+the Code Loop log instead of the TUI (the default when output is not a
+terminal).
+
+Ctrl+C, SIGTERM, SIGHUP, quitting the TUI or a fatal error ends the session:
+running jobs are stopped and checkpointed, then the temporary directory is
+removed. A directory left behind by a killed session is removed by the next
+watch once its PID is gone.`,
 	RunE: runWatch,
 }
 
@@ -72,6 +100,8 @@ func init() {
 	f.BoolVar(&watchOpts.noChangelog, "no-changelog", false, "skip changelog entries in gh-fix pull requests")
 	f.BoolVar(&watchOpts.browserVision, "browser-vision", false, "browser delivery: read pages it no longer recognizes from capped screenshots")
 	f.BoolVar(&watchOpts.browserVisible, "browser-visible", false, "browser delivery: show the browser it reads with, for debugging")
+	f.BoolVar(&watchOpts.noWebUI, "no-webui", false, "don't serve the session's web UI")
+	f.BoolVar(&watchOpts.noTUI, "no-tui", false, "print the Code Loop log instead of showing the TUI")
 	rootCmd.AddCommand(watchCmd)
 }
 
@@ -133,7 +163,7 @@ func watchSettings() (config.ProjectsConfig, error) {
 	return settings, nil
 }
 
-func runWatch(cmd *cobra.Command, args []string) error {
+func runWatch(cmd *cobra.Command, args []string) (err error) {
 	targets, err := watchTargets(args)
 	if err != nil {
 		return err
@@ -142,62 +172,155 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	watch := projects.Watch{Targets: targets, Agent: watchOpts.agent, Settings: settings}
-	running, _, err := server.IsRunning()
+	out := cmd.OutOrStdout()
+	sources, global, err := resolveGlobalWatchSources(cfgFile)
 	if err != nil {
-		return fmt.Errorf("checking server status: %w", err)
+		return err
 	}
-	if !running {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Watching %s; starting the Aviary server in the foreground (Ctrl+C stops both).\n", strings.Join(targets, ", "))
-		server.SetStartupWatches([]projects.Watch{watch})
-		return runStart(nil, nil)
+	for _, dir := range sweepStaleWatchDirs(os.TempDir()) {
+		_, _ = fmt.Fprintf(out, "Removed %s, left behind by an earlier watch.\n", dir)
 	}
-	return attachWatch(cmd.Context(), cmd.OutOrStdout(), watch)
-}
-
-// attachWatch adds the watch to the running server, prints its log until
-// Ctrl+C, and then removes the watch again.
-func attachWatch(ctx context.Context, out io.Writer, watch projects.Watch) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	d := activeDispatcher()
-	payload := func(target string) map[string]any {
-		data, _ := json.Marshal(watch.Settings)
-		var settings map[string]any
-		_ = json.Unmarshal(data, &settings)
-		args := map[string]any{"target": target, "runtime": true}
-		if watch.Agent != "" {
-			args["agent"] = watch.Agent
-		}
-		if len(settings) > 0 {
-			args["settings"] = settings
-		}
-		return args
-	}
-	var added []string
+	session, err := startWatchSession(os.TempDir(), global, sources, watchOpts.agent, targets, settings)
+	// The session directory goes on every way out, a panic included.
 	defer func() {
-		for _, target := range added {
-			if _, err := d.CallTool(context.Background(), "project_remove", map[string]any{"target": target, "runtime": true}); err != nil {
-				_, _ = fmt.Fprintf(out, "stop watching %s: %v\n", target, err)
+		if cleanupErr := endWatchSession(session); cleanupErr != nil {
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), cleanupErr)
+			if err == nil {
+				err = cleanupErr
 			}
 		}
 	}()
-	for _, target := range watch.Targets {
-		if _, err := d.CallTool(ctx, "project_add", payload(target)); err != nil {
-			return fmt.Errorf("watch %s: %w", target, err)
-		}
-		added = append(added, target)
+	if err != nil {
+		return err
 	}
-	_, _ = fmt.Fprintf(out, "Watching %s on the running Aviary server (Ctrl+C stops the watch).\n", strings.Join(watch.Targets, ", "))
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	tui := !watchOpts.noTUI && isatty.IsTerminal(os.Stdout.Fd())
+	return runWatchSession(ctx, out, session, targets, tui, !watchOpts.noWebUI)
+}
 
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+// watchSignals end a watch session.
+var watchSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
+
+// runWatchSession serves the session until a signal arrives, the TUI quits
+// or the server fails, then stops it: Code Loop checkpoints running jobs and
+// agents stop before this returns.
+func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, targets []string, tui, webUI bool) error {
+	if err := logging.Init(); err != nil {
+		_, _ = fmt.Fprintf(out, "warning: failed to initialize logging: %v\n", err)
+	}
+	cfg, err := config.Load(session.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("loading the watch session config: %w", err)
+	}
+	tok, _, err := server.LoadOrGenerateToken()
+	if err != nil {
+		return fmt.Errorf("creating the session token: %w", err)
+	}
+	if err := server.WritePID(); err != nil {
+		return fmt.Errorf("writing PID: %w", err)
+	}
+	defer server.RemovePID() //nolint:errcheck
+
+	server.SetMinimalMode(true)
+	server.SetWebUIEnabled(webUI)
+	defer server.SetMinimalMode(false)
+	defer server.SetWebUIEnabled(true)
+
+	ctx, stop := signal.NotifyContext(ctx, watchSignals...)
 	defer stop()
-	offset := 0.0
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	srv := server.New(cfg, tok)
+	served := make(chan error, 1)
+	go func() { served <- serveWatch(ctx, srv, tok, session.ConfigPath) }()
+
+	webURL := ""
+	if webUI {
+		webURL = fmt.Sprintf("http://localhost:%d/agents/%s/projects", session.Port, url.PathEscape(session.Agent))
+	}
+	call, closeCalls, err := watchToolCalls(ctx)
+	if err != nil {
+		cancel()
+		<-served
+		return err
+	}
+	defer closeCalls()
+
+	title := strings.Join(targets, ", ")
+	if tui {
+		tuiDone := make(chan error, 1)
+		go func() { tuiDone <- runWatchTUI(ctx, call, title, webURL) }()
+		select {
+		case err = <-tuiDone:
+			cancel()
+			if serveErr := <-served; err == nil {
+				err = serveErr
+			}
+		case err = <-served:
+			cancel()
+			<-tuiDone
+		}
+	} else {
+		_, _ = fmt.Fprintf(out, "Watching %s in an isolated session (Ctrl+C stops it).\n", title)
+		if webURL != "" {
+			_, _ = fmt.Fprintf(out, "Code Loop: %s\n", webURL)
+		}
+		logsDone := make(chan struct{})
+		go func() {
+			printWatchLogs(ctx, out, call)
+			close(logsDone)
+		}()
+		err = <-served
+		cancel()
+		<-logsDone
+	}
+	_, _ = fmt.Fprintln(out, "Watch session ended.")
+	return err
+}
+
+// serveWatch runs the session's server until ctx ends, starting it again
+// when a config change needs a restart.
+func serveWatch(ctx context.Context, srv *server.Server, tok, configPath string) error {
+	for {
+		err := srv.ListenAndServe(ctx)
+		if err == nil || ctx.Err() != nil {
+			return shutdownErr(err)
+		}
+		if !errors.Is(err, server.ErrRestartRequired) {
+			return err
+		}
+		cfg, loadErr := config.Load(configPath)
+		if loadErr != nil {
+			return fmt.Errorf("reloading the watch session config: %w", loadErr)
+		}
+		srv = server.New(cfg, tok)
+	}
+}
+
+// watchToolCalls connects an in-process MCP client to the session's server,
+// for the TUI and the log printer.
+func watchToolCalls(ctx context.Context) (watchToolCaller, func(), error) {
+	client, err := internalmcp.NewInProcessClient(ctx, internalmcp.NewServer())
+	if err != nil {
+		return nil, nil, fmt.Errorf("connecting to the watch session: %w", err)
+	}
+	call := func(ctx context.Context, name string, args map[string]any) (string, error) {
+		return client.CallToolText(ctx, name, args)
+	}
+	return call, func() { _ = client.Close() }, nil
+}
+
+// printWatchLogs prints the Code Loop log until ctx ends.
+func printWatchLogs(ctx context.Context, out io.Writer, call watchToolCaller) {
+	offset := 0
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
-		raw, err := d.CallTool(ctx, "project_status", map[string]any{"log_offset": int(offset)})
+		raw, err := call(ctx, "project_status", map[string]any{"log_offset": offset})
 		if err == nil {
 			var status struct {
 				Logs   []string `json:"recent_logs"`
@@ -207,12 +330,12 @@ func attachWatch(ctx context.Context, out io.Writer, watch projects.Watch) error
 				for _, line := range status.Logs {
 					_, _ = fmt.Fprintln(out, line)
 				}
-				offset = status.Offset
+				offset = int(status.Offset)
 			}
 		}
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case <-ticker.C:
 		}
 	}

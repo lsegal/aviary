@@ -22,6 +22,9 @@ type healthPayload struct {
 	// AuthDisabled tells the web UI the server needs no token, so it can
 	// skip the login prompt.
 	AuthDisabled bool `json:"auth_disabled,omitempty"`
+	// Minimal tells the web UI the server is an `aviary watch` session that
+	// serves only Code Loop and Scheduled Tasks.
+	Minimal bool `json:"minimal,omitempty"`
 }
 
 type wsEvent struct {
@@ -109,7 +112,7 @@ var wsUpgrader = websocket.Upgrader{
 
 // healthHandler handles GET /api/health.
 // Public — no authentication required. Returns current version and status.
-func healthHandler(authDisabled func() bool) http.HandlerFunc {
+func healthHandler(authDisabled func() bool, minimal bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(healthPayload{
@@ -117,6 +120,7 @@ func healthHandler(authDisabled func() bool) http.HandlerFunc {
 			Version:      update.CurrentVersion(),
 			GOOS:         runtime.GOOS,
 			AuthDisabled: tokenAuthDisabled(authDisabled),
+			Minimal:      minimal,
 		})
 	}
 }

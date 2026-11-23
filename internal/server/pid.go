@@ -80,3 +80,6 @@ func IsRunning() (bool, int, error) {
 	}
 	return pidAlive(pid), pid, nil
 }
+
+// ProcessAlive reports whether the process with the given PID is running.
+func ProcessAlive(pid int) bool { return pidAlive(pid) }
