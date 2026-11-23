@@ -311,6 +311,28 @@ func TestInstallOnDevBuildUsesBundledCopy(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "the extracted copy is removed afterwards")
 }
 
+func TestExtractBundleCopiesOnlyShippedSkills(t *testing.T) {
+	m, _, _ := newTestManager(t, "dev")
+	// A dev bundle read from the checkout also holds the repository's own skills.
+	bundle := fstest.MapFS{".agents/skills/commit/SKILL.md": {Data: []byte("commit\n")}}
+	for name, file := range testBundle {
+		bundle[name] = file
+	}
+	m.Bundle = bundle
+
+	dir, cleanup, err := m.extractBundle()
+	require.NoError(t, err)
+	defer cleanup()
+	root := filepath.Join(dir, ".agents", "skills")
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	assert.ElementsMatch(t, []string{"gh-fix", "gh-discuss", "gh-create", "gh-safe-merge"}, names)
+}
+
 func TestSyncFollowsConfig(t *testing.T) {
 	m, npx, home := newTestManager(t, "2.0.0", "claude")
 	claudeDir := filepath.Join(home, ".claude", "skills")

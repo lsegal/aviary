@@ -11,15 +11,21 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/lsegal/aviary"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/update"
 )
 
 //go:embed */*
 var builtinFS embed.FS
+
+// builtinSource holds the builtin skills, read from the checkout in dev so
+// edits to them take effect without a restart.
+var builtinSource = sync.OnceValue(func() fs.FS { return update.DevAssets(builtinFS, "skills") })
 
 // Definition describes a skill that can be listed or installed.
 type Definition struct {
@@ -140,20 +146,21 @@ func markEnabled(sk Definition, cfg *config.Config) Definition {
 }
 
 func loadEmbedded() ([]Definition, error) {
-	matches, err := fs.Glob(builtinFS, "*/SKILL.md")
+	builtin := builtinSource()
+	matches, err := fs.Glob(builtin, "*/SKILL.md")
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Definition, 0, len(matches))
 	for _, match := range matches {
-		data, err := builtinFS.ReadFile(match)
+		data, err := fs.ReadFile(builtin, match)
 		if err != nil {
 			return nil, err
 		}
 		name := filepath.Base(filepath.Dir(match))
 		var mf manifest
 		manifestPath := path.Join(path.Dir(match), "aviary-skill.json")
-		if manifestData, err := builtinFS.ReadFile(manifestPath); err == nil {
+		if manifestData, err := fs.ReadFile(builtin, manifestPath); err == nil {
 			if err := json.Unmarshal(manifestData, &mf); err != nil {
 				return nil, err
 			}
