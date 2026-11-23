@@ -712,9 +712,7 @@ test("Code Loop settings live under the projects section, not System", async ({
 }) => {
 	await setup(page);
 	await page.goto("/projects/settings");
-	await expect(page.getByTestId("settings-title")).toHaveText(
-		"Code Loop Settings",
-	);
+	await expect(page.getByTestId("settings-title")).toHaveText("Settings");
 	await expect(page.getByTestId("project-settings")).toBeVisible();
 	await expect(
 		(await systemList(page)).getByRole("link", {

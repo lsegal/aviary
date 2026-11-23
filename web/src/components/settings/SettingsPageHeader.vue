@@ -9,12 +9,13 @@
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div class="flex min-w-0 items-center gap-3">
 				<slot name="icon" />
-				<nav v-if="crumbs.length > 1" aria-label="Breadcrumb" data-testid="settings-title" class="min-w-0">
+				<nav v-if="crumbs.length > 1" aria-label="Breadcrumb" data-testid="settings-breadcrumb" class="min-w-0">
 					<ol class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xl font-bold text-gray-900 dark:text-white">
 						<li v-for="(crumb, i) in crumbs" :key="i" class="flex min-w-0 items-center gap-1.5">
 							<ChevronRightIcon v-if="i > 0" aria-hidden="true"
 								class="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
-							<span v-if="i === crumbs.length - 1" aria-current="page" class="truncate">{{ crumb.label }}</span>
+							<h2 v-if="i === crumbs.length - 1" aria-current="page" data-testid="settings-title" class="truncate">
+								{{ crumb.label }}</h2>
 							<router-link v-else-if="crumb.to" :to="crumb.to"
 								class="truncate rounded text-gray-500 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-white">
 								{{ crumb.label }}</router-link>
