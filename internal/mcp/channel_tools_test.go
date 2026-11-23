@@ -64,6 +64,18 @@ func TestChannelToolsLifecycle(t *testing.T) {
 	require.Len(t, renamed, 1)
 	assert.Equal(t, sessionID, renamed[0]["id"])
 
+	// It enables and disables in place.
+	toolCallContains(t, d, "channel_update", map[string]any{"agent": "bot", "channel": "Ops"}, `missing properties: ["enabled"]`)
+	toolCallContains(t, d, "channel_update", map[string]any{"agent": "bot", "channel": "Nope", "enabled": true}, "no channel named")
+	callText(t, d, "channel_update", map[string]any{"agent": "bot", "channel": "Ops", "enabled": true})
+	cfg, err = config.Load("")
+	require.NoError(t, err)
+	assert.True(t, config.BoolOr(cfg.Agents[0].Channels[0].Enabled, true))
+	callText(t, d, "channel_update", map[string]any{"agent": "bot", "channel": "ops", "enabled": false})
+	cfg, err = config.Load("")
+	require.NoError(t, err)
+	assert.False(t, config.BoolOr(cfg.Agents[0].Channels[0].Enabled, true))
+
 	// Removing it with archive keeps the session as a regular chat.
 	toolCallContains(t, d, "channel_remove", map[string]any{"agent": "bot", "channel": "Ops", "sessions": "keep"}, "sessions must be archive or delete")
 	callText(t, d, "channel_remove", map[string]any{"agent": "bot", "channel": "Ops", "sessions": "archive"})
