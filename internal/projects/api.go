@@ -405,7 +405,7 @@ func (m *Manager) UnblockRun(target string, number int) (map[string]any, error) 
 
 // IssueComment is project_issue_comment: post an update that mentions the
 // issue's author and this instance, so the owning job hears it.
-func (m *Manager) IssueComment(ctx context.Context, repository string, number int, text string) (map[string]any, error) {
+func (m *Manager) IssueComment(ctx context.Context, repository string, number int, text string, attachments []string) (map[string]any, error) {
 	engine := m.engine()
 	if engine == nil {
 		return nil, ErrNotWatching
@@ -423,16 +423,16 @@ func (m *Manager) IssueComment(ctx context.Context, repository string, number in
 		}
 		repository = resolved
 	}
-	result, err := engine.PostIssueUpdate(ctx, core.IssueUpdate{Repository: repository, Number: number, Text: text})
+	result, err := engine.PostIssueUpdate(ctx, core.IssueUpdate{Repository: repository, Number: number, Text: text, Attachments: attachments})
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"url": result.URL, "author": result.Author, "repository": repository, "number": number}, nil
+	return map[string]any{"url": result.URL, "author": result.Author, "repository": repository, "number": number, "attachments": attachedList(result.Attachments)}, nil
 }
 
 // IssueCreate is project_issue_create: file an issue through gh-create with
-// this instance's identity.
-func (m *Manager) IssueCreate(ctx context.Context, repository, text, model string) (map[string]any, error) {
+// this instance's identity, uploading and embedding attachments.
+func (m *Manager) IssueCreate(ctx context.Context, repository, text, model string, attachments []string) (map[string]any, error) {
 	engine := m.engine()
 	if engine == nil {
 		return nil, ErrNotWatching
@@ -447,11 +447,20 @@ func (m *Manager) IssueCreate(ctx context.Context, repository, text, model strin
 		}
 		repository = resolved
 	}
-	result, err := engine.CreateIssue(ctx, core.IssueCreate{Repository: repository, Text: text, Model: model})
+	result, err := engine.CreateIssue(ctx, core.IssueCreate{Repository: repository, Text: text, Model: model, Attachments: attachments})
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"url": result.URL, "agent": result.Agent, "repository": repository}, nil
+	return map[string]any{"url": result.URL, "agent": result.Agent, "repository": repository, "attachments": attachedList(result.Attachments)}, nil
+}
+
+// attachedList reports the files a filing attached, as an empty list rather
+// than null when there were none, so the result always says.
+func attachedList(files []string) []string {
+	if files == nil {
+		return []string{}
+	}
+	return files
 }
 
 // explainJob says in words why a job is where it is and what moves it on.

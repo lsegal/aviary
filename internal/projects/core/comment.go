@@ -63,3 +63,9 @@ type IssueUpdatePoster interface {
 	IssueAuthor(ctx context.Context, repo string, number int) (string, error)
 	PostCommentURL(ctx context.Context, repo string, number int, body string) (string, error)
 }
+
+// AttachmentCommentPoster posts a comment with local image or video files
+// uploaded and embedded in it, reporting the comment's URL.
+type AttachmentCommentPoster interface {
+	PostCommentWithAttachments(ctx context.Context, repo string, number int, body string, files []string) (string, error)
+}
