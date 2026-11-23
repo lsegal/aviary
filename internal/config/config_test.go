@@ -67,7 +67,7 @@ func TestEffectiveServerNoTLS(t *testing.T) {
 }
 
 func TestEffectiveServerTLS(t *testing.T) {
-	for _, k := range []string{"AVIARY_CONFIG_SERVER_TLS_CERT", "AVIARY_CONFIG_SERVER_TLS_KEY", "AVIARY_CONFIG_SERVER_TLS_SANS"} {
+	for _, k := range []string{"AVIARY_CONFIG_SERVER_TLS_CERT", "AVIARY_CONFIG_SERVER_TLS_KEY", "AVIARY_CONFIG_SERVER_TLS_SANS", "AVIARY_CONFIG_SERVER_TLS_NO_HOST_SANS"} {
 		t.Setenv(k, "")
 	}
 	yaml := ServerConfig{TLS: &TLSConfig{Cert: "c.pem", Key: "k.pem", SANs: []string{"nas.local"}}}
@@ -77,10 +77,12 @@ func TestEffectiveServerTLS(t *testing.T) {
 	t.Setenv("AVIARY_CONFIG_SERVER_TLS_CERT", "/certs/tls.crt")
 	t.Setenv("AVIARY_CONFIG_SERVER_TLS_KEY", "/certs/tls.key")
 	t.Setenv("AVIARY_CONFIG_SERVER_TLS_SANS", " aviary.lan, 192.168.1.20 ,,")
+	t.Setenv("AVIARY_CONFIG_SERVER_TLS_NO_HOST_SANS", "true")
 	assert.Equal(t, TLSConfig{
-		Cert: "/certs/tls.crt",
-		Key:  "/certs/tls.key",
-		SANs: []string{"aviary.lan", "192.168.1.20"},
+		Cert:       "/certs/tls.crt",
+		Key:        "/certs/tls.key",
+		SANs:       []string{"aviary.lan", "192.168.1.20"},
+		NoHostSANs: true,
 	}, EffectiveServerTLS(yaml))
 	assert.Equal(t, []string{"nas.local"}, yaml.TLS.SANs)
 }

@@ -128,6 +128,8 @@ jobs:
 
           echo "Container did not start serving on port 16677" >&2
           exit 1
+      - name: Smoke test container TLS
+        run: scripts/docker-tls-smoke.sh "${SMOKE_IMAGE}"
       - uses: docker/login-action@v4
         if: steps.prep.outputs.push_image == 'true'
         with:

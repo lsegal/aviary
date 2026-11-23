@@ -45,6 +45,11 @@ func TestLoadOrGenerateTLS_GeneratesWithHostSANs(t *testing.T) {
 	}
 }
 
+func TestSelfSignedSANs_NoHostSANs(t *testing.T) {
+	sans := SelfSignedSANs(config.TLSConfig{NoHostSANs: true, SANs: []string{"nas.lan"}})
+	assert.Equal(t, []string{"localhost", "127.0.0.1", "::1", "nas.lan"}, sans)
+}
+
 func TestLoadOrGenerateTLS_ReusesCoveringCert(t *testing.T) {
 	setupServerDataDir(t)
 
@@ -80,7 +85,7 @@ func TestLoadOrGenerateTLS_CustomCert(t *testing.T) {
 
 	dir := t.TempDir()
 	certFile, keyFile := filepath.Join(dir, "c.pem"), filepath.Join(dir, "k.pem")
-	want, err := generateSelfSigned(certFile, keyFile, nil)
+	want, err := generateSelfSigned(certFile, keyFile, config.TLSConfig{})
 	require.NoError(t, err)
 	got, err := LoadOrGenerateTLS(config.TLSConfig{Cert: certFile, Key: keyFile})
 	require.NoError(t, err)

@@ -90,8 +90,8 @@ RUN chmod 777 /home/linuxbrew /home/linuxbrew/.linuxbrew
 
 USER root
 RUN useradd -m bot -d /home/bot -s /bin/bash \
-  && mkdir -p /home/bot/.local/bin \
-  && chown -R bot:bot /home/bot/.local
+  && mkdir -p /home/bot/.local/bin /home/bot/.config/aviary \
+  && chown -R bot:bot /home/bot/.local /home/bot/.config
 
 COPY --from=go-builder /out/aviary /usr/local/bin/aviary
 
@@ -99,7 +99,17 @@ USER bot
 ENV PATH="/home/bot/.local/bin:/home/linuxbrew/.linuxbrew/bin:${PATH}"
 ENV AVIARY_SANDBOX=true
 ENV AVIARY_CONFIG_SERVER_EXTERNAL_ACCESS=true
+# The container's own hostname and addresses change per container; clients
+# reach it by the names in AVIARY_CONFIG_SERVER_TLS_SANS instead.
+ENV AVIARY_CONFIG_SERVER_TLS_NO_HOST_SANS=true
 WORKDIR /home/bot
+# Config, the login token, and the TLS cert live here. The server generates a
+# unique self-signed cert on first start, so the image itself holds no key.
+VOLUME /home/bot/.config/aviary
 EXPOSE 1455 45289 16677
+
+# Serves HTTPS by default; AVIARY_CONFIG_SERVER_NO_TLS=true serves plain HTTP.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --start-interval=2s --retries=3 \
+  CMD curl -fsk https://127.0.0.1:16677/api/health || curl -fs http://127.0.0.1:16677/api/health || exit 1
 
 CMD ["aviary", "serve"]

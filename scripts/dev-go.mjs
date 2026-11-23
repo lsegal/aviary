@@ -6,23 +6,13 @@
 // current sources. A managed forgo older than MIN_FORGO_VERSION is updated
 // first, because earlier releases crash the backend after some hot reloads.
 import { execFileSync, spawn } from "node:child_process";
-import {
-	accessSync,
-	constants,
-	existsSync,
-	readFileSync,
-	realpathSync,
-	rmSync,
-} from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { exeExt, findForgo, installDir, isWindows } from "./go-runner.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const isWindows = process.platform === "win32";
-const exeExt = isWindows ? ".exe" : "";
-const installDir =
-	process.env.FORGO_INSTALL_DIR ?? path.join(homedir(), ".forgo");
 
 // forgo only publishes release binaries for these platforms.
 const SUPPORTED = new Set(["darwin-arm64", "linux-x64", "win32-x64"]);
@@ -30,37 +20,6 @@ const SUPPORTED = new Set(["darwin-arm64", "linux-x64", "win32-x64"]);
 // The oldest forgo whose hot reload Aviary's dev updates rely on: 0.7.4 fixed
 // a crash after reloading code that uses a type (lsegal/forgo#50).
 const MIN_FORGO_VERSION = "0.7.4";
-
-function isExecutable(file) {
-	try {
-		accessSync(file, constants.X_OK);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-function findOnPath() {
-	try {
-		const finder = isWindows ? "where" : "which";
-		const found = execFileSync(finder, ["forgo"], {
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-		})
-			.split(/\r?\n/)[0]
-			.trim();
-		return found || null;
-	} catch {
-		return null;
-	}
-}
-
-function findForgo() {
-	if (process.env.FORGO_BIN) return process.env.FORGO_BIN;
-	const installed = path.join(installDir, "bin", `forgo${exeExt}`);
-	if (isExecutable(installed)) return installed;
-	return findOnPath();
-}
 
 // forgoVersion returns the version in the FORGO_VERSION file at the root of
 // the toolchain bin belongs to (bin/forgo), or null. `forgo version` is no

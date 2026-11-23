@@ -45,7 +45,7 @@ func TLSFiles(t config.TLSConfig, regenerate bool) (certFile, keyFile string, er
 
 // LoadOrGenerateTLS loads the configured TLS cert+key, or the self-signed
 // one, generating a new self-signed cert when none exists or the existing
-// one does not cover every name in SelfSignedSANs.
+// one is expired or does not cover every name in SelfSignedSANs.
 func LoadOrGenerateTLS(t config.TLSConfig) (tls.Certificate, error) {
 	if t.Cert != "" && t.Key != "" {
 		return tls.LoadX509KeyPair(t.Cert, t.Key)
@@ -62,12 +62,12 @@ func loadOrGenerate(t config.TLSConfig, regenerate bool) (tls.Certificate, error
 	defer unlock()
 
 	if regenerate {
-		return generateSelfSigned(certFile, keyFile, t.SANs)
+		return generateSelfSigned(certFile, keyFile, t)
 	}
-	if cert, err := tls.LoadX509KeyPair(certFile, keyFile); err == nil && certCovers(cert, SelfSignedSANs(t.SANs)) {
+	if cert, err := tls.LoadX509KeyPair(certFile, keyFile); err == nil && certCovers(cert, SelfSignedSANs(t)) {
 		return cert, nil
 	}
-	return generateSelfSigned(certFile, keyFile, t.SANs)
+	return generateSelfSigned(certFile, keyFile, t)
 }
 
 // lockCerts serializes self-signed cert generation across processes, such as
@@ -101,15 +101,22 @@ func lockCerts(dir string) (func(), error) {
 }
 
 // SelfSignedSANs returns the names a generated cert must cover: localhost,
-// the loopback addresses, the hostname, the host's current non-loopback IPv4
-// addresses, and any extra configured names.
-func SelfSignedSANs(extra []string) []string {
+// the loopback addresses, the hostname and the host's current non-loopback
+// IPv4 addresses unless t.NoHostSANs is set, and t.SANs.
+func SelfSignedSANs(t config.TLSConfig) []string {
 	sans := []string{"localhost", "127.0.0.1", "::1"}
-	if host, err := os.Hostname(); err == nil && host != "" {
-		sans = append(sans, strings.ToLower(host))
+	if !t.NoHostSANs {
+		if host, err := os.Hostname(); err == nil && host != "" {
+			host = strings.ToLower(host)
+			sans = append(sans, host)
+			// Bare hostnames are usually reachable over mDNS as host.local.
+			if !strings.Contains(host, ".") {
+				sans = append(sans, host+".local")
+			}
+		}
+		sans = append(sans, lanIPv4s()...)
 	}
-	sans = append(sans, lanIPv4s()...)
-	for _, name := range extra {
+	for _, name := range t.SANs {
 		if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
 			sans = append(sans, name)
 		}
@@ -172,7 +179,7 @@ func certCovers(cert tls.Certificate, sans []string) bool {
 	return true
 }
 
-func generateSelfSigned(certFile, keyFile string, extraSANs []string) (tls.Certificate, error) {
+func generateSelfSigned(certFile, keyFile string, t config.TLSConfig) (tls.Certificate, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("generating key: %w", err)
@@ -185,7 +192,7 @@ func generateSelfSigned(certFile, keyFile string, extraSANs []string) (tls.Certi
 
 	var dnsNames []string
 	var ips []net.IP
-	for _, name := range SelfSignedSANs(extraSANs) {
+	for _, name := range SelfSignedSANs(t) {
 		if ip := net.ParseIP(name); ip != nil {
 			ips = append(ips, ip)
 		} else {

@@ -91,6 +91,9 @@ type TLSConfig struct {
 	// SANs lists extra hostnames and IP addresses the generated self-signed
 	// cert covers, on top of localhost, the hostname, and the LAN addresses.
 	SANs []string `yaml:"sans,omitempty" json:"sans,omitempty"`
+	// NoHostSANs leaves the hostname and LAN addresses out of the generated
+	// cert, for hosts such as containers whose own names clients never use.
+	NoHostSANs bool `yaml:"no_host_sans,omitempty" json:"no_host_sans,omitempty"`
 }
 
 // FilesystemPermissionsConfig restricts file tool access to ordered allow/deny
@@ -578,6 +581,7 @@ func EffectiveServerNoTLS(s ServerConfig) bool {
 // AVIARY_CONFIG_SERVER_TLS_CERT and AVIARY_CONFIG_SERVER_TLS_KEY override
 // server.tls.cert and server.tls.key, and AVIARY_CONFIG_SERVER_TLS_SANS, a
 // comma-separated list, overrides server.tls.sans.
+// AVIARY_CONFIG_SERVER_TLS_NO_HOST_SANS overrides server.tls.no_host_sans.
 func EffectiveServerTLS(s ServerConfig) TLSConfig {
 	var t TLSConfig
 	if s.TLS != nil {
@@ -596,6 +600,11 @@ func EffectiveServerTLS(s ServerConfig) TLSConfig {
 			if name = strings.TrimSpace(name); name != "" {
 				t.SANs = append(t.SANs, name)
 			}
+		}
+	}
+	if raw := strings.TrimSpace(os.Getenv("AVIARY_CONFIG_SERVER_TLS_NO_HOST_SANS")); raw != "" {
+		if parsed, err := strconv.ParseBool(raw); err == nil {
+			t.NoHostSANs = parsed
 		}
 	}
 	return t
@@ -674,7 +683,7 @@ func EffectiveCodingSkillsInstallNewCLIs(cfg *Config) bool {
 // It is called automatically by Save.
 func normalize(cfg *Config) {
 	// Nil out TLS block if no cert/key are configured.
-	if cfg.Server.TLS != nil && cfg.Server.TLS.Cert == "" && cfg.Server.TLS.Key == "" && len(cfg.Server.TLS.SANs) == 0 {
+	if cfg.Server.TLS != nil && cfg.Server.TLS.Cert == "" && cfg.Server.TLS.Key == "" && len(cfg.Server.TLS.SANs) == 0 && !cfg.Server.TLS.NoHostSANs {
 		cfg.Server.TLS = nil
 	}
 	// Nil out empty slices/maps so they are omitted from YAML.
