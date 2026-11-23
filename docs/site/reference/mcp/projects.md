@@ -100,13 +100,27 @@ Run a stuck-job watchdog round now, over every stuck job or the one named.
 
 Post an update comment on an issue or pull request. The comment mentions the issue's author and this instance, so the job working it hears it. It never edits the body.
 
-**Arguments:** `number`, `text`, and `repository` (optional; defaults to the repository of the job with that number, or the only watched repository).
+**Arguments:** `number`, `text`, and optional `repository` (defaults to the repository of the job with that number, or the only watched repository), `attachments` and `skip_turn_media`.
+
+Images and videos are uploaded and embedded in the comment. See [Attachments](#attachments).
 
 ## project_issue_create
 
 File an issue through the `gh-create` skill with this instance's identity, and return the new issue's URL.
 
-**Arguments:** `text`, and optional `repository` and `model`.
+**Arguments:** `text`, and optional `repository`, `model`, `attachments` and `skip_turn_media`.
+
+Images and videos are uploaded and embedded in the issue. See [Attachments](#attachments).
+
+### Attachments
+
+`project_issue_create` and `project_issue_comment` attach screenshots and videos instead of describing them.
+
+- By default they attach the images and videos from the user message that started the turn, such as a screenshot sent over Signal or pasted into web chat. Other files in that message, such as voice notes and documents, are left out and listed in `skipped_turn_media`.
+- `attachments` adds local image or video files, as paths or `file://` URLs.
+- `skip_turn_media: true` leaves the turn's media out.
+
+GitHub takes PNG, JPEG, GIF, WebP and SVG images up to 10 MB, and MP4, MOV and WebM videos up to 100 MB. If any file is missing, has another type, or is too large, the call fails with an error that names the file and the reason, and nothing is posted. The result's `attachments` lists the files that were attached. Uploading needs push access to the repository.
 
 ## project_check
 

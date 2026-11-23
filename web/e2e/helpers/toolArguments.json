@@ -298,13 +298,17 @@
 	"project_github_signin": [],
 	"project_github_use_polling": [],
 	"project_issue_comment": [
+		"attachments",
 		"number",
 		"repository",
+		"skip_turn_media",
 		"text"
 	],
 	"project_issue_create": [
+		"attachments",
 		"model",
 		"repository",
+		"skip_turn_media",
 		"text"
 	],
 	"project_job_explain": [
