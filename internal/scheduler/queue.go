@@ -424,6 +424,23 @@ func (q *JobQueue) SetTrigger(id, trigger string) error {
 	return store.WriteJSON(path, &job)
 }
 
+// SetTriggerContext records the channel message that started a workflow run.
+func (q *JobQueue) SetTriggerContext(id string, tc *domain.TriggerContext) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	path := store.FindJobPath(id)
+	if path == "" {
+		return fmt.Errorf("job %s not found", id)
+	}
+	job, err := store.ReadJSON[domain.Job](path)
+	if err != nil {
+		return fmt.Errorf("reading job %s: %w", id, err)
+	}
+	job.TriggerContext = tc
+	return store.WriteJSON(path, &job)
+}
+
 // UpdateOutput persists the text output captured during a job's execution.
 func (q *JobQueue) UpdateOutput(id, output string) error {
 	q.mu.Lock()

@@ -27,6 +27,9 @@ type taskFileFrontmatter struct {
 	Every          string `yaml:"every,omitempty"`
 	At             string `yaml:"at,omitempty"`
 	Days           string `yaml:"days,omitempty"`
+	Channel        string `yaml:"channel,omitempty"`
+	Entry          string `yaml:"entry,omitempty"`
+	Match          string `yaml:"match,omitempty"`
 	Timezone       string `yaml:"timezone,omitempty"`
 	Overlap        string `yaml:"overlap,omitempty"`
 	Missed         string `yaml:"missed,omitempty"`
@@ -85,6 +88,9 @@ func ParseMarkdownTask(defaultName string, data []byte) (TaskConfig, error) {
 	task.Every = fm.Every
 	task.At = fm.At
 	task.Days = fm.Days
+	task.Channel = fm.Channel
+	task.Entry = fm.Entry
+	task.Match = fm.Match
 	task.Timezone = fm.Timezone
 	task.Overlap = fm.Overlap
 	task.Missed = fm.Missed
@@ -140,6 +146,9 @@ func SaveMarkdownTask(dir string, task TaskConfig) (string, error) {
 		Every:          task.Every,
 		At:             task.At,
 		Days:           task.Days,
+		Channel:        task.Channel,
+		Entry:          task.Entry,
+		Match:          task.Match,
 		Timezone:       task.Timezone,
 		Overlap:        task.Overlap,
 		Missed:         task.Missed,

@@ -31,6 +31,7 @@ import {
 	type AgentTask,
 	activeTaskName,
 	agentTaskPath,
+	isWorkflow,
 	taskSessionPath,
 	useSettingsStore,
 } from "../../stores/settings";
@@ -53,7 +54,7 @@ const tasks = computed(() => {
 	const all =
 		settings.config?.agents
 			.find((a) => a.name === props.agent)
-			?.tasks.filter((t) => t.name) ?? [];
+			?.tasks.filter((t) => t.name && !isWorkflow(t)) ?? [];
 	return [
 		...all.filter((t) => !isPaused(t)),
 		...all.filter((t) => isPaused(t)),

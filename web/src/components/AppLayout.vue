@@ -401,6 +401,7 @@ import { useAuthStore } from "../stores/auth";
 import { useChatSessionsStore } from "../stores/chatSessions";
 import {
 	activeTaskName,
+	isWorkflow,
 	taskSessionPath,
 	useSettingsStore,
 } from "../stores/settings";
@@ -820,7 +821,7 @@ function agentItems(agent: string): NavChild[] {
 		const active = activeTaskName(route, agent);
 		// Paused tasks follow the active ones, as in the sidebar.
 		return tasks
-			.filter((t) => t.name)
+			.filter((t) => t.name && !isWorkflow(t))
 			.map((t) => ({
 				key: `task:${t.name}`,
 				label: t.name,

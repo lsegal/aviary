@@ -231,7 +231,22 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				Every: t.Every, At: t.At, Days: t.Days, Timezone: t.Timezone,
 				Overlap: t.Overlap, Missed: t.Missed,
 			}
-			if !fields.HasTrigger() && t.Watch == "" {
+			workflow := t.IsWorkflow()
+			if workflow {
+				// A workflow's trigger is a message, not a schedule.
+				fields = schedule.Fields{}
+				if strings.TrimSpace(t.Channel) == "" {
+					v.errorf(tf+".channel", "workflows require the channel whose messages trigger them")
+				} else if a.ChannelByName(t.Channel) < 0 {
+					v.errorf(tf+".channel", "agent %q has no channel named %q", a.Name, t.Channel)
+				}
+				if t.Watch != "" || t.Schedule != "" || t.Every != "" || t.At != "" || t.Days != "" || t.StartAt != "" || t.RunOnce || t.Missed != "" {
+					v.errorf(tf, "workflows are triggered by messages and cannot also have a schedule or watch")
+				}
+			} else if t.Channel != "" || t.Entry != "" || t.Match != "" {
+				v.errorf(tf, "channel, entry and match are only supported for workflows (trigger: message)")
+			}
+			if !workflow && !fields.HasTrigger() && t.Watch == "" {
 				v.warnf(tf, "neither a schedule trigger nor 'watch' is set; task will never be triggered")
 			}
 
@@ -252,7 +267,7 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				if _, err := schedule.Parse(fields); err != nil {
 					v.errorf(tf+".trigger", "%v (cron accepts standard 5-field cron or 6-field cron with leading seconds, e.g. \"* * * * *\")", err)
 				}
-			} else if t.RunOnce || t.StartAt != "" || t.Timezone != "" || t.Overlap != "" || t.Missed != "" {
+			} else if !workflow && (t.RunOnce || t.StartAt != "" || t.Timezone != "" || t.Overlap != "" || t.Missed != "") {
 				v.errorf(tf, "run_once, timezone, overlap and missed are only supported for scheduled tasks")
 			}
 
@@ -273,11 +288,17 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 					v.errorf(tf+".prompt", "project tasks require non-empty prompt content")
 				}
 			}
-			if taskType != "project" && (t.Project != "" || t.Model != "") {
-				v.errorf(tf, "project and model are only supported for project tasks")
+			if taskType == "project" && workflow {
+				v.errorf(tf+".type", "workflows run prompt or script content, not project tasks")
+			}
+			if taskType != "project" && (t.Project != "" || (t.Model != "" && !workflow)) {
+				v.errorf(tf, "project and model are only supported for project tasks and workflows")
 			}
 			if taskType != "project" && (t.Precompile != nil || t.Compiled != "" || t.CompiledKey != "") {
 				v.errorf(tf, "precompile, compiled and compiled_key are only supported for project tasks; prompt tasks are compiled into script tasks")
+			}
+			if model := strings.TrimSpace(t.Model); model != "" && workflow {
+				v.checkModel(tf+".model", model)
 			}
 			if model := strings.TrimSpace(t.Model); model != "" && taskType == "project" {
 				v.checkProjectTaskModel(tf+".model", model)
@@ -291,8 +312,12 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				}
 			}
 
-			if !validTaskTarget(t.Target) {
-				v.errorf(tf+".target", "invalid value %q; must be empty, \"silent\", session:<name-or-id>, or channel:<channel name>", t.Target)
+			if IsReplyTarget(t.Target) {
+				if !workflow {
+					v.errorf(tf+".target", "only workflows can reply to the conversation that triggered them")
+				}
+			} else if !validTaskTarget(t.Target) {
+				v.errorf(tf+".target", "invalid value %q; must be empty, \"silent\", \"reply\" (workflows), session:<name-or-id>, or channel:<channel name>", t.Target)
 			} else if name, ok := ChannelTargetName(t.Target); ok && a.ChannelByName(name) < 0 {
 				v.errorf(tf+".target", "agent %q has no channel named %q", a.Name, name)
 			}
@@ -300,10 +325,19 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 	}
 }
 
+// ReplyTarget is a workflow's delivery target that answers in the
+// conversation whose message triggered the run.
+const ReplyTarget = "reply"
+
+// IsReplyTarget reports whether target is ReplyTarget.
+func IsReplyTarget(target string) bool {
+	return strings.EqualFold(strings.TrimSpace(target), ReplyTarget)
+}
+
 // ValidTaskTarget reports whether target is a valid task delivery target:
 // empty, "silent", "session:<name-or-id>", or "channel:<channel name>".
 func ValidTaskTarget(target string) bool {
-	return validTaskTarget(target)
+	return IsReplyTarget(target) || validTaskTarget(target)
 }
 
 func validTaskTarget(target string) bool {

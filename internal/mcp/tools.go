@@ -134,6 +134,7 @@ func Register(s *sdkmcp.Server) {
 	registerRulesTools(s)
 	registerSessionTools(s)
 	registerChannelTools(s)
+	registerWorkflowTools(s)
 	registerSessionSendTool(s)
 	registerTaskTools(s)
 	registerAgentContextTools(s)
@@ -923,15 +924,16 @@ func registerSessionTools(s *sdkmcp.Server) {
 		}
 
 		type messageDTO struct {
-			ID         string                `json:"id"`
-			SessionID  string                `json:"session_id"`
-			Role       string                `json:"role"`
-			Sender     *domain.MessageSender `json:"sender,omitempty"`
-			Content    string                `json:"content"`
-			MediaURLs  []string              `json:"media_urls,omitempty"`
-			Model      string                `json:"model,omitempty"`
-			ResponseID string                `json:"response_id,omitempty"`
-			Timestamp  string                `json:"timestamp"`
+			ID         string                   `json:"id"`
+			SessionID  string                   `json:"session_id"`
+			Role       string                   `json:"role"`
+			Sender     *domain.MessageSender    `json:"sender,omitempty"`
+			Content    string                   `json:"content"`
+			MediaURLs  []string                 `json:"media_urls,omitempty"`
+			Model      string                   `json:"model,omitempty"`
+			ResponseID string                   `json:"response_id,omitempty"`
+			Workflows  []domain.MessageWorkflow `json:"workflows,omitempty"`
+			Timestamp  string                   `json:"timestamp"`
 		}
 
 		responseIDs := make(map[string]string)
@@ -961,6 +963,7 @@ func registerSessionTools(s *sdkmcp.Server) {
 				MediaURLs:  msg.MediaURLs,
 				Model:      msg.Model,
 				ResponseID: responseID,
+				Workflows:  msg.Workflows,
 				Timestamp:  ts,
 			})
 		}
@@ -1301,7 +1304,11 @@ type taskScheduleArgs struct {
 // taskTriggerArgs are the scheduler options shared by task_schedule and
 // task_preview.
 type taskTriggerArgs struct {
-	Trigger  string `json:"trigger,omitempty" schema:"enum=once|interval|daily|weekly|cron"`
+	Trigger string `json:"trigger,omitempty" schema:"enum=once|interval|daily|weekly|cron|message"`
+	// Channel, Entry and Match configure a workflow (trigger=message).
+	Channel  string `json:"channel,omitempty"`
+	Entry    string `json:"entry,omitempty"`
+	Match    string `json:"match,omitempty"`
 	Every    string `json:"every,omitempty"`
 	At       string `json:"at,omitempty"`
 	Days     string `json:"days,omitempty"`
@@ -1361,7 +1368,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, or channel:<channel name> (e.g. channel:Team Slack), which lands in that channel's own session — an agent name like \"assistant\" is not a valid target. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled; a project task keeps its prompt and, when precompiled, runs its compiled script in the clone, falling back to the model if the script fails. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction. Instead of schedule, a recurring task may use trigger=interval with every=<duration> (e.g. 30m, 2h, 1d), trigger=daily with at=HH:MM (comma-separate several times), trigger=weekly with days=mon,wed and at=HH:MM, or trigger=once with start_at. timezone=<IANA zone> sets the zone triggers are evaluated in; set it only when the user names a zone. overlap=skip drops a fire while the previous run is still active (default queue); missed=run_once runs one catch-up fire for runs missed while Aviary was stopped or the machine slept (default skip). Use task_preview to check the next fires. type=project runs content as a Code Loop job on the board of project=<watched project> (owner/repo) in an isolated clone, with cli=<model spec such as claude:opus> or the project's agent; it needs a schedule trigger.",
+		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, or channel:<channel name> (e.g. channel:Team Slack), which lands in that channel's own session — an agent name like \"assistant\" is not a valid target. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled; a project task keeps its prompt and, when precompiled, runs its compiled script in the clone, falling back to the model if the script fails. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction. Instead of schedule, a recurring task may use trigger=interval with every=<duration> (e.g. 30m, 2h, 1d), trigger=daily with at=HH:MM (comma-separate several times), trigger=weekly with days=mon,wed and at=HH:MM, or trigger=once with start_at. timezone=<IANA zone> sets the zone triggers are evaluated in; set it only when the user names a zone. overlap=skip drops a fire while the previous run is still active (default queue); missed=run_once runs one catch-up fire for runs missed while Aviary was stopped or the machine slept (default skip). Use task_preview to check the next fires. trigger=message defines a workflow instead: it runs when a message arrives on the agent's channel=<channel name> (optionally only on entry=<conversation ID>, such as a Slack channel ID or Signal number or group; see workflow_entries) whose text matches match=<case-insensitive wildcard; * and ?; empty matches every message>, and it replaces the agent's own chat reply to that message. Workflows take no schedule; target may also be \"reply\" to answer in the triggering conversation, model overrides the agent's model, and overlap applies as for scheduled tasks. Use workflow_preview to test a match against recent messages. type=project runs content as a Code Loop job on the board of project=<watched project> (owner/repo) in an isolated clone, with cli=<model spec such as claude:opus> or the project's agent; it needs a schedule trigger.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
@@ -1375,6 +1382,12 @@ func registerTaskTools(s *sdkmcp.Server) {
 			if _, ok := d.Agents.Get(args.Agent); !ok {
 				return nil, struct{}{}, fmt.Errorf("agent %q not found; use agent_list to see available agents", args.Agent)
 			}
+		}
+		if strings.EqualFold(strings.TrimSpace(args.Trigger), config.TriggerMessage) {
+			return createWorkflow(args)
+		}
+		if args.Channel != "" || args.Entry != "" || args.Match != "" {
+			return nil, struct{}{}, fmt.Errorf("channel, entry and match are only supported for workflows (trigger=message)")
 		}
 		taskType := strings.ToLower(strings.TrimSpace(args.Type))
 		if taskType == "" {
@@ -1419,6 +1432,9 @@ func registerTaskTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, loadErr
 		}
 		target := normalizeTaskTarget(args.Target)
+		if config.IsReplyTarget(target) {
+			return nil, struct{}{}, fmt.Errorf("only workflows can reply to the conversation that triggered them; use trigger=message")
+		}
 		if target != "" && !config.ValidTaskTarget(target) {
 			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", session:<name-or-id>, or channel:<channel name>", args.Target)
 		}

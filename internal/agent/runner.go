@@ -252,6 +252,10 @@ func (r *AgentRunner) promptCore(
 			AgentID:   r.agent.ID,
 			Model:     effectiveModel,
 			Provider:  extractProvider(effectiveModel),
+			Channel:   UsageChannelFromContext(promptCtx),
+		}
+		if taskID, ok := TaskIDFromContext(promptCtx); ok {
+			usageRec.Task = taskID
 		}
 		defer func() {
 			if usageRec.InputTokens > 0 || usageRec.OutputTokens > 0 || usageRec.HasError || usageRec.HasThrottle {

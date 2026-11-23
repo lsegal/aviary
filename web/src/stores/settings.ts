@@ -107,6 +107,12 @@ export interface AgentTask {
 	overlap?: "queue" | "skip";
 	missed?: "skip" | "run_once";
 	watch?: string;
+	/** A workflow's channel (trigger "message"): the agent's channel whose messages run it. */
+	channel?: string;
+	/** The conversation on the channel a workflow watches; empty watches every conversation. */
+	entry?: string;
+	/** Case-insensitive wildcard a message must match to run a workflow; empty matches every message. */
+	match?: string;
 	target?: string;
 	/** The project of this agent's that a "project" task runs its prompt against. */
 	project?: string;
@@ -204,6 +210,11 @@ export interface AppConfig {
 export function agentTaskPath(agent: string, task = "") {
 	const path = `/agents/${encodeURIComponent(agent)}/tasks`;
 	return task ? { path, query: { task } } : { path };
+}
+
+/** Whether task is a workflow: run by a matching channel message, not a schedule. */
+export function isWorkflow(task: Pick<AgentTask, "trigger">): boolean {
+	return (task.trigger ?? "").trim().toLowerCase() === "message";
 }
 
 /** A task's session, which every run of the task shares. */

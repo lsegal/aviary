@@ -264,12 +264,25 @@
 							data-testid="channel-settings"
 							aria-labelledby="agent-settings-channels-heading" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
 							<div class="flex items-center justify-between border-b border-gray-200 px-5 py-2 dark:border-gray-700">
-								<h3 id="agent-settings-channels-heading" class="py-1 text-sm font-semibold text-gray-800 dark:text-gray-200">Channel</h3>
+								<div class="flex items-center gap-4">
+									<h3 id="agent-settings-channels-heading" class="py-1 text-sm font-semibold text-gray-800 dark:text-gray-200">Channel</h3>
+									<nav v-if="selectedChannel" role="tablist" aria-label="Channel settings" class="flex gap-1" data-testid="channel-settings-tabs">
+										<router-link v-for="t in CHANNEL_TABS" :key="t.value" role="tab" :data-testid="`channel-tab-${t.value}`"
+											:aria-selected="channelTab === t.value" :to="{ query: t.value === 'settings' ? {} : { tab: t.value } }"
+											class="rounded-md px-2.5 py-1 text-xs font-medium"
+											:class="channelTab === t.value ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'">
+											{{ t.label }}
+										</router-link>
+									</nav>
+								</div>
 								<router-link v-if="selectedChannel" :to="channelPath(agent.name, channelName(selectedChannel))"
 									data-testid="channel-open-conversation"
 									class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Open conversation</router-link>
 							</div>
-							<div class="space-y-4 p-5">
+							<div v-if="selectedChannel && !channelNotFound && channelTab === 'workflows'" class="p-5">
+								<ChannelWorkflows :agent="agent.name" :channel="selectedChannel" />
+							</div>
+							<div v-else class="space-y-4 p-5">
 							<p v-if="channelNotFound || !selectedChannel"
 								class="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
 								No channel named {{ $route.params.channel }}.
@@ -849,12 +862,14 @@ import {
 	SwitchRoot,
 	SwitchThumb,
 } from "radix-vue";
-import { type Component, defineComponent, inject } from "vue";
+import { type Component, computed, defineComponent, inject } from "vue";
+import { useRoute } from "vue-router";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
 import { channelName, channelPath } from "../../lib/channels";
 import { projectOwner } from "../../lib/projectSettings";
 import { projectPath } from "../../lib/projects";
 import { type AgentTask, useSettingsStore } from "../../stores/settings";
+import ChannelWorkflows from "../channels/ChannelWorkflows.vue";
 import FilePreviewSplit from "../files/FilePreviewSplit.vue";
 import FilePreviewToggle from "../files/FilePreviewToggle.vue";
 import MessagingLogo from "../MessagingLogo.vue";
@@ -877,6 +892,7 @@ export default defineComponent({
 		DropdownMenuTrigger,
 		AppCombobox,
 		AppSelect,
+		ChannelWorkflows,
 		FilePreviewSplit,
 		FilePreviewToggle,
 		MessagingLogo,
@@ -917,6 +933,16 @@ export default defineComponent({
 			{ value: "script", label: "Script" },
 			{ value: "project", label: "Project" },
 		];
+		// A channel's settings are split into its connection settings and
+		// its workflows, picked by ?tab=.
+		const CHANNEL_TABS = [
+			{ value: "settings", label: "Settings" },
+			{ value: "workflows", label: "Workflows" },
+		];
+		const route = useRoute();
+		const channelTab = computed(() =>
+			route.query.tab === "workflows" ? "workflows" : "settings",
+		);
 		const agentFileHint =
 			"Root-level .md only. AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md are built in and cannot be renamed or deleted.";
 		const store = useSettingsStore();
@@ -1000,6 +1026,8 @@ export default defineComponent({
 			return "Conversation ID";
 		};
 		return Object.assign(settings, {
+			CHANNEL_TABS,
+			channelTab,
 			channelDeliverToPlaceholder,
 			channelName,
 			channelPath,

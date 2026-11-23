@@ -47,6 +47,12 @@ type WorkerPool struct {
 	projectCompiler ProjectTaskCompiler
 	// projectScriptReporter records how each precompiled script run ended.
 	projectScriptReporter ProjectTaskScriptReporter
+	// workflowReply sends a workflow run's output back to the conversation
+	// whose message triggered it, for the "reply" target.
+	workflowReply func(agentName string, tc domain.TriggerContext, text string) error
+	// workflowAfter returns the messages that followed a workflow's
+	// triggering message, recorded with the run when it ends.
+	workflowAfter func(agentName string, tc domain.TriggerContext) []domain.TriggerMessage
 }
 
 // ProjectRun is one fire of a "project" task: its prompt, run as a job on the
@@ -309,13 +315,19 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 	ctx = agent.WithSessionAgentID(ctx, job.AgentID)
 	ctx = agent.WithTaskID(ctx, job.TaskID)
 	ctx = agent.WithJobID(ctx, job.ID)
+	if tc := job.TriggerContext; tc != nil {
+		// Usage is attributed to the workflow and the channel that fired it.
+		ctx = agent.WithUsageChannel(ctx, tc.Channel)
+		defer p.recordWorkflowAfter(job)
+	}
+	deliver := p.deliverFor(job)
 
 	taskType, prompt, _ := resolveTaskExecution(job, runner.Config())
 	if taskType == "project" {
 		return p.executeProjectJob(ctx, job, runner.Config())
 	}
 	if taskType == "script" {
-		result, err := executeScriptJob(ctx, job, runner.Config(), p.deliver)
+		result, err := executeScriptJob(ctx, job, runner.Config(), deliver)
 		if result.Logs != "" {
 			if persistErr := p.queue.UpdateOutput(job.ID, result.Logs); persistErr != nil {
 				slog.Warn("job: failed to persist output", "id", job.ID, "err", persistErr)
@@ -340,8 +352,9 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 	live := &liveJobOutput{jobID: job.ID, agentID: job.AgentID}
 	startedAt := time.Now().UTC()
 	idle := taskIdleTimeout(job, runner.Config())
+	overrides := agent.RunOverrides{Model: workflowModel(job, runner.Config())}
 	runErr := runPromptWatched(ctx, idle, func(ctx context.Context, consume agent.StreamConsumer) {
-		runner.Prompt(ctx, prompt, consume)
+		runner.PromptWithOverrides(ctx, prompt, overrides, consume)
 	}, func(e agent.StreamEvent) {
 		switch e.Type {
 		case agent.StreamEventText:
@@ -403,8 +416,8 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 				slog.Warn("job: failed to send reply to session", "id", job.ID, "session", job.ReplySessionID, "err", err)
 			}
 		}
-		if agent.ShouldDeliverReply(replyOutput) && job.OutputChannel != "" && p.deliver != nil {
-			if err := p.deliver(job.AgentID, job.OutputChannel, replyOutput); err != nil {
+		if agent.ShouldDeliverReply(replyOutput) && job.OutputChannel != "" && deliver != nil {
+			if err := deliver(job.AgentID, job.OutputChannel, replyOutput); err != nil {
 				slog.Warn("job: failed to deliver output to task channel", "id", job.ID, "route", job.OutputChannel, "err", err)
 			}
 		}
@@ -514,7 +527,7 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 		if persistErr := p.queue.UpdateOutput(job.ID, summary); persistErr != nil {
 			slog.Warn("job: failed to persist output", "id", job.ID, "err", persistErr)
 		}
-		if deliverErr := recordTaskOutput(job, summary, p.deliver); deliverErr != nil {
+		if deliverErr := recordTaskOutput(job, summary, p.deliverFor(job)); deliverErr != nil {
 			slog.Warn("job: failed to deliver project task output", "id", job.ID, "route", job.OutputChannel, "err", deliverErr)
 		}
 	}
@@ -555,6 +568,58 @@ func (p *WorkerPool) runCompiledProjectTask(ctx context.Context, job *domain.Job
 	scriptJob.Script = script
 	output, err = executeScriptJobOutput(ctx, &scriptJob, logf)
 	return output, true, err
+}
+
+// deliverFor returns how job's output reaches its target: the "reply" target
+// of a workflow run answers in the conversation that triggered it, and every
+// other target goes through the task output delivery.
+func (p *WorkerPool) deliverFor(job *domain.Job) func(agentName, route, text string) error {
+	return func(agentName, route, text string) error {
+		if !config.IsReplyTarget(route) {
+			if p.deliver == nil {
+				return nil
+			}
+			return p.deliver(agentName, route, text)
+		}
+		if job.TriggerContext == nil {
+			return fmt.Errorf("only a run triggered by a channel message can reply to it")
+		}
+		if p.workflowReply == nil {
+			return errors.New("workflow replies are not available")
+		}
+		return p.workflowReply(agentName, *job.TriggerContext, text)
+	}
+}
+
+// workflowModel is the model override of the workflow job runs, or "".
+func workflowModel(job *domain.Job, cfg *config.AgentConfig) string {
+	if job.TriggerContext == nil || cfg == nil {
+		return ""
+	}
+	name := jobSessionName(job)
+	for _, task := range cfg.Tasks {
+		if task.Name == name && task.IsWorkflow() {
+			return strings.TrimSpace(task.Model)
+		}
+	}
+	return ""
+}
+
+// recordWorkflowAfter records the messages that followed a workflow run's
+// triggering message once the run ends, completing its trigger context.
+func (p *WorkerPool) recordWorkflowAfter(job *domain.Job) {
+	if p.workflowAfter == nil || job.TriggerContext == nil {
+		return
+	}
+	after := p.workflowAfter(job.AgentID, *job.TriggerContext)
+	if len(after) == 0 {
+		return
+	}
+	tc := *job.TriggerContext
+	tc.After = after
+	if err := p.queue.SetTriggerContext(job.ID, &tc); err != nil {
+		slog.Warn("job: failed to record messages after the trigger", "id", job.ID, "err", err)
+	}
 }
 
 // SetTaskOutputDelivery configures the callback used to forward completed task output.

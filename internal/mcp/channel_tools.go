@@ -309,9 +309,20 @@ func retargetChannel(cfg *config.Config, agentName, oldName, newName string) {
 	for i := range cfg.Agents {
 		a := &cfg.Agents[i]
 		if a.Name == agentName {
-			for j := range a.Tasks {
-				a.Tasks[j].Target = move(a.Tasks[j].Target)
+			kept := a.Tasks[:0]
+			for _, t := range a.Tasks {
+				t.Target = move(t.Target)
+				if t.IsWorkflow() && strings.EqualFold(strings.TrimSpace(t.Channel), oldName) {
+					if newName == "" {
+						// A workflow belongs to its channel and goes with it.
+						removeWorkflowFile(*a, t)
+						continue
+					}
+					t.Channel = newName
+				}
+				kept = append(kept, t)
 			}
+			a.Tasks = kept
 		}
 		for j := range a.Projects {
 			reports := a.Projects[j].Reports
@@ -328,6 +339,19 @@ func retargetChannel(cfg *config.Config, agentName, oldName, newName string) {
 			if len(kept) == 0 {
 				a.Projects[j].Reports = nil
 			}
+		}
+	}
+}
+
+// removeWorkflowFile deletes the definition file of a workflow whose channel
+// is being removed.
+func removeWorkflowFile(a config.AgentConfig, t config.TaskConfig) {
+	if !t.FromFile {
+		return
+	}
+	if path, err := config.FindMarkdownTask(config.AgentTasksDir(a), t.Name); err == nil {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			slog.Warn("channel: removing workflow file failed", "path", path, "err", err)
 		}
 	}
 }
@@ -362,7 +386,7 @@ func saveChannelConfig(prev, cfg *config.Config) error {
 				continue
 			}
 			onDisk, err := config.LoadMarkdownTask(path)
-			if err != nil || onDisk.Target == t.Target {
+			if err != nil || (onDisk.Target == t.Target && onDisk.Channel == t.Channel) {
 				continue
 			}
 			written, err := config.SaveMarkdownTask(dir, t)

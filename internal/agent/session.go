@@ -626,6 +626,21 @@ func AppendMediaMessageToSessionWithSender(agentID, sessionID string, role domai
 	})
 }
 
+// AppendWorkflowMessageToSession records a channel message that workflows
+// handled in place of the agent's chat reply, naming those workflows and
+// their runs, at time at.
+func AppendWorkflowMessageToSession(agentID, sessionID, content string, mediaURLs []string, sender *domain.MessageSender, workflows []domain.MessageWorkflow, at time.Time) error {
+	return appendSessionMessage(agentID, sessionID, domain.Message{
+		ID:        newID("msg"),
+		Role:      domain.MessageRoleUser,
+		Sender:    sender,
+		Content:   content,
+		MediaURLs: mediaURLs,
+		Workflows: workflows,
+		Timestamp: at,
+	})
+}
+
 // newID generates a simple timestamped ID with a prefix.
 func newID(prefix string) string {
 	return fmt.Sprintf("%s_%d_%d", prefix, time.Now().UnixNano(), idCounter.Add(1))

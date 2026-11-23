@@ -526,7 +526,7 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 			logFn(IncomingMessage{
 				Type:          "slack",
 				From:          from,
-				SenderName:    from,
+				SenderName:    c.displayNameForUser(from),
 				Channel:       channelID,
 				ThreadTS:      threadTS,
 				IsThreadReply: isThreadReply,

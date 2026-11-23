@@ -112,6 +112,22 @@ func TaskIDFromContext(ctx context.Context) (string, bool) {
 	return v, true
 }
 
+type usageChannelKey struct{}
+
+// WithUsageChannel stores the channel a workflow run's usage is attributed to.
+func WithUsageChannel(ctx context.Context, channel string) context.Context {
+	if channel == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, usageChannelKey{}, channel)
+}
+
+// UsageChannelFromContext returns the channel set by WithUsageChannel.
+func UsageChannelFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(usageChannelKey{}).(string)
+	return v
+}
+
 // WithJobID stores the current scheduled job ID in context.
 func WithJobID(ctx context.Context, jobID string) context.Context {
 	if jobID == "" {

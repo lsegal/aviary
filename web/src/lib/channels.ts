@@ -29,6 +29,17 @@ export function channelSettingsPath(agent: string, name: string): string {
 	return `${channelPath(agent, name)}/settings`;
 }
 
+/** The channel's Workflows settings tab, optionally opened on one workflow. */
+export function workflowSettingsPath(
+	agent: string,
+	channel: string,
+	workflow = "",
+): { path: string; query: Record<string, string> } {
+	const query: Record<string, string> = { tab: "workflows" };
+	if (workflow) query.workflow = workflow;
+	return { path: channelSettingsPath(agent, channel), query };
+}
+
 /** A channel's session, from channel_sessions. */
 export interface ChannelSession {
 	id: string;

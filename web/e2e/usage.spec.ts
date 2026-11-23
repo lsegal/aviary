@@ -119,6 +119,34 @@ test("lists sessions by name instead of by ID", async ({ page }) => {
 	});
 });
 
+test("attributes workflow runs to the workflow and its channel", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		usage_query: [
+			{
+				timestamp: new Date().toISOString(),
+				session_id: "task-session",
+				agent_id: "assistant",
+				model: "anthropic/claude-sonnet-5-5",
+				provider: "anthropic",
+				input_tokens: 100,
+				output_tokens: 20,
+				task: "assistant/triage",
+				channel: "Team Slack",
+			},
+		],
+		session_list: [],
+	});
+	await page.goto("/system/usage");
+	await expect(page.getByTestId("usage-session-name")).toHaveText(
+		"Workflow triage · Team Slack",
+	);
+});
+
 test("summarizes project outcomes and wall time apart from token metrics", async ({
 	page,
 }) => {

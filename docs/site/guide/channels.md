@@ -20,6 +20,8 @@ Each agent's **Channels** section lists its channels:
 
 Channel sessions live under their channel, not under **Chats**.
 
+With no channel picked, the **Channels** page shows an overview: every workflow of the agent as a card, with its active or paused state, its last run's result and the running animation, and below them each channel's recent messages under a heading that opens that channel's chat.
+
 For the exact `agents[].channels` schema, see the [Configuration Reference](/reference/config#agents-channels).
 
 ## Channel Basics
@@ -63,6 +65,42 @@ Slack, Discord, and Signal handle files sent with a message the same way. Every 
 - PDFs go to the model as documents on providers that read them natively: Anthropic, Gemini, and OpenAI (`openai` and `openai-codex`) models that take file input. On OpenAI-compatible endpoints such as Ollama and vLLM, older OpenAI models, and CLI agents, the agent gets the saved path.
 - Session history keeps the placeholder, not the file's contents.
 - Voice notes and other audio are transcribed with a local whisper.cpp engine, and the transcript is added before the placeholder as `[voice message 0:12, transcribed]: …`. See [Voice Messages](./voice.md).
+
+## Workflows
+
+A workflow is a channel automation that works like a [scheduled task](./scheduled-tasks.md), but runs when a message arrives on the channel instead of on a schedule. For example, a workflow can triage every message containing "crash" in a Slack channel and reply in the same conversation.
+
+Add, edit, pause, resume and delete a channel's workflows in its settings, on the **Workflows** tab. The form is the task form, with a trigger in place of the schedule:
+
+- **Source entry** is the conversation to watch: a Slack or Discord channel, or a Signal contact or group. Empty watches every conversation on the channel.
+- **Text match** is a case-insensitive wildcard over the whole message text: `*` matches anything (including line breaks) and `?` one character. `*crash*` matches every message containing "crash". Empty matches every message, like `*`.
+- **Would match** tests the current text match against the entry's recent messages as you type.
+- **Model override**, **Send Via** and **While a run is active** work as they do for tasks. Send Via can be **silent**, **reply to the source conversation**, a session, or another channel.
+
+When a message matches one or more active workflows, **the workflows replace the agent's own reply**: every matching workflow runs, in name order, and the agent does not answer the message itself. Whether anything is said back is up to each workflow's Send Via. The message is still recorded in the channel's conversation, marked **Handled by workflow** with a link to each run. The agent replies as usual only when no active workflow matches. Paused workflows never match, so a message that matches only paused workflows gets the normal reply. A workflow with an empty text match takes over every message on its entry, and the form says so.
+
+Workflows only see messages the channel accepts through its `allow_from` rules, and never run on the agent's own messages, so a workflow cannot loop on its replies.
+
+Each run goes through the same job queue as scheduled tasks, with the same run history, logs, statuses and overlap handling. A prompt workflow's run gets the triggering message, and the few messages before it, below its prompt. Each run records its **trigger context**: the channel and entry, the sender's display name (never a raw ID or phone number), the message and its attachments, timestamps, and the messages just before and after it. Usage records attribute each run's tokens to the workflow and its channel.
+
+In the channel's chat, its workflows show as cards above the conversation, active ones first. **Hide paused** filters out paused workflows, and the strip collapses to icons; both choices are remembered. While a workflow is triggered (a run queued) or running, a colored segment travels clockwise around its card, amber while triggered and blue while running. Under `prefers-reduced-motion` the card gets a static colored border instead. Clicking a card opens the workflow's page: live logs for the current run, previous runs with their results, each run's trigger context, and **Run now**, **Pause** and settings.
+
+In YAML or a task file, a workflow is a task with `trigger: message`:
+
+```yaml
+agents:
+  - name: lobby
+    tasks:
+      - name: triage-crashes
+        trigger: message
+        channel: Team Slack   # the agent's channel, by name or ID
+        entry: C0123456789    # optional: one conversation on it
+        match: "*crash*"      # optional: empty matches every message
+        target: reply         # silent (empty), reply, session:<name>, or channel:<name>
+        prompt: Triage this crash report and reply with next steps.
+```
+
+Renaming a channel moves its workflows along, and removing a channel deletes them.
 
 ## Slack
 

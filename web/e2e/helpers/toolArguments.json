@@ -473,9 +473,12 @@
 	"task_preview": [
 		"agent",
 		"at",
+		"channel",
 		"count",
 		"days",
+		"entry",
 		"every",
+		"match",
 		"missed",
 		"name",
 		"overlap",
@@ -491,10 +494,13 @@
 	"task_schedule": [
 		"agent",
 		"at",
+		"channel",
 		"content",
 		"days",
+		"entry",
 		"every",
 		"in",
+		"match",
 		"missed",
 		"model",
 		"name",
@@ -527,10 +533,13 @@
 	"task_update": [
 		"agent",
 		"at",
+		"channel",
 		"content",
 		"days",
 		"enabled",
+		"entry",
 		"every",
+		"match",
 		"missed",
 		"model",
 		"name",
@@ -552,5 +561,16 @@
 	"web_search": [
 		"count",
 		"query"
+	],
+	"workflow_entries": [
+		"agent",
+		"channel"
+	],
+	"workflow_preview": [
+		"agent",
+		"channel",
+		"entry",
+		"limit",
+		"match"
 	]
 }

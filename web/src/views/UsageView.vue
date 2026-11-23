@@ -251,7 +251,7 @@
                 <td class="px-5 py-2.5">
                   <span class="flex items-center gap-1.5">
                     <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="s.has_error ? 'bg-red-500' : s.has_throttle ? 'bg-amber-500' : 'bg-green-500'" />
-                    <span data-testid="usage-session-name" class="text-gray-700 dark:text-gray-300">{{ sessionLabel(s.agent_id, s.session_id) }}</span>
+                    <span data-testid="usage-session-name" class="text-gray-700 dark:text-gray-300">{{ sessionLabel(s.agent_id, s.session_id, s.task, s.channel) }}</span>
                   </span>
                 </td>
                 <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ s.agent_id }}</td>
@@ -297,7 +297,16 @@ watch(
 	{ immediate: true },
 );
 
-function sessionLabel(agent: string, id: string): string {
+function sessionLabel(
+	agent: string,
+	id: string,
+	task?: string,
+	channel?: string,
+): string {
+	// A workflow run is named after its workflow and the channel that fired it.
+	const taskName = task?.slice(task.indexOf("/") + 1);
+	if (taskName && channel) return `Workflow ${taskName} · ${channel}`;
+	if (taskName) return `Task ${taskName}`;
 	const sess = chatSessions.sessions(agent).find((s) => s.id === id);
 	if (sess) return chatDisplayName(sess);
 	if (agent in chatSessions.byAgent) return "Deleted session";

@@ -225,7 +225,7 @@ A plain string in `allow_from` is equivalent to `{ from: "<string>" }`.
 
 ### agents[].tasks
 
-A list of scheduled or file-watch tasks for this agent.
+A list of scheduled, file-watch or message-triggered tasks for this agent. A task with `trigger: message` is a [workflow](/guide/channels#workflows).
 
 ```yaml
 tasks:
@@ -255,7 +255,12 @@ tasks:
 | `watch` | string | | File glob pattern; the task runs when matching files change |
 | `prompt` | string | | Prompt text sent to the agent (for `type: prompt`) |
 | `script` | string | | Lua script executed directly (for `type: script`) |
-| `target` | string | | Target session or output destination. Use `session:<name>` for a session or `channel:<name>` for one of the agent's channels, which delivers into that channel's session. |
+| `target` | string | | Target session or output destination. Use `session:<name>` for a session or `channel:<name>` for one of the agent's channels, which delivers into that channel's session. Workflows may also use `reply`, which answers in the conversation that triggered the run. |
+| `trigger` | string | | `once`, `interval`, `daily`, `weekly` or `cron` for a schedule, or `message` for a workflow |
+| `channel` | string | | Workflows: the agent's channel, by name or ID, whose messages run it |
+| `entry` | string | | Workflows: the conversation on the channel to watch; empty watches every conversation |
+| `match` | string | | Workflows: case-insensitive wildcard (`*`, `?`) the whole message must match; empty matches every message |
+| `model` | string | | Project tasks and workflows: a model override for the task's runs |
 
 ### agents[].projects
 

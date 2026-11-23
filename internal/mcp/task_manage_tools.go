@@ -40,7 +40,10 @@ type taskUpdateArgs struct {
 	Content  *string `json:"content,omitempty"`
 	Target   *string `json:"target,omitempty"`
 	Schedule *string `json:"schedule,omitempty"`
-	Trigger  *string `json:"trigger,omitempty" schema:"enum=once|interval|daily|weekly|cron|"`
+	Trigger  *string `json:"trigger,omitempty" schema:"enum=once|interval|daily|weekly|cron|message|"`
+	Channel  *string `json:"channel,omitempty"`
+	Entry    *string `json:"entry,omitempty"`
+	Match    *string `json:"match,omitempty"`
 	Every    *string `json:"every,omitempty"`
 	At       *string `json:"at,omitempty"`
 	Days     *string `json:"days,omitempty"`
@@ -95,7 +98,7 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 	registerTaskUpcomingTool(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_update",
-		Description: "Change fields of an existing scheduled task. name may be <agent>/<task> or a task name (add agent to disambiguate). Only the fields you pass change; pass an empty string to clear a field. Trigger fields: schedule (cron), trigger (once|interval|daily|weekly|cron), every, at (HH:MM), days (mon,wed), timezone (IANA), start_at, run_once, overlap (queue|skip), missed (skip|run_once). Project tasks also take project (watched owner/repo), model (model spec), and precompile (run a compiled script in the clone when the prompt is deterministic, falling back to the model). Use enabled=false to pause a task without deleting it.",
+		Description: "Change fields of an existing scheduled task. name may be <agent>/<task> or a task name (add agent to disambiguate). Only the fields you pass change; pass an empty string to clear a field. Trigger fields: schedule (cron), trigger (once|interval|daily|weekly|cron), every, at (HH:MM), days (mon,wed), timezone (IANA), start_at, run_once, overlap (queue|skip), missed (skip|run_once). Project tasks also take project (watched owner/repo), model (model spec), and precompile (run a compiled script in the clone when the prompt is deterministic, falling back to the model). Use enabled=false to pause a task without deleting it. Workflows (trigger=message) take channel, entry and match instead of a schedule, model, and target \"reply\".",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpdateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		_, agentCfg, task, err := findConfiguredTask(args.Agent, args.Name)
 		if err != nil {
@@ -124,6 +127,11 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 		set(&task.Overlap, args.Overlap)
 		set(&task.Missed, args.Missed)
 		set(&task.Watch, args.Watch)
+		set(&task.Channel, args.Channel)
+		set(&task.Entry, args.Entry)
+		if args.Match != nil {
+			task.Match = strings.TrimSpace(*args.Match)
+		}
 		set(&task.Project, args.Project)
 		set(&task.Model, args.Model)
 		if args.RunOnce != nil {
@@ -147,16 +155,33 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 		task.Missed = strings.ToLower(task.Missed)
 
 		if task.Target != "" && !config.ValidTaskTarget(task.Target) {
-			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", session:<name-or-id>, or channel:<channel name>", task.Target)
+			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", \"reply\" (workflows), session:<name-or-id>, or channel:<channel name>", task.Target)
 		}
 		if strings.EqualFold(task.Type, "project") && task.Project == "" {
 			return nil, struct{}{}, fmt.Errorf("project tasks require a project")
 		}
-		if !strings.EqualFold(task.Type, "project") && (task.Project != "" || task.Model != "") {
-			return nil, struct{}{}, fmt.Errorf("project and model are only supported for project tasks")
+		workflow := task.IsWorkflow()
+		if !strings.EqualFold(task.Type, "project") && (task.Project != "" || (task.Model != "" && !workflow)) {
+			return nil, struct{}{}, fmt.Errorf("project and model are only supported for project tasks and workflows")
+		}
+		if config.IsReplyTarget(task.Target) && !workflow {
+			return nil, struct{}{}, fmt.Errorf("only workflows can reply to the conversation that triggered them")
 		}
 		fields := scheduler.TaskFields(task)
 		switch {
+		case workflow:
+			if strings.EqualFold(task.Type, "project") {
+				return nil, struct{}{}, fmt.Errorf("workflows run prompt or script content")
+			}
+			if agentCfg.ChannelByName(task.Channel) < 0 {
+				return nil, struct{}{}, fmt.Errorf("workflows need one of agent %q's channels; %q is not one", agentCfg.Name, task.Channel)
+			}
+			if task.Watch != "" || task.Schedule != "" || task.Every != "" || task.At != "" || task.Days != "" || task.StartAt != "" || task.RunOnce || task.Missed != "" {
+				return nil, struct{}{}, fmt.Errorf("workflows are triggered by messages and cannot also have a schedule or watch")
+			}
+			task.Channel = agentCfg.Channels[agentCfg.ChannelByName(task.Channel)].EffectiveName()
+		case task.Channel != "" || task.Entry != "" || task.Match != "":
+			return nil, struct{}{}, fmt.Errorf("channel, entry and match are only supported for workflows (trigger=message)")
 		case fields.HasTrigger() && task.Watch != "":
 			return nil, struct{}{}, fmt.Errorf("a task cannot have both a schedule trigger and watch")
 		case fields.HasTrigger():

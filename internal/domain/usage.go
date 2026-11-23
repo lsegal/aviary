@@ -24,6 +24,11 @@ type UsageRecord struct {
 	// Source names what spent the tokens when it is not a session's prompt,
 	// such as UsageSourceTaskEditor.
 	Source string `json:"source,omitempty"`
+	// Task is the "agent/task" key of the scheduled task or workflow whose
+	// run spent the tokens, and Channel the channel whose message fired a
+	// workflow run.
+	Task    string `json:"task,omitempty"`
+	Channel string `json:"channel,omitempty"`
 }
 
 // UsageSourceTaskEditor marks the tokens a task editor's live determinism

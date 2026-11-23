@@ -13,6 +13,9 @@ const (
 	TriggerTypeWeekly   TriggerType = "weekly"
 	TriggerTypeCron     TriggerType = "cron"
 	TriggerTypeWatch    TriggerType = "watch"
+	// TriggerTypeMessage marks a workflow: a task that runs when a matching
+	// message arrives on one of its agent's channels.
+	TriggerTypeMessage TriggerType = "message"
 )
 
 // ScheduledTask represents a task to be executed by an agent on a schedule or trigger.
@@ -33,9 +36,14 @@ type ScheduledTask struct {
 	Overlap     string      `json:"overlap,omitempty"`
 	Missed      string      `json:"missed,omitempty"`
 	Watch       string      `json:"watch,omitempty"` // glob pattern
-	Prompt      string      `json:"prompt"`
-	Script      string      `json:"script,omitempty"`
-	Target      string      `json:"target,omitempty"`
+	// Channel, Entry and Match are a workflow's trigger: the channel and
+	// conversation it watches and the wildcard its messages must match.
+	Channel string `json:"channel,omitempty"`
+	Entry   string `json:"entry,omitempty"`
+	Match   string `json:"match,omitempty"`
+	Prompt  string `json:"prompt"`
+	Script  string `json:"script,omitempty"`
+	Target  string `json:"target,omitempty"`
 	// Project is a project task's watched project, and Model overrides the
 	// project agent's model for its runs; an empty Model uses the agent's own.
 	Project string `json:"project,omitempty"`
@@ -77,7 +85,8 @@ const (
 // TaskRun is one entry of a scheduled task's run history.
 type TaskRun struct {
 	FireTime time.Time `json:"fire_time"`
-	// Reason is what fired the task: schedule, missed, watch or manual.
+	// Reason is what fired the task: schedule, missed, watch, message or
+	// manual.
 	Reason     string        `json:"reason"`
 	Status     TaskRunStatus `json:"status"`
 	JobID      string        `json:"job_id,omitempty"`
@@ -107,18 +116,20 @@ type Job struct {
 	Prompt        string `json:"prompt"`
 	Script        string `json:"script,omitempty"`
 	OutputChannel string `json:"output_channel,omitempty"`
-	// Trigger is what fired the run: schedule, missed (a catch-up), watch or
-	// manual. Empty for jobs no task fire created.
-	Trigger        string     `json:"trigger,omitempty"`
-	Status         JobStatus  `json:"status"`
-	Attempts       int        `json:"attempts"`
-	MaxRetries     int        `json:"max_retries"`
-	LockedAt       *time.Time `json:"locked_at,omitempty"`
-	NextRetryAt    *time.Time `json:"next_retry_at,omitempty"`
-	ScheduledFor   *time.Time `json:"scheduled_for,omitempty"`
-	ReplyAgentID   string     `json:"reply_agent_id,omitempty"`   // agent whose session to reply to
-	ReplySessionID string     `json:"reply_session_id,omitempty"` // session to send output back to
-	Output         string     `json:"output,omitempty"`
+	// Trigger is what fired the run: schedule, missed (a catch-up), watch,
+	// message or manual. Empty for jobs no task fire created.
+	Trigger string `json:"trigger,omitempty"`
+	// TriggerContext is the channel message that started a workflow run.
+	TriggerContext *TriggerContext `json:"trigger_context,omitempty"`
+	Status         JobStatus       `json:"status"`
+	Attempts       int             `json:"attempts"`
+	MaxRetries     int             `json:"max_retries"`
+	LockedAt       *time.Time      `json:"locked_at,omitempty"`
+	NextRetryAt    *time.Time      `json:"next_retry_at,omitempty"`
+	ScheduledFor   *time.Time      `json:"scheduled_for,omitempty"`
+	ReplyAgentID   string          `json:"reply_agent_id,omitempty"`   // agent whose session to reply to
+	ReplySessionID string          `json:"reply_session_id,omitempty"` // session to send output back to
+	Output         string          `json:"output,omitempty"`
 	// Error is why the latest attempt failed, shown with the run; it is
 	// cleared when an attempt completes.
 	Error string `json:"error,omitempty"`
@@ -131,6 +142,40 @@ type Job struct {
 	ResumeNote string    `json:"resume_note,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// TriggerContext records the channel message that started a workflow run,
+// for debugging the run. Senders are recorded by display name only, never by
+// a raw platform ID or phone number.
+type TriggerContext struct {
+	// ChannelType, ConfiguredID and Channel name the agent's channel the
+	// message arrived on; Entry is the conversation on it and ThreadTS the
+	// platform thread, when there is one.
+	ChannelType  string `json:"channel_type"`
+	ConfiguredID string `json:"configured_id"`
+	Channel      string `json:"channel"`
+	Entry        string `json:"entry"`
+	ThreadTS     string `json:"thread_ts,omitempty"`
+	// SessionID is the channel session the message was recorded in, and
+	// RecordedAt when; messages before and after that time are Before and
+	// After.
+	SessionID  string    `json:"session_id,omitempty"`
+	RecordedAt time.Time `json:"recorded_at"`
+	// Message is the triggering message; Before and After are the messages
+	// just before and just after it in the conversation.
+	Message TriggerMessage   `json:"message"`
+	Before  []TriggerMessage `json:"before,omitempty"`
+	After   []TriggerMessage `json:"after,omitempty"`
+}
+
+// TriggerMessage is one channel message in a TriggerContext.
+type TriggerMessage struct {
+	// Sender is the sender's display name, empty when only a raw ID is known.
+	Sender      string    `json:"sender,omitempty"`
+	FromAgent   bool      `json:"from_agent,omitempty"`
+	Text        string    `json:"text"`
+	Attachments []string  `json:"attachments,omitempty"`
+	Timestamp   time.Time `json:"timestamp"`
 }
 
 // RunStatus represents the status of an individual job execution.

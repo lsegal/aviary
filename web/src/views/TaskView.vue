@@ -5,7 +5,8 @@
 			<header v-if="task" data-testid="task-header"
 				class="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 sm:px-6 dark:border-gray-800">
 				<span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-					<ClockIcon aria-hidden="true" class="h-4 w-4" />
+					<BoltIcon v-if="workflow" aria-hidden="true" class="h-4 w-4" />
+					<ClockIcon v-else aria-hidden="true" class="h-4 w-4" />
 				</span>
 				<div class="min-w-0">
 					<div class="flex items-center gap-2">
@@ -40,8 +41,8 @@
 						@click="chat.open.value = !chat.open.value">
 						<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
 					</button>
-					<router-link :to="agentTaskPath(agent, task.name)" data-testid="task-settings-link"
-						aria-label="Task settings" title="Task settings"
+					<router-link :to="settingsLink" data-testid="task-settings-link"
+						:aria-label="workflow ? 'Workflow settings' : 'Task settings'" :title="workflow ? 'Workflow settings' : 'Task settings'"
 						class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
 						<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
 					</router-link>
@@ -66,9 +67,10 @@
 								:fetch-logs="dash.fetchLogs" class="h-96" @stop="act(() => dash.stop($event))" />
 							<TaskRunLog v-else-if="dash.stats.value.last" :entry="dash.stats.value.last" title="Last run"
 								:now="dash.now.value" :fetch-logs="dash.fetchLogs" class="h-72" />
+							<TriggerContextPanel v-if="shownRunContext" :context="shownRunContext" />
 							<p v-else-if="dash.loaded.value" data-testid="task-run-log-empty"
 								class="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-								This task hasn't run yet. Its current run's logs show here while it runs, and the last run's after.
+								{{ workflow ? "This workflow hasn't run yet. A matching message starts a run; its logs show here while it runs, and the last run's after." : "This task hasn't run yet. Its current run's logs show here while it runs, and the last run's after." }}
 							</p>
 
 							<TaskRunHistory v-model:filter="filter" :entries="dash.entries.value" :agent="agent" :task="task.name"
@@ -116,6 +118,7 @@
 </template>
 
 <script setup lang="ts">
+import BoltIcon from "@heroicons/vue/24/outline/BoltIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ClockIcon from "@heroicons/vue/24/outline/ClockIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
@@ -133,6 +136,7 @@ import TaskRunHistory, {
 	type TaskRunFilter,
 } from "../components/tasks/dashboard/TaskRunHistory.vue";
 import TaskRunLog from "../components/tasks/dashboard/TaskRunLog.vue";
+import TriggerContextPanel from "../components/tasks/dashboard/TriggerContextPanel.vue";
 import PausedChip from "../components/tasks/PausedChip.vue";
 import { useMCP } from "../composables/useMCP";
 import {
@@ -141,12 +145,14 @@ import {
 } from "../composables/useTaskChatPanel";
 import { useTaskDashboard } from "../composables/useTaskDashboard";
 import { useTaskPause } from "../composables/useTaskPause";
+import { workflowSettingsPath } from "../lib/channels";
 import { age, until } from "../lib/projects";
 import { RESULT_LABELS } from "../lib/taskRuns";
 import { formatDuration } from "../stores/jobs";
 import {
 	agentTaskPath,
 	agentTaskType,
+	isWorkflow,
 	useSettingsStore,
 } from "../stores/settings";
 import ChatView from "./ChatView.vue";
@@ -174,7 +180,16 @@ const TYPE_LABELS = {
 	script: "Script task",
 	project: "Project task",
 } as const;
-const typeLabel = computed(() => TYPE_LABELS[agentTaskType(task.value?.type)]);
+const workflow = computed(() => !!task.value && isWorkflow(task.value));
+const typeLabel = computed(() =>
+	workflow.value ? "Workflow" : TYPE_LABELS[agentTaskType(task.value?.type)],
+);
+// A workflow is edited in its channel's Workflows tab, a task on Tasks.
+const settingsLink = computed(() =>
+	workflow.value && task.value?.channel
+		? workflowSettingsPath(agent.value, task.value.channel, task.value.name)
+		: agentTaskPath(agent.value, task.value?.name ?? ""),
+);
 const isProject = computed(() => agentTaskType(task.value?.type) === "project");
 
 // ── Runs ────────────────────────────────────────────────────────────────────
@@ -197,6 +212,11 @@ const scheduleText = computed(() => {
 		? `${text} · next ${until(nextRun.value, dash.now.value)}`
 		: text;
 });
+
+/** The trigger context of the run the dashboard shows: the current one, else the last. */
+const shownRunContext = computed(
+	() => (current.value ?? dash.stats.value.last)?.job?.trigger_context ?? null,
+);
 
 const filter = ref<TaskRunFilter>("all");
 watch(taskParam, () => {
