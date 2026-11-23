@@ -76,6 +76,16 @@ Add, edit, pause, resume and delete a channel's workflows in its settings, on th
 - **Text match** is a case-insensitive wildcard over the whole message text: `*` matches anything (including line breaks) and `?` one character. `*crash*` matches every message containing "crash". Empty matches every message, like `*`.
 - **Would match** tests the current text match against the entry's recent messages as you type.
 - **Model override**, **Send Via** and **While a run is active** work as they do for tasks. Send Via can be **silent**, **reply to the source conversation**, a session, or another channel.
+- The prompt, its live analysis, **Try to precompile** and the model override are the same section the task editors use. As you type, the prompt is analyzed (debounced, and a newer edit cancels the analysis in flight) and the form shows whether it can be precompiled, with the reason when it can't, and the estimated tokens and cost of each run. The estimate includes the triggering message and the messages before it that each run's prompt carries, so it is higher than for the same scheduled task. When the workflow will be precompiled, the estimate is 0 tokens per run, with the model's cost beside it for comparison.
+
+### Precompiled workflows
+
+A prompt workflow can be precompiled like a [project task](./scheduled-tasks.md#precompiled-project-tasks). **Try to precompile** follows `scheduler.precompute_tasks` for a new workflow (on by default), and `task_schedule` and `task_update` take `precompile`. Saving compiles the prompt in the background when it passes the determinism gate. The workflow keeps its prompt, and each matching message then:
+
+1. Runs the compiled script, which reads the message from the Lua global `trigger` (`trigger.message.text`, `.sender`, `trigger.before`, `trigger.channel`, `trigger.entry`). What the script prints is the workflow's reply.
+2. Falls back to a normal model run on the prompt if the script or the compile fails. The run shows **Succeeded via fallback**, the script's error is in the run's logs, and the workflow's card says its last run fell back to the model.
+
+A script that fails on its first run is set aside, and one that fails 3 runs in a row turns precompile off, exactly as for project tasks; the workflow's page says why. Workflow cards, the Workflows tab and the workflow's page show a badge with the compiled state (**Compiled**, **Compiling…**, **Not precompiled** or **Runs on model**), and the page also counts compile attempts, fallback runs and script failures.
 
 When a message matches one or more active workflows, **the workflows replace the agent's own reply**: every matching workflow runs, in name order, and the agent does not answer the message itself. Whether anything is said back is up to each workflow's Send Via. The message is still recorded in the channel's conversation, marked **Handled by workflow** with a link to each run. The agent replies as usual only when no active workflow matches. Paused workflows never match, so a message that matches only paused workflows gets the normal reply. A workflow with an empty text match takes over every message on its entry, and the form says so.
 
@@ -97,6 +107,7 @@ agents:
         entry: C0123456789    # optional: one conversation on it
         match: "*crash*"      # optional: empty matches every message
         target: reply         # silent (empty), reply, session:<name>, or channel:<name>
+        precompile: true      # optional: run a compiled script, falling back to the model
         prompt: Triage this crash report and reply with next steps.
 ```
 

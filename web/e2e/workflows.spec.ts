@@ -671,14 +671,18 @@ test("workflow cards and the detail view show the compiled state and fallback ru
 	await page.goto("/agents/assistant/channels/Team%20Slack");
 	const card = page.getByTestId("workflow-card");
 	await expect(card.getByTestId("task-precompile-badge")).toHaveText(
-		"Compiled · 1 failed",
+		"Compiled",
+	);
+	await expect(card.getByTestId("task-precompile-badge")).toHaveAttribute(
+		"title",
+		/failed its last run/,
 	);
 	await expect(card.getByTestId("workflow-card-last")).toHaveAttribute(
 		"data-last",
 		"fallback",
 	);
 	await expect(card.getByTestId("workflow-card-last")).toHaveText(
-		"last run fell back to the model",
+		"last run fell back",
 	);
 
 	await card.click();

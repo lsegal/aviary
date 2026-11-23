@@ -1,6 +1,6 @@
 <template>
 	<span v-if="badge" data-testid="task-precompile-badge" :data-state="badge.state" :title="badge.title"
-		class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="TONES[badge.tone]">
+		class="inline-block max-w-full shrink-0 truncate whitespace-nowrap rounded-full px-2 py-0.5 align-middle text-[11px] font-semibold" :class="TONES[badge.tone]">
 		{{ badge.label }}
 	</span>
 </template>
@@ -12,7 +12,11 @@ import { type AgentTask, precompileState } from "../../stores/settings";
 // A precompiling task's compiled state as a badge: compiled, compiling, not
 // deterministic, or running on the model after its script failed.
 
-const props = defineProps<{ task: AgentTask }>();
+const props = defineProps<{
+	task: AgentTask;
+	/** Leaves the failure count to the title, for narrow cards. */
+	compact?: boolean;
+}>();
 
 const TONES = {
 	green: "bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300",
@@ -29,7 +33,7 @@ const badge = computed(() => {
 				? {
 						state: "compiled",
 						tone: "amber" as const,
-						label: `Compiled · ${failures} failed`,
+						label: props.compact ? "Compiled" : `Compiled · ${failures} failed`,
 						title: `The compiled script failed its last ${failures === 1 ? "run" : `${failures} runs`}, which fell back to the model.`,
 					}
 				: {

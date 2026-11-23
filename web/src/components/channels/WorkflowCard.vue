@@ -13,6 +13,7 @@
 				<div class="min-w-0 flex-1">
 					<p class="truncate text-sm font-semibold text-gray-900 group-hover:underline dark:text-white">{{ workflow.name }}</p>
 					<p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ matchText }}</p>
+					<TaskPrecompileBadge :task="workflow" compact class="mt-1" />
 				</div>
 				<div class="flex shrink-0 flex-col items-end gap-1">
 					<PausedChip v-if="paused" />
@@ -20,9 +21,9 @@
 						class="rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700 dark:bg-green-950/50 dark:text-green-300">
 						{{ status.activity === "running" ? "Running" : status.activity === "triggering" ? "Triggered" : "Active" }}
 					</span>
-					<TaskPrecompileBadge :task="workflow" />
 					<span v-if="status.last" data-testid="workflow-card-last" :data-last="status.last" class="text-[11px]"
-						:class="status.last === 'failed' ? 'text-red-600 dark:text-red-400' : status.last === 'fallback' ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'">
+						:class="status.last === 'failed' ? 'text-red-600 dark:text-red-400' : status.last === 'fallback' ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'"
+						:title="status.last === 'fallback' ? 'Its precompiled script failed, so the model ran it' : undefined">
 						{{ LAST_TEXT[status.last] }}
 					</span>
 				</div>
@@ -53,7 +54,7 @@ const props = defineProps<{
 
 const LAST_TEXT = {
 	succeeded: "last run ok",
-	fallback: "last run fell back to the model",
+	fallback: "last run fell back",
 	failed: "last run failed",
 } as const;
 
