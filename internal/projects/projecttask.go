@@ -156,9 +156,10 @@ var cloneProjectRepository = func(ctx context.Context, repository, dir string) e
 
 // runCompiledProjectTask runs a precompiled project task's script in a fresh
 // clone of its repository, under one of the engine's clone roots, writing its
-// output to the job's log. It reports whether the script completed; when it
-// did not, the log says why and the caller runs the prompt on the agent.
-func (w *Engine) runCompiledProjectTask(ctx context.Context, key string, run scheduler.ProjectRun, repository string, output io.Writer, updateSession func(AgentSession)) bool {
+// output to the job's log. It reports whether the script completed, and
+// whether it failed so the run falls back to the model; when it did not
+// complete, the log says why and the caller runs the prompt on the agent.
+func (w *Engine) runCompiledProjectTask(ctx context.Context, key string, run scheduler.ProjectRun, repository string, output io.Writer, updateSession func(AgentSession)) (compiled, fellBack bool) {
 	logf := func(format string, args ...any) { _, _ = fmt.Fprintf(output, format+"\n", args...) }
 	var checkout string
 	defer func() {
@@ -194,17 +195,18 @@ func (w *Engine) runCompiledProjectTask(ctx context.Context, key string, run sch
 			logf("%s", result)
 		}
 		w.jobSystem(key, "scheduled run finished its precompiled script without the model")
-		return true
+		return true, false
 	case errors.Is(err, scheduler.ErrProjectTaskNotCompiled):
 		w.jobSystem(key, "the prompt is not deterministic, so the model runs it")
 	case ctx.Err() != nil:
 		// A stopped run does not fall back; the caller reports the stop.
-		return false
+		return false, false
 	default:
 		logf("precompiled script failed, so the model runs the task: %v", err)
 		w.jobSystem(key, "precompiled script failed, falling back to the model: "+clidoctor.FirstLine(err.Error()))
+		return false, true
 	}
-	return false
+	return false, false
 }
 
 // projectTaskOutcome turns how a project task's agent exited into the summary

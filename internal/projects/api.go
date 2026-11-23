@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/transcript"
 )
@@ -147,50 +148,68 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 	return status
 }
 
-// boardStateCounts counts the jobs of targets, or of every project without
-// targets, in each board state, so the board's counts match its filters.
+// boardStateCounts counts the board entries of targets, or of every project
+// without targets, in each board state, so the board's counts match its
+// filters. A schedule counts once, and only while it is starting, running or
+// failed: its finished runs never count as done.
 func boardStateCounts(jobs []JobSnapshot, targets []string) map[string]int {
 	counts := make(map[string]int, len(core.BoardStates))
 	for _, state := range core.BoardStates {
 		counts[state] = 0
 	}
-	for _, job := range jobs {
-		if len(targets) > 0 && !slices.Contains(targets, job.Target) {
+	for _, entry := range boardEntries(jobs) {
+		if len(targets) > 0 && !slices.Contains(targets, entry.job.Target) {
 			continue
 		}
-		counts[job.BoardState()]++
+		if _, ok := counts[entry.state]; ok {
+			counts[entry.state]++
+		}
 	}
 	return counts
 }
 
 // ListJobs is project_job_list: every job, running and errored ones first,
-// filtered by projects, engine status, board states and a search query, and
-// paged. No targets means every project. total counts the jobs that match
-// them all; with a query, unfiltered_total counts those matching all but the
-// query.
-func (m *Manager) ListJobs(targets []string, status string, states []string, query string, offset, limit int) map[string]any {
+// filtered by projects, engine status, board states, job kinds and a search
+// query, and paged. A schedule is one entry, its latest run with the
+// schedule's last_run, next_run and recent_runs, rather than a job per fire.
+// No targets means every project. total counts the jobs that match them all;
+// with a query, unfiltered_total counts those matching all but the query.
+func (m *Manager) ListJobs(targets []string, status string, states, kinds []string, query string, offset, limit int) map[string]any {
 	if limit <= 0 {
 		limit = defaultJobListLimit
 	}
 	query = strings.ToLower(strings.TrimSpace(query))
 	display := m.display()
+	var tasks map[string]domain.ScheduledTask
 	var matched []map[string]any
 	unfiltered := 0
-	for _, job := range display.Jobs {
+	for _, entry := range boardEntries(display.Jobs) {
+		job := entry.job
 		if len(targets) > 0 && !slices.Contains(targets, job.Target) {
 			continue
 		}
 		if status != "" && job.Status != status {
 			continue
 		}
-		if len(states) > 0 && !slices.Contains(states, job.BoardState()) {
+		if len(states) > 0 && !slices.Contains(states, entry.state) {
+			continue
+		}
+		if len(kinds) > 0 && !slices.Contains(kinds, job.Kind) {
 			continue
 		}
 		unfiltered++
 		if query != "" && !jobMatches(job, query) {
 			continue
 		}
-		matched = append(matched, displayJobSummary(display, job))
+		summary := displayJobSummary(display, job)
+		if entry.runs != nil {
+			if tasks == nil {
+				tasks = m.scheduledTasks()
+			}
+			summary["state"] = entry.state
+			addScheduleRuns(summary, entry, tasks)
+		}
+		matched = append(matched, summary)
 	}
 	total := len(matched)
 	offset = min(max(offset, 0), total)
@@ -296,8 +315,9 @@ func (m *Manager) ExplainJob(target string, number int) (map[string]any, error) 
 	return detail, nil
 }
 
-// JobAction is project_job_retry, _pause, _resume and _stop. It refuses what
-// the job's status does not allow. Stop waits for the agent to exit.
+// JobAction is project_job_retry, _pause, _resume, _stop and _dismiss. It
+// refuses what the job's status does not allow. Stop waits for the agent to
+// exit. Dismiss takes a failed scheduled run off the board's Failed state.
 func (m *Manager) JobAction(ctx context.Context, action, target string, number int) (map[string]any, error) {
 	engine := m.engine()
 	if engine == nil {
@@ -326,6 +346,10 @@ func (m *Manager) JobAction(ctx context.Context, action, target string, number i
 	case "stop":
 		if !available.Stop {
 			return nil, fmt.Errorf("%s cannot be stopped while %s", key, job.Status)
+		}
+	case "dismiss":
+		if job.Kind != core.JobKindSchedule || job.Status != "failed" {
+			return nil, fmt.Errorf("%s is not a failed scheduled run; only those can be dismissed", key)
 		}
 	default:
 		return nil, fmt.Errorf("unknown job action %q", action)
@@ -597,6 +621,15 @@ func jobSummary(job core.JobSnapshot) map[string]any {
 	}
 	if job.ScheduleID != "" {
 		summary["schedule_id"] = job.ScheduleID
+		if job.Summary != "" {
+			summary["summary"] = job.Summary
+		}
+		if !job.Finished.IsZero() {
+			summary["finished"] = job.Finished
+		}
+		if runFinished(job) {
+			summary["result"] = runResult(job)
+		}
 	}
 	if url := job.IssueURL(); url != "" {
 		summary["issue_url"] = url

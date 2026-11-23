@@ -37,7 +37,7 @@ func TestListJobsSearchesEveryField(t *testing.T) {
 		{"351", "complete", []int{12}},
 		{"zzzzz", "", nil},
 	} {
-		list := m.ListJobs([]string{"o/r"}, tc.status, nil, tc.query, 0, 0)
+		list := m.ListJobs([]string{"o/r"}, tc.status, nil, nil, tc.query, 0, 0)
 		if got := numbers(list); !slices.Equal(got, tc.want) {
 			t.Errorf("query %q status %q = %v, want %v", tc.query, tc.status, got, tc.want)
 		}
@@ -45,10 +45,10 @@ func TestListJobsSearchesEveryField(t *testing.T) {
 			t.Errorf("query %q total = %v, want %d", tc.query, list["total"], len(tc.want))
 		}
 	}
-	if got := m.ListJobs([]string{"o/r"}, "", nil, "351", 0, 0)["unfiltered_total"]; got != 4 {
+	if got := m.ListJobs([]string{"o/r"}, "", nil, nil, "351", 0, 0)["unfiltered_total"]; got != 4 {
 		t.Errorf("unfiltered_total = %v, want 4", got)
 	}
-	if _, ok := m.ListJobs([]string{"o/r"}, "", nil, "", 0, 0)["unfiltered_total"]; ok {
+	if _, ok := m.ListJobs([]string{"o/r"}, "", nil, nil, "", 0, 0)["unfiltered_total"]; ok {
 		t.Error("unfiltered_total set without a query")
 	}
 }
@@ -76,7 +76,7 @@ func TestListJobsFiltersByBoardState(t *testing.T) {
 	seen := 0
 	for _, state := range core.BoardStates {
 		var got []int
-		for _, job := range m.ListJobs([]string{"o/r"}, "", []string{state}, "", 0, 0)["jobs"].([]map[string]any) {
+		for _, job := range m.ListJobs([]string{"o/r"}, "", []string{state}, nil, "", 0, 0)["jobs"].([]map[string]any) {
 			got = append(got, job["number"].(int))
 			if job["state"] != state {
 				t.Errorf("job #%v state = %v, want %s", job["number"], job["state"], state)
@@ -92,14 +92,14 @@ func TestListJobsFiltersByBoardState(t *testing.T) {
 	}
 	// Several states list the jobs in any of them, and no states list all.
 	var got []int
-	for _, job := range m.ListJobs([]string{"o/r"}, "", []string{core.BoardRunning, core.BoardFailed}, "", 0, 0)["jobs"].([]map[string]any) {
+	for _, job := range m.ListJobs([]string{"o/r"}, "", []string{core.BoardRunning, core.BoardFailed}, nil, "", 0, 0)["jobs"].([]map[string]any) {
 		got = append(got, job["number"].(int))
 	}
 	slices.Sort(got)
 	if want := []int{3, 4, 5, 9}; !slices.Equal(got, want) {
 		t.Errorf("running and failed = %v, want %v", got, want)
 	}
-	if total := m.ListJobs([]string{"o/r"}, "", nil, "", 0, 0)["total"]; total != 9 {
+	if total := m.ListJobs([]string{"o/r"}, "", nil, nil, "", 0, 0)["total"]; total != 9 {
 		t.Errorf("no states total = %v, want 9", total)
 	}
 }
@@ -121,7 +121,7 @@ func TestStatusCountsBoardStatesLikeTheFilters(t *testing.T) {
 			t.Errorf("targets %v: states = %v, want one count per board state", targets, states)
 		}
 		for _, state := range core.BoardStates {
-			if want := m.ListJobs(targets, "", []string{state}, "", 0, 0)["total"]; states[state] != want {
+			if want := m.ListJobs(targets, "", []string{state}, nil, "", 0, 0)["total"]; states[state] != want {
 				t.Errorf("targets %v: %s = %d, the filter shows %v", targets, state, states[state], want)
 			}
 		}
@@ -165,7 +165,7 @@ func TestListJobsCoversSeveralProjects(t *testing.T) {
 		{Number: 2, Target: "x/y", Status: "active"},
 		{Number: 3, Target: "z/z", Status: "active"},
 	}})
-	count := func(targets []string) any { return m.ListJobs(targets, "", nil, "", 0, 0)["total"] }
+	count := func(targets []string) any { return m.ListJobs(targets, "", nil, nil, "", 0, 0)["total"] }
 	if got := count([]string{"o/r", "x/y"}); got != 2 {
 		t.Errorf("two projects total = %v, want 2", got)
 	}

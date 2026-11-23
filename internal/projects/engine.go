@@ -3865,7 +3865,8 @@ func (w *Engine) Run(ctx context.Context) error {
 		}
 	}
 	// serveScheduledAction answers a dashboard action on a scheduled job:
-	// Stop cancels its run, while Retry and Pause are refused: core's
+	// Stop cancels its run and Dismiss hides its schedule's failed runs from
+	// the board's Failed state, while Retry and Pause are refused: core's
 	// scheduler fires the task again, and a scheduled run has no issue to
 	// resume it from.
 	serveScheduledAction = func(request jobActionRequest, key string, job JobSnapshot) {
@@ -3899,6 +3900,19 @@ func (w *Engine) Run(ctx context.Context) error {
 					request.done <- fmt.Errorf("job is still stopping: %w", ctx.Err())
 				}
 			}()
+		case "dismiss":
+			// Dismissing takes every failed run of the schedule off the
+			// board's Failed state; its card still shows the last run.
+			jobMu.Lock()
+			for k, run := range jobs {
+				if run.Kind == core.JobKindSchedule && run.Target == job.Target && run.ScheduleID == job.ScheduleID && run.Status == "failed" {
+					run.Dismissed = true
+					jobs[k] = run
+				}
+			}
+			jobMu.Unlock()
+			publish()
+			request.done <- nil
 		case "retry":
 			request.done <- errScheduledRetry
 		case "pause":
@@ -3964,6 +3978,7 @@ func (w *Engine) Run(ctx context.Context) error {
 			}
 			tasks.mu.Unlock()
 			var runErr error
+			fellBack := false
 			if acquired {
 				defer func() {
 					sem.release()
@@ -4005,7 +4020,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				}
 				compiled := false
 				if runErr == nil && run.RunCompiled != nil {
-					compiled = w.runCompiledProjectTask(runCtx, key, run, request.repository, output, updateSession)
+					compiled, fellBack = w.runCompiledProjectTask(runCtx, key, run, request.repository, output, updateSession)
 				}
 				if runErr == nil && !compiled {
 					switch runner := w.runner().(type) {
@@ -4024,7 +4039,7 @@ func (w *Engine) Run(ctx context.Context) error {
 			job := jobs[key]
 			result = projectTaskOutcome(runErr, context.Cause(runCtx), job.Log)
 			status := projectTaskStatus(result)
-			job.Status = "complete"
+			job.Status, job.Finished, job.Summary, job.Fallback = "complete", time.Now(), result.summary, fellBack
 			if result.err != nil {
 				job.Status = "failed"
 				job.Log += result.summary

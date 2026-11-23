@@ -19,6 +19,7 @@ import (
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/browser"
@@ -106,6 +107,32 @@ type Manager struct {
 	// usageRecorder receives each job run's token use; see
 	// SetUsageRecorder.
 	usageRecorder atomic.Pointer[UsageRecorder]
+	// scheduleSource lists core's scheduled tasks; see SetScheduleSource.
+	scheduleSource atomic.Pointer[ScheduleSource]
+}
+
+// ScheduleSource lists core's scheduled tasks with their next fire and run
+// history, as the scheduler's ListTasks does.
+type ScheduleSource func() []domain.ScheduledTask
+
+// SetScheduleSource makes job lists and summaries report each schedule's
+// next run from list.
+func (m *Manager) SetScheduleSource(list ScheduleSource) {
+	m.scheduleSource.Store(&list)
+}
+
+// scheduledTasks lists core's scheduled tasks by ID, or nil without a
+// schedule source.
+func (m *Manager) scheduledTasks() map[string]domain.ScheduledTask {
+	list := m.scheduleSource.Load()
+	if list == nil || *list == nil {
+		return nil
+	}
+	tasks := map[string]domain.ScheduledTask{}
+	for _, task := range (*list)() {
+		tasks[task.ID] = task
+	}
+	return tasks
 }
 
 // MentionRouter sends a prompt to the built-in Code Loop agent.

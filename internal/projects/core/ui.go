@@ -58,6 +58,14 @@ type JobSnapshot struct {
 	// ScheduleID names the schedule a scheduled run fired from.
 	Kind       string
 	ScheduleID string
+	// Finished is when a scheduled run ended, Summary its one-line result,
+	// and Fallback whether its precompiled script failed so the model ran
+	// it. Dismissed hides a failed scheduled run from the board's Failed
+	// state until the schedule's next run.
+	Finished  time.Time
+	Summary   string
+	Fallback  bool
+	Dismissed bool
 }
 
 // Job kinds.
@@ -83,6 +91,12 @@ const (
 	BoardDone     = "done"
 	BoardFailed   = "failed"
 )
+
+// BoardScheduled is the state of a schedule's board entry between runs: its
+// runs collapse into one entry per schedule (see boardEntries), which is
+// starting or running while a run is in flight, failed while its last run
+// failed and was not dismissed, and scheduled otherwise. It is never done.
+const BoardScheduled = "scheduled"
 
 // BoardStates lists the board states in the order the board shows them.
 var BoardStates = []string{BoardStarting, BoardPaused, BoardRunning, BoardDone, BoardFailed}
