@@ -5,11 +5,11 @@
 		     optional hover-only detail, and the "…" menu. -->
 		<slot v-if="editing" name="editor" />
 		<template v-else>
-			<router-link :to="to" :title="label" data-testid="sidebar-item-link"
+			<router-link :to="to" :title="tooltip ?? label" data-testid="sidebar-item-link"
 				class="min-w-0 flex-1 truncate py-2 pl-3 pr-1 text-sm"
-				:class="active
+				:class="[active
 					? 'font-semibold text-gray-950 dark:text-white'
-					: 'text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white'"
+					: 'text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-white', muted ? 'italic opacity-60' : '']"
 				@dblclick.prevent="emit('dblclick')">
 				{{ label }}
 			</router-link>
@@ -33,6 +33,10 @@ defineProps<{
 	menuTestid: string;
 	/** Shows the editor slot (an inline rename) in place of the link. */
 	editing?: boolean;
+	/** Dims the label, as for a paused task. */
+	muted?: boolean;
+	/** The link's tooltip in place of its label. */
+	tooltip?: string;
 }>();
 const emit = defineEmits<{ select: [key: string]; dblclick: [] }>();
 const menuOpen = defineModel<boolean>("menuOpen", { default: false });

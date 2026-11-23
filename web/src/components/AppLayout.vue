@@ -74,8 +74,10 @@
       class="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-800 dark:bg-gray-950 lg:hidden">
       <nav class="group/row relative flex gap-2 overflow-x-auto pb-1" :class="mobileAdd ? 'pr-9' : ''">
         <router-link v-for="child in mobileChildren" :key="child.key" :to="child.to"
-          :class="[mobileSubnavClass(child), 'inline-flex items-center gap-1.5']">
-          <SystemPageIcon v-if="systemActive" :page-key="child.key" class="h-4 w-4" />{{ child.label }}<ProjectRunningBadge
+          :title="child.paused ? 'Paused' : undefined" :data-paused="child.paused || undefined"
+          :class="[mobileSubnavClass(child), 'inline-flex items-center gap-1.5', child.paused ? 'italic opacity-60' : '']">
+          <SystemPageIcon v-if="systemActive" :page-key="child.key" class="h-4 w-4" /><span v-if="child.paused"
+            data-testid="mobile-task-paused" class="inline-flex text-amber-600 dark:text-amber-400"><PauseIcon aria-hidden="true" class="h-3.5 w-3.5" /></span>{{ child.label }}<ProjectRunningBadge
             :running="child.running ?? 0" class="ml-1.5" />
         </router-link>
         <SidebarRowAction v-if="mobileAdd" :label="rowAddLabel(mobileAdd.page)" data-testid="mobile-row-action" @click="openAdd(mobileAdd.page, mobileAdd.agent)" />
@@ -333,6 +335,7 @@
 
     <AgentItemDialogs />
     <ChannelDialogs />
+    <ToastStack />
 
     <UpgradeDialog :open="upgradeDialogOpen" :latest-version="latestVersion" :release-url="releaseUrl"
       :jobs="restart?.jobs ?? []" :busy="upgrading" :git="git" @close="upgradeDialogOpen = false"
@@ -349,6 +352,7 @@ const systemGroupState = createRouteExpandedGroupState();
 </script>
 
 <script setup lang="ts">
+import PauseIcon from "@heroicons/vue/20/solid/PauseIcon";
 import ArrowUpCircleIcon from "@heroicons/vue/24/outline/ArrowUpCircleIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronDoubleLeftIcon from "@heroicons/vue/24/outline/ChevronDoubleLeftIcon";
@@ -411,6 +415,7 @@ import AgentTaskList from "./sidebar/AgentTaskList.vue";
 import SidebarGearMenu from "./sidebar/SidebarGearMenu.vue";
 import SidebarRailItem from "./sidebar/SidebarRailItem.vue";
 import SystemPageIcon from "./SystemPageIcon.vue";
+import ToastStack from "./ui/ToastStack.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 import VersionIndicator from "./VersionIndicator.vue";
 
@@ -423,6 +428,8 @@ interface NavChild {
 	running?: number;
 	/** Overrides the path match, for items picked by a query. */
 	active?: boolean;
+	/** A paused scheduled task, shown dimmed with a pause icon. */
+	paused?: boolean;
 }
 
 interface AgentNav {
@@ -802,6 +809,7 @@ function agentItems(agent: string): NavChild[] {
 		const tasks =
 			settingsStore.config?.agents.find((a) => a.name === agent)?.tasks ?? [];
 		const active = activeTaskName(route, agent);
+		// Paused tasks follow the active ones, as in the sidebar.
 		return tasks
 			.filter((t) => t.name)
 			.map((t) => ({
@@ -809,7 +817,9 @@ function agentItems(agent: string): NavChild[] {
 				label: t.name,
 				to: router.resolve(taskSessionPath(agent, t.name)).fullPath,
 				active: active === t.name,
-			}));
+				paused: t.enabled === false,
+			}))
+			.sort((a, b) => Number(a.paused) - Number(b.paused));
 	}
 	if (filesOpen.value) {
 		const q = route.query.file;
