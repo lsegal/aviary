@@ -255,7 +255,7 @@ func TestServerRoutes_DisableTokenAuth(t *testing.T) {
 			s.mux.Handle("/api/logs/history", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})))
-			s.mux.HandleFunc("/api/health", healthHandler(s.authDisabled.Load))
+			s.mux.HandleFunc("/api/health", healthHandler(s.authDisabled.Load, false))
 
 			rr := httptest.NewRecorder()
 			s.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/logs/history", nil))
@@ -378,7 +378,7 @@ func TestPIDLifecycle(t *testing.T) {
 func TestHealthHandler(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	rr := httptest.NewRecorder()
-	healthHandler(nil)(rr, req)
+	healthHandler(nil, false)(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var payload struct {
@@ -2219,4 +2219,44 @@ func TestDeliverTaskOutput_SessionTarget(t *testing.T) {
 	data, err := os.ReadFile(store.SessionPath("bot", sess.ID))
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "hello")
+}
+
+func TestDeliverOutput_CodeLoopTargetRecordsFailure(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	srv := New(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Projects: []config.ProjectConfig{{Target: "o/r"}}}}}, "tok")
+
+	source := domain.OutputSource{Task: "bot/triage", JobID: "job_1", Workflow: true}
+	delivery, err := srv.deliverOutput(source, "bot", "codeloop:o/r#12", "build is red")
+	require.Error(t, err)
+	require.NotNil(t, delivery)
+	assert.Equal(t, domain.DeliveryFailed, delivery.Status)
+	assert.Equal(t, "codeloop:o/r#12", delivery.Target)
+	assert.Equal(t, "o/r", delivery.Project)
+	assert.Equal(t, 12, delivery.Number)
+	assert.Equal(t, "bot", delivery.Owner)
+	assert.Equal(t, err.Error(), delivery.Message)
+
+	records, err := store.ReadJSONL[domain.UsageRecord](store.UsagePath())
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, UsageSourceTaskDelivery, records[0].Source)
+	assert.Equal(t, "bot/triage", records[0].Task)
+	assert.True(t, records[0].HasError)
+	require.NotNil(t, records[0].Delivery)
+	assert.Equal(t, "codeloop:o/r#12", records[0].Delivery.Target)
+}
+
+func TestDeliverOutput_SilentRecordsNothing(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	srv := New(&config.Config{}, "tok")
+	delivery, err := srv.deliverOutput(domain.OutputSource{Task: "bot/x"}, "bot", "silent", "text")
+	require.NoError(t, err)
+	assert.Nil(t, delivery)
+}
+
+func TestTaskRunPath(t *testing.T) {
+	assert.Equal(t, "/agents/bot/tasks/daily%20digest/runs/job_1", taskRunPath(domain.OutputSource{Task: "bot/daily digest", JobID: "job_1"}))
+	assert.Empty(t, taskRunPath(domain.OutputSource{}))
 }

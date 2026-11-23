@@ -31,6 +31,13 @@
 			class="border-b border-red-200 bg-red-50 px-3 py-2 text-xs whitespace-pre-wrap text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
 			{{ entry.error }}
 		</p>
+		<p v-if="delivery" data-testid="task-run-log-delivery" :data-status="delivery.status"
+			:role="delivery.status === 'failed' ? 'alert' : undefined" class="border-b px-3 py-2 text-xs"
+			:class="delivery.status === 'failed' ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300' : 'border-gray-200 text-gray-600 dark:border-gray-800 dark:text-gray-300'">
+			<span class="font-medium">Delivery {{ delivery.status }}:</span> {{ delivery.message }}
+			<router-link v-if="deliveryJobPath" :to="deliveryJobPath" data-testid="task-run-log-delivery-link"
+				class="ml-1 text-blue-600 hover:underline dark:text-blue-400">Open job</router-link>
+		</p>
 		<div class="relative flex min-h-0 flex-1 flex-col">
 			<pre ref="logEl" data-testid="task-run-log-output"
 				class="min-h-24 flex-1 overflow-y-auto whitespace-pre-wrap break-all bg-slate-950 px-3 py-2 font-mono text-xs leading-relaxed text-slate-200"
@@ -50,6 +57,7 @@ import ClipboardDocumentIcon from "@heroicons/vue/24/outline/ClipboardDocumentIc
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import { computed, onUnmounted, ref, watch } from "vue";
 import { useStickToBottom } from "../../../composables/useJobOutput";
+import { jobPath } from "../../../lib/projects";
 import {
 	isActive,
 	runDurationText,
@@ -70,6 +78,14 @@ const props = defineProps<{
 	fetchLogs: (jobID: string) => Promise<string>;
 }>();
 const emit = defineEmits<{ stop: [jobID: string] }>();
+
+const delivery = computed(() => props.entry.job?.delivery);
+const deliveryJobPath = computed(() => {
+	const d = delivery.value;
+	return d?.project && d.number
+		? jobPath(d.owner ?? "", d.project, d.number)
+		: "";
+});
 
 const logs = ref("");
 const loading = ref(false);

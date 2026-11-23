@@ -144,12 +144,12 @@ jobs:
       # a skip here means this job lost its setup and must fail (#979).
       - name: Run end-to-end transcription tests
         run: |
-          go test -count=1 -v -run 'TestTranscribeHandler_WebM.*EndToEnd' ./internal/server | tee "$RUNNER_TEMP/transcription-e2e.log"
+          go test -count=1 -v -run 'TestTranscribeHandler_.*EndToEnd' ./internal/server | tee "$RUNNER_TEMP/transcription-e2e.log"
           if grep -q -- '--- SKIP' "$RUNNER_TEMP/transcription-e2e.log"; then
             echo "::error::end-to-end transcription tests skipped"
             exit 1
           fi
-          test "$(grep -c -- '--- PASS: TestTranscribeHandler_WebM' "$RUNNER_TEMP/transcription-e2e.log")" -eq 2
+          test "$(grep -c -- '--- PASS: TestTranscribeHandler_' "$RUNNER_TEMP/transcription-e2e.log")" -eq 5
 
   installer:
     name: "Test: Installer (${{ matrix.name }})"

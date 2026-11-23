@@ -5,7 +5,7 @@
 			<header v-if="channel" data-testid="channel-header"
 				class="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 sm:px-6 dark:border-gray-800">
 				<span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
-					<MessagingLogo v-if="isKnownType(channel.type)" :name="channel.type" :disabled="channel.enabled === false" class="h-4 w-4" />
+					<MessagingLogo v-if="isKnownChannelType(channel.type)" :name="channel.type" :disabled="channel.enabled === false" class="h-4 w-4" />
 				</span>
 				<div class="min-w-0">
 					<h2 class="truncate text-lg font-bold text-gray-900 dark:text-white" data-testid="channel-title">{{ channelName(channel) }}</h2>
@@ -32,19 +32,11 @@
 				<ChatView v-if="selectedId" :key="selectedId" :agent="agent" :session="selectedId" data-testid="channel-chat" />
 				<p v-else-if="error" role="alert" class="px-6 py-4 text-sm text-red-600 dark:text-red-400">{{ error }}</p>
 			</div>
-			<ChannelsOverview v-else-if="!channelParam && channels.length" :agent="agent" :channels="channels"
+			<ChannelsOverview v-else-if="!channelParam" :agent="agent" :channels="channels"
 				:workflows="agentWorkflows" :status-of="statusOf" />
 			<div v-else class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-gray-500 dark:text-gray-400"
-				data-testid="channels-empty">
-				<template v-if="channelParam">
-					<p>No channel named <span class="font-medium text-gray-900 dark:text-white">{{ channelParam }}</span>.</p>
-				</template>
-				<template v-else>
-					<p>No channels yet. A channel connects this agent to Slack, Discord or Signal, and keeps its conversation here.</p>
-					<button type="button" data-testid="channels-empty-add"
-						class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
-						@click="openCreate">Add channel</button>
-				</template>
+				data-testid="channel-missing">
+				<p>No channel named <span class="font-medium text-gray-900 dark:text-white">{{ channelParam }}</span>.</p>
 			</div>
 		</div>
 	</AppLayout>
@@ -59,14 +51,15 @@ import ChannelsOverview from "../components/channels/ChannelsOverview.vue";
 import WorkflowStrip from "../components/channels/WorkflowStrip.vue";
 import MessagingLogo from "../components/MessagingLogo.vue";
 import { AppSelect } from "../components/ui/select";
-import { useChannelDialogs } from "../composables/useChannelDialogs";
 import { useMCP } from "../composables/useMCP";
 import { useWorkflowStatus } from "../composables/useWorkflowStatus";
 import {
-	CHANNEL_TYPES,
 	type ChannelSession,
 	channelName,
 	channelSettingsPath,
+	channelTypeLabel,
+	channelWorkflows as channelWorkflowsOf,
+	isKnownChannelType,
 } from "../lib/channels";
 import { isWorkflow, useSettingsStore } from "../stores/settings";
 import ChatView from "./ChatView.vue";
@@ -74,7 +67,6 @@ import ChatView from "./ChatView.vue";
 const route = useRoute();
 const settings = useSettingsStore();
 const { callTool } = useMCP();
-const { open } = useChannelDialogs();
 
 const agent = computed(() =>
 	typeof route.params.agent === "string" ? route.params.agent : "",
@@ -105,24 +97,11 @@ const agentWorkflows = computed(
 );
 const channelWorkflows = computed(() => {
 	const c = channel.value;
-	if (!c) return [];
-	const names = [channelName(c).toLowerCase(), (c.id ?? "").toLowerCase()];
-	return agentWorkflows.value.filter((t) =>
-		names.includes((t.channel ?? "").trim().toLowerCase()),
-	);
+	return c ? channelWorkflowsOf(c, agentWorkflows.value) : [];
 });
 const { statusOf } = useWorkflowStatus(agent);
 
-const typeLabel = computed(
-	() =>
-		CHANNEL_TYPES.find((t) => t.value === channel.value?.type)?.label ??
-		channel.value?.type ??
-		"",
-);
-
-function isKnownType(type: string): type is "slack" | "discord" | "signal" {
-	return type === "slack" || type === "discord" || type === "signal";
-}
+const typeLabel = computed(() => channelTypeLabel(channel.value?.type ?? ""));
 
 const sessions = ref<ChannelSession[]>([]);
 const selectedId = ref("");
@@ -158,8 +137,4 @@ watch(
 	() => void loadSessions(),
 	{ immediate: true },
 );
-
-function openCreate() {
-	open({ mode: "create", agent: agent.value });
-}
 </script>

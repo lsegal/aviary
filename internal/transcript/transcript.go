@@ -61,9 +61,12 @@ type Event struct {
 	Items []PlanItem `json:"items,omitempty"`
 	// Usage is a turn's token use and cost.
 	Usage *Usage `json:"usage,omitempty"`
-	// Author and URL identify a relayed comment.
+	// Author and URL identify a relayed comment. Source is set instead of a
+	// GitHub comment when a scheduled task's or workflow's output was relayed:
+	// it labels the run that sent it, and URL links to that run.
 	Author string `json:"author,omitempty"`
 	URL    string `json:"url,omitempty"`
+	Source string `json:"source,omitempty"`
 }
 
 // PlanItem is one step of an agent's plan.

@@ -22,7 +22,7 @@
 		<p v-if="error" role="alert" class="mt-3 text-sm text-red-600 dark:text-red-400">{{ error }}</p>
 		<ul v-if="status" class="mt-4 grid gap-2 sm:grid-cols-3">
 			<li v-for="row in rows" :key="row.label" :data-testid="`transcription-${row.key}`"
-				class="rounded-xl border border-gray-100 px-3 py-2 dark:border-gray-800">
+				class="min-w-0 rounded-xl border border-gray-100 px-3 py-2 dark:border-gray-800">
 				<div class="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
 					<span class="h-2 w-2 rounded-full" :class="row.ok ? 'bg-green-500' : 'bg-red-500'" aria-hidden="true" />
 					{{ row.label }}

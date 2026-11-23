@@ -140,7 +140,7 @@ Each daemon shows its PID, uptime, and health status. Restart a daemon without r
 
 ### Watches (`/system/watches/<owner%2Frepo>`)
 
-A runtime watch started with `aviary watch` that no agent owns has its board here, listed under **More**.
+A runtime watch (`project_add` with `runtime`) that no agent owns has its board here, listed under **More**.
 
 ---
 

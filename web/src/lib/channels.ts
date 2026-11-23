@@ -1,10 +1,21 @@
-import type { AgentChannel } from "../stores/settings";
+import type { AgentChannel, AgentTask } from "../stores/settings";
 
 /** The channel's display name: its name, else its ID, else its type. */
 export function channelName(
 	ch: Pick<AgentChannel, "name" | "id" | "type">,
 ): string {
 	return ch.name?.trim() || ch.id?.trim() || ch.type;
+}
+
+/** The workflows among tasks that watch the channel, by its name or ID. */
+export function channelWorkflows(
+	ch: Pick<AgentChannel, "name" | "id" | "type">,
+	tasks: AgentTask[],
+): AgentTask[] {
+	const names = [channelName(ch).toLowerCase(), (ch.id ?? "").toLowerCase()];
+	return tasks.filter((t) =>
+		names.includes((t.channel ?? "").trim().toLowerCase()),
+	);
 }
 
 /** The delivery target that picks the channel named name. */
@@ -58,3 +69,15 @@ export const CHANNEL_TYPES = [
 	{ value: "discord", label: "Discord" },
 	{ value: "signal", label: "Signal" },
 ] as const;
+
+/** Whether type is a channel type MessagingLogo has a logo for. */
+export function isKnownChannelType(
+	type: string,
+): type is (typeof CHANNEL_TYPES)[number]["value"] {
+	return CHANNEL_TYPES.some((t) => t.value === type);
+}
+
+/** The label of a channel type, such as "Slack". */
+export function channelTypeLabel(type: string): string {
+	return CHANNEL_TYPES.find((t) => t.value === type)?.label ?? type;
+}

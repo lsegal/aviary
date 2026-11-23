@@ -57,16 +57,23 @@ func readyStatus() Status {
 	}
 }
 
-// writeWAV writes 16 kHz mono 16-bit PCM WAV, with a LIST chunk before the
-// data chunk as ffmpeg writes it.
-func writeWAV(t *testing.T, path string, samples []int16) {
+// writeWAV writes 16 kHz 16-bit PCM WAV with one channel per argument, with
+// a LIST chunk before the data chunk as ffmpeg writes it.
+func writeWAV(t *testing.T, path string, channels ...[]int16) {
 	t.Helper()
+	var samples []int16
+	for i := range channels[0] {
+		for _, ch := range channels {
+			samples = append(samples, ch[i])
+		}
+	}
+	n := len(channels)
 	list := []byte("LIST\x04\x00\x00\x00INFO")
 	var buf bytes.Buffer
 	buf.WriteString("RIFF")
 	_ = binary.Write(&buf, binary.LittleEndian, uint32(4+24+len(list)+8+2*len(samples)))
 	buf.WriteString("WAVEfmt ")
-	for _, v := range []any{uint32(16), uint16(1), uint16(1), uint32(16000), uint32(32000), uint16(2), uint16(16)} {
+	for _, v := range []any{uint32(16), uint16(1), uint16(n), uint32(16000), uint32(32000 * n), uint16(2 * n), uint16(16)} {
 		_ = binary.Write(&buf, binary.LittleEndian, v)
 	}
 	buf.Write(list)
@@ -74,6 +81,17 @@ func writeWAV(t *testing.T, path string, samples []int16) {
 	_ = binary.Write(&buf, binary.LittleEndian, uint32(2*len(samples)))
 	_ = binary.Write(&buf, binary.LittleEndian, samples)
 	require.NoError(t, os.WriteFile(path, buf.Bytes(), 0o600))
+}
+
+// readWAV returns the samples of a mono 16-bit WAV file.
+func readWAV(t *testing.T, path string) []float64 {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	channels, err := decodeWAV(data)
+	require.NoError(t, err)
+	require.Len(t, channels, 1)
+	return channels[0]
 }
 
 // tone is d of a 440 Hz sine at amplitude (0..1 of full scale).
@@ -85,17 +103,21 @@ func tone(d time.Duration, amplitude float64) []int16 {
 	return out
 }
 
-// fakeTools stands in for ffmpeg and whisper-cli: ffmpeg writes samples as
-// 16 kHz mono WAV, whisper-cli writes whisperJSON as its output.
-func fakeTools(t *testing.T, calls *[][]string, samples []int16, whisperJSON string) runFunc {
+// fakeTools stands in for ffmpeg and whisper-cli: ffmpeg writes channels as
+// 16 kHz WAV, whisper-cli writes whisperJSON as its output and records the
+// audio it was given in heard.
+func fakeTools(t *testing.T, calls *[][]string, channels [][]int16, whisperJSON string, heard ...*[]float64) runFunc {
 	return func(_ context.Context, name string, args ...string) ([]byte, error) {
 		*calls = append(*calls, append([]string{name}, args...))
 		switch name {
 		case "/bin/ffmpeg":
-			writeWAV(t, args[len(args)-1], samples)
+			writeWAV(t, args[len(args)-1], channels...)
 			return nil, nil
 		case "/bin/whisper-cli":
 			prefix := args[slices.Index(args, "-of")+1]
+			for _, h := range heard {
+				*h = readWAV(t, args[slices.Index(args, "-f")+1])
+			}
 			return nil, os.WriteFile(prefix+".json", []byte(whisperJSON), 0o600)
 		}
 		t.Fatalf("unexpected command %s", name)
@@ -109,7 +131,7 @@ func TestLocal_ConvertsWithFFmpegThenRunsWhisper(t *testing.T) {
 	for _, input := range []string{"note.ogg", "note.opus", "clip.m4a", "clip.aac", "rec.webm", "song.mp3", "raw.wav"} {
 		t.Run(input, func(t *testing.T) {
 			var calls [][]string
-			l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, tone(12*time.Second, 0.5), helloWorldJSON)}
+			l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, [][]int16{tone(12*time.Second, 0.5)}, helloWorldJSON)}
 			got, err := l.Transcribe(context.Background(), "/in/"+input, Options{Language: "de"})
 			require.NoError(t, err)
 			assert.Equal(t, Transcript{Text: "Hello world.", Language: "en", Duration: 12 * time.Second}, got)
@@ -119,10 +141,10 @@ func TestLocal_ConvertsWithFFmpegThenRunsWhisper(t *testing.T) {
 			assert.Equal(t, "/bin/ffmpeg", ffmpeg[0])
 			assert.Equal(t, "/in/"+input, ffmpeg[slices.Index(ffmpeg, "-i")+1])
 			assert.Equal(t, "16000", ffmpeg[slices.Index(ffmpeg, "-ar")+1])
-			assert.Equal(t, "1", ffmpeg[slices.Index(ffmpeg, "-ac")+1])
+			assert.NotContains(t, ffmpeg, "-ac", "every channel should reach prepareSpeech")
 			assert.Equal(t, "/bin/whisper-cli", whisper[0])
 			assert.Equal(t, "/models/ggml-base.en.bin", whisper[slices.Index(whisper, "-m")+1])
-			assert.Equal(t, ffmpeg[len(ffmpeg)-1], whisper[slices.Index(whisper, "-f")+1])
+			assert.Equal(t, filepath.Dir(ffmpeg[len(ffmpeg)-1]), filepath.Dir(whisper[slices.Index(whisper, "-f")+1]))
 			assert.Equal(t, "de", whisper[slices.Index(whisper, "-l")+1])
 		})
 	}
@@ -131,13 +153,13 @@ func TestLocal_ConvertsWithFFmpegThenRunsWhisper(t *testing.T) {
 func TestLocal_SilentOrShortAudioIsNoSpeech(t *testing.T) {
 	for name, samples := range map[string][]int16{
 		"silent":     make([]int16, 9*16000),
-		"faint hiss": tone(9*time.Second, 0.001),
+		"faint hiss": tone(9*time.Second, 0.0008),
 		"too short":  tone(300*time.Millisecond, 0.5),
 		"empty":      nil,
 	} {
 		t.Run(name, func(t *testing.T) {
 			var calls [][]string
-			l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, samples, `{"transcription":[{"text":" you"}]}`)}
+			l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, [][]int16{samples}, `{"transcription":[{"text":" you"}]}`)}
 			got, err := l.Transcribe(context.Background(), "/in/rec.webm", Options{})
 			require.NoError(t, err)
 			assert.True(t, got.NoSpeech)
@@ -152,7 +174,7 @@ func TestLocal_WhisperSilenceHallucinationIsNoSpeech(t *testing.T) {
 		t.Run(text, func(t *testing.T) {
 			var calls [][]string
 			out := `{"result":{"language":"en"},"transcription":[{"text":` + strconv.Quote(text) + `}]}`
-			l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, tone(9*time.Second, 0.3), out)}
+			l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, [][]int16{tone(9*time.Second, 0.3)}, out)}
 			got, err := l.Transcribe(context.Background(), "/in/rec.webm", Options{})
 			require.NoError(t, err)
 			assert.Equal(t, Transcript{Language: "en", Duration: 9 * time.Second, NoSpeech: true}, got)
@@ -163,24 +185,111 @@ func TestLocal_WhisperSilenceHallucinationIsNoSpeech(t *testing.T) {
 func TestLocal_KeepsRealSpeechAroundNonSpeechMarkers(t *testing.T) {
 	var calls [][]string
 	out := `{"result":{"language":"en"},"transcription":[{"text":" [BLANK_AUDIO]"},{"text":" Thank you,"},{"text":" see you soon."},{"text":" (music)"}]}`
-	l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, tone(4*time.Second, 0.3), out)}
+	l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, [][]int16{tone(4*time.Second, 0.3)}, out)}
 	got, err := l.Transcribe(context.Background(), "/in/rec.webm", Options{})
 	require.NoError(t, err)
 	assert.Equal(t, Transcript{Text: "Thank you, see you soon.", Language: "en", Duration: 4 * time.Second}, got)
 }
 
-func TestReadWAVLevel(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "a.wav")
-	writeWAV(t, path, tone(2*time.Second, 0.5))
-	level, err := readWAVLevel(path)
+func TestLocal_TranscribesStereoWithSpeechOnOneChannel(t *testing.T) {
+	speech := tone(3*time.Second, 0.4)
+	for name, channels := range map[string][][]int16{
+		"left only":    {speech, make([]int16, len(speech))},
+		"right only":   {make([]int16, len(speech)), speech},
+		"out of phase": {speech, invert(speech)},
+		"multichannel": {make([]int16, len(speech)), make([]int16, len(speech)), speech, make([]int16, len(speech))},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var calls [][]string
+			var heard []float64
+			l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, channels, helloWorldJSON, &heard)}
+			got, err := l.Transcribe(context.Background(), "/in/rec.webm", Options{})
+			require.NoError(t, err)
+			assert.Equal(t, "Hello world.", got.Text)
+			require.Len(t, calls, 2)
+			peak, _ := measure(heard)
+			assert.InDelta(t, speechPeak, peak, 0.01, "whisper should hear the speech channel at full level")
+		})
+	}
+}
+
+func TestLocal_AmplifiesLowLevelSpeech(t *testing.T) {
+	var calls [][]string
+	var heard []float64
+	// About -50 dBFS: quiet speech from a low-gain audio interface.
+	l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, [][]int16{tone(3*time.Second, 0.003)}, helloWorldJSON, &heard)}
+	got, err := l.Transcribe(context.Background(), "/in/rec.webm", Options{})
+	require.NoError(t, err)
+	assert.False(t, got.NoSpeech)
+	assert.Equal(t, "Hello world.", got.Text)
+	require.Len(t, calls, 2)
+	peak, _ := measure(heard)
+	assert.InDelta(t, speechPeak, peak, 0.02)
+}
+
+func TestLocal_LeavesLoudSpeechUnchanged(t *testing.T) {
+	var calls [][]string
+	var heard []float64
+	l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, [][]int16{tone(3*time.Second, 0.9)}, helloWorldJSON, &heard)}
+	_, err := l.Transcribe(context.Background(), "/in/rec.webm", Options{})
+	require.NoError(t, err)
+	peak, _ := measure(heard)
+	assert.InDelta(t, 0.9, peak, 0.01)
+}
+
+func invert(samples []int16) []int16 {
+	out := make([]int16, len(samples))
+	for i, v := range samples {
+		out[i] = -v
+	}
+	return out
+}
+
+func TestPrepareSpeech(t *testing.T) {
+	dir := t.TempDir()
+	in, out := filepath.Join(dir, "in.wav"), filepath.Join(dir, "out.wav")
+	writeWAV(t, in, tone(2*time.Second, 0.05), tone(2*time.Second, 0.5))
+	level, err := prepareSpeech(in, out)
 	require.NoError(t, err)
 	assert.Equal(t, 2*time.Second, level.Duration)
+	assert.Equal(t, 2, level.Channels)
+	assert.Equal(t, 1, level.Channel)
 	assert.InDelta(t, 0.5, level.Peak, 0.01)
 	assert.InDelta(t, 0.5/math.Sqrt2, level.RMS, 0.01)
+	assert.InDelta(t, speechPeak/0.5, level.Gain, 0.01)
+	assert.Len(t, readWAV(t, out), 2*16000)
 
-	require.NoError(t, os.WriteFile(path, []byte("not audio"), 0o600))
-	_, err = readWAVLevel(path)
+	require.NoError(t, os.WriteFile(in, []byte("not audio"), 0o600))
+	_, err = prepareSpeech(in, out)
 	assert.Error(t, err)
+}
+
+func TestPrepareSpeech_SilenceWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	in, out := filepath.Join(dir, "in.wav"), filepath.Join(dir, "out.wav")
+	writeWAV(t, in, make([]int16, 16000), make([]int16, 16000))
+	level, err := prepareSpeech(in, out)
+	require.NoError(t, err)
+	assert.Equal(t, "recording is silent", level.silent())
+	assert.NoFileExists(t, out)
+}
+
+func TestDecodeWAV_Float32(t *testing.T) {
+	var buf bytes.Buffer
+	buf.WriteString("RIFF")
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(4+24+8+16))
+	buf.WriteString("WAVEfmt ")
+	for _, v := range []any{uint32(16), uint16(3), uint16(2), uint32(16000), uint32(128000), uint16(8), uint16(32)} {
+		_ = binary.Write(&buf, binary.LittleEndian, v)
+	}
+	buf.WriteString("data")
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(16))
+	_ = binary.Write(&buf, binary.LittleEndian, []float32{0.25, -0.5, 0.0001, 1})
+	channels, err := decodeWAV(buf.Bytes())
+	require.NoError(t, err)
+	require.Len(t, channels, 2)
+	assert.InDeltaSlice(t, []float64{0.25, 0.0001}, channels[0], 1e-6)
+	assert.InDeltaSlice(t, []float64{-0.5, 1}, channels[1], 1e-6)
 }
 
 func TestLocal_DefaultsLanguageToAuto(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -845,8 +846,19 @@ func normalize(cfg *Config) {
 	}
 }
 
+// customDefaultPath overrides DefaultPath; see SetDefaultPath.
+var customDefaultPath atomic.Pointer[string]
+
+// SetDefaultPath makes DefaultPath return path, so every load and save that
+// names no file uses it. `aviary watch` points it at its temporary config.
+// An empty path restores the automatic resolution.
+func SetDefaultPath(path string) { customDefaultPath.Store(&path) }
+
 // DefaultPath returns the default path to aviary.yaml.
 func DefaultPath() string {
+	if path := customDefaultPath.Load(); path != nil && *path != "" {
+		return *path
+	}
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "aviary", "aviary.yaml")
 	}

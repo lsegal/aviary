@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="flex flex-1 flex-col overflow-y-auto px-6 py-6">
+    <div class="flex flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6">
       <!-- Header + Filters -->
       <div class="mb-6 flex flex-wrap items-center gap-3">
         <SystemPageIcon page-key="usage" tile />
@@ -17,7 +17,7 @@
             {{ p.label }}
           </button>
         </div>
-        <div class="flex items-center gap-1 text-sm">
+        <div class="flex flex-wrap items-center gap-1 text-sm">
           <input v-model="store.startDate" type="date"
             class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
             @change="activePreset = null; store.fetch()" />

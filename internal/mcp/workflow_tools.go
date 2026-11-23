@@ -9,11 +9,9 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lsegal/aviary/internal/config"
-	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/scriptruntime"
 	"github.com/lsegal/aviary/internal/sessiontarget"
-	"github.com/lsegal/aviary/internal/store"
 )
 
 // workflowPreviewArgs selects the recent messages workflow_preview tests a
@@ -109,51 +107,17 @@ func sessionEntry(cc config.ChannelConfig, name string) string {
 // recentChannelMessages returns the latest limit messages others sent on the
 // channel's conversations, or only on entry when it is set, oldest first.
 func recentChannelMessages(a config.AgentConfig, idx int, entry string, limit int) ([]workflowPreviewMessage, error) {
-	sessions, err := sessiontarget.ChannelSessions(a, idx)
+	h, err := readChannelHistory(a, idx, entry)
 	if err != nil {
 		return nil, err
 	}
-	type stamped struct {
-		msg workflowPreviewMessage
-		at  time.Time
+	msgs := h.Messages
+	if len(msgs) > limit {
+		msgs = msgs[len(msgs)-limit:]
 	}
-	var all []stamped
-	for _, sess := range sessions {
-		e := sessionEntry(a.Channels[idx], sess.Name)
-		if e == "" || (entry != "" && e != entry) {
-			continue
-		}
-		path := store.FindSessionPath(sess.AgentID, sess.ID)
-		if path == "" {
-			continue
-		}
-		lines, err := store.ReadJSONL[domain.Message](path)
-		if err != nil {
-			continue
-		}
-		for _, m := range lines {
-			if m.Role != domain.MessageRoleUser {
-				continue
-			}
-			pm := workflowPreviewMessage{Entry: e, Text: m.Content, Timestamp: m.Timestamp.Format(time.RFC3339Nano)}
-			if m.Sender != nil {
-				pm.Sender = scheduler.DisplayName(m.Sender.ID, m.Sender.Name)
-			}
-			all = append(all, stamped{pm, m.Timestamp})
-		}
-	}
-	// Oldest first, keeping the latest limit.
-	for i := 1; i < len(all); i++ {
-		for j := i; j > 0 && all[j].at.Before(all[j-1].at); j-- {
-			all[j], all[j-1] = all[j-1], all[j]
-		}
-	}
-	if len(all) > limit {
-		all = all[len(all)-limit:]
-	}
-	out := make([]workflowPreviewMessage, 0, len(all))
-	for _, s := range all {
-		out = append(out, s.msg)
+	out := make([]workflowPreviewMessage, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, workflowPreviewMessage{Entry: m.Entry, Sender: m.Sender, Text: m.Message.Content, Timestamp: m.Message.Timestamp.Format(time.RFC3339Nano)})
 	}
 	return out, nil
 }
@@ -189,8 +153,8 @@ func createWorkflow(args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, er
 		return nil, struct{}{}, err
 	}
 	target := normalizeTaskTarget(args.Target)
-	if target != "" && !config.ValidTaskTarget(target) {
-		return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted or \"silent\", \"reply\", session:<name-or-id>, or channel:<channel name>", args.Target)
+	if _, err := config.ParseTaskTarget(target); err != nil {
+		return nil, struct{}{}, err
 	}
 	name := strings.TrimSpace(args.Name)
 	if name == "" {

@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { installUnsavedChanges } from "../composables/useUnsavedChanges";
+import { minimalAllowsPath } from "../lib/minimalMode";
 import { needsOnboarding } from "../lib/onboarding";
+import { useAgentsStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
 import { prefetchSettingsViewWhenIdle, SettingsView } from "./settingsView";
 
@@ -154,6 +156,13 @@ router.beforeEach(async (to) => {
 	if (to.meta.requiresAuth && !auth.isLoggedIn) {
 		return "/login";
 	}
+	// A watch session serves only Code Loop and Scheduled Tasks; anything
+	// else lands on the session agent's Code Loop board. Its server needs no
+	// token, so the health check above has always told the store.
+	if (auth.minimal) {
+		if (minimalAllowsPath(to.path)) return;
+		return await minimalHome();
+	}
 	// With no agent configured, every page sends the user through the setup
 	// wizard first, wherever the login or link landed.
 	if (
@@ -164,6 +173,16 @@ router.beforeEach(async (to) => {
 		return "/onboarding";
 	}
 });
+/** A watch session's landing page: its agent's Code Loop board. */
+async function minimalHome(): Promise<string> {
+	const agents = useAgentsStore();
+	if (!agents.agents.length) await agents.fetchAgents();
+	const name = agents.agents[0]?.name;
+	return name
+		? `/agents/${encodeURIComponent(name)}/projects`
+		: "/projects/settings";
+}
+
 installUnsavedChanges(router);
 void router.isReady().then(prefetchSettingsViewWhenIdle);
 

@@ -17,6 +17,8 @@ export interface UsageRecord {
 	has_throttle?: boolean;
 	cost_usd?: number;
 	project?: ProjectUsage;
+	/** Set on a record that logs a task's or workflow's output delivery. */
+	delivery?: { target: string; status: string; message: string };
 	/** The "<agent>/<task>" scheduled task or workflow whose run spent the tokens. */
 	task?: string;
 	/** The channel whose message fired a workflow run. */
@@ -80,7 +82,8 @@ export const useUsageStore = defineStore("usage", () => {
 				end: endDate.value,
 			});
 			const all = (JSON.parse(raw) as UsageRecord[]) ?? [];
-			records.value = all.filter((r) => !r.project);
+			// Delivery records log where task output went and spend no tokens.
+			records.value = all.filter((r) => !r.project && !r.delivery);
 			projectRecords.value = all.filter((r) => r.project);
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);

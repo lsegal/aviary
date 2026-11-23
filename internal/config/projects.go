@@ -164,7 +164,7 @@ func (c *Config) ValidateProjectReports(r *ProjectReportsConfig) error {
 		if strings.TrimSpace(target) == "" {
 			continue
 		}
-		if !validTaskTarget(target) || strings.EqualFold(strings.TrimSpace(target), "silent") {
+		if parsed, err := ParseTaskTarget(target); err != nil || (parsed.Kind != TargetSession && parsed.Kind != TargetChannel) {
 			return fmt.Errorf("invalid report target %q; use channel:<channel name> or session:<name>", target)
 		}
 		if name, ok := ChannelTargetName(target); ok && owner.ChannelByName(name) < 0 {

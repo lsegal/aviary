@@ -1,6 +1,6 @@
 <template>
 	<AppLayout>
-		<div ref="scrollRoot" :class="isAgentFilesPage ? 'flex h-full flex-col overflow-hidden' : 'h-full overflow-y-auto'">
+		<div ref="scrollRoot" data-testid="settings-scroll" :class="isAgentFilesPage ? 'flex h-full flex-col overflow-hidden' : 'h-full overflow-y-auto'">
 			<div :class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'mx-auto max-w-7xl px-4 py-6 sm:px-6'">
 				<SettingsPageHeader v-if="!isAgentFilesPage" :crumbs="pageHeader.crumbs" :back="pageHeader.back">
 					<template #icon>
@@ -378,6 +378,7 @@ import {
 import { projectTargets } from "../lib/projectSettings";
 import { projectPath } from "../lib/projects";
 import { SETTINGS_TABS } from "../lib/systemNav";
+import { CODELOOP_TARGET_PREFIX, isCodeLoopTarget } from "../lib/taskTargets";
 import {
 	clampToolNamesForPreset,
 	groupTools,
@@ -2464,8 +2465,9 @@ function selectedTaskTarget(task: AgentTask): string {
 }
 
 function setSelectedTaskTarget(task: AgentTask, value: string) {
-	if (parseTaskChannelValue(task.target).selection !== "session") return;
-	task.target = `session:${value.trim()}`;
+	const selection = parseTaskChannelValue(task.target).selection;
+	if (selection === "session") task.target = `session:${value.trim()}`;
+	else if (selection === "codeloop") task.target = value.trim();
 }
 
 function slackVisibleChannels(
@@ -2484,6 +2486,7 @@ function slackVisibleChannels(
 function configuredTaskChannelOptions(agent: AgentEntry): TaskChannelOption[] {
 	return [
 		{ value: "session", label: "Session" },
+		{ value: "codeloop", label: "Code Loop job" },
 		...(agent.channels ?? [])
 			.filter((ch) => !!ch.type && !!ch.id)
 			.map((ch) => ({
@@ -2501,6 +2504,7 @@ function parseTaskChannelValue(target?: string): {
 	const raw = (target ?? "").trim();
 	if (raw.startsWith("session:"))
 		return { selection: "session", target: raw.slice("session:".length) };
+	if (isCodeLoopTarget(raw)) return { selection: "codeloop", target: raw };
 	const name = channelTargetName(raw);
 	if (name) return { selection: channelTarget(name), target: "" };
 	return { selection: "", target: "" };
@@ -2614,6 +2618,9 @@ function allowFromCardClass(entry: AllowFromEntry): string {
 function setTaskChannelSelection(task: AgentTask, selection: string) {
 	const parsed = parseTaskChannelValue(task.target);
 	if (selection === "session") task.target = `session:${parsed.target}`;
+	else if (selection === "codeloop")
+		task.target =
+			parsed.selection === "codeloop" ? parsed.target : CODELOOP_TARGET_PREFIX;
 	else task.target = selection;
 }
 
