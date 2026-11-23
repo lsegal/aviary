@@ -74,8 +74,10 @@ function usageRecord({
 	};
 }
 
+const docsVersion = "0.7.3";
+
 const versionPayload = {
-	latestVersion: "0.3.1",
+	latestVersion: docsVersion,
 	upgradeAvailable: false,
 	message: "",
 };
@@ -139,6 +141,23 @@ const overviewFixtures = {
 	config_validate: [],
 };
 
+const chatSessions = [
+	{
+		id: "sess-main",
+		agent_id: "agent_assistant",
+		name: "main",
+		created_at: iso(1, 10),
+		is_processing: false,
+	},
+	{
+		id: "sess-triage",
+		agent_id: "agent_assistant",
+		name: "morning planning",
+		created_at: iso(0, 8),
+		is_processing: false,
+	},
+];
+
 const chatFixtures = {
 	agent_list: [
 		{
@@ -154,22 +173,6 @@ const chatFixtures = {
 			model: "openai/gpt-5",
 			fallbacks: [],
 			state: "idle",
-		},
-	],
-	session_list: [
-		{
-			id: "sess-main",
-			agent_id: "agent_assistant",
-			name: "main",
-			created_at: iso(1, 10),
-			is_processing: false,
-		},
-		{
-			id: "sess-triage",
-			agent_id: "agent_assistant",
-			name: "morning planning",
-			created_at: iso(0, 8),
-			is_processing: false,
 		},
 	],
 	session_messages: [
@@ -224,8 +227,37 @@ const chatFixtures = {
 	],
 };
 
+// A Code Loop record reports an issue's job wall time or its outcome instead
+// of token use.
+function projectUsage(issue, daysAgo, hour, project) {
+	return {
+		timestamp: iso(daysAgo, hour),
+		session_id: issue,
+		agent_id: "coder",
+		model: "",
+		provider: "",
+		input_tokens: 0,
+		output_tokens: 0,
+		project: { issue, ...project },
+	};
+}
+
 const usageFixtures = {
 	usage_query: [
+		projectUsage("lsegal/aviary#209", 1, 10, { duration_ms: 38 * 60_000 }),
+		projectUsage("lsegal/aviary#209", 1, 11, {
+			outcome: "merged",
+			additions: 84,
+			deletions: 12,
+		}),
+		projectUsage("lsegal/aviary#200", 3, 14, { duration_ms: 52 * 60_000 }),
+		projectUsage("lsegal/aviary#200", 3, 15, {
+			outcome: "merged",
+			additions: 312,
+			deletions: 41,
+		}),
+		projectUsage("lsegal/forgo#80", 0, 9, { duration_ms: 64 * 60_000 }),
+		projectUsage("lsegal/forgo#80", 0, 10, { outcome: "failed" }),
 		usageRecord({
 			daysAgo: 0,
 			hour: 8,
@@ -365,7 +397,9 @@ const usageFixtures = {
 	],
 };
 
-const settingsConfig = {
+// The configuration every page loads: the sidebar lists its agents and their
+// sessions, tasks and channels.
+const docsConfig = {
 	server: {
 		port: 16677,
 		tls: { cert: "", key: "" },
@@ -444,8 +478,44 @@ const settingsConfig = {
 					],
 				},
 			],
-			tasks: [],
+			tasks: [
+				{
+					name: "daily-inbox-triage",
+					type: "script",
+					trigger: "weekly",
+					days: "mon,tue,wed,thu,fri",
+					at: "07:00",
+					prompt:
+						"Check unread email, compare against today’s meetings, and draft a morning brief.",
+				},
+				{
+					name: "calendar-prep",
+					trigger: "daily",
+					at: "08:30",
+					prompt: "Summarize today’s meetings and prep notes.",
+				},
+				{
+					name: "weekly-review",
+					trigger: "weekly",
+					days: "fri",
+					at: "16:00",
+					enabled: false,
+					prompt: "Draft a weekly review from closed tasks and sent email.",
+				},
+			],
 		},
+		{
+			name: "researcher",
+			model: "openai/gpt-5",
+			tasks: [
+				{
+					name: "competitor-watch",
+					every: "4h",
+					prompt: "Track competitor launches and pricing changes.",
+				},
+			],
+		},
+		{ name: "ops", model: "google/gemini-2.5-pro" },
 	],
 	models: {
 		providers: {},
@@ -545,8 +615,61 @@ const settingsToolList = [
 	},
 ];
 
+const transcriptionStatus = {
+	enabled: true,
+	engine: "whisper.cpp",
+	language: "auto",
+	ready: true,
+	status: {
+		whisper: {
+			name: "whisper-cli",
+			installed: true,
+			path: "/usr/local/bin/whisper-cli",
+		},
+		ffmpeg: {
+			name: "ffmpeg",
+			installed: true,
+			path: "/usr/local/bin/ffmpeg",
+		},
+		model: {
+			name: "base.en",
+			downloaded: true,
+			path: "~/.config/aviary/whisper/ggml-base.en.bin",
+		},
+	},
+};
+
+// Mocks every page needs, which a capture's own fixtures override.
+const commonFixtures = {
+	config_get: docsConfig,
+	config_validate: [],
+	server_version_check: {
+		currentVersion: docsVersion,
+		latestVersion: docsVersion,
+		upgradeAvailable: false,
+		upgradeSupported: true,
+		restart: { phase: "idle", jobs: [], held: false },
+	},
+	session_list: (args) => (args.agent === "assistant" ? chatSessions : []),
+	// Called with a saved task's agent/name, or with an edited task's fields.
+	task_preview: (args) => {
+		const [agent, name] = String(args.name ?? "").split("/");
+		const task =
+			docsConfig.agents
+				.find((a) => a.name === agent)
+				?.tasks?.find((t) => t.name === name) ?? args;
+		return {
+			description: task.every
+				? `every ${task.every}`
+				: task.trigger === "weekly"
+					? `weekly on ${task.days} at ${task.at}`
+					: `daily at ${task.at}`,
+			next: task.enabled === false ? [] : [iso(-1, 7)],
+		};
+	},
+};
+
 const settingsFixtures = {
-	config_get: settingsConfig,
 	auth_list: ["anthropic:default", "openai:default", "google:default"],
 	tool_list: settingsToolList,
 };
@@ -591,20 +714,64 @@ const systemToolsFixtures = {
 		"1. aviary.bot landing page draft\n2. docs screenshot checklist\n3. customer feedback thread about docs images",
 };
 
+// The coding skills Aviary installs into each CLI provider, as
+// internal/codingskills reports them.
+const codingSkillClis = [
+	{ id: "claude", name: "Claude Code", target: "claude-code" },
+	{ id: "codex", name: "Codex", target: "codex" },
+];
+
+function codingSkill(name, summary, runByProjects, outdatedIn = []) {
+	return {
+		name,
+		summary,
+		run_by_projects: runByProjects,
+		installs: codingSkillClis.map((cli) => ({
+			cli: cli.id,
+			installed: true,
+			current: !outdatedIn.includes(cli.id),
+			version: outdatedIn.includes(cli.id) ? "0.7.1" : docsVersion,
+			source: "lsegal/aviary",
+		})),
+	};
+}
+
+const codingSkillsStatus = {
+	version: docsVersion,
+	source: "lsegal/aviary",
+	release: true,
+	clis: codingSkillClis,
+	skills: [
+		codingSkill(
+			"gh-fix",
+			"Fixes an issue end to end: draft PR, implement, test, changelog, CI repair, merge. Runs for issues on watched repos and boards.",
+			true,
+		),
+		codingSkill(
+			"gh-discuss",
+			"Reads the repo and posts one reply to a new Discussion thread, or stays silent. Read-only. Runs for watched Discussions boards.",
+			true,
+		),
+		codingSkill(
+			"gh-create",
+			"Files a well-formed issue from a short request. Code Loop never runs it, but the issues it files are what Code Loop picks up.",
+			false,
+		),
+		codingSkill(
+			"gh-safe-merge",
+			"Safety-checks an unowned pull request, such as an external contribution, before anything runs, then drives CI green and merges it. Code Loop never runs it.",
+			false,
+			["codex"],
+		),
+	],
+	outdated: 1,
+};
+
 const systemSkillsFixtures = {
 	skills_list: systemSkillsList,
+	coding_skills_list: codingSkillsStatus,
 	config_get: {
-		server: {
-			port: 16677,
-			tls: { cert: "", key: "" },
-			external_access: false,
-			no_tls: false,
-		},
-		agents: [],
-		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
-		browser: { binary: "", cdp_port: 9222, headless: true },
-		search: { web: { brave_api_key: "" } },
-		scheduler: { concurrency: "", precompute_tasks: true },
+		...docsConfig,
 		skills: {
 			calendar: { enabled: true },
 			email: { enabled: true },
@@ -653,71 +820,41 @@ const compileDetail = {
 		"events = calendar_events_today()\nmail = email_inbox_list(unread_only=true)\nprint(render_morning_brief(events, mail))",
 };
 
+function taskRun(n, task, status, daysAgo, hour, seconds, extra = {}) {
+	const created = new Date(iso(daysAgo, hour));
+	return {
+		id: `job_${String(n).padStart(8, "0")}`,
+		task_id: `assistant/${task}`,
+		agent_id: "assistant",
+		prompt: "",
+		status,
+		attempts: status === "failed" ? 2 : 1,
+		max_retries: 3,
+		scheduled_for: created.toISOString(),
+		created_at: created.toISOString(),
+		updated_at: new Date(created.getTime() + seconds * 1000).toISOString(),
+		...extra,
+	};
+}
+
 const jobsFixtures = {
 	job_query: [
-		{
-			id: "job-run-1",
-			task_id: "daily-inbox-triage",
-			agent_id: "assistant",
-			session_id: "sess-triage",
-			prompt:
-				"Check unread email, compare against today’s meetings, and draft a morning brief.",
-			status: "completed",
-			attempts: 1,
-			max_retries: 3,
-			scheduled_for: iso(0, 7, 0),
-			created_at: iso(0, 7, 0),
-			updated_at: iso(0, 7, 1),
-		},
-		{
-			id: "job-run-2",
-			task_id: "calendar-prep",
-			agent_id: "assistant",
-			session_id: "sess-main",
-			prompt: "Summarize today’s meetings and prep notes.",
-			status: "in_progress",
-			attempts: 1,
-			max_retries: 3,
-			scheduled_for: iso(0, 8, 30),
-			created_at: iso(0, 8, 30),
-			updated_at: iso(0, 8, 31),
-		},
-		{
-			id: "job-run-3",
-			task_id: "competitor-watch",
-			agent_id: "researcher",
-			session_id: "sess-research",
-			prompt: "Track competitor launches and pricing changes.",
-			status: "failed",
-			attempts: 2,
-			max_retries: 3,
-			scheduled_for: iso(1, 15, 0),
-			created_at: iso(1, 15, 0),
-			updated_at: iso(1, 15, 2),
-		},
-	],
-	task_list: [
-		{
-			id: "daily-inbox-triage",
-			agent_id: "assistant",
-			agent_name: "assistant",
-			name: "daily-inbox-triage",
-			type: "script",
-			trigger_type: "cron",
-			schedule: "0 7 * * 1-5",
-			prompt:
-				"Check unread email, compare against today’s meetings, and draft a morning brief.",
-		},
-		{
-			id: "competitor-watch",
-			agent_id: "researcher",
-			agent_name: "researcher",
-			name: "competitor-watch",
-			type: "prompt",
-			trigger_type: "cron",
-			schedule: "0 */4 * * *",
-			prompt: "Track competitor launches and pricing changes.",
-		},
+		taskRun(12, "calendar-prep", "in_progress", 0, 8, 30),
+		taskRun(11, "daily-inbox-triage", "completed", 0, 7, 41),
+		taskRun(10, "calendar-prep", "completed", 1, 8, 52),
+		taskRun(9, "daily-inbox-triage", "completed", 1, 7, 38),
+		taskRun(8, "calendar-prep", "failed", 2, 8, 95, {
+			error: "calendar_events_today: provider returned 503",
+		}),
+		taskRun(7, "daily-inbox-triage", "completed", 2, 7, 44),
+		taskRun(6, "calendar-prep", "completed", 3, 8, 47),
+		taskRun(5, "daily-inbox-triage", "completed", 3, 7, 36),
+		taskRun(4, "weekly-review", "completed", 4, 16, 120),
+		taskRun(15, "daily-inbox-triage", "completed", 4, 7, 39),
+		taskRun(14, "calendar-prep", "completed", 4, 8, 51),
+		taskRun(13, "calendar-prep", "completed", 5, 8, 46),
+		taskRun(3, "daily-inbox-triage", "completed", 6, 7, 40),
+		taskRun(2, "calendar-prep", "completed", 6, 8, 49),
 	],
 	task_compile_query: [compileDetail],
 	task_compile_get: compileDetail,
@@ -1128,7 +1265,8 @@ async function waitForServer(browser, url, timeoutMs = 30_000) {
 }
 
 async function configurePage(page, fixtures) {
-	await page.addInitScript(() => {
+	fixtures = { ...commonFixtures, ...fixtures };
+	await page.addInitScript((version) => {
 		localStorage.setItem("aviary_token", "docs-shot-token");
 		// The mocked server has no providers, so skip the setup wizard.
 		sessionStorage.setItem("aviary_onboarding_skipped", "1");
@@ -1152,8 +1290,9 @@ async function configurePage(page, fixtures) {
 					this.onmessage?.({
 						type: "message",
 						data: JSON.stringify({
+							type: "health",
 							ok: true,
-							version: "0.3.0",
+							version,
 							goos: "linux",
 						}),
 						target: this,
@@ -1171,6 +1310,29 @@ async function configurePage(page, fixtures) {
 		}
 
 		window.WebSocket = MockWebSocket;
+	}, docsVersion);
+
+	// The dev server proxies /api to whatever Aviary server runs locally, so
+	// answer every request no route below mocks rather than let the real
+	// server's paths or numbers into an image.
+	await page.route("**/api/**", async (route) => {
+		await route.fulfill({ status: 404, body: "" });
+	});
+
+	await page.route("**/api/health", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ ok: true, auth_disabled: false }),
+		});
+	});
+
+	await page.route("**/api/transcription", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify(transcriptionStatus),
+		});
 	});
 
 	await page.route("**/api/version", async (route) => {
@@ -1205,7 +1367,7 @@ async function configurePage(page, fixtures) {
 					result: {
 						protocolVersion: "2024-11-05",
 						capabilities: {},
-						serverInfo: { name: "aviary-docs-shot", version: "0.3.0" },
+						serverInfo: { name: "aviary-docs-shot", version: docsVersion },
 					},
 				}),
 			});
@@ -1328,13 +1490,23 @@ async function captureJobs(browser, theme) {
 	});
 	try {
 		await configurePage(page, jobsFixtures);
-		await openPage(page, "/jobs", 'h2:has-text("Jobs")');
+		await openPage(page, "/agents/assistant/tasks", '[data-testid="stat-runs"]');
+		await page.getByTestId("more-analytics-toggle").click();
 		await page
 			.locator("tr")
 			.filter({ hasText: "Workflow is deterministic and safe to compile" })
 			.first()
 			.click();
 		await page.getByText("Generated Script").waitFor();
+		// The drawer slides in from the right; wait until it is flush with the
+		// viewport's edge.
+		await page.waitForFunction(() => {
+			const panel = document.querySelector('[data-testid="details-panel"]');
+			return (
+				Math.round(panel?.getBoundingClientRect().right ?? 0) ===
+				window.innerWidth
+			);
+		});
 		await page.screenshot({
 			path: path.join(outputDir, themedOutputName("system-jobs.png", theme)),
 			fullPage: false,
@@ -1379,7 +1551,7 @@ async function main() {
 			await captureSimple({
 				browser,
 				fixtures: overviewFixtures,
-				pathname: "/overview",
+				pathname: "/system/overview",
 				readySelector: 'h2:has-text("Overview")',
 				outputName: "control-panel-overview.png",
 				viewport: { width: 1040, height: 980 },
@@ -1389,7 +1561,7 @@ async function main() {
 			await captureSimple({
 				browser,
 				fixtures: chatFixtures,
-				pathname: "/chat",
+				pathname: "/agents/assistant/chat/sess-triage",
 				readySelector: "text=I took a quick pass through everything.",
 				outputName: "chat-workspace.png",
 				viewport: { width: 1040, height: 980 },
@@ -1399,7 +1571,7 @@ async function main() {
 			await captureSimple({
 				browser,
 				fixtures: usageFixtures,
-				pathname: "/usage",
+				pathname: "/system/usage",
 				readySelector: 'h2:has-text("Usage")',
 				outputName: "usage-analytics.png",
 				viewport: { width: 1040, height: 1120 },
@@ -1408,15 +1580,15 @@ async function main() {
 
 			await captureSettingsPage({
 				browser,
-				pathname: "/settings/agents/assistant/channels",
+				pathname: "/agents/assistant/channels/design-ops-bot/settings",
 				outputName: "configure-everything.png",
-				readySelector: 'h5:has-text("Channel 1")',
+				readySelector: "text=Allow From",
 				theme,
 			});
 
 			await captureSettingsPage({
 				browser,
-				pathname: "/settings/agents/assistant/permissions",
+				pathname: "/agents/assistant/settings/permissions",
 				outputName: "security-minded.png",
 				readySelector: 'label:has-text("Filesystem Allowed Paths")',
 				theme,
@@ -1426,7 +1598,7 @@ async function main() {
 				browser,
 				fixtures: systemSkillsFixtures,
 				pathname: "/system/skills",
-				readySelector: 'h2:has-text("Skills")',
+				readySelector: '[data-testid="coding-skill-gh-fix"]',
 				outputName: "system-skills.png",
 				viewport: { width: 1040, height: 1120 },
 				theme,
