@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -181,6 +181,13 @@ for (const target of targets) {
 }
 
 await writeFile(path.join(releaseDir, "checksums.txt"), `${checksums.join("\n")}\n`);
+
+// The installers ship as release assets, so
+// https://github.com/lsegal/aviary/releases/latest/download/install.sh always
+// serves the installer that matches the latest release (#983).
+for (const installer of ["install.sh", "install.ps1"]) {
+	await copyFile(path.join(rootDir, "installer", installer), path.join(releaseDir, installer));
+}
 
 if (windowsAmd64Hash) {
 	await mkdir(path.dirname(scoopManifestPath), { recursive: true });

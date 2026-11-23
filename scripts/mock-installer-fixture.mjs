@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -30,41 +31,33 @@ const baseUrl = args.baseUrl ?? "http://127.0.0.1:8765";
 
 const binaryName = goos === "windows" ? "aviary.exe" : "aviary";
 const assetName = `aviary_${version}_${goos}_${goarch}.tar.gz`;
-const assetUrl = `${baseUrl}/assets/${assetName}`;
-const release = {
-	tag_name: version,
-	assets: [
-		{
-			name: assetName,
-			browser_download_url: assetUrl,
-		},
-	],
-};
 
-const assetsDir = path.join(root, "assets");
-const releaseDir = path.join(root, "repos", ...repo.split("/"), "releases");
+// Mirrors github.com: <repo>/releases/latest redirects to the tag page, and
+// assets download from <repo>/releases/download/<tag>/<asset>.
+const releasesDir = path.join(root, ...repo.split("/"), "releases");
+const downloadDir = path.join(releasesDir, "download", version);
 const stageDir = await mkdtemp(path.join(tmpdir(), "aviary-installer-fixture-"));
 
 try {
-	await mkdir(assetsDir, { recursive: true });
-	await mkdir(path.join(releaseDir, "tags"), { recursive: true });
+	await mkdir(downloadDir, { recursive: true });
 
 	const binaryPath = path.join(stageDir, binaryName);
 	const binaryContents =
 		goos === "windows"
 			? Buffer.concat([Buffer.from([0x4d, 0x5a]), Buffer.from("mock aviary windows binary\n")])
-			: "#!/usr/bin/env sh\necho mock aviary\n";
+			: '#!/usr/bin/env sh\nif [ "$1" = install-skills ]; then mkdir -p "$HOME/.agents/skills/gh-fix" && echo "installed gh-fix" >>"$HOME/.agents/skills/gh-fix/install.log"; fi\necho mock aviary\n';
 	await writeFile(binaryPath, binaryContents, {
 		mode: goos === "windows" ? 0o644 : 0o755,
 	});
 
-	execFileSync("tar", ["-czf", path.join(assetsDir, assetName), "-C", stageDir, binaryName], {
+	const archivePath = path.join(downloadDir, assetName);
+	execFileSync("tar", ["-czf", archivePath, "-C", stageDir, binaryName], {
 		stdio: "inherit",
 	});
 
-	const releaseJSON = `${JSON.stringify(release, null, 2)}\n`;
-	await writeFile(path.join(releaseDir, "latest"), releaseJSON);
-	await writeFile(path.join(releaseDir, "tags", version), releaseJSON);
+	const sha256 = createHash("sha256").update(await readFile(archivePath)).digest("hex");
+	await writeFile(path.join(downloadDir, "checksums.txt"), `${sha256}  ${assetName}\n`);
+	await writeFile(path.join(releasesDir, "latest.redirect"), `${baseUrl}/${repo}/releases/tag/${version}\n`);
 } finally {
 	await rm(stageDir, { recursive: true, force: true });
 }

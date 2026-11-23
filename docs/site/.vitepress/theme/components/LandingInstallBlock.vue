@@ -17,13 +17,15 @@ const installOptions = [
 		key: "curl",
 		label: "Bash",
 		prompt: "$",
-		command: "curl -fsSL https://aviary.bot/install.sh | sh",
+		command:
+			"curl -fsSL https://github.com/lsegal/aviary/releases/latest/download/install.sh | sh",
 	},
 	{
 		key: "pwsh",
 		label: "PowerShell",
 		prompt: ">",
-		command: "iwr https://aviary.bot/install.ps1 | iex",
+		command:
+			"irm https://github.com/lsegal/aviary/releases/latest/download/install.ps1 | iex",
 	},
 	{
 		key: "docker",
@@ -205,16 +207,18 @@ watch(activeKey, (_value, oldValue) => {
 }
 
 .landing-install-command .prompt {
+	align-self: flex-start;
+	line-height: 1.5;
 	color: var(--brand);
 	font-weight: 600;
 }
 
+/* Commands wrap instead of truncating, so the full install URL stays readable. */
 .landing-install-command .command {
 	flex: 1;
 	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
 }
 
 .landing-install-command .caret {
