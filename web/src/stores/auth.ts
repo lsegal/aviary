@@ -31,7 +31,11 @@ export const useAuthStore = defineStore("auth", () => {
 	}
 
 	async function pollHealth(): Promise<boolean> {
-		for (let delay = RETRY_MIN_MS; ; delay = Math.min(delay * 2, RETRY_MAX_MS)) {
+		for (
+			let delay = RETRY_MIN_MS;
+			;
+			delay = Math.min(delay * 2, RETRY_MAX_MS)
+		) {
 			try {
 				const res = await fetch("/api/health");
 				if (res.status < 500) {
