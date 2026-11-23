@@ -26,23 +26,18 @@
 				</div>
 			</header>
 
+			<WorkflowStrip v-if="channel" :agent="agent" :workflows="channelWorkflows" :status-of="statusOf" />
+
 			<div v-if="channel" class="min-h-0 flex-1">
 				<ChatView v-if="selectedId" :key="selectedId" :agent="agent" :session="selectedId" data-testid="channel-chat" />
 				<p v-else-if="error" role="alert" class="px-6 py-4 text-sm text-red-600 dark:text-red-400">{{ error }}</p>
 			</div>
+			<ChannelsOverview v-else-if="!channelParam && channels.length" :agent="agent" :channels="channels"
+				:workflows="agentWorkflows" :status-of="statusOf" />
 			<div v-else class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-gray-500 dark:text-gray-400"
 				data-testid="channels-empty">
 				<template v-if="channelParam">
 					<p>No channel named <span class="font-medium text-gray-900 dark:text-white">{{ channelParam }}</span>.</p>
-				</template>
-				<template v-else-if="channels.length">
-					<p>Pick a channel to see its conversation.</p>
-					<div class="flex flex-wrap justify-center gap-2">
-						<router-link v-for="c in channels" :key="channelName(c)" :to="channelPath(agent, channelName(c))"
-							class="rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-							{{ channelName(c) }}
-						</router-link>
-					</div>
 				</template>
 				<template v-else>
 					<p>No channels yet. A channel connects this agent to Slack, Discord or Signal, and keeps its conversation here.</p>
@@ -60,18 +55,20 @@ import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import ChannelsOverview from "../components/channels/ChannelsOverview.vue";
+import WorkflowStrip from "../components/channels/WorkflowStrip.vue";
 import MessagingLogo from "../components/MessagingLogo.vue";
 import { AppSelect } from "../components/ui/select";
 import { useChannelDialogs } from "../composables/useChannelDialogs";
 import { useMCP } from "../composables/useMCP";
+import { useWorkflowStatus } from "../composables/useWorkflowStatus";
 import {
 	CHANNEL_TYPES,
 	type ChannelSession,
 	channelName,
-	channelPath,
 	channelSettingsPath,
 } from "../lib/channels";
-import { useSettingsStore } from "../stores/settings";
+import { isWorkflow, useSettingsStore } from "../stores/settings";
 import ChatView from "./ChatView.vue";
 
 const route = useRoute();
@@ -98,6 +95,23 @@ const channel = computed(() =>
 			)
 		: undefined,
 );
+
+// The agent's workflows, and the open channel's, with their live state.
+const agentWorkflows = computed(
+	() =>
+		settings.config?.agents
+			.find((a) => a.name === agent.value)
+			?.tasks.filter((t) => isWorkflow(t)) ?? [],
+);
+const channelWorkflows = computed(() => {
+	const c = channel.value;
+	if (!c) return [];
+	const names = [channelName(c).toLowerCase(), (c.id ?? "").toLowerCase()];
+	return agentWorkflows.value.filter((t) =>
+		names.includes((t.channel ?? "").trim().toLowerCase()),
+	);
+});
+const { statusOf } = useWorkflowStatus(agent);
 
 const typeLabel = computed(
 	() =>

@@ -87,6 +87,17 @@
 										{{ formatTime(item.msg.timestamp) }}{{ item.msg.model ? ' | ' + item.msg.model : '' }}
 									</span>
 								</div>
+								<!-- A channel message a workflow handled: the agent did not
+									reply to it, and the workflow's run is one click away. -->
+								<p v-if="item.msg.workflows?.length" data-testid="chat-message-workflows"
+									class="mt-1 flex flex-wrap items-center justify-end gap-1 text-xs text-gray-500 dark:text-gray-400">
+									<BoltIcon aria-hidden="true" class="h-3.5 w-3.5" />
+									Handled by workflow
+									<template v-for="(w, wi) in item.msg.workflows" :key="w.task_id">
+										<router-link :to="workflowRunLink(w)" data-testid="chat-message-workflow-link"
+											class="font-medium text-blue-600 hover:underline dark:text-blue-400">{{ w.name }}</router-link><span v-if="wi < item.msg.workflows.length - 1">,</span>
+									</template>
+								</p>
 								<!-- A failed turn's error hangs off the bottom of its message,
 									offset so it reads as part of that bubble. -->
 								<div v-if="item.error" data-testid="chat-message-error"
@@ -150,6 +161,7 @@
 
 <script setup lang="ts">
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
+import BoltIcon from "@heroicons/vue/24/outline/BoltIcon";
 import {
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -181,6 +193,7 @@ import {
 	isMainChat,
 	useChatSessionsStore,
 } from "../stores/chatSessions";
+import { taskRunPath, taskSessionPath } from "../stores/settings";
 
 interface ToolData {
 	/** Ties a streamed call to its result; the two share one block. */
@@ -210,6 +223,15 @@ interface Message {
 	isError?: boolean;
 	/** The key of the user message whose turn this error failed. */
 	errorFor?: string;
+	/** The workflows that handled this channel message instead of the agent. */
+	workflows?: MessageWorkflow[];
+}
+
+/** A workflow that handled a channel message, and its run. */
+interface MessageWorkflow {
+	task_id: string;
+	name: string;
+	job_id?: string;
 }
 
 type MessageItem = {
@@ -241,6 +263,7 @@ interface PersistedMessage {
 	content: string;
 	media_urls?: string[];
 	model?: string;
+	workflows?: MessageWorkflow[];
 	timestamp?: string;
 }
 
@@ -255,6 +278,15 @@ const props = defineProps<{
 	 * the Code Loop prompt chat does with its hidden session. */
 	session?: string;
 }>();
+
+/** A workflow's run, or the workflow's page when the run is unknown. */
+function workflowRunLink(w: MessageWorkflow): string {
+	const [agent, ...rest] = w.task_id.split("/");
+	const task = rest.join("/") || w.name;
+	return w.job_id
+		? taskRunPath(agent, task, w.job_id)
+		: taskSessionPath(agent, task);
+}
 
 const agentsStore = useAgentsStore();
 const chatSessions = useChatSessionsStore();
@@ -1029,6 +1061,7 @@ async function loadSessionMessages(force = false) {
 							.filter((u) => !u.startsWith("file:")),
 						timestamp: m.timestamp,
 						model: m.model,
+						workflows: m.workflows,
 						isError: m.role === "assistant" && isErrorMessage(m.content),
 					};
 				}),
