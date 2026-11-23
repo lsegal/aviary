@@ -43,10 +43,10 @@ type WorkerPool struct {
 	onAttemptDone func(job domain.Job, duration time.Duration)
 	// projectRunner runs a "project" task's prompt as a Code Loop board job.
 	projectRunner ProjectRunner
-	// projectCompiler compiles precompiled project tasks.
-	projectCompiler ProjectTaskCompiler
-	// projectScriptReporter records how each precompiled script run ended.
-	projectScriptReporter ProjectTaskScriptReporter
+	// taskCompiler compiles precompiled project tasks.
+	taskCompiler TaskCompiler
+	// scriptReporter records how each precompiled script run ended.
+	scriptReporter TaskScriptReporter
 	// workflowReply sends a workflow run's output back to the conversation
 	// whose message triggered it, for the "reply" target.
 	workflowReply func(agentName string, tc domain.TriggerContext, text string) error
@@ -82,14 +82,14 @@ type ProjectRun struct {
 // not pass the determinism gate, so each run uses the model.
 var ErrProjectTaskNotCompiled = errors.New("the task's prompt is not deterministic enough to compile")
 
-// ProjectTaskCompiler returns a precompiled project task's current script,
+// TaskCompiler returns a precompiled project task's current script,
 // compiling it first when its prompt, project or tools changed; "" means its
 // prompt is not deterministic.
-type ProjectTaskCompiler func(ctx context.Context, agentName, taskName string) (string, error)
+type TaskCompiler func(ctx context.Context, agentName, taskName string) (string, error)
 
-// ProjectTaskScriptReporter records how a precompiled project task's script
+// TaskScriptReporter records how a precompiled project task's script
 // run ended: err is nil when it completed.
-type ProjectTaskScriptReporter func(agentName, taskName string, err error) error
+type TaskScriptReporter func(agentName, taskName string, err error) error
 
 // ProjectRunner runs a project task and waits for its agent to exit. It
 // returns the run's one-line summary, and an error when the run failed or
@@ -336,6 +336,13 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 		return err
 	}
 
+	// A precompiled workflow runs its script first; the model runs it only
+	// when there is no script or the script failed.
+	scriptLogs, handled, err := p.runCompiledWorkflow(ctx, job, runner.Config(), deliver)
+	if handled {
+		return err
+	}
+
 	if job.SessionID != "" && (job.Attempts > 1 || job.ResumeNote != "") {
 		prompt = "Continue the unfinished scheduled task from this existing session. Complete any remaining work for the original request:\n\n" + job.Prompt
 	}
@@ -349,6 +356,7 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 	var lastErr error
 	var reply strings.Builder
 	var logs jobLogBuilder
+	logs.AddBlock(scriptLogs)
 	live := &liveJobOutput{jobID: job.ID, agentID: job.AgentID}
 	startedAt := time.Now().UTC()
 	idle := taskIdleTimeout(job, runner.Config())
@@ -481,7 +489,7 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 	}
 	var compiledErr error
 	scriptExecuted := false
-	if precompile && p.projectCompiler != nil && cfg != nil {
+	if precompile && p.taskCompiler != nil && cfg != nil {
 		jobCtx := ctx
 		run.RunCompiled = func(runCtx context.Context, clone func(context.Context) (string, error), logf func(string, ...any)) (string, error) {
 			// The script runs as the job's agent, in its task session, which
@@ -499,8 +507,8 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 		}
 	}
 	summary, err := p.projectRunner(ctx, run)
-	if scriptExecuted && ctx.Err() == nil && p.projectScriptReporter != nil {
-		if reportErr := p.projectScriptReporter(cfg.Name, run.Name, compiledErr); reportErr != nil {
+	if scriptExecuted && ctx.Err() == nil && p.scriptReporter != nil {
+		if reportErr := p.scriptReporter(cfg.Name, run.Name, compiledErr); reportErr != nil {
 			slog.Warn("job: failed to record precompiled script result", "id", job.ID, "task", job.TaskID, "err", reportErr)
 		}
 	}
@@ -508,14 +516,7 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 	if compiledErr != nil && !errors.Is(compiledErr, ErrProjectTaskNotCompiled) {
 		scriptErr = compiledErr.Error()
 	}
-	if scriptErr != "" || job.ScriptError != "" {
-		// Each attempt records its own script error, or clears a retried
-		// job's earlier one.
-		if persistErr := p.queue.SetScriptError(job.ID, scriptErr); persistErr != nil {
-			slog.Warn("job: failed to persist script error", "id", job.ID, "err", persistErr)
-		}
-		job.ScriptError = scriptErr
-	}
+	p.setScriptError(job, scriptErr)
 	if scriptErr != "" {
 		// The run's summary and chat message are the model's result plus a
 		// short note; the full error, often a Lua traceback with gh's JSON
@@ -534,6 +535,81 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 	return err
 }
 
+// runCompiledWorkflow runs a precompiled prompt workflow's compiled script
+// for job, with the triggering message in the Lua global trigger. handled is
+// true when the script completed, or the run was stopped, so the model does
+// not run; err is then the run's result. Otherwise the run falls back to the
+// model: logs say what the script did, and job.ScriptError why it failed,
+// which marks the run as a fallback. A workflow whose prompt is not
+// deterministic simply runs on the model.
+func (p *WorkerPool) runCompiledWorkflow(ctx context.Context, job *domain.Job, cfg *config.AgentConfig, deliver func(agentName, route, text string) error) (logs string, handled bool, err error) {
+	if job.TriggerContext == nil || p.taskCompiler == nil || cfg == nil {
+		return "", false, nil
+	}
+	name := jobSessionName(job)
+	precompile := false
+	for _, task := range cfg.Tasks {
+		if task.Name == name && task.IsWorkflow() {
+			precompile = config.BoolOr(task.Precompile, false)
+			break
+		}
+	}
+	if !precompile {
+		return "", false, nil
+	}
+	var b jobLogBuilder
+	script, runErr := p.taskCompiler(ctx, cfg.Name, name)
+	executed := false
+	output := ""
+	if runErr == nil {
+		if strings.TrimSpace(script) == "" {
+			p.setScriptError(job, "")
+			return "", false, nil
+		}
+		b.Addf("running the precompiled script")
+		scriptJob := *job
+		scriptJob.Script = script
+		output, runErr = executeScriptJobOutput(ctx, &scriptJob, b.Addf)
+		executed = true
+	}
+	// Only the script's own result counts toward setting it aside, not a
+	// failed compile nor a stopped run.
+	if executed && ctx.Err() == nil && p.scriptReporter != nil {
+		if reportErr := p.scriptReporter(cfg.Name, name, runErr); reportErr != nil {
+			slog.Warn("job: failed to record precompiled script result", "id", job.ID, "task", job.TaskID, "err", reportErr)
+		}
+	}
+	if ctx.Err() != nil {
+		return "", true, ctx.Err()
+	}
+	if runErr == nil {
+		p.setScriptError(job, "")
+		if persistErr := p.queue.UpdateOutput(job.ID, b.String()); persistErr != nil {
+			slog.Warn("job: failed to persist output", "id", job.ID, "err", persistErr)
+		}
+		if output == "" {
+			return b.String(), true, nil
+		}
+		return b.String(), true, recordTaskOutput(job, output, deliver)
+	}
+	p.setScriptError(job, runErr.Error())
+	b.Addf("precompiled script failed (%s); falling back to the model", ProjectScriptFailureCause(runErr))
+	slog.Warn("job: precompiled workflow fell back to the model", "id", job.ID, "task", job.TaskID, "err", runErr)
+	return b.String(), false, nil
+}
+
+// setScriptError records the attempt's script error on job, or clears a
+// retried job's earlier one.
+func (p *WorkerPool) setScriptError(job *domain.Job, scriptErr string) {
+	if scriptErr == "" && job.ScriptError == "" {
+		return
+	}
+	if err := p.queue.SetScriptError(job.ID, scriptErr); err != nil {
+		slog.Warn("job: failed to persist script error", "id", job.ID, "err", err)
+	}
+	job.ScriptError = scriptErr
+}
+
 // fallbackSummary is a fallback run's summary: the model's result, then a
 // short note on why the precompiled script did not run it, in its own
 // paragraph so the chat shows it on its own line.
@@ -550,7 +626,7 @@ func fallbackSummary(summary string, scriptErr error) string {
 // gets: its tools and exec permissions, the clone granted to them and their
 // default directory, and the clone and repository in the command env.
 func (p *WorkerPool) runCompiledProjectTask(ctx context.Context, job *domain.Job, agentName string, run ProjectRun, clone func(context.Context) (string, error), logf func(string, ...any)) (output string, executed bool, err error) {
-	script, err := p.projectCompiler(ctx, agentName, run.Name)
+	script, err := p.taskCompiler(ctx, agentName, run.Name)
 	if err != nil {
 		return "", false, err
 	}

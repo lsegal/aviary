@@ -136,7 +136,7 @@ test("Scheduled Tasks creates a script task whose type, script and trigger round
 	);
 	await radio(dialog, "Type", "Script").click();
 	// A script is already a script, so it is never precomputed.
-	await expect(dialog.getByLabel("Try to precompute task")).toBeDisabled();
+	await expect(dialog.getByLabel("Try to precompile")).toBeDisabled();
 	await dialog.getByLabel("Task name").fill("lua-hello");
 	await dialog.getByRole("radio", { name: "Cron" }).click();
 	await dialog.getByLabel("Cron expression").fill("0 8 * * 1");

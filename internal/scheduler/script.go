@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -63,9 +64,27 @@ func executeScriptJobOutput(ctx context.Context, job *domain.Job, logf func(form
 			SessionID: job.SessionID,
 			TaskID:    job.TaskID,
 			JobID:     job.ID,
+			Trigger:   scriptTrigger(job.TriggerContext),
 		},
 		Logf: logf,
 	})
+}
+
+// scriptTrigger is a workflow run's triggering message as a script sees it,
+// in the Lua global trigger, or nil outside workflow runs.
+func scriptTrigger(tc *domain.TriggerContext) map[string]any {
+	if tc == nil {
+		return nil
+	}
+	raw, err := json.Marshal(tc)
+	if err != nil {
+		return nil
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+	return out
 }
 
 type scriptToolClient struct {

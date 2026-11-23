@@ -149,7 +149,7 @@ test("typing analyzes the prompt once after a pause and shows a deterministic ve
 	});
 
 	// Turning precompute off re-runs the check for the new input.
-	await dialog.getByLabel("Try to precompute task").uncheck();
+	await dialog.getByLabel("Try to precompile").uncheck();
 	await expect.poll(() => calls.length).toBe(2);
 	expect(calls[1]).toMatchObject({ precompile: false });
 });

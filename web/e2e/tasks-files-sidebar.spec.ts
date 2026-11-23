@@ -163,7 +163,7 @@ test("the Tasks + opens the add-task modal and the new task joins the sidebar", 
 	// No inline add-task input remains on the page.
 	await expect(page.getByPlaceholder("task-name")).toHaveCount(0);
 	// Precompute is chosen per task in the dialog, not on the page.
-	await expect(page.getByText(/Try to precompute/)).toHaveCount(0);
+	await expect(page.getByText(/Try to precompile/)).toHaveCount(0);
 
 	const add = sidebarRow(page, "tasks").getByRole("button", {
 		name: "Add task",
@@ -179,7 +179,7 @@ test("the Tasks + opens the add-task modal and the new task joins the sidebar", 
 	await dialog.getByLabel("Cron expression").fill("0 8 * * 1");
 	await dialog.getByLabel("Prompt").fill("Write the weekly report");
 	// scheduler.precompute_tasks defaults on, so the new task is precomputed.
-	await expect(dialog.getByLabel("Try to precompute task")).toBeChecked();
+	await expect(dialog.getByLabel("Try to precompile")).toBeChecked();
 	await dialog.getByRole("button", { name: "Create" }).click();
 
 	await expect(dialog).toBeHidden();
@@ -262,7 +262,7 @@ test("the add-task modal's precompute choice follows the setting and applies to 
 		.click();
 
 	const dialog = page.getByRole("dialog", { name: "Add task" });
-	const precompute = dialog.getByLabel("Try to precompute task");
+	const precompute = dialog.getByLabel("Try to precompile");
 	await expect(precompute).not.toBeChecked();
 	await dialog.getByLabel("Task name").fill("stays-prompt");
 	await dialog.getByRole("radio", { name: "Cron" }).click();

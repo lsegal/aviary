@@ -16,6 +16,7 @@
 							Enabled
 						</span>
 						<PausedChip v-else data-testid="task-state" data-enabled="false" />
+						<TaskPrecompileBadge :task="task" />
 					</div>
 					<p class="truncate text-xs text-gray-500 dark:text-gray-400" data-testid="task-schedule">
 						{{ typeLabel }} · {{ scheduleText }}<template v-if="codeLoopTarget"> · sends to
@@ -140,6 +141,7 @@ import TaskRunHistory, {
 import TaskRunLog from "../components/tasks/dashboard/TaskRunLog.vue";
 import TriggerContextPanel from "../components/tasks/dashboard/TriggerContextPanel.vue";
 import PausedChip from "../components/tasks/PausedChip.vue";
+import TaskPrecompileBadge from "../components/tasks/TaskPrecompileBadge.vue";
 import { useMCP } from "../composables/useMCP";
 import {
 	TASK_CHAT_MIN_HEIGHT,
@@ -156,6 +158,7 @@ import {
 	agentTaskPath,
 	agentTaskType,
 	isWorkflow,
+	precompilesBesidePrompt,
 	useSettingsStore,
 } from "../stores/settings";
 import ChatView from "./ChatView.vue";
@@ -193,7 +196,53 @@ const settingsLink = computed(() =>
 		? workflowSettingsPath(agent.value, task.value.channel, task.value.name)
 		: agentTaskPath(agent.value, task.value?.name ?? ""),
 );
-const isProject = computed(() => agentTaskType(task.value?.type) === "project");
+/**
+ * Whether the task's runs can try a compiled script and fall back to the
+ * model: a project task or prompt workflow that has precompile on, or had it
+ * until Aviary turned it off.
+ */
+const precompiles = computed(
+	() =>
+		!!task.value &&
+		precompilesBesidePrompt(task.value) &&
+		(task.value.precompile === true || !!task.value.precompile_note),
+);
+
+// How many times the task's script was compiled, and how the latest went.
+const compileAttempts = ref<{ status: string }[]>([]);
+async function loadCompileAttempts() {
+	const name = taskParam.value;
+	if (!precompiles.value) {
+		compileAttempts.value = [];
+		return;
+	}
+	try {
+		const raw = await callTool("task_compile_query", {
+			agent: agent.value,
+			task: name,
+		});
+		const list = (JSON.parse(raw) ?? []) as {
+			status: string;
+			created_at: string;
+		}[];
+		if (name !== taskParam.value) return;
+		compileAttempts.value = list.sort((a, b) =>
+			b.created_at.localeCompare(a.created_at),
+		);
+	} catch {
+		compileAttempts.value = [];
+	}
+}
+watch(
+	() => [
+		agent.value,
+		taskParam.value,
+		precompiles.value,
+		task.value?.compiled_key,
+	],
+	() => void loadCompileAttempts(),
+	{ immediate: true },
+);
 // A Code Loop target links to its job from the header.
 const codeLoopTarget = computed(() =>
 	isCodeLoopTarget(task.value?.target) ? (task.value?.target ?? "") : "",
@@ -269,9 +318,18 @@ const statChips = computed((): StatChip[] => {
 		count("queued"),
 		count("running"),
 		count("succeeded"),
-		// Only a precompiled project task's script can fail into the fallback.
-		...(isProject.value
+		// Only a precompiled task's script can fail into the fallback.
+		...(precompiles.value
 			? [
+					{
+						label: "Compile attempts",
+						value: compileAttempts.value.length,
+						chip: String(compileAttempts.value.length),
+						chipLabel: compileAttempts.value[0]
+							? `compile attempts · last ${compileAttempts.value[0].status}`
+							: "compile attempts",
+						cls: CHIP_TONES.neutral,
+					},
 					count("fallback"),
 					{
 						label: "Script failures",

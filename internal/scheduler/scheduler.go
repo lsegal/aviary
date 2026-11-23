@@ -527,7 +527,7 @@ func (s *Scheduler) ListTasks() []domain.ScheduledTask {
 			Model:     tc.Model,
 			Enabled:   config.BoolOr(tc.Enabled, true),
 		}
-		if strings.EqualFold(task.Type, "project") {
+		if strings.EqualFold(task.Type, "project") || (tc.IsWorkflow() && taskType(tc) == "prompt") {
 			task.Precompile = config.BoolOr(tc.Precompile, false)
 			task.Compiled = task.Precompile && strings.TrimSpace(tc.Compiled) != ""
 		}
@@ -689,16 +689,16 @@ func (s *Scheduler) SetProjectRunner(fn ProjectRunner) {
 	s.pool.projectRunner = fn
 }
 
-// SetProjectTaskCompiler registers what compiles precompiled project tasks
-// before their runs; without one they always run on the model.
-func (s *Scheduler) SetProjectTaskCompiler(fn ProjectTaskCompiler) {
-	s.pool.projectCompiler = fn
+// SetTaskCompiler registers what compiles precompiled project tasks and
+// workflows before their runs; without one they always run on the model.
+func (s *Scheduler) SetTaskCompiler(fn TaskCompiler) {
+	s.pool.taskCompiler = fn
 }
 
-// SetProjectTaskScriptReporter registers what records each precompiled
-// project task script run's result, so a failing script can be set aside.
-func (s *Scheduler) SetProjectTaskScriptReporter(fn ProjectTaskScriptReporter) {
-	s.pool.projectScriptReporter = fn
+// SetTaskScriptReporter registers what records each precompiled
+// project task or workflow script run's result, so a failing script can be set aside.
+func (s *Scheduler) SetTaskScriptReporter(fn TaskScriptReporter) {
+	s.pool.scriptReporter = fn
 }
 
 // SetTaskOutputDelivery registers an optional function used to deliver

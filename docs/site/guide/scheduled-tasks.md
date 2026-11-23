@@ -298,7 +298,7 @@ scheduler:
 
 ### Precompiled project tasks
 
-[Project tasks](#scheduled-prompts) can be precompiled too. Turn on **Try to precompute task** in the **Add task** dialog or in the project board's schedule editor, or pass `precompile=true` to `task_schedule` or `task_update`. New project tasks follow `precompute_tasks`; a project task without `precompile` set stays on the model. Both editors show the same live feedback for project tasks as for agent tasks: ✔ deterministic, ◐ partial, or ✖ not deterministic, with the per-run token estimate and the monthly projection.
+[Project tasks](#scheduled-prompts) can be precompiled too. Turn on **Try to precompile** in the **Add task** dialog or in the project board's schedule editor, or pass `precompile=true` to `task_schedule` or `task_update`. New project tasks follow `precompute_tasks`; a project task without `precompile` set stays on the model. Both editors show the same live feedback for project tasks as for agent tasks: ✔ deterministic, ◐ partial, or ✖ not deterministic, with the per-run token estimate and the monthly projection.
 
 A project task is not rewritten into a script task. It keeps its prompt and stores the compiled script beside it (`compiled` and `compiled_key` in its definition, written by Aviary). The prompt is analyzed and compiled against the tools of the agent the task belongs to, with the clone it runs in described. Each run then:
 
@@ -414,6 +414,7 @@ The Lua runtime exposes:
 - `os.date(fmt)` / `os.time()` / `os.difftime(t2, t1)` — time utilities
 - `print(...)` — emit output; joined lines are delivered to `target` when the run completes
 - `environment.agent_id`, `.session_id`, `.task_id`, `.job_id` — runtime context
+- `trigger` — in a [workflow](./channels.md#workflows) run, the message that triggered it: `trigger.message` (`text`, `sender`, `from_agent`, `timestamp`, `attachments`), `trigger.before` (the messages just before it), and `trigger.channel`, `.channel_type` and `.entry`; `nil` in other runs
 
 File I/O, `os.execute`, `loadfile`, and `dofile` are disabled. Scripts run fully sandboxed with access only to the tools explicitly granted to their agent.
 
