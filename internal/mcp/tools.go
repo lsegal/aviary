@@ -135,6 +135,7 @@ func Register(s *sdkmcp.Server) {
 	registerSessionTools(s)
 	registerChannelTools(s)
 	registerWorkflowTools(s)
+	registerChannelActivityTool(s)
 	registerSessionSendTool(s)
 	registerTaskTools(s)
 	registerAgentContextTools(s)

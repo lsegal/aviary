@@ -156,11 +156,16 @@ const voice = useVoiceInput({
 	transcribe: (audio) => transcribeRecording(audio, auth.getToken()),
 	onTranscript: insertTranscript,
 });
-// The meter shows the square root of the peak level, so quiet speech still
-// moves it visibly.
-const micLevelPercent = computed(() =>
-	Math.min(100, Math.round(Math.sqrt(voice.level.value ?? 0) * 100)),
-);
+// The meter spans -60 to 0 dBFS, so quiet audio-interface input still moves
+// it visibly.
+const micLevelPercent = computed(() => {
+	const level = voice.level.value ?? 0;
+	if (level <= 0) return 0;
+	return Math.max(
+		0,
+		Math.min(100, Math.round(100 + (100 / 60) * 20 * Math.log10(level))),
+	);
+});
 const micUnavailable = computed(() => voice.unsupportedReason.value !== "");
 const micLabel = computed(() =>
 	voice.state.value === "recording" ? "Stop recording" : "Record voice message",

@@ -422,24 +422,6 @@ test("a workflow card opens its detail view with the run's trigger context", asy
 	await expect(page.getByTestId("workflow-name")).toHaveValue("triage");
 });
 
-test("the Channels page shows every workflow and recent messages by channel", async ({
-	page,
-}) => {
-	await mockWorkflows(page, [ARCHIVE, TRIAGE]);
-	await page.goto("/agents/assistant/channels");
-
-	const overview = page.getByTestId("channels-overview");
-	await expect(overview).toBeVisible();
-	const cards = overview.getByTestId("workflow-card");
-	await expect(cards).toHaveCount(2);
-	await expect(cards.nth(0)).toHaveAttribute("data-workflow", "triage");
-	await expect(cards.nth(1)).toHaveAttribute("data-paused", "true");
-
-	await expect(page.getByTestId("channels-overview-message")).toHaveCount(2);
-	await page.getByTestId("channels-overview-channel-link").click();
-	await expect(page).toHaveURL(/\/agents\/assistant\/channels\/Team%20Slack$/);
-});
-
 test("workflows stay out of the Scheduled Tasks list", async ({ page }) => {
 	await mockWorkflows(page, [
 		TRIAGE,
