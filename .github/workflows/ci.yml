@@ -100,6 +100,57 @@ jobs:
       # Linux also runs the race detector so data races fail CI (#632).
       - run: go test ${{ matrix.os == 'ubuntu-latest' && '-race' || '' }} ./...
 
+  transcription-e2e:
+    name: "Test: Transcription E2E"
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      AVIARY_CONFIG_TRANSCRIPTION_MODEL: ${{ github.workspace }}/.whisper/ggml-base.en.bin
+      WHISPER_CPP_VERSION: v1.9.6
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - id: whisper-cache
+        uses: actions/cache@v6
+        with:
+          path: .whisper-cpp
+          key: whisper-cpp-${{ runner.os }}-${{ env.WHISPER_CPP_VERSION }}
+      # GGML_NATIVE is off so the cached binary runs on any runner CPU.
+      - name: Build whisper-cli
+        if: steps.whisper-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$WHISPER_CPP_VERSION" https://github.com/ggml-org/whisper.cpp "$RUNNER_TEMP/whisper.cpp"
+          cmake -S "$RUNNER_TEMP/whisper.cpp" -B "$RUNNER_TEMP/whisper.cpp/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DGGML_NATIVE=OFF
+          cmake --build "$RUNNER_TEMP/whisper.cpp/build" --target whisper-cli -j "$(nproc)"
+          mkdir -p .whisper-cpp
+          cp "$RUNNER_TEMP/whisper.cpp/build/bin/whisper-cli" .whisper-cpp/
+      - run: echo "$GITHUB_WORKSPACE/.whisper-cpp" >> "$GITHUB_PATH"
+      - uses: actions/cache@v6
+        with:
+          path: .whisper
+          key: whisper-model-ggml-base.en-v1
+      - name: Download whisper model
+        run: |
+          if [ ! -s "$AVIARY_CONFIG_TRANSCRIPTION_MODEL" ]; then
+            mkdir -p .whisper
+            curl -fsSL --retry 3 -o "$AVIARY_CONFIG_TRANSCRIPTION_MODEL" https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+          fi
+      # The tests skip when whisper-cli, ffmpeg, or the model is missing, so
+      # a skip here means this job lost its setup and must fail (#979).
+      - name: Run end-to-end transcription tests
+        run: |
+          go test -count=1 -v -run 'TestTranscribeHandler_WebM.*EndToEnd' ./internal/server | tee "$RUNNER_TEMP/transcription-e2e.log"
+          if grep -q -- '--- SKIP' "$RUNNER_TEMP/transcription-e2e.log"; then
+            echo "::error::end-to-end transcription tests skipped"
+            exit 1
+          fi
+          test "$(grep -c -- '--- PASS: TestTranscribeHandler_WebM' "$RUNNER_TEMP/transcription-e2e.log")" -eq 2
+
   installer:
     name: "Test: Installer (${{ matrix.name }})"
     permissions:
