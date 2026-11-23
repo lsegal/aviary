@@ -97,28 +97,33 @@
 			</div>
 
 			<div v-else-if="layout === 'cards'" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="task-cards">
-				<article v-for="r in rows" :key="r.task.name" data-testid="task-card" :data-task="r.task.name" role="link" tabindex="0"
-					:aria-label="`Edit ${r.task.name}`"
-					class="cursor-pointer space-y-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2.5 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700"
-					:class="r.enabled ? '' : 'opacity-75'"
-					@click="openTask(r.task.name)" @keydown.enter.self="openTask(r.task.name)">
+				<!-- The whole card opens the task's page, the same one its sidebar row
+					opens: its name is a link stretched over the card, and the controls
+					sit above it. -->
+				<article v-for="r in rows" :key="r.task.name" data-testid="task-card" :data-task="r.task.name"
+					class="relative cursor-pointer space-y-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2.5 focus-within:ring-2 focus-within:ring-blue-500 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700"
+					:class="r.enabled ? '' : 'opacity-75'">
 					<div class="flex items-center gap-2">
 						<span v-if="r.running" data-testid="task-running" title="Running now" class="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />
-						<h3 class="min-w-0 flex-1 truncate font-mono text-sm font-semibold text-gray-900 dark:text-white">{{ r.task.name }}</h3>
-						<TaskEnabledSwitch :task="r.task.name" :enabled="r.enabled" :busy="busy === r.id" @update="setEnabled(r, $event)" />
+						<h3 class="min-w-0 flex-1 truncate font-mono text-sm font-semibold text-gray-900 dark:text-white">
+							<router-link :to="taskSessionPath(agent, r.task.name)" data-testid="task-card-link"
+								class="after:absolute after:inset-0 after:rounded-xl focus:outline-none">{{ r.task.name }}</router-link>
+						</h3>
+						<TaskEnabledSwitch class="z-10" :task="r.task.name" :enabled="r.enabled" :busy="busy === r.id" @update="setEnabled(r, $event)" />
 					</div>
 					<p class="truncate text-xs text-gray-500 dark:text-gray-400" data-testid="task-owner">{{ r.owner }}</p>
 					<p class="truncate text-xs text-gray-700 dark:text-gray-300" data-testid="task-schedule" :title="r.schedule">{{ r.schedule }}</p>
 					<div class="flex items-center justify-between gap-2">
 						<p class="min-w-0 truncate text-xs" data-testid="task-last-run">
-							<span v-if="r.running" class="font-medium text-blue-600 dark:text-blue-400">Running now</span>
+							<router-link v-if="r.running" :to="taskSessionPath(agent, r.task.name)" data-testid="task-running-link"
+								title="Open the current run" class="relative z-10 font-medium text-blue-600 hover:underline dark:text-blue-400">Running now</router-link>
 							<template v-else-if="r.last">
 								<span class="font-medium" :class="RUN_CLASS[r.last.status]">{{ RUN_LABEL[r.last.status] }}</span>
 								<span class="text-gray-500 dark:text-gray-400">{{ ` ${ago(r.last.created_at)}` }}</span>
 							</template>
 							<span v-else class="text-gray-400">Never run</span>
 						</p>
-						<TaskActions :row="r" :busy="busy === r.id" @action="onAction(r, $event)" />
+						<TaskActions class="relative z-10" :row="r" :busy="busy === r.id" @action="onAction(r, $event)" />
 					</div>
 				</article>
 			</div>
@@ -142,7 +147,7 @@
 							<td class="px-4 py-2">
 								<span class="inline-flex items-center gap-1.5 font-mono font-medium">
 									<span v-if="r.running" data-testid="task-running" title="Running now" class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
-									{{ r.task.name }}
+									<router-link :to="taskSessionPath(agent, r.task.name)" class="hover:underline" @click.stop>{{ r.task.name }}</router-link>
 								</span>
 							</td>
 							<td class="px-3 py-2"><TaskEnabledSwitch :task="r.task.name" :enabled="r.enabled" :busy="busy === r.id" @update="setEnabled(r, $event)" /></td>
@@ -185,7 +190,7 @@ import {
 } from "../../stores/jobs";
 import {
 	type AgentTask,
-	agentTaskPath,
+	taskSessionPath,
 	useSettingsStore,
 } from "../../stores/settings";
 import TaskActions from "./TaskActions.vue";
@@ -455,8 +460,9 @@ const runsTask = ref("");
 const busy = ref("");
 const actionError = ref("");
 
+// A task opens on its page, as its sidebar row does; settings are behind Edit.
 function openTask(name: string) {
-	void router.push(agentTaskPath(props.agent, name));
+	void router.push(taskSessionPath(props.agent, name));
 }
 
 function editTask(name: string) {

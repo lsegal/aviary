@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { clickCardAt } from "./helpers/cards";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { chooseOption, optionLabels, searchOption } from "./helpers/select";
 import {
@@ -337,9 +338,10 @@ test("board lists scheduled tasks as their own boxes with run details", async ({
 	await expect(nightly).toHaveText(
 		/^(?:(?!running).)*running(?:(?!running).)*$/is,
 	);
+	// The pencil to its editor stays beside it.
 	await expect(
 		nightly.getByRole("link", { name: "Edit schedule" }),
-	).toHaveCount(0);
+	).toBeVisible();
 	// It shows the run's output like an issue card does.
 	await expect(nightly.getByTestId("scheduled-output")).toHaveText(
 		"Reading the issues opened since 02:00 yesterday…",
@@ -461,6 +463,36 @@ test("a scheduled card's footer runs, pauses and opens settings like a job card'
 	// Settings opens the shared task dialog, as the sidebar's gear does.
 	await weekly.getByRole("button", { name: "Settings" }).click();
 	await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+test("a scheduled card opens its task's page, like its sidebar row (#950)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/system/watches/lsegal%2Faviary");
+	const weekly = page.getByTestId("scheduled-card").nth(1);
+	await expect(weekly).toContainText("weekly-deps");
+
+	// The name is a real link to the task's page, stretched over the card.
+	const link = weekly.getByTestId("scheduled-card-link");
+	await expect(link).toHaveAttribute(
+		"href",
+		"/agents/assistant/tasks/weekly-deps",
+	);
+	await clickCardAt(weekly, weekly.getByTestId("scheduled-trigger"));
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/weekly-deps$/);
+
+	// Kanban cards follow the same rules: card → task page, pencil → editor.
+	await page.goto("/system/watches/lsegal%2Faviary");
+	await page.getByTestId("kanban-toggle").click();
+	const kanban = page
+		.getByTestId("kanban-scheduled-card")
+		.filter({ hasText: "weekly-deps" });
+	await kanban.getByRole("link", { name: "Edit schedule" }).click();
+	await expect(page).toHaveURL(/scheduled=assistant(%2F|\/)weekly-deps/);
+	await page.goto("/system/watches/lsegal%2Faviary");
+	await clickCardAt(kanban, kanban.getByTestId("kanban-scheduled-prompt"));
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/weekly-deps$/);
 });
 
 // A one-time schedule moves through these states: armed, fired and running
@@ -611,7 +643,7 @@ test("kanban shows a Scheduled column of compact scheduled boxes", async ({
 	await expect(columns.first()).toHaveAttribute("data-state", "running");
 });
 
-test("a scheduled card opens its editor within the project page", async ({
+test("a scheduled card's pencil opens its editor within the project page", async ({
 	page,
 }) => {
 	const calls = await setup(page);
@@ -619,7 +651,7 @@ test("a scheduled card opens its editor within the project page", async ({
 	await page
 		.getByTestId("scheduled-card")
 		.first()
-		.getByRole("link", { name: "nightly-triage" })
+		.getByRole("link", { name: "Edit schedule" })
 		.click();
 	await expect(page).toHaveURL(/scheduled=assistant(%2F|\/)nightly-triage/);
 
@@ -671,7 +703,7 @@ test("a scheduled card opens its editor within the project page", async ({
 		.poll(() => calls.task_run?.[0])
 		.toEqual({ name: "assistant/nightly-triage" });
 
-	// The card's expand link opens the same editor.
+	// The other card's pencil opens its own editor.
 	await detail.getByRole("link", { name: "Back to board" }).click();
 	await expect(page).not.toHaveURL(/scheduled=/);
 	await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
@@ -893,7 +925,7 @@ test("the header Schedule button creates a project scheduled task through the sh
 			.filter({ hasText: "hourly-ci-watch" }),
 	).toHaveCount(1);
 	await page.getByTestId("kanban-toggle").click();
-	await card.getByRole("link", { name: "hourly-ci-watch" }).click();
+	await card.getByRole("link", { name: "Edit schedule" }).click();
 	await expect(page).toHaveURL(/scheduled=assistant(%2F|\/)hourly-ci-watch/);
 	const editor = page.getByTestId("schedule-editor");
 	await expect(editor.getByLabel("Name")).toHaveValue("hourly-ci-watch");
@@ -973,7 +1005,7 @@ test("new schedule sets every trigger type, timezone and policy, and they round-
 				"cron 0 * * * * (America/Los_Angeles)",
 			);
 		// The saved task reopens in the schedule editor with every field kept.
-		await card.getByRole("link", { name, exact: true }).click();
+		await card.getByRole("link", { name: "Edit schedule" }).click();
 		const editor = page.getByTestId("schedule-editor");
 		await expect(editor.getByLabel("Name")).toHaveValue(name);
 		await expectTrigger(editor, c);
@@ -1030,7 +1062,7 @@ test("leaving a schedule with unsaved edits asks first", async ({ page }) => {
 	await page
 		.getByTestId("scheduled-card")
 		.first()
-		.getByRole("link", { name: "nightly-triage" })
+		.getByRole("link", { name: "Edit schedule" })
 		.click();
 	await prompt.fill("Edited prompt");
 	await back.click();
