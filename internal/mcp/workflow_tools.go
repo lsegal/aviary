@@ -189,8 +189,8 @@ func createWorkflow(args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, er
 		return nil, struct{}{}, err
 	}
 	target := normalizeTaskTarget(args.Target)
-	if target != "" && !config.ValidTaskTarget(target) {
-		return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted or \"silent\", \"reply\", session:<name-or-id>, or channel:<channel name>", args.Target)
+	if _, err := config.ParseTaskTarget(target); err != nil {
+		return nil, struct{}{}, err
 	}
 	name := strings.TrimSpace(args.Name)
 	if name == "" {
