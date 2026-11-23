@@ -320,11 +320,15 @@ test("board lists scheduled tasks as their own boxes with run details", async ({
 	await expect(nightly.getByTestId("scheduled-next")).toContainText(
 		/in 4[12]m/,
 	);
-	await expect(nightly.getByTestId("scheduled-last")).toContainText(
-		"Labeled 4 issues",
+	// The output area shows the run's output, not the last finished result.
+	await expect(nightly.getByTestId("scheduled-last")).toHaveCount(0);
+	await expect(nightly.getByTestId("scheduled-agent")).toHaveText(
+		"assistant · cli/claude/opus",
 	);
 	await expect(boxes.nth(1).getByTestId("scheduled-next")).toHaveText("paused");
-	await expect(boxes.nth(1).getByTestId("scheduled-last")).toHaveText("never");
+	await expect(boxes.nth(1).getByTestId("scheduled-last")).toHaveText(
+		"Hasn't run yet",
+	);
 
 	// A recurring schedule's run in flight shows once, as the control that
 	// opens the run, beside its next fire time and its last finished result.
@@ -345,11 +349,12 @@ test("board lists scheduled tasks as their own boxes with run details", async ({
 	await expect(page).toHaveURL(new RegExp(`/jobs/${FIRE}`));
 	await page.goto("/system/watches/lsegal%2Faviary");
 	await expect(boxes).toHaveCount(2);
-	// A schedule with no run has no output, no running control and the
-	// expand link to its editor.
+	// A schedule with no run has an empty output area, no running control
+	// and the expand link to its editor.
 	const weekly = boxes.nth(1);
 	await expect(weekly.getByTestId("scheduled-running")).toHaveCount(0);
 	await expect(weekly.getByTestId("scheduled-output")).toHaveCount(0);
+	await expect(weekly.getByTestId("scheduled-empty")).toBeVisible();
 	await expect(weekly.getByTestId("output-mode")).toHaveCount(0);
 	await expect(
 		weekly.getByRole("link", { name: "Edit schedule" }),
@@ -381,17 +386,81 @@ test("scheduled cards are compact: trigger and next run share one line (#875)", 
 	const next = await weekly.getByTestId("scheduled-next").boundingBox();
 	expect(details!.height).toBeLessThan(24);
 	expect(Math.abs(trigger!.y - next!.y)).toBeLessThan(4);
-	// The last result sits in the footer row, beside the expand link.
-	const last = await weekly.getByTestId("scheduled-last").boundingBox();
-	const expand = await weekly
-		.getByRole("link", { name: "Edit schedule" })
-		.boundingBox();
-	expect(
-		Math.abs(last!.y + last!.height / 2 - (expand!.y + expand!.height / 2)),
-	).toBeLessThan(4);
-	// Header, title, prompt, one details line and the footer: no tall
-	// label/value grid.
-	expect((await weekly.boundingBox())!.height).toBeLessThan(170);
+});
+
+for (const viewport of [
+	{ name: "desktop", width: 1280, height: 900 },
+	{ name: "mobile", width: 390, height: 844 },
+]) {
+	test(`scheduled and job cards share a row's height on ${viewport.name} (#948)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize(viewport);
+		await setup(page, {
+			tasks: [TASKS[1]],
+			jobs: [{ ...SCHEDULED_JOB, schedule_id: "", kind: "issue", number: 7 }],
+		});
+		await page.goto("/system/watches/lsegal%2Faviary");
+		const scheduled = page.getByTestId("scheduled-card");
+		const job = page.getByTestId("job-card");
+		await expect(scheduled).toHaveCount(1);
+		await expect(job).toHaveCount(1);
+		// A never-run schedule still has the output area, with its empty state.
+		await expect(scheduled.getByTestId("scheduled-empty")).toBeVisible();
+		const s = (await scheduled.boundingBox())!;
+		const j = (await job.boundingBox())!;
+		if (viewport.name === "desktop") {
+			expect(Math.abs(s.y - j.y)).toBeLessThan(1);
+			expect(Math.abs(s.height - j.height)).toBeLessThan(1);
+		} else {
+			// Stacked on a phone, each card is as tall as a job card's layout.
+			expect(Math.abs(s.x - j.x)).toBeLessThan(1);
+			expect(s.height).toBeGreaterThan(200);
+		}
+		// The footer action rows line up at each card's bottom.
+		const footerBottom = async (card: typeof job, name: string) => {
+			const b = (await card.getByRole("link", { name }).boundingBox())!;
+			return b.y + b.height;
+		};
+		const sBottom = await footerBottom(scheduled, "Edit schedule");
+		const jBottom = await footerBottom(job, "Details");
+		expect(
+			Math.abs(s.y + s.height - sBottom - (j.y + j.height - jBottom)),
+		).toBeLessThan(2);
+	});
+}
+
+test("a scheduled card's footer runs, pauses and opens settings like a job card's (#948)", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/system/watches/lsegal%2Faviary");
+	const weekly = page.getByTestId("scheduled-card").nth(1);
+	await expect(weekly.getByTestId("scheduled-agent")).toHaveText("assistant");
+
+	await weekly.getByRole("button", { name: "Run now" }).click();
+	await expect.poll(() => calls.task_run?.length ?? 0).toBe(1);
+	expect(calls.task_run[0]).toMatchObject({ name: "assistant/weekly-deps" });
+
+	// Paused, it offers Resume; resuming saves it enabled.
+	await expect(weekly.getByRole("button", { name: "Pause" })).toHaveCount(0);
+	await weekly.getByRole("button", { name: "Resume" }).click();
+	await expect.poll(() => calls.task_update?.length ?? 0).toBe(1);
+	expect(calls.task_update[0]).toMatchObject({
+		name: "assistant/weekly-deps",
+		enabled: true,
+	});
+	const nightly = page.getByTestId("scheduled-card").first();
+	await nightly.getByRole("button", { name: "Pause" }).click();
+	await expect.poll(() => calls.task_update?.length ?? 0).toBe(2);
+	expect(calls.task_update[1]).toMatchObject({
+		name: "assistant/nightly-triage",
+		enabled: false,
+	});
+
+	// Settings opens the shared task dialog, as the sidebar's gear does.
+	await weekly.getByRole("button", { name: "Settings" }).click();
+	await expect(page.getByRole("dialog")).toBeVisible();
 });
 
 // A one-time schedule moves through these states: armed, fired and running
@@ -495,13 +564,16 @@ for (const tc of [
 			expect(await kanbanNext()).toBe("Running now");
 		}
 		if (tc.state === "after") {
-			await expect(card.getByTestId("scheduled-last")).toContainText(
-				"Posted the weekly summary",
+			// The finished run's output fills the output area.
+			await expect(card.getByTestId("scheduled-output-rich")).toContainText(
+				"Found 12 merged pull requests.",
 			);
 			expect(await kanbanNext()).toBe("No next run");
 		}
 		if (tc.state === "before") {
-			await expect(card.getByTestId("scheduled-last")).toHaveText("never");
+			await expect(card.getByTestId("scheduled-last")).toHaveText(
+				/^\s*Hasn't run yet · next run in (29|30)m\s*$/,
+			);
 			await expect(card.getByTestId("scheduled-output")).toHaveCount(0);
 		}
 	});
