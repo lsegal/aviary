@@ -268,6 +268,11 @@ A `codeloop:<project>#<number>` target hands the output to a [Code Loop](/guide/
 - **Complete:** the delivery fails with an error in the run log.
 - **No longer exists:** the delivery fails, and the task's page warns that its job is gone.
 
+Two optional settings change the paused and complete cases. Add them after the job number as `?resume`, `?reopen`, or `?resume,reopen` (for example `codeloop:owner/repo#123?resume,reopen`), or tick **Resume the job if it is paused** and **Reopen the job if it is complete** under the job picker:
+
+- **Resume:** a paused job is resumed when output arrives, as the board's Resume button does, and the agent sees the output on its first turn. If the job cannot be resumed right now, the output stays queued.
+- **Reopen:** a completed job is retried with the output, as the board's Retry button does, instead of failing the delivery.
+
 The job's transcript labels the output with the task or workflow that sent it, linking to the run. Each run's log records the delivery ("delivered to Code Loop owner/repo#123", linking to the job), and every delivery is written to the usage log. Discussion jobs and scheduled project runs have no live session to relay into, so they reject Code Loop output.
 
 Any text printed from a script — or returned from a prompt run — is delivered to that route. If the output is `SKIP` or empty, delivery is suppressed. This lets scripts opt out of noisy no-op notifications cheaply.
