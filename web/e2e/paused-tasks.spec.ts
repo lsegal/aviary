@@ -125,6 +125,96 @@ test("a paused task's sidebar row is muted, marked and sorted last", async ({
 	);
 });
 
+test("a paused row's icon sits flush right until the menu button shows", async ({
+	page,
+}) => {
+	await mockPausable(page);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto("/agents/assistant/tasks");
+
+	const row = sidebarRow(page, "nightly");
+	const icon = row.getByTestId("task-row-paused");
+	const button = row.getByTestId("task-menu-button");
+	const link = row.getByTestId("sidebar-item-link");
+	await expect(icon).toBeVisible();
+	await page.mouse.move(1000, 700);
+
+	// Hidden "…" takes no room, so the icon ends at the row's right padding (#985).
+	await expect(button).not.toBeVisible();
+	const rowBox = await row.boundingBox();
+	const restIcon = await icon.boundingBox();
+	const restLink = await link.boundingBox();
+	if (!rowBox || !restIcon || !restLink) throw new Error("row not laid out");
+	const gap = rowBox.x + rowBox.width - (restIcon.x + restIcon.width);
+	expect(gap).toBeGreaterThanOrEqual(2);
+	expect(gap).toBeLessThanOrEqual(6);
+
+	// On hover, "…" shows right of the icon without moving the label.
+	await row.hover();
+	await expect(button).toBeVisible();
+	const hoverIcon = await icon.boundingBox();
+	const hoverButton = await button.boundingBox();
+	const hoverLink = await link.boundingBox();
+	if (!hoverIcon || !hoverButton || !hoverLink)
+		throw new Error("row not laid out");
+	expect(hoverButton.x).toBeGreaterThanOrEqual(hoverIcon.x + hoverIcon.width);
+	expect(hoverButton.x + hoverButton.width).toBeLessThanOrEqual(
+		rowBox.x + rowBox.width,
+	);
+	expect(hoverLink.x).toBe(restLink.x);
+
+	// Keyboard focus shows it too.
+	await page.mouse.move(1000, 700);
+	await button.focus();
+	await expect(button).toBeVisible();
+	await expect(button).toBeFocused();
+});
+
+test("a long paused task name truncates before its icon", async ({ page }) => {
+	await mockPausable(page);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto("/agents/assistant/tasks");
+
+	const row = sidebarRow(page, "nightly");
+	const link = row.getByTestId("sidebar-item-link");
+	await link.evaluate((el) => {
+		el.textContent = "nightly-".repeat(20);
+	});
+	await page.mouse.move(1000, 700);
+	const icon = await row.getByTestId("task-row-paused").boundingBox();
+	const linkBox = await link.boundingBox();
+	if (!icon || !linkBox) throw new Error("row not laid out");
+	expect(linkBox.x + linkBox.width).toBeLessThanOrEqual(icon.x);
+	expect(await link.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(
+		true,
+	);
+});
+
+test("on a touch screen a paused row shows its menu beside the icon", async ({
+	browser,
+}) => {
+	const context = await browser.newContext({
+		viewport: { width: 1280, height: 800 },
+		hasTouch: true,
+		isMobile: true,
+	});
+	const page = await context.newPage();
+	await mockPausable(page);
+	await page.goto("/agents/assistant/tasks");
+	expect(await page.evaluate(() => matchMedia("(hover: none)").matches)).toBe(
+		true,
+	);
+
+	const row = sidebarRow(page, "nightly");
+	const button = row.getByTestId("task-menu-button");
+	await expect(button).toBeVisible();
+	const icon = await row.getByTestId("task-row-paused").boundingBox();
+	const box = await button.boundingBox();
+	if (!icon || !box) throw new Error("row not laid out");
+	expect(box.x).toBeGreaterThanOrEqual(icon.x + icon.width);
+	await context.close();
+});
+
 test("the mobile nav marks paused tasks too", async ({ page }) => {
 	await mockPausable(page);
 	await page.setViewportSize({ width: 390, height: 844 });

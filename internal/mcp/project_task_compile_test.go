@@ -28,6 +28,8 @@ func setupProjectTaskCompile(t *testing.T, cfg *config.Config, compile func(prom
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// Background compiles read the deps, so they finish before the restore.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })

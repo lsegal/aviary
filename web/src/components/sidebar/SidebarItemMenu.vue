@@ -1,9 +1,11 @@
 <template>
 	<DropdownMenuRoot :open="open" @update:open="(v) => (open = v)">
+		<!-- Collapsed while hidden, so the row's status icons sit flush right
+		     instead of leaving a gap where the button would be. -->
 		<DropdownMenuTrigger asChild>
 			<button type="button" :aria-label="`More options for ${label}`" :data-testid="testid"
-				class="mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
-				:class="open ? 'opacity-100' : 'opacity-0'">
+				class="inline-flex h-6 shrink-0 items-center justify-center overflow-hidden rounded-md text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 focus:mr-1 focus:w-6 focus:opacity-100 group-hover:mr-1 group-hover:w-6 group-hover:opacity-100 group-focus-within:mr-1 group-focus-within:w-6 group-focus-within:opacity-100 [@media(hover:none)]:mr-1 [@media(hover:none)]:w-6 [@media(hover:none)]:opacity-100 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+				:class="open ? 'mr-1 w-6 opacity-100' : 'w-0 opacity-0'">
 				<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" class="h-4 w-4">
 					<circle cx="3" cy="8" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="13" cy="8" r="1.4" />
 				</svg>

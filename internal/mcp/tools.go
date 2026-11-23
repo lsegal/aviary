@@ -3435,11 +3435,7 @@ func registerServerTools(s *sdkmcp.Server) {
 			if !EffectiveProjectTaskPrecompile(task) {
 				return nil, struct{}{}, fmt.Errorf("project task %q does not have precompile turned on", args.Task)
 			}
-			go func() {
-				if _, err := EnsureProjectTaskCompiled(context.Background(), args.Agent, args.Task, "manual"); err != nil {
-					slog.Warn("task_compile: project task compile failed", "component", "task_compile", "agent", args.Agent, "task", args.Task, "error", err)
-				}
-			}()
+			compileProjectTaskInBackground(args.Agent, args.Task, "manual")
 			return text(fmt.Sprintf("compiling project task %q", args.Task))
 		}
 		agentIdx := -1

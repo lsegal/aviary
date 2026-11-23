@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -185,12 +184,7 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 		if EffectiveProjectTaskPrecompile(task) {
 			// Compile ahead of the next run, which would otherwise compile
 			// first; a task whose inputs did not change keeps its script.
-			agentName, taskName := agentCfg.Name, task.Name
-			go func() {
-				if _, err := EnsureProjectTaskCompiled(context.Background(), agentName, taskName, "update"); err != nil {
-					slog.Warn("task_compile: project task compile failed", "component", "task_compile", "agent", agentName, "task", taskName, "error", err)
-				}
-			}()
+			compileProjectTaskInBackground(agentCfg.Name, task.Name, "update")
 		}
 		return text(fmt.Sprintf("Task %q updated for agent %q.", task.Name, agentCfg.Name))
 	})

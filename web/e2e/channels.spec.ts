@@ -274,12 +274,17 @@ test("… Rename, Settings and Delete act on a channel", async ({ page }) => {
 	await page.goto("/agents/assistant/channels/Team%20Slack");
 	const row = (name: string) =>
 		page.locator(`[data-testid=channel-row][data-channel="${name}"]`);
-	const menu = async (name: string, item: string) => {
+	// "…" shows on hover, like a pointer reaching it (#985).
+	const openMenu = async (name: string) => {
+		await row(name).hover();
 		await row(name).getByTestId("channel-menu-button").click();
+	};
+	const menu = async (name: string, item: string) => {
+		await openMenu(name);
 		await page.getByRole("menuitem", { name: item }).click();
 	};
 
-	await row("Team Slack").getByTestId("channel-menu-button").click();
+	await openMenu("Team Slack");
 	await expect(page.getByRole("menuitem")).toHaveText([
 		"Disable",
 		"Rename",
