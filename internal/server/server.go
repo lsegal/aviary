@@ -310,6 +310,9 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("/api/transcription", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.transcriptionHandler)))
 	s.mux.Handle("/api/media", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(mediaHandler)))
 
+	// The web UI's navigation order and visibility, kept per user.
+	s.mux.Handle("/api/preferences/navigation", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(navPreferencesHandler)))
+
 	// Web UI: SPA served from embedded web/dist.
 	s.mux.Handle("/", webFileServer())
 }
