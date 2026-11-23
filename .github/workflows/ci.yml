@@ -104,16 +104,32 @@ jobs:
     name: "Test: Transcription E2E"
     permissions:
       contents: read
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     env:
       AVIARY_CONFIG_TRANSCRIPTION_MODEL: ${{ github.workspace }}/.whisper/ggml-base.en.bin
+      WHISPER_CPP_VERSION: v1.9.6
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: go.mod
           cache: true
-      - run: brew install whisper-cpp ffmpeg
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - id: whisper-cache
+        uses: actions/cache@v6
+        with:
+          path: .whisper-cpp
+          key: whisper-cpp-${{ runner.os }}-${{ env.WHISPER_CPP_VERSION }}
+      # GGML_NATIVE is off so the cached binary runs on any runner CPU.
+      - name: Build whisper-cli
+        if: steps.whisper-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$WHISPER_CPP_VERSION" https://github.com/ggml-org/whisper.cpp "$RUNNER_TEMP/whisper.cpp"
+          cmake -S "$RUNNER_TEMP/whisper.cpp" -B "$RUNNER_TEMP/whisper.cpp/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DGGML_NATIVE=OFF
+          cmake --build "$RUNNER_TEMP/whisper.cpp/build" --target whisper-cli -j "$(nproc)"
+          mkdir -p .whisper-cpp
+          cp "$RUNNER_TEMP/whisper.cpp/build/bin/whisper-cli" .whisper-cpp/
+      - run: echo "$GITHUB_WORKSPACE/.whisper-cpp" >> "$GITHUB_PATH"
       - uses: actions/cache@v6
         with:
           path: .whisper
