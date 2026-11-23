@@ -813,11 +813,13 @@ placeholder="Default project agent model"
 </div>
 
 <div class="mt-4">
-<label class="field-label">{{ selectedTask.type === 'script' ? 'Script' : 'Prompt' }}</label>
-<textarea v-model="selectedTask.prompt" rows="12" class="field-input min-h-[28vh] font-mono text-xs" :placeholder="selectedTask.type === 'script' ? 'print(\'hello from lua\')' : 'Task prompt...'"></textarea>
-<TaskCostFeedback :agent="agent.name" :prompt="selectedTask.prompt ?? ''" :type="selectedTask.type || 'prompt'"
-	:target="selectedTask.target ?? ''" :trigger="taskTrigger(selectedTask)" :model="selectedTask.type === 'project' ? (selectedTask.model ?? '') : ''"
-	:project="selectedTask.project ?? ''" :precompile="selectedTask.type === 'project' && selectedTask.precompile === true" />
+<TaskPromptSection :prompt="selectedTask.prompt ?? ''" id-prefix="settings-task" :agent="agent.name" :type="selectedTask.type || 'prompt'"
+	:target="selectedTask.target ?? ''" :project="selectedTask.project ?? ''" :rows="12" prompt-class="min-h-[28vh]"
+	:trigger="isWorkflow(selectedTask) ? null : taskTrigger(selectedTask)" :trigger-type="isWorkflow(selectedTask) ? 'message' : 'schedule'"
+	:show-precompile="precompilesBesidePrompt(selectedTask)" :precompile="selectedTask.precompile === true"
+	:show-model="selectedTask.type === 'project' || isWorkflow(selectedTask)" :model="selectedTask.model ?? ''"
+	@update:prompt="selectedTask.prompt = $event" @update:precompile="selectedTask.precompile = $event"
+	@update:model="selectedTask.model = $event || undefined" />
 <div class="flex gap-2 mt-3">
 <!-- Move task to file -->
 <button v-if="!selectedTask.from_file" type="button" class="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Move this task out of aviary.yaml into a tasks/ file' : 'Task must have a name to be moved'" @click="moveTaskToFile(i, selectedTaskIdx ?? 0, agent.name, selectedTask.name)">Move to File</button>
@@ -868,7 +870,12 @@ import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
 import { channelName, channelPath } from "../../lib/channels";
 import { projectOwner } from "../../lib/projectSettings";
 import { projectPath } from "../../lib/projects";
-import { type AgentTask, useSettingsStore } from "../../stores/settings";
+import {
+	type AgentTask,
+	isWorkflow,
+	precompilesBesidePrompt,
+	useSettingsStore,
+} from "../../stores/settings";
 import ChannelWorkflows from "../channels/ChannelWorkflows.vue";
 import FilePreviewSplit from "../files/FilePreviewSplit.vue";
 import FilePreviewToggle from "../files/FilePreviewToggle.vue";
@@ -876,7 +883,7 @@ import MessagingLogo from "../MessagingLogo.vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
 import SessionSelect from "../SessionSelect.vue";
-import TaskCostFeedback from "../TaskCostFeedback.vue";
+import TaskPromptSection from "../TaskPromptSection.vue";
 import TriggerEditor from "../TriggerEditor.vue";
 import PausedChip from "../tasks/PausedChip.vue";
 import TasksOverview from "../tasks/TasksOverview.vue";
@@ -903,7 +910,7 @@ export default defineComponent({
 		SwitchThumb,
 		PausedChip,
 		TasksOverview,
-		TaskCostFeedback,
+		TaskPromptSection,
 		TriggerEditor,
 	},
 	setup() {
@@ -1040,6 +1047,8 @@ export default defineComponent({
 			permissionPresetDescription,
 			permissionPresetOptions,
 			removeTask,
+			isWorkflow,
+			precompilesBesidePrompt,
 		});
 	},
 });

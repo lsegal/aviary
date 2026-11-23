@@ -253,7 +253,7 @@ const precompileHelp = computed(() => {
 	if (w?.precompile === true && w.precompile_note) return w.precompile_note;
 	if (w?.precompile === true && w.compiled)
 		return "Precompiled: each matching message runs its script with no model calls, and falls back to the model if it fails";
-	return "Compiled on save when the prompt is deterministic; runs fall back to the model if its script fails";
+	return "";
 });
 
 const otherChannels = computed(
