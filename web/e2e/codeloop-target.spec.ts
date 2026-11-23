@@ -51,6 +51,7 @@ async function mockCodeLoop(
 	page: Page,
 	tasks: Task[],
 	jobs: Record<string, unknown>[] = [],
+	jobsDelayMs = 0,
 ) {
 	const config = {
 		agents: [
@@ -95,8 +96,9 @@ async function mockCodeLoop(
 		session_messages: [],
 		workflow_entries: [],
 		workflow_preview: [],
-		project_job_list: (args?: Record<string, unknown>) => {
+		project_job_list: async (args?: Record<string, unknown>) => {
 			record("project_job_list", args);
+			await new Promise((r) => setTimeout(r, jobsDelayMs));
 			return { jobs: JOBS, total: JOBS.length };
 		},
 		job_query: jobs,
@@ -187,6 +189,35 @@ test("the workflow form warns when its Code Loop job no longer exists", async ({
 	await expect(
 		page.getByTestId("workflow-form").getByTestId("codeloop-job-warning"),
 	).toContainText("o/r#99 no longer exists");
+});
+
+test("the workflow form shows its Code Loop job's label once the jobs load", async ({
+	page,
+}) => {
+	// The jobs arrive after the picker renders its target.
+	await mockCodeLoop(
+		page,
+		[
+			{
+				name: "relay",
+				trigger: "message",
+				channel: "Team Slack",
+				prompt: "x",
+				target: "codeloop:o/r#15",
+			},
+		],
+		[],
+		500,
+	);
+	await page.goto(
+		"/agents/assistant/channels/Team%20Slack/settings?tab=workflows",
+	);
+	await page.getByTestId("workflow-edit").click();
+	const combobox = page
+		.getByTestId("workflow-form")
+		.getByRole("combobox", { name: "Code Loop job" });
+	await expect(combobox).toHaveAttribute("data-value", "codeloop:o/r#15");
+	await expect(combobox).toHaveValue("#15 Flaky upload");
 });
 
 test("the task form sends its output to a Code Loop job", async ({ page }) => {
@@ -330,6 +361,8 @@ test("the task form keeps its Code Loop options when the job changes and clears 
 	const combobox = page.getByRole("combobox", { name: "Code Loop job" });
 	// The picker shows the bare job; its options are the checkboxes.
 	await expect(combobox).toHaveAttribute("data-value", "codeloop:o/r#12");
+	// It shows the job's label, not the raw target, once the jobs load (#1011).
+	await expect(combobox).toHaveValue("#12 Fix login");
 	await expect(page.getByTestId("codeloop-job-warning")).toHaveCount(0);
 	await expect(page.getByTestId("codeloop-resume")).toBeChecked();
 	await expect(page.getByTestId("codeloop-reopen")).toBeChecked();
