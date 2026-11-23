@@ -164,11 +164,11 @@ func TestFireWorkflowsOverlapSkip(t *testing.T) {
 func TestWorkerDeliversWorkflowReplies(t *testing.T) {
 	p := &WorkerPool{}
 	var replied, delivered []string
-	p.workflowReply = func(agentName string, tc domain.TriggerContext, text string) error {
+	p.workflowReply = func(_ string, tc domain.TriggerContext, text string) error {
 		replied = append(replied, tc.Entry+":"+text)
 		return nil
 	}
-	p.deliver = func(agentName, route, text string) error {
+	p.deliver = func(_, route, text string) error {
 		delivered = append(delivered, route+":"+text)
 		return nil
 	}
