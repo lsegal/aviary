@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { clickCardAt } from "./helpers/cards";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 const HOUR = 3_600_000;
@@ -273,21 +274,64 @@ test("card quick actions work", async ({ page }) => {
 	);
 	await expect(page.getByTestId("job-count")).toHaveText("2 jobs");
 
-	await daily.getByRole("button", { name: "Edit" }).click();
-	await expect(page.getByRole("dialog")).toBeVisible();
-	await page.keyboard.press("Escape");
+	// None of the controls opens the card's task page.
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks$/);
 
-	// Clicking the card opens the task's editor.
-	await daily.getByRole("heading", { name: "daily-report" }).click();
-	await expect(page).toHaveURL(
-		/\/agents\/assistant\/tasks\?task=daily-report$/,
-	);
-	await expect(
-		page.getByRole("button", { name: "Save Changes" }),
-	).toBeVisible();
+	// The pencil opens the task's settings editor, without leaving the page.
+	await daily.getByRole("button", { name: "Edit" }).click();
+	await expect(page.getByRole("dialog", { name: "Edit task" })).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks$/);
 });
 
-test("clicking a list row opens the task's editor", async ({ page }) => {
+test("a task card opens the task's page, like its sidebar row (#950)", async ({
+	page,
+}) => {
+	await mockTasks(page);
+	await page.goto("/agents/assistant/tasks");
+	const daily = page
+		.getByTestId("task-card")
+		.filter({ hasText: "daily-report" });
+	// A real link, to the route the sidebar's task row uses.
+	const link = daily.getByTestId("task-card-link");
+	await expect(link).toHaveAttribute(
+		"href",
+		"/agents/assistant/tasks/daily-report",
+	);
+	await expect(daily).toHaveCSS("cursor", "pointer");
+
+	// Cmd/Ctrl-click opens it in a new tab and leaves this one alone.
+	const popup = page.context().waitForEvent("page");
+	await clickCardAt(daily, daily.getByTestId("task-schedule"), [
+		"ControlOrMeta",
+	]);
+	const tab = await popup;
+	await expect(tab).toHaveURL(/\/agents\/assistant\/tasks\/daily-report$/);
+	await tab.close();
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks$/);
+
+	// Anywhere on the card body opens the task's page.
+	await clickCardAt(daily, daily.getByTestId("task-owner"));
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/daily-report$/);
+	await expect(page.getByTestId("task-title")).toHaveText("daily-report");
+
+	// The card is focusable and Enter opens it.
+	await page.goto("/agents/assistant/tasks");
+	await link.focus();
+	await page.keyboard.press("Enter");
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/daily-report$/);
+
+	// Running now opens the running task's page.
+	await page.goto("/agents/assistant/tasks");
+	await page
+		.getByTestId("task-card")
+		.filter({ hasText: "ci-watch" })
+		.getByTestId("task-running-link")
+		.click();
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/ci-watch$/);
+});
+
+test("clicking a list row opens the task's page", async ({ page }) => {
 	await mockTasks(page);
 	await page.goto("/agents/assistant/tasks");
 	await page.getByTestId("layout-list").click();
@@ -297,9 +341,7 @@ test("clicking a list row opens the task's editor", async ({ page }) => {
 		.locator("td")
 		.first()
 		.click();
-	await expect(page).toHaveURL(
-		/\/agents\/assistant\/tasks\?task=weekly-cleanup$/,
-	);
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/weekly-cleanup$/);
 });
 
 test("System → Jobs redirects to Scheduled Tasks and has no nav entry", async ({

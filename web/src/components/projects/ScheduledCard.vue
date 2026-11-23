@@ -3,7 +3,7 @@
 		opens: its name is a link stretched over the box, and the controls sit
 		above it. The pencil opens the schedule's editor. -->
 	<article data-testid="scheduled-card" :class="{ 'self-start': !job }"
-		class="relative flex max-h-[50vh] min-w-0 flex-col overflow-hidden rounded-xl border border-violet-200 bg-white focus-within:ring-2 focus-within:ring-blue-500 hover:border-violet-400 hover:shadow-sm dark:border-violet-900 dark:bg-gray-900 dark:hover:border-violet-700">
+		class="relative flex max-h-[50vh] cursor-pointer min-w-0 flex-col overflow-hidden rounded-xl border border-violet-200 bg-white focus-within:ring-2 focus-within:ring-blue-500 hover:border-violet-400 hover:shadow-sm dark:border-violet-900 dark:bg-gray-900 dark:hover:border-violet-700">
 		<div class="shrink-0 space-y-1 px-4 pb-2.5 pt-3">
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
 				<span class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">

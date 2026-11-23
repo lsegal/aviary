@@ -101,7 +101,7 @@
 					opens: its name is a link stretched over the card, and the controls
 					sit above it. -->
 				<article v-for="r in rows" :key="r.task.name" data-testid="task-card" :data-task="r.task.name"
-					class="relative space-y-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2.5 focus-within:ring-2 focus-within:ring-blue-500 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700"
+					class="relative cursor-pointer space-y-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2.5 focus-within:ring-2 focus-within:ring-blue-500 hover:border-blue-300 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700"
 					:class="r.enabled ? '' : 'opacity-75'">
 					<div class="flex items-center gap-2">
 						<span v-if="r.running" data-testid="task-running" title="Running now" class="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />

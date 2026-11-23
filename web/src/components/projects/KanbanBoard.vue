@@ -10,7 +10,7 @@
 			<div class="flex flex-col gap-2 p-2">
 				<!-- The card opens the task's page; the pencil, the schedule's editor. -->
 				<article v-for="s in schedules" :key="s.id" data-testid="kanban-scheduled-card"
-					class="relative min-w-0 space-y-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs focus-within:ring-2 focus-within:ring-blue-500 hover:border-violet-400 dark:border-violet-900 dark:bg-gray-900 dark:hover:border-violet-700">
+					class="relative min-w-0 cursor-pointer space-y-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs focus-within:ring-2 focus-within:ring-blue-500 hover:border-violet-400 dark:border-violet-900 dark:bg-gray-900 dark:hover:border-violet-700">
 					<div class="flex items-center gap-1">
 						<router-link :to="taskSessionPath(s.agent, s.name)" :title="s.id"
 							class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 after:absolute after:inset-0 after:rounded-lg hover:underline focus:outline-none dark:text-white">
