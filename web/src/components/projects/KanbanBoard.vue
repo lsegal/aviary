@@ -8,12 +8,19 @@
 				<span class="ml-auto font-normal tabular-nums text-violet-400">{{ schedules.length }}</span>
 			</h3>
 			<div class="flex flex-col gap-2 p-2">
+				<!-- The card opens the task's page; the pencil, the schedule's editor. -->
 				<article v-for="s in schedules" :key="s.id" data-testid="kanban-scheduled-card"
-					class="min-w-0 space-y-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs dark:border-violet-900 dark:bg-gray-900">
-					<router-link :to="scheduleTo(s)" :title="s.id"
-						class="block truncate text-sm font-medium text-gray-900 hover:underline dark:text-white">
-						{{ s.name }}
-					</router-link>
+					class="relative min-w-0 space-y-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs focus-within:ring-2 focus-within:ring-blue-500 hover:border-violet-400 dark:border-violet-900 dark:bg-gray-900 dark:hover:border-violet-700">
+					<div class="flex items-center gap-1">
+						<router-link :to="taskSessionPath(s.agent, s.name)" :title="s.id"
+							class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 after:absolute after:inset-0 after:rounded-lg hover:underline focus:outline-none dark:text-white">
+							{{ s.name }}
+						</router-link>
+						<router-link :to="scheduleTo(s)" aria-label="Edit schedule" title="Edit this schedule"
+							class="relative z-10 shrink-0 rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white">
+							<PencilIcon aria-hidden="true" class="h-3.5 w-3.5" />
+						</router-link>
+					</div>
 					<p data-testid="kanban-scheduled-next" class="tabular-nums text-violet-700 dark:text-violet-300"
 						:title="s.nextRun ? formatFire(s.nextRun) : ''">
 						<template v-if="scheduleNext(s).kind === 'paused'">Paused</template>
@@ -61,6 +68,7 @@
 </template>
 
 <script setup lang="ts">
+import PencilIcon from "@heroicons/vue/24/outline/PencilIcon";
 import { computed } from "vue";
 import type { RouteLocationRaw } from "vue-router";
 import { projectOwner } from "../../lib/projectSettings";
@@ -81,7 +89,7 @@ import {
 	until,
 	waitText,
 } from "../../lib/projects";
-import { useSettingsStore } from "../../stores/settings";
+import { taskSessionPath, useSettingsStore } from "../../stores/settings";
 import PullRequestLink from "./PullRequestLink.vue";
 
 const props = withDefaults(

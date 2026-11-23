@@ -1,6 +1,9 @@
 <template>
+	<!-- The whole box opens the task's page, the same one its sidebar row
+		opens: its name is a link stretched over the box, and the controls sit
+		above it. The pencil opens the schedule's editor. -->
 	<article data-testid="scheduled-card" :class="{ 'self-start': !job }"
-		class="flex max-h-[50vh] min-w-0 flex-col overflow-hidden rounded-xl border border-violet-200 bg-white dark:border-violet-900 dark:bg-gray-900">
+		class="relative flex max-h-[50vh] min-w-0 flex-col overflow-hidden rounded-xl border border-violet-200 bg-white focus-within:ring-2 focus-within:ring-blue-500 hover:border-violet-400 hover:shadow-sm dark:border-violet-900 dark:bg-gray-900 dark:hover:border-violet-700">
 		<div class="shrink-0 space-y-1 px-4 pb-2.5 pt-3">
 			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
 				<span class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
@@ -12,7 +15,8 @@
 				<span class="ml-auto truncate font-mono text-gray-500 dark:text-gray-400">{{ schedule.id }}</span>
 			</div>
 			<h3 class="text-base font-semibold leading-snug text-gray-900 dark:text-white">
-				<router-link :to="to" class="hover:underline">{{ schedule.name }}</router-link>
+				<router-link :to="taskTo" data-testid="scheduled-card-link"
+					class="after:absolute after:inset-0 after:rounded-xl hover:underline focus:outline-none">{{ schedule.name }}</router-link>
 			</h3>
 			<p class="truncate text-xs text-gray-500 dark:text-gray-400" :title="schedule.prompt">{{ truncatePrompt(schedule.prompt, 120) }}</p>
 			<!-- Trigger and next run share one line. A one-time trigger that has
@@ -31,19 +35,19 @@
 				</template>
 			</p>
 		</div>
-		<JobOutputPane v-if="job" :job="job" testid="scheduled-output" />
+		<JobOutputPane v-if="job" :job="job" testid="scheduled-output" class="relative z-10" />
 		<div class="flex shrink-0 items-center gap-2 border-t border-gray-100 px-3 py-2 dark:border-gray-800">
+			<router-link :to="to" aria-label="Edit schedule" title="Edit this schedule"
+				class="relative z-10 shrink-0 rounded-lg border border-gray-200 bg-white p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+				<PencilIcon aria-hidden="true" class="h-4 w-4" />
+			</router-link>
 			<!-- The running state shows once: as the control that opens the run. -->
 			<router-link v-if="active" :to="runTo" data-testid="scheduled-running"
-				:title="job ? 'Open this run' : 'Open this schedule'"
-				class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950">
+				:title="job ? 'Open this run' : 'Open this task'"
+				class="relative z-10 inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950">
 				<span aria-hidden="true" class="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
 				{{ activeLabel }} · {{ age(active.fireTime, now) }}
 				<ArrowsPointingOutIcon aria-hidden="true" class="h-3.5 w-3.5" />
-			</router-link>
-			<router-link v-else :to="to" aria-label="Edit schedule" title="Edit this schedule"
-				class="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-				<ArrowsPointingOutIcon aria-hidden="true" class="h-4 w-4" />
 			</router-link>
 			<span v-if="last || !schedule.history.length" data-testid="scheduled-last"
 				class="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-gray-700 dark:text-gray-200">
@@ -55,13 +59,14 @@
 				<template v-else>never</template>
 			</span>
 			<span v-else class="flex-1" />
-			<JobOutputToggle v-if="job" />
+			<JobOutputToggle v-if="job" class="relative z-10" />
 		</div>
 	</article>
 </template>
 
 <script setup lang="ts">
 import ArrowsPointingOutIcon from "@heroicons/vue/24/outline/ArrowsPointingOutIcon";
+import PencilIcon from "@heroicons/vue/24/outline/PencilIcon";
 import { computed } from "vue";
 import type { RouteLocationRaw } from "vue-router";
 import { projectOwner } from "../../lib/projectSettings";
@@ -79,7 +84,7 @@ import {
 	truncatePrompt,
 	until,
 } from "../../lib/projects";
-import { useSettingsStore } from "../../stores/settings";
+import { taskSessionPath, useSettingsStore } from "../../stores/settings";
 import JobOutputPane from "./JobOutputPane.vue";
 import JobOutputToggle from "./JobOutputToggle.vue";
 
@@ -88,7 +93,7 @@ import JobOutputToggle from "./JobOutputToggle.vue";
 const props = defineProps<{
 	schedule: ProjectSchedule;
 	now: number;
-	/** Where the box opens its detail view. */
+	/** Where the box's pencil opens the schedule's editor. */
 	to: RouteLocationRaw;
 	/** The board job of the schedule's latest run, whose output the box shows. */
 	job?: ProjectJob;
@@ -109,12 +114,19 @@ const activeLabel = computed(() => {
 	}
 });
 
+// The task's page: its session, which every run shares.
+const taskTo = computed(() =>
+	taskSessionPath(props.schedule.agent, props.schedule.name),
+);
+
 const settings = useSettingsStore();
 // The running control opens the run's view when the board has its job; an
-// earlier run's finished job is not the one running.
+// earlier run's finished job is not the one running, so it opens the task's
+// page, whose session shows the run.
 const runTo = computed<RouteLocationRaw>(() => {
 	const job = props.job;
-	if (!job || job.state === "done" || job.state === "failed") return props.to;
+	if (!job || job.state === "done" || job.state === "failed")
+		return taskTo.value;
 	return jobPath(
 		projectOwner(settings.config, job.target),
 		job.target,
