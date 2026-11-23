@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
@@ -101,6 +102,20 @@ func projectTaskCompileKey(prompt, project string, tools []agent.ToolInfo, agent
 // compiling; editors and task_schedule write the choice explicitly.
 func EffectiveProjectTaskPrecompile(task config.TaskConfig) bool {
 	return strings.EqualFold(task.Type, "project") && config.BoolOr(task.Precompile, false)
+}
+
+// backgroundCompiles tracks compiles started by compileProjectTaskInBackground,
+// so tests can wait for them before restoring the state they read.
+var backgroundCompiles sync.WaitGroup
+
+// compileProjectTaskInBackground compiles a project task without blocking
+// the caller, logging a failure.
+func compileProjectTaskInBackground(agentName, taskName, trigger string) {
+	backgroundCompiles.Go(func() {
+		if _, err := EnsureProjectTaskCompiled(context.Background(), agentName, taskName, trigger); err != nil {
+			slog.Warn("task_compile: project task compile failed", "component", "task_compile", "agent", agentName, "task", taskName, "error", err)
+		}
+	})
 }
 
 // EnsureProjectTaskCompiled returns the compiled script a precompiled project
