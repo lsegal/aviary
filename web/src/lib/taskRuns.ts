@@ -32,6 +32,12 @@ export interface ScheduledTaskInfo {
 	description?: string;
 	next_run?: string;
 	history?: TaskFire[];
+	/** "message" for a workflow; a schedule kind or "watch" otherwise. */
+	trigger_type?: string;
+	/** A workflow's channel, conversation and text match. */
+	channel?: string;
+	entry?: string;
+	match?: string;
 }
 
 export interface TaskRunEntry {
@@ -72,6 +78,7 @@ const TRIGGER_LABELS: Record<string, string> = {
 	schedule: "schedule",
 	missed: "catch-up",
 	watch: "file watch",
+	message: "message",
 	manual: "manual",
 };
 

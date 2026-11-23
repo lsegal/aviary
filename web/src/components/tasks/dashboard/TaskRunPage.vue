@@ -6,6 +6,7 @@
 		</router-link>
 		<TaskRunLog v-if="entry" :entry="entry" :title="`Run ${entry.id}`" :now="dashboard.now.value"
 			:fetch-logs="dashboard.fetchLogs" class="h-[calc(100dvh-16rem)] min-h-80" @stop="dashboard.stop($event)" />
+		<TriggerContextPanel v-if="entry?.job?.trigger_context" :context="entry.job.trigger_context" />
 		<p v-else-if="dashboard.loaded.value" data-testid="task-run-missing"
 			class="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
 			No run <span class="font-mono">{{ runID }}</span> for this task.
@@ -21,6 +22,7 @@ import { useRoute } from "vue-router";
 import type { TaskDashboard } from "../../../composables/useTaskDashboard";
 import { taskSessionPath } from "../../../stores/settings";
 import TaskRunLog from "./TaskRunLog.vue";
+import TriggerContextPanel from "./TriggerContextPanel.vue";
 
 // One run of a task at its own URL: its full logs, with a failed run's error
 // on top. It opens inside the task's dashboard, so the chat stays mounted.

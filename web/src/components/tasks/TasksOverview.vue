@@ -195,6 +195,7 @@ import {
 } from "../../stores/jobs";
 import {
 	type AgentTask,
+	isWorkflow,
 	taskSessionPath,
 	useSettingsStore,
 } from "../../stores/settings";
@@ -235,7 +236,7 @@ const tasks = computed(
 	(): AgentTask[] =>
 		settings.config?.agents
 			.find((a) => a.name === props.agent)
-			?.tasks?.filter((t) => t.name) ?? [],
+			?.tasks?.filter((t) => t.name && !isWorkflow(t)) ?? [],
 );
 
 // ── Upcoming fires, as the scheduler predicts them ──────────────────────────

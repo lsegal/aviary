@@ -405,6 +405,7 @@ import {
 	type AppConfig,
 	agentTaskPath,
 	agentTaskType,
+	isWorkflow,
 	type SkillConfig,
 	useSettingsStore,
 } from "../stores/settings";
@@ -2958,13 +2959,13 @@ function normalizedDraftConfig(): AppConfig {
 			name: (task.name ?? "").trim(),
 			type: agentTaskType(task.type),
 			prompt: task.prompt ?? "",
-			// project and model belong to project tasks only.
+			// project belongs to project tasks only, model to them and workflows.
 			project:
 				agentTaskType(task.type) === "project"
 					? (task.project ?? "").trim() || undefined
 					: undefined,
 			model:
-				agentTaskType(task.type) === "project"
+				agentTaskType(task.type) === "project" || isWorkflow(task)
 					? (task.model ?? "").trim() || undefined
 					: undefined,
 			schedule: (task.schedule ?? "").trim(),

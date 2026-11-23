@@ -9,8 +9,10 @@ export interface Job {
 	session_id?: string;
 	prompt: string;
 	status: "pending" | "in_progress" | "completed" | "failed" | "canceled";
-	/** What fired the run: schedule, missed (a catch-up), watch or manual. */
+	/** What fired the run: schedule, missed (a catch-up), watch, message or manual. */
 	trigger?: string;
+	/** The channel message that started a workflow run. */
+	trigger_context?: TriggerContext;
 	attempts: number;
 	max_retries: number;
 	output?: string;
@@ -23,6 +25,30 @@ export interface Job {
 	scheduled_for?: string;
 	created_at: string;
 	updated_at: string;
+}
+
+/** One channel message in a workflow run's trigger context. */
+export interface TriggerMessage {
+	/** The sender's display name; empty when only a raw ID is known. */
+	sender?: string;
+	from_agent?: boolean;
+	text: string;
+	attachments?: string[];
+	timestamp: string;
+}
+
+/** The channel message that started a workflow run, with its neighbours. */
+export interface TriggerContext {
+	channel_type: string;
+	configured_id: string;
+	channel: string;
+	entry: string;
+	thread_ts?: string;
+	session_id?: string;
+	recorded_at: string;
+	message: TriggerMessage;
+	before?: TriggerMessage[];
+	after?: TriggerMessage[];
 }
 
 export interface SessionMessage {
