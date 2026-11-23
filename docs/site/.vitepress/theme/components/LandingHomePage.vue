@@ -87,15 +87,15 @@ const projectsItems: ShowcaseItem[] = [
 	{
 		title: "The Code Loop board",
 		description:
-			"Every watched repository gets a board of its jobs: what is running, what is up next, and what merged.",
+			"One board for every project an agent watches: what is starting, running, paused on a blocker, done, or failed.",
 		bullets: [
-			"Issues are picked up by label and filter, highest priority first.",
-			"Each job is claimed, so two instances never work the same issue.",
-			"Retry, pause, resume, or stop a job from its card.",
+			"Issues matching your filter, such as assignee:@me, are picked up, critical and high labels first.",
+			"Each job is claimed with a comment on its issue, so two instances never work the same issue.",
+			"Retry, stop, or summarize a job from its card, or open its run view.",
 		],
 		lightSrc: "/screenshots/projects-board-light.png",
 		darkSrc: "/screenshots/projects-board-dark.png",
-		alt: "Code Loop board with running, paused, and merged jobs",
+		alt: "Code Loop board for two projects with starting, running, paused, done, and failed jobs",
 	},
 	{
 		title: "A job's run view",

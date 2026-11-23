@@ -1,3 +1,11 @@
+// Renders the docs site's screenshots (docs/site/public/screenshots) from the
+// web UI against the fixtures below, with every MCP call mocked. Run it from
+// the repository root with the web dev server up:
+//
+//   node scripts/generate-doc-screenshots.mjs [name-prefix...]
+//
+// DOCS_SCREENSHOT_BASE_URL overrides the dev server's URL. See
+// "Regenerating Docs Screenshots" in CONTRIBUTING.md.
 import { chromium } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
@@ -14,6 +22,13 @@ const outputDir = path.join(
 const baseURL =
 	process.env.DOCS_SCREENSHOT_BASE_URL ?? "https://127.0.0.1:5173";
 const themes = ["light", "dark"];
+// Optional name prefixes passed on the command line (for example `projects`)
+// limit the run to matching screenshots.
+const only = process.argv.slice(2);
+
+function wanted(outputName) {
+	return only.length === 0 || only.some((name) => outputName.startsWith(name));
+}
 
 function themedOutputName(outputName, theme) {
 	const extensionIndex = outputName.lastIndexOf(".");
@@ -712,23 +727,42 @@ function minutesAgo(minutes) {
 	return new Date(Date.now() - minutes * 60_000).toISOString();
 }
 
+// The Code Loop fixtures follow the payloads internal/projects' Manager
+// returns for project_status, project_job_list and project_job_get (see
+// web/e2e/projects.spec.ts). Keep them to public repositories.
+const projectTargets = ["lsegal/aviary", "lsegal/forgo"];
+
+// The board state core.JobSnapshot.BoardState reports for each job status.
+const projectStateOf = {
+	queued: "starting",
+	active: "running",
+	waiting: "paused",
+	paused: "paused",
+	complete: "done",
+	failed: "failed",
+};
+
 function projectJob({
+	target = "lsegal/aviary",
 	number,
 	title,
 	status,
+	state,
 	agent,
 	model,
 	started,
 	pr,
+	prState = "open",
 	progress,
 	waitReason,
 }) {
 	return {
-		key: `lsegal/aviary#${number}`,
-		target: "lsegal/aviary",
+		key: `${target}#${number}`,
+		target,
 		number,
 		title,
 		status,
+		state: state ?? projectStateOf[status],
 		kind: "issue",
 		agent,
 		model,
@@ -738,12 +772,13 @@ function projectJob({
 			resume: status === "paused",
 			stop: ["active", "waiting", "paused"].includes(status),
 		},
-		repository: "lsegal/aviary",
-		issue_url: `https://github.com/lsegal/aviary/issues/${number}`,
+		repository: target,
+		issue_url: `https://github.com/${target}/issues/${number}`,
 		...(pr
 			? {
 					pull_request: pr,
-					pull_request_url: `https://github.com/lsegal/aviary/pull/${pr}`,
+					pull_request_url: `https://github.com/${target}/pull/${pr}`,
+					pull_request_state: prState,
 				}
 			: {}),
 		...(progress
@@ -769,28 +804,51 @@ const projectJobs = [
 		model: "opus",
 		started: 14,
 		pr: 233,
+		prState: "draft",
 		progress: [2, 5],
+	}),
+	projectJob({
+		target: "lsegal/forgo",
+		number: 87,
+		title: "Hot reload drops methods added to generic types",
+		status: "active",
+		agent: "codex",
+		model: "gpt-5.5",
+		started: 22,
+		pr: 91,
+		prState: "draft",
+		progress: [3, 6],
 	}),
 	projectJob({
 		number: 221,
 		title: "Export a session as Markdown from the chat menu",
 		status: "active",
+		state: "starting",
 		agent: "codex",
 		model: "gpt-5.5",
-		started: 3,
-		pr: 236,
-		progress: [1, 6],
+		started: 1,
 	}),
 	projectJob({
 		number: 214,
 		title: "Show token usage per scheduled task",
-		status: "waiting",
+		status: "paused",
 		agent: "claude",
 		model: "opus",
 		started: 41,
 		pr: 229,
 		progress: [5, 6],
-		waitReason: "Waiting on CI for PR #229",
+		waitReason: "Stacked on PR #226, waiting for it to merge",
+	}),
+	projectJob({
+		target: "lsegal/forgo",
+		number: 80,
+		title: "cmd/go build cache ignores -tags from GOFLAGS",
+		status: "failed",
+		agent: "claude",
+		model: "opus",
+		started: 70,
+		pr: 84,
+		progress: [4, 6],
 	}),
 	projectJob({
 		number: 209,
@@ -800,6 +858,7 @@ const projectJobs = [
 		model: "opus",
 		started: 95,
 		pr: 227,
+		prState: "merged",
 		progress: [6, 6],
 	}),
 	projectJob({
@@ -810,6 +869,7 @@ const projectJobs = [
 		model: "gpt-5.5",
 		started: 300,
 		pr: 205,
+		prState: "merged",
 		progress: [5, 5],
 	}),
 ];
@@ -861,18 +921,113 @@ const projectRunEvents = [
 	},
 	{
 		kind: "command",
-		time: minutesAgo(7),
+		time: minutesAgo(8),
+		call_id: "b1",
 		command: "go test ./internal/scheduler/...",
+		status: "running",
+	},
+	{
+		kind: "command",
+		time: minutesAgo(8),
+		call_id: "b1",
+		output: "--- FAIL: TestBackoffCap (0.01s)",
+		exit_code: 1,
+		is_error: true,
+		status: "done",
+	},
+	{
+		kind: "file_change",
+		time: minutesAgo(7),
+		path: "internal/scheduler/queue_test.go",
+		diff: "@@ -88,2 +88,3 @@\n-want := 20 * time.Minute\n+want := 10 * time.Minute\n+// jitter stays within 10%",
+	},
+	{
+		kind: "command",
+		time: minutesAgo(6),
+		call_id: "b2",
+		command: "go test ./internal/scheduler/...",
+		status: "running",
+	},
+	{
+		kind: "command",
+		time: minutesAgo(6),
+		call_id: "b2",
 		output: "ok  internal/scheduler 2.41s",
 		exit_code: 0,
-		status: "completed",
+		status: "done",
 	},
 	{
 		kind: "usage",
-		time: minutesAgo(6),
+		time: minutesAgo(5),
 		usage: { input_tokens: 182000, output_tokens: 9100, cost_usd: 1.42 },
 	},
 ];
+
+// The latest few events of every other job, which its card's output shows.
+function projectCommand(id, minutes, command, output, failed = false) {
+	return [
+		{ kind: "command", time: minutesAgo(minutes), call_id: id, command, status: "running" },
+		{
+			kind: "command",
+			time: minutesAgo(minutes),
+			call_id: id,
+			output,
+			exit_code: failed ? 1 : 0,
+			is_error: failed,
+			status: "done",
+		},
+	];
+}
+
+const projectEvents = {
+	218: projectRunEvents,
+	87: [
+		{
+			kind: "file_change",
+			time: minutesAgo(9),
+			path: "src/cmd/hotreload/methods.go",
+			diff: "@@ -12,2 +12,6 @@\n+for _, inst := range named.Instances() {\n+\tpatch(inst)\n+}",
+		},
+		...projectCommand("f1", 6, "go test ./cmd/hotreload/...", "ok  cmd/hotreload 4.87s"),
+		{
+			kind: "message",
+			time: minutesAgo(2),
+			text: "Generic instances now pick up new methods. Running the runtime tests next.",
+		},
+	],
+	221: [
+		{ kind: "system", time: minutesAgo(1), text: "Claimed #221" },
+		{ kind: "system", time: minutesAgo(0.5), text: "Cloning lsegal/aviary" },
+	],
+	214: [
+		...projectCommand("p1", 30, "pnpm test:e2e usage", "12 passed (18.4s)"),
+		{ kind: "system", time: minutesAgo(28), text: "Marked PR #229 ready for review" },
+		{ kind: "system", time: minutesAgo(27), text: "Paused: stacked on PR #226" },
+	],
+	80: [
+		{
+			kind: "file_change",
+			time: minutesAgo(50),
+			path: "src/cmd/go/internal/work/buildid.go",
+			diff: "@@ -201,1 +201,2 @@\n+h.Write(cfg.BuildTags)",
+		},
+		...projectCommand("g1", 44, "go test cmd/go -run Script/build_cache", "--- FAIL: TestScript/build_cache_tags", true),
+		{ kind: "system", time: minutesAgo(40), text: "CI failed on PR #84" },
+	],
+	209: [
+		...projectCommand("s1", 60, "go test ./installer/...", "ok  installer 0.92s"),
+		{ kind: "system", time: minutesAgo(52), text: "CI passed on PR #227" },
+		{ kind: "system", time: minutesAgo(50), text: "Merged PR #227" },
+	],
+	200: [
+		...projectCommand("d1", 260, "pnpm lint", "Checked 412 files. No fixes applied."),
+		{ kind: "system", time: minutesAgo(250), text: "Merged PR #205" },
+	],
+};
+
+function projectInTargets(args, target) {
+	return !Array.isArray(args.targets) || args.targets.includes(target);
+}
 
 const projectsFixtures = {
 	agent_list: [],
@@ -881,52 +1036,71 @@ const projectsFixtures = {
 			{
 				name: "coder",
 				model: "cli/claude/opus",
-				projects: [{ target: "lsegal/aviary" }],
+				projects: projectTargets.map((target) => ({ target })),
 			},
 		],
 	},
-	project_status: {
-		identity: "7F3CA91B",
-		running: true,
-		targets: ["lsegal/aviary"],
-		issue_counts: { "lsegal/aviary": 4 },
-		jobs: {
-			running: 2,
-			queued: 0,
-			paused: 0,
-			completed: 12,
-			merged_24h: 3,
-			failed: 0,
-		},
-		concurrency: 4,
-		delivery: "poll",
-		poll_interval: "30s",
-		issue_filter: "assignee:@me",
-		allowed_commenters: ["lsegal"],
-		quotas: { claude: "62% of 5h quota left", codex: "quota ok" },
-		agents: ["claude", "codex"],
-		recent_logs:
-			"12:03:58 checked lsegal/aviary: 4 ready issues\n12:04:11 claimed #221, cloning into ~/.aviary/clones/aviary-221",
-		log_offset: 2,
-		last_check: minutesAgo(0.1),
+	// Like the Manager, project_status counts the jobs of the projects it is
+	// passed in each board state.
+	project_status: (args) => {
+		const states = { starting: 0, paused: 0, running: 0, done: 0, failed: 0 };
+		for (const job of projectJobs) {
+			if (projectInTargets(args, job.target)) states[job.state]++;
+		}
+		return {
+			identity: "7F3CA91B",
+			running: true,
+			targets: projectTargets,
+			issue_counts: { "lsegal/aviary": 6, "lsegal/forgo": 3 },
+			states,
+			jobs: {
+				running: 3,
+				queued: 0,
+				paused: 1,
+				completed: 12,
+				merged_24h: 4,
+				failed: 1,
+			},
+			concurrency: 4,
+			delivery: "browser",
+			poll_interval: "20s",
+			issue_filter: "assignee:@me",
+			allowed_commenters: ["lsegal"],
+			quotas: { claude: "62% of 5h quota left", codex: "quota ok" },
+			agents: ["claude/opus", "codex"],
+			clis: [
+				{ name: "claude", models: ["opus"], quota: "62% of 5h quota left" },
+				{ name: "codex", models: ["gpt-5.5"], quota: "quota ok" },
+			],
+			recent_logs:
+				"12:03:58 checked lsegal/aviary: 6 ready issues\n12:04:11 claimed #221, cloning lsegal/aviary",
+			log_offset: 2,
+			last_check: minutesAgo(0.1),
+		};
 	},
-	project_job_list: {
-		jobs: projectJobs,
-		total: projectJobs.length,
-		offset: 0,
-		limit: 50,
+	project_job_list: (args) => {
+		const jobs = projectJobs.filter(
+			(job) =>
+				projectInTargets(args, job.target) &&
+				(!args.status || job.status === args.status) &&
+				(!Array.isArray(args.states) || args.states.includes(job.state)),
+		);
+		return { jobs, total: jobs.length, offset: 0, limit: args.limit ?? 50 };
 	},
-	project_job_get: {
-		...projectJobs[0],
-		checkout_directory: "~/.aviary/clones/aviary-218",
-		session_id: "7f3c…a9",
-		scrollback: [
-			"▸ read internal/scheduler/queue.go",
-			"$ go test ./internal/scheduler/...",
-			"ok  internal/scheduler 2.41s",
-		].join("\n"),
-		events: projectRunEvents,
-		raw_output: "",
+	project_job_get: (args) => {
+		const job =
+			projectJobs.find(
+				(j) => j.target === args.target && j.number === args.number,
+			) ?? projectJobs[0];
+		return {
+			...job,
+			checkout_directory: `~/.aviary/clones/${job.target.split("/")[1]}-${job.number}`,
+			checkout_state: job.state === "done" ? "removed" : "present",
+			session_id: "7f3c…a9",
+			scrollback: "",
+			events: projectEvents[job.number] ?? [],
+			raw_output: "",
+		};
 	},
 };
 
@@ -956,6 +1130,8 @@ async function waitForServer(browser, url, timeoutMs = 30_000) {
 async function configurePage(page, fixtures) {
 	await page.addInitScript(() => {
 		localStorage.setItem("aviary_token", "docs-shot-token");
+		// The mocked server has no providers, so skip the setup wizard.
+		sessionStorage.setItem("aviary_onboarding_skipped", "1");
 
 		class MockWebSocket {
 			static CONNECTING = 0;
@@ -1056,7 +1232,12 @@ async function configurePage(page, fixtures) {
 
 		if (body.method === "tools/call") {
 			const name = body.params?.name ?? "";
-			const result = name in fixtures ? fixtures[name] : [];
+			const fixture = name in fixtures ? fixtures[name] : [];
+			// A function fixture computes its result from the call's arguments.
+			const result =
+				typeof fixture === "function"
+					? fixture(body.params?.arguments ?? {})
+					: fixture;
 			await route.fulfill({
 				status: 200,
 				contentType: "application/json",
@@ -1096,10 +1277,18 @@ async function captureSimple({
 	outputName,
 	viewport,
 	theme,
+	storage = {},
 }) {
+	if (!wanted(outputName)) return;
 	const page = await browser.newPage({ viewport, colorScheme: theme });
 	try {
 		await configurePage(page, fixtures);
+		// UI preferences the page reads from localStorage on load.
+		await page.addInitScript((entries) => {
+			for (const [key, value] of Object.entries(entries)) {
+				localStorage.setItem(key, value);
+			}
+		}, storage);
 		await openPage(page, pathname, readySelector);
 		await page.screenshot({
 			path: path.join(outputDir, themedOutputName(outputName, theme)),
@@ -1111,6 +1300,7 @@ async function captureSimple({
 }
 
 async function captureTools(browser, theme) {
+	if (!wanted("system-tools.png")) return;
 	const page = await browser.newPage({
 		viewport: { width: 1040, height: 1120 },
 		colorScheme: theme,
@@ -1131,6 +1321,7 @@ async function captureTools(browser, theme) {
 }
 
 async function captureJobs(browser, theme) {
+	if (!wanted("system-jobs.png")) return;
 	const page = await browser.newPage({
 		viewport: { width: 1040, height: 1120 },
 		colorScheme: theme,
@@ -1160,6 +1351,7 @@ async function captureSettingsPage({
 	readySelector,
 	theme,
 }) {
+	if (!wanted(outputName)) return;
 	const page = await browser.newPage({
 		viewport: { width: 1040, height: 1120 },
 		colorScheme: theme,
@@ -1253,18 +1445,20 @@ async function main() {
 			await captureSimple({
 				browser,
 				fixtures: projectsFixtures,
-				pathname: "/agents/coder/projects/lsegal%2Faviary",
+				pathname: "/agents/coder/projects",
 				readySelector: "text=Cap scheduler retry backoff at 10 minutes",
 				outputName: "projects-board.png",
 				viewport: { width: 1040, height: 980 },
 				theme,
+				// Show the job counts as the compact row of chips.
+				storage: { "aviary.projects.statsCompact": "1" },
 			});
 
 			await captureSimple({
 				browser,
 				fixtures: projectsFixtures,
 				pathname: "/agents/coder/projects/lsegal%2Faviary/jobs/218",
-				readySelector: '[data-event="file_change"]',
+				readySelector: '[data-event="usage"]',
 				outputName: "projects-run.png",
 				viewport: { width: 1440, height: 980 },
 				theme,

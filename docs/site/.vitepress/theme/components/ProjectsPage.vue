@@ -166,9 +166,10 @@ onBeforeUnmount(() => {
 					<p class="pp-eyebrow">The loop</p>
 					<h2>It keeps going after you stop looking</h2>
 					<p>
-						Aviary polls each watched target through <code>gh</code>, or takes
-						webhook deliveries through an ngrok tunnel, and picks up issues that
-						match the filter, <code>critical</code> and <code>high</code> first.
+						Aviary reads each watched target in its own browser, signed in as
+						you, or through the GitHub API by polling or webhook deliveries, and
+						picks up issues that match the filter (<code>assignee:@me</code>
+						by default), <code>critical</code> and <code>high</code> first.
 						It claims each one with a signed comment so no two instances work
 						the same issue, then dispatches <code>/gh-fix</code> to the first
 						provider with quota left.
@@ -213,15 +214,15 @@ onBeforeUnmount(() => {
 						<span class="tl"><span /><span /><span /></span>
 						<span>localhost:16677 · Code Loop</span>
 					</div>
-					<img :src="screenshot('projects-board')" alt="Code Loop board with running, paused, and merged jobs" />
+					<img :src="screenshot('projects-board')" alt="Code Loop board for two projects with starting, running, paused, done, and failed jobs" />
 				</div>
 				<div>
 					<p class="pp-eyebrow">The board</p>
 					<h2>Watch it work, or don't</h2>
 					<p>
-						Every agent gets a board of its projects' jobs: what is running,
-						what is waiting on CI or a blocker, and what merged. Retry, pause,
-						resume, or stop a job from its card.
+						Every agent gets a board of its projects' jobs: what is starting,
+						running, paused on CI or a blocker, done, or failed. Retry, stop, or
+						summarize a job from its card.
 					</p>
 					<p class="pp-muted">
 						Open a job to follow it from claim to merge: the plan, tool calls,
