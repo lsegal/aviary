@@ -4016,8 +4016,8 @@ func (w *Engine) Run(ctx context.Context) error {
 			publish()
 		}
 		err := w.runRelayingInbox(runCtx, inboxRun{key: key, subject: fmt.Sprintf("discussion #%d", i.Number), intro: intro, issue: i, output: output, updateSession: updateSession}, session)
-		if err == nil {
-			err = context.Cause(runCtx)
+		if cause := context.Cause(runCtx); err == nil && errors.Is(cause, errWorkStoppedFromWebUI) {
+			err = cause
 		}
 		jobMu.Lock()
 		job := jobs[key]
