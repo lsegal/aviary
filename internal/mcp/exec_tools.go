@@ -42,7 +42,7 @@ var execCommandContext = exec.CommandContext
 func registerExecTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "exec",
-		Description: "Execute a host OS command for the current agent when permissions.exec.allowedCommands allows it. Arguments: command (required), cwd (optional; defaults to the agent directory, or to the job's granted directory during a job).",
+		Description: "Execute a host OS command for the current agent when permissions.exec.allowedCommands allows it, or from a precompiled project task's script, inside its clone. Arguments: command (required), cwd (optional; defaults to the agent directory, or to the job's granted directory during a job).",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args execArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		perms, agentDir, err := resolveAllowedAgentExec(ctx, args.Command)
 		if err != nil {
