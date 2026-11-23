@@ -175,6 +175,7 @@ func (r *AgentRunner) promptCore(
 		promptCtx = WithSessionID(promptCtx, sessionID)
 		promptCtx = WithSessionAgentID(promptCtx, r.agent.ID)
 		promptCtx = WithWriteGuard(promptCtx)
+		promptCtx = WithTurnMedia(promptCtx, mediaURLs)
 		untrack := trackSessionRun(r.agent.ID, sessionID, cancel)
 		defer untrack()
 		turn := beginActiveTurn(r.agent.ID, sessionID)

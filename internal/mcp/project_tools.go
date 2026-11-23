@@ -9,7 +9,9 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/projects"
 )
 
@@ -84,12 +86,70 @@ type projectIssueCommentArgs struct {
 	Number     int    `json:"number" jsonschema:"The issue or pull request number"`
 	Repository string `json:"repository,omitempty" jsonschema:"OWNER/REPO hosting it; defaults to the repository of the job with this number, or the only watched repository"`
 	Text       string `json:"text" jsonschema:"The update to post"`
+	// Attachments are files to upload and embed besides the turn's media.
+	Attachments []string `json:"attachments,omitempty" jsonschema:"Local image or video files (paths or file:// URLs) to upload and embed in the comment, in addition to the current turn's media"`
+	// SkipTurnMedia leaves the current turn's media out.
+	SkipTurnMedia bool `json:"skip_turn_media,omitempty" jsonschema:"Do not attach the images and videos from the user message that started this turn, which are attached by default"`
 }
 
 type projectIssueCreateArgs struct {
 	Repository string `json:"repository,omitempty" jsonschema:"OWNER/REPO to file the issue on; defaults to the only watched repository"`
 	Text       string `json:"text" jsonschema:"What the issue is about, as you would describe it to gh-create"`
 	Model      string `json:"model,omitempty" jsonschema:"Model for the CLI provider that runs gh-create"`
+	// Attachments are files to upload and embed besides the turn's media.
+	Attachments []string `json:"attachments,omitempty" jsonschema:"Local image or video files (paths or file:// URLs) for gh-create to upload and embed in the issue, in addition to the current turn's media"`
+	// SkipTurnMedia leaves the current turn's media out.
+	SkipTurnMedia bool `json:"skip_turn_media,omitempty" jsonschema:"Do not attach the images and videos from the user message that started this turn, which are attached by default"`
+}
+
+// issueAttachmentsDescription tells agents how project_issue_create and
+// project_issue_comment attach media.
+const issueAttachmentsDescription = "Screenshots and videos are uploaded and embedded, never just described: by default the images and videos attached to the user message that started this turn are attached (its other files are left out and listed in skipped_turn_media), and attachments adds local image or video files; set skip_turn_media to leave the turn's media out. GitHub takes PNG, JPEG, GIF, WebP and SVG images up to 10 MB and MP4, MOV and WebM videos up to 100 MB. A file that is missing, of another type, or too large fails the call with an error naming it and the reason, and nothing is posted; the result lists the files attached"
+
+// issueAttachments is the files a filing attaches: the images and videos of
+// the current turn's media, unless skipTurnMedia, then extra. skipped names
+// the turn's other media, such as voice notes and documents, which GitHub
+// does not take as attachments.
+func issueAttachments(ctx context.Context, extra []string, skipTurnMedia bool) (files, skipped []string, err error) {
+	var problems []string
+	add := func(mediaURL string, turn bool) {
+		file, err := agent.MediaFile(mediaURL)
+		if err != nil {
+			problems = append(problems, err.Error())
+			return
+		}
+		if turn && !isVisualMedia(file) {
+			skipped = append(skipped, file)
+			return
+		}
+		files = append(files, file)
+	}
+	if !skipTurnMedia {
+		for _, mediaURL := range agent.TurnMediaFromContext(ctx) {
+			add(mediaURL, true)
+		}
+	}
+	for _, file := range extra {
+		add(file, false)
+	}
+	if len(problems) > 0 {
+		return nil, nil, fmt.Errorf("cannot attach %s", strings.Join(problems, "; "))
+	}
+	return files, skipped, nil
+}
+
+// isVisualMedia reports whether file is named as an image or video.
+func isVisualMedia(file string) bool {
+	contentType := llm.ContentTypeFromName(file)
+	return strings.HasPrefix(contentType, "image/") || strings.HasPrefix(contentType, "video/")
+}
+
+// withSkippedMedia adds the turn media a filing left out to its result.
+func withSkippedMedia(result map[string]any, err error, skipped []string) (map[string]any, error) {
+	if err == nil && len(skipped) > 0 {
+		result["skipped_turn_media"] = skipped
+	}
+	return result, err
 }
 
 type projectGitHubImportArgs struct {
@@ -348,21 +408,31 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_issue_comment",
-		Description: "Post an update comment on an issue or pull request that mentions its author and this instance, so the job working it hears it; never edits the body",
+		Description: "Post an update comment on an issue or pull request that mentions its author and this instance, so the job working it hears it; never edits the body. " + issueAttachmentsDescription,
 		Annotations: mutatingTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectIssueCommentArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
-			return m.IssueComment(ctx, args.Repository, args.Number, args.Text)
+			attachments, skipped, err := issueAttachments(ctx, args.Attachments, args.SkipTurnMedia)
+			if err != nil {
+				return nil, err
+			}
+			result, err := m.IssueComment(ctx, args.Repository, args.Number, args.Text, attachments)
+			return withSkippedMedia(result, err, skipped)
 		})
 	})
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_issue_create",
-		Description: "File an issue through the gh-create skill with this instance's identity, wait for it, and return the new issue's URL. Calling it again with the same repository and text while that issue is still filing, or after it filed, waits for or returns the same issue instead of filing a duplicate",
+		Description: "File an issue through the gh-create skill with this instance's identity, wait for it, and return the new issue's URL. Calling it again with the same repository, text and attachments while that issue is still filing, or after it filed, waits for or returns the same issue instead of filing a duplicate. " + issueAttachmentsDescription,
 		Annotations: mutatingTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectIssueCreateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
-			return m.IssueCreate(ctx, args.Repository, args.Text, args.Model)
+			attachments, skipped, err := issueAttachments(ctx, args.Attachments, args.SkipTurnMedia)
+			if err != nil {
+				return nil, err
+			}
+			result, err := m.IssueCreate(ctx, args.Repository, args.Text, args.Model, attachments)
+			return withSkippedMedia(result, err, skipped)
 		})
 	})
 

@@ -29,7 +29,7 @@ When an Aviary job files an issue, the issue ends with a `**Created by Aviary:**
 
 ## Media That Renders, Secrets That Don't
 
-- **Media actually attached.** Screenshots and videos you mention are uploaded with `gh issue create --attach`, or GitHub's upload endpoint as a fallback. The filed issue is read back to confirm no local path is left behind and no image appears twice.
+- **Media actually attached.** Screenshots and videos you mention are uploaded with `gh issue create --attach`, or GitHub's upload endpoint as a fallback. The filed issue is read back to confirm no local path is left behind and no image appears twice. When Aviary files the issue for a chat request, the screenshots you sent with the message are passed along as `attach:` arguments and embedded the same way.
 - **Private data scrubbed.** Local paths, names, emails, hostnames and tokens stay out, even in the quoted prompt. A public issue never mentions a private repository or its code.
 - **Research is optional.** With the repository at hand it can point to the files involved and link related issues, but it never holds up filing.
 

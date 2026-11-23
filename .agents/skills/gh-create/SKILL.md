@@ -5,7 +5,7 @@ description: "File a well-formed GitHub issue from a short user request: expand 
 
 # File a GitHub Issue
 
-Treat `/gh-create [OWNER/REPO] <request>` as authorization to file one GitHub issue that describes the request. Every agent that uses this skill files issues the same way: the same structure, the same labels, the same assignee, properly attached media, explanatory visuals where they help, and no leaked private data. This skill only creates and edits the one issue it files. It never changes code, branches, pull requests, or other issues. The invocation may append `identity:/aviary:<ID>` when an Aviary agent run uses this skill; "Mark issues created by an Aviary agent" describes what that changes.
+Treat `/gh-create [OWNER/REPO] <request>` as authorization to file one GitHub issue that describes the request. Every agent that uses this skill files issues the same way: the same structure, the same labels, the same assignee, properly attached media, explanatory visuals where they help, and no leaked private data. This skill only creates and edits the one issue it files. It never changes code, branches, pull requests, or other issues. The invocation may append `identity:/aviary:<ID>` when an Aviary agent run uses this skill; "Mark issues created by an Aviary agent" describes what that changes. The invocation may also carry one or more `attach:<PATH>` arguments, with the path quoted when it contains spaces. Each names an image or video the user attached to their request, such as a screenshot sent from a chat channel; "Attach media" describes what to do with them. They are not part of the request's text: leave them and their paths out of the expanded body and the quoted prompt.
 
 ## Identify the target repository
 
@@ -130,7 +130,7 @@ When the request involves high-level interaction between systems, services, proc
 
 Generated wireframes and diagrams, and screenshots, videos, and other files the user mentions or provides, must be uploaded to GitHub and embedded in the issue. Attach generated visuals through this same flow. Never publish any of them through an asset branch, a gist, a file committed to a repository, or an external image host. Never leave a local file path, a `file://` URL, or a placeholder where the media belongs: nobody else can open it.
 
-1. Collect every media file the user referenced, attached, or pointed to, and every visual you generated. Confirm each file exists and scrub it as described above.
+1. Collect every media file the user referenced, attached, or pointed to, every file named by an `attach:<PATH>` argument, and every visual you generated. Confirm each file exists and scrub it as described above. A file from an `attach:` argument is the user's own screenshot or video: upload and embed it, with alt text describing what it shows, rather than describing it in words. Never report that it cannot be attached without trying the steps below, and name any that still fails, with the reason, in the result.
 2. Write each one into the body where it belongs, using its local path, so the issue reads correctly before upload:
    ```markdown
    ![Settings page after clicking Save](./screenshots/settings.png)

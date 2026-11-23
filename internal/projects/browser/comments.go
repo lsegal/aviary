@@ -127,6 +127,16 @@ func (s *CommentSource) PostCommentURL(ctx context.Context, repo string, number 
 	return poster.PostCommentURL(ctx, repo, number, body)
 }
 
+// PostCommentWithAttachments writes through the API client, same as
+// PostCommentURL.
+func (s *CommentSource) PostCommentWithAttachments(ctx context.Context, repo string, number int, body string, files []string) (string, error) {
+	poster, ok := s.api.(core.AttachmentCommentPoster)
+	if !ok {
+		return "", fmt.Errorf("the GitHub API client (%T) cannot upload attachments", s.api)
+	}
+	return poster.PostCommentWithAttachments(ctx, repo, number, body, files)
+}
+
 // AddReaction writes through the API client, same as PostComment: the
 // conversation page offers no affordance Aviary could drive to react with. It
 // is a no-op when the wrapped client has no reaction capability.

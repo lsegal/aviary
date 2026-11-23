@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +36,10 @@ func (w *Engine) CreateIssue(ctx context.Context, request core.IssueCreate) (cor
 	case len(text) > maxIssueDescription:
 		return core.IssueCreateResult{}, fmt.Errorf("the issue description is longer than %d characters", maxIssueDescription)
 	}
+	attachments, err := checkAttachments(request.Attachments)
+	if err != nil {
+		return core.IssueCreateResult{}, err
+	}
 	config := unblockConfig{}
 	if model := strings.TrimSpace(request.Model); model != "" {
 		config.Model = model
@@ -47,17 +52,18 @@ func (w *Engine) CreateIssue(ctx context.Context, request core.IssueCreate) (cor
 	if err != nil {
 		return core.IssueCreateResult{}, fmt.Errorf("the coding agent cannot run: %w", err)
 	}
-	key := issueFilingKey{repository: strings.ToLower(request.Repository), text: text, model: config.Model}
+	key := issueFilingKey{repository: strings.ToLower(request.Repository), text: text, model: config.Model, attachments: strings.Join(attachments, "\n")}
 	filing, started := w.filings.start(key, time.Now())
 	if started {
-		prompt := createIssuePrompt(request.Repository, text, w.Identity)
-		w.logf("prompt agent (%s) filing an issue on %s: %s", spec, request.Repository, truncate(text, 120))
+		prompt := createIssuePrompt(request.Repository, text, attachments, w.Identity)
+		w.logf("prompt agent (%s) filing an issue on %s with %d attachments: %s", spec, request.Repository, len(attachments), truncate(text, 120))
 		go func() {
 			callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), issueCreateTimeout)
 			defer cancel()
 			output, runErr := run(callCtx, spec, prompt)
 			result, err := createdIssueResult(output, runErr, request.Repository, spec)
 			if err == nil {
+				result.Attachments = attachments
 				w.logf("prompt agent filed %s", result.URL)
 			}
 			w.filings.finish(key, filing, result, err, time.Now())
@@ -67,7 +73,7 @@ func (w *Engine) CreateIssue(ctx context.Context, request core.IssueCreate) (cor
 	case <-filing.done:
 		return filing.result, filing.err
 	case <-ctx.Done():
-		return core.IssueCreateResult{}, fmt.Errorf("gh-create is still filing this issue on %s; call project_issue_create again with the same repository and text to wait for its URL, and do not file it any other way", request.Repository)
+		return core.IssueCreateResult{}, fmt.Errorf("gh-create is still filing this issue on %s; call project_issue_create again with the same repository, text and attachments to wait for its URL, and do not file it any other way", request.Repository)
 	}
 }
 
@@ -88,9 +94,10 @@ func createdIssueResult(output string, runErr error, repository string, spec age
 // filedIssueMemory is how long a filed issue answers an identical request.
 const filedIssueMemory = time.Hour
 
-// issueFilingKey identifies one create-issue request.
+// issueFilingKey identifies one create-issue request. The same text with
+// different media is a different issue.
 type issueFilingKey struct {
-	repository, text, model string
+	repository, text, model, attachments string
 }
 
 // issueFiling is one gh-create run; done closes once result or err is set.
@@ -142,10 +149,17 @@ func (f *issueFilings) finish(key issueFilingKey, filing *issueFiling, result co
 	close(filing.done)
 }
 
-// createIssuePrompt invokes gh-create for repository with the description and
-// this instance's identity, the way a job's dispatch invokes gh-fix.
-func createIssuePrompt(repository, text string, identity Identity) string {
+// createIssuePrompt invokes gh-create for repository with the description,
+// an attach: argument per file to upload and embed, and this instance's
+// identity, the way a job's dispatch invokes gh-fix.
+func createIssuePrompt(repository, text string, attachments []string, identity Identity) string {
 	prompt := "/gh-create " + repository + " " + text
+	for _, path := range attachments {
+		if strings.ContainsAny(path, " \t\n\"") {
+			path = strconv.Quote(path)
+		}
+		prompt += " attach:" + path
+	}
 	if identity != "" {
 		prompt += " identity:/aviary:" + string(identity)
 	}

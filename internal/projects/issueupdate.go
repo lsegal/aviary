@@ -56,15 +56,28 @@ func (w *Engine) PostIssueUpdate(ctx context.Context, update core.IssueUpdate) (
 	if !ok {
 		return core.IssueUpdateResult{}, fmt.Errorf("this instance's comment client (%T) cannot read an issue's author or report a posted comment's URL, which posting an update needs", w.Comments)
 	}
+	attachments, err := checkAttachments(update.Attachments)
+	if err != nil {
+		return core.IssueUpdateResult{}, err
+	}
+	attacher, canAttach := w.Comments.(core.AttachmentCommentPoster)
+	if len(attachments) > 0 && !canAttach {
+		return core.IssueUpdateResult{}, fmt.Errorf("this instance's comment client (%T) cannot upload attachments", w.Comments)
+	}
 	author, err := client.IssueAuthor(ctx, update.Repository, update.Number)
 	if err != nil {
 		return core.IssueUpdateResult{}, err
 	}
 	body := fmt.Sprintf("@%s @/aviary:%s\n\n%s", author, w.Identity, text)
-	url, err := client.PostCommentURL(ctx, update.Repository, update.Number, body)
+	var url string
+	if len(attachments) > 0 {
+		url, err = attacher.PostCommentWithAttachments(ctx, update.Repository, update.Number, body, attachments)
+	} else {
+		url, err = client.PostCommentURL(ctx, update.Repository, update.Number, body)
+	}
 	if err != nil {
 		return core.IssueUpdateResult{}, err
 	}
-	w.logf("posted an update on %s#%d for @%s: %s", update.Repository, update.Number, author, url)
-	return core.IssueUpdateResult{URL: url, Author: author}, nil
+	w.logf("posted an update on %s#%d for @%s with %d attachments: %s", update.Repository, update.Number, author, len(attachments), url)
+	return core.IssueUpdateResult{URL: url, Author: author, Attachments: attachments}, nil
 }

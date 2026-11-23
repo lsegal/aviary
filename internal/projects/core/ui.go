@@ -438,12 +438,16 @@ type IssueUpdate struct {
 	Repository string `json:"repository"`
 	Number     int    `json:"number"`
 	Text       string `json:"text"`
+	// Attachments are local image or video files uploaded and embedded in
+	// the comment.
+	Attachments []string `json:"attachments,omitempty"`
 }
 
 // IssueUpdateResult is the comment an IssueUpdate posted.
 type IssueUpdateResult struct {
-	URL    string `json:"url"`
-	Author string `json:"author"`
+	URL         string   `json:"url"`
+	Author      string   `json:"author"`
+	Attachments []string `json:"attachments,omitempty"`
 }
 
 // IssueCreate asks for an issue to be filed on Repository through the
@@ -453,11 +457,15 @@ type IssueCreate struct {
 	Repository string `json:"repository"`
 	Text       string `json:"text"`
 	Model      string `json:"model,omitempty"`
+	// Attachments are local image or video files gh-create uploads and
+	// embeds in the issue.
+	Attachments []string `json:"attachments,omitempty"`
 }
 
 // IssueCreateResult is the issue an IssueCreate filed and the agent that
 // filed it.
 type IssueCreateResult struct {
-	URL   string `json:"url"`
-	Agent string `json:"agent"`
+	URL         string   `json:"url"`
+	Agent       string   `json:"agent"`
+	Attachments []string `json:"attachments,omitempty"`
 }
