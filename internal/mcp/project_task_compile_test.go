@@ -110,7 +110,7 @@ func TestTaskScheduleSavesPrecompiledProjectTask(t *testing.T) {
 	assert.Len(t, *prompts, 1, "a project task with precompile off is not compiled")
 }
 
-func TestEnsureProjectTaskCompiledRecompilesOnChange(t *testing.T) {
+func TestEnsureTaskCompiledRecompilesOnChange(t *testing.T) {
 	on := true
 	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x", Tasks: []config.TaskConfig{{
 		Name: "stale", Type: "project", Project: "acme/app", Prompt: "Label stale issues", Trigger: "daily", At: "09:00", Precompile: &on,
@@ -119,21 +119,21 @@ func TestEnsureProjectTaskCompiledRecompilesOnChange(t *testing.T) {
 	prompts, tools := setupProjectTaskCompile(t, cfg, func(string) *compiledTaskResult { return compiledScript(script)("") })
 	ctx := context.Background()
 
-	got, err := EnsureProjectTaskCompiled(ctx, "bot", "stale", "run")
+	got, err := EnsureTaskCompiled(ctx, "bot", "stale", "run")
 	require.NoError(t, err)
 	assert.Equal(t, `print("v1")`, got)
 	assert.Equal(t, `print("v1")`, loadedTask(t, "stale").Compiled, "an aviary.yaml task keeps its script there")
 
 	// Nothing changed: the saved script is reused without compiling.
 	script = `print("v2")`
-	got, err = EnsureProjectTaskCompiled(ctx, "bot", "stale", "run")
+	got, err = EnsureTaskCompiled(ctx, "bot", "stale", "run")
 	require.NoError(t, err)
 	assert.Equal(t, `print("v1")`, got)
 	assert.Len(t, *prompts, 1)
 
 	// A new tool recompiles.
 	*tools = append(*tools, agent.ToolInfo{Name: "web_get"})
-	got, err = EnsureProjectTaskCompiled(ctx, "bot", "stale", "run")
+	got, err = EnsureTaskCompiled(ctx, "bot", "stale", "run")
 	require.NoError(t, err)
 	assert.Equal(t, `print("v2")`, got)
 	assert.Len(t, *prompts, 2)
@@ -143,12 +143,12 @@ func TestEnsureProjectTaskCompiledRecompilesOnChange(t *testing.T) {
 	require.NoError(t, err)
 	saved.Agents[0].Tasks[0].Prompt = "Label issues stale for 30 days"
 	require.NoError(t, config.Save("", saved))
-	_, err = EnsureProjectTaskCompiled(ctx, "bot", "stale", "run")
+	_, err = EnsureTaskCompiled(ctx, "bot", "stale", "run")
 	require.NoError(t, err)
 	saved.Agents[0].Tasks[0] = loadedTask(t, "stale")
 	saved.Agents[0].Tasks[0].Project = "acme/web"
 	require.NoError(t, config.Save("", saved))
-	_, err = EnsureProjectTaskCompiled(ctx, "bot", "stale", "run")
+	_, err = EnsureTaskCompiled(ctx, "bot", "stale", "run")
 	require.NoError(t, err)
 	assert.Equal(t, []string{
 		projectTaskCompilePrompt("Label stale issues", "acme/app"),
@@ -158,7 +158,7 @@ func TestEnsureProjectTaskCompiledRecompilesOnChange(t *testing.T) {
 	}, *prompts)
 }
 
-func TestEnsureProjectTaskCompiledKeepsNonDeterministicPromptOnModel(t *testing.T) {
+func TestEnsureTaskCompiledKeepsNonDeterministicPromptOnModel(t *testing.T) {
 	on := true
 	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x", Tasks: []config.TaskConfig{{
 		Name: "fix", Type: "project", Project: "acme/app", Prompt: "Fix the flakiest test", Trigger: "daily", At: "09:00", Precompile: &on,
@@ -168,7 +168,7 @@ func TestEnsureProjectTaskCompiledKeepsNonDeterministicPromptOnModel(t *testing.
 	})
 
 	for range 2 {
-		got, err := EnsureProjectTaskCompiled(context.Background(), "bot", "fix", "run")
+		got, err := EnsureTaskCompiled(context.Background(), "bot", "fix", "run")
 		require.NoError(t, err)
 		assert.Empty(t, got)
 	}

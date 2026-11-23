@@ -40,7 +40,7 @@ local tag = tool.exec({command = "gh release view --repo acme/app --json tagName
 print(main.stdout, tag.stdout)`, nil
 	}
 
-	got, err := EnsureProjectTaskCompiled(context.Background(), "bot", "release", "run")
+	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
 	require.NoError(t, err)
 	assert.Contains(t, got, "repos/acme/app/commits/main")
 	assert.NotContains(t, got, "{owner}")
@@ -61,7 +61,7 @@ func TestCompileRejectsScriptThatNamesRepositoryThroughPlaceholders(t *testing.T
 				fmt.Sprintf("local r = tool.exec({command = %q})\nprint(r.stdout)", command),
 				`{"valid":true,"reason":"reads main's SHA"}`)
 
-			got, err := EnsureProjectTaskCompiled(context.Background(), "bot", "release", "run")
+			got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
 			require.NoError(t, err)
 			assert.Empty(t, got, "the script is not promoted")
 			task := loadedTask(t, "release")
@@ -86,7 +86,7 @@ func setupCompiledReleaseTask(t *testing.T, script string) string {
 		Name: "release", Type: "project", Project: "acme/app", Prompt: releaseShaPrompt, Trigger: "interval", Every: "5m", Precompile: new(true),
 	}}}}}
 	setupProjectTaskCompile(t, cfg, compiledScript(script))
-	got, err := EnsureProjectTaskCompiled(context.Background(), "bot", "release", "run")
+	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
 	require.NoError(t, err)
 	require.Equal(t, script, got)
 	return loadedTask(t, "release").CompiledKey
@@ -97,7 +97,7 @@ var errGh404 = errors.New("<string>:52: failed to read main SHA: gh: Not Found (
 func TestScriptFailingItsFirstRunIsSetAside(t *testing.T) {
 	key := setupCompiledReleaseTask(t, `print("checked")`)
 
-	require.NoError(t, RecordProjectTaskScriptResult("bot", "release", errGh404))
+	require.NoError(t, RecordTaskScriptResult("bot", "release", errGh404))
 	task := loadedTask(t, "release")
 	assert.Empty(t, task.Compiled, "a script that never completed is dropped at once")
 	assert.Equal(t, key, task.CompiledKey, "and not compiled again for the same prompt")
@@ -106,7 +106,7 @@ func TestScriptFailingItsFirstRunIsSetAside(t *testing.T) {
 	assert.Contains(t, task.PrecompileNote, "failed on its first run (gh 404)")
 
 	// Later runs use the model without compiling again.
-	got, err := EnsureProjectTaskCompiled(context.Background(), "bot", "release", "run")
+	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
@@ -114,28 +114,28 @@ func TestScriptFailingItsFirstRunIsSetAside(t *testing.T) {
 func TestConsecutiveScriptFailuresTurnPrecompileOff(t *testing.T) {
 	setupCompiledReleaseTask(t, `print("checked")`)
 
-	require.NoError(t, RecordProjectTaskScriptResult("bot", "release", nil))
+	require.NoError(t, RecordTaskScriptResult("bot", "release", nil))
 	task := loadedTask(t, "release")
 	assert.True(t, task.ScriptVerified)
 
 	for i := 1; i < projectScriptFailureLimit; i++ {
-		require.NoError(t, RecordProjectTaskScriptResult("bot", "release", errGh404))
+		require.NoError(t, RecordTaskScriptResult("bot", "release", errGh404))
 		task = loadedTask(t, "release")
 		assert.Equal(t, i, task.ScriptFailures)
 		assert.NotEmpty(t, task.Compiled, "a script that has worked gets more than one chance")
 		assert.Empty(t, task.PrecompileNote)
 	}
 	// A success in between starts the count over.
-	require.NoError(t, RecordProjectTaskScriptResult("bot", "release", nil))
+	require.NoError(t, RecordTaskScriptResult("bot", "release", nil))
 	assert.Zero(t, loadedTask(t, "release").ScriptFailures)
 
 	for range projectScriptFailureLimit {
-		require.NoError(t, RecordProjectTaskScriptResult("bot", "release", errGh404))
+		require.NoError(t, RecordTaskScriptResult("bot", "release", errGh404))
 	}
 	task = loadedTask(t, "release")
 	require.NotNil(t, task.Precompile)
 	assert.False(t, *task.Precompile, "precompile is turned off")
-	assert.False(t, EffectiveProjectTaskPrecompile(task))
+	assert.False(t, EffectiveTaskPrecompile(task))
 	assert.Empty(t, task.Compiled)
 	assert.Contains(t, task.PrecompileNote, fmt.Sprintf("failed %d runs in a row (last: gh 404)", projectScriptFailureLimit))
 

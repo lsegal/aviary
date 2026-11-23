@@ -459,7 +459,7 @@ func (q *JobQueue) UpdateOutput(id, output string) error {
 	return store.WriteJSON(path, &job)
 }
 
-// SetScriptError records why a precompiled project task's script failed
+// SetScriptError records why a precompiled project task's or workflow's script failed
 // before the model ran the task instead, for the run's logs and status.
 func (q *JobQueue) SetScriptError(id, scriptErr string) error {
 	q.mu.Lock()

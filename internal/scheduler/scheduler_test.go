@@ -1047,12 +1047,12 @@ func TestWorkerPool_ExecutePrecompiledProjectJob(t *testing.T) {
 	}
 	var compiledFor []string
 	script, compileErr := `print("Labeled 2 stale issues")`, error(nil)
-	p.projectCompiler = func(_ context.Context, agentName, taskName string) (string, error) {
+	p.taskCompiler = func(_ context.Context, agentName, taskName string) (string, error) {
 		compiledFor = append(compiledFor, agentName+"/"+taskName)
 		return script, compileErr
 	}
 	var reported []string
-	p.projectScriptReporter = func(agentName, taskName string, err error) error {
+	p.scriptReporter = func(agentName, taskName string, err error) error {
 		result := "ok"
 		if err != nil {
 			result = err.Error()

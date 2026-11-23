@@ -100,7 +100,7 @@ print(r.stdout)`
 		assert.Contains(t, prompt, "exec runs commands in that clone")
 		return &compiledTaskResult{Type: "script", Script: script, Steps: []compiledTaskStep{{Kind: "deterministic", Deterministic: true, Tool: "exec"}}}, nil
 	}
-	got, err := EnsureProjectTaskCompiled(context.Background(), "bot", "release", "run")
+	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
 	require.NoError(t, err)
 	require.Equal(t, script, got)
 
@@ -164,7 +164,7 @@ func TestCompileRejectsScriptThatAlwaysErrors(t *testing.T) {
 		"error(\"release check aborted: the `exec` tool is not available in this script runtime\")",
 		`{"valid":true,"reason":"ok"}`)
 
-	got, err := EnsureProjectTaskCompiled(context.Background(), "bot", "release", "run")
+	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
 	require.NoError(t, err)
 	assert.Empty(t, got, "a stub is never promoted")
 	task := loadedTask(t, "release")
@@ -178,7 +178,7 @@ func TestCompileRejectsScriptWhoseReasonSaysStayAPromptTask(t *testing.T) {
 		`local r = tool.exec({command = "gh release view --json tagName"}) print(r.stdout)`,
 		`{"valid":true,"reason":"The script never dispatches release.yml, so a faithful deterministic script cannot be built from these tools. The task should stay a prompt task and not be auto-promoted."}`)
 
-	got, err := EnsureProjectTaskCompiled(context.Background(), "bot", "release", "run")
+	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
 	require.NoError(t, err)
 	assert.Empty(t, got)
 	assert.Empty(t, loadedTask(t, "release").Compiled)
@@ -190,7 +190,7 @@ func TestCompileDeclinedWhenAnalysisReasonSaysStayAPromptTask(t *testing.T) {
 		`{"reason":"exec is unavailable, so this should stay a prompt task","steps":[{"kind":"deterministic","deterministic":true}]}`,
 		`print("never generated")`, `{"valid":true}`)
 
-	got, err := EnsureProjectTaskCompiled(context.Background(), "bot", "release", "run")
+	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
 	require.NoError(t, err)
 	assert.Empty(t, got)
 	assert.Equal(t, []string{"analysis"}, *stages, "nothing is generated once the analysis declines")
@@ -201,7 +201,7 @@ func TestCompilePromotesWorkingExecScript(t *testing.T) {
 	script := `local r = tool.exec({command = "gh release view --json tagName"}) print(r.stdout)`
 	stubCompileStages(t, deterministicExecAnalysis, script, `{"valid":true,"reason":"compares main with the release and dispatches the workflow"}`)
 
-	got, err := EnsureProjectTaskCompiled(context.Background(), "bot", "release", "run")
+	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
 	require.NoError(t, err)
 	assert.Equal(t, script, got)
 }

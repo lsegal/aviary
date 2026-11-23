@@ -27,7 +27,10 @@ import (
 // the script inside a fresh clone of the project with that clone granted to
 // its tools and AVIARY_CHECKOUT_DIRECTORY set (see scheduler.ProjectRun).
 // Unlike a prompt task, which becomes a script task once compiled, a project
-// task keeps its prompt, so a run whose script fails falls back to it.
+// task keeps its prompt, so a run whose script fails falls back to it. A
+// prompt workflow precompiles the same way: its script runs on each matching
+// message, with the message in the Lua global trigger, and a run whose script
+// fails falls back to the prompt on the model.
 
 // compileToolsFunc, when set, replaces compileTools in tests.
 var compileToolsFunc func(ctx context.Context, agentName string) ([]agent.ToolInfo, error)
@@ -53,6 +56,26 @@ func projectTaskCompilePrompt(prompt, project string) string {
 		" in every command, never as a variable or as gh's {owner}/{repo} placeholders. For example, main's head SHA is " +
 		"`gh api repos/" + project + "/commits/main --jq .sha` and the latest release is " +
 		"`gh release view --repo " + project + " --json tagName --jq .tagName`."
+}
+
+// workflowTaskCompilePrompt is what a prompt workflow is analyzed and compiled
+// as: the prompt, plus the triggering message its script reads at run time.
+func workflowTaskCompilePrompt(prompt string) string {
+	return strings.TrimSpace(prompt) + "\n\n" +
+		"This task is a workflow: it runs each time a matching message arrives on one of the agent's channels. " +
+		"Its script reads the message that triggered the run from the Lua global table `trigger`: " +
+		"trigger.message is the triggering message, trigger.before lists the messages just before it, oldest first, " +
+		"and each message has text, sender (a display name, possibly empty), from_agent (true for the agent's own messages), " +
+		"timestamp and attachments. trigger.channel, trigger.channel_type and trigger.entry name the channel and conversation. " +
+		"What the script prints is the workflow's reply, delivered to its target."
+}
+
+// taskCompilePrompt is what task is analyzed and compiled as.
+func taskCompilePrompt(task config.TaskConfig) string {
+	if task.IsWorkflow() {
+		return workflowTaskCompilePrompt(task.Prompt)
+	}
+	return projectTaskCompilePrompt(task.Prompt, task.Project)
 }
 
 // shellVariablePattern matches a shell variable reference such as $GH_REPO or
@@ -97,41 +120,57 @@ func projectTaskCompileKey(prompt, project string, tools []agent.ToolInfo, agent
 	return hex.EncodeToString(sum.Sum(nil))[:16]
 }
 
-// EffectiveProjectTaskPrecompile reports whether a project task precompiles.
-// A task that never chose stays off, so existing tasks do not start
-// compiling; editors and task_schedule write the choice explicitly.
-func EffectiveProjectTaskPrecompile(task config.TaskConfig) bool {
-	return strings.EqualFold(task.Type, "project") && config.BoolOr(task.Precompile, false)
+// precompilesBesidePrompt reports whether task keeps its prompt when it is
+// precompiled, storing its script beside it: a project task or a prompt
+// workflow.
+func precompilesBesidePrompt(task config.TaskConfig) bool {
+	if strings.EqualFold(task.Type, "project") {
+		return true
+	}
+	t := strings.TrimSpace(task.Type)
+	return task.IsWorkflow() && (t == "" || strings.EqualFold(t, "prompt"))
 }
 
-// backgroundCompiles tracks compiles started by compileProjectTaskInBackground,
+// EffectiveTaskPrecompile reports whether a project task or prompt workflow
+// precompiles. A task that never chose stays off, so existing tasks do not
+// start compiling; editors and task_schedule write the choice explicitly.
+func EffectiveTaskPrecompile(task config.TaskConfig) bool {
+	return precompilesBesidePrompt(task) && config.BoolOr(task.Precompile, false)
+}
+
+// backgroundCompiles tracks compiles started by compileTaskInBackground,
 // so tests can wait for them before restoring the state they read.
 var backgroundCompiles sync.WaitGroup
 
-// compileProjectTaskInBackground compiles a project task without blocking
+// compileTaskInBackground compiles a precompiled task without blocking
 // the caller, logging a failure.
-func compileProjectTaskInBackground(agentName, taskName, trigger string) {
+func compileTaskInBackground(agentName, taskName, trigger string) {
 	backgroundCompiles.Go(func() {
-		if _, err := EnsureProjectTaskCompiled(context.Background(), agentName, taskName, trigger); err != nil {
-			slog.Warn("task_compile: project task compile failed", "component", "task_compile", "agent", agentName, "task", taskName, "error", err)
+		if _, err := EnsureTaskCompiled(context.Background(), agentName, taskName, trigger); err != nil {
+			slog.Warn("task_compile: task compile failed", "component", "task_compile", "agent", agentName, "task", taskName, "error", err)
 		}
 	})
 }
 
-// EnsureProjectTaskCompiled returns the compiled script a precompiled project
-// task runs, compiling it first when its prompt, project or tools changed
-// since the last compile. It returns "" when the task does not precompile or
+// EnsureTaskCompiled returns the compiled script a precompiled project task
+// or workflow runs, compiling it first when its prompt, project or tools
+// changed since the last compile. It returns "" when the task does not precompile or
 // its prompt did not pass the determinism gate, so the run uses the model.
-func EnsureProjectTaskCompiled(ctx context.Context, agentName, taskName, trigger string) (string, error) {
+func EnsureTaskCompiled(ctx context.Context, agentName, taskName, trigger string) (string, error) {
 	_, agentCfg, task, err := findConfiguredTask(agentName, taskName)
 	if err != nil {
 		return "", err
 	}
-	if !EffectiveProjectTaskPrecompile(task) {
+	if !EffectiveTaskPrecompile(task) {
 		return "", nil
 	}
-	// The script is compiled against the tools it runs with.
-	ctx = agent.WithProjectTaskScript(ctx)
+	project := strings.EqualFold(task.Type, "project")
+	kind := "workflow"
+	if project {
+		// The script is compiled against the tools it runs with.
+		ctx = agent.WithProjectTaskScript(ctx)
+		kind = "project"
+	}
 	tools, err := resolveCompileTools()(ctx, agentCfg.Name)
 	if err != nil {
 		return "", fmt.Errorf("listing agent %q's tools: %w", agentCfg.Name, err)
@@ -140,14 +179,14 @@ func EnsureProjectTaskCompiled(ctx context.Context, agentName, taskName, trigger
 	if key == task.CompiledKey {
 		return strings.TrimSpace(task.Compiled), nil
 	}
-	tracker := newTaskCompileTracker(agentCfg.Name, task.Name, "project", task.Prompt, task.Target, trigger, false)
-	compiled, compileErr := resolveTryCompileTaskPrompt()(withTaskCompileTracker(ctx, tracker), agentCfg.Name, projectTaskCompilePrompt(task.Prompt, task.Project), task.Target, false)
+	tracker := newTaskCompileTracker(agentCfg.Name, task.Name, kind, task.Prompt, task.Target, trigger, false)
+	compiled, compileErr := resolveTryCompileTaskPrompt()(withTaskCompileTracker(ctx, tracker), agentCfg.Name, taskCompilePrompt(task), task.Target, false)
 	if compileErr != nil {
 		tracker.record.Status = domain.TaskCompileStatusFailed
 		tracker.record.Reason = compileErr.Error()
 		persistProjectCompileRecord(tracker)
 		// The key is left as it was, so the next run tries again.
-		return "", fmt.Errorf("compiling project task %q: %w", task.Name, compileErr)
+		return "", fmt.Errorf("compiling %s task %q: %w", kind, task.Name, compileErr)
 	}
 	tracker.record.ResultTaskType = compiled.Type
 	tracker.record.NeedsDiscovery = compiled.NeedsDiscovery
@@ -158,7 +197,7 @@ func EnsureProjectTaskCompiled(ctx context.Context, agentName, taskName, trigger
 	task.ScriptVerified, task.ScriptFailures, task.PrecompileNote = false, 0, ""
 	script := strings.TrimSpace(compiled.Script)
 	problem := ""
-	if compiled.Type == "script" && script != "" && !compiled.NeedsDiscovery {
+	if project && compiled.Type == "script" && script != "" && !compiled.NeedsDiscovery {
 		problem = projectScriptPlaceholderProblem(script)
 	}
 	switch {
@@ -178,25 +217,25 @@ func EnsureProjectTaskCompiled(ctx context.Context, agentName, taskName, trigger
 	task.CompiledKey = key
 	persistProjectCompileRecord(tracker)
 	if err := saveConfiguredTask(agentCfg, task); err != nil {
-		return task.Compiled, fmt.Errorf("saving project task %q's compiled script: %w", task.Name, err)
+		return task.Compiled, fmt.Errorf("saving %s task %q's compiled script: %w", kind, task.Name, err)
 	}
-	slog.Info("task_compile: compiled project task", "component", "task_compile", "agent", agentCfg.Name,
+	slog.Info("task_compile: compiled "+kind+" task", "component", "task_compile", "agent", agentCfg.Name,
 		"task", task.Name, "project", task.Project, "status", tracker.record.Status, "reason", tracker.record.Reason)
 	return task.Compiled, nil
 }
 
 // projectScriptFailureLimit is how many runs in a row a compiled project task
-// script that has completed before may fail before precompile is turned off,
+// or workflow script that has completed before may fail before precompile is turned off,
 // so a broken script does not cost a script run and a model run every fire.
 const projectScriptFailureLimit = 3
 
-// RecordProjectTaskScriptResult records how a precompiled project task's
-// script run ended; runErr is nil when it completed. A script that fails
+// RecordTaskScriptResult records how a precompiled project task's or
+// workflow's script run ended; runErr is nil when it completed. A script that fails
 // before it has ever completed is set aside at once and the task runs on its
 // prompt, since the compile gate could not catch the failure; one that has
 // completed before is given projectScriptFailureLimit runs in a row before
 // precompile is turned off. Either way PrecompileNote says what happened.
-func RecordProjectTaskScriptResult(agentName, taskName string, runErr error) error {
+func RecordTaskScriptResult(agentName, taskName string, runErr error) error {
 	_, agentCfg, task, err := findConfiguredTask(agentName, taskName)
 	if err != nil {
 		return err
@@ -225,7 +264,7 @@ func RecordProjectTaskScriptResult(agentName, taskName string, runErr error) err
 		task.PrecompileNote = fmt.Sprintf("Precompile was turned off after the compiled script failed %d runs in a row (last: %s), so the task runs on the model.", task.ScriptFailures, cause)
 	}
 	if task.PrecompileNote != "" {
-		slog.Warn("task_compile: set aside a failing project task script", "component", "task_compile", "agent", agentCfg.Name,
+		slog.Warn("task_compile: set aside a failing compiled script", "component", "task_compile", "agent", agentCfg.Name,
 			"task", task.Name, "failures", task.ScriptFailures, "note", task.PrecompileNote)
 	}
 	return saveConfiguredTask(agentCfg, task)
