@@ -146,6 +146,18 @@ pnpm build            # Builds web assets and compiles the Go binary
 
 Web assets are built to `web/dist/`, copied into `internal/server/webdist/`, and embedded in the Go binary via `go:embed`. The `webdist/` directory is gitignored.
 
+## Regenerating Docs Screenshots
+
+The screenshots on the docs site and the aviary.bot landing page (`docs/site/public/screenshots/*-{light,dark}.png`) are rendered from the web UI against fixture data, not from a live instance. When the UI changes, update the fixtures in `scripts/generate-doc-screenshots.mjs` (for example `projectsFixtures` for the Code Loop board and run view) and regenerate:
+
+```shell
+pnpm exec vite                                   # web dev server, if it isn't already running
+node scripts/generate-doc-screenshots.mjs        # every screenshot, light and dark
+node scripts/generate-doc-screenshots.mjs projects  # only screenshots whose name starts with "projects"
+```
+
+The script mocks every MCP call, so no Go server or credentials are needed and nothing private ends up in an image. Set `DOCS_SCREENSHOT_BASE_URL` when the web dev server isn't at `https://127.0.0.1:5173`. Keep fixture data to public repositories with no tokens or personal details.
+
 ## MCP Connection
 
 Aviary exposes an MCP endpoint you can connect to directly for testing:
