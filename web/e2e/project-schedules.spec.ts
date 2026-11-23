@@ -265,7 +265,14 @@ test("board shows scheduled job cards and the up next strip", async ({
 	await expect(card).toHaveCount(1);
 	await expect(card.getByTestId("job-scheduled")).toHaveText("Scheduled");
 	await expect(card.getByRole("heading")).toHaveText("nightly-triage");
-	await expect(card).toContainText("assistant/nightly-triage");
+	// The label names the task as its title does, unbroken (#958).
+	const scheduleTask = card.getByTestId("job-schedule-task");
+	await expect(scheduleTask).toHaveText("nightly-triage");
+	await expect(scheduleTask).toHaveAttribute(
+		"title",
+		"assistant/nightly-triage",
+	);
+	await expect(scheduleTask).toHaveCSS("white-space", "nowrap");
 	// The time sits in the header and the agent label in the footer (#756).
 	const cardBox = await card.boundingBox();
 	const headingBox = await card.getByRole("heading").boundingBox();

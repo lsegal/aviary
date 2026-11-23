@@ -25,6 +25,10 @@ const TONES: Record<TaskRunResult, [string, string]> = {
 		"bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300",
 		"bg-green-500",
 	],
+	fallback: [
+		"bg-amber-50 text-amber-800 ring-1 ring-amber-300 ring-inset dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-800",
+		"bg-amber-500",
+	],
 	failed: [
 		"bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300",
 		"bg-red-500",

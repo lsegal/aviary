@@ -20,7 +20,8 @@
 				</router-link>
 			</h3>
 			<p v-if="job.scheduled" class="text-xs text-gray-500 dark:text-gray-400">
-				Scheduled prompt<template v-if="job.scheduleID"> · <span class="font-mono">{{ job.scheduleID }}</span></template>
+				Scheduled prompt<template v-if="scheduleTask"> · <span data-testid="job-schedule-task" class="whitespace-nowrap font-mono"
+					:title="job.scheduleID">{{ scheduleTask }}</span></template>
 			</p>
 			<p v-else class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500 dark:text-gray-400">
 				<a v-if="job.number && job.repo" :href="job.issueURL || githubURL(job.repo, 'issues', job.number)"
@@ -127,6 +128,13 @@ const projectBoardPath = computed(() =>
 const agentLabel = computed(() =>
 	[props.job.skill, props.job.cli].filter(Boolean).join(" · "),
 );
+
+// A scheduled job's task by name, as its title and the task page name it;
+// the full "agent/task" ID would wrap at the task name's hyphens.
+const scheduleTask = computed(() => {
+	const id = props.job.scheduleID;
+	return id.slice(id.indexOf("/") + 1);
+});
 
 const waitingText = computed(() => waitText(props.job, props.now));
 

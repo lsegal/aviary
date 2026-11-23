@@ -53,6 +53,10 @@
 					<div class="space-y-4 px-4 py-4 sm:px-6">
 						<p v-if="dash.error.value" role="alert" data-testid="task-dashboard-error"
 							class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{{ dash.error.value }}</p>
+						<p v-if="task.precompile_note" role="status" data-testid="task-precompile-note"
+							class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+							{{ task.precompile_note }}
+						</p>
 
 						<router-view v-if="route.params.run" :dashboard="dash" :agent="agent" :task="task.name" />
 						<template v-else>
@@ -169,6 +173,7 @@ const TYPE_LABELS = {
 	project: "Project task",
 } as const;
 const typeLabel = computed(() => TYPE_LABELS[agentTaskType(task.value?.type)]);
+const isProject = computed(() => agentTaskType(task.value?.type) === "project");
 
 // ── Runs ────────────────────────────────────────────────────────────────────
 
@@ -200,6 +205,8 @@ const CHIP_TONES = {
 		"border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-300",
 	running:
 		"border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
+	fallback:
+		"border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
 	succeeded:
 		"border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300",
 	failed:
@@ -210,12 +217,13 @@ const CHIP_TONES = {
 const statChips = computed((): StatChip[] => {
 	const s = dash.stats.value;
 	const count = (
-		key: "queued" | "running" | "succeeded" | "failed",
+		key: "queued" | "running" | "succeeded" | "fallback" | "failed",
 	): StatChip => ({
 		label: RESULT_LABELS[key],
 		value: s[key],
 		chip: String(s[key]),
-		chipLabel: key === "queued" ? "queued" : RESULT_LABELS[key].toLowerCase(),
+		chipLabel:
+			key === "fallback" ? "via fallback" : RESULT_LABELS[key].toLowerCase(),
 		cls: CHIP_TONES[key],
 		filter: key,
 		active: filter.value === key,
@@ -231,6 +239,19 @@ const statChips = computed((): StatChip[] => {
 		count("queued"),
 		count("running"),
 		count("succeeded"),
+		// Only a precompiled project task's script can fail into the fallback.
+		...(isProject.value
+			? [
+					count("fallback"),
+					{
+						label: "Script failures",
+						value: s.scriptFailures,
+						chip: String(s.scriptFailures),
+						chipLabel: "script failures",
+						cls: s.scriptFailures ? CHIP_TONES.fallback : CHIP_TONES.neutral,
+					},
+				]
+			: []),
 		count("failed"),
 		{
 			label: "Success rate",

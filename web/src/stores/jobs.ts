@@ -16,6 +16,8 @@ export interface Job {
 	output?: string;
 	/** Why the latest attempt failed; cleared when an attempt completes. */
 	error?: string;
+	/** A precompiled project task's script error, when the model ran the task instead. */
+	script_error?: string;
 	locked_at?: string;
 	next_retry_at?: string;
 	scheduled_for?: string;
@@ -144,6 +146,7 @@ export const useJobsStore = defineStore("jobs", () => {
 		error.value = null;
 		try {
 			const raw = await callTool("task_compile_query", {
+				agent: name,
 				start: startDate.value,
 				end: endDate.value,
 			});

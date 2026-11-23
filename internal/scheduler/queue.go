@@ -442,6 +442,24 @@ func (q *JobQueue) UpdateOutput(id, output string) error {
 	return store.WriteJSON(path, &job)
 }
 
+// SetScriptError records why a precompiled project task's script failed
+// before the model ran the task instead, for the run's logs and status.
+func (q *JobQueue) SetScriptError(id, scriptErr string) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	path := store.FindJobPath(id)
+	if path == "" {
+		return fmt.Errorf("job %s not found", id)
+	}
+	job, err := store.ReadJSON[domain.Job](path)
+	if err != nil {
+		return fmt.Errorf("reading job %s: %w", id, err)
+	}
+	job.ScriptError = scriptErr
+	return store.WriteJSON(path, &job)
+}
+
 func (q *JobQueue) updateStatus(id string, status domain.JobStatus) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()

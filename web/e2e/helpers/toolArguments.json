@@ -447,7 +447,8 @@
 		"end",
 		"id",
 		"start",
-		"status"
+		"status",
+		"task"
 	],
 	"task_delete": [
 		"agent",

@@ -17,27 +17,30 @@ import (
 // The task body (below the closing "---") is always the content field:
 // the prompt text for prompt tasks, the Lua source for script tasks.
 type taskFileFrontmatter struct {
-	Name        string `yaml:"name,omitempty"`
-	Enabled     *bool  `yaml:"enabled,omitempty"`
-	Type        string `yaml:"type,omitempty"`
-	Schedule    string `yaml:"schedule,omitempty"`
-	StartAt     string `yaml:"start_at,omitempty"`
-	RunOnce     bool   `yaml:"run_once,omitempty"`
-	Trigger     string `yaml:"trigger,omitempty"`
-	Every       string `yaml:"every,omitempty"`
-	At          string `yaml:"at,omitempty"`
-	Days        string `yaml:"days,omitempty"`
-	Timezone    string `yaml:"timezone,omitempty"`
-	Overlap     string `yaml:"overlap,omitempty"`
-	Missed      string `yaml:"missed,omitempty"`
-	Watch       string `yaml:"watch,omitempty"`
-	Target      string `yaml:"target,omitempty"`
-	Project     string `yaml:"project,omitempty"`
-	Model       string `yaml:"model,omitempty"`
-	IdleTimeout string `yaml:"idle_timeout,omitempty"`
-	Precompile  *bool  `yaml:"precompile,omitempty"`
-	Compiled    string `yaml:"compiled,omitempty"`
-	CompiledKey string `yaml:"compiled_key,omitempty"`
+	Name           string `yaml:"name,omitempty"`
+	Enabled        *bool  `yaml:"enabled,omitempty"`
+	Type           string `yaml:"type,omitempty"`
+	Schedule       string `yaml:"schedule,omitempty"`
+	StartAt        string `yaml:"start_at,omitempty"`
+	RunOnce        bool   `yaml:"run_once,omitempty"`
+	Trigger        string `yaml:"trigger,omitempty"`
+	Every          string `yaml:"every,omitempty"`
+	At             string `yaml:"at,omitempty"`
+	Days           string `yaml:"days,omitempty"`
+	Timezone       string `yaml:"timezone,omitempty"`
+	Overlap        string `yaml:"overlap,omitempty"`
+	Missed         string `yaml:"missed,omitempty"`
+	Watch          string `yaml:"watch,omitempty"`
+	Target         string `yaml:"target,omitempty"`
+	Project        string `yaml:"project,omitempty"`
+	Model          string `yaml:"model,omitempty"`
+	IdleTimeout    string `yaml:"idle_timeout,omitempty"`
+	Precompile     *bool  `yaml:"precompile,omitempty"`
+	Compiled       string `yaml:"compiled,omitempty"`
+	CompiledKey    string `yaml:"compiled_key,omitempty"`
+	ScriptVerified bool   `yaml:"script_verified,omitempty"`
+	ScriptFailures int    `yaml:"script_failures,omitempty"`
+	PrecompileNote string `yaml:"precompile_note,omitempty"`
 	// LegacyRunAgent and LegacyCLI read the old keys of Model (see
 	// LegacyTaskModel). They are never written: saving a task moves the
 	// value to model.
@@ -93,6 +96,9 @@ func ParseMarkdownTask(defaultName string, data []byte) (TaskConfig, error) {
 	task.Precompile = fm.Precompile
 	task.Compiled = fm.Compiled
 	task.CompiledKey = fm.CompiledKey
+	task.ScriptVerified = fm.ScriptVerified
+	task.ScriptFailures = fm.ScriptFailures
+	task.PrecompileNote = fm.PrecompileNote
 	if task.Model == "" {
 		task.Model = LegacyTaskModel(fm.LegacyRunAgent, fm.LegacyCLI)
 	}
@@ -124,26 +130,29 @@ func SaveMarkdownTask(dir string, task TaskConfig) (string, error) {
 	// Build frontmatter — only include fields that are set.
 	// Task content (prompt text or Lua script) always lives in the file body.
 	fm := taskFileFrontmatter{
-		Enabled:     task.Enabled,
-		Type:        task.Type,
-		Target:      task.Target,
-		Schedule:    task.Schedule,
-		StartAt:     task.StartAt,
-		RunOnce:     task.RunOnce,
-		Trigger:     task.Trigger,
-		Every:       task.Every,
-		At:          task.At,
-		Days:        task.Days,
-		Timezone:    task.Timezone,
-		Overlap:     task.Overlap,
-		Missed:      task.Missed,
-		Watch:       task.Watch,
-		Project:     task.Project,
-		Model:       task.Model,
-		IdleTimeout: task.IdleTimeout,
-		Precompile:  task.Precompile,
-		Compiled:    task.Compiled,
-		CompiledKey: task.CompiledKey,
+		Enabled:        task.Enabled,
+		Type:           task.Type,
+		Target:         task.Target,
+		Schedule:       task.Schedule,
+		StartAt:        task.StartAt,
+		RunOnce:        task.RunOnce,
+		Trigger:        task.Trigger,
+		Every:          task.Every,
+		At:             task.At,
+		Days:           task.Days,
+		Timezone:       task.Timezone,
+		Overlap:        task.Overlap,
+		Missed:         task.Missed,
+		Watch:          task.Watch,
+		Project:        task.Project,
+		Model:          task.Model,
+		IdleTimeout:    task.IdleTimeout,
+		Precompile:     task.Precompile,
+		Compiled:       task.Compiled,
+		CompiledKey:    task.CompiledKey,
+		ScriptVerified: task.ScriptVerified,
+		ScriptFailures: task.ScriptFailures,
+		PrecompileNote: task.PrecompileNote,
 	}
 	// Only include name in frontmatter when it differs from the filename stem.
 	stem := strings.TrimSuffix(filename, ".md")

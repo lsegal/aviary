@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -44,6 +45,8 @@ type WorkerPool struct {
 	projectRunner ProjectRunner
 	// projectCompiler compiles precompiled project tasks.
 	projectCompiler ProjectTaskCompiler
+	// projectScriptReporter records how each precompiled script run ended.
+	projectScriptReporter ProjectTaskScriptReporter
 }
 
 // ProjectRun is one fire of a "project" task: its prompt, run as a job on the
@@ -77,6 +80,10 @@ var ErrProjectTaskNotCompiled = errors.New("the task's prompt is not determinist
 // compiling it first when its prompt, project or tools changed; "" means its
 // prompt is not deterministic.
 type ProjectTaskCompiler func(ctx context.Context, agentName, taskName string) (string, error)
+
+// ProjectTaskScriptReporter records how a precompiled project task's script
+// run ended: err is nil when it completed.
+type ProjectTaskScriptReporter func(agentName, taskName string, err error) error
 
 // ProjectRunner runs a project task and waits for its agent to exit. It
 // returns the run's one-line summary, and an error when the run failed or
@@ -454,6 +461,7 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 		return fmt.Errorf("project task %q names no project", job.TaskID)
 	}
 	var compiledErr error
+	scriptExecuted := false
 	if precompile && p.projectCompiler != nil && cfg != nil {
 		jobCtx := ctx
 		run.RunCompiled = func(runCtx context.Context, clone func(context.Context) (string, error), logf func(string, ...any)) (string, error) {
@@ -463,16 +471,37 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 			defer cancel(nil)
 			stop := context.AfterFunc(runCtx, func() { cancel(context.Cause(runCtx)) })
 			defer stop()
-			output, err := p.runCompiledProjectTask(scriptCtx, job, cfg.Name, run, clone, logf)
+			output, executed, err := p.runCompiledProjectTask(scriptCtx, job, cfg.Name, run, clone, logf)
 			compiledErr = err
+			// Only the script's own result counts toward setting it aside,
+			// not a failed compile or clone, nor a stopped run.
+			scriptExecuted = executed && runCtx.Err() == nil
 			return output, err
 		}
 	}
 	summary, err := p.projectRunner(ctx, run)
+	if scriptExecuted && ctx.Err() == nil && p.projectScriptReporter != nil {
+		if reportErr := p.projectScriptReporter(cfg.Name, run.Name, compiledErr); reportErr != nil {
+			slog.Warn("job: failed to record precompiled script result", "id", job.ID, "task", job.TaskID, "err", reportErr)
+		}
+	}
+	scriptErr := ""
 	if compiledErr != nil && !errors.Is(compiledErr, ErrProjectTaskNotCompiled) {
-		// The fallback is part of the run's result, not only the board log.
-		note := "Precompiled script failed, so the model ran the task: " + compiledErr.Error()
-		summary = strings.TrimSpace(note + "\n" + summary)
+		scriptErr = compiledErr.Error()
+	}
+	if scriptErr != "" || job.ScriptError != "" {
+		// Each attempt records its own script error, or clears a retried
+		// job's earlier one.
+		if persistErr := p.queue.SetScriptError(job.ID, scriptErr); persistErr != nil {
+			slog.Warn("job: failed to persist script error", "id", job.ID, "err", persistErr)
+		}
+		job.ScriptError = scriptErr
+	}
+	if scriptErr != "" {
+		// The run's summary and chat message are the model's result plus a
+		// short note; the full error, often a Lua traceback with gh's JSON
+		// body, stays in the run's logs.
+		summary = fallbackSummary(summary, compiledErr)
 		slog.Warn("job: precompiled project task fell back to the model", "id", job.ID, "task", job.TaskID, "err", compiledErr)
 	}
 	if summary != "" {
@@ -486,28 +515,40 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 	return err
 }
 
+// fallbackSummary is a fallback run's summary: the model's result, then a
+// short note on why the precompiled script did not run it, in its own
+// paragraph so the chat shows it on its own line.
+func fallbackSummary(summary string, scriptErr error) string {
+	note := "_Precompiled script failed (" + ProjectScriptFailureCause(scriptErr) + "), fell back to the model; details in the run logs._"
+	if summary = strings.TrimSpace(summary); summary == "" {
+		return note
+	}
+	return summary + "\n\n" + note
+}
+
 // runCompiledProjectTask runs a precompiled project task's script in checkout,
 // a fresh clone of its project, with the same environment the task's agent
 // gets: its tools and exec permissions, the clone granted to them and their
 // default directory, and the clone and repository in the command env.
-func (p *WorkerPool) runCompiledProjectTask(ctx context.Context, job *domain.Job, agentName string, run ProjectRun, clone func(context.Context) (string, error), logf func(string, ...any)) (string, error) {
+func (p *WorkerPool) runCompiledProjectTask(ctx context.Context, job *domain.Job, agentName string, run ProjectRun, clone func(context.Context) (string, error), logf func(string, ...any)) (output string, executed bool, err error) {
 	script, err := p.projectCompiler(ctx, agentName, run.Name)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if strings.TrimSpace(script) == "" {
-		return "", ErrProjectTaskNotCompiled
+		return "", false, ErrProjectTaskNotCompiled
 	}
 	checkout, err := clone(ctx)
 	if err != nil {
-		return "", fmt.Errorf("cloning %s: %w", run.Project, err)
+		return "", false, fmt.Errorf("cloning %s: %w", run.Project, err)
 	}
 	logf("running the precompiled script in %s", checkout)
 	ctx = agent.WithProjectTaskScript(agent.WithFilesystemGrant(ctx, checkout))
 	ctx = agent.WithCommandEnv(ctx, map[string]string{"AVIARY_CHECKOUT_DIRECTORY": checkout, "GH_REPO": run.Project})
 	scriptJob := *job
 	scriptJob.Script = script
-	return executeScriptJobOutput(ctx, &scriptJob, logf)
+	output, err = executeScriptJobOutput(ctx, &scriptJob, logf)
+	return output, true, err
 }
 
 // SetTaskOutputDelivery configures the callback used to forward completed task output.
@@ -558,4 +599,34 @@ func (p *WorkerPool) StopJobs(matcher func(jobID, taskID string) bool) int {
 		stopped++
 	}
 	return stopped
+}
+
+// httpStatusPattern finds the status gh reports for a failed API call.
+var httpStatusPattern = regexp.MustCompile(`\(HTTP (\d{3})\)`)
+
+// luaLocationPattern matches the "<string>:52: " location Lua puts before an
+// error raised by a script.
+var luaLocationPattern = regexp.MustCompile(`^(?:<string>|\[string "[^"]*"\]):\d+:\s*`)
+
+// ProjectScriptFailureCause is a short description of why a compiled script
+// failed, for a run's summary and the task's note: "gh 404" for a failed gh
+// API call, otherwise the error's first line without its Lua location,
+// shortened. The full error belongs in the run's logs.
+func ProjectScriptFailureCause(err error) string {
+	if err == nil {
+		return ""
+	}
+	text := strings.TrimSpace(err.Error())
+	if m := httpStatusPattern.FindStringSubmatch(text); m != nil {
+		return "gh " + m[1]
+	}
+	line, _, _ := strings.Cut(text, "\n")
+	line = strings.TrimSpace(luaLocationPattern.ReplaceAllString(strings.TrimSpace(line), ""))
+	if r := []rune(line); len(r) > 80 {
+		line = string(r[:79]) + "…"
+	}
+	if line == "" {
+		return "error"
+	}
+	return line
 }

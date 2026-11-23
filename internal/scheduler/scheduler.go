@@ -554,6 +554,12 @@ func (s *Scheduler) SetProjectTaskCompiler(fn ProjectTaskCompiler) {
 	s.pool.projectCompiler = fn
 }
 
+// SetProjectTaskScriptReporter registers what records each precompiled
+// project task script run's result, so a failing script can be set aside.
+func (s *Scheduler) SetProjectTaskScriptReporter(fn ProjectTaskScriptReporter) {
+	s.pool.projectScriptReporter = fn
+}
+
 // SetTaskOutputDelivery registers an optional function used to deliver
 // completed task output to configured task channels.
 func (s *Scheduler) SetTaskOutputDelivery(fn func(agentName, route, text string) error) {

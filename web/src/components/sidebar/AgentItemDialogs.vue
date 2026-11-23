@@ -426,20 +426,30 @@ function withForm(task: AgentTask, trigger: TriggerFields): AgentTask {
 	if (taskType.value === "project") {
 		next.project = form.project;
 		// Unset is off, so an unchanged task saves unchanged.
-		if (form.precompute) next.precompile = true;
-		else {
+		if (form.precompute) {
+			// Turning it on, including after Aviary turned it off, compiles anew.
+			if (task.precompile !== true) dropCompiled(next);
+			next.precompile = true;
+		} else {
 			delete next.precompile;
-			delete next.compiled;
-			delete next.compiled_key;
+			dropCompiled(next);
 		}
 	} else {
 		delete next.project;
 		delete next.model;
 		delete next.precompile;
-		delete next.compiled;
-		delete next.compiled_key;
+		dropCompiled(next);
 	}
 	return withTrigger(next, trigger);
+}
+
+/** Drops a project task's compiled script and what Aviary tracks about it. */
+function dropCompiled(task: AgentTask) {
+	delete task.compiled;
+	delete task.compiled_key;
+	delete task.script_verified;
+	delete task.script_failures;
+	delete task.precompile_note;
 }
 
 async function submitTask(mode: "create" | "edit", from = "") {

@@ -12,6 +12,7 @@ interface MockJob {
 	trigger?: string;
 	error?: string;
 	output?: string;
+	script_error?: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -50,7 +51,7 @@ function job(
 async function mockTask(
 	page: Page,
 	jobs: MockJob[],
-	opts: { enabled?: boolean; history?: object[] } = {},
+	opts: { enabled?: boolean; history?: object[]; task?: object } = {},
 ) {
 	const state = { jobs, enabled: opts.enabled ?? true };
 	const calls: { tool: string; args: Record<string, unknown> }[] = [];
@@ -73,6 +74,7 @@ async function mockTask(
 							every: "15m",
 							prompt: "Report",
 							enabled: state.enabled,
+							...opts.task,
 						},
 					],
 				},
@@ -432,4 +434,66 @@ test("on a phone the chat opens as a bottom sheet", async ({ page }) => {
 		.getByTestId("task-chat-backdrop")
 		.click({ position: { x: 10, y: 10 } });
 	await expect(panel).toHaveCount(0);
+});
+
+test("a precompiled project task's fallback runs are marked and counted", async ({
+	page,
+}) => {
+	const { logs } = await mockTask(
+		page,
+		[
+			job("fallback", "completed", 5, {
+				output:
+					"Started the Release workflow because main moved past v0.7.4\n\n_Precompiled script failed (gh 404), fell back to the model; details in the run logs._",
+				script_error:
+					"<string>:52: failed to read main SHA: gh: Not Found (HTTP 404)\nstack traceback:\n    [G]: in function 'error'",
+			}),
+			job("script", "completed", 10),
+			job("broken", "failed", 15, {
+				error: "agent exited 1",
+				script_error: "<string>:3: boom",
+			}),
+		],
+		{
+			task: {
+				type: "project",
+				project: "acme/app",
+				precompile: false,
+				precompile_note:
+					"Precompile was turned off after the compiled script failed 3 runs in a row (last: gh 404), so the task runs on the model.",
+			},
+		},
+	);
+	logs.set(
+		"fallback",
+		"Precompiled script failed, so the model ran the task:\n<string>:52: failed to read main SHA: gh: Not Found (HTTP 404)\nstack traceback:\n\nStarted the Release workflow",
+	);
+	await page.goto("/agents/assistant/tasks/report");
+
+	await expect(page.getByTestId("task-precompile-note")).toContainText(
+		"Precompile was turned off after the compiled script failed 3 runs in a row",
+	);
+	const log = page.getByTestId("task-run-log");
+	await expect(log).toHaveAttribute("data-run", "fallback");
+	const pill = log.getByTestId("task-run-result");
+	await expect(pill).toHaveText("Succeeded via fallback");
+	await expect(pill).toHaveAttribute("data-result", "fallback");
+	await expect(pill).toHaveClass(/amber/);
+	// The traceback is in the run's logs.
+	await expect(log.getByTestId("task-run-log-output")).toContainText(
+		"stack traceback",
+	);
+
+	const chips = page.getByTestId("stat-chip");
+	const fallbackChip = chips.filter({ hasText: /^1\s*via fallback$/ });
+	await expect(fallbackChip).toHaveCount(1);
+	await expect(chips.filter({ hasText: /^1\s*succeeded$/ })).toHaveCount(1);
+	await expect(chips.filter({ hasText: "script failures" })).toContainText("2");
+	// A fallback that succeeded still counts toward the success rate.
+	await expect(chips.filter({ hasText: /%\s*success$/ })).toContainText("67%");
+
+	await fallbackChip.click();
+	const rows = page.getByTestId("task-run-row");
+	await expect(rows).toHaveCount(1);
+	await expect(rows.first()).toHaveAttribute("data-result", "fallback");
 });

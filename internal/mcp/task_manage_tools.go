@@ -136,9 +136,12 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 			}
 			precompile := *args.Precompile
 			task.Precompile = &precompile
-			if !precompile {
+			if !precompile || task.Compiled == "" {
+				// Turning it back on compiles a script that was set aside again.
 				task.Compiled, task.CompiledKey = "", ""
 			}
+			// Turning precompile off or back on starts the script over.
+			task.ScriptVerified, task.ScriptFailures, task.PrecompileNote = false, 0, ""
 		}
 		task.Trigger = strings.ToLower(task.Trigger)
 		task.Overlap = strings.ToLower(task.Overlap)
