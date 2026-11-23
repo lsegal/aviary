@@ -1,5 +1,5 @@
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950">
+  <div class="flex min-h-full items-center justify-center bg-gray-50 dark:bg-gray-950">
     <div class="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-8 shadow-xl dark:border-gray-800 dark:bg-gray-900">
       <h1 class="mb-2 text-2xl font-bold text-gray-900 dark:text-white">Aviary</h1>
       <p class="mb-4 text-sm text-gray-500 dark:text-gray-400">Enter your authentication token to continue.</p>

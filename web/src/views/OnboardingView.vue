@@ -1,5 +1,5 @@
 <template>
-  <div class="h-dvh overflow-y-auto bg-white dark:bg-gray-950" data-testid="onboarding">
+  <div class="h-full overflow-y-auto bg-white dark:bg-gray-950" data-testid="onboarding">
     <SetupWizard @skip="skip" />
   </div>
 </template>

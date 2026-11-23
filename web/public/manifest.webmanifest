@@ -1,0 +1,31 @@
+{
+	"id": "/",
+	"name": "Aviary",
+	"short_name": "Aviary",
+	"description": "Control panel for your Aviary AI agents: chat, tasks, sessions, and settings.",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"theme_color": "#f9fafb",
+	"background_color": "#ffffff",
+	"icons": [
+		{
+			"src": "/icons/icon-192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/icons/icon-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/icons/icon-maskable-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "maskable"
+		}
+	]
+}

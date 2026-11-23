@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"strings"
 )
 
 //go:embed all:webdist
@@ -23,6 +24,33 @@ func webFileServer() http.Handler {
 	return spaHandler{fs: http.FS(sub)}
 }
 
+// staticFiles are web/dist files the browser fetches by exact path. Their
+// headers matter for installing the app (#942), and a missing one must 404
+// rather than be answered with index.html, which a browser would reject as a
+// service worker or manifest only after a confusing parse error.
+var staticFiles = map[string]struct{ contentType, cacheControl string }{
+	// The service worker is revalidated on every update check so a deploy
+	// replaces it promptly.
+	"/sw.js":                {"text/javascript; charset=utf-8", "no-cache"},
+	"/manifest.webmanifest": {"application/manifest+json", "no-cache"},
+	"/offline.html":         {"text/html; charset=utf-8", "no-cache"},
+}
+
+// staticPrefixes hold build output and icons: never SPA routes.
+var staticPrefixes = []string{"/assets/", "/icons/"}
+
+func isStaticPath(p string) bool {
+	if _, ok := staticFiles[p]; ok {
+		return true
+	}
+	for _, prefix := range staticPrefixes {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // spaHandler serves static files; falls back to index.html for missing routes.
 type spaHandler struct {
 	fs http.FileSystem
@@ -31,18 +59,30 @@ type spaHandler struct {
 func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f, err := h.fs.Open(r.URL.Path)
 	if err != nil {
-		// Path not found — serve index.html directly for SPA client-side routing.
-		h.serveIndex(w, r)
+		h.serveMissing(w, r)
 		return
 	}
 	stat, err := f.Stat()
 	_ = f.Close()
 	if err != nil || stat.IsDir() {
-		// Directory or stat error — serve index.html.
-		h.serveIndex(w, r)
+		h.serveMissing(w, r)
 		return
 	}
+	if file, ok := staticFiles[r.URL.Path]; ok {
+		w.Header().Set("Content-Type", file.contentType)
+		w.Header().Set("Cache-Control", file.cacheControl)
+	}
 	http.FileServer(h.fs).ServeHTTP(w, r)
+}
+
+// serveMissing answers a path with no file: a 404 for static files, and
+// index.html for everything else so client-side routes load the SPA.
+func (h spaHandler) serveMissing(w http.ResponseWriter, r *http.Request) {
+	if isStaticPath(r.URL.Path) {
+		http.NotFound(w, r)
+		return
+	}
+	h.serveIndex(w, r)
 }
 
 func (h spaHandler) serveIndex(w http.ResponseWriter, r *http.Request) {

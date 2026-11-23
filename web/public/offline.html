@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Aviary server unreachable</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        box-sizing: border-box;
+        background: #f9fafb;
+        color: #101828;
+      }
+      main {
+        max-width: 24rem;
+        padding: 2rem 1.5rem;
+        text-align: center;
+      }
+      img {
+        width: 4rem;
+        height: 4rem;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 1rem 0 0.5rem;
+      }
+      p {
+        font-size: 0.875rem;
+        line-height: 1.5;
+        color: #4a5565;
+      }
+      button {
+        margin-top: 1rem;
+        border: 0;
+        border-radius: 0.5rem;
+        padding: 0.5rem 1rem;
+        font: inherit;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #fff;
+        background: #155dfc;
+        cursor: pointer;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #030712;
+          color: #fff;
+        }
+        p {
+          color: #99a1af;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icons/icon-192.png" alt="" />
+      <h1>Aviary server unreachable</h1>
+      <p>Aviary can't reach its server. Check that <code>aviary serve</code> is running and that this device is on the same network, then try again.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+  </body>
+</html>

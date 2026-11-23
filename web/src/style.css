@@ -21,6 +21,16 @@ body,
 body {
 	margin: 0;
 	min-height: 100vh;
+	@apply bg-white dark:bg-gray-950;
+}
+
+/* The installed app draws edge to edge (viewport-fit=cover), so keep the UI
+   clear of notches, status bars, and home indicators. Views fill #app with
+   h-full rather than 100dvh so the insets aren't counted twice. */
+#app {
+	height: 100dvh;
+	padding: env(safe-area-inset-top) env(safe-area-inset-right)
+		env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 .field-input {
