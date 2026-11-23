@@ -31,7 +31,7 @@ func TestHaltStopsSchedulingOnShutdown(t *testing.T) {
 
 	s.mu.Lock()
 	assert.Empty(t, s.armed, "every trigger is disarmed")
-	assert.Nil(t, s.fireLocked(key, spec, "schedule", now), "timer fires enqueue nothing")
+	assert.Nil(t, s.fireLocked(key, spec, "schedule", now, nil), "timer fires enqueue nothing")
 	s.mu.Unlock()
 	s.fireFromWatch(key)
 	assert.Equal(t, 0, jobCount(t, s, key), "nothing is enqueued after shutdown begins")
@@ -122,7 +122,7 @@ func TestStaleRunNoLongerBlocksOverlapPolicy(t *testing.T) {
 			s.Reconcile(singleTask(config.TaskConfig{Name: "t", Every: "5m", Overlap: schedule.OverlapSkip, Prompt: "p"}))
 			s.mu.Lock()
 			spec := s.armed[key].spec
-			first := s.fireLocked(key, spec, "schedule", now)
+			first := s.fireLocked(key, spec, "schedule", now, nil)
 			s.mu.Unlock()
 			require.NotNil(t, first)
 			if tc.prepare != nil {
@@ -130,7 +130,7 @@ func TestStaleRunNoLongerBlocksOverlapPolicy(t *testing.T) {
 			}
 
 			s.mu.Lock()
-			assert.Nil(t, s.fireLocked(key, spec, "schedule", now), "a live run still blocks")
+			assert.Nil(t, s.fireLocked(key, spec, "schedule", now, nil), "a live run still blocks")
 			now = now.Add(tc.advance)
 			if tc.name == "run past the stale-run timeout" {
 				// Keep the heartbeat fresh so only the run's age counts.
@@ -139,7 +139,7 @@ func TestStaleRunNoLongerBlocksOverlapPolicy(t *testing.T) {
 				job.LockedAt = &now
 				require.NoError(t, store.WriteJSON(store.JobPath(first.AgentID, first.ID), &job))
 			}
-			assert.NotNil(t, s.fireLocked(key, spec, "schedule", now), "a stale run no longer blocks")
+			assert.NotNil(t, s.fireLocked(key, spec, "schedule", now, nil), "a stale run no longer blocks")
 			s.mu.Unlock()
 			assert.Equal(t, domain.TaskRunQueued, lastRun(t, s, key).Status)
 		})

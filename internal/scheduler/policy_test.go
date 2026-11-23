@@ -72,8 +72,8 @@ func TestOverlapPolicy(t *testing.T) {
 
 			s.mu.Lock()
 			spec := s.armed[key].spec
-			require.NotNil(t, s.fireLocked(key, spec, "schedule", now))
-			s.fireLocked(key, spec, "schedule", now.Add(time.Hour))
+			require.NotNil(t, s.fireLocked(key, spec, "schedule", now, nil))
+			s.fireLocked(key, spec, "schedule", now.Add(time.Hour), nil)
 			s.mu.Unlock()
 
 			assert.Equal(t, tc.wantJobs, jobCount(t, s, key))
@@ -91,7 +91,7 @@ func TestFireRecordsTrigger(t *testing.T) {
 
 	s.mu.Lock()
 	spec := s.armed[key].spec
-	job := s.fireLocked(key, spec, "missed", now)
+	job := s.fireLocked(key, spec, "missed", now, nil)
 	s.mu.Unlock()
 
 	require.NotNil(t, job)
@@ -200,7 +200,7 @@ func TestRecordAttemptUpdatesHistory(t *testing.T) {
 	s.Reconcile(singleTask(config.TaskConfig{Name: "t", Every: "1h", Prompt: "p"}))
 	key := "alpha/t"
 	s.mu.Lock()
-	job := s.fireLocked(key, s.armed[key].spec, "schedule", now)
+	job := s.fireLocked(key, s.armed[key].spec, "schedule", now, nil)
 	s.mu.Unlock()
 	require.NotNil(t, job)
 

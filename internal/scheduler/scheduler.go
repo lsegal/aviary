@@ -148,6 +148,11 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 			s.removeTriggersLocked(key)
 			s.tasks[key] = tc
 
+			if tc.IsWorkflow() {
+				// Workflows fire from channel messages; see FireWorkflows.
+				slog.Info("scheduler: workflow registered", "key", key, "channel", tc.Channel)
+				continue
+			}
 			if fields := TaskFields(tc); fields.HasTrigger() {
 				spec, err := schedule.Parse(fields)
 				if err != nil {
@@ -214,7 +219,7 @@ func (s *Scheduler) armLocked(key string, spec schedule.Spec, catchUp bool) {
 			if due.Before(now.Add(-missedGrace)) {
 				s.settleMissedLocked(key, spec, due, now)
 			} else {
-				s.fireLocked(key, spec, "schedule", due)
+				s.fireLocked(key, spec, "schedule", due, nil)
 				fired = true
 			}
 			if spec.RunOnce && fired {
@@ -237,7 +242,7 @@ func (s *Scheduler) armLocked(key string, spec schedule.Spec, catchUp bool) {
 func (s *Scheduler) settleMissedLocked(key string, spec schedule.Spec, due, now time.Time) {
 	slog.Info("scheduler: missed fire detected", "key", key, "due", due.Format(time.RFC3339), "policy", spec.Missed)
 	if spec.Missed == schedule.MissedRunOnce {
-		s.fireLocked(key, spec, "missed", due)
+		s.fireLocked(key, spec, "missed", due, nil)
 		return
 	}
 	s.state.update(key, func(t *taskState) {
@@ -259,7 +264,7 @@ func (s *Scheduler) onTimer(key string, gen int) {
 		s.armLocked(key, a.spec, true)
 		return
 	}
-	s.fireLocked(key, a.spec, "schedule", a.next)
+	s.fireLocked(key, a.spec, "schedule", a.next, nil)
 	if !a.spec.RunOnce {
 		s.armLocked(key, a.spec, false)
 	}
@@ -298,12 +303,13 @@ func (s *Scheduler) fireFromWatch(key string) {
 	if spec.Overlap == "" {
 		spec.Overlap = schedule.OverlapQueue
 	}
-	s.fireLocked(key, spec, "watch", time.Time{})
+	s.fireLocked(key, spec, "watch", time.Time{}, nil)
 }
 
 // fireLocked enqueues a run of key unless the overlap policy skips it, and
-// records the fire. due is the scheduled fire time, zero for watch fires.
-func (s *Scheduler) fireLocked(key string, spec schedule.Spec, reason string, due time.Time) *domain.Job {
+// records the fire. due is the scheduled fire time, zero for watch and
+// message fires; trigger is the message that fired a workflow.
+func (s *Scheduler) fireLocked(key string, spec schedule.Spec, reason string, due time.Time, trigger *domain.TriggerContext) *domain.Job {
 	tc, ok := s.tasks[key]
 	if !ok {
 		return nil
@@ -322,7 +328,11 @@ func (s *Scheduler) fireLocked(key string, spec schedule.Spec, reason string, du
 	} else {
 		agentID, _, _ := strings.Cut(key, "/")
 		var err error
-		job, err = s.queue.EnqueueWithType(key, taskType(tc), agentID, tc.Prompt, tc.Prompt, tc.Target, 0, "", "")
+		prompt := tc.Prompt
+		if trigger != nil && taskType(tc) == "prompt" {
+			prompt = WorkflowPrompt(tc.Prompt, trigger)
+		}
+		job, err = s.queue.EnqueueWithType(key, taskType(tc), agentID, prompt, tc.Prompt, tc.Target, 0, "", "")
 		if err != nil {
 			slog.Warn("scheduler: enqueue failed", "task", key, "err", err)
 			run.Status = domain.TaskRunFailed
@@ -334,6 +344,13 @@ func (s *Scheduler) fireLocked(key string, spec schedule.Spec, reason string, du
 				slog.Warn("scheduler: recording trigger failed", "task", key, "err", err)
 			} else {
 				job.Trigger = reason
+			}
+			if trigger != nil {
+				if err := s.queue.SetTriggerContext(job.ID, trigger); err != nil {
+					slog.Warn("scheduler: recording trigger context failed", "task", key, "err", err)
+				} else {
+					job.TriggerContext = trigger
+				}
 			}
 		}
 	}
@@ -503,6 +520,9 @@ func (s *Scheduler) ListTasks() []domain.ScheduledTask {
 			Days:      tc.Days,
 			Timezone:  tc.Timezone,
 			Watch:     tc.Watch,
+			Channel:   tc.Channel,
+			Entry:     tc.Entry,
+			Match:     tc.Match,
 			Project:   tc.Project,
 			Model:     tc.Model,
 			Enabled:   config.BoolOr(tc.Enabled, true),
@@ -511,7 +531,11 @@ func (s *Scheduler) ListTasks() []domain.ScheduledTask {
 			task.Precompile = config.BoolOr(tc.Precompile, false)
 			task.Compiled = task.Precompile && strings.TrimSpace(tc.Compiled) != ""
 		}
-		if fields := TaskFields(tc); fields.HasTrigger() {
+		if tc.IsWorkflow() {
+			task.TriggerType = domain.TriggerTypeMessage
+			task.Description = workflowDescription(tc)
+			task.Overlap = strings.ToLower(strings.TrimSpace(tc.Overlap))
+		} else if fields := TaskFields(tc); fields.HasTrigger() {
 			task.TriggerType = domain.TriggerType(fields.InferKind())
 			if spec, err := schedule.Parse(fields); err == nil {
 				task.Description = spec.Describe()
@@ -556,7 +580,7 @@ func (s *Scheduler) Preview(name string, n int) ([]time.Time, error) {
 		return nil, fmt.Errorf("task %q not found", name)
 	}
 	fields := TaskFields(tc)
-	if !fields.HasTrigger() {
+	if tc.IsWorkflow() || !fields.HasTrigger() {
 		return nil, nil
 	}
 	spec, err := schedule.Parse(fields)
@@ -681,6 +705,17 @@ func (s *Scheduler) SetProjectTaskScriptReporter(fn ProjectTaskScriptReporter) {
 // completed task output to configured task channels.
 func (s *Scheduler) SetTaskOutputDelivery(fn func(agentName, route, text string) error) {
 	s.pool.SetTaskOutputDelivery(fn)
+}
+
+// SetWorkflowHooks registers how workflow runs reply to the conversation
+// whose message triggered them, and how a run's trigger context learns the
+// messages that followed the triggering one.
+func (s *Scheduler) SetWorkflowHooks(
+	reply func(agentName string, tc domain.TriggerContext, text string) error,
+	after func(agentName string, tc domain.TriggerContext) []domain.TriggerMessage,
+) {
+	s.pool.workflowReply = reply
+	s.pool.workflowAfter = after
 }
 
 // RunJobNow force-starts an existing pending job immediately, bypassing queue

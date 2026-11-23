@@ -340,6 +340,15 @@ type TaskConfig struct {
 	At string `yaml:"at,omitempty"       json:"at,omitempty"`
 	// Days lists the weekly trigger's weekdays, comma-separated ("mon,wed").
 	Days string `yaml:"days,omitempty"     json:"days,omitempty"`
+	// Channel, Entry and Match configure a workflow: a task whose trigger is
+	// "message". Channel names the agent's channel (its name or ID), Entry
+	// the conversation on it the workflow watches (a Slack channel ID, a
+	// Signal phone number or group ID; empty watches every conversation),
+	// and Match a case-insensitive wildcard pattern the message text must
+	// match (empty matches every message).
+	Channel string `yaml:"channel,omitempty"  json:"channel,omitempty"`
+	Entry   string `yaml:"entry,omitempty"    json:"entry,omitempty"`
+	Match   string `yaml:"match,omitempty"    json:"match,omitempty"`
 	// Timezone is the IANA zone triggers are evaluated in (default: local).
 	Timezone string `yaml:"timezone,omitempty" json:"timezone,omitempty"`
 	// Overlap decides what a fire does while a previous run is still
@@ -386,6 +395,16 @@ type TaskConfig struct {
 	// defined inline in aviary.yaml. It is intentionally excluded from YAML
 	// serialization so it never gets written back to the config file.
 	FromFile bool `yaml:"-" json:"from_file,omitempty"`
+}
+
+// TriggerMessage is the trigger of a workflow: a task that runs when a
+// matching message arrives on one of its agent's channels.
+const TriggerMessage = "message"
+
+// IsWorkflow reports whether t is a workflow, triggered by channel messages
+// instead of a schedule or file watch.
+func (t TaskConfig) IsWorkflow() bool {
+	return strings.EqualFold(strings.TrimSpace(t.Trigger), TriggerMessage)
 }
 
 // UnmarshalYAML reads a task, accepting the old "run_agent" and "cli" keys
