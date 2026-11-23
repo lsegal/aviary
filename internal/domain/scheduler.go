@@ -139,9 +139,54 @@ type Job struct {
 	ScriptError string `json:"script_error,omitempty"`
 	// ResumeNote is set when a safe restart interrupted the job. The resumed
 	// run receives it ahead of the original prompt in the same session.
-	ResumeNote string    `json:"resume_note,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ResumeNote string `json:"resume_note,omitempty"`
+	// Delivery records where the run's output was sent, and whether it got
+	// there.
+	Delivery  *JobDelivery `json:"delivery,omitempty"`
+	CreatedAt time.Time    `json:"created_at"`
+	UpdatedAt time.Time    `json:"updated_at"`
+}
+
+// The outcomes a JobDelivery records.
+const (
+	DeliveryDelivered = "delivered"
+	DeliveryQueued    = "queued"
+	DeliveryFailed    = "failed"
+)
+
+// JobDelivery is the outcome of sending a run's output to its target, for the
+// run log.
+type JobDelivery struct {
+	Target string `json:"target"`
+	// Status is DeliveryDelivered, DeliveryQueued, or DeliveryFailed, and
+	// Message says what happened, such as "delivered to Code Loop
+	// owner/repo#123" or why the delivery failed.
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	// Project and Number name the Code Loop job a codeloop target reached,
+	// and Owner the agent whose board shows it ("" for a runtime watch), so
+	// the run log can link to the job's page.
+	Project string    `json:"project,omitempty"`
+	Number  int       `json:"number,omitempty"`
+	Owner   string    `json:"owner,omitempty"`
+	At      time.Time `json:"at"`
+}
+
+// OutputSource is the task or workflow run whose output is being delivered.
+type OutputSource struct {
+	// Task is the "agent/task" key and JobID the run.
+	Task     string
+	JobID    string
+	Workflow bool
+}
+
+// Label names the source the way a Code Loop job's transcript shows it, such
+// as "workflow bot/triage".
+func (s OutputSource) Label() string {
+	if s.Workflow {
+		return "workflow " + s.Task
+	}
+	return "task " + s.Task
 }
 
 // TriggerContext records the channel message that started a workflow run,

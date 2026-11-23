@@ -387,6 +387,12 @@ type Engine struct {
 	forks         map[string]forkProbe
 	jobActionOnce sync.Once
 	jobActions    chan jobActionRequest
+	// inboxOnce/inbox hold the task and workflow output sent to each job, and
+	// liveNudges the nudge channel of every job whose run is in flight, by
+	// issue key, so a new message reaches its watcher at once (issue #999).
+	inboxOnce  sync.Once
+	inbox      *jobInbox
+	liveNudges sync.Map
 	// projectTasks carries core's project task runs into the Run loop.
 	projectTasks projectTaskChannel
 	// settingsOnce/settingsRequests carry live settings updates
@@ -1227,6 +1233,12 @@ func (w *Engine) watchForIssueUpdates(ctx context.Context, checker WorkClosureCh
 		}
 	}
 	seen := w.commentsSeen(ctx, repo, issue.Number)
+	// Output a task or workflow sent while the job was paused or queued is
+	// relayed before the resumed turn starts.
+	if watch.canRelay() && w.relayInbox(issue, cancel) {
+		close(ready)
+		return
+	}
 	close(ready)
 	if reason := closedWorkReason(OriginatingWorkState{}, previous, issue.Number); checker != nil && err == nil && !watch.closed && strings.EqualFold(previous.IssueState, "closed") && reason != "" {
 		cause := fmt.Errorf("%w: %s", errWorkClosedByUser, reason)
@@ -1242,6 +1254,9 @@ func (w *Engine) watchForIssueUpdates(ctx context.Context, checker WorkClosureCh
 			return
 		case <-watch.nudge:
 		case <-ticker.C:
+		}
+		if watch.canRelay() && w.relayInbox(issue, cancel) {
+			return
 		}
 		if checker != nil {
 			current, checkErr := checker.OriginatingWorkState(ctx, repo, issue.Number)
@@ -3032,6 +3047,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				nudges[key] = nudge
 				runExits[key] = exited
 				workMu.Unlock()
+				w.liveNudges.Store(key, nudge)
 				// Registered after workFinished so the reservation is gone
 				// before the dispatch loop hears the run finished and polls,
 				// which is what reruns a retry.
@@ -3047,6 +3063,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					workMu.Lock()
 					delete(nudges, key)
 					workMu.Unlock()
+					w.liveNudges.Delete(key)
 				}()
 				w.logf("issue #%d started (tasks: %d running, %d queued)", i.Number, running, queued)
 				jobOutput := jobOutputWriter{write: func(text string) {

@@ -168,9 +168,9 @@ func TestWorkerDeliversWorkflowReplies(t *testing.T) {
 		replied = append(replied, tc.Entry+":"+text)
 		return nil
 	}
-	p.deliver = func(_, route, text string) error {
+	p.deliver = func(_ domain.OutputSource, _, route, text string) (*domain.JobDelivery, error) {
 		delivered = append(delivered, route+":"+text)
-		return nil
+		return nil, nil
 	}
 	job := &domain.Job{TriggerContext: &domain.TriggerContext{Entry: "C1"}}
 	require.NoError(t, p.deliverFor(job)("alpha", "reply", "on it"))
@@ -179,4 +179,26 @@ func TestWorkerDeliversWorkflowReplies(t *testing.T) {
 	assert.Equal(t, []string{"session:ops:fyi"}, delivered)
 
 	assert.Error(t, p.deliverFor(&domain.Job{})("alpha", "reply", "x"), "a run without a triggering message cannot reply")
+}
+
+func TestDeliverForRecordsDeliveryOnRun(t *testing.T) {
+	q := NewJobQueue()
+	p := &WorkerPool{queue: q}
+	job, err := q.Enqueue("alpha/digest", "alpha", "x", "codeloop:o/r#3", 1, "", "")
+	require.NoError(t, err)
+	var got domain.OutputSource
+	p.deliver = func(source domain.OutputSource, _, route, _ string) (*domain.JobDelivery, error) {
+		got = source
+		return &domain.JobDelivery{Target: route, Status: domain.DeliveryQueued, Message: "queued for Code Loop o/r#3 until the job runs again", Project: "o/r", Number: 3}, nil
+	}
+	require.NoError(t, p.deliverFor(job)("alpha", "codeloop:o/r#3", "report"))
+	assert.Equal(t, domain.OutputSource{Task: "alpha/digest", JobID: job.ID}, got)
+	assert.Equal(t, "task alpha/digest", got.Label())
+
+	jobs, err := q.List("alpha/digest")
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	require.NotNil(t, jobs[0].Delivery)
+	assert.Equal(t, domain.DeliveryQueued, jobs[0].Delivery.Status)
+	assert.Equal(t, 3, jobs[0].Delivery.Number)
 }

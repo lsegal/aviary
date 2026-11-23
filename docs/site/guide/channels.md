@@ -82,7 +82,7 @@ Add, edit, pause, resume and delete a channel's workflows in its settings, on th
 - **Source entry** is the conversation to watch: a Slack or Discord channel, or a Signal contact or group. Empty watches every conversation on the channel.
 - **Text match** is a case-insensitive wildcard over the whole message text: `*` matches anything (including line breaks) and `?` one character. `*crash*` matches every message containing "crash". Empty matches every message, like `*`.
 - **Would match** tests the current text match against the entry's recent messages as you type.
-- **Model override**, **Send Via** and **While a run is active** work as they do for tasks. Send Via can be **silent**, **reply to the source conversation**, a session, or another channel.
+- **Model override**, **Send Via** and **While a run is active** work as they do for tasks. Send Via can be **silent**, **reply to the source conversation**, a session, a [Code Loop job](/guide/scheduled-tasks#sending-output-to-a-code-loop-job), or another channel.
 
 When a message matches one or more active workflows, **the workflows replace the agent's own reply**: every matching workflow runs, in name order, and the agent does not answer the message itself. Whether anything is said back is up to each workflow's Send Via. The message is still recorded in the channel's conversation, marked **Handled by workflow** with a link to each run. The agent replies as usual only when no active workflow matches. Paused workflows never match, so a message that matches only paused workflows gets the normal reply. A workflow with an empty text match takes over every message on its entry, and the form says so.
 

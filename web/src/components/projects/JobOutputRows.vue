@@ -117,7 +117,9 @@ const rows = computed(() =>
 						key,
 						callID: "",
 						icon: ChatBubbleLeftEllipsisIcon,
-						text: `${e.author}: ${e.body}`,
+						text: e.source
+							? `output from ${e.source}: ${e.body}`
+							: `${e.author}: ${e.body}`,
 						status: "ok",
 						badge: "relayed",
 					},

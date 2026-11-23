@@ -23,8 +23,23 @@ export interface Job {
 	locked_at?: string;
 	next_retry_at?: string;
 	scheduled_for?: string;
+	/** Where the run's output was sent, and whether it got there. */
+	delivery?: JobDelivery;
 	created_at: string;
 	updated_at: string;
+}
+
+/** The outcome of sending a run's output to its target. */
+export interface JobDelivery {
+	target: string;
+	status: "delivered" | "queued" | "failed";
+	/** What happened, such as "delivered to Code Loop owner/repo#12". */
+	message: string;
+	/** The Code Loop job a codeloop target reached, and the agent whose board shows it. */
+	project?: string;
+	number?: number;
+	owner?: string;
+	at: string;
 }
 
 /** One channel message in a workflow run's trigger context. */

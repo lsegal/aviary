@@ -154,8 +154,8 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 		task.Overlap = strings.ToLower(task.Overlap)
 		task.Missed = strings.ToLower(task.Missed)
 
-		if task.Target != "" && !config.ValidTaskTarget(task.Target) {
-			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", \"reply\" (workflows), session:<name-or-id>, or channel:<channel name>", task.Target)
+		if _, err := config.ParseTaskTarget(task.Target); err != nil {
+			return nil, struct{}{}, err
 		}
 		if strings.EqualFold(task.Type, "project") && task.Project == "" {
 			return nil, struct{}{}, fmt.Errorf("project tasks require a project")
