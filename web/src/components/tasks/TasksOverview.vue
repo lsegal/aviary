@@ -109,9 +109,12 @@
 							<router-link :to="taskSessionPath(agent, r.task.name)" data-testid="task-card-link"
 								class="after:absolute after:inset-0 after:rounded-xl focus:outline-none">{{ r.task.name }}</router-link>
 						</h3>
-						<TaskEnabledSwitch class="z-10" :task="r.task.name" :enabled="r.enabled" :busy="busy === r.id" @update="setEnabled(r, $event)" />
+						<TaskEnabledSwitch class="z-10" :task="r.task.name" :enabled="r.enabled" :busy="busy === r.id || isPending(agent, r.task.name)" @update="setEnabled(r, $event)" />
 					</div>
-					<p class="truncate text-xs text-gray-500 dark:text-gray-400" data-testid="task-owner">{{ r.owner }}</p>
+					<div class="flex min-w-0 items-center gap-2">
+						<PausedChip v-if="!r.enabled" />
+						<p class="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400" data-testid="task-owner">{{ r.owner }}</p>
+					</div>
 					<p class="truncate text-xs text-gray-700 dark:text-gray-300" data-testid="task-schedule" :title="r.schedule">{{ r.schedule }}</p>
 					<div class="flex items-center justify-between gap-2">
 						<p class="min-w-0 truncate text-xs" data-testid="task-last-run">
@@ -148,9 +151,10 @@
 								<span class="inline-flex items-center gap-1.5 font-mono font-medium">
 									<span v-if="r.running" data-testid="task-running" title="Running now" class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
 									<router-link :to="taskSessionPath(agent, r.task.name)" class="hover:underline" @click.stop>{{ r.task.name }}</router-link>
+									<PausedChip v-if="!r.enabled" />
 								</span>
 							</td>
-							<td class="px-3 py-2"><TaskEnabledSwitch :task="r.task.name" :enabled="r.enabled" :busy="busy === r.id" @update="setEnabled(r, $event)" /></td>
+							<td class="px-3 py-2"><TaskEnabledSwitch :task="r.task.name" :enabled="r.enabled" :busy="busy === r.id || isPending(agent, r.task.name)" @update="setEnabled(r, $event)" /></td>
 							<td class="px-3 py-2 text-gray-500 dark:text-gray-400">{{ r.owner }}</td>
 							<td class="max-w-xs truncate px-3 py-2" :title="r.schedule">{{ r.schedule }}</td>
 							<td class="px-3 py-2">
@@ -181,6 +185,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
 import { useMCP } from "../../composables/useMCP";
+import { useTaskPause } from "../../composables/useTaskPause";
 import { age, parseToolJSON, until } from "../../lib/projects";
 import {
 	formatDuration,
@@ -193,6 +198,7 @@ import {
 	taskSessionPath,
 	useSettingsStore,
 } from "../../stores/settings";
+import PausedChip from "./PausedChip.vue";
 import TaskActions from "./TaskActions.vue";
 import TaskAnalytics from "./TaskAnalytics.vue";
 import TaskEnabledSwitch from "./TaskEnabledSwitch.vue";
@@ -204,6 +210,7 @@ const router = useRouter();
 const settings = useSettingsStore();
 const jobs = useJobsStore();
 const { callTool } = useMCP();
+const { setTaskEnabled, isPending } = useTaskPause();
 const { open: openItemDialog } = useAgentItemDialogs();
 
 const PRESETS = [
@@ -499,11 +506,10 @@ function runNow(r: TaskRow) {
 	return act(r, () => jobs.runTaskNow(r.id));
 }
 
+// Optimistic: the switch, the sidebar and the editor flip at once, and a
+// failure flips them back with a toast.
 function setEnabled(r: TaskRow, enabled: boolean) {
-	return act(r, async () => {
-		await callTool("task_update", { name: r.id, enabled });
-		await settings.fetchConfig();
-	});
+	return setTaskEnabled(props.agent, r.task.name, enabled);
 }
 
 // ── Loading and refreshing ──────────────────────────────────────────────────

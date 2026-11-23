@@ -10,11 +10,11 @@
 				<div class="min-w-0">
 					<div class="flex items-center gap-2">
 						<h2 class="truncate text-lg font-bold text-gray-900 dark:text-white" data-testid="task-title">{{ task.name }}</h2>
-						<span data-testid="task-state" :data-enabled="enabled"
-							class="shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold"
-							:class="enabled ? 'bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300' : 'bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'">
-							{{ enabled ? "Enabled" : "Paused" }}
+						<span v-if="enabled" data-testid="task-state" data-enabled="true"
+							class="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700 dark:bg-green-950/50 dark:text-green-300">
+							Enabled
 						</span>
+						<PausedChip v-else data-testid="task-state" data-enabled="false" />
 					</div>
 					<p class="truncate text-xs text-gray-500 dark:text-gray-400" data-testid="task-schedule">
 						{{ typeLabel }} · {{ scheduleText }}
@@ -133,12 +133,14 @@ import TaskRunHistory, {
 	type TaskRunFilter,
 } from "../components/tasks/dashboard/TaskRunHistory.vue";
 import TaskRunLog from "../components/tasks/dashboard/TaskRunLog.vue";
+import PausedChip from "../components/tasks/PausedChip.vue";
 import { useMCP } from "../composables/useMCP";
 import {
 	TASK_CHAT_MIN_HEIGHT,
 	useTaskChatPanel,
 } from "../composables/useTaskChatPanel";
 import { useTaskDashboard } from "../composables/useTaskDashboard";
+import { useTaskPause } from "../composables/useTaskPause";
 import { age, until } from "../lib/projects";
 import { RESULT_LABELS } from "../lib/taskRuns";
 import { formatDuration } from "../stores/jobs";
@@ -178,6 +180,7 @@ const isProject = computed(() => agentTaskType(task.value?.type) === "project");
 // ── Runs ────────────────────────────────────────────────────────────────────
 
 const dash = useTaskDashboard(agent, taskParam);
+const { setTaskEnabled } = useTaskPause();
 const current = dash.current;
 const enabled = computed(() => task.value?.enabled !== false);
 const nextRun = computed(() => {
@@ -304,8 +307,8 @@ async function act(fn: () => Promise<unknown>) {
 }
 
 async function setEnabled(value: boolean) {
-	await dash.setEnabled(value);
-	await settings.fetchConfig();
+	if (await setTaskEnabled(agent.value, taskParam.value, value))
+		await dash.refresh();
 }
 
 // ── Chat ────────────────────────────────────────────────────────────────────

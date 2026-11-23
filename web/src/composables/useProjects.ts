@@ -17,6 +17,7 @@ import {
 	type UpcomingRun,
 } from "../lib/projects";
 import { triggerArgs } from "../lib/trigger";
+import { useSettingsStore } from "../stores/settings";
 import { useMCP } from "./useMCP";
 import { useTriggerPreview } from "./useTriggerPreview";
 
@@ -367,6 +368,24 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		loaded.value = false;
 		void refresh();
 	});
+
+	// A task paused or resumed elsewhere, such as from the sidebar, shows on
+	// its box at once rather than at the next poll.
+	const settings = useSettingsStore();
+	watch(
+		() =>
+			(settings.config?.agents ?? [])
+				.flatMap((a) => a.tasks.map((t) => `${a.name}/${t.name}:${t.enabled}`))
+				.join("\n"),
+		() => {
+			for (const s of schedules.value) {
+				const task = settings.config?.agents
+					.find((a) => a.name === s.agent)
+					?.tasks.find((t) => t.name === s.name);
+				if (task) s.enabled = task.enabled !== false;
+			}
+		},
+	);
 
 	/**
 	 * Saves an existing project scheduled task. New ones are created through

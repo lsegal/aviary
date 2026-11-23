@@ -711,7 +711,7 @@
 								<div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 									<div class="min-w-0">
 										<div class="flex flex-wrap items-center gap-2 sm:gap-3">
-											<span v-if="!isTaskEnabled(selectedTask)" class="flex-shrink-0 rounded-full bg-red-50 px-3 py-1 text-sm font-medium text-red-700 dark:bg-red-900/20 dark:text-red-300">disabled</span>
+											<PausedChip v-if="!isTaskEnabled(selectedTask)" size="md" />
 											<span class="flex-shrink-0 rounded-full px-3 py-1 text-sm font-medium"
 												:class="selectedTask.type === 'script' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' : selectedTask.type === 'project' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'">
 												{{ selectedTask.type }}</span>
@@ -863,6 +863,7 @@ import SecretSelect from "../SecretSelect.vue";
 import SessionSelect from "../SessionSelect.vue";
 import TaskCostFeedback from "../TaskCostFeedback.vue";
 import TriggerEditor from "../TriggerEditor.vue";
+import PausedChip from "../tasks/PausedChip.vue";
 import TasksOverview from "../tasks/TasksOverview.vue";
 import { AppCombobox, AppSelect } from "../ui/select";
 import { settingsViewContextKey } from "./context";
@@ -884,6 +885,7 @@ export default defineComponent({
 		SessionSelect,
 		SwitchRoot,
 		SwitchThumb,
+		PausedChip,
 		TasksOverview,
 		TaskCostFeedback,
 		TriggerEditor,

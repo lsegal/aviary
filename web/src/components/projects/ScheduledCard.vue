@@ -9,9 +9,7 @@
 				<span class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
 					Scheduled
 				</span>
-				<span v-if="!schedule.enabled" class="rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-					Paused
-				</span>
+				<PausedChip v-if="!schedule.enabled" />
 				<span class="ml-auto truncate font-mono text-gray-500 dark:text-gray-400">{{ schedule.id }}</span>
 			</div>
 			<h3 class="text-base font-semibold leading-snug text-gray-900 dark:text-white">
@@ -27,8 +25,9 @@
 				<template v-if="next.kind !== 'running'">
 					<span aria-hidden="true" class="text-gray-300 dark:text-gray-600">·</span>
 					<span data-testid="scheduled-next" class="shrink-0 whitespace-nowrap"
+						:class="next.kind === 'paused' ? 'italic text-gray-400 dark:text-gray-500' : ''"
 						:title="next.kind === 'next' ? formatFire(next.at) : ''">
-						<template v-if="next.kind === 'paused'">paused</template>
+						<template v-if="next.kind === 'paused'">Next run: paused</template>
 						<template v-else-if="next.kind === 'next'">next {{ until(next.at, now) }}</template>
 						<template v-else>no next run</template>
 					</span>
@@ -116,6 +115,7 @@ import {
 	until,
 } from "../../lib/projects";
 import { taskSessionPath, useSettingsStore } from "../../stores/settings";
+import PausedChip from "../tasks/PausedChip.vue";
 import JobOutputPane from "./JobOutputPane.vue";
 import JobOutputToggle from "./JobOutputToggle.vue";
 
