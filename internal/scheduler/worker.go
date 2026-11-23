@@ -123,9 +123,15 @@ func (p *WorkerPool) Start(ctx context.Context) {
 	}
 }
 
+// Halt stops workers from claiming queued jobs. Running jobs keep running;
+// each worker exits once its current job ends.
+func (p *WorkerPool) Halt() {
+	p.stopOnce.Do(func() { close(p.stop) })
+}
+
 // Stop signals all workers to exit and waits for them.
 func (p *WorkerPool) Stop() {
-	p.stopOnce.Do(func() { close(p.stop) })
+	p.Halt()
 	p.wg.Wait()
 }
 
