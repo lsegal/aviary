@@ -20,7 +20,7 @@ func runCommand(ctx context.Context, name string, args ...string) ([]byte, error
 }
 
 // Local transcribes with whisper.cpp's whisper-cli, converting input to
-// 16 kHz mono WAV with ffmpeg first.
+// 16 kHz WAV with ffmpeg and keeping its loudest channel first.
 type Local struct {
 	Model string
 	// Resolve finds the tools; it defaults to Detect for Model.
@@ -56,11 +56,12 @@ func (l *Local) Transcribe(ctx context.Context, audioPath string, opts Options) 
 	}
 	defer os.RemoveAll(dir) //nolint:errcheck
 
-	wav := filepath.Join(dir, "audio.wav")
-	if out, err := run(ctx, st.FFmpeg.Path, ffmpegArgs(audioPath, wav)...); err != nil {
+	converted := filepath.Join(dir, "converted.wav")
+	if out, err := run(ctx, st.FFmpeg.Path, ffmpegArgs(audioPath, converted)...); err != nil {
 		return Transcript{}, fmt.Errorf("converting audio with ffmpeg: %w: %s", err, firstLine(out))
 	}
-	level, err := readWAVLevel(wav)
+	wav := filepath.Join(dir, "audio.wav")
+	level, err := prepareSpeech(converted, wav)
 	if err != nil {
 		return Transcript{}, fmt.Errorf("converting audio with ffmpeg: %w", err)
 	}
@@ -69,7 +70,9 @@ func (l *Local) Transcribe(ctx context.Context, audioPath string, opts Options) 
 		inputSize = info.Size()
 	}
 	slog.Debug("transcribe: converted audio", "component", "transcribe", "input", filepath.Base(audioPath), "input_bytes", inputSize,
-		"duration", level.Duration, "peak_dbfs", roundDB(dBFS(level.Peak)), "rms_dbfs", roundDB(dBFS(level.RMS)))
+		"duration", level.Duration, "channels", level.Channels, "channel", level.Channel,
+		"peak_dbfs", roundDB(dBFS(level.Peak)), "rms_dbfs", roundDB(dBFS(level.RMS)),
+		"silence_peak_dbfs", roundDB(dBFS(silencePeak)), "gain_db", roundDB(dBFS(level.Gain)))
 	if reason := level.silent(); reason != "" {
 		slog.Debug("transcribe: no speech detected", "component", "transcribe", "reason", reason, "duration", level.Duration)
 		return Transcript{Duration: level.Duration, NoSpeech: true}, nil
@@ -102,10 +105,11 @@ func roundDB(db float64) float64 {
 	return math.Round(db*10) / 10
 }
 
-// ffmpegArgs converts any input whisper-cli can't read to 16 kHz mono
-// 16-bit WAV.
+// ffmpegArgs converts any input, at any sample rate, to 16 kHz float WAV
+// that keeps every channel, so prepareSpeech can pick the one with the mic
+// on it without losing quiet speech to 16-bit rounding.
 func ffmpegArgs(in, out string) []string {
-	return []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", in, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", out}
+	return []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", in, "-ar", "16000", "-c:a", "pcm_f32le", out}
 }
 
 func whisperArgs(model, wav, prefix, language string) []string {

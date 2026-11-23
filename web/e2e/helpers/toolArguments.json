@@ -148,6 +148,11 @@
 		"tab_id",
 		"timeout_ms"
 	],
+	"channel_activity": [
+		"agent",
+		"channel",
+		"limit"
+	],
 	"channel_create": [
 		"agent",
 		"name",

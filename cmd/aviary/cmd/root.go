@@ -35,8 +35,12 @@ var dispatcher *mcp.Dispatcher
 
 // Execute runs the root command.
 func Execute() {
-	if err := logging.Init(); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to initialize logging: %v\n", err)
+	// A watch session logs into its own temporary directory once it has
+	// one, never into the user's.
+	if cmd, _, err := rootCmd.Find(os.Args[1:]); err != nil || cmd != watchCmd {
+		if err := logging.Init(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to initialize logging: %v\n", err)
+		}
 	}
 
 	// Wire server package into MCP dispatcher.

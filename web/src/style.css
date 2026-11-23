@@ -24,6 +24,15 @@ body {
 	@apply bg-white dark:bg-gray-950;
 }
 
+/* A fieldset defaults to min-inline-size: min-content, so one long
+   unbreakable line inside it (a truncated preview, a URL) widens the whole
+   form past a phone's screen (#997). */
+@layer base {
+	fieldset {
+		min-width: 0;
+	}
+}
+
 /* The installed app draws edge to edge (viewport-fit=cover), so keep the UI
    clear of notches, status bars, and home indicators. Views fill #app with
    h-full rather than 100dvh so the insets aren't counted twice. */

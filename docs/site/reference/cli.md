@@ -294,16 +294,19 @@ aviary task stop
 
 ## aviary watch
 
-Watch GitHub projects and fix ready issues with a CLI provider. Nothing is written to `aviary.yaml`; the watch lasts until Ctrl+C. When the server is running the watch is added to it and its log is printed; otherwise the server starts in the foreground. See [Code Loop](/guide/projects).
+Watch GitHub projects and fix ready issues with a CLI provider, in a one-off session isolated from your Aviary config. The session runs its own server against a temporary config and data directory that is removed when it ends; only the browser profile and provider credentials are shared, read in place. See [Watch sessions](/guide/projects#watch-sessions).
 
 ```
 aviary watch [TARGET ...] [--agent NAME] [--concurrency N] [--interval D]
-             [--delivery poll|webhook] [--ready-state S]
+             [--delivery browser|poll|webhook] [--ready-state S]
              [--filter F ...] [--all-issues] [--allowed-commenters LOGINS]
              [--yolo] [--no-merge] [--no-changelog]
+             [--browser-vision] [--browser-visible] [--no-webui] [--no-tui]
 ```
 
-With no `TARGET`, the current checkout's `origin` repository is watched. `--agent` runs the targets under an Aviary agent, whose model and fallbacks pick the jobs' CLI providers; without it a target runs under the agent that owns it, or `models.defaults`. Flags override the shared `projects:` settings while the watch runs.
+With no `TARGET`, the current checkout's `origin` repository is watched. `--agent` runs the targets under an Aviary agent, whose model and fallbacks pick the jobs' CLI providers; without it a target runs under the agent that owns it, or `models.defaults`. Flags override the shared `projects:` settings for the session.
+
+The session serves a minimal web UI, Code Loop and Scheduled Tasks only with no token prompt, on the first free `localhost` port from `server.port` up, and shows a TUI board in the terminal. `--no-webui` serves no web UI; `--no-tui` prints the Code Loop log instead of the TUI. Ctrl+C, `SIGTERM` or `SIGHUP` stops and checkpoints running jobs, then removes the temporary directory; directories left by killed sessions are swept on the next start.
 
 ---
 

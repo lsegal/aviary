@@ -1,0 +1,507 @@
+package cmd
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+// watchStateColors are the board states' colors, as the web board's pills:
+// Scheduled violet, Starting orange, Paused amber, Running blue, Done green,
+// Failed red.
+var watchStateColors = map[string]lipgloss.AdaptiveColor{
+	watchScheduled: {Light: "#7c3aed", Dark: "#a78bfa"},
+	watchStarting:  {Light: "#c2410c", Dark: "#fb923c"},
+	watchPaused:    {Light: "#b45309", Dark: "#fbbf24"},
+	watchRunning:   {Light: "#1d4ed8", Dark: "#60a5fa"},
+	watchDone:      tuiGood,
+	watchFailed:    tuiBad,
+}
+
+// watchMergedColor is the merged count's color, purple as on the web board.
+var watchMergedColor = lipgloss.AdaptiveColor{Light: "#7e22ce", Dark: "#c084fc"}
+
+var watchStateLabels = map[string]string{
+	watchScheduled: "Scheduled",
+	watchStarting:  "Starting",
+	watchPaused:    "Paused",
+	watchRunning:   "Running",
+	watchDone:      "Done",
+	watchFailed:    "Failed",
+}
+
+func watchStateStyle(state string) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(watchStateColors[state])
+}
+
+// watchHelpLines are the help overlay's lines.
+var watchHelpLines = []string{
+	"aviary watch keys",
+	"",
+	"0-6        filter: all, scheduled, starting, paused, running, done, failed",
+	"f / F      next / previous filter",
+	"b          toggle board / list",
+	"↑↓ / j k   select a job",
+	"←→ / tab   board column",
+	"g / G      first / last job",
+	"enter      toggle the selected job's output",
+	"l          toggle the log pane",
+	"pgup/pgdn  scroll the log pane",
+	"r          retry the selected job",
+	"p          pause it",
+	"u          resume it",
+	"s          stop it (asks to confirm)",
+	"d          dismiss a failed scheduled run",
+	"?          toggle this help",
+	"q          quit",
+}
+
+func (m watchModel) View() string {
+	if m.width == 0 || m.height == 0 {
+		return "Starting aviary watch..."
+	}
+	if m.showHelp {
+		box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(tuiAccent).Padding(1, 2).Render(strings.Join(watchHelpLines, "\n"))
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	}
+	top := []string{m.headerLine(), m.statsLine(), m.filterLine()}
+	bottom := []string{}
+	if h := m.outputPaneHeight(); h > 0 {
+		bottom = append(bottom, m.outputPane(h)...)
+	}
+	if h := m.logPaneHeight(); h > 0 {
+		bottom = append(bottom, m.logPane(h)...)
+	}
+	bottom = append(bottom, m.footerLine())
+	bodyHeight := max(1, m.height-len(top)-len(bottom))
+	var body []string
+	switch {
+	case !m.loaded:
+		body = []string{tuiDimStyle.Render("Loading...")}
+	case m.board:
+		body = m.boardView(bodyHeight)
+	default:
+		body = m.listView(bodyHeight)
+	}
+	body = watchFitLines(body, bodyHeight)
+	return strings.Join(append(append(top, body...), bottom...), "\n")
+}
+
+// headerLine names the watch and its targets, with the web UI's URL on the
+// right when it is on.
+func (m watchModel) headerLine() string {
+	left := tuiTitleStyle.Render("aviary watch")
+	if m.title != "" {
+		left += " " + tuiDimStyle.Render("·") + " " + m.title
+	}
+	if m.webURL == "" {
+		return watchTruncate(left, m.width)
+	}
+	right := tuiSectionStyle.Render(m.webURL)
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 2 {
+		return watchTruncate(left+"  "+right, m.width)
+	}
+	return left + strings.Repeat(" ", gap) + right
+}
+
+// statsLine is the web board's compact stat row: busy slots, each board
+// state's count, and pull requests merged in the last day, then delivery and
+// the last check.
+func (m watchModel) statsLine() string {
+	if !m.hasStatus {
+		return tuiDimStyle.Render("waiting for status...")
+	}
+	s := m.status
+	parts := []string{tuiLabelStyle.Render(fmt.Sprintf("%d/%d", s.Jobs.Running, s.Concurrency)) + " slots"}
+	for _, state := range watchBoardStates {
+		parts = append(parts, watchStateStyle(state).Render(fmt.Sprintf("%d %s", s.States[state], strings.ToLower(watchStateLabels[state]))))
+	}
+	parts = append(parts, lipgloss.NewStyle().Foreground(watchMergedColor).Render(fmt.Sprintf("%d merged 24h", s.Jobs.Merged24h)))
+	if delivery := m.deliveryText(); delivery != "" {
+		parts = append(parts, tuiDimStyle.Render(delivery))
+	}
+	return watchTruncate(strings.Join(parts, tuiDimStyle.Render(" · ")), m.width)
+}
+
+// deliveryText says how issues arrive and when they were last checked.
+func (m watchModel) deliveryText() string {
+	s := m.status
+	text := s.Delivery
+	if s.Delivery == "poll" && s.PollInterval != "" {
+		text += " every " + s.PollInterval
+	}
+	if s.WebhookOnline != nil && !*s.WebhookOnline {
+		text += " (offline)"
+	}
+	if t, err := time.Parse(time.RFC3339, s.LastCheck); err == nil {
+		text = strings.TrimSpace(text + " · checked " + t.Local().Format("15:04:05"))
+	}
+	if !s.Running {
+		text = strings.TrimSpace("stopped " + text)
+	}
+	return text
+}
+
+// filterLine lists the filters with their keys and counts, the selected one
+// highlighted, and the view mode.
+func (m watchModel) filterLine() string {
+	parts := []string{m.filterChip("0", "", "All", len(m.items))}
+	for i, state := range watchFilters {
+		n := 0
+		for _, it := range m.items {
+			if it.inFilter(state) {
+				n++
+			}
+		}
+		parts = append(parts, m.filterChip(fmt.Sprint(i+1), state, watchStateLabels[state], n))
+	}
+	mode := "list"
+	if m.board {
+		mode = "board"
+	}
+	return watchTruncate(strings.Join(parts, " ")+"  "+tuiDimStyle.Render("["+mode+"]"), m.width)
+}
+
+func (m watchModel) filterChip(key, state, label string, n int) string {
+	text := fmt.Sprintf("%s %s %d", key, label, n)
+	if m.filter == state {
+		style := lipgloss.NewStyle().Bold(true).Reverse(true)
+		if state != "" {
+			style = style.Foreground(watchStateColors[state])
+		}
+		return style.Render(" " + text + " ")
+	}
+	if state == "" {
+		return " " + text + " "
+	}
+	return " " + watchStateStyle(state).Render(text) + " "
+}
+
+// listView is one row per item under the filter, scrolled to the cursor.
+func (m watchModel) listView(height int) []string {
+	items := m.visibleItems()
+	if len(items) == 0 {
+		return []string{tuiDimStyle.Render(m.emptyText())}
+	}
+	start := watchScrollStart(m.cursor, len(items), height)
+	var lines []string
+	for i := start; i < len(items) && len(lines) < height; i++ {
+		lines = append(lines, m.listRow(items[i], i == m.cursor))
+	}
+	return lines
+}
+
+func (m watchModel) emptyText() string {
+	if m.filter == "" {
+		return "No jobs or scheduled tasks yet."
+	}
+	return "Nothing " + strings.ToLower(watchStateLabels[m.filter]) + "."
+}
+
+// listRow is a list item: its state, key, title and details.
+func (m watchModel) listRow(it watchItem, selected bool) string {
+	state := it.state
+	label := watchStateLabels[state]
+	if it.scheduled() && it.scheduleState != watchScheduled {
+		// A scheduled prompt with a run in flight or failed says so.
+		state = it.scheduleState
+		label = watchStateLabels[state]
+	}
+	badge := watchStateStyle(state).Render(fmt.Sprintf("%-9s", label))
+	name := m.itemName(it)
+	title := m.itemTitle(it)
+	if selected {
+		name = tuiSelectedStyle.Render(name)
+	} else {
+		name = tuiLabelStyle.Render(name)
+	}
+	row := tuiCursor(selected) + " " + badge + " " + name + "  " + title
+	if detail := m.itemDetail(it); detail != "" {
+		row += "  " + tuiDimStyle.Render(detail)
+	}
+	return watchTruncate(row, m.width)
+}
+
+// itemName is a job's target#number, or a scheduled prompt's project/name.
+func (m watchModel) itemName(it watchItem) string {
+	if it.scheduled() {
+		if it.project != "" {
+			return it.project + "/" + it.name
+		}
+		return it.name
+	}
+	return watchJobKey(it.job)
+}
+
+func (m watchModel) itemTitle(it watchItem) string {
+	if it.scheduled() {
+		if it.hasJob && it.job.Summary != "" {
+			return it.job.Summary
+		}
+		return it.job.Title
+	}
+	return it.job.Title
+}
+
+// itemDetail is a job's agent, progress, pull request and wait reason, or
+// a scheduled prompt's next run and last result.
+func (m watchModel) itemDetail(it watchItem) string {
+	var parts []string
+	if it.scheduled() {
+		switch {
+		case it.disabled:
+			parts = append(parts, "paused")
+		case it.nextRun != "":
+			parts = append(parts, "next "+watchUntil(it.nextRun, m.now()))
+		}
+		if it.hasJob && it.job.LastRun != nil {
+			last := "last run " + it.job.LastRun.Result
+			if it.job.LastRun.Dismissed {
+				last += " (dismissed)"
+			}
+			parts = append(parts, last)
+		}
+		return strings.Join(parts, " · ")
+	}
+	job := it.job
+	if job.Agent != "" {
+		cli := job.Agent
+		if job.Model != "" {
+			cli += "/" + job.Model
+		}
+		parts = append(parts, cli)
+	}
+	if job.Progress != nil && job.Progress.Total > 0 {
+		parts = append(parts, fmt.Sprintf("%d/%d tasks", job.Progress.Done, job.Progress.Total))
+	}
+	if job.PullRequest > 0 {
+		pr := fmt.Sprintf("PR #%d", job.PullRequest)
+		if job.PullRequestState != "" {
+			pr += " " + job.PullRequestState
+		}
+		parts = append(parts, pr)
+	}
+	if job.WaitReason != "" {
+		wait := job.WaitReason
+		if job.WakeAt != "" {
+			if t, err := time.Parse(time.RFC3339, job.WakeAt); err == nil && t.After(m.now()) {
+				wait += " · wakes " + watchUntil(job.WakeAt, m.now())
+			}
+		}
+		parts = append(parts, wait)
+	}
+	if job.Stale {
+		parts = append(parts, "stale")
+	}
+	return strings.Join(parts, " · ")
+}
+
+// boardView lays the columns side by side, each a header and two-line cards,
+// scrolled to its cursor in the selected column.
+func (m watchModel) boardView(height int) []string {
+	cols := m.columns()
+	gap := 1
+	width := max(8, (m.width-gap*(len(cols)-1))/len(cols))
+	blocks := make([][]string, len(cols))
+	for c, col := range cols {
+		// One style, so the selected column's underline never wraps
+		// already-styled text that truncation could cut mid-escape.
+		style := watchStateStyle(col.state).Bold(true).MaxWidth(width)
+		if c == m.col {
+			style = style.Underline(true)
+		}
+		lines := []string{style.Render(fmt.Sprintf("%s %d", watchStateLabels[col.state], len(col.items)))}
+		cursor := -1
+		if c == m.col {
+			cursor = m.cursor
+		}
+		cards := max(1, (height-1)/2)
+		start := 0
+		if cursor >= 0 {
+			start = watchScrollStart(cursor, len(col.items), cards)
+		}
+		for i := start; i < len(col.items) && len(lines)+2 <= height; i++ {
+			lines = append(lines, m.boardCard(col.items[i], i == cursor, width)...)
+		}
+		if len(col.items) == 0 {
+			lines = append(lines, tuiDimStyle.Render(watchTruncate("—", width)))
+		}
+		blocks[c] = lines
+	}
+	out := make([]string, 0, height)
+	for row := range height {
+		var b strings.Builder
+		for c, lines := range blocks {
+			cell := ""
+			if row < len(lines) {
+				cell = lines[row]
+			}
+			b.WriteString(watchPad(cell, width))
+			if c < len(blocks)-1 {
+				b.WriteString(strings.Repeat(" ", gap))
+			}
+		}
+		out = append(out, strings.TrimRight(b.String(), " "))
+	}
+	return out
+}
+
+// boardCard is an item's two board lines: its name and title, then its
+// details.
+func (m watchModel) boardCard(it watchItem, selected bool, width int) []string {
+	name := m.itemName(it)
+	if !it.scheduled() {
+		name = fmt.Sprintf("#%d", it.job.Number)
+	}
+	first := name + " " + m.itemTitle(it)
+	second := m.itemDetail(it)
+	if !it.scheduled() {
+		second = strings.TrimSuffix(it.job.Target+" · "+second, " · ")
+	} else if it.scheduleState != watchScheduled {
+		second = strings.TrimSuffix(watchStateLabels[it.scheduleState]+" · "+second, " · ")
+	}
+	first = watchTruncate(tuiCursor(selected)+" "+first, width)
+	if selected {
+		first = tuiSelectedStyle.Render(first)
+	}
+	return []string{first, tuiDimStyle.Render(watchTruncate("  "+second, width))}
+}
+
+// logPaneHeight is the log pane's height, title included: a third of the
+// screen while it is shown.
+func (m watchModel) logPaneHeight() int {
+	if !m.showLogs {
+		return 0
+	}
+	return max(4, (m.height-4)/3)
+}
+
+// outputPaneHeight is the output pane's height while it is open.
+func (m watchModel) outputPaneHeight() int {
+	if !m.showOutput {
+		return 0
+	}
+	return max(4, (m.height-4)/3)
+}
+
+// logPane is the engine's log, its newest lines at the bottom unless
+// scrolled back.
+func (m watchModel) logPane(height int) []string {
+	title := "Logs"
+	if m.logScroll > 0 {
+		title += fmt.Sprintf(" (scrolled back %d)", m.logScroll)
+	}
+	end := max(0, len(m.logs)-m.logScroll)
+	start := max(0, end-(height-1))
+	return m.pane(title, watchSplitLines(strings.Join(m.logs[start:end], "\n")), height)
+}
+
+// outputPane is the selected job's scrollback, newest lines at the bottom.
+func (m watchModel) outputPane(height int) []string {
+	title := "Output"
+	if m.outputKey != "" {
+		title += " · " + m.outputKey
+	}
+	lines := m.output
+	if m.outputKey == "" {
+		lines = []string{"Select a job that has run to see its output."}
+	} else if len(lines) == 0 {
+		lines = []string{"waiting for output..."}
+	}
+	return m.pane(title, lines[max(0, len(lines)-(height-1)):], height)
+}
+
+// pane is a titled rule and up to height-1 lines under it.
+func (m watchModel) pane(title string, lines []string, height int) []string {
+	rule := "── " + title + " "
+	rule += strings.Repeat("─", max(0, m.width-lipgloss.Width(rule)))
+	out := []string{tuiSectionStyle.Render(watchTruncate(rule, m.width))}
+	for _, line := range lines {
+		out = append(out, watchTruncate(line, m.width))
+	}
+	return watchFitLines(out, height)
+}
+
+// footerLine is the confirm prompt, or the last error or message, with the
+// key hint.
+func (m watchModel) footerLine() string {
+	hint := tuiHelpStyle.Render("? help · q quit")
+	var text string
+	switch {
+	case m.confirm != nil:
+		text = tuiErrorStyle.Render(fmt.Sprintf("%s %s? y/n", m.confirm.verb, watchJobKey(m.confirm.item.job)))
+	case m.errText != "":
+		text = tuiErrorStyle.Render(m.errText)
+	case m.hasStatus && m.status.Error != "":
+		text = tuiErrorStyle.Render(m.status.Error)
+	case m.message != "":
+		text = tuiSuccessStyle.Render(m.message)
+	default:
+		text = tuiHelpStyle.Render("0-6 filter · b board · enter output · l logs · r retry · p pause · u resume · s stop")
+	}
+	gap := m.width - lipgloss.Width(text) - lipgloss.Width(hint)
+	if gap < 2 {
+		return watchTruncate(text, m.width)
+	}
+	return text + strings.Repeat(" ", gap) + hint
+}
+
+// watchScrollStart is the first of n rows to show in height rows so the
+// cursor stays in view.
+func watchScrollStart(cursor, n, height int) int {
+	if height <= 0 || n <= height {
+		return 0
+	}
+	return max(0, min(cursor-height/2, n-height))
+}
+
+// watchFitLines pads or cuts lines to exactly height.
+func watchFitLines(lines []string, height int) []string {
+	if len(lines) > height {
+		return lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return lines
+}
+
+// watchTruncate cuts s, which may be styled, to width cells.
+func watchTruncate(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= width {
+		return s
+	}
+	return lipgloss.NewStyle().MaxWidth(width).Render(s)
+}
+
+// watchPad pads s, which may be styled, with spaces to width cells.
+func watchPad(s string, width int) string {
+	s = watchTruncate(s, width)
+	return s + strings.Repeat(" ", max(0, width-lipgloss.Width(s)))
+}
+
+// watchUntil is a compact countdown to an RFC 3339 time, such as "in 14m".
+func watchUntil(at string, now time.Time) string {
+	t, err := time.Parse(time.RFC3339, at)
+	if err != nil {
+		return at
+	}
+	d := t.Sub(now)
+	switch {
+	case d <= 0:
+		return "now"
+	case d < time.Minute:
+		return fmt.Sprintf("in %ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("in %dm", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("in %dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("in %dd", int(d.Hours()/24))
+}

@@ -199,14 +199,6 @@ func New(cfg *config.Config, token string) *Server {
 	return s
 }
 
-// startupWatches are the runtime watches the next server start begins with,
-// as `aviary watch` hands them over when it starts the server itself.
-var startupWatches []projects.Watch
-
-// SetStartupWatches makes the next server start watch these targets without
-// saving them to aviary.yaml.
-func SetStartupWatches(watches []projects.Watch) { startupWatches = watches }
-
 // configureCLIProviders installs the models: section's CLI providers in
 // core's provider layer, which Code Loop and every other CLI caller resolve
 // through.
@@ -219,15 +211,10 @@ func configureCLIProviders(cfg *config.Config) {
 	}
 }
 
-// startProjects applies the agents' projects and the startup watches.
+// startProjects applies the agents' projects.
 func (s *Server) startProjects() {
 	s.projects.SetBrowser(s.cfg.Browser)
 	s.projects.Reconcile(s.cfg)
-	for _, watch := range startupWatches {
-		if err := s.projects.AddWatch(watch); err != nil {
-			slog.Error("server: watch failed to start", "targets", watch.Targets, "err", err)
-		}
-	}
 }
 
 // Projects returns the server's Code Loop manager.
@@ -283,12 +270,25 @@ func (s *Server) registerRoutes() {
 	mcpSrv := mcp.NewServer()
 	mcp.SetLiveServer(mcpSrv)
 	mcpHandler := mcp.HTTPHandler(mcpSrv)
+	minimal := MinimalMode()
+	if minimal {
+		mcpHandler = minimalMCPHandler(mcpHandler)
+	}
+	// guard refuses what minimal mode does not serve: System's daemons and
+	// the composer's speech-to-text. The log stream stays, as Scheduled
+	// Tasks' analytics read it.
+	guard := func(h http.Handler) http.Handler {
+		if minimal {
+			return http.HandlerFunc(minimalBlockedHandler)
+		}
+		return h
+	}
 
 	// Login does not require auth.
 	s.mux.HandleFunc("/api/login", LoginHandler(s.token, s.authDisabled.Load))
 
 	// Health check (public) and WebSocket keepalive (auth via session cookie / ?token=).
-	s.mux.HandleFunc("/api/health", healthHandler(s.authDisabled.Load))
+	s.mux.HandleFunc("/api/health", healthHandler(s.authDisabled.Load, minimal))
 	s.mux.HandleFunc("/api/ws", wsHandler(s.token, s.authDisabled.Load))
 
 	// MCP endpoint: wrapped in bearer middleware.
@@ -300,18 +300,22 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("/api/logs/history", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(logsHistoryHandler)))
 
 	// Daemons status + log-stream endpoints.
-	s.mux.Handle("/api/daemons", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.daemonsHandler)))
-	s.mux.Handle("/api/daemons/logs", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.daemonLogsHandler)))
-	s.mux.Handle("/api/daemons/restart", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.daemonRestartHandler)))
+	s.mux.Handle("/api/daemons", guard(BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.daemonsHandler))))
+	s.mux.Handle("/api/daemons/logs", guard(BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.daemonLogsHandler))))
+	s.mux.Handle("/api/daemons/restart", guard(BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.daemonRestartHandler))))
 
 	// Speech-to-text for the composer mic, its dependency status and
 	// install, and playback of saved voice messages.
-	s.mux.Handle("/api/transcribe", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.transcribeHandler)))
-	s.mux.Handle("/api/transcription", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.transcriptionHandler)))
+	s.mux.Handle("/api/transcribe", guard(BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.transcribeHandler))))
+	s.mux.Handle("/api/transcription", guard(BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.transcriptionHandler))))
 	s.mux.Handle("/api/media", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(mediaHandler)))
 
 	// Web UI: SPA served from embedded web/dist.
-	s.mux.Handle("/", webFileServer())
+	if webUIOff.Load() {
+		s.mux.HandleFunc("/", webUIOffHandler)
+	} else {
+		s.mux.Handle("/", webFileServer())
+	}
 }
 
 // codingSkillsSyncInterval is how often the server looks for providers set
@@ -371,7 +375,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		defer saferestart.Unregister("tasks")
 	}
 
-	// Start the Code Loop engine, with any watches `aviary watch` handed over.
+	// Start the Code Loop engine.
 	if s.projects != nil {
 		// Jobs a safe restart stopped resume in their own sessions and are
 		// told that Aviary restarted.
