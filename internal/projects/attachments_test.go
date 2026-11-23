@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -59,7 +60,7 @@ func TestCreateIssuePassesAttachmentsToGhCreate(t *testing.T) {
 	if !slices.Equal(result.Attachments, []string{shot, spaced}) {
 		t.Errorf("attachments = %q", result.Attachments)
 	}
-	if want := "/gh-create o/r Save crashes attach:" + shot + " attach:\"" + spaced + "\" identity:/aviary:ABCD1234"; prompts[0] != want {
+	if want := "/gh-create o/r Save crashes attach:" + shot + " attach:" + strconv.Quote(spaced) + " identity:/aviary:ABCD1234"; prompts[0] != want {
 		t.Errorf("prompt = %q, want %q", prompts[0], want)
 	}
 	if _, err := w.CreateIssue(context.Background(), core.IssueCreate{Repository: "o/r", Text: "Save crashes"}); err != nil || len(prompts) != 2 {
