@@ -66,6 +66,7 @@ const PAGE_SIZE = 20;
 const FILTERS: TaskRunFilter[] = [
 	"all",
 	"succeeded",
+	"fallback",
 	"failed",
 	"canceled",
 	"skipped",

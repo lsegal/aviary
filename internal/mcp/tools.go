@@ -1849,6 +1849,28 @@ type taskCompileQueryArgs struct {
 	End    string `json:"end,omitempty"`
 	Status string `json:"status,omitempty"`
 	Agent  string `json:"agent,omitempty"`
+	Task   string `json:"task,omitempty"`
+}
+
+// parseCompileQueryTime reads a task_compile_query bound: a date
+// (YYYY-MM-DD), which end extends to the end of that day, or an RFC 3339
+// time.
+func parseCompileQueryTime(field, value string, end bool) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, nil
+	}
+	if day, err := time.Parse("2006-01-02", value); err == nil {
+		if end {
+			day = day.Add(24*time.Hour - time.Nanosecond)
+		}
+		return day, nil
+	}
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%s %q is neither a date (YYYY-MM-DD) nor an RFC 3339 time", field, value)
+	}
+	return t, nil
 }
 
 func listTaskCompiles() ([]domain.TaskCompile, error) {
@@ -1869,21 +1891,22 @@ func listTaskCompiles() ([]domain.TaskCompile, error) {
 func registerJobTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_compile_query",
-		Description: "Return task compile attempt records filtered by id, date range, status, and/or agent",
+		Description: "Return task compile attempt records filtered by id, date range (start/end as YYYY-MM-DD or RFC 3339), status, agent, and/or task. Records leave out their compile stages, which are large; task_compile_get returns one record in full.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskCompileQueryArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		slog.Info("mcp: tool call", "component", "task_compile", "tool", "task_compile_query")
+		slog.Info("mcp: tool call", "component", "task_compile", "tool", "task_compile_query", "agent", args.Agent, "task", args.Task, "start", args.Start, "end", args.End)
+		start, err := parseCompileQueryTime("start", args.Start, false)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		end, err := parseCompileQueryTime("end", args.End, true)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
 		all, err := listTaskCompiles()
 		if err != nil {
 			return nil, struct{}{}, err
 		}
-		var start, end time.Time
-		if args.Start != "" {
-			start, _ = time.Parse("2006-01-02", args.Start)
-		}
-		if args.End != "" {
-			end, _ = time.Parse("2006-01-02", args.End)
-			end = end.Add(24*time.Hour - time.Nanosecond)
-		}
+		agentName, taskName := strings.TrimSpace(args.Agent), strings.TrimSpace(args.Task)
 		out := all[:0]
 		for _, record := range all {
 			if args.ID != "" && record.ID != args.ID {
@@ -1898,9 +1921,13 @@ func registerJobTools(s *sdkmcp.Server) {
 			if args.Status != "" && string(record.Status) != args.Status {
 				continue
 			}
-			if args.Agent != "" && record.AgentID != args.Agent {
+			if agentName != "" && !strings.EqualFold(record.AgentID, agentName) {
 				continue
 			}
+			if taskName != "" && !strings.EqualFold(record.TaskName, taskName) {
+				continue
+			}
+			record.Stages = nil
 			out = append(out, record)
 		}
 		return jsonResult(out)

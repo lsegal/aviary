@@ -8,6 +8,7 @@ export type TaskRunResult =
 	| "queued"
 	| "running"
 	| "succeeded"
+	| "fallback"
 	| "failed"
 	| "canceled"
 	| "skipped";
@@ -45,6 +46,8 @@ export interface TaskRunEntry {
 	durationMs?: number;
 	/** Why a failed, skipped or missed run did not succeed. */
 	error?: string;
+	/** Whether the precompiled script failed and the model ran the task. */
+	scriptFailed?: boolean;
 }
 
 const JOB_RESULTS: Record<Job["status"], TaskRunResult> = {
@@ -59,6 +62,7 @@ export const RESULT_LABELS: Record<TaskRunResult, string> = {
 	queued: "Queued",
 	running: "Running",
 	succeeded: "Succeeded",
+	fallback: "Succeeded via fallback",
 	failed: "Failed",
 	canceled: "Canceled",
 	skipped: "Skipped",
@@ -89,7 +93,9 @@ export function taskRunEntries(
 		history.filter((f) => f.job_id).map((f) => [f.job_id, f.reason]),
 	);
 	const out: TaskRunEntry[] = jobs.map((job) => {
-		const result = JOB_RESULTS[job.status] ?? "queued";
+		const scriptFailed = !!job.script_error;
+		let result = JOB_RESULTS[job.status] ?? "queued";
+		if (result === "succeeded" && scriptFailed) result = "fallback";
 		const active = result === "queued" || result === "running";
 		return {
 			id: job.id,
@@ -99,6 +105,7 @@ export function taskRunEntries(
 			startedAt: job.created_at,
 			durationMs: active ? undefined : jobDurationMs(job),
 			error: result === "failed" ? job.error || undefined : undefined,
+			scriptFailed,
 		};
 	});
 	for (const fire of history) {
@@ -124,30 +131,36 @@ export interface TaskRunStats {
 	queued: number;
 	running: number;
 	succeeded: number;
+	/** Succeeded runs whose precompiled script failed first. */
+	fallback: number;
 	failed: number;
-	/** Succeeded share of finished runs, 0–100; null before any finish. */
+	/** Runs whose precompiled script failed, whatever the fallback did. */
+	scriptFailures: number;
+	/** Share of finished runs that succeeded, by script or fallback, 0–100; null before any finish. */
 	successRate: number | null;
 	last?: TaskRunEntry;
 	avgDurationMs: number | null;
 }
 
+const FINISHED: TaskRunResult[] = ["succeeded", "fallback", "failed"];
+
 export function taskRunStats(entries: TaskRunEntry[]): TaskRunStats {
 	const count = (r: TaskRunResult) =>
 		entries.filter((e) => e.result === r).length;
 	const succeeded = count("succeeded");
+	const fallback = count("fallback");
 	const failed = count("failed");
-	const timed = entries.filter(
-		(e) => e.job && (e.result === "succeeded" || e.result === "failed"),
-	);
+	const ok = succeeded + fallback;
+	const timed = entries.filter((e) => e.job && FINISHED.includes(e.result));
 	return {
 		queued: count("queued"),
 		running: count("running"),
 		succeeded,
+		fallback,
 		failed,
+		scriptFailures: entries.filter((e) => e.scriptFailed).length,
 		successRate:
-			succeeded + failed
-				? Math.round((succeeded / (succeeded + failed)) * 100)
-				: null,
+			ok + failed ? Math.round((ok / (ok + failed)) * 100) : null,
 		last: entries.find((e) => e.job && !isActive(e)),
 		avgDurationMs: timed.length
 			? timed.reduce((sum, e) => sum + (e.durationMs ?? 0), 0) / timed.length
