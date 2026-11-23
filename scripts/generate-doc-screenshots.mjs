@@ -615,6 +615,30 @@ const settingsToolList = [
 	},
 ];
 
+const transcriptionStatus = {
+	enabled: true,
+	engine: "whisper.cpp",
+	language: "auto",
+	ready: true,
+	status: {
+		whisper: {
+			name: "whisper-cli",
+			installed: true,
+			path: "/usr/local/bin/whisper-cli",
+		},
+		ffmpeg: {
+			name: "ffmpeg",
+			installed: true,
+			path: "/usr/local/bin/ffmpeg",
+		},
+		model: {
+			name: "base.en",
+			downloaded: true,
+			path: "~/.config/aviary/whisper/ggml-base.en.bin",
+		},
+	},
+};
+
 // Mocks every page needs, which a capture's own fixtures override.
 const commonFixtures = {
 	config_get: docsConfig,
@@ -690,20 +714,64 @@ const systemToolsFixtures = {
 		"1. aviary.bot landing page draft\n2. docs screenshot checklist\n3. customer feedback thread about docs images",
 };
 
+// The coding skills Aviary installs into each CLI provider, as
+// internal/codingskills reports them.
+const codingSkillClis = [
+	{ id: "claude", name: "Claude Code", target: "claude-code" },
+	{ id: "codex", name: "Codex", target: "codex" },
+];
+
+function codingSkill(name, summary, runByProjects, outdatedIn = []) {
+	return {
+		name,
+		summary,
+		run_by_projects: runByProjects,
+		installs: codingSkillClis.map((cli) => ({
+			cli: cli.id,
+			installed: true,
+			current: !outdatedIn.includes(cli.id),
+			version: outdatedIn.includes(cli.id) ? "0.7.1" : docsVersion,
+			source: "lsegal/aviary",
+		})),
+	};
+}
+
+const codingSkillsStatus = {
+	version: docsVersion,
+	source: "lsegal/aviary",
+	release: true,
+	clis: codingSkillClis,
+	skills: [
+		codingSkill(
+			"gh-fix",
+			"Fixes an issue end to end: draft PR, implement, test, changelog, CI repair, merge. Runs for issues on watched repos and boards.",
+			true,
+		),
+		codingSkill(
+			"gh-discuss",
+			"Reads the repo and posts one reply to a new Discussion thread, or stays silent. Read-only. Runs for watched Discussions boards.",
+			true,
+		),
+		codingSkill(
+			"gh-create",
+			"Files a well-formed issue from a short request. Code Loop never runs it, but the issues it files are what Code Loop picks up.",
+			false,
+		),
+		codingSkill(
+			"gh-safe-merge",
+			"Safety-checks an unowned pull request, such as an external contribution, before anything runs, then drives CI green and merges it. Code Loop never runs it.",
+			false,
+			["codex"],
+		),
+	],
+	outdated: 1,
+};
+
 const systemSkillsFixtures = {
 	skills_list: systemSkillsList,
+	coding_skills_list: codingSkillsStatus,
 	config_get: {
-		server: {
-			port: 16677,
-			tls: { cert: "", key: "" },
-			external_access: false,
-			no_tls: false,
-		},
-		agents: [],
-		models: { providers: {}, defaults: { model: "", fallbacks: [] } },
-		browser: { binary: "", cdp_port: 9222, headless: true },
-		search: { web: { brave_api_key: "" } },
-		scheduler: { concurrency: "", precompute_tasks: true },
+		...docsConfig,
 		skills: {
 			calendar: { enabled: true },
 			email: { enabled: true },
@@ -1244,6 +1312,29 @@ async function configurePage(page, fixtures) {
 		window.WebSocket = MockWebSocket;
 	}, docsVersion);
 
+	// The dev server proxies /api to whatever Aviary server runs locally, so
+	// answer every request no route below mocks rather than let the real
+	// server's paths or numbers into an image.
+	await page.route("**/api/**", async (route) => {
+		await route.fulfill({ status: 404, body: "" });
+	});
+
+	await page.route("**/api/health", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ ok: true, auth_disabled: false }),
+		});
+	});
+
+	await page.route("**/api/transcription", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify(transcriptionStatus),
+		});
+	});
+
 	await page.route("**/api/version", async (route) => {
 		await route.fulfill({
 			status: 200,
@@ -1303,7 +1394,6 @@ async function configurePage(page, fixtures) {
 
 		if (body.method === "tools/call") {
 			const name = body.params?.name ?? "";
-			if (process.env.DOCS_SCREENSHOT_DEBUG && !(name in fixtures)) console.warn("UNMOCKED", page.url(), name, JSON.stringify(body.params?.arguments));
 			const fixture = name in fixtures ? fixtures[name] : [];
 			// A function fixture computes its result from the call's arguments.
 			const result =
@@ -1338,7 +1428,7 @@ async function openPage(page, pathname, readySelector) {
 	await page.goto(`${baseURL}${pathname}`);
 	await page.waitForLoadState("networkidle");
 	await page.waitForFunction(() => document.fonts?.status === "loaded");
-	try { await page.locator(readySelector).waitFor({timeout: 8000}); } catch (e) { await page.screenshot({path: `/tmp/946dbg/${pathname.replaceAll("/","_")}.png`}); throw e; }
+	await page.locator(readySelector).waitFor();
 }
 
 async function captureSimple({
@@ -1508,7 +1598,7 @@ async function main() {
 				browser,
 				fixtures: systemSkillsFixtures,
 				pathname: "/system/skills",
-				readySelector: 'h2:has-text("Skills")',
+				readySelector: '[data-testid="coding-skill-gh-fix"]',
 				outputName: "system-skills.png",
 				viewport: { width: 1040, height: 1120 },
 				theme,

@@ -19,9 +19,9 @@ const showcaseItems: ShowcaseItem[] = [
 	{
 		title: "Plan the morning",
 		description:
-			"Keep recurring planning threads in one shared chat view with tool calls and context inline.",
+			"Keep recurring planning threads as chat sessions with tool calls and context inline.",
 		bullets: [
-			"Separate tabs for recurring threads.",
+			"Each recurring thread is its own session in the sidebar.",
 			"Tool calls stay attached to the answer.",
 			"Good for daily briefs and handoffs.",
 		],
@@ -32,15 +32,15 @@ const showcaseItems: ShowcaseItem[] = [
 	{
 		title: "Configure everything",
 		description:
-			"Set up channels, sender rules, permissions, and model overrides from one screen.",
+			"Set up a channel's sender rules, mention routing, and model overrides from its settings page.",
 		bullets: [
 			"Per-channel model overrides.",
 			"Sender allowlists and mention-only routing.",
-			"Agent-level permissions without guesswork.",
+			"Per-channel disabled tools.",
 		],
 		lightSrc: "/screenshots/configure-everything-light.png",
 		darkSrc: "/screenshots/configure-everything-dark.png",
-		alt: "Configure channels and model overrides",
+		alt: "A Slack channel's settings with sender rules and model overrides",
 	},
 	{
 		title: "Usage analytics",
@@ -71,9 +71,9 @@ const showcaseItems: ShowcaseItem[] = [
 	{
 		title: "Jobs and compile attempts",
 		description:
-			"See queue health, scheduled runs, retries, and compile attempts in one place.",
+			"See an agent's scheduled runs, retries, and compile attempts on its Scheduled Tasks page.",
 		bullets: [
-			"Scheduled jobs and retries in one view.",
+			"Run counts, success rate, and upcoming runs at a glance.",
 			"Compile status visible per task.",
 			"Failure details without leaving the browser.",
 		],

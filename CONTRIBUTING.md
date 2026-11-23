@@ -156,7 +156,7 @@ node scripts/generate-doc-screenshots.mjs        # every screenshot, light and d
 node scripts/generate-doc-screenshots.mjs projects  # only screenshots whose name starts with "projects"
 ```
 
-The script mocks every MCP call, so no Go server or credentials are needed and nothing private ends up in an image. Set `DOCS_SCREENSHOT_BASE_URL` when the web dev server isn't at `https://127.0.0.1:5173`. Keep fixture data to public repositories with no tokens or personal details.
+The script mocks every MCP call and answers every other `/api` request itself (the dev server would otherwise proxy them to your local Aviary server), so no Go server or credentials are needed and nothing private ends up in an image. Set `DOCS_SCREENSHOT_BASE_URL` when the web dev server isn't at `https://127.0.0.1:5173`. Keep fixture data to public repositories with no tokens or personal details.
 
 ## MCP Connection
 
