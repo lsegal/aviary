@@ -242,7 +242,7 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 
 	webURL := ""
 	if webUI {
-		webURL = fmt.Sprintf("http://localhost:%d/agents/%s/projects", session.Port, url.PathEscape(session.Agent))
+		webURL = fmt.Sprintf("http://127.0.0.1:%d/agents/%s/projects", session.Port, url.PathEscape(session.Agent))
 	}
 	title := strings.Join(targets, ", ")
 	if !tui {

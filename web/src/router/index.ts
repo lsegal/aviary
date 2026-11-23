@@ -143,16 +143,8 @@ const router = createRouter({
 	],
 });
 
-// The server's health is read on the first navigation, so a session that
-// already holds a token still learns whether it is a minimal watch session.
-let healthRead = false;
-
 router.beforeEach(async (to) => {
 	const auth = useAuthStore();
-	if (!healthRead) {
-		await auth.checkAuthDisabled();
-		healthRead = true;
-	}
 	// A server running without token authentication needs no login.
 	if (
 		(to.meta.requiresAuth || to.path === "/login") &&
@@ -165,7 +157,8 @@ router.beforeEach(async (to) => {
 		return "/login";
 	}
 	// A watch session serves only Code Loop and Scheduled Tasks; anything
-	// else lands on the session agent's Code Loop board.
+	// else lands on the session agent's Code Loop board. Its server needs no
+	// token, so the health check above has always told the store.
 	if (auth.minimal) {
 		if (minimalAllowsPath(to.path)) return;
 		return await minimalHome();

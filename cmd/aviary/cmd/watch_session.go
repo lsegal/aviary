@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/config"
@@ -139,20 +140,39 @@ func newWatchSessionDir(parent string) (string, error) {
 }
 
 // freeWatchPort returns the first port from start up that nothing listens
-// on, on the loopback interface the session's server binds.
+// on. The session binds 127.0.0.1, but a server on the IPv6 loopback or
+// every interface, as your own Aviary may be, holds the port for
+// "localhost" too, so both loopbacks have to be free.
 func freeWatchPort(start int) (int, error) {
 	if start <= 0 {
 		start = defaultWatchPort
 	}
 	for port := start; port < start+100 && port <= 65535; port++ {
-		ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-		if err != nil {
-			continue
+		if watchPortFree(port) {
+			return port, nil
 		}
-		_ = ln.Close()
-		return port, nil
 	}
 	return 0, fmt.Errorf("no free port found in %d-%d", start, start+99)
+}
+
+// watchPortFree reports whether nothing answers on port on either loopback
+// and the session can bind it on 127.0.0.1. Binding alone is not enough:
+// listeners set SO_REUSEADDR, which on BSDs lets a specific address bind
+// beside a server on every interface.
+func watchPortFree(port int) bool {
+	for _, host := range []string{"127.0.0.1", "::1"} {
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 200*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return false
+		}
+	}
+	ln, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		return false
+	}
+	_ = ln.Close()
+	return true
 }
 
 // watchSessionAgent picks the agent of the user's config the targets run

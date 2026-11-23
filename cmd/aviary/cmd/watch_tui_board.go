@@ -307,11 +307,13 @@ func (m watchModel) boardView(height int) []string {
 	width := max(8, (m.width-gap*(len(cols)-1))/len(cols))
 	blocks := make([][]string, len(cols))
 	for c, col := range cols {
-		header := watchStateStyle(col.state).Bold(true).Render(fmt.Sprintf("%s %d", watchStateLabels[col.state], len(col.items)))
+		// One style, so the selected column's underline never wraps
+		// already-styled text that truncation could cut mid-escape.
+		style := watchStateStyle(col.state).Bold(true).MaxWidth(width)
 		if c == m.col {
-			header = lipgloss.NewStyle().Underline(true).Render(header)
+			style = style.Underline(true)
 		}
-		lines := []string{watchTruncate(header, width)}
+		lines := []string{style.Render(fmt.Sprintf("%s %d", watchStateLabels[col.state], len(col.items)))}
 		cursor := -1
 		if c == m.col {
 			cursor = m.cursor

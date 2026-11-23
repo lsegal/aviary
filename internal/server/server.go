@@ -269,7 +269,7 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 func (s *Server) registerRoutes() {
 	mcpSrv := mcp.NewServer()
 	mcp.SetLiveServer(mcpSrv)
-	var mcpHandler http.Handler = mcp.HTTPHandler(mcpSrv)
+	mcpHandler := mcp.HTTPHandler(mcpSrv)
 	minimal := MinimalMode()
 	if minimal {
 		mcpHandler = minimalMCPHandler(mcpHandler)

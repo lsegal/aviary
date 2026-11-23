@@ -73,18 +73,25 @@ func TestSweepStaleWatchDirs(t *testing.T) {
 }
 
 func TestFreeWatchPortSkipsTakenPort(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close() //nolint:errcheck
-	taken := ln.Addr().(*net.TCPAddr).Port
-	port, err := freeWatchPort(taken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if port <= taken {
-		t.Fatalf("freeWatchPort(%d) = %d, want a later free port", taken, port)
+	for _, network := range []string{"tcp4", "tcp6"} {
+		host := "127.0.0.1"
+		if network == "tcp6" {
+			host = "::1"
+		}
+		ln, err := net.Listen(network, net.JoinHostPort(host, "0"))
+		if err != nil {
+			t.Logf("no %s loopback: %v", network, err)
+			continue
+		}
+		taken := ln.Addr().(*net.TCPAddr).Port
+		port, err := freeWatchPort(taken)
+		_ = ln.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if port <= taken {
+			t.Errorf("freeWatchPort(%d) with the port taken on %s = %d, want a later free port", taken, network, port)
+		}
 	}
 }
 
@@ -280,9 +287,11 @@ func startWatchProcess(t *testing.T, args ...string) *watchProcess {
 		}
 	}
 	p := &watchProcess{out: &bytes.Buffer{}, tmp: tmp, globalDir: writeGlobalAviary(t, configHome)}
-	// Keep the default port taken, so the session has to fall back.
-	ln, err := net.Listen("tcp", "127.0.0.1:16677")
-	if err == nil {
+	// Keep the default port taken on the IPv6 loopback only, as a dual-stack
+	// server holds it, so the session has to fall back.
+	if ln, err := net.Listen("tcp6", "[::1]:16677"); err == nil {
+		t.Cleanup(func() { _ = ln.Close() })
+	} else if ln, err := net.Listen("tcp4", "127.0.0.1:16677"); err == nil {
 		t.Cleanup(func() { _ = ln.Close() })
 	}
 	p.before = snapshotDir(t, p.globalDir)
@@ -356,7 +365,7 @@ func TestWatchSessionCleansUpOnSIGINT(t *testing.T) {
 	if p.port == 16677 {
 		t.Errorf("the session took the taken default port")
 	}
-	if !strings.Contains(p.out.String(), fmt.Sprintf("http://localhost:%d/", p.port)) {
+	if !strings.Contains(p.out.String(), fmt.Sprintf("http://127.0.0.1:%d/", p.port)) {
 		t.Errorf("the session did not print its URL; output:\n%s", p.out)
 	}
 	p.stop(t, syscall.SIGINT)

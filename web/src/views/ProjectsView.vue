@@ -68,7 +68,7 @@
 								@click="logsOpen = !logsOpen">
 								<DocumentTextIcon aria-hidden="true" class="h-5 w-5" />
 							</button>
-							<button type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
+							<button v-if="!auth.minimal" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
 								aria-label="Prompt chat" title="Prompt chat"
 								class="rounded-lg border p-1.5"
 								:class="chatOpen ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
@@ -248,7 +248,7 @@
 			</div>
 			<ProjectLogsPanel v-if="(project || aggregate) && logsOpen" :lines="status?.log ?? []" @close="logsOpen = false" />
 			</div>
-			<ProjectChatPanel v-if="(project || aggregate) && chatOpen" ref="chatPanel" :project="project" @close="chatOpen = false" />
+			<ProjectChatPanel v-if="(project || aggregate) && chatOpen && !auth.minimal" ref="chatPanel" :project="project" @close="chatOpen = false" />
 		</div>
 		<AddProjectDialog v-if="adding" :agent="routeAgent" @close="closeAdd" @added="onAdded" />
 	</AppLayout>
@@ -318,6 +318,7 @@ import {
 	targetURL,
 } from "../lib/projects";
 import { shortVersion } from "../lib/version";
+import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
 
 // A selected state chip fills with that state's color; Starting is orange.
@@ -765,6 +766,8 @@ async function onGitHub(fn: () => Promise<void>) {
 	}
 }
 
+// A watch session has no chat, so it offers no prompt chat either.
+const auth = useAuthStore();
 // The prompt chat's open state survives reloads.
 const CHAT_OPEN_KEY = "aviary.projects.chatOpen";
 const chatOpen = ref(localStorage.getItem(CHAT_OPEN_KEY) === "1");
