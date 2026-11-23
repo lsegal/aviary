@@ -341,6 +341,7 @@ test("a scheduled task delivers to a channel picked by name", async ({
 	expect(await optionLabels(sendVia)).toEqual([
 		"silent",
 		"Session",
+		"Code Loop job",
 		"Channel: Team Slack",
 	]);
 	await chooseOption(sendVia, "Channel: Team Slack");
