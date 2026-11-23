@@ -6,8 +6,12 @@ import {
 } from "../lib/projects";
 import { useMCP } from "./useMCP";
 
-// The Code Loop issue jobs a task or workflow can send its output to, shared
-// by the target pickers and target links so they read the list once.
+// The Code Loop jobs a task or workflow can send its output to: issue jobs,
+// Discussion jobs, and schedules, one entry each. Shared by the target pickers
+// and target links so they read the list once.
+
+/** The job kinds that accept task and workflow output. */
+export const CODELOOP_TARGET_KINDS = ["issue", "discussion", "schedule"];
 
 const jobs = ref<ProjectJob[]>([]);
 const loaded = ref(false);
@@ -24,7 +28,7 @@ export function useCodeLoopJobs() {
 		pending = (async () => {
 			try {
 				const text = await callTool("project_job_list", {
-					kinds: ["issue"],
+					kinds: CODELOOP_TARGET_KINDS,
 					limit: 1000,
 				});
 				jobs.value = normalizeJobList(parseToolJSON(text)).jobs;
@@ -39,10 +43,15 @@ export function useCodeLoopJobs() {
 		return pending;
 	}
 
+	// Any run of a schedule names the schedule, so a target saved from an
+	// earlier run still finds its entry.
 	function find(project: string, number: number): ProjectJob | undefined {
 		const p = project.trim().toLowerCase();
 		return jobs.value.find(
-			(j) => j.number === number && j.target.toLowerCase() === p,
+			(j) =>
+				j.target.toLowerCase() === p &&
+				(j.number === number ||
+					!!j.schedule?.recentRuns.some((r) => r.number === number)),
 		);
 	}
 

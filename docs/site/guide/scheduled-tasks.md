@@ -261,19 +261,26 @@ A channel target picks one of the agent's channels by name: `channel:<name>`. Th
 
 ### Sending output to a Code Loop job
 
-A `codeloop:<project>#<number>` target hands the output to a [Code Loop](/guide/code-loop) issue job the way a comment from an allowed commenter reaches it. `<project>` is the project as configured on an agent (`owner/repo`, or a project board URL), and saving a target whose project no agent has is rejected. What happens depends on the job's state:
+A `codeloop:<project>#<number>` target hands the output to a [Code Loop](/guide/code-loop) job the way a comment from an allowed commenter reaches it: an issue job, a Discussion job, or a [scheduled project run](#scheduled-prompts). `<project>` is the project as configured on an agent (`owner/repo`, or a project board URL), and saving a target whose project no agent has is rejected. For issue and Discussion jobs, what happens depends on the job's state:
 
 - **Running or waiting:** the agent is interrupted and resumed in the same session with the output, so it sees it on its next turn.
-- **Paused, queued, or failed:** the output is queued and the job keeps its state. The agent sees it when the job next runs.
-- **Complete:** the delivery fails with an error in the run log.
+- **Paused, queued, or failed:** the output is queued and the job keeps its state. The agent sees it when the job next runs. A failed Discussion job runs again when the next poll finds the thread still unanswered.
+- **Complete:** the delivery fails with an error in the run log. A Discussion job is complete once its agent has answered the thread.
 - **No longer exists:** the delivery fails, and the task's page warns that its job is gone.
 
 Two optional settings change the paused and complete cases. Add them after the job number as `?resume`, `?reopen`, or `?resume,reopen` (for example `codeloop:owner/repo#123?resume,reopen`), or tick **Resume the job if it is paused** and **Reopen the job if it is complete** under the job picker:
 
 - **Resume:** a paused job is resumed when output arrives, as the board's Resume button does, and the agent sees the output on its first turn. If the job cannot be resumed right now, the output stays queued.
-- **Reopen:** a completed job is retried with the output, as the board's Retry button does, instead of failing the delivery.
+- **Reopen:** a completed issue job is retried with the output, as the board's Retry button does, instead of failing the delivery. An answered Discussion job is never retried, so output to it still fails.
 
-The job's transcript labels the output with the task or workflow that sent it, linking to the run. Each run's log records the delivery ("delivered to Code Loop owner/repo#123", linking to the job), and every delivery is written to the usage log. Discussion jobs and scheduled project runs have no live session to relay into, so they reject Code Loop output.
+A scheduled project run's number is its fire time, so any run of a schedule names the whole schedule, and output to it is never rejected for a finished run:
+
+- **A run in flight:** the agent is interrupted and resumed in the same session with the output, as for an issue job. A run still waiting for an agent slot starts with the output instead.
+- **Between runs:** the output is queued for the schedule, and its next run starts with it, added to the end of the task's prompt. That run uses the model even when the task is [precompiled](#precompiled-project-tasks), because a script can't read the output. Output that arrives while a precompiled script runs, or too late for the run to see it, also waits for the next run.
+
+The **Code Loop job** picker lists issue jobs, Discussion jobs, and schedules, one entry per schedule, and stores the schedule's latest run. A target saved from an earlier run still names the schedule, including after a restart, as long as the run is in the task's run history.
+
+The job's transcript labels the output with the task or workflow that sent it, linking to the run. Each run's log records the delivery ("delivered to Code Loop owner/repo#123", linking to the job), and every delivery is written to the usage log.
 
 Any text printed from a script — or returned from a prompt run — is delivered to that route. If the output is `SKIP` or empty, delivery is suppressed. This lets scripts opt out of noisy no-op notifications cheaply.
 

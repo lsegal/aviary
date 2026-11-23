@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/transcript"
 )
@@ -23,7 +24,11 @@ func inboxTestManager(t *testing.T) (*Manager, *Engine) {
 		{Number: 2, Target: "o/r", Kind: core.JobKindIssue, Status: "waiting"},
 		{Number: 3, Target: "o/r", Kind: core.JobKindIssue, Status: "paused"},
 		{Number: 4, Target: "o/r", Kind: core.JobKindIssue, Status: "complete"},
-		{Number: 5, Target: "o/r", Kind: core.JobKindSchedule, Status: "active"},
+		{Number: 5, Target: "o/r", Kind: core.JobKindSchedule, ScheduleID: "bot/digest", Status: "complete"},
+		{Number: 6, Target: "o/r", Kind: core.JobKindSchedule, ScheduleID: "bot/digest", Status: "active"},
+		{Number: 7, Target: "o/r", Kind: core.JobKindSchedule, ScheduleID: "bot/sweep", Status: "failed"},
+		{Number: 8, Target: "o/r/discussions", Kind: core.JobKindDiscussion, Status: "active"},
+		{Number: 9, Target: "o/r/discussions", Kind: core.JobKindDiscussion, Status: "complete"},
 	}})
 	return m, engine
 }
@@ -72,10 +77,76 @@ func TestSendJobMessageByJobState(t *testing.T) {
 	if _, _, err := m.SendJobMessage(context.Background(), "o/r", 99, msg, JobDeliveryOptions{}); !errors.Is(err, ErrJobGone) {
 		t.Fatalf("missing job err = %v, want ErrJobGone", err)
 	}
+}
 
-	// Scheduled runs have no session to relay into.
-	if _, _, err := m.SendJobMessage(context.Background(), "o/r", 5, msg, JobDeliveryOptions{}); err == nil || !strings.Contains(err.Error(), "only issue jobs") {
-		t.Fatalf("schedule job err = %v, want it rejected", err)
+func TestSendJobMessageToDiscussionJobs(t *testing.T) {
+	m, engine := inboxTestManager(t)
+	msg := InboxMessage{Source: "task bot/digest", Text: "new release notes"}
+	nudge := make(chan struct{}, 1)
+	engine.liveNudges.Store("o/r/discussions#8", nudge)
+	outcome, job, err := m.SendJobMessage(context.Background(), "o/r/discussions", 8, msg, JobDeliveryOptions{})
+	if err != nil || outcome != InboxDelivered || job.Kind != core.JobKindDiscussion {
+		t.Fatalf("active discussion = %q, %+v, %v; want delivered", outcome, job, err)
+	}
+	select {
+	case <-nudge:
+	default:
+		t.Fatal("the active discussion was not woken")
+	}
+	if got := engine.jobInbox().pending("o/r/discussions#8"); got != 1 {
+		t.Fatalf("active discussion has %d pending messages, want 1", got)
+	}
+	if _, _, err := m.SendJobMessage(context.Background(), "o/r/discussions", 9, msg, JobDeliveryOptions{}); err == nil || !strings.Contains(err.Error(), "is complete") {
+		t.Fatalf("answered discussion err = %v, want it rejected", err)
+	}
+	if _, _, err := m.SendJobMessage(context.Background(), "o/r/discussions", 9, msg, JobDeliveryOptions{Reopen: true}); err == nil || !strings.Contains(err.Error(), "is complete") {
+		t.Fatalf("answered discussion with reopen err = %v, want it rejected", err)
+	}
+}
+
+func TestSendJobMessageToScheduledRuns(t *testing.T) {
+	m, engine := inboxTestManager(t)
+	msg := InboxMessage{Source: "workflow bot/triage", Text: "three new issues"}
+
+	// Any run of a schedule names it: an earlier, finished run reaches the
+	// schedule's run in flight, which is woken.
+	nudge := make(chan struct{}, 1)
+	engine.liveNudges.Store("o/r#6", nudge)
+	outcome, job, err := m.SendJobMessage(context.Background(), "o/r", 5, msg, JobDeliveryOptions{})
+	if err != nil || outcome != InboxDelivered || job.Number != 6 {
+		t.Fatalf("schedule with a run in flight = %q, run %d, %v; want delivered to run 6", outcome, job.Number, err)
+	}
+	select {
+	case <-nudge:
+	default:
+		t.Fatal("the schedule's run in flight was not woken")
+	}
+	if got := engine.jobInbox().pending("o/r#6"); got != 1 {
+		t.Fatalf("run in flight has %d pending messages, want 1", got)
+	}
+
+	// Between runs, output waits for the schedule's next run, even when the
+	// last run failed.
+	outcome, job, err = m.SendJobMessage(context.Background(), "o/r", 7, msg, JobDeliveryOptions{})
+	if err != nil || outcome != InboxQueued || job.Number != 7 {
+		t.Fatalf("schedule between runs = %q, run %d, %v; want queued", outcome, job.Number, err)
+	}
+	if got := engine.jobInbox().pending(scheduleInboxKey("o/r", "bot/sweep")); got != 1 {
+		t.Fatalf("schedule queue has %d pending messages, want 1", got)
+	}
+
+	// A run from before a restart is no longer on the board, but core's run
+	// history still names its schedule.
+	fire := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	m.SetScheduleSource(func() []domain.ScheduledTask {
+		return []domain.ScheduledTask{{ID: "bot/nightly", Name: "nightly", Project: "o/r", History: []domain.TaskRun{{FireTime: fire}}}}
+	})
+	outcome, job, err = m.SendJobMessage(context.Background(), "o/r", int(fire.Unix()), msg, JobDeliveryOptions{})
+	if err != nil || outcome != InboxQueued || job.ScheduleID != "bot/nightly" {
+		t.Fatalf("schedule run from history = %q, %+v, %v; want queued for bot/nightly", outcome, job, err)
+	}
+	if got := engine.jobInbox().pending(scheduleInboxKey("o/r", "bot/nightly")); got != 1 {
+		t.Fatalf("schedule queue has %d pending messages, want 1", got)
 	}
 }
 

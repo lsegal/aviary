@@ -14,7 +14,7 @@ A project is a watched target that belongs to one Aviary agent: a repository (`o
 
 - **Configure:** the agent's tab in **Code Loop Settings** (`/projects/settings?agent=<agent>`), `aviary project add owner/repo --agent coder`, or the agent's `projects:` section in `aviary.yaml` ([`agents[].projects`](/reference/config#agents-projects)). `aviary watch owner/repo` watches a target for the life of the command in an isolated session that never touches your config ([Watch sessions](./projects#watch-sessions)).
 - **Delivery:** `poll` (the default) reads GitHub through `gh` every `interval`; `webhook` adds repository webhooks through an ngrok tunnel and still polls as a fallback.
-- **Observe:** the agent's **Code Loop** page is one board of all its projects' jobs, and each project's own board opens beneath it; `aviary project status` reports every project.
+- **Observe:** the agent's **Code Loop** page is one board of all its projects' jobs, and each project's own board opens beneath it; `aviary project status` reports every project. A Discussions board's threads show as Discussion jobs while their `gh-discuss` run is in flight and after it ends. A Discussion job can be stopped but not paused or retried, because the next poll answers a thread that still has no reply.
 
 ## 2. An issue matches and is picked up
 
@@ -96,6 +96,8 @@ When every required check passes on the head that was tested, `gh-fix` merges wi
 ### Steering a running job
 
 Comments by allowed commenters (`allowed_commenters`, the signed-in `gh` user by default) on the issue or its pull request are instructions. New comments, edits to the issue description, and closures are relayed into the running session, so you steer a job by commenting on GitHub. Comments by anyone else are treated as information, not instructions.
+
+A scheduled task or workflow can steer a job too: its `codeloop:<project>#<number>` output target relays its output into an issue job, a Discussion job, or a scheduled project run the same way. See [Sending output to a Code Loop job](./scheduled-tasks#sending-output-to-a-code-loop-job).
 
 A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass on that instance. On a finished or paused job, the mention goes to the Code Loop agent, which decides whether to retry or resume it. See [Steering jobs](./projects#steering-jobs).
 

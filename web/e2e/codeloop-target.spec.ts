@@ -47,10 +47,41 @@ const JOBS = [
 	},
 ];
 
+// A Discussion job and a schedule's one entry, whose latest run is numbered by
+// its fire time and whose recent runs include an earlier one (#1007).
+const SCHEDULE_RUN = 1763888400;
+const EARLIER_RUN = 1763802000;
+const OTHER_KINDS = [
+	{
+		key: "o/r#8",
+		target: "o/r",
+		number: 8,
+		title: "How do I deploy?",
+		status: "active",
+		state: "running",
+		kind: "discussion",
+	},
+	{
+		key: `o/r#${SCHEDULE_RUN}`,
+		target: "o/r",
+		number: SCHEDULE_RUN,
+		title: "Nightly digest",
+		status: "complete",
+		state: "scheduled",
+		kind: "schedule",
+		schedule_id: "assistant/nightly",
+		recent_runs: [
+			{ number: SCHEDULE_RUN, status: "complete" },
+			{ number: EARLIER_RUN, status: "complete" },
+		],
+	},
+];
+
 async function mockCodeLoop(
 	page: Page,
 	tasks: Task[],
 	jobs: Record<string, unknown>[] = [],
+	codeLoopJobs: Record<string, unknown>[] = JOBS,
 	jobsDelayMs = 0,
 ) {
 	const config = {
@@ -99,7 +130,7 @@ async function mockCodeLoop(
 		project_job_list: async (args?: Record<string, unknown>) => {
 			record("project_job_list", args);
 			await new Promise((r) => setTimeout(r, jobsDelayMs));
-			return { jobs: JOBS, total: JOBS.length };
+			return { jobs: codeLoopJobs, total: codeLoopJobs.length };
 		},
 		job_query: jobs,
 		job_list: (args?: Record<string, unknown>) =>
@@ -207,6 +238,7 @@ test("the workflow form shows its Code Loop job's label once the jobs load", asy
 			},
 		],
 		[],
+		JOBS,
 		500,
 	);
 	await page.goto(
@@ -308,6 +340,83 @@ test("the task view warns when its Code Loop job no longer exists", async ({
 	await expect(page.getByTestId("codeloop-target-warning")).toContainText(
 		"job no longer exists",
 	);
+});
+
+test("the job picker lists Discussion jobs and schedules alongside issue jobs", async ({
+	page,
+}) => {
+	const { calls } = await mockCodeLoop(
+		page,
+		[{ name: "digest", schedule: "0 9 * * *", prompt: "report" }],
+		[],
+		[...JOBS, ...OTHER_KINDS],
+	);
+	await page.goto("/agents/assistant/tasks?task=digest");
+
+	await chooseOption(page.getByTestId("task-send-via"), "Code Loop job");
+	const picker = page.getByTestId("codeloop-job-select");
+	await picker.click();
+	const list = listbox(picker);
+	await expect(list.getByRole("option")).toHaveCount(5);
+	await expect(
+		list.getByRole("option", { name: /^#8 How do I deploy\?/ }),
+	).toContainText("discussion · active");
+	// A schedule is named by its title; its number is a fire time.
+	await expect(
+		list.getByRole("option", { name: /^Nightly digest/ }),
+	).toContainText("schedule · complete");
+	await page.keyboard.press("Escape");
+	expect(calls.project_job_list.at(-1)?.kinds).toEqual([
+		"issue",
+		"discussion",
+		"schedule",
+	]);
+
+	await searchOption(
+		page.getByRole("combobox", { name: "Code Loop job" }),
+		"nightly",
+		/^Nightly digest/,
+	);
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect.poll(() => calls.config_save?.length ?? 0).toBe(1);
+	const saved = JSON.parse(String(calls.config_save[0].config));
+	expect(saved.agents[0].tasks[0].target).toBe(`codeloop:o/r#${SCHEDULE_RUN}`);
+});
+
+test("a target saved from an earlier run of a schedule still names the schedule", async ({
+	page,
+}) => {
+	await mockCodeLoop(
+		page,
+		[
+			{
+				name: "digest",
+				schedule: "0 9 * * *",
+				prompt: "report",
+				target: `codeloop:o/r#${EARLIER_RUN}`,
+			},
+		],
+		[],
+		[...JOBS, ...OTHER_KINDS],
+	);
+	await page.goto("/agents/assistant/tasks/digest");
+	await expect(page.getByTestId("codeloop-target-link")).toBeVisible();
+	await expect(page.getByTestId("codeloop-target-warning")).toHaveCount(0);
+
+	await page.goto("/agents/assistant/tasks?task=digest");
+	const picker = page.getByTestId("codeloop-job-select");
+	await picker.click();
+	// The earlier run is offered as the schedule, not as a missing job.
+	const list = listbox(picker);
+	await expect(
+		list.getByRole("option", { name: /^Nightly digest/ }),
+	).toHaveCount(2);
+	await expect(
+		list.getByRole("option", { name: /no longer exists/ }),
+	).toHaveCount(0);
+	await expect(page.getByTestId("codeloop-job-warning")).toHaveCount(0);
+	// Resume and reopen only apply to issue jobs.
+	await expect(page.getByTestId("codeloop-resume")).toHaveCount(0);
 });
 
 // The resume and reopen delivery options (#1008) are checkboxes beside the
