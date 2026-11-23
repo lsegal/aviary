@@ -1,6 +1,5 @@
 import { chromium } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
-import https from "node:https";
 import path from "node:path";
 import process from "node:process";
 
@@ -931,34 +930,26 @@ const projectsFixtures = {
 	},
 };
 
-// serverReady reports whether url answers 2xx. The dev server's cert is
-// self-signed, so it is not verified.
-function serverReady(url) {
-	if (!url.startsWith("https:")) {
-		return fetch(url).then((response) => response.ok);
-	}
-	return new Promise((resolve, reject) => {
-		https
-			.get(url, { rejectUnauthorized: false }, (response) => {
-				response.resume();
-				resolve(response.statusCode >= 200 && response.statusCode < 300);
-			})
-			.on("error", reject);
-	});
-}
-
-async function waitForServer(url, timeoutMs = 30_000) {
+// waitForServer loads url in the browser until it answers 2xx. The browser
+// accepts the dev server's self-signed cert.
+async function waitForServer(browser, url, timeoutMs = 30_000) {
 	const started = Date.now();
-	for (;;) {
-		try {
-			if (await serverReady(url)) return;
-		} catch {
-			// Keep waiting.
+	const page = await browser.newPage();
+	try {
+		for (;;) {
+			try {
+				const response = await page.goto(url);
+				if (response?.ok()) return;
+			} catch {
+				// Keep waiting.
+			}
+			if (Date.now() - started > timeoutMs) {
+				throw new Error(`Timed out waiting for ${url}`);
+			}
+			await new Promise((resolve) => setTimeout(resolve, 500));
 		}
-		if (Date.now() - started > timeoutMs) {
-			throw new Error(`Timed out waiting for ${url}`);
-		}
-		await new Promise((resolve) => setTimeout(resolve, 500));
+	} finally {
+		await page.close();
 	}
 }
 
@@ -1187,12 +1178,11 @@ async function captureSettingsPage({
 
 async function main() {
 	await mkdir(outputDir, { recursive: true });
-	await waitForServer(baseURL);
-
 	const browser = await chromium.launch({
 		args: ["--ignore-certificate-errors"],
 	});
 	try {
+		await waitForServer(browser, baseURL);
 		for (const theme of themes) {
 			await captureSimple({
 				browser,
