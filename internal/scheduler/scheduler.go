@@ -300,6 +300,11 @@ func (s *Scheduler) fireLocked(key string, spec schedule.Spec, reason string, du
 		} else {
 			run.Status = domain.TaskRunQueued
 			run.JobID = job.ID
+			if err := s.queue.SetTrigger(job.ID, reason); err != nil {
+				slog.Warn("scheduler: recording trigger failed", "task", key, "err", err)
+			} else {
+				job.Trigger = reason
+			}
 		}
 	}
 	s.state.update(key, func(t *taskState) {
@@ -517,6 +522,11 @@ func (s *Scheduler) Trigger(name string) (*domain.Job, error) {
 	job, err := s.queue.StartImmediateWithType(key, taskType(tc), agentID, tc.Prompt, tc.Prompt, tc.Target, "", "")
 	if err != nil {
 		return nil, err
+	}
+	if err := s.queue.SetTrigger(job.ID, "manual"); err != nil {
+		slog.Warn("scheduler: recording trigger failed", "task", key, "err", err)
+	} else {
+		job.Trigger = "manual"
 	}
 	s.state.update(key, func(t *taskState) {
 		t.addRun(domain.TaskRun{FireTime: s.now(), Reason: "manual", Status: domain.TaskRunRunning, JobID: job.ID})
