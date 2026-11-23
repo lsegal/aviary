@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -259,10 +260,28 @@ func TestWatchHelperProcess(t *testing.T) {
 	os.Exit(0)
 }
 
+// lockedBuffer is a bytes.Buffer a process writes while the test reads it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // watchProcess is a running `aviary watch` helper process.
 type watchProcess struct {
 	cmd        *exec.Cmd
-	out        *bytes.Buffer
+	out        *lockedBuffer
 	tmp        string
 	globalDir  string
 	before     map[string]string
@@ -286,7 +305,7 @@ func startWatchProcess(t *testing.T, args ...string) *watchProcess {
 			t.Fatal(err)
 		}
 	}
-	p := &watchProcess{out: &bytes.Buffer{}, tmp: tmp, globalDir: writeGlobalAviary(t, configHome)}
+	p := &watchProcess{out: &lockedBuffer{}, tmp: tmp, globalDir: writeGlobalAviary(t, configHome)}
 	// Keep the default port taken on the IPv6 loopback only, as a dual-stack
 	// server holds it, so the session has to fall back.
 	if ln, err := net.Listen("tcp6", "[::1]:16677"); err == nil {
