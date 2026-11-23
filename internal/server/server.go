@@ -114,6 +114,7 @@ func New(cfg *config.Config, token string) *Server {
 	s.channels = channels.NewManager()
 	if s.sched != nil {
 		s.sched.SetTaskOutputDelivery(s.deliverTaskOutput)
+		s.sched.SetWorkflowHooks(s.replyToWorkflowTrigger, workflowMessagesAfter)
 	}
 	s.sampler = NewProcSampler()
 	cdpPort := cfg.Browser.CDPPort
@@ -495,7 +496,9 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 	agentID := agentName
 	channelCfg, _ := s.findChannelConfig(agentName, channelType, configuredID)
 	sessionName := channelSessionNameForIncoming(agentID, channelCfg, msg)
+	sessionID := ""
 	if sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, sessionName); err == nil && sess != nil {
+		sessionID = sess.ID
 		msgCtx = agent.WithSessionID(msgCtx, sess.ID)
 		target := store.SessionChannel{
 			Type:         msg.Type,
@@ -507,6 +510,12 @@ func (s *Server) handleIncomingChannelMessage(ctx context.Context, agentName, ch
 		if err := store.EnsureSessionChannelTarget(agentID, sess.ID, target); err != nil {
 			slog.Warn("server: failed to update session channels config", "session", sess.ID, "err", err)
 		}
+	}
+
+	// A message an active workflow matches is the workflow's to handle: it
+	// replaces the agent's chat reply.
+	if s.handleWorkflowMessage(agentName, channelCfg, sessionID, msg) {
+		return
 	}
 
 	// Let the platform stop this run (e.g. Slack's native Stop control).

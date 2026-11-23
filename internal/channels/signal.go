@@ -278,6 +278,25 @@ type SignalChannel struct {
 
 	logSinkMu sync.RWMutex
 	logSink   *LogSink
+
+	// names holds the profile name signal-cli last reported for each sender,
+	// so messages carry a display name rather than only a phone number.
+	names sync.Map
+}
+
+// rememberName records name as source's display name.
+func (c *SignalChannel) rememberName(source, name string) {
+	if name = strings.TrimSpace(name); source != "" && name != "" {
+		c.names.Store(source, name)
+	}
+}
+
+// senderName returns source's display name, or source when none is known.
+func (c *SignalChannel) senderName(source string) string {
+	if v, ok := c.names.Load(source); ok {
+		return v.(string)
+	}
+	return source
 }
 
 // reconnectDelay is the wait between reconnect attempts after a connection error.
@@ -935,6 +954,7 @@ type signalEditMessage struct {
 type receiveParams struct {
 	Envelope struct {
 		Source          string                 `json:"source"`
+		SourceName      string                 `json:"sourceName"`
 		Timestamp       int64                  `json:"timestamp"`
 		DataMessage     *signalDataMessage     `json:"dataMessage"`
 		EditMessage     *signalEditMessage     `json:"editMessage"`
@@ -959,6 +979,7 @@ func (c *SignalChannel) dispatch(line []byte) {
 	}
 
 	env := p.Envelope
+	c.rememberName(env.Source, env.SourceName)
 
 	// Treat emoji reactions on the agent's own messages as direct prompts.
 	if r := env.ReactionMessage; r != nil && !r.IsRemove &&
@@ -1078,7 +1099,7 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 			logFn(IncomingMessage{
 				Type:       "signal",
 				From:       source,
-				SenderName: source,
+				SenderName: c.senderName(source),
 				Channel:    channelID,
 				Text:       msgText,
 				ReceivedAt: receivedAt,
@@ -1105,7 +1126,7 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 		im := IncomingMessage{
 			Type:          "signal",
 			From:          source,
-			SenderName:    source,
+			SenderName:    c.senderName(source),
 			Channel:       channelID,
 			Text:          msgText,
 			Attachments:   c.signalAttachments(dataMessage.Attachments, source, channelID, isGroup),
@@ -1341,7 +1362,7 @@ func (c *SignalChannel) dispatchReactionEnvelope(source string, msgTimestamp int
 		im := IncomingMessage{
 			Type:          "signal",
 			From:          source,
-			SenderName:    source,
+			SenderName:    c.senderName(source),
 			Channel:       channelID,
 			Text:          reactionMessage.Emoji,
 			ReceivedAt:    receivedAt,

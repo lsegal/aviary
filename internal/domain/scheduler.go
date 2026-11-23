@@ -156,8 +156,11 @@ type TriggerContext struct {
 	Channel      string `json:"channel"`
 	Entry        string `json:"entry"`
 	ThreadTS     string `json:"thread_ts,omitempty"`
-	// SessionID is the channel session the message was recorded in.
-	SessionID string `json:"session_id,omitempty"`
+	// SessionID is the channel session the message was recorded in, and
+	// RecordedAt when; messages before and after that time are Before and
+	// After.
+	SessionID  string    `json:"session_id,omitempty"`
+	RecordedAt time.Time `json:"recorded_at"`
 	// Message is the triggering message; Before and After are the messages
 	// just before and just after it in the conversation.
 	Message TriggerMessage   `json:"message"`

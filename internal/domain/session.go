@@ -84,5 +84,15 @@ type Message struct {
 	MediaURLs  []string       `json:"media_urls,omitempty"`
 	Model      string         `json:"model,omitempty"`       // LLM model used; only set on assistant messages
 	ResponseID string         `json:"response_id,omitempty"` // ID of the assistant message that responded to this prompt
-	Timestamp  time.Time      `json:"timestamp"`
+	// Workflows lists the workflows that handled this channel message in
+	// place of the agent's chat reply.
+	Workflows []MessageWorkflow `json:"workflows,omitempty"`
+	Timestamp time.Time         `json:"timestamp"`
+}
+
+// MessageWorkflow is a workflow that handled a channel message, and its run.
+type MessageWorkflow struct {
+	TaskID string `json:"task_id"`
+	Name   string `json:"name"`
+	JobID  string `json:"job_id,omitempty"`
 }
