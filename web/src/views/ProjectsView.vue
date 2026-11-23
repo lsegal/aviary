@@ -225,7 +225,9 @@
 						<div v-else-if="!boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
 						<section v-else class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Jobs">
 							<ScheduledCard v-for="s in boardSchedules" :key="s.id" :schedule="s" :now="now" :to="scheduleTo(s)"
-								:job="scheduleJob(jobs, s.id)" />
+								:job="scheduleJob(jobs, s.id)" :busy="busySchedule === s.id"
+								@run="onScheduleAction(runScheduleNow, $event)"
+								@toggle="onScheduleAction(toggleSchedule, $event)" @settings="openScheduleSettings" />
 							<JobCard v-for="job in boardJobs" :key="job.id" :job="job" :now="now" :show-project="aggregate"
 								:busy="busyJob === job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
 								@summarize="onSummarize" />
@@ -518,6 +520,28 @@ const detailSchedule = computed(() => {
 		? (schedules.value.find((s) => s.id === id) ?? null)
 		: null;
 });
+// A scheduled box's footer runs, pauses and resumes its task in place, and
+// opens its settings in the shared task dialog, as the sidebar's gear does.
+const busySchedule = ref("");
+async function onScheduleAction(
+	fn: (s: ProjectSchedule) => Promise<void>,
+	s: ProjectSchedule,
+) {
+	busySchedule.value = s.id;
+	try {
+		await fn(s);
+	} catch (e) {
+		error.value = e instanceof Error ? e.message : String(e);
+	} finally {
+		busySchedule.value = "";
+	}
+}
+function toggleSchedule(s: ProjectSchedule) {
+	return saveSchedule({ ...s, enabled: !s.enabled });
+}
+function openScheduleSettings(s: ProjectSchedule) {
+	openItemDialog({ kind: "task", mode: "edit", agent: s.agent, name: s.name });
+}
 function openSchedule(id: string) {
 	void router.push({ query: { ...route.query, scheduled: id } });
 }

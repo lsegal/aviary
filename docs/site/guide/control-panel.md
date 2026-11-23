@@ -46,7 +46,7 @@ Opened from the **Settings** gear on any Code Loop board. Every agent's projects
 The one place for the agent's scheduled and file-watch tasks and their runs. **+ New task** adds one.
 
 - **Summary** — stat cards for the chosen range (Today, 7d, 30d or custom dates): runs over time (succeeded and failed), success rate, average and median duration, runs coming up in the next 24 hours, running and pending runs, and recent failures.
-- **More analytics** — expands to the runs by day, the latest compile attempts of precomputed prompt tasks (with their LLM stages and resulting Lua script), and the job queue with a status filter, paging, Run Now and Stop. Clicking a run opens its details: timing, attempts, and its live or saved output.
+- **More analytics** — expands to the runs by day, the job queue with a status filter, paging, Run Now and Stop, and below it the latest compile attempts of precomputed prompt tasks (with their LLM stages and resulting Lua script). Clicking a run opens its details: timing, attempts, and its live or saved output.
 - **Tasks** — each task as a compact card with its enabled switch, its agent or target project, its schedule in words with its next run (or "paused"), its last run, a running-now dot, and quick actions: run now, pause or resume, edit, and view runs. Search and the Enabled, Paused, Running and Failed chips filter them. The Cards / List toggle switches to a dense list with the same fields, and the choice is remembered.
 
 Clicking a task opens its editor (`/agents/<agent>/tasks?task=<name>`), which has its own **Save Changes** and asks before leaving unsaved edits. The page refreshes itself, so it has no Reload or Save.
