@@ -3,7 +3,7 @@
 		:data-activity="status.activity" :data-paused="paused" :title="cardTitle" :aria-label="cardTitle"
 		class="workflow-card group relative block shrink-0 rounded-xl p-[2px]" :class="[
 			status.activity === 'idle' ? '' : 'workflow-card--active',
-			compact ? 'h-10 w-10' : 'w-56',
+			compact ? 'h-10 w-10' : wide ? 'w-full' : 'w-56',
 		]" :style="{ '--snake': status.activity === 'running' ? RUNNING : TRIGGERING }">
 		<div class="relative flex h-full items-center gap-2 rounded-[10px] border bg-white dark:bg-gray-900"
 			:class="[paused ? 'border-dashed border-gray-300 opacity-70 dark:border-gray-700' : 'border-gray-200 dark:border-gray-800', compact ? 'justify-center' : 'px-3 py-2']">
@@ -47,6 +47,8 @@ const props = defineProps<{
 	workflow: AgentTask;
 	status: WorkflowStatus;
 	compact?: boolean;
+	/** Fills its grid cell instead of the strip's fixed width. */
+	wide?: boolean;
 }>();
 
 const TRIGGERING = "#f59e0b";
