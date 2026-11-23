@@ -49,6 +49,8 @@ Environment variables override the config file. TLS changes take effect after a 
 
 Browsers warn about a self-signed certificate. You can accept the warning, or trust the certificate so the warning goes away.
 
+Accepting the warning is enough to use the control panel, but [installing it as an app](/guide/control-panel#installing-as-an-app) needs a certificate the device trusts.
+
 - **Desktop browsers:** choose **Advanced** and continue to the site. To trust it instead, import `cert.pem` into the system store: on macOS, open it in Keychain Access and set **Always Trust**; on Windows, import it into **Trusted Root Certification Authorities**; on Linux, add it to your browser's certificate settings.
 - **iOS:** open the address in Safari, tap **Show Details**, and then **visit this website**. iOS only offers full trust for CA certificates, so to remove the warning, use [mkcert](#trusted-certificates-with-mkcert) and install its root CA.
 - **Android:** in Chrome, tap **Advanced** and **Proceed**. To trust a certificate instead, install the mkcert root CA under **Settings > Security > Encryption & credentials > Install a certificate > CA certificate**.
