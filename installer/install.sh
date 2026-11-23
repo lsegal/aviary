@@ -3,16 +3,24 @@ set -eu
 
 REPO="${AVIARY_REPO:-lsegal/aviary}"
 VERSION="${AVIARY_VERSION:-}"
-API_BASE="${AVIARY_API_BASE:-https://api.github.com}"
+DOWNLOAD_BASE="${AVIARY_DOWNLOAD_BASE:-https://github.com}"
+SKIP_SKILLS="${AVIARY_SKIP_SKILLS:-}"
 
 usage() {
 	cat <<'EOF'
-Usage: . ./installer/install.sh [--version <tag>] [--repo <owner/name>]
+Usage: curl -fsSL https://github.com/lsegal/aviary/releases/latest/download/install.sh | sh
+       sh install.sh [--version <tag>] [--repo <owner/name>] [--skip-skills]
+
+Options:
+  --version <tag>  Install a specific tag instead of the latest release
+  --repo <name>    Override the GitHub repository (default: lsegal/aviary)
+  --skip-skills    Do not run `aviary install-skills` after installing
 
 Environment:
-  AVIARY_VERSION   Install a specific tag instead of the latest release
-  AVIARY_REPO      Override the GitHub repository (default: lsegal/aviary)
-  AVIARY_API_BASE  Override the GitHub API base URL
+  AVIARY_VERSION        Same as --version
+  AVIARY_REPO           Same as --repo
+  AVIARY_SKIP_SKILLS=1  Same as --skip-skills
+  AVIARY_DOWNLOAD_BASE  Override the release download host (default: https://github.com)
 EOF
 }
 
@@ -25,6 +33,10 @@ while [ "$#" -gt 0 ]; do
 	--repo)
 		REPO="$2"
 		shift 2
+		;;
+	--skip-skills)
+		SKIP_SKILLS=1
+		shift
 		;;
 	-h|--help)
 		usage
@@ -69,23 +81,33 @@ aarch64|arm64) GOARCH="arm64" ;;
 esac
 
 if [ -z "$VERSION" ]; then
-	RELEASE_JSON="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$API_BASE/repos/$REPO/releases/latest")"
-	VERSION="$(printf '%s' "$RELEASE_JSON" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
-else
-	RELEASE_JSON="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$API_BASE/repos/$REPO/releases/tags/$VERSION")"
+	# <host>/<repo>/releases/latest redirects to the latest release's tag page,
+	# so the tag is read from that redirect. It is an ordinary web request, not
+	# a GitHub API call, so the unauthenticated API rate limit (which answers
+	# with HTTP 403) never applies.
+	LOCATION="$(curl -fsS -o /dev/null -w '%{redirect_url}' "$DOWNLOAD_BASE/$REPO/releases/latest")" || LOCATION=""
+	case "$LOCATION" in
+	*/releases/tag/*) VERSION="${LOCATION##*/releases/tag/}" ;;
+	esac
 fi
 
 if [ -z "$VERSION" ]; then
-	echo "Failed to resolve release version from GitHub API" >&2
+	echo "Failed to resolve the latest release of $REPO" >&2
 	return 1 2>/dev/null || exit 1
 fi
 
 ASSET="aviary_${VERSION}_${GOOS}_${GOARCH}.tar.gz"
-ASSET_URL="$(printf '%s' "$RELEASE_JSON" | sed -n "s|.*\\\"browser_download_url\\\"[[:space:]]*:[[:space:]]*\\\"\\([^\\\"]*${ASSET}\\)\\\".*|\\1|p" | head -n1)"
+DOWNLOAD_URL="$DOWNLOAD_BASE/$REPO/releases/download/$VERSION"
 
-if [ -z "$ASSET_URL" ]; then
-	ASSET_URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
-fi
+sha256_of() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1" | awk '{print $1}'
+	elif command -v shasum >/dev/null 2>&1; then
+		shasum -a 256 "$1" | awk '{print $1}'
+	else
+		openssl dgst -sha256 "$1" | awk '{print $NF}'
+	fi
+}
 
 BIN_DIR="${HOME}/.local/bin"
 TMP_DIR="$(mktemp -d)"
@@ -102,7 +124,18 @@ if [ -t 1 ]; then
 else
 	CURL_PROGRESS_ARG="--silent --show-error"
 fi
-curl --fail --location $CURL_PROGRESS_ARG "$ASSET_URL" -o "$ARCHIVE_PATH"
+curl --fail --location $CURL_PROGRESS_ARG "$DOWNLOAD_URL/$ASSET" -o "$ARCHIVE_PATH"
+curl -fsSL "$DOWNLOAD_URL/checksums.txt" -o "$TMP_DIR/checksums.txt"
+EXPECTED_SHA="$(awk -v asset="$ASSET" '$2 == asset {print $1}' "$TMP_DIR/checksums.txt")"
+if [ -z "$EXPECTED_SHA" ]; then
+	echo "checksums.txt for $VERSION has no entry for $ASSET" >&2
+	return 1 2>/dev/null || exit 1
+fi
+ACTUAL_SHA="$(sha256_of "$ARCHIVE_PATH")"
+if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+	echo "Checksum mismatch for $ASSET: expected $EXPECTED_SHA, got $ACTUAL_SHA" >&2
+	return 1 2>/dev/null || exit 1
+fi
 tar -xzf "$ARCHIVE_PATH" -C "$TMP_DIR"
 install -m 0755 "$TMP_DIR/aviary" "$BIN_DIR/aviary"
 
@@ -178,8 +211,29 @@ else
 	RESET=""
 fi
 
+# Install the gh-* skills the same way the app does. install-skills refreshes
+# skills already installed, so re-running the installer or upgrading is safe.
+# This script is normally piped into sh, so stdin is the rest of the script;
+# keep the binary (and the npx it runs) off it.
+if [ -n "$SKIP_SKILLS" ] && [ "$SKIP_SKILLS" != "0" ]; then
+	SKILLS_STATUS="skipped"
+elif ! command -v npx >/dev/null 2>&1; then
+	SKILLS_STATUS="no-npx"
+elif "$BIN_DIR/aviary" install-skills </dev/null; then
+	SKILLS_STATUS="installed"
+else
+	SKILLS_STATUS="failed"
+fi
+
 printf "Installed %s%saviary %s%s to %s%s%s\n" "$BOLD" "$BRIGHT_WHITE" "$VERSION" "$RESET" "$BOLD" "$BIN_DISPLAY" "$RESET"
 printf "Restart your terminal or run %s%ssource %s%s to update your PATH.\n" "$BOLD" "$BRIGHT_WHITE" "$PROFILE_DISPLAY" "$RESET"
+echo ""
+case "$SKILLS_STATUS" in
+installed) echo "Installed Aviary's gh-* skills globally." ;;
+skipped) printf "Skipped skill installation; run %s%saviary install-skills%s to install them later.\n" "$BOLD" "$BRIGHT_WHITE" "$RESET" ;;
+no-npx) printf "Skills were not installed because npx was not found; install Node.js and run %s%saviary install-skills%s.\n" "$BOLD" "$BRIGHT_WHITE" "$RESET" >&2 ;;
+*) printf "Skill installation failed; run %s%saviary install-skills%s to retry.\n" "$BOLD" "$BRIGHT_WHITE" "$RESET" >&2 ;;
+esac
 echo ""
 printf "Run %s%saviary configure%s to set up your Aviary configuration.\n" "$BOLD" "$BRIGHT_WHITE" "$RESET"
 printf "Run %s%saviary service install%s to set up and start the system service (optional).\n" "$BOLD" "$BRIGHT_WHITE" "$RESET"

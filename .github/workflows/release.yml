@@ -53,6 +53,13 @@ jobs:
       - id: version
         run: echo "tag=v$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
 
+  installer-smoke:
+    name: Smoke test the public installer
+    needs: release
+    uses: ./.github/workflows/installer-smoke.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+
   docker:
     name: Publish Docker image
     needs: release

@@ -35,6 +35,12 @@ type channelRenameArgs struct {
 	NewName string `json:"new_name"`
 }
 
+type channelUpdateArgs struct {
+	Agent   string `json:"agent"`
+	Channel string `json:"channel"`
+	Enabled bool   `json:"enabled"`
+}
+
 type channelRemoveArgs struct {
 	Agent    string `json:"agent"`
 	Channel  string `json:"channel"`
@@ -160,6 +166,29 @@ func registerChannelTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 		return text(fmt.Sprintf("channel %q renamed to %q", oldName, newName))
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "channel_update",
+		Description: "Enable or disable a channel. Disabled channels are not started and do not receive or send messages until re-enabled.",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args channelUpdateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		slog.Info("mcp: tool call", "component", "channels", "tool", "channel_update", "agent", args.Agent, "channel", args.Channel, "enabled", args.Enabled)
+		cfg, a, idx, err := loadChannel(args.Agent, args.Channel)
+		if err != nil {
+			return nil, struct{}{}, err
+		}
+		prev := cloneChannels(cfg)
+		ai := agentIndex(cfg, a.Name)
+		enabled := args.Enabled
+		cfg.Agents[ai].Channels[idx].Enabled = &enabled
+		if err := saveChannelConfig(prev, cfg); err != nil {
+			return nil, struct{}{}, err
+		}
+		verb := "disabled"
+		if enabled {
+			verb = "enabled"
+		}
+		return text(fmt.Sprintf("channel %q %s", cfg.Agents[ai].Channels[idx].EffectiveName(), verb))
 	})
 
 	addTool(s, &sdkmcp.Tool{

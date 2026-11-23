@@ -62,18 +62,6 @@
 				@click="onDelete">Delete</button>
 		</div>
 
-		<section v-if="schedule.history.length" aria-label="Recent runs" class="text-sm">
-			<h3 class="mb-1 font-medium text-gray-700 dark:text-gray-200">Recent runs</h3>
-			<ul data-testid="schedule-runs" class="divide-y divide-gray-100 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-				<li v-for="run in schedule.history" :key="run.fireTime" class="flex items-center gap-2 px-3 py-1.5 text-xs">
-					<span class="h-2 w-2 shrink-0 rounded-full" :class="scheduleRunDot(run.status)" />
-					<span class="w-16 shrink-0 text-gray-500">{{ run.status }}</span>
-					<span class="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200" :title="run.summary">{{ run.summary || run.reason }}</span>
-					<span class="shrink-0 tabular-nums text-gray-400">{{ runDuration(run.durationMS) }}</span>
-					<span class="shrink-0 text-gray-400">{{ formatFire(run.fireTime) }}</span>
-				</li>
-			</ul>
-		</section>
 	</form>
 </template>
 
@@ -81,12 +69,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useAvailableModels } from "../../composables/useAvailableModels";
 import { useUnsavedChanges } from "../../composables/useUnsavedChanges";
-import {
-	formatFire,
-	type ProjectSchedule,
-	runDuration,
-	scheduleRunDot,
-} from "../../lib/projects";
+import type { ProjectSchedule } from "../../lib/projects";
 import type { TriggerFields } from "../../lib/trigger";
 import { agentTaskPath } from "../../stores/settings";
 import ModelSelector from "../ModelSelector.vue";

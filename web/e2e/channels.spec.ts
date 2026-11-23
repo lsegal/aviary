@@ -50,6 +50,8 @@ async function mockChannels(
 		],
 	};
 	const calls: Record<string, Record<string, unknown>[]> = {};
+	// While fail is set, channel_update fails.
+	const failUpdates = { fail: false };
 	const record = (tool: string, args?: Record<string, unknown>) => {
 		calls[tool] ??= [];
 		calls[tool].push(args ?? {});
@@ -132,6 +134,13 @@ async function mockChannels(
 			ch[find(args?.channel)].name = String(args?.new_name);
 			return "renamed";
 		},
+		channel_update: (args?: Record<string, unknown>) => {
+			record("channel_update", args);
+			if (failUpdates.fail) throw new Error("disk is read-only");
+			const ch = config.agents[0].channels ?? [];
+			ch[find(args?.channel)].enabled = Boolean(args?.enabled);
+			return "updated";
+		},
 		channel_remove: (args?: Record<string, unknown>) => {
 			record("channel_remove", args);
 			const i = find(args?.channel);
@@ -141,7 +150,7 @@ async function mockChannels(
 			return "removed";
 		},
 	});
-	return { config, calls };
+	return { config, calls, failUpdates };
 }
 
 const TEAM: Channel = {
@@ -220,7 +229,9 @@ test("+ adds a channel, creating its session, and opens its settings", async ({
 		/\/agents\/assistant\/channels\/Ops%20Discord\/settings$/,
 	);
 	await expect(page.getByTestId("channel-settings")).toBeVisible();
-	await expect(page.getByTestId("channel-row")).toHaveText(["Ops Discord"]);
+	await expect(
+		page.getByTestId("channel-row").getByTestId("sidebar-item-link"),
+	).toHaveText(["Ops Discord"]);
 
 	// Its conversation opens on the channel's own session.
 	await page.getByTestId("channel-open-conversation").click();
@@ -275,6 +286,7 @@ test("… Rename, Settings and Delete act on a channel", async ({ page }) => {
 
 	await openMenu("Team Slack");
 	await expect(page.getByRole("menuitem")).toHaveText([
+		"Disable",
 		"Rename",
 		"Settings",
 		"Delete",
@@ -354,4 +366,143 @@ test("Agent Settings has no Channels section and its old address redirects", asy
 
 	await page.goto("/agents/assistant/settings/channels");
 	await expect(page).toHaveURL(/\/agents\/assistant\/channels$/);
+});
+
+// Disabled channels: muted sidebar rows and mobile pills, and Enable/Disable
+// in the row's "…" menu (#981).
+
+const OFF: Channel = {
+	type: "signal",
+	id: "+15551234567",
+	name: "Phone",
+	enabled: false,
+};
+
+const channelRow = (page: Page, name: string) =>
+	page
+		.getByTestId("sidebar")
+		.locator(`[data-testid=channel-row][data-channel="${name}"]`);
+
+async function openChannelMenu(page: Page, name: string) {
+	const row = channelRow(page, name);
+	await row.hover();
+	await row.getByTestId("channel-menu-button").click();
+}
+
+test("a disabled channel's sidebar row is muted, marked and sorted last", async ({
+	page,
+}) => {
+	await mockChannels(page, [OFF, TEAM]);
+	await page.goto("/agents/assistant/channels");
+
+	const rows = page.getByTestId("sidebar").getByTestId("channel-row");
+	await expect(rows.getByTestId("sidebar-item-link")).toHaveText([
+		"Team Slack",
+		"Phone",
+	]);
+
+	const off = channelRow(page, "Phone");
+	await expect(off).toHaveAttribute("data-disabled", "true");
+	await expect(off.getByTestId("channel-row-disabled")).toBeVisible();
+	const link = off.getByTestId("sidebar-item-link");
+	await expect(link).toHaveAttribute("title", "Disabled");
+	await expect(link).toHaveClass(/italic/);
+
+	const on = channelRow(page, "Team Slack");
+	await expect(on).not.toHaveAttribute("data-disabled", "true");
+	await expect(on.getByTestId("channel-row-disabled")).toHaveCount(0);
+	await expect(on.getByTestId("sidebar-item-link")).toHaveAttribute(
+		"title",
+		"Team Slack",
+	);
+	await expect(on.getByTestId("sidebar-item-link")).not.toHaveClass(/italic/);
+});
+
+test("the mobile nav marks disabled channels too", async ({ page }) => {
+	await mockChannels(page, [OFF, TEAM]);
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto("/agents/assistant/channels");
+
+	const pill = page.locator('a[data-disabled="true"]');
+	await expect(pill).toHaveCount(1);
+	await expect(pill).toHaveText("Phone");
+	await expect(pill).toHaveAttribute("title", "Disabled");
+	await expect(pill).toHaveClass(/italic/);
+	await expect(pill.getByTestId("mobile-channel-disabled")).toBeVisible();
+	const enabled = page.getByRole("link", { name: "Team Slack", exact: true });
+	await expect(enabled.first()).not.toHaveAttribute("title", "Disabled");
+});
+
+test("the sidebar menu disables and enables a channel without navigating", async ({
+	page,
+}) => {
+	const { calls } = await mockChannels(page, [OFF, TEAM]);
+	await page.goto("/agents/assistant/channels/Team%20Slack");
+	const url = page.url();
+
+	await openChannelMenu(page, "Phone");
+	await expect(page.getByRole("menuitem")).toHaveText([
+		"Enable",
+		"Rename",
+		"Settings",
+		"Delete",
+	]);
+	await page.keyboard.press("Escape");
+
+	await openChannelMenu(page, "Team Slack");
+	await page.getByRole("menuitem", { name: "Disable" }).click();
+	await expect(channelRow(page, "Team Slack")).toHaveAttribute(
+		"data-disabled",
+		"true",
+	);
+	expect(page.url()).toBe(url);
+	expect(calls.channel_update).toEqual([
+		{ agent: "assistant", channel: "Team Slack", enabled: false },
+	]);
+
+	await openChannelMenu(page, "Phone");
+	await page.getByRole("menuitem", { name: "Enable" }).click();
+	await expect(channelRow(page, "Phone")).not.toHaveAttribute(
+		"data-disabled",
+		"true",
+	);
+	await expect(
+		page
+			.getByTestId("sidebar")
+			.getByTestId("channel-row")
+			.getByTestId("sidebar-item-link"),
+	).toHaveText(["Phone", "Team Slack"]);
+	expect(calls.channel_update.at(-1)).toEqual({
+		agent: "assistant",
+		channel: "Phone",
+		enabled: true,
+	});
+	expect(page.url()).toBe(url);
+});
+
+test("a failed channel toggle rolls back and shows an error toast", async ({
+	page,
+}) => {
+	const { failUpdates } = await mockChannels(page, [OFF, TEAM]);
+	await page.goto("/agents/assistant/channels");
+	failUpdates.fail = true;
+
+	await openChannelMenu(page, "Team Slack");
+	await page.getByRole("menuitem", { name: "Disable" }).click();
+	const toast = page.getByTestId("toast");
+	await expect(toast).toContainText("Couldn't disable Team Slack");
+	await expect(toast).toContainText("disk is read-only");
+	await expect(toast).toHaveAttribute("data-tone", "error");
+	await expect(channelRow(page, "Team Slack")).not.toHaveAttribute(
+		"data-disabled",
+		"true",
+	);
+
+	await openChannelMenu(page, "Phone");
+	await page.getByRole("menuitem", { name: "Enable" }).click();
+	await expect(toast.last()).toContainText("Couldn't enable Phone");
+	await expect(channelRow(page, "Phone")).toHaveAttribute(
+		"data-disabled",
+		"true",
+	);
 });

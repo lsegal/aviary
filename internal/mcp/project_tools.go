@@ -32,7 +32,8 @@ type projectJobListArgs struct {
 	Target  string   `json:"target,omitempty" jsonschema:"Only list jobs of this project"`
 	Targets []string `json:"targets,omitempty" jsonschema:"Only list jobs of these projects, together with target"`
 	Status  string   `json:"status,omitempty" jsonschema:"Only list jobs with this status, such as active, waiting, queued, paused, failed or complete"`
-	States  []string `json:"states,omitempty" jsonschema:"Only list jobs the board shows in any of these states: starting, paused, running, done or failed"`
+	States  []string `json:"states,omitempty" jsonschema:"Only list jobs the board shows in any of these states: starting, paused, running, done, failed, or scheduled for a schedule between runs"`
+	Kinds   []string `json:"kinds,omitempty" jsonschema:"Only list jobs of these kinds: issue, discussion or schedule"`
 	Query   string   `json:"query,omitempty" jsonschema:"Only list jobs with this text, case-insensitively, in any field: number, pull request, title, repository, status, skill, agent, session, schedule, or output"`
 	Offset  int      `json:"offset,omitempty" jsonschema:"Index of the first job to return"`
 	Limit   int      `json:"limit,omitempty" jsonschema:"Most jobs to return; defaults to 50"`
@@ -223,11 +224,11 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_job_list",
-		Description: "List every Code Loop job, running and errored jobs first, with the actions each accepts; filter by project, status, board states and search text, paged",
+		Description: "List every Code Loop job, running and errored jobs first, with the actions each accepts; filter by project, status, board states, kinds and search text, paged. Each schedule is one entry, its latest run, with last_run, next_run and recent_runs, instead of one job per fire",
 		Annotations: readOnlyTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectJobListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
-			return m.ListJobs(jobListTargets(args), args.Status, args.States, args.Query, args.Offset, args.Limit), nil
+			return m.ListJobs(jobListTargets(args), args.Status, args.States, args.Kinds, args.Query, args.Offset, args.Limit), nil
 		})
 	})
 
@@ -259,6 +260,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		{"project_job_pause", "pause", "Pause an active, waiting or queued Code Loop job; a running agent is stopped and its work pushed, and only a retry or resume picks it back up", mutatingTool},
 		{"project_job_resume", "resume", "Resume a paused Code Loop job: clear the pause and requeue it", mutatingTool},
 		{"project_job_stop", "stop", "Stop a Code Loop job's agent and wait for it to exit, or clear a paused job and release its claim on the issue", destructiveTool},
+		{"project_job_dismiss", "dismiss", "Dismiss a failed scheduled run: its schedule leaves the board's Failed state until its next run fails, while its card still shows the last run", mutatingTool},
 	} {
 		addTool(s, &sdkmcp.Tool{
 			Name:        action.name,

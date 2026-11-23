@@ -171,6 +171,11 @@
 		"agent",
 		"channel"
 	],
+	"channel_update": [
+		"agent",
+		"channel",
+		"enabled"
+	],
 	"coding_skills_install": [
 		"cli",
 		"skill",
@@ -316,6 +321,10 @@
 		"skip_turn_media",
 		"text"
 	],
+	"project_job_dismiss": [
+		"number",
+		"target"
+	],
 	"project_job_explain": [
 		"number",
 		"target"
@@ -327,6 +336,7 @@
 		"target"
 	],
 	"project_job_list": [
+		"kinds",
 		"limit",
 		"offset",
 		"query",
