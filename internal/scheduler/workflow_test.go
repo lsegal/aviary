@@ -1,14 +1,18 @@
 package scheduler
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 func TestWildcardMatch(t *testing.T) {
@@ -179,4 +183,99 @@ func TestWorkerDeliversWorkflowReplies(t *testing.T) {
 	assert.Equal(t, []string{"session:ops:fyi"}, delivered)
 
 	assert.Error(t, p.deliverFor(&domain.Job{})("alpha", "reply", "x"), "a run without a triggering message cannot reply")
+}
+
+func TestWorkerPool_RunCompiledWorkflow(t *testing.T) {
+	setupSchedulerDataDir(t)
+	precompile := true
+	cfg := &config.AgentConfig{Name: "alpha", Tasks: []config.TaskConfig{
+		{Name: "triage", Trigger: config.TriggerMessage, Channel: "team", Prompt: "Echo the crash report", Target: "reply", Precompile: &precompile},
+		{Name: "plain", Trigger: config.TriggerMessage, Channel: "team", Prompt: "Echo the crash report", Target: "reply"},
+	}}
+	q := NewJobQueue()
+	p := NewWorkerPool(q, agent.NewManager(nil), 1)
+	var replies []string
+	p.workflowReply = func(_ string, _ domain.TriggerContext, text string) error {
+		replies = append(replies, text)
+		return nil
+	}
+	// The script reads the triggering message from the trigger global.
+	script, compileErr := `print("crash: " .. trigger.message.text .. " after " .. #trigger.before)`, error(nil)
+	var compiledFor []string
+	p.taskCompiler = func(_ context.Context, agentName, taskName string) (string, error) {
+		compiledFor = append(compiledFor, agentName+"/"+taskName)
+		return script, compileErr
+	}
+	var reported []string
+	p.scriptReporter = func(_, taskName string, err error) error {
+		result := "ok"
+		if err != nil {
+			result = "failed"
+		}
+		reported = append(reported, taskName+": "+result)
+		return nil
+	}
+	enqueue := func(task string) *domain.Job {
+		job, err := q.EnqueueWithType("alpha/"+task, "prompt", "alpha", "Echo the crash report", "", "reply", 1, "", "")
+		require.NoError(t, err)
+		job.OutputChannel = "reply"
+		job.TriggerContext = &domain.TriggerContext{
+			Channel: "team", Entry: "C1",
+			Message: domain.TriggerMessage{Sender: "Ana", Text: "app crashed on launch"},
+			Before:  []domain.TriggerMessage{{Sender: "Ana", Text: "hi"}},
+		}
+		return job
+	}
+	persisted := func(job *domain.Job) domain.Job {
+		got, err := store.ReadJSON[domain.Job](store.FindJobPath(job.ID))
+		require.NoError(t, err)
+		return got
+	}
+
+	// A compiled script handles the run and replies in the conversation.
+	job := enqueue("triage")
+	logs, handled, err := p.runCompiledWorkflow(context.Background(), job, cfg, p.deliverFor(job))
+	require.NoError(t, err)
+	assert.True(t, handled, "a completed script runs no model")
+	assert.Equal(t, []string{"crash: app crashed on launch after 1"}, replies)
+	assert.Contains(t, logs, "running the precompiled script")
+	assert.Empty(t, persisted(job).ScriptError)
+	assert.Equal(t, []string{"triage: ok"}, reported)
+
+	// A failing script falls back to the model, and the run is marked.
+	script = `error("lookup failed")`
+	job = enqueue("triage")
+	logs, handled, err = p.runCompiledWorkflow(context.Background(), job, cfg, p.deliverFor(job))
+	require.NoError(t, err)
+	assert.False(t, handled, "the model runs a workflow whose script failed")
+	assert.Contains(t, logs, "precompiled script failed (lookup failed); falling back to the model")
+	assert.Contains(t, persisted(job).ScriptError, "lookup failed")
+	assert.Equal(t, []string{"triage: ok", "triage: failed"}, reported)
+	assert.Len(t, replies, 1, "a failed script sends no reply of its own")
+
+	// A failed compile falls back as well, but is not the script's failure.
+	script, compileErr = "", errors.New("provider unavailable")
+	job = enqueue("triage")
+	_, handled, err = p.runCompiledWorkflow(context.Background(), job, cfg, p.deliverFor(job))
+	require.NoError(t, err)
+	assert.False(t, handled)
+	assert.Contains(t, persisted(job).ScriptError, "provider unavailable")
+	assert.Len(t, reported, 2)
+
+	// A prompt that is not deterministic just runs on the model.
+	compileErr = nil
+	job = enqueue("triage")
+	logs, handled, err = p.runCompiledWorkflow(context.Background(), job, cfg, p.deliverFor(job))
+	require.NoError(t, err)
+	assert.False(t, handled)
+	assert.Empty(t, logs)
+	assert.Empty(t, job.ScriptError)
+
+	// A workflow without precompile never compiles.
+	compiledFor = nil
+	job = enqueue("plain")
+	_, handled, err = p.runCompiledWorkflow(context.Background(), job, cfg, p.deliverFor(job))
+	require.NoError(t, err)
+	assert.False(t, handled)
+	assert.Empty(t, compiledFor)
 }
