@@ -801,6 +801,7 @@ func TestTrigger(t *testing.T) {
 	assert.NotNil(t, job)
 	assert.Equal(t, "alpha/daily", job.TaskID)
 	assert.Equal(t, domain.JobStatusInProgress, job.Status)
+	assert.Equal(t, "manual", job.Trigger)
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -808,6 +809,7 @@ func TestTrigger(t *testing.T) {
 		assert.Nil(t, readErr)
 
 		if persisted.Status == domain.JobStatusCompleted {
+			assert.Equal(t, "manual", persisted.Trigger, "the trigger survives the run")
 			break
 		}
 		assert.False(t, time.Now().After(deadline))

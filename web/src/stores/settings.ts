@@ -205,9 +205,14 @@ export function taskSessionPath(agent: string, task: string): string {
 	return `/agents/${encodeURIComponent(agent)}/tasks/${encodeURIComponent(task)}`;
 }
 
+/** One run of a task, shown on its own page under the task's dashboard. */
+export function taskRunPath(agent: string, task: string, run: string): string {
+	return `${taskSessionPath(agent, task)}/runs/${encodeURIComponent(run)}`;
+}
+
 /**
- * The task whose session or settings are showing for agent, or "": its
- * session view, or the Tasks page opened on its ?task.
+ * The task whose dashboard, run or settings are showing for agent, or "":
+ * its dashboard or one of its runs, or the Tasks page opened on its ?task.
  */
 export function activeTaskName(
 	route: Pick<RouteLocationNormalizedLoaded, "path" | "query">,
@@ -220,7 +225,8 @@ export function activeTaskName(
 	}
 	if (!route.path.startsWith(`${base}/`)) return "";
 	const rest = route.path.slice(base.length + 1).replace(/\/$/, "");
-	return rest.includes("/") ? "" : decodeURIComponent(rest);
+	const m = /^([^/]+)(?:\/runs\/[^/]+)?$/.exec(rest);
+	return m ? decodeURIComponent(m[1]) : "";
 }
 
 /** Normalizes a task's type, which defaults to prompt. */

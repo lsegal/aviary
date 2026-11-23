@@ -349,12 +349,14 @@ const RUN_LABEL: Record<Job["status"], string> = {
 	in_progress: "Running",
 	completed: "Succeeded",
 	failed: "Failed",
+	canceled: "Canceled",
 };
 const RUN_CLASS: Record<Job["status"], string> = {
 	pending: "text-yellow-600 dark:text-yellow-400",
 	in_progress: "text-blue-600 dark:text-blue-400",
 	completed: "text-green-600 dark:text-green-400",
 	failed: "text-red-600 dark:text-red-400",
+	canceled: "text-amber-600 dark:text-amber-400",
 };
 
 function ago(iso: string): string {

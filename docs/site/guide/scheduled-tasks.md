@@ -225,9 +225,17 @@ Project tasks are scheduled tasks like any other: there is one list of them, one
 
 The project's **Schedules** tab is a second place to create and edit the same tasks. It lists the scheduled tasks that target the project with enable toggles and their last results. **New schedule** opens the same **Add task** dialog the **+** on **Scheduled Tasks** opens, with the task already set to type `project` and to target the project, so it creates a project scheduled task that also shows in **Scheduled Tasks**. Selecting a task edits every field with a preview of the next fires, the recent runs, Run now, Save, Delete, and a link to the task in **Scheduled Tasks**; the **Scheduled Tasks** editor links back to the project's Schedules tab. The board's **Up next** strip shows the project's next five runs, at most three per schedule, and hides when no schedule is enabled.
 
-### Task sessions
+### Task pages and sessions
 
-Every run of a task shares one session, named and titled after the task. In the control panel it lives under the task in the sidebar's **Scheduled Tasks** section, not in **Chats**: clicking the task opens its session, and the gear at the top right opens the task's settings. Renaming the task moves its session, and its run history, to the new name. A deleted task's session stays in **Chats**.
+Every run of a task shares one session, named and titled after the task. In the control panel it lives under the task in the sidebar's **Scheduled Tasks** section, not in **Chats**. Renaming the task moves its session, and its run history, to the new name. A deleted task's session stays in **Chats**.
+
+Clicking the task in the sidebar opens its page, a dashboard for that one task:
+
+- **Header** — the task's name, its schedule with the next fire, and whether it is enabled or paused, with **Run now**, **Pause**/**Resume**, and **Stop** while a run is active. The chat icon shows or hides the chat panel, and the gear opens the task's settings.
+- **Stats** — a row of pills: queued, running, succeeded and failed runs, success rate, the last run and its result, the next run, and the average duration. Clicking a count filters the run history.
+- **Current run** — while a run is active, its status, start time, elapsed time and live logs, which keep scrolling to the newest line until you scroll up, with copy and stop buttons. When nothing is running, the last run's logs and result show instead.
+- **Run history** — every run, newest first, with its start time, duration, result (succeeded, failed, canceled or skipped), and trigger (schedule, catch-up, file watch or manual), twenty at a time and filterable by result. A failed or skipped run shows why. **Open run** opens a run's full logs at its own URL, `/agents/<agent>/tasks/<task>/runs/<job id>`.
+- **Chat** — the task's session, in a panel along the bottom. Drag its top edge to resize it. On a phone it opens as a bottom sheet. Whether it shows and how tall it is are remembered in the browser.
 
 ## Output Delivery
 

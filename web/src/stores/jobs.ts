@@ -8,7 +8,9 @@ export interface Job {
 	agent_id: string;
 	session_id?: string;
 	prompt: string;
-	status: "pending" | "in_progress" | "completed" | "failed";
+	status: "pending" | "in_progress" | "completed" | "failed" | "canceled";
+	/** What fired the run: schedule, missed (a catch-up), watch or manual. */
+	trigger?: string;
 	attempts: number;
 	max_retries: number;
 	output?: string;

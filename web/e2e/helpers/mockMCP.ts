@@ -30,7 +30,7 @@ export interface MCPStreamFixture {
 /** Fixture data keyed by MCP tool name. */
 export interface ToolFixtures {
 	agent_list?: ToolHandler | object[] | string;
-	job_list?: object[] | null;
+	job_list?: ToolHandler | object[] | null;
 	config_validate?: object[];
 	session_list?: ToolHandler | object[] | string;
 	server_status?: object;

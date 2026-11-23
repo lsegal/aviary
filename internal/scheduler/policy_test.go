@@ -82,6 +82,26 @@ func TestOverlapPolicy(t *testing.T) {
 	}
 }
 
+func TestFireRecordsTrigger(t *testing.T) {
+	setupSchedulerDataDir(t)
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	s := newPolicyScheduler(t, &now)
+	s.Reconcile(singleTask(config.TaskConfig{Name: "t", Every: "1h", Prompt: "p"}))
+	key := "alpha/t"
+
+	s.mu.Lock()
+	spec := s.armed[key].spec
+	job := s.fireLocked(key, spec, "missed", now)
+	s.mu.Unlock()
+
+	require.NotNil(t, job)
+	assert.Equal(t, "missed", job.Trigger)
+	jobs, err := s.Queue().List(key)
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.Equal(t, "missed", jobs[0].Trigger, "the stored job keeps what fired it")
+}
+
 func TestMissedPolicyOnStartup(t *testing.T) {
 	for _, tc := range []struct {
 		missed   string

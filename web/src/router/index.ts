@@ -45,12 +45,21 @@ const router = createRouter({
 			component: () => import("../views/ChannelView.vue"),
 			meta: { requiresAuth: true },
 		},
-		// One scheduled task's session, which its runs share; its settings
-		// stay on the Tasks page (?task=), behind the view's gear.
+		// One scheduled task's dashboard: its runs, their logs and the session
+		// they share. A run opens at its own URL inside it, so the chat stays
+		// mounted. Its settings stay on the Tasks page (?task=), behind the
+		// view's gear.
 		{
 			path: "/agents/:agent/tasks/:task",
 			component: () => import("../views/TaskView.vue"),
 			meta: { requiresAuth: true },
+			children: [
+				{
+					path: "runs/:run",
+					component: () =>
+						import("../components/tasks/dashboard/TaskRunPage.vue"),
+				},
+			],
 		},
 		{
 			path: "/agents/:agent/chat/:sessionId?",

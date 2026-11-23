@@ -99,14 +99,17 @@ const (
 
 // Job represents a single instance of a task being executed.
 type Job struct {
-	ID             string     `json:"id"`
-	TaskID         string     `json:"task_id"`
-	TaskType       string     `json:"task_type,omitempty"`
-	AgentID        string     `json:"agent_id"`
-	SessionID      string     `json:"session_id,omitempty"`
-	Prompt         string     `json:"prompt"`
-	Script         string     `json:"script,omitempty"`
-	OutputChannel  string     `json:"output_channel,omitempty"`
+	ID            string `json:"id"`
+	TaskID        string `json:"task_id"`
+	TaskType      string `json:"task_type,omitempty"`
+	AgentID       string `json:"agent_id"`
+	SessionID     string `json:"session_id,omitempty"`
+	Prompt        string `json:"prompt"`
+	Script        string `json:"script,omitempty"`
+	OutputChannel string `json:"output_channel,omitempty"`
+	// Trigger is what fired the run: schedule, missed (a catch-up), watch or
+	// manual. Empty for jobs no task fire created.
+	Trigger        string     `json:"trigger,omitempty"`
 	Status         JobStatus  `json:"status"`
 	Attempts       int        `json:"attempts"`
 	MaxRetries     int        `json:"max_retries"`
