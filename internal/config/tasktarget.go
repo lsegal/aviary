@@ -8,8 +8,20 @@ import (
 
 // CodeLoopTargetPrefix starts a delivery target that names a Code Loop job:
 // "codeloop:<project>#<number>", where project is the job's watch target as
-// configured (OWNER/REPO or a GitHub project URL) and number its issue.
+// configured (OWNER/REPO or a GitHub project URL) and number its issue. The
+// number may be followed by "?" and comma-separated delivery options:
+// CodeLoopResume and CodeLoopReopen.
 const CodeLoopTargetPrefix = "codeloop:"
+
+// The delivery options of a Code Loop target.
+const (
+	// CodeLoopResume resumes a paused job when output arrives instead of
+	// queuing the output until the job runs again.
+	CodeLoopResume = "resume"
+	// CodeLoopReopen retries a completed job with the output instead of
+	// rejecting it.
+	CodeLoopReopen = "reopen"
+)
 
 // The kinds of task and workflow delivery targets.
 const (
@@ -28,9 +40,12 @@ type TaskTarget struct {
 	// channel name of a channel target.
 	Session string
 	Channel string
-	// Project and Number name the job of a Code Loop target.
+	// Project and Number name the job of a Code Loop target, and Resume and
+	// Reopen are its CodeLoopResume and CodeLoopReopen options.
 	Project string
 	Number  int
+	Resume  bool
+	Reopen  bool
 }
 
 // String writes the target back in its saved form.
@@ -43,7 +58,18 @@ func (t TaskTarget) String() string {
 	case TargetChannel:
 		return ChannelTarget(t.Channel)
 	case TargetCodeLoop:
-		return CodeLoopTarget(t.Project, t.Number)
+		target := CodeLoopTarget(t.Project, t.Number)
+		var options []string
+		if t.Resume {
+			options = append(options, CodeLoopResume)
+		}
+		if t.Reopen {
+			options = append(options, CodeLoopReopen)
+		}
+		if len(options) > 0 {
+			target += "?" + strings.Join(options, ",")
+		}
+		return target
 	}
 	return ""
 }
@@ -55,7 +81,7 @@ func CodeLoopTarget(project string, number int) string {
 
 // ParseTaskTarget resolves a delivery target: empty or "silent", "reply",
 // "session:<name-or-id>", "channel:<channel name>", or
-// "codeloop:<project>#<number>".
+// "codeloop:<project>#<number>[?resume,reopen]".
 func ParseTaskTarget(target string) (TaskTarget, error) {
 	target = strings.TrimSpace(target)
 	switch {
@@ -85,14 +111,29 @@ func parseCodeLoopTarget(target string) (TaskTarget, error) {
 		return TaskTarget{}, fmt.Errorf("codeloop target %q names no job; use codeloop:<owner/repo>#<number>", target)
 	}
 	project := strings.TrimSpace(ref[:hash])
-	number, err := strconv.Atoi(strings.TrimSpace(ref[hash+1:]))
+	rawNumber, rawOptions, hasOptions := strings.Cut(ref[hash+1:], "?")
+	number, err := strconv.Atoi(strings.TrimSpace(rawNumber))
 	if project == "" || strings.ContainsAny(project, " \t\r\n") {
 		return TaskTarget{}, fmt.Errorf("codeloop target %q names no project; use codeloop:<owner/repo>#<number>", target)
 	}
 	if err != nil || number <= 0 {
 		return TaskTarget{}, fmt.Errorf("codeloop target %q needs a positive job number; use codeloop:<owner/repo>#<number>", target)
 	}
-	return TaskTarget{Kind: TargetCodeLoop, Project: project, Number: number}, nil
+	parsed := TaskTarget{Kind: TargetCodeLoop, Project: project, Number: number}
+	if !hasOptions {
+		return parsed, nil
+	}
+	for option := range strings.SplitSeq(rawOptions, ",") {
+		switch strings.ToLower(strings.TrimSpace(option)) {
+		case CodeLoopResume:
+			parsed.Resume = true
+		case CodeLoopReopen:
+			parsed.Reopen = true
+		default:
+			return TaskTarget{}, fmt.Errorf("codeloop target %q has unknown option %q; options are %q and %q", target, strings.TrimSpace(option), CodeLoopResume, CodeLoopReopen)
+		}
+	}
+	return parsed, nil
 }
 
 // HasProject reports whether any agent in agents owns project.

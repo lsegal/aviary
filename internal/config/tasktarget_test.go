@@ -18,6 +18,9 @@ func TestParseTaskTarget(t *testing.T) {
 		{"session:main", TaskTarget{Kind: TargetSession, Session: "main"}},
 		{"channel:Team Slack", TaskTarget{Kind: TargetChannel, Channel: "Team Slack"}},
 		{"codeloop:owner/repo#123", TaskTarget{Kind: TargetCodeLoop, Project: "owner/repo", Number: 123}},
+		{"codeloop:owner/repo#12?resume", TaskTarget{Kind: TargetCodeLoop, Project: "owner/repo", Number: 12, Resume: true}},
+		{"codeloop:owner/repo#12?reopen", TaskTarget{Kind: TargetCodeLoop, Project: "owner/repo", Number: 12, Reopen: true}},
+		{"codeloop:owner/repo#12?resume,reopen", TaskTarget{Kind: TargetCodeLoop, Project: "owner/repo", Number: 12, Resume: true, Reopen: true}},
 		{"codeloop:https://github.com/users/o/projects/3#7", TaskTarget{Kind: TargetCodeLoop, Project: "https://github.com/users/o/projects/3", Number: 7}},
 	}
 	for _, c := range cases {
@@ -28,7 +31,7 @@ func TestParseTaskTarget(t *testing.T) {
 			assert.Equal(t, c.in, got.String())
 		}
 	}
-	for _, bad := range []string{"telegram", "session:", "codeloop:", "codeloop:owner/repo", "codeloop:#12", "codeloop:owner/repo#0", "codeloop:owner/repo#x", "codeloop:own er/repo#1"} {
+	for _, bad := range []string{"telegram", "session:", "codeloop:", "codeloop:owner/repo", "codeloop:#12", "codeloop:owner/repo#0", "codeloop:owner/repo#x", "codeloop:own er/repo#1", "codeloop:owner/repo#1?", "codeloop:owner/repo#1?wake", "codeloop:owner/repo#1?resume,"} {
 		_, err := ParseTaskTarget(bad)
 		assert.Error(t, err, bad)
 	}
@@ -42,10 +45,14 @@ func TestValidateCodeLoopTaskTarget(t *testing.T) {
 			{Name: "ok", Schedule: "0 * * * *", Prompt: "x", Target: "codeloop:owner/repo#12"},
 			{Name: "unknown", Schedule: "0 * * * *", Prompt: "x", Target: "codeloop:other/repo#3"},
 			{Name: "malformed", Schedule: "0 * * * *", Prompt: "x", Target: "codeloop:owner/repo"},
+			{Name: "options", Schedule: "0 * * * *", Prompt: "x", Target: "codeloop:owner/repo#12?resume,reopen"},
+			{Name: "bad-option", Schedule: "0 * * * *", Prompt: "x", Target: "codeloop:owner/repo#12?wake"},
 		},
 	}}}
 	issues := Validate(cfg, nil)
-	assert.False(t, hasIssue(issues, "codeloop:owner/repo#12"))
+	assert.False(t, hasIssue(issues, `"codeloop:owner/repo#12"`))
+	assert.False(t, hasIssue(issues, "codeloop:owner/repo#12?resume,reopen"))
+	assert.True(t, hasIssue(issues, `has unknown option "wake"`))
 	assert.True(t, hasIssue(issues, `no agent has a Code Loop project "other/repo"`))
 	assert.True(t, hasIssue(issues, `codeloop target "codeloop:owner/repo" names no job`))
 }

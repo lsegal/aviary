@@ -36,7 +36,26 @@ const (
 	// InboxQueued means the job was paused or queued and keeps its state; its
 	// agent sees the message when the job next runs.
 	InboxQueued = "queued"
+	// InboxResumed means the job was paused and, with JobDeliveryOptions.Resume,
+	// was resumed so its agent sees the message on its first turn.
+	InboxResumed = "resumed"
+	// InboxReopened means the job was complete and, with
+	// JobDeliveryOptions.Reopen, was retried with the message.
+	InboxReopened = "reopened"
 )
+
+// JobDeliveryOptions are a Code Loop target's delivery options (issue #1008).
+// Without them a paused job queues the output and a completed job rejects it.
+type JobDeliveryOptions struct {
+	// Resume resumes a paused job when output arrives.
+	Resume bool
+	// Reopen retries a completed job with the output.
+	Reopen bool
+}
+
+// jobDeliveryActionTimeout bounds how long a delivery waits for the engine to
+// resume or reopen the job it reached.
+const jobDeliveryActionTimeout = time.Minute
 
 // ErrJobGone is returned when a message names a Code Loop job that no longer
 // exists.
@@ -100,6 +119,23 @@ func (b *jobInbox) take(key string) []InboxMessage {
 	delete(b.messages, key)
 	_ = b.saveLocked()
 	return messages
+}
+
+// discard removes the last message waiting for the job keyed key if it is
+// message, undoing an add whose delivery failed.
+func (b *jobInbox) discard(key string, message InboxMessage) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.loadLocked()
+	messages := b.messages[key]
+	if n := len(messages); n > 0 && messages[n-1] == message {
+		if n == 1 {
+			delete(b.messages, key)
+		} else {
+			b.messages[key] = messages[:n-1]
+		}
+		_ = b.saveLocked()
+	}
 }
 
 // pending reports how many messages wait for the job keyed key.
@@ -171,8 +207,12 @@ func inboxPrompt(issue Issue, messages []InboxMessage) string {
 // number of target, by the job's state: a running or waiting job is woken
 // with it, a paused, queued or failed job keeps its state and sees it when it
 // next runs, and a completed job, or one that no longer exists, rejects it.
-// It returns InboxDelivered or InboxQueued and the job it reached.
-func (m *Manager) SendJobMessage(target string, number int, message InboxMessage) (string, core.JobSnapshot, error) {
+// With options.Resume a paused job is resumed with the output instead, and
+// with options.Reopen a completed job is retried with it, both through the
+// same resume and retry actions as the dashboard's buttons. It returns the
+// InboxDelivered, InboxQueued, InboxResumed or InboxReopened outcome and the
+// job it reached.
+func (m *Manager) SendJobMessage(ctx context.Context, target string, number int, message InboxMessage, options JobDeliveryOptions) (string, core.JobSnapshot, error) {
 	engine := m.engine()
 	if engine == nil {
 		return "", core.JobSnapshot{}, ErrNotWatching
@@ -193,14 +233,22 @@ func (m *Manager) SendJobMessage(target string, number int, message InboxMessage
 	if job.Kind != "" && job.Kind != core.JobKindIssue {
 		return "", job, fmt.Errorf("the Code Loop job %s is a %s job; only issue jobs accept output", key, job.Kind)
 	}
-	var outcome string
+	var outcome, action string
 	switch job.Status {
 	case "active", "waiting":
 		outcome = InboxDelivered
-	case "paused", "queued", "failed":
+	case "paused":
+		outcome = InboxQueued
+		if options.Resume {
+			outcome, action = InboxResumed, "resume"
+		}
+	case "queued", "failed":
 		outcome = InboxQueued
 	case "complete":
-		return "", job, fmt.Errorf("the Code Loop job %s is complete; it no longer accepts output", key)
+		if !options.Reopen {
+			return "", job, fmt.Errorf("the Code Loop job %s is complete; it no longer accepts output", key)
+		}
+		outcome, action = InboxReopened, "retry"
 	default:
 		return "", job, fmt.Errorf("the Code Loop job %s is %s and cannot accept output", key, job.Status)
 	}
@@ -210,11 +258,33 @@ func (m *Manager) SendJobMessage(target string, number int, message InboxMessage
 	if err := engine.jobInbox().add(key, message); err != nil {
 		return "", job, fmt.Errorf("queuing output for Code Loop job %s: %w", key, err)
 	}
-	if outcome == InboxDelivered {
+	switch outcome {
+	case InboxDelivered:
 		engine.nudgeJob(key)
 		m.logf("Code Loop job %s received output from %s; waking it", key, message.Source)
-	} else {
+		return outcome, job, nil
+	case InboxQueued:
 		m.logf("Code Loop job %s received output from %s; queued until it runs again", key, message.Source)
+		return outcome, job, nil
+	}
+	// The queued message is relayed into the session when the resumed or
+	// retried run starts.
+	actionCtx, cancel := context.WithTimeout(ctx, jobDeliveryActionTimeout)
+	defer cancel()
+	if _, err := m.JobAction(actionCtx, action, job.Target, job.Number); err != nil {
+		if outcome == InboxReopened {
+			// A completed job never runs again on its own, so the output
+			// is not left waiting for it.
+			engine.jobInbox().discard(key, message)
+			return "", job, fmt.Errorf("reopening the completed Code Loop job %s: %w", key, err)
+		}
+		m.logf("Code Loop job %s received output from %s; resuming it failed (%v), so it stays queued until the job runs again", key, message.Source, err)
+		return InboxQueued, job, nil
+	}
+	if outcome == InboxResumed {
+		m.logf("Code Loop job %s received output from %s; resumed it", key, message.Source)
+	} else {
+		m.logf("Code Loop job %s received output from %s; reopened it", key, message.Source)
 	}
 	return outcome, job, nil
 }
