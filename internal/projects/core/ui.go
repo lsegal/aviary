@@ -351,13 +351,16 @@ func JobActionAvailability(status string) JobActions {
 
 // JobActionsFor reports the job actions the run accepts for job. A scheduled
 // run has no issue to resume, so it is never paused, and Retry fires its
-// schedule again once the run has finished. The web dashboard's
-// jobActionAvailability mirrors it.
+// schedule again once the run has finished. A discussion is only stopped: the
+// next poll answers a thread that still has no reply.
 func JobActionsFor(job JobSnapshot) JobActions {
+	running := job.Status == "queued" || job.Status == "active" || job.Status == "waiting"
+	if job.Kind == JobKindDiscussion {
+		return JobActions{Stop: running, RetryReason: "The next poll answers the discussion again while it has no reply"}
+	}
 	if job.Kind != JobKindSchedule {
 		return JobActionAvailability(job.Status)
 	}
-	running := job.Status == "queued" || job.Status == "active" || job.Status == "waiting"
 	actions := JobActions{Stop: running, Retry: job.Status == "complete" || job.Status == "failed"}
 	if !actions.Retry {
 		actions.RetryReason = "The scheduled run has not finished"

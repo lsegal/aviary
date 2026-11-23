@@ -1104,7 +1104,7 @@ func (w *Engine) negotiateContestedIssuesWithin(ctx context.Context, checker Wor
 // tells the next poll whether it still needs an answer. active only guards
 // against dispatching the same discussion twice while an agent run for it
 // is still in flight.
-func (w *Engine) pollDiscussions(ctx context.Context, n int, targets []string, sem *concurrencySemaphore, wg *sync.WaitGroup, workMu *sync.Mutex, active map[string]string) {
+func (w *Engine) pollDiscussions(ctx context.Context, n int, targets []string, sem *concurrencySemaphore, wg *sync.WaitGroup, workMu *sync.Mutex, active map[string]string, run func(context.Context, Issue) error) {
 	if w.Discussions == nil {
 		return
 	}
@@ -1170,7 +1170,7 @@ func (w *Engine) pollDiscussions(ctx context.Context, n int, targets []string, s
 				workMu.Unlock()
 			}()
 			w.logf("discussion #%d started", i.Number)
-			if err := w.runner().Run(ctx, i); err != nil {
+			if err := run(ctx, i); err != nil {
 				w.logf("discussion #%d failed: %v", i.Number, err)
 				return
 			}
@@ -2311,6 +2311,9 @@ func (w *Engine) Run(ctx context.Context) error {
 	// startScheduled queues a core project task run as a board job.
 	var startScheduled func(request projectTaskRequest)
 	var serveScheduledAction func(request jobActionRequest, key string, job JobSnapshot)
+	var stopRun func(request jobActionRequest, key string, job JobSnapshot, noun string)
+	// runDiscussion runs a Discussion thread's agent as a board job.
+	var runDiscussion func(ctx context.Context, issue Issue) error
 	// acquireDispatchSlot waits for a free slot for the queued job key, as
 	// acquireSlot does, while also answering job actions, so the owner can
 	// pause the queued job or stop a running one to free its slot (issue
@@ -2386,7 +2389,7 @@ func (w *Engine) Run(ctx context.Context) error {
 			}
 		}
 		w.logChanged("poll-issues", strconv.Itoa(len(issues)), "poll #%d found %d open issue(s)", n, len(issues))
-		w.pollDiscussions(ctx, n, targets, sem, &wg, &workMu, active)
+		w.pollDiscussions(ctx, n, targets, sem, &wg, &workMu, active, runDiscussion)
 		observed = make(map[string]bool, len(issues))
 		for _, issue := range issues {
 			if issue.Repository != "" && issue.Number > 0 {
@@ -3668,6 +3671,16 @@ func (w *Engine) Run(ctx context.Context) error {
 			serveScheduledAction(request, key, job)
 			return
 		}
+		if job.Kind == core.JobKindDiscussion {
+			// The next poll answers a thread that still has no reply, so a
+			// discussion is only ever stopped.
+			if action.Action != "stop" {
+				request.done <- fmt.Errorf("discussion jobs can only be stopped")
+				return
+			}
+			stopRun(request, key, job, "discussion")
+			return
+		}
 		switch action.Action {
 		case "stop":
 			if !core.JobActionAvailability(job.Status).Stop {
@@ -3887,36 +3900,9 @@ func (w *Engine) Run(ctx context.Context) error {
 	// scheduler fires the task again, and a scheduled run has no issue to
 	// resume it from.
 	serveScheduledAction = func(request jobActionRequest, key string, job JobSnapshot) {
-		available := core.JobActionsFor(job)
 		switch request.action.Action {
 		case "stop":
-			if !available.Stop {
-				request.done <- fmt.Errorf("job cannot be stopped while %s", job.Status)
-				return
-			}
-			workMu.Lock()
-			cancel, exited := cancellations[key], runExits[key]
-			workMu.Unlock()
-			if cancel == nil {
-				request.done <- fmt.Errorf("job is not running")
-				return
-			}
-			w.logf("scheduled run %s stop requested", key)
-			w.jobSystem(key, "stopped by the owner")
-			jobMu.Lock()
-			job.Status = "stopping"
-			jobs[key] = job
-			jobMu.Unlock()
-			publish()
-			cancel(errWorkStoppedFromWebUI)
-			go func() {
-				select {
-				case <-exited:
-					request.done <- nil
-				case <-ctx.Done():
-					request.done <- fmt.Errorf("job is still stopping: %w", ctx.Err())
-				}
-			}()
+			stopRun(request, key, job, "scheduled run")
 		case "dismiss":
 			// Dismissing takes every failed run of the schedule off the
 			// board's Failed state; its card still shows the last run.
@@ -3938,6 +3924,121 @@ func (w *Engine) Run(ctx context.Context) error {
 			request.done <- fmt.Errorf("unknown job action %q", request.action.Action)
 		}
 	}
+	// stopRun answers Stop on a scheduled run or a discussion, named by noun
+	// in the log: it cancels the run and reports once it has exited.
+	stopRun = func(request jobActionRequest, key string, job JobSnapshot, noun string) {
+		if !core.JobActionsFor(job).Stop {
+			request.done <- fmt.Errorf("job cannot be stopped while %s", job.Status)
+			return
+		}
+		workMu.Lock()
+		cancel, exited := cancellations[key], runExits[key]
+		workMu.Unlock()
+		if cancel == nil {
+			request.done <- fmt.Errorf("job is not running")
+			return
+		}
+		w.logf("%s %s stop requested", noun, key)
+		w.jobSystem(key, "stopped by the owner")
+		jobMu.Lock()
+		job.Status = "stopping"
+		jobs[key] = job
+		jobMu.Unlock()
+		publish()
+		cancel(errWorkStoppedFromWebUI)
+		go func() {
+			select {
+			case <-exited:
+				request.done <- nil
+			case <-ctx.Done():
+				request.done <- fmt.Errorf("job is still stopping: %w", ctx.Err())
+			}
+		}()
+	}
+	// runDiscussion runs the gh-discuss agent on a Discussion thread as a
+	// board job, which output sent to it is relayed into while it runs
+	// (issue #1007). pollDiscussions holds the thread's slot and claim.
+	runDiscussion = func(runCtx context.Context, i Issue) error {
+		key := issueKey(i)
+		session := AgentSession{Agent: w.newJobAgent(i.Target)}
+		if agentAssignsSessionID(session.Agent) {
+			id, err := newSessionID()
+			if err != nil {
+				return err
+			}
+			session.ID = id
+		}
+		intro := discussionInboxIntro(i)
+		// Output sent while an earlier run of the thread failed starts this
+		// one.
+		if queued := w.takeInbox(key); len(queued) > 0 {
+			session.Update = inboxPrompt(intro, queued)
+		}
+		runCtx, cancelRun := context.WithCancelCause(runCtx)
+		defer cancelRun(nil)
+		exited := make(chan struct{})
+		workMu.Lock()
+		cancellations[key] = cancelRun
+		runExits[key] = exited
+		workMu.Unlock()
+		defer func() {
+			workMu.Lock()
+			delete(cancellations, key)
+			delete(runExits, key)
+			workMu.Unlock()
+			close(exited)
+		}()
+		spec, _ := parseAgentSpec(session.Agent)
+		jobMu.Lock()
+		jobs[key] = JobSnapshot{Kind: core.JobKindDiscussion, Number: i.Number, Target: i.Target, Repository: issueRepository(i.Target, i), Title: i.Title, Status: "active", SessionID: session.ID, Agent: spec.Name, Model: spec.Model, Effort: spec.Level, Started: time.Now()}
+		jobMu.Unlock()
+		tasks.mu.Lock()
+		tasks.running++
+		tasks.mu.Unlock()
+		w.jobSystem(key, "started answering the discussion on "+session.Agent)
+		publish()
+		output := jobOutputWriter{write: func(text string) {
+			jobMu.Lock()
+			job := jobs[key]
+			job.Log += text
+			jobs[key] = job
+			jobMu.Unlock()
+			publish()
+		}}
+		updateSession := func(update AgentSession) {
+			jobMu.Lock()
+			job := jobs[key]
+			if update.ID != "" {
+				job.SessionID = update.ID
+			}
+			jobs[key] = job
+			jobMu.Unlock()
+			publish()
+		}
+		err := w.runRelayingInbox(runCtx, inboxRun{key: key, subject: fmt.Sprintf("discussion #%d", i.Number), intro: intro, issue: i, output: output, updateSession: updateSession}, session)
+		if err == nil {
+			err = context.Cause(runCtx)
+		}
+		jobMu.Lock()
+		job := jobs[key]
+		job.Status, job.Finished = "complete", time.Now()
+		if err != nil {
+			job.Status = "failed"
+		}
+		jobs[key] = job
+		jobMu.Unlock()
+		tasks.mu.Lock()
+		tasks.running--
+		if err == nil {
+			tasks.completed++
+		} else {
+			tasks.failed++
+		}
+		tasks.mu.Unlock()
+		w.jobSystem(key, "discussion run "+job.Status)
+		publish()
+		return err
+	}
 	startScheduled = func(request projectTaskRequest) {
 		run, target := request.run, request.run.Project
 		number := int(run.Fire.Unix())
@@ -3951,11 +4052,7 @@ func (w *Engine) Run(ctx context.Context) error {
 		key := target + "#" + strconv.Itoa(number)
 		session := AgentSession{Agent: request.session.Agent, Model: request.session.Model}
 		if session.Agent == "" {
-			if identified, ok := w.runner().(TargetAgentIdentifier); ok {
-				session.Agent = identified.AgentNameFor(target)
-			} else if identified, ok := w.runner().(AgentIdentifier); ok {
-				session.Agent = identified.AgentName()
-			}
+			session.Agent = w.newJobAgent(target)
 		}
 		spec, _ := parseAgentSpec(session.Agent)
 		jobs[key] = JobSnapshot{Kind: core.JobKindSchedule, ScheduleID: run.TaskID, Number: number, Target: target, Repository: request.repository, Title: run.Name, Status: "queued", Agent: spec.Name, Model: spec.Model, Effort: spec.Level, Started: time.Now()}
@@ -4035,19 +4132,20 @@ func (w *Engine) Run(ctx context.Context) error {
 					jobMu.Unlock()
 					publish()
 				}
+				// Output sent to the schedule between runs, or to this run
+				// while it was queued, starts the run; a precompiled script
+				// cannot read it, so the model runs instead (issue #1007).
+				intro := scheduleInboxIntro(issue)
+				if queued := w.takeInbox(key, scheduleInboxKey(target, run.TaskID)); len(queued) > 0 {
+					session.Update = inboxPrompt(intro, queued)
+					w.logf("scheduled run %s starts with output from %s", key, inboxSources(queued))
+				}
 				compiled := false
-				if runErr == nil && run.RunCompiled != nil {
+				if runErr == nil && run.RunCompiled != nil && session.Update == "" {
 					compiled, fellBack = w.runCompiledProjectTask(runCtx, key, run, request.repository, output, updateSession)
 				}
 				if runErr == nil && !compiled {
-					switch runner := w.runner().(type) {
-					case SessionAgentOutputRunner:
-						runErr = runner.RunSessionWithOutput(runCtx, issue, session, updateSession, output)
-					case AgentOutputRunner:
-						runErr = runner.RunWithOutput(runCtx, issue, output)
-					default:
-						runErr = runner.Run(runCtx, issue)
-					}
+					runErr = w.runRelayingInbox(runCtx, inboxRun{key: key, subject: "scheduled run " + key, intro: intro, issue: issue, output: output, updateSession: updateSession}, session)
 				}
 			} else {
 				runErr = context.Cause(runCtx)
@@ -4076,6 +4174,10 @@ func (w *Engine) Run(ctx context.Context) error {
 			w.jobSystem(key, "scheduled run "+status)
 			w.logf("scheduled run %s %s: %s", key, status, result.summary)
 			publish()
+			// Output that reached the run too late for it waits for the
+			// schedule's next run. Once the finished run is published, new
+			// output goes to the schedule's queue directly.
+			w.carryInbox(key, scheduleInboxKey(target, run.TaskID))
 		}()
 	}
 	// Signal readiness now, immediately before the first dispatch. Initial
@@ -4787,6 +4889,18 @@ func workStateMatchesRemote(target string, issue Issue, state workState) bool {
 	default:
 		return true
 	}
+}
+
+// newJobAgent is the agent spec a new job on target runs on when nothing
+// names one.
+func (w *Engine) newJobAgent(target string) string {
+	if identified, ok := w.runner().(TargetAgentIdentifier); ok {
+		return identified.AgentNameFor(target)
+	}
+	if identified, ok := w.runner().(AgentIdentifier); ok {
+		return identified.AgentName()
+	}
+	return ""
 }
 
 func newSessionID() (string, error) {

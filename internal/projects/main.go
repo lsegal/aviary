@@ -1565,7 +1565,7 @@ func jobPrompt(r CommandRunner, issue Issue, session AgentSession) string {
 	}
 	prompt := "continue"
 	if !session.Resume && issue.Prompt != "" {
-		prompt = scheduledRunPrompt(r, issue, session)
+		prompt = scheduledRunPrompt(r, issue, session) + freshUpdate(session)
 	} else if !session.Resume {
 		repo := issueRepository(target, issue)
 		if isDiscussionTarget(target) {
@@ -1606,6 +1606,7 @@ func jobPrompt(r CommandRunner, issue Issue, session AgentSession) string {
 		if session.ReusedClone && inCheckout && !isDiscussionTarget(target) {
 			prompt += "\n\nReuse clone: " + session.CheckoutDirectory
 		}
+		prompt += freshUpdate(session)
 	} else if session.Update != "" {
 		// The session is being resumed to relay a change made to the issue
 		// while it was running, so the change itself is the
@@ -1621,6 +1622,15 @@ func jobPrompt(r CommandRunner, issue Issue, session AgentSession) string {
 		}
 	}
 	return prompt
+}
+
+// freshUpdate is what a fresh session is told besides its dispatch: output
+// sent to its job before it started (issue #1007).
+func freshUpdate(session AgentSession) string {
+	if session.Update == "" {
+		return ""
+	}
+	return "\n\n" + session.Update
 }
 
 func commandArgsForSession(r CommandRunner, issue Issue, session AgentSession) []string {
