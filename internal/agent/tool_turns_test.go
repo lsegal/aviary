@@ -88,6 +88,8 @@ func TestFindToolCallTurnsWithoutHistory(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, turns)
 
+	// A session that cannot be read is skipped, not fatal.
+	require.NoError(t, os.MkdirAll(filepath.Join(store.AgentDir("Aviary"), "sessions", "unreadable.jsonl"), 0o700))
 	writeSession(t, "Aviary", "tools_only", toolMessage(t, toolEventRecord{Name: "project_issue_create", Result: "{}"}, time.Now()))
 	turns, err = FindToolCallTurns("project_issue_create")
 	require.NoError(t, err)

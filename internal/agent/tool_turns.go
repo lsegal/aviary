@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -29,7 +30,8 @@ type ToolCallTurn struct {
 // FindToolCallTurns returns every call of tool that returned a result in any
 // agent's session history, oldest first, each with the user message whose
 // turn made it, so a tool's past effect can be traced back to the request
-// behind it, such as the screenshots sent with an issue filing.
+// behind it, such as the screenshots sent with an issue filing. Sessions
+// that cannot be read are skipped.
 func FindToolCallTurns(tool string) ([]ToolCallTurn, error) {
 	agentsDir := filepath.Join(store.DataDir(), store.DirAgents)
 	agents, err := os.ReadDir(agentsDir)
@@ -48,7 +50,10 @@ func FindToolCallTurns(tool string) ([]ToolCallTurn, error) {
 		for _, path := range sessions {
 			found, err := sessionToolCallTurns(path, tool)
 			if err != nil {
-				return nil, err
+				// One unreadable session, such as one with a line too long
+				// to read, must not hide every other session's calls.
+				slog.Warn("agent: skipping unreadable session while finding tool calls", "path", path, "err", err)
+				continue
 			}
 			for i := range found {
 				found[i].AgentID = a.Name()
