@@ -1051,11 +1051,21 @@ func TestWorkerPool_ExecutePrecompiledProjectJob(t *testing.T) {
 		compiledFor = append(compiledFor, agentName+"/"+taskName)
 		return script, compileErr
 	}
-	output := func(job *domain.Job) string {
+	var reported []string
+	p.projectScriptReporter = func(agentName, taskName string, err error) error {
+		result := "ok"
+		if err != nil {
+			result = err.Error()
+		}
+		reported = append(reported, agentName+"/"+taskName+": "+result)
+		return nil
+	}
+	persisted := func(job *domain.Job) domain.Job {
 		persisted, err := store.ReadJSON[domain.Job](store.FindJobPath(job.ID))
 		require.NoError(t, err)
-		return persisted.Output
+		return persisted
 	}
+	output := func(job *domain.Job) string { return persisted(job).Output }
 
 	job, err := q.EnqueueWithType("alpha/stale", "project", "alpha", "Label stale issues", "", "", 1, "", "")
 	require.NoError(t, err)
@@ -1064,26 +1074,46 @@ func TestWorkerPool_ExecutePrecompiledProjectJob(t *testing.T) {
 	assert.True(t, cloned)
 	assert.Zero(t, modelRuns, "a deterministic project task runs no model")
 	assert.Equal(t, "Labeled 2 stale issues", output(job))
+	assert.Empty(t, persisted(job).ScriptError)
+	assert.Equal(t, []string{"alpha/stale: ok"}, reported)
 
-	// A script that fails falls back to the model, and the run says why.
-	script = `error("gh exited 1")`
+	// A script that fails falls back to the model. The run's summary and chat
+	// message are the model's result and a short note; the traceback and
+	// gh's JSON body are kept for the run's logs only.
+	script = `error("failed to read main SHA: gh: Not Found (HTTP 404) {\n  \"message\": \"Not Found\",\n  \"status\": \"404\"\n}")`
 	require.NoError(t, p.executeJob(context.Background(), job))
 	assert.Equal(t, 1, modelRuns)
-	assert.Contains(t, output(job), "Precompiled script failed, so the model ran the task:")
-	assert.Contains(t, output(job), "gh exited 1")
-	assert.Contains(t, output(job), "model summary")
+	assert.Equal(t, "model summary\n\n_Precompiled script failed (gh 404), fell back to the model; details in the run logs._", output(job))
+	scriptErr := persisted(job).ScriptError
+	assert.Contains(t, scriptErr, "failed to read main SHA")
+	assert.Contains(t, scriptErr, `"message": "Not Found"`)
+	assert.Contains(t, scriptErr, "stack traceback")
+	sess := persisted(job).SessionID
+	assertSessionContains(t, "alpha", sess, "Precompiled script failed (gh 404)")
+	sessPath := store.FindSessionPath("alpha", sess)
+	require.NotEmpty(t, sessPath)
+	raw, err := os.ReadFile(sessPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "stack traceback")
+	assert.NotContains(t, string(raw), "Not Found")
+	require.Len(t, reported, 2)
+	assert.Contains(t, reported[1], "alpha/stale: ")
+	assert.Contains(t, reported[1], "HTTP 404")
 
-	// So does a compile that fails.
+	// A compile that fails falls back too, but is not the script's failure.
 	script, compileErr = "", errors.New("provider unavailable")
 	require.NoError(t, p.executeJob(context.Background(), job))
 	assert.Equal(t, 2, modelRuns)
-	assert.Contains(t, output(job), "provider unavailable")
+	assert.Contains(t, output(job), "Precompiled script failed (provider unavailable)")
+	assert.Len(t, reported, 2, "a failed compile is not reported as a script result")
 
 	// A prompt that is not deterministic just runs on the model.
 	compileErr = nil
 	require.NoError(t, p.executeJob(context.Background(), job))
 	assert.Equal(t, 3, modelRuns)
 	assert.Equal(t, "model summary", output(job))
+	assert.Empty(t, persisted(job).ScriptError, "a run without a script failure clears the last one")
+	assert.Len(t, reported, 2)
 
 	// A task without precompile never compiles.
 	compiledFor = nil

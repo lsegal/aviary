@@ -179,11 +179,14 @@ Return task compile attempt records, optionally filtered.
 | --- | --- | --- | --- |
 | `id` | string | | Filter to a specific compile attempt ID |
 | `start` | string | | Start of date range (RFC3339 or `YYYY-MM-DD`) |
-| `end` | string | | End of date range |
-| `status` | string | | Filter by status: `"pending"`, `"success"`, `"error"` |
-| `agent` | string | | Filter by agent name |
+| `end` | string | | End of date range (RFC3339 or `YYYY-MM-DD`, which includes that whole day) |
+| `status` | string | | Filter by status: `"succeeded"`, `"skipped"`, `"failed"` |
+| `agent` | string | | Filter by agent name (case-insensitive) |
+| `task` | string | | Filter by task name (case-insensitive) |
 
-**Returns:** JSON array of `TaskCompile` records.
+An unparseable `start` or `end` is an error rather than being ignored.
+
+**Returns:** JSON array of `TaskCompile` records, without their `stages`, which can be hundreds of kilobytes each. Use `task_compile_get` for a record's stages.
 
 ---
 
@@ -240,7 +243,7 @@ Return job records with flexible filtering.
 | --- | --- | --- | --- |
 | `id` | string | | Filter to a specific job ID |
 | `start` | string | | Start of date range (RFC3339 or `YYYY-MM-DD`) |
-| `end` | string | | End of date range |
+| `end` | string | | End of date range (RFC3339 or `YYYY-MM-DD`, which includes that whole day) |
 | `status` | string | | Filter by status: `"pending"`, `"running"`, `"completed"`, `"failed"`, `"stopped"` |
 | `agent` | string | | Filter by agent name |
 

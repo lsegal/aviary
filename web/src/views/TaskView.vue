@@ -222,7 +222,8 @@ const statChips = computed((): StatChip[] => {
 		label: RESULT_LABELS[key],
 		value: s[key],
 		chip: String(s[key]),
-		chipLabel: key === "queued" ? "queued" : RESULT_LABELS[key].toLowerCase(),
+		chipLabel:
+			key === "fallback" ? "via fallback" : RESULT_LABELS[key].toLowerCase(),
 		cls: CHIP_TONES[key],
 		filter: key,
 		active: filter.value === key,

@@ -159,8 +159,7 @@ export function taskRunStats(entries: TaskRunEntry[]): TaskRunStats {
 		fallback,
 		failed,
 		scriptFailures: entries.filter((e) => e.scriptFailed).length,
-		successRate:
-			ok + failed ? Math.round((ok / (ok + failed)) * 100) : null,
+		successRate: ok + failed ? Math.round((ok / (ok + failed)) * 100) : null,
 		last: entries.find((e) => e.job && !isActive(e)),
 		avgDurationMs: timed.length
 			? timed.reduce((sum, e) => sum + (e.durationMs ?? 0), 0) / timed.length

@@ -485,13 +485,22 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 			slog.Warn("job: failed to record precompiled script result", "id", job.ID, "task", job.TaskID, "err", reportErr)
 		}
 	}
+	scriptErr := ""
 	if compiledErr != nil && !errors.Is(compiledErr, ErrProjectTaskNotCompiled) {
+		scriptErr = compiledErr.Error()
+	}
+	if scriptErr != "" || job.ScriptError != "" {
+		// Each attempt records its own script error, or clears a retried
+		// job's earlier one.
+		if persistErr := p.queue.SetScriptError(job.ID, scriptErr); persistErr != nil {
+			slog.Warn("job: failed to persist script error", "id", job.ID, "err", persistErr)
+		}
+		job.ScriptError = scriptErr
+	}
+	if scriptErr != "" {
 		// The run's summary and chat message are the model's result plus a
 		// short note; the full error, often a Lua traceback with gh's JSON
 		// body, stays in the run's logs.
-		if persistErr := p.queue.SetScriptError(job.ID, compiledErr.Error()); persistErr != nil {
-			slog.Warn("job: failed to persist script error", "id", job.ID, "err", persistErr)
-		}
 		summary = fallbackSummary(summary, compiledErr)
 		slog.Warn("job: precompiled project task fell back to the model", "id", job.ID, "task", job.TaskID, "err", compiledErr)
 	}
