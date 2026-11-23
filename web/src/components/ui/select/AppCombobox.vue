@@ -84,7 +84,7 @@ import {
 	ComboboxTrigger,
 	ComboboxViewport,
 } from "radix-vue";
-import { computed, type HTMLAttributes, ref, useId } from "vue";
+import { computed, type HTMLAttributes, ref, useId, watch } from "vue";
 import {
 	CHECK,
 	CHEVRON,
@@ -169,6 +169,16 @@ function labelFor(key: string): string {
 function displayValue(key: unknown): string {
 	return typeof key === "string" && key ? labelFor(key) : "";
 }
+
+// radix-vue only refreshes the input text when the value changes, so a
+// value set before its options load would keep showing the raw key. Swap
+// in the label once it resolves, unless the user has typed a search.
+watch(
+	() => (props.multiple ? "" : displayValue(selectedKeys.value)),
+	(label, previous) => {
+		if (searchTerm.value === previous) searchTerm.value = label;
+	},
+);
 
 function filter(keys: string[], term: string): string[] {
 	return keys.filter((k) => {
