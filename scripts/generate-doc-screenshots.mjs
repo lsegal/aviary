@@ -1,5 +1,6 @@
 import { chromium } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
+import https from "node:https";
 import path from "node:path";
 import process from "node:process";
 
@@ -12,7 +13,7 @@ const outputDir = path.join(
 	"screenshots",
 );
 const baseURL =
-	process.env.DOCS_SCREENSHOT_BASE_URL ?? "http://127.0.0.1:5173";
+	process.env.DOCS_SCREENSHOT_BASE_URL ?? "https://127.0.0.1:5173";
 const themes = ["light", "dark"];
 
 function themedOutputName(outputName, theme) {
@@ -930,12 +931,27 @@ const projectsFixtures = {
 	},
 };
 
+// serverReady reports whether url answers 2xx. The dev server's cert is
+// self-signed, so it is not verified.
+function serverReady(url) {
+	if (!url.startsWith("https:")) {
+		return fetch(url).then((response) => response.ok);
+	}
+	return new Promise((resolve, reject) => {
+		https
+			.get(url, { rejectUnauthorized: false }, (response) => {
+				response.resume();
+				resolve(response.statusCode >= 200 && response.statusCode < 300);
+			})
+			.on("error", reject);
+	});
+}
+
 async function waitForServer(url, timeoutMs = 30_000) {
 	const started = Date.now();
 	for (;;) {
 		try {
-			const response = await fetch(url);
-			if (response.ok) return;
+			if (await serverReady(url)) return;
 		} catch {
 			// Keep waiting.
 		}
@@ -1173,7 +1189,9 @@ async function main() {
 	await mkdir(outputDir, { recursive: true });
 	await waitForServer(baseURL);
 
-	const browser = await chromium.launch();
+	const browser = await chromium.launch({
+		args: ["--ignore-certificate-errors"],
+	});
 	try {
 		for (const theme of themes) {
 			await captureSimple({
