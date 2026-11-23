@@ -91,6 +91,79 @@ func TestTranscribeHandler_EmptyRecording(t *testing.T) {
 	assert.Contains(t, resp.Error, "empty")
 }
 
+func TestTranscribeHandler_ReportsNoSpeech(t *testing.T) {
+	useTranscriber(t, noSpeechEngine{})
+	code, resp := postRecording(t, &Server{cfg: &config.Config{}}, "webm-bytes")
+	assert.Equal(t, http.StatusOK, code)
+	assert.Equal(t, transcribeResponse{DurationMS: 9000, NoSpeech: true}, resp)
+}
+
+type noSpeechEngine struct{}
+
+func (noSpeechEngine) Transcribe(context.Context, string, transcribe.Options) (transcribe.Transcript, error) {
+	return transcribe.Transcript{Duration: 9 * time.Second, NoSpeech: true}, nil
+}
+
+func TestRecordingExt(t *testing.T) {
+	cases := []struct {
+		name, head, contentType, want string
+	}{
+		{"webm magic beats a wrong type", "\x1a\x45\xdf\xa3\x9f\x42\x86\x81", "audio/mp4", ".webm"},
+		{"ogg magic", "OggS\x00\x02", "", ".ogg"},
+		{"safari mp4 magic", "\x00\x00\x00\x1cftypisom", "audio/webm", ".m4a"},
+		{"wav magic", "RIFF\x24\x00\x00\x00WAVE", "", ".wav"},
+		{"mp3 magic", "ID3\x04\x00", "", ".mp3"},
+		{"type with parameters", "????", "audio/ogg; codecs=opus", ".ogg"},
+		{"mp4 type", "????", "audio/mp4;codecs=mp4a.40.2", ".m4a"},
+		{"unknown defaults to webm", "????", "", ".webm"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "rec")
+			require.NoError(t, os.WriteFile(path, []byte(tc.head), 0o600))
+			assert.Equal(t, tc.want, recordingExt(path, tc.contentType))
+		})
+	}
+}
+
+// useLocalWhisper transcribes with the real whisper-cli and ffmpeg, skipping
+// the test when they or the model are not installed. Tests use their own data
+// directory, so point AVIARY_CONFIG_TRANSCRIPTION_MODEL at a downloaded model
+// (for example ~/.config/aviary/deps/whisper/ggml-base.en.bin) to run them.
+func useLocalWhisper(t *testing.T) {
+	t.Helper()
+	st := transcribe.Detect("")
+	if missing := st.Missing(); len(missing) > 0 {
+		t.Skipf("local transcription not installed: missing %s", strings.Join(missing, ", "))
+	}
+	useTranscriber(t, transcribe.NewLocal(st.Model.Path))
+}
+
+func postFixture(t *testing.T, name string) (int, transcribeResponse) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", name))
+	require.NoError(t, err)
+	return postRecording(t, &Server{cfg: &config.Config{}}, string(data))
+}
+
+func TestTranscribeHandler_WebMSpeechEndToEnd(t *testing.T) {
+	useLocalWhisper(t)
+	code, resp := postFixture(t, "speech.webm")
+	require.Equal(t, http.StatusOK, code, resp.Error)
+	assert.False(t, resp.NoSpeech)
+	assert.Regexp(t, `(?i)^test (one|1), (two|2), (three|3)\.?$`, resp.Text)
+	assert.Positive(t, resp.DurationMS)
+}
+
+func TestTranscribeHandler_WebMSilenceEndToEnd(t *testing.T) {
+	useLocalWhisper(t)
+	code, resp := postFixture(t, "silence.webm")
+	require.Equal(t, http.StatusOK, code, resp.Error)
+	assert.True(t, resp.NoSpeech)
+	assert.Empty(t, resp.Text)
+	assert.InDelta(t, 3000, resp.DurationMS, 100)
+}
+
 func TestTranscriptionHandler_ReportsStatus(t *testing.T) {
 	store.SetDataDir(t.TempDir())
 	t.Cleanup(func() { store.SetDataDir("") })

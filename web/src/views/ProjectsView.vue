@@ -293,6 +293,7 @@ import {
 	useProjectSchedules,
 } from "../composables/useProjects";
 import { useServerStatus } from "../composables/useServerStatus";
+import { useTaskPause } from "../composables/useTaskPause";
 import {
 	agentProjectsSettingsPath,
 	projectOwner,
@@ -559,8 +560,13 @@ async function onScheduleAction(
 		busySchedule.value = "";
 	}
 }
-function toggleSchedule(s: ProjectSchedule) {
-	return saveSchedule({ ...s, enabled: !s.enabled });
+// Pause and Resume flip the box at once, as the sidebar does, and flip it
+// back with a toast when the change fails.
+async function toggleSchedule(s: ProjectSchedule) {
+	const enabled = !s.enabled;
+	s.enabled = enabled;
+	if (!(await setTaskEnabled(s.agent, s.name, enabled))) s.enabled = !enabled;
+	await refreshSchedules();
 }
 function openScheduleSettings(s: ProjectSchedule) {
 	openItemDialog({ kind: "task", mode: "edit", agent: s.agent, name: s.name });
@@ -577,6 +583,7 @@ const scheduleAgent = computed(
 // Schedule creates a scheduled task the way any is created, through the
 // shared Add task dialog, as a "project" task targeting this project.
 const { open: openItemDialog } = useAgentItemDialogs();
+const { setTaskEnabled } = useTaskPause();
 function onNewSchedule() {
 	if (!scheduleAgent.value) return;
 	openItemDialog({

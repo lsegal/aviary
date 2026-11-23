@@ -29,7 +29,7 @@
 					</p>
 					<p data-testid="kanban-scheduled-next" class="tabular-nums text-violet-700 dark:text-violet-300"
 						:title="nextOf(s).kind === 'next' ? formatFire(s.nextRun) : ''">
-						<template v-if="nextOf(s).kind === 'paused'"><span class="text-amber-700 dark:text-amber-400">Paused</span></template>
+						<PausedChip v-if="nextOf(s).kind === 'paused'" />
 						<template v-else-if="nextOf(s).kind === 'queued'">Queued</template>
 						<template v-else-if="s.nextRun">Next {{ until(s.nextRun, now) }}</template>
 						<template v-else-if="nextOf(s).kind === 'running'">Running now</template>
@@ -106,6 +106,7 @@ import {
 	waitText,
 } from "../../lib/projects";
 import { taskSessionPath, useSettingsStore } from "../../stores/settings";
+import PausedChip from "../tasks/PausedChip.vue";
 import PullRequestLink from "./PullRequestLink.vue";
 
 const props = withDefaults(

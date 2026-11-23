@@ -277,8 +277,17 @@ test("System → Settings' + Add agent opens a new agent's settings", async ({
 test("unauthenticated user is redirected to login", async ({ page }) => {
 	// Clear token so auth guard fires.
 	await page.addInitScript(() => localStorage.removeItem("aviary_token"));
+	// A reachable server that requires a token.
+	await page.route("/api/health", (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ ok: true, version: "dev" }),
+		}),
+	);
 	await page.goto("/system/overview");
 	await expect(page).toHaveURL("/login");
+	await expect(page.getByTestId("server-unavailable")).toHaveCount(0);
 });
 
 test("with several agents the phone main nav stays on one row", async ({
@@ -333,4 +342,36 @@ test("a server without token authentication skips the login prompt (#877)", asyn
 	await expect(page).toHaveURL("/system/overview");
 	await page.goto("/login");
 	await expect(page).not.toHaveURL(/\/login$/);
+});
+
+test("an unreachable server shows a reconnecting state instead of login (#968)", async ({
+	page,
+}) => {
+	await page.addInitScript(() => localStorage.removeItem("aviary_token"));
+	let serverUp = false;
+	let failures = 0;
+	await page.route("/api/health", (route) => {
+		if (!serverUp) {
+			failures++;
+			// Alternate a network error and a proxy 5xx, as vite's proxy does.
+			return failures % 2
+				? route.abort("connectionrefused")
+				: route.fulfill({ status: 502, body: "ECONNREFUSED" });
+		}
+		return route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ ok: true, version: "dev", auth_disabled: true }),
+		});
+	});
+	await page.goto("/system/overview");
+	const reconnecting = page.getByTestId("server-unavailable");
+	await expect(reconnecting).toHaveText(/Server unavailable, reconnecting/);
+	await expect.poll(() => failures).toBeGreaterThanOrEqual(2);
+	await expect(page).not.toHaveURL(/\/login$/);
+	await expect(page.getByLabel("Token")).toHaveCount(0);
+
+	serverUp = true;
+	await expect(reconnecting).toHaveCount(0);
+	await expect(page).toHaveURL("/system/overview");
 });

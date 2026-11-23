@@ -124,9 +124,8 @@ test("agents and tasks tab shows configured entries", async ({ page }) => {
 	await expect(
 		page.locator('input[placeholder="daily-briefing"]').first(),
 	).toHaveValue("daily-briefing");
-	await expect(
-		page.getByText("disabled", { exact: true }).first(),
-	).toBeVisible();
+	await expect(page.getByTestId("paused-chip").first()).toBeVisible();
+	await expect(page.getByText("disabled", { exact: true })).toHaveCount(0);
 	await expect(
 		page.getByRole("switch", { name: "Toggle task enabled" }).first(),
 	).toBeVisible();
@@ -850,12 +849,15 @@ test("tasks can be enabled from the settings UI", async ({ page }) => {
 	// The root page is the overview; a task's Settings opens it for editing.
 	await openTaskSettings(page);
 
-	await expect(page.getByText("disabled", { exact: true })).toBeVisible();
+	const chip = page.getByTestId("paused-chip");
+	await expect(chip).toHaveText("Paused");
+	await expect(page.getByText("disabled", { exact: true })).toHaveCount(0);
 	const toggle = page
 		.getByRole("switch", { name: "Toggle task enabled" })
 		.first();
 	await toggle.click();
 	await expect(toggle).toHaveAttribute("aria-checked", "true");
+	await expect(chip).toHaveCount(0);
 });
 
 test("task header wraps cleanly on mobile", async ({ page }) => {
