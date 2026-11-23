@@ -637,7 +637,8 @@ const scheduleJobStates = computed(
 const allItems = computed(() =>
 	aggregate.value
 		? allJobs.value
-		: allJobs.value - scheduleJobStates.value + schedules.value.length,
+		: Math.max(allJobs.value - scheduleJobStates.value, 0) +
+			schedules.value.length,
 );
 const shownTotal = computed(
 	() => (showJobs.value ? total.value : 0) + boardSchedules.value.length,
