@@ -96,6 +96,7 @@ test("the gear opens a Settings, Restart and Logout menu rather than navigating"
 	await expect(page).toHaveURL("/system/overview");
 	await expect(page.getByTestId("gear-menu").getByRole("menuitem")).toHaveText([
 		"Settings",
+		"Edit sidebar",
 		"Restart",
 		"Logout",
 	]);

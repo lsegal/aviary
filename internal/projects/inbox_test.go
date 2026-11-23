@@ -42,7 +42,7 @@ func TestSendJobMessageByJobState(t *testing.T) {
 		nudge := make(chan struct{}, 1)
 		key := "o/r#" + strconv.Itoa(number)
 		engine.liveNudges.Store(key, nudge)
-		outcome, _, err := m.SendJobMessage("o/r", number, msg)
+		outcome, _, err := m.SendJobMessage(context.Background(), "o/r", number, msg, JobDeliveryOptions{})
 		if err != nil || outcome != InboxDelivered {
 			t.Fatalf("job %d = %q, %v; want delivered", number, outcome, err)
 		}
@@ -57,7 +57,7 @@ func TestSendJobMessageByJobState(t *testing.T) {
 	}
 
 	// A paused job keeps its state and holds the message for its next run.
-	outcome, job, err := m.SendJobMessage("o/r", 3, msg)
+	outcome, job, err := m.SendJobMessage(context.Background(), "o/r", 3, msg, JobDeliveryOptions{})
 	if err != nil || outcome != InboxQueued || job.Status != "paused" {
 		t.Fatalf("paused job = %q, %q, %v; want queued and still paused", outcome, job.Status, err)
 	}
@@ -66,7 +66,7 @@ func TestSendJobMessageByJobState(t *testing.T) {
 	}
 
 	// A completed job rejects the output and queues nothing.
-	if _, _, err := m.SendJobMessage("o/r", 4, msg); err == nil || !strings.Contains(err.Error(), "is complete") {
+	if _, _, err := m.SendJobMessage(context.Background(), "o/r", 4, msg, JobDeliveryOptions{}); err == nil || !strings.Contains(err.Error(), "is complete") {
 		t.Fatalf("complete job err = %v, want it rejected", err)
 	}
 	if got := engine.jobInbox().pending("o/r#4"); got != 0 {
@@ -74,7 +74,7 @@ func TestSendJobMessageByJobState(t *testing.T) {
 	}
 
 	// A job that no longer exists is an error the caller can recognize.
-	if _, _, err := m.SendJobMessage("o/r", 99, msg); !errors.Is(err, ErrJobGone) {
+	if _, _, err := m.SendJobMessage(context.Background(), "o/r", 99, msg, JobDeliveryOptions{}); !errors.Is(err, ErrJobGone) {
 		t.Fatalf("missing job err = %v, want ErrJobGone", err)
 	}
 }
@@ -84,7 +84,7 @@ func TestSendJobMessageToDiscussionJobs(t *testing.T) {
 	msg := InboxMessage{Source: "task bot/digest", Text: "new release notes"}
 	nudge := make(chan struct{}, 1)
 	engine.liveNudges.Store("o/r/discussions#8", nudge)
-	outcome, job, err := m.SendJobMessage("o/r/discussions", 8, msg)
+	outcome, job, err := m.SendJobMessage(context.Background(), "o/r/discussions", 8, msg, JobDeliveryOptions{})
 	if err != nil || outcome != InboxDelivered || job.Kind != core.JobKindDiscussion {
 		t.Fatalf("active discussion = %q, %+v, %v; want delivered", outcome, job, err)
 	}
@@ -96,8 +96,11 @@ func TestSendJobMessageToDiscussionJobs(t *testing.T) {
 	if got := engine.jobInbox().pending("o/r/discussions#8"); got != 1 {
 		t.Fatalf("active discussion has %d pending messages, want 1", got)
 	}
-	if _, _, err := m.SendJobMessage("o/r/discussions", 9, msg); err == nil || !strings.Contains(err.Error(), "is complete") {
+	if _, _, err := m.SendJobMessage(context.Background(), "o/r/discussions", 9, msg, JobDeliveryOptions{}); err == nil || !strings.Contains(err.Error(), "is complete") {
 		t.Fatalf("answered discussion err = %v, want it rejected", err)
+	}
+	if _, _, err := m.SendJobMessage(context.Background(), "o/r/discussions", 9, msg, JobDeliveryOptions{Reopen: true}); err == nil || !strings.Contains(err.Error(), "is complete") {
+		t.Fatalf("answered discussion with reopen err = %v, want it rejected", err)
 	}
 }
 
@@ -109,7 +112,7 @@ func TestSendJobMessageToScheduledRuns(t *testing.T) {
 	// schedule's run in flight, which is woken.
 	nudge := make(chan struct{}, 1)
 	engine.liveNudges.Store("o/r#6", nudge)
-	outcome, job, err := m.SendJobMessage("o/r", 5, msg)
+	outcome, job, err := m.SendJobMessage(context.Background(), "o/r", 5, msg, JobDeliveryOptions{})
 	if err != nil || outcome != InboxDelivered || job.Number != 6 {
 		t.Fatalf("schedule with a run in flight = %q, run %d, %v; want delivered to run 6", outcome, job.Number, err)
 	}
@@ -124,7 +127,7 @@ func TestSendJobMessageToScheduledRuns(t *testing.T) {
 
 	// Between runs, output waits for the schedule's next run, even when the
 	// last run failed.
-	outcome, job, err = m.SendJobMessage("o/r", 7, msg)
+	outcome, job, err = m.SendJobMessage(context.Background(), "o/r", 7, msg, JobDeliveryOptions{})
 	if err != nil || outcome != InboxQueued || job.Number != 7 {
 		t.Fatalf("schedule between runs = %q, run %d, %v; want queued", outcome, job.Number, err)
 	}
@@ -138,7 +141,7 @@ func TestSendJobMessageToScheduledRuns(t *testing.T) {
 	m.SetScheduleSource(func() []domain.ScheduledTask {
 		return []domain.ScheduledTask{{ID: "bot/nightly", Name: "nightly", Project: "o/r", History: []domain.TaskRun{{FireTime: fire}}}}
 	})
-	outcome, job, err = m.SendJobMessage("o/r", int(fire.Unix()), msg)
+	outcome, job, err = m.SendJobMessage(context.Background(), "o/r", int(fire.Unix()), msg, JobDeliveryOptions{})
 	if err != nil || outcome != InboxQueued || job.ScheduleID != "bot/nightly" {
 		t.Fatalf("schedule run from history = %q, %+v, %v; want queued for bot/nightly", outcome, job, err)
 	}
@@ -147,9 +150,106 @@ func TestSendJobMessageToScheduledRuns(t *testing.T) {
 	}
 }
 
+// serveJobActions answers the engine's job action requests the way its
+// dispatch loop does, recording each and replying with reply.
+func serveJobActions(t *testing.T, engine *Engine, reply error) <-chan core.JobAction {
+	t.Helper()
+	close(engine.readyChan())
+	seen := make(chan core.JobAction, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() {
+		for {
+			select {
+			case request := <-engine.jobActionRequests():
+				seen <- request.action
+				request.done <- reply
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return seen
+}
+
+func TestSendJobMessageResumesPausedJob(t *testing.T) {
+	m, engine := inboxTestManager(t)
+	actions := serveJobActions(t, engine, nil)
+	msg := InboxMessage{Source: "task bot/digest", Text: "new results"}
+
+	outcome, _, err := m.SendJobMessage(context.Background(), "o/r", 3, msg, JobDeliveryOptions{Resume: true})
+	if err != nil || outcome != InboxResumed {
+		t.Fatalf("paused job with resume = %q, %v; want resumed", outcome, err)
+	}
+	// Resume is the dashboard's resume: a retry of the paused job, whose run
+	// relays the queued message on its first turn.
+	if got := <-actions; got.Action != "retry" || got.Target != "o/r" || got.Number != 3 {
+		t.Fatalf("job action = %+v, want retry of o/r#3", got)
+	}
+	if got := engine.jobInbox().pending("o/r#3"); got != 1 {
+		t.Fatalf("resumed job has %d pending messages, want 1", got)
+	}
+
+	// Resume only applies to paused jobs; a completed job still rejects.
+	if _, _, err := m.SendJobMessage(context.Background(), "o/r", 4, msg, JobDeliveryOptions{Resume: true}); err == nil || !strings.Contains(err.Error(), "is complete") {
+		t.Fatalf("complete job with resume err = %v, want it rejected", err)
+	}
+}
+
+func TestSendJobMessageQueuesWhenResumeFails(t *testing.T) {
+	m, engine := inboxTestManager(t)
+	serveJobActions(t, engine, errors.New("no slot"))
+	outcome, _, err := m.SendJobMessage(context.Background(), "o/r", 3, InboxMessage{Text: "x"}, JobDeliveryOptions{Resume: true})
+	if err != nil || outcome != InboxQueued {
+		t.Fatalf("failed resume = %q, %v; want queued", outcome, err)
+	}
+	if got := engine.jobInbox().pending("o/r#3"); got != 1 {
+		t.Fatalf("job has %d pending messages, want 1", got)
+	}
+}
+
+func TestSendJobMessageReopensCompletedJob(t *testing.T) {
+	m, engine := inboxTestManager(t)
+	actions := serveJobActions(t, engine, nil)
+	msg := InboxMessage{Source: "workflow bot/triage", Text: "regression is back"}
+
+	outcome, _, err := m.SendJobMessage(context.Background(), "o/r", 4, msg, JobDeliveryOptions{Reopen: true})
+	if err != nil || outcome != InboxReopened {
+		t.Fatalf("complete job with reopen = %q, %v; want reopened", outcome, err)
+	}
+	if got := <-actions; got.Action != "retry" || got.Number != 4 {
+		t.Fatalf("job action = %+v, want retry of o/r#4", got)
+	}
+	if got := engine.jobInbox().pending("o/r#4"); got != 1 {
+		t.Fatalf("reopened job has %d pending messages, want 1", got)
+	}
+
+	// Reopen leaves a paused job queued as before.
+	outcome, _, err = m.SendJobMessage(context.Background(), "o/r", 3, msg, JobDeliveryOptions{Reopen: true})
+	if err != nil || outcome != InboxQueued {
+		t.Fatalf("paused job with reopen = %q, %v; want queued", outcome, err)
+	}
+	select {
+	case got := <-actions:
+		t.Fatalf("paused job with reopen ran action %+v", got)
+	default:
+	}
+}
+
+func TestSendJobMessageReopenFailureDropsOutput(t *testing.T) {
+	m, engine := inboxTestManager(t)
+	serveJobActions(t, engine, errors.New("no slot"))
+	if _, _, err := m.SendJobMessage(context.Background(), "o/r", 4, InboxMessage{Text: "x"}, JobDeliveryOptions{Reopen: true}); err == nil || !strings.Contains(err.Error(), "reopening") {
+		t.Fatalf("failed reopen err = %v, want a delivery error", err)
+	}
+	if got := engine.jobInbox().pending("o/r#4"); got != 0 {
+		t.Fatalf("failed reopen left %d pending messages, want 0", got)
+	}
+}
+
 func TestSendJobMessageWithoutEngine(t *testing.T) {
 	m := newTestManager(t)
-	if _, _, err := m.SendJobMessage("o/r", 1, InboxMessage{Text: "x"}); !errors.Is(err, ErrNotWatching) {
+	if _, _, err := m.SendJobMessage(context.Background(), "o/r", 1, InboxMessage{Text: "x"}, JobDeliveryOptions{}); !errors.Is(err, ErrNotWatching) {
 		t.Fatalf("err = %v, want ErrNotWatching", err)
 	}
 }

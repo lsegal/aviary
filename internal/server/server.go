@@ -146,10 +146,10 @@ func New(cfg *config.Config, token string) *Server {
 	if s.sched != nil && s.projects != nil {
 		s.sched.SetProjectRunner(s.projects.RunProjectTask)
 		s.projects.SetScheduleSource(s.sched.ListTasks)
-		s.sched.SetProjectTaskCompiler(func(ctx context.Context, agentName, taskName string) (string, error) {
-			return mcp.EnsureProjectTaskCompiled(ctx, agentName, taskName, "run")
+		s.sched.SetTaskCompiler(func(ctx context.Context, agentName, taskName string) (string, error) {
+			return mcp.EnsureTaskCompiled(ctx, agentName, taskName, "run")
 		})
-		s.sched.SetProjectTaskScriptReporter(mcp.RecordProjectTaskScriptResult)
+		s.sched.SetTaskScriptReporter(mcp.RecordTaskScriptResult)
 	}
 
 	// Inject deps into MCP tool handlers.
@@ -309,6 +309,9 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("/api/transcribe", guard(BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.transcribeHandler))))
 	s.mux.Handle("/api/transcription", guard(BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.transcriptionHandler))))
 	s.mux.Handle("/api/media", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(mediaHandler)))
+
+	// The web UI's navigation order and visibility, kept per user.
+	s.mux.Handle("/api/preferences/navigation", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(navPreferencesHandler)))
 
 	// Web UI: SPA served from embedded web/dist.
 	if webUIOff.Load() {

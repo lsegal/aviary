@@ -13,6 +13,10 @@
 				<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
 				Settings
 			</DropdownMenuItem>
+			<DropdownMenuItem :class="itemClass" data-testid="gear-menu-edit-nav" @select="nav.editing.value = true">
+				<AdjustmentsHorizontalIcon aria-hidden="true" class="h-4 w-4" />
+				Edit sidebar
+			</DropdownMenuItem>
 			<DropdownMenuItem :class="itemClass" :disabled="restartDisabled" data-testid="restart-button"
 				@select="emit('restart')">
 				<ArrowPathIcon aria-hidden="true" class="h-4 w-4" :class="restartPending ? 'animate-spin' : ''" />
@@ -27,10 +31,11 @@
 </template>
 
 <script setup lang="ts">
-// The sidebar's gear (#822): a menu of Settings, the safe Restart, and
-// Logout, rather than a link straight to Settings. Hovering, focusing or
+// The sidebar's gear (#822): a menu of Settings, Edit sidebar (#1003), the
+// safe Restart, and Logout, rather than a link straight to Settings. Hovering, focusing or
 // opening it prefetches the Settings chunk so choosing Settings routes at
 // once (#897).
+import AdjustmentsHorizontalIcon from "@heroicons/vue/24/outline/AdjustmentsHorizontalIcon";
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowRightOnRectangleIcon from "@heroicons/vue/24/outline/ArrowRightOnRectangleIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
@@ -42,6 +47,7 @@ import {
 } from "radix-vue";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { useNavPrefs } from "../../composables/useNavPrefs";
 import { isSettingsPath } from "../../lib/systemNav";
 import { prefetchSettingsView } from "../../router/settingsView";
 import { useAuthStore } from "../../stores/auth";
@@ -60,6 +66,7 @@ watch(open, (isOpen) => {
 });
 const router = useRouter();
 const auth = useAuthStore();
+const nav = useNavPrefs();
 
 function logout() {
 	auth.logout();

@@ -1,0 +1,114 @@
+import { ref } from "vue";
+import {
+	emptyNavPrefs,
+	type NavList,
+	type NavPrefs,
+	withOrder,
+} from "../lib/navPrefs";
+import { useAuthStore } from "../stores/auth";
+
+// The user's navigation order and visibility (#1003). The server keeps them
+// per user so they follow the user across devices; this browser keeps a
+// copy, read before the first render and used whenever the server's can't
+// be read or saved.
+
+const STORAGE_KEY = "aviary.nav.prefs";
+const ENDPOINT = "/api/preferences/navigation";
+
+function normalize(value: unknown): NavPrefs {
+	const v = (value ?? {}) as Partial<NavPrefs>;
+	return { order: { ...v.order }, hidden: { ...v.hidden } };
+}
+
+function storedPrefs(): NavPrefs {
+	try {
+		const raw = localStorage.getItem(STORAGE_KEY);
+		return raw ? normalize(JSON.parse(raw)) : emptyNavPrefs();
+	} catch {
+		return emptyNavPrefs();
+	}
+}
+
+const prefs = ref<NavPrefs>(storedPrefs());
+/** Shows hidden items in the sidebar and top row for this visit. */
+const showHidden = ref(false);
+/** Whether the Edit sidebar dialog is open. */
+const editing = ref(false);
+let loaded = false;
+
+function storeLocally(value: NavPrefs) {
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+	} catch {
+		// Private browsing can refuse storage; the server copy still applies.
+	}
+}
+
+async function request(
+	method: "GET" | "PUT" | "DELETE",
+	body?: NavPrefs,
+): Promise<NavPrefs | undefined> {
+	const token = useAuthStore().getToken();
+	try {
+		const res = await fetch(ENDPOINT, {
+			method,
+			headers: {
+				...(token ? { Authorization: `Bearer ${token}` } : {}),
+				...(body ? { "Content-Type": "application/json" } : {}),
+			},
+			body: body ? JSON.stringify(body) : undefined,
+		});
+		if (!res.ok) return undefined;
+		return normalize(await res.json());
+	} catch {
+		return undefined;
+	}
+}
+
+function save(next: NavPrefs) {
+	prefs.value = next;
+	storeLocally(next);
+	void request("PUT", next);
+}
+
+export function useNavPrefs() {
+	if (!loaded && useAuthStore().isLoggedIn) {
+		loaded = true;
+		void request("GET").then((remote) => {
+			if (!remote) return;
+			prefs.value = remote;
+			storeLocally(remote);
+		});
+	}
+	return {
+		prefs,
+		showHidden,
+		editing,
+		/** Saves the list's order, given the keys it shows now in order. */
+		setOrder(list: NavList, shown: string[]) {
+			const order = withOrder(prefs.value.order[list], shown);
+			save({ ...prefs.value, order: { ...prefs.value.order, [list]: order } });
+		},
+		isHidden(list: NavList, key: string): boolean {
+			return prefs.value.hidden[list]?.includes(key) ?? false;
+		},
+		setHidden(list: NavList, key: string, hide: boolean) {
+			const rest = (prefs.value.hidden[list] ?? []).filter((k) => k !== key);
+			const hidden = hide ? [...rest, key] : rest;
+			save({
+				...prefs.value,
+				hidden: { ...prefs.value.hidden, [list]: hidden },
+			});
+		},
+		/** Restores the built-in order and visibility, here and on the server. */
+		reset() {
+			prefs.value = emptyNavPrefs();
+			try {
+				localStorage.removeItem(STORAGE_KEY);
+			} catch {
+				// Nothing stored.
+			}
+			void request("DELETE");
+		},
+	};
+}

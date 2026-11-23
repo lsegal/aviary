@@ -19,6 +19,9 @@ type Environment struct {
 	SessionID string
 	TaskID    string
 	JobID     string
+	// Trigger is the channel message that started a workflow run, as the
+	// Lua global trigger; nil outside workflow runs.
+	Trigger map[string]any
 }
 
 // Options configures a sandboxed Lua script execution.
@@ -66,6 +69,10 @@ func RunLua(ctx context.Context, script string, opts Options) (string, error) {
 		"task_id":    opts.Environment.TaskID,
 		"job_id":     opts.Environment.JobID,
 	}))
+
+	if opts.Environment.Trigger != nil {
+		L.SetGlobal("trigger", goToLuaValue(L, opts.Environment.Trigger))
+	}
 
 	toolTable := L.NewTable()
 	if opts.ToolClient != nil {

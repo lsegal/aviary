@@ -383,4 +383,71 @@ test("a target saved from an earlier run of a schedule still names the schedule"
 		list.getByRole("option", { name: /no longer exists/ }),
 	).toHaveCount(0);
 	await expect(page.getByTestId("codeloop-job-warning")).toHaveCount(0);
+	// Resume and reopen only apply to issue jobs.
+	await expect(page.getByTestId("codeloop-resume")).toHaveCount(0);
+});
+
+// The resume and reopen delivery options (#1008) are checkboxes beside the
+// job picker and are stored on the target.
+
+test("the workflow form saves the resume and reopen options on its Code Loop target", async ({
+	page,
+}) => {
+	const { calls } = await mockCodeLoop(page, []);
+	await page.goto(
+		"/agents/assistant/channels/Team%20Slack/settings?tab=workflows",
+	);
+	await page.getByTestId("workflow-add").click();
+	await page.getByTestId("workflow-name").fill("relay");
+	await page.getByTestId("workflow-content").fill("Summarize it.");
+	await chooseOption(page.getByTestId("workflow-send-via"), "a Code Loop job");
+
+	// The options appear once a job is picked and default to off.
+	await expect(page.getByTestId("codeloop-resume")).toHaveCount(0);
+	await searchOption(
+		page.getByRole("combobox", { name: "Code Loop job" }),
+		"upload",
+		/^#15 Flaky upload/,
+	);
+	await expect(page.getByTestId("codeloop-resume")).not.toBeChecked();
+	await expect(page.getByTestId("codeloop-reopen")).not.toBeChecked();
+	await page.getByTestId("codeloop-resume").check();
+	await page.getByTestId("codeloop-reopen").check();
+	await page.getByTestId("workflow-save").click();
+
+	await expect.poll(() => calls.task_schedule?.length ?? 0).toBe(1);
+	expect(calls.task_schedule[0]).toMatchObject({
+		name: "relay",
+		target: "codeloop:o/r#15?resume,reopen",
+	});
+});
+
+test("the task form keeps its Code Loop options when the job changes and clears them when unchecked", async ({
+	page,
+}) => {
+	const { calls } = await mockCodeLoop(page, [
+		{
+			name: "digest",
+			schedule: "0 9 * * *",
+			prompt: "report",
+			target: "codeloop:o/r#12?resume,reopen",
+		},
+	]);
+	await page.goto("/agents/assistant/tasks?task=digest");
+
+	const combobox = page.getByRole("combobox", { name: "Code Loop job" });
+	// The picker shows the bare job; its options are the checkboxes.
+	await expect(combobox).toHaveAttribute("data-value", "codeloop:o/r#12");
+	await expect(page.getByTestId("codeloop-job-warning")).toHaveCount(0);
+	await expect(page.getByTestId("codeloop-resume")).toBeChecked();
+	await expect(page.getByTestId("codeloop-reopen")).toBeChecked();
+
+	await searchOption(combobox, "dark", /^#3 Dark mode/);
+	await expect(page.getByTestId("codeloop-reopen")).toBeChecked();
+	await page.getByTestId("codeloop-resume").uncheck();
+	await page.getByRole("button", { name: "Save Changes" }).click();
+
+	await expect.poll(() => calls.config_save?.length ?? 0).toBe(1);
+	const saved = JSON.parse(String(calls.config_save[0].config));
+	expect(saved.agents[0].tasks[0].target).toBe("codeloop:o/web#3?reopen");
 });

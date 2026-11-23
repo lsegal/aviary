@@ -268,6 +268,11 @@ A `codeloop:<project>#<number>` target hands the output to a [Code Loop](/guide/
 - **Complete:** the delivery fails with an error in the run log. A Discussion job is complete once its agent has answered the thread.
 - **No longer exists:** the delivery fails, and the task's page warns that its job is gone.
 
+Two optional settings change the paused and complete cases. Add them after the job number as `?resume`, `?reopen`, or `?resume,reopen` (for example `codeloop:owner/repo#123?resume,reopen`), or tick **Resume the job if it is paused** and **Reopen the job if it is complete** under the job picker:
+
+- **Resume:** a paused job is resumed when output arrives, as the board's Resume button does, and the agent sees the output on its first turn. If the job cannot be resumed right now, the output stays queued.
+- **Reopen:** a completed issue job is retried with the output, as the board's Retry button does, instead of failing the delivery. An answered Discussion job is never retried, so output to it still fails.
+
 A scheduled project run's number is its fire time, so any run of a schedule names the whole schedule, and output to it is never rejected for a finished run:
 
 - **A run in flight:** the agent is interrupted and resumed in the same session with the output, as for an issue job. A run still waiting for an agent slot starts with the output instead.
@@ -305,7 +310,7 @@ scheduler:
 
 ### Precompiled project tasks
 
-[Project tasks](#scheduled-prompts) can be precompiled too. Turn on **Try to precompute task** in the **Add task** dialog or in the project board's schedule editor, or pass `precompile=true` to `task_schedule` or `task_update`. New project tasks follow `precompute_tasks`; a project task without `precompile` set stays on the model. Both editors show the same live feedback for project tasks as for agent tasks: ✔ deterministic, ◐ partial, or ✖ not deterministic, with the per-run token estimate and the monthly projection.
+[Project tasks](#scheduled-prompts) can be precompiled too. Turn on **Try to precompile** in the **Add task** dialog or in the project board's schedule editor, or pass `precompile=true` to `task_schedule` or `task_update`. New project tasks follow `precompute_tasks`; a project task without `precompile` set stays on the model. Both editors show the same live feedback for project tasks as for agent tasks: ✔ deterministic, ◐ partial, or ✖ not deterministic, with the per-run token estimate and the monthly projection.
 
 A project task is not rewritten into a script task. It keeps its prompt and stores the compiled script beside it (`compiled` and `compiled_key` in its definition, written by Aviary). The prompt is analyzed and compiled against the tools of the agent the task belongs to, with the clone it runs in described. Each run then:
 
@@ -421,6 +426,7 @@ The Lua runtime exposes:
 - `os.date(fmt)` / `os.time()` / `os.difftime(t2, t1)` — time utilities
 - `print(...)` — emit output; joined lines are delivered to `target` when the run completes
 - `environment.agent_id`, `.session_id`, `.task_id`, `.job_id` — runtime context
+- `trigger` — in a [workflow](./channels.md#workflows) run, the message that triggered it: `trigger.message` (`text`, `sender`, `from_agent`, `timestamp`, `attachments`), `trigger.before` (the messages just before it), and `trigger.channel`, `.channel_type` and `.entry`; `nil` in other runs
 
 File I/O, `os.execute`, `loadfile`, and `dofile` are disabled. Scripts run fully sandboxed with access only to the tools explicitly granted to their agent.
 

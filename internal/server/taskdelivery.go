@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -77,11 +78,11 @@ func (s *Server) deliverToCodeLoop(source domain.OutputSource, target config.Tas
 	if source.Task == "" {
 		label = "Aviary"
 	}
-	outcome, _, err := s.projects.SendJobMessage(target.Project, target.Number, projects.InboxMessage{
+	outcome, _, err := s.projects.SendJobMessage(context.Background(), target.Project, target.Number, projects.InboxMessage{
 		Source:    label,
 		SourceURL: taskRunPath(source),
 		Text:      text,
-	})
+	}, projects.JobDeliveryOptions{Resume: target.Resume, Reopen: target.Reopen})
 	switch {
 	case errors.Is(err, projects.ErrJobGone):
 		return fmt.Errorf("the Code Loop job %s no longer exists", ref)
@@ -90,6 +91,12 @@ func (s *Server) deliverToCodeLoop(source domain.OutputSource, target config.Tas
 	case outcome == projects.InboxQueued:
 		delivery.Status = domain.DeliveryQueued
 		delivery.Message = "queued for Code Loop " + ref + " until the job runs again"
+	case outcome == projects.InboxResumed:
+		delivery.Status = domain.DeliveryDelivered
+		delivery.Message = "resumed Code Loop " + ref + " with the output"
+	case outcome == projects.InboxReopened:
+		delivery.Status = domain.DeliveryDelivered
+		delivery.Message = "reopened Code Loop " + ref + " with the output"
 	default:
 		delivery.Status = domain.DeliveryDelivered
 		delivery.Message = "delivered to Code Loop " + ref

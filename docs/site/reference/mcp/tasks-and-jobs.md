@@ -93,7 +93,7 @@ Schedule a one-time or recurring task.
 
 **Side effects:** Queues a job. For recurring named tasks, updates `aviary.yaml`. When `scheduler.precompute_tasks` is enabled, prompt tasks trigger an LLM compile call to convert the prompt to a Lua script unless `precompile=false` is provided for that task.
 
-**Workflows:** with `trigger=message` the task runs when a matching message arrives on `channel`, and replaces the agent's own reply to it. A workflow takes no schedule, `in`, `every`, `at`, `days`, `start_at`, `run_once` or `missed`, and is never precompiled. Its `target` may also be `reply`, which answers in the conversation that triggered the run, and `model` overrides the agent's model. `overlap` applies as for scheduled tasks.
+**Workflows:** with `trigger=message` the task runs when a matching message arrives on `channel`, and replaces the agent's own reply to it. A workflow takes no schedule, `in`, `every`, `at`, `days`, `start_at`, `run_once` or `missed`. A prompt workflow keeps its prompt; with `precompile` (default `scheduler.precompute_tasks`) a deterministic one runs a compiled script on each matching message and falls back to the model when the script fails; see [Precompiled workflows](/guide/channels#precompiled-workflows). Its `target` may also be `reply`, which answers in the conversation that triggered the run, and `model` overrides the agent's model. `overlap` applies as for scheduled tasks.
 
 **Notes:** `in` and a schedule trigger are mutually exclusive — set exactly one per call. To both create a recurring task and fire it once immediately for testing, make two separate `task_schedule`/`task_run` calls rather than passing both fields at once. For `type=script`, `content` must be Aviary embedded Lua — not shell commands or shebang scripts. Do not add timezone conversion logic unless the task explicitly requires it.
 
@@ -103,7 +103,7 @@ Schedule a one-time or recurring task.
 
 Change fields of an existing task. Only the fields passed change; an empty string clears a field.
 
-**Arguments:** `name` (required; `agent/task` or a task name), `agent`, and any of `enabled`, `content`, `target`, `schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`, `watch`, `project`, `model`, `precompile` (project tasks only: turns the precompiled script on or off), and for workflows `channel`, `entry` and `match`.
+**Arguments:** `name` (required; `agent/task` or a task name), `agent`, and any of `enabled`, `content`, `target`, `schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`, `watch`, `project`, `model`, `precompile` (project tasks and prompt workflows only: turns the precompiled script on or off), and for workflows `channel`, `entry` and `match`.
 
 **Side effects:** Writes the task's markdown file in the agent's `tasks/` directory and reloads the scheduler.
 

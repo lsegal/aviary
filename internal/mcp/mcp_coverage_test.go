@@ -37,6 +37,9 @@ func setupDispatcherWithScheduler(t *testing.T) (*Dispatcher, *scheduler.Schedul
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// Background compiles, such as the one task_update starts for a project
+	// task, read the deps, so they finish before the restore.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })

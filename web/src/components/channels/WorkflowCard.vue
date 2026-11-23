@@ -13,6 +13,7 @@
 				<div class="min-w-0 flex-1">
 					<p class="truncate text-sm font-semibold text-gray-900 group-hover:underline dark:text-white">{{ workflow.name }}</p>
 					<p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ matchText }}</p>
+					<TaskPrecompileBadge :task="workflow" compact class="mt-1" />
 				</div>
 				<div class="flex shrink-0 flex-col items-end gap-1">
 					<PausedChip v-if="paused" />
@@ -21,8 +22,9 @@
 						{{ status.activity === "running" ? "Running" : status.activity === "triggering" ? "Triggered" : "Active" }}
 					</span>
 					<span v-if="status.last" data-testid="workflow-card-last" :data-last="status.last" class="text-[11px]"
-						:class="status.last === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'">
-						{{ status.last === "failed" ? "last run failed" : "last run ok" }}
+						:class="status.last === 'failed' ? 'text-red-600 dark:text-red-400' : status.last === 'fallback' ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'"
+						:title="status.last === 'fallback' ? 'Its precompiled script failed, so the model ran it' : undefined">
+						{{ LAST_TEXT[status.last] }}
 					</span>
 				</div>
 			</template>
@@ -37,6 +39,7 @@ import { computed } from "vue";
 import type { WorkflowStatus } from "../../composables/useWorkflowStatus";
 import { type AgentTask, taskSessionPath } from "../../stores/settings";
 import PausedChip from "../tasks/PausedChip.vue";
+import TaskPrecompileBadge from "../tasks/TaskPrecompileBadge.vue";
 
 // A workflow as a card: active or paused, its match, and its last run. While
 // it is triggering or running, a colored segment travels clockwise around the
@@ -50,6 +53,12 @@ const props = defineProps<{
 	/** Fills its grid cell instead of the strip's fixed width. */
 	wide?: boolean;
 }>();
+
+const LAST_TEXT = {
+	succeeded: "last run ok",
+	fallback: "last run fell back",
+	failed: "last run failed",
+} as const;
 
 const TRIGGERING = "#f59e0b";
 const RUNNING = "#3b82f6";

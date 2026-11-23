@@ -457,6 +457,7 @@
 		"precompile",
 		"project",
 		"target",
+		"trigger",
 		"type"
 	],
 	"task_compile_get": [

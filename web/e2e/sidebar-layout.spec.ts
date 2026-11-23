@@ -111,6 +111,7 @@ test("rail icons navigate and name their page in a tooltip", async ({
 	const menu = page.getByTestId("gear-menu");
 	await expect(menu.getByRole("menuitem")).toHaveText([
 		"Settings",
+		"Edit sidebar",
 		"Restart",
 		"Logout",
 	]);

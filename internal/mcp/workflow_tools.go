@@ -148,7 +148,7 @@ func createWorkflow(args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, er
 			return nil, struct{}{}, fmt.Errorf("script tasks require valid Aviary Lua source: %w", err)
 		}
 	}
-	_, a, idx, err := loadChannel(args.Agent, args.Channel)
+	cfg, a, idx, err := loadChannel(args.Agent, args.Channel)
 	if err != nil {
 		return nil, struct{}{}, err
 	}
@@ -181,6 +181,16 @@ func createWorkflow(args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, er
 		Overlap: strings.ToLower(strings.TrimSpace(args.Overlap)),
 		Model:   strings.TrimSpace(args.Model),
 	}
+	if taskType == "prompt" {
+		// A prompt workflow keeps its prompt and, when precompiled, runs a
+		// compiled script beside it, as a project task does. The choice
+		// defaults to scheduler.precompute_tasks, as the task editor's does.
+		precompile := config.EffectivePrecomputeTasks(cfg.Scheduler)
+		if args.Precompile != nil {
+			precompile = *args.Precompile
+		}
+		task.Precompile = &precompile
+	}
 	if _, err := config.SaveMarkdownTask(config.AgentTasksDir(a), task); err != nil {
 		return nil, struct{}{}, err
 	}
@@ -191,7 +201,14 @@ func createWorkflow(args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, er
 	if updated {
 		action = "updated"
 	}
-	return text(fmt.Sprintf("Workflow %q %s for agent %q: runs on %s.", name, action, a.Name, workflowSummary(task)))
+	note := ""
+	if EffectiveTaskPrecompile(task) {
+		// Compiling calls the model several times, so it runs in the
+		// background; a run that comes first compiles before it starts.
+		compileTaskInBackground(a.Name, task.Name, "schedule")
+		note = " Precompiling: when its prompt is deterministic, runs execute the compiled script and fall back to the model if it fails."
+	}
+	return text(fmt.Sprintf("Workflow %q %s for agent %q: runs on %s.%s", name, action, a.Name, workflowSummary(task), note))
 }
 
 // workflowSummary describes what a workflow fires on.
