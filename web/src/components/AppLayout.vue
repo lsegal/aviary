@@ -74,10 +74,12 @@
       class="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-800 dark:bg-gray-950 lg:hidden">
       <nav class="group/row relative flex gap-2 overflow-x-auto pb-1" :class="mobileAdd ? 'pr-9' : ''">
         <router-link v-for="child in mobileChildren" :key="child.key" :to="child.to"
-          :title="child.paused ? 'Paused' : undefined" :data-paused="child.paused || undefined"
-          :class="[mobileSubnavClass(child), 'inline-flex items-center gap-1.5', child.paused ? 'italic opacity-60' : '']">
+          :title="child.paused ? 'Paused' : child.disabled ? 'Disabled' : undefined" :data-paused="child.paused || undefined"
+          :data-disabled="child.disabled || undefined"
+          :class="[mobileSubnavClass(child), 'inline-flex items-center gap-1.5', child.paused || child.disabled ? 'italic opacity-60' : '']">
           <SystemPageIcon v-if="systemActive" :page-key="child.key" class="h-4 w-4" /><span v-if="child.paused"
-            data-testid="mobile-task-paused" class="inline-flex text-amber-600 dark:text-amber-400"><PauseIcon aria-hidden="true" class="h-3.5 w-3.5" /></span>{{ child.label }}<ProjectRunningBadge
+            data-testid="mobile-task-paused" class="inline-flex text-amber-600 dark:text-amber-400"><PauseIcon aria-hidden="true" class="h-3.5 w-3.5" /></span><span v-if="child.disabled"
+            data-testid="mobile-channel-disabled" class="inline-flex text-gray-400 dark:text-gray-500"><NoSymbolIcon aria-hidden="true" class="h-3.5 w-3.5" /></span>{{ child.label }}<ProjectRunningBadge
             :running="child.running ?? 0" class="ml-1.5" />
         </router-link>
         <SidebarRowAction v-if="mobileAdd" :label="rowAddLabel(mobileAdd.page)" data-testid="mobile-row-action" @click="openAdd(mobileAdd.page, mobileAdd.agent)" />
@@ -352,6 +354,7 @@ const systemGroupState = createRouteExpandedGroupState();
 </script>
 
 <script setup lang="ts">
+import NoSymbolIcon from "@heroicons/vue/20/solid/NoSymbolIcon";
 import PauseIcon from "@heroicons/vue/20/solid/PauseIcon";
 import ArrowUpCircleIcon from "@heroicons/vue/24/outline/ArrowUpCircleIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
@@ -430,6 +433,8 @@ interface NavChild {
 	active?: boolean;
 	/** A paused scheduled task, shown dimmed with a pause icon. */
 	paused?: boolean;
+	/** A disabled channel, shown dimmed with a no-entry icon. */
+	disabled?: boolean;
 }
 
 interface AgentNav {
@@ -799,11 +804,15 @@ function agentItems(agent: string): NavChild[] {
 		const channels =
 			settingsStore.config?.agents.find((a) => a.name === agent)?.channels ??
 			[];
-		return channels.map((c) => ({
-			key: `channel:${channelName(c)}`,
-			label: channelName(c),
-			to: channelPath(agent, channelName(c)),
-		}));
+		// Disabled channels follow the enabled ones, as in the sidebar.
+		return channels
+			.map((c) => ({
+				key: `channel:${channelName(c)}`,
+				label: channelName(c),
+				to: channelPath(agent, channelName(c)),
+				disabled: c.enabled === false,
+			}))
+			.sort((a, b) => Number(a.disabled) - Number(b.disabled));
 	}
 	if (tasksOpen.value) {
 		const tasks =

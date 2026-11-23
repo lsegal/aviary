@@ -245,6 +245,16 @@ Rename a channel. Its session and history stay, and task and report targets that
 | `channel` | string | yes | Current channel name |
 | `new_name` | string | yes | New channel name |
 
+### channel_update
+
+Enable or disable a channel. Disabled channels are not started and do not receive or send messages until re-enabled.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent` | string | yes | Agent name |
+| `channel` | string | yes | Channel name |
+| `enabled` | boolean | yes | `true` enables the channel; `false` disables it |
+
 ### channel_remove
 
 Remove a channel. Task and report targets that pick it by name are cleared.
