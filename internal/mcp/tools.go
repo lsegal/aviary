@@ -2040,6 +2040,10 @@ func registerJobTools(s *sdkmcp.Server) {
 			}
 			return text("(no output captured)")
 		}
+		if scriptErr := strings.TrimSpace(job.ScriptError); scriptErr != "" {
+			// The summary only notes the failed script; its full error is here.
+			return text("Precompiled script failed, so the model ran the task:\n" + scriptErr + "\n\n" + job.Output)
+		}
 		return text(job.Output)
 	})
 

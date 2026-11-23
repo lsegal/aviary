@@ -368,6 +368,16 @@ type TaskConfig struct {
 	// any of them recompiles it.
 	Compiled    string `yaml:"compiled,omitempty"     json:"compiled,omitempty"`
 	CompiledKey string `yaml:"compiled_key,omitempty" json:"compiled_key,omitempty"`
+	// ScriptVerified is set once the compiled script has completed a run,
+	// and ScriptFailures counts its consecutive failed runs since. Both are
+	// reset whenever the script is recompiled.
+	ScriptVerified bool `yaml:"script_verified,omitempty" json:"script_verified,omitempty"`
+	ScriptFailures int  `yaml:"script_failures,omitempty" json:"script_failures,omitempty"`
+	// PrecompileNote says why Aviary set the compiled script aside: it failed
+	// its first run, or it failed too many runs in a row and precompile was
+	// turned off. It is cleared when the script is recompiled or precompile
+	// is turned back on.
+	PrecompileNote string `yaml:"precompile_note,omitempty" json:"precompile_note,omitempty"`
 	// IdleTimeout is how long a prompt run may go without any output before
 	// it is stopped and marked failed, e.g. "30m". "0" disables it. Empty
 	// uses DefaultTaskIdleTimeout.

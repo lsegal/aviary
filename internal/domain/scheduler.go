@@ -122,6 +122,10 @@ type Job struct {
 	// Error is why the latest attempt failed, shown with the run; it is
 	// cleared when an attempt completes.
 	Error string `json:"error,omitempty"`
+	// ScriptError is set when a precompiled project task's script failed and
+	// the model ran the task instead: the script's full error, which the
+	// run's logs show and its summary leaves out.
+	ScriptError string `json:"script_error,omitempty"`
 	// ResumeNote is set when a safe restart interrupted the job. The resumed
 	// run receives it ahead of the original prompt in the same session.
 	ResumeNote string    `json:"resume_note,omitempty"`

@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/scheduler"
 )
 
 // Project tasks used to be hard-coded out of precompilation: they ran only as
@@ -37,12 +39,40 @@ func resolveCompileTools() func(ctx context.Context, agentName string) ([]agent.
 }
 
 // projectTaskCompilePrompt is what a project task's prompt is analyzed and
-// compiled as: the prompt, plus where its script runs.
+// compiled as: the prompt, plus where its script runs. exec does not run its
+// command through a shell, so the repository is spelled out for the script to
+// write literally: "$GH_REPO" or gh's "{owner}/{repo}" would reach gh as is.
 func projectTaskCompilePrompt(prompt, project string) string {
+	project = strings.TrimSpace(project)
 	return strings.TrimSpace(prompt) + "\n\n" +
-		"This task runs on a timer against the GitHub repository " + strings.TrimSpace(project) +
-		", inside a fresh clone of it. exec runs commands in that clone by default, " +
-		"with gh authenticated, GH_REPO set to the repository, and AVIARY_CHECKOUT_DIRECTORY set to the clone's path."
+		"This task runs on a timer against the GitHub repository " + project +
+		", inside a fresh clone of it. exec runs commands in that clone by default, with gh authenticated. " +
+		"exec runs a command directly, not through a shell: environment variables such as $GH_REPO, " +
+		"pipes, redirections like 2>&1 and globs are not expanded. Write the repository literally as " + project +
+		" in every command, never as a variable or as gh's {owner}/{repo} placeholders. For example, main's head SHA is " +
+		"`gh api repos/" + project + "/commits/main --jq .sha` and the latest release is " +
+		"`gh release view --repo " + project + " --json tagName --jq .tagName`."
+}
+
+// shellVariablePattern matches a shell variable reference such as $GH_REPO or
+// ${HOME}. Lua patterns use "$" too, but only as an anchor, never before a
+// name.
+var shellVariablePattern = regexp.MustCompile(`\$\{?[A-Za-z_][A-Za-z0-9_]*`)
+
+// projectScriptPlaceholderProblem reports why a compiled project task script
+// cannot work as written: a command that names the repository through gh's
+// {owner}/{repo} placeholders or a shell variable, which exec passes to the
+// command unexpanded. It returns "" for a script with neither.
+func projectScriptPlaceholderProblem(script string) string {
+	for _, placeholder := range []string{"{owner}", "{repo}"} {
+		if strings.Contains(script, placeholder) {
+			return "the script uses gh's " + placeholder + " placeholder instead of the project's owner/repo"
+		}
+	}
+	if match := shellVariablePattern.FindString(script); match != "" {
+		return "the script uses the shell variable " + match + ", which exec does not expand"
+	}
+	return ""
 }
 
 // projectTaskCompileKey identifies what a project task's script is compiled
@@ -110,11 +140,22 @@ func EnsureProjectTaskCompiled(ctx context.Context, agentName, taskName, trigger
 	tracker.record.Reason = strings.TrimSpace(compiled.Reason)
 	tracker.record.Steps = toDomainCompileSteps(compiled.Steps)
 	task.Compiled = ""
-	if compiled.Type == "script" && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
-		task.Compiled = strings.TrimSpace(compiled.Script)
+	task.ScriptVerified, task.ScriptFailures, task.PrecompileNote = false, 0, ""
+	script := strings.TrimSpace(compiled.Script)
+	problem := ""
+	if compiled.Type == "script" && script != "" && !compiled.NeedsDiscovery {
+		problem = projectScriptPlaceholderProblem(script)
+	}
+	switch {
+	case problem != "":
+		tracker.record.Status = domain.TaskCompileStatusSkipped
+		tracker.record.Script = script
+		tracker.record.Reason = "Rejected: " + problem + "; the task stays a prompt task."
+	case compiled.Type == "script" && script != "" && !compiled.NeedsDiscovery:
+		task.Compiled = script
 		tracker.record.Status = domain.TaskCompileStatusSucceeded
 		tracker.record.Script = task.Compiled
-	} else {
+	default:
 		tracker.record.Status = domain.TaskCompileStatusSkipped
 	}
 	// A prompt that is not deterministic records its key too, so it is not
@@ -127,6 +168,52 @@ func EnsureProjectTaskCompiled(ctx context.Context, agentName, taskName, trigger
 	slog.Info("task_compile: compiled project task", "component", "task_compile", "agent", agentCfg.Name,
 		"task", task.Name, "project", task.Project, "status", tracker.record.Status, "reason", tracker.record.Reason)
 	return task.Compiled, nil
+}
+
+// projectScriptFailureLimit is how many runs in a row a compiled project task
+// script that has completed before may fail before precompile is turned off,
+// so a broken script does not cost a script run and a model run every fire.
+const projectScriptFailureLimit = 3
+
+// RecordProjectTaskScriptResult records how a precompiled project task's
+// script run ended; runErr is nil when it completed. A script that fails
+// before it has ever completed is set aside at once and the task runs on its
+// prompt, since the compile gate could not catch the failure; one that has
+// completed before is given projectScriptFailureLimit runs in a row before
+// precompile is turned off. Either way PrecompileNote says what happened.
+func RecordProjectTaskScriptResult(agentName, taskName string, runErr error) error {
+	_, agentCfg, task, err := findConfiguredTask(agentName, taskName)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(task.Compiled) == "" {
+		return nil
+	}
+	if runErr == nil {
+		if task.ScriptVerified && task.ScriptFailures == 0 {
+			return nil
+		}
+		task.ScriptVerified, task.ScriptFailures = true, 0
+		return saveConfiguredTask(agentCfg, task)
+	}
+	cause := scheduler.ProjectScriptFailureCause(runErr)
+	task.ScriptFailures++
+	switch {
+	case !task.ScriptVerified:
+		// The key stays, so the same prompt is not compiled again.
+		task.Compiled = ""
+		task.PrecompileNote = "The compiled script failed on its first run (" + cause + "), so it was set aside and the task runs on the model. Turn precompile off and on to compile it again."
+	case task.ScriptFailures >= projectScriptFailureLimit:
+		off := false
+		task.Precompile = &off
+		task.Compiled, task.CompiledKey = "", ""
+		task.PrecompileNote = fmt.Sprintf("Precompile was turned off after the compiled script failed %d runs in a row (last: %s), so the task runs on the model.", task.ScriptFailures, cause)
+	}
+	if task.PrecompileNote != "" {
+		slog.Warn("task_compile: set aside a failing project task script", "component", "task_compile", "agent", agentCfg.Name,
+			"task", task.Name, "failures", task.ScriptFailures, "note", task.PrecompileNote)
+	}
+	return saveConfiguredTask(agentCfg, task)
 }
 
 func persistProjectCompileRecord(tracker *taskCompileTracker) {
