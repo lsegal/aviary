@@ -289,7 +289,7 @@ Move or rename a file. Both paths must be within the agent's allowlist.
 
 ## exec
 
-Execute a host OS command. Only available when the agent's `permissions.exec.allowed_commands` is configured and the command matches an allow rule.
+Execute a host OS command. Only available when the agent's `permissions.exec.allowed_commands` is configured and the command matches an allow rule, or to a [precompiled project task's](/guide/scheduled-tasks#precompiled-project-tasks) script, which runs commands inside its clone.
 
 **Arguments:**
 

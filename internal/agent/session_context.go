@@ -153,6 +153,25 @@ func FilesystemGrantFromContext(ctx context.Context) (string, bool) {
 	return v, true
 }
 
+type projectTaskScriptKey struct{}
+
+// WithProjectTaskScript marks ctx as a precompiled project task's script, or
+// the compile and analysis of one. Such a script runs in a fresh clone of its
+// project, where the task would otherwise run as a coding agent with a shell,
+// so exec is available to it whatever the agent's own exec permissions are,
+// confined to the clone its context grants (see WithFilesystemGrant). Listing
+// tools with ctx, which is what compiles, analyzes and runs the script, is
+// how all three see the same tools.
+func WithProjectTaskScript(ctx context.Context) context.Context {
+	return context.WithValue(ctx, projectTaskScriptKey{}, true)
+}
+
+// IsProjectTaskScript reports whether ctx is a project task's script.
+func IsProjectTaskScript(ctx context.Context) bool {
+	v, _ := ctx.Value(projectTaskScriptKey{}).(bool)
+	return v
+}
+
 type commandEnvKey struct{}
 
 // WithCommandEnv sets environment variables for the commands tool calls made

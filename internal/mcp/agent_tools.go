@@ -29,7 +29,7 @@ func (c *agentToolClient) ListTools(ctx context.Context) ([]agent.ToolInfo, erro
 	preset := agentPermissionsPreset(ctx)
 	out := make([]agent.ToolInfo, 0, len(tools))
 	for _, t := range tools {
-		if !config.IsToolAllowedByPreset(preset, t.Name) {
+		if !config.IsToolAllowedByPreset(preset, t.Name) && !isProjectScriptExec(ctx, t.Name) {
 			continue
 		}
 		if err := agentToolPermitted(ctx, t.Name); err != nil {

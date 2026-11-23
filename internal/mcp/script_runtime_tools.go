@@ -5,10 +5,21 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
 )
 
+// isProjectScriptExec reports whether name is exec called from a project
+// task's script, which gets exec in its clone whatever the agent's preset and
+// exec permissions; see resolveAllowedAgentExec.
+func isProjectScriptExec(ctx context.Context, name string) bool {
+	return name == "exec" && agent.IsProjectTaskScript(ctx)
+}
+
 func agentToolPermitted(ctx context.Context, name string) error {
+	if isProjectScriptExec(ctx, name) {
+		return nil
+	}
 	runner := runnerForAgentContext(ctx)
 	if runner == nil {
 		return nil

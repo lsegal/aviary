@@ -315,7 +315,19 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 		return result, nil
 	}
 
-	validationSystem := "You are Aviary's task compiler validator. Decide whether the generated Lua script faithfully performs the original task prompt using the available tools and no hidden assumptions. Reply with JSON only using this schema: {\"valid\":bool,\"reason\":\"short explanation\"}. Return valid=false if the script skips required behavior, changes the task meaning, relies on unavailable tools, or is otherwise unsafe to auto-promote. When a non-empty task output target is provided, Aviary will automatically deliver print(...) output to that target, so prefer scripts that notify via print(...) over scripts that call session_send for the same routed output."
+	if scriptruntime.AlwaysErrors(candidateScript) {
+		result.Reason = "compiler produced a script that only raises an error, so it can never succeed"
+		slog.Warn("task_compile: script always errors", "component", "task_compile", "agent", agentName, "reason", result.Reason)
+		if tracker != nil {
+			tracker.record.Status = domain.TaskCompileStatusSkipped
+			tracker.record.ResultTaskType = "prompt"
+			tracker.record.Reason = result.Reason
+			tracker.record.Script = candidateScript
+		}
+		return result, nil
+	}
+
+	validationSystem := "You are Aviary's task compiler validator. Decide whether the generated Lua script faithfully performs the original task prompt using the available tools and no hidden assumptions. Reply with JSON only using this schema: {\"valid\":bool,\"reason\":\"short explanation\"}. Return valid=false if the script skips required behavior, changes the task meaning, relies on unavailable tools, only raises an error, or is otherwise unsafe to auto-promote. valid must agree with reason: a reason that says the task cannot be done deterministically or should stay a prompt task means valid=false. When a non-empty task output target is provided, Aviary will automatically deliver print(...) output to that target, so prefer scripts that notify via print(...) over scripts that call session_send for the same routed output."
 	validationUser := buildCompileStageUserPrompt(prompt, target, tools, "Compiler analysis JSON:\n"+mustJSON(analysis), "Generated Lua script:\n"+candidateScript)
 	validationText, err := completeLLMText(ctx, provider, model, "validation", validationSystem, validationUser, nil)
 	if err != nil {
@@ -335,7 +347,7 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 		}
 		return nil, fmt.Errorf("parsing compiler validation: %w", err)
 	}
-	if !validation.Valid {
+	if !validation.Valid || reasonDeclinesCompile(validation.Reason) {
 		if strings.TrimSpace(validation.Reason) != "" {
 			result.Reason = strings.TrimSpace(validation.Reason)
 		} else if result.Reason == "" {
@@ -373,9 +385,10 @@ func tryCompileTaskPrompt(ctx context.Context, agentName, prompt, target string,
 const taskDeterminismSystemPrompt = "You are Aviary's task determinism analyzer. Break the task into concrete execution steps. For each step, decide whether it is deterministic from the prompt plus the available tool catalog. A step is deterministic when it can be executed with fixed arguments and bounded tool calls, even if the observed external result changes from run to run. For example, checking a URL with a fixed tool call, reading a fixed inbox query, downloading a fixed file, or visiting a fixed page with a grounded selector are deterministic observation steps. Do not confuse changing external data with nondeterminism. A step is nondeterministic only when it requires fuzzy judgment, semantic interpretation, hidden selectors, open-ended search, or discovery of missing parameters/capabilities. A notify step is deterministic whenever it can be implemented as print(...) or a fixed message template derived only from deterministic step outputs. When a non-empty task output target is provided, any script output emitted via print(...) will be delivered to that target by Aviary automatically. Treat that routed notification delivery as deterministic and preferred; do not require session_send for that case. Whether a target is set, and where output is delivered, has no bearing on determinism; never mention the output target in the reason. If the task needs discovery that is not explicitly allowed, set needs_discovery=true. Set unbounded_input=true when the amount of data a run reads or fetches has no fixed bound (for example, every new email, an arbitrary web page, or a whole feed), so the size of a model run cannot be estimated. A step whose capability neither the tool catalog nor Aviary's Lua runtime covers is nondeterministic. A task whose steps are all deterministic, including a task with a single step such as printing a fixed message, is compiled into a script. Prefer using the named tools in the catalog as evidence of capability; do not claim capabilities are missing when a listed tool clearly covers the step. Reply with JSON only using this schema: {\"needs_discovery\":bool,\"reason\":string,\"unbounded_input\":bool,\"steps\":[{\"kind\":\"deterministic|agent_run|notify|unknown\",\"deterministic\":bool,\"tool\":\"optional tool name\",\"description\":\"short description\"}]}. Do not invent tools."
 
 // allowsCompile reports whether the analysis passes the precompile gate: at
-// least one step, every step deterministic, and no discovery.
+// least one step, every step deterministic, no discovery, and a reason that
+// does not itself say the task should not be compiled.
 func (a *compileTaskAnalysis) allowsCompile() bool {
-	if len(a.Steps) == 0 || a.NeedsDiscovery {
+	if len(a.Steps) == 0 || a.NeedsDiscovery || reasonDeclinesCompile(a.Reason) {
 		return false
 	}
 	for _, step := range a.Steps {
@@ -384,6 +397,37 @@ func (a *compileTaskAnalysis) allowsCompile() bool {
 		}
 	}
 	return true
+}
+
+// compileDeclinePhrases are what a compiler stage's reason says when it
+// concludes the task must not be compiled, whatever its verdict field says.
+var compileDeclinePhrases = []string{
+	"stay a prompt task",
+	"remain a prompt task",
+	"stay as a prompt task",
+	"remain as a prompt task",
+	"not be auto-promoted",
+	"not be promoted",
+	"cannot be done deterministically",
+	"can't be done deterministically",
+	"cannot be performed deterministically",
+	"cannot be built from these tools",
+	"script cannot be built",
+	"can never succeed",
+	"only raises an error",
+}
+
+// reasonDeclinesCompile reports whether a compiler stage's reason says the
+// task should not be compiled, so a verdict that contradicts it never
+// promotes a script.
+func reasonDeclinesCompile(reason string) bool {
+	reason = strings.Join(strings.Fields(strings.ToLower(strings.ReplaceAll(reason, "’", "'"))), " ")
+	for _, phrase := range compileDeclinePhrases {
+		if strings.Contains(reason, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 // analyzeTaskDeterminism runs the determinism analysis stage of task

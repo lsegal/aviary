@@ -85,6 +85,8 @@ func EnsureProjectTaskCompiled(ctx context.Context, agentName, taskName, trigger
 	if !EffectiveProjectTaskPrecompile(task) {
 		return "", nil
 	}
+	// The script is compiled against the tools it runs with.
+	ctx = agent.WithProjectTaskScript(ctx)
 	tools, err := resolveCompileTools()(ctx, agentCfg.Name)
 	if err != nil {
 		return "", fmt.Errorf("listing agent %q's tools: %w", agentCfg.Name, err)
