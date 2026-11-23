@@ -83,6 +83,8 @@ Behind a reverse proxy that terminates TLS, serve plain HTTP with `-e AVIARY_CON
 
 The Docker image also bundles a working Chrome/Chromium browser, so Aviary can run browser tasks in headless mode out of the box.
 
+[Voice message transcription](./voice.md) works out of the box too: the image includes whisper.cpp's `whisper-cli`, `ffmpeg`, and the whisper `base.en` model, so nothing is installed or downloaded at runtime.
+
 ::: tip
 `-p 1455:1455` is only needed for OpenAI Codex OAuth, and `-p 45289:45289` is only needed for Gemini OAuth. If you are using API keys or other providers, you can omit those extra port mappings.
 :::

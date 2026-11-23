@@ -70,6 +70,8 @@ The image runs `aviary serve` by default. With the bind mount above, Aviary stor
 
 The Docker image also includes a working Chrome/Chromium browser, so browser tasks run in headless mode out of the box without extra setup.
 
+[Voice message transcription](https://aviary.bot/guide/voice) also works out of the box in Docker: the image bundles whisper.cpp's `whisper-cli`, `ffmpeg`, and the whisper `base.en` model, so nothing is installed or downloaded at runtime.
+
 > Tip: `-p 1455:1455` is only needed for OpenAI Codex OAuth, and `-p 45289:45289` is only needed for Gemini OAuth. If you are using API keys or other providers, you can omit those extra port mappings.
 
 ### Binary Release

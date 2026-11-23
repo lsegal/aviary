@@ -128,8 +128,63 @@ jobs:
 
           echo "Container did not start serving on port 16677" >&2
           exit 1
+      - name: Smoke test transcription
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # No network: the bundled tools and model must be enough, and the
+          # bundled sample clip goes through Aviary's own transcription API.
+          docker run --rm --network none "${SMOKE_IMAGE}" bash -euo pipefail -c '
+            whisper-cli --help >/dev/null
+            ffmpeg -version | head -n 1
+
+            status="$(aviary deps status)"
+            echo "$status"
+            if grep -q missing <<<"$status"; then
+              echo "aviary deps status reports missing transcription dependencies" >&2
+              exit 1
+            fi
+
+            ffmpeg -nostdin -loglevel error -i /opt/aviary/samples/jfk.wav -c:a libopus /tmp/jfk.ogg
+
+            aviary serve >/tmp/serve.log 2>&1 &
+            for _ in $(seq 1 30); do
+              if [[ -s ~/.config/aviary/token ]] && curl -ksS -o /dev/null https://127.0.0.1:16677/ 2>/dev/null; then
+                break
+              fi
+              sleep 2
+            done
+            token="$(cat ~/.config/aviary/token)"
+
+            ready="$(curl -ksS -H "Authorization: Bearer ${token}" https://127.0.0.1:16677/api/transcription)"
+            echo "$ready"
+            grep -q "\"ready\":true" <<<"$ready"
+
+            transcript="$(curl -ksS -H "Authorization: Bearer ${token}" -H "Content-Type: audio/ogg" --data-binary @/tmp/jfk.ogg https://127.0.0.1:16677/api/transcribe)"
+            echo "$transcript"
+            if ! grep -qi "ask not what your country can do for you" <<<"$transcript"; then
+              cat /tmp/serve.log >&2
+              echo "transcript of the bundled sample does not match" >&2
+              exit 1
+            fi
+          '
       - name: Smoke test container TLS
         run: scripts/docker-tls-smoke.sh "${SMOKE_IMAGE}"
+      - name: Report image size
+        if: steps.prep.outputs.push_image != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          size() { docker image inspect --format '{{.Size}}' "$1" | awk '{ printf "%.0f MB", $1 / 1000000 }'; }
+          {
+            echo "| Image | Size |"
+            echo "| --- | --- |"
+            echo "| This build | $(size "${SMOKE_IMAGE}") |"
+            if docker pull -q "ghcr.io/${{ github.repository }}:latest" >/dev/null 2>&1; then
+              echo "| Published latest | $(size "ghcr.io/${{ github.repository }}:latest") |"
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: docker/login-action@v4
         if: steps.prep.outputs.push_image == 'true'
         with:
@@ -150,3 +205,34 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  whisper-arm64:
+    name: whisper.cpp arm64 build
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_call' && inputs.ref || github.sha }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Build whisper.cpp stage for linux/arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: whisper-smoke
+          platforms: linux/arm64
+          load: true
+          push: false
+          tags: aviary-whisper-arm64:${{ github.run_id }}
+          cache-from: type=gha,scope=whisper-arm64
+          cache-to: type=gha,scope=whisper-arm64,mode=max
+      - name: Transcribe the sample clip on arm64
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none "aviary-whisper-arm64:${{ github.run_id }}" bash -euo pipefail -c '
+            /opt/whisper.cpp/whisper-cli --help >/dev/null
+            transcript="$(/opt/whisper.cpp/whisper-cli -m /opt/aviary/models/ggml-base.en.bin -f /opt/aviary/samples/jfk.wav -np -nt)"
+            echo "$transcript"
+            grep -qi "ask not what your country can do for you" <<<"$transcript"
+          '
