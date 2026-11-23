@@ -64,6 +64,9 @@ type Transcript struct {
 	Text     string        `json:"text"`
 	Language string        `json:"language,omitempty"`
 	Duration time.Duration `json:"duration"`
+	// NoSpeech is set when the audio is silent or too short, or Whisper
+	// returned only one of its stock outputs for silence. Text is empty.
+	NoSpeech bool `json:"no_speech,omitempty"`
 }
 
 // Engine transcribes an audio file.
