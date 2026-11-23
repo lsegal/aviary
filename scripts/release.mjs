@@ -6,7 +6,7 @@ import { publishSignedRelease } from "./signed-release-commit.mjs";
 const pkgData = await readFile("package.json");
 const pkg = JSON.parse(pkgData.toString());
 const assets = (await readdir("dist/release"))
-	.filter((name) => name.endsWith(".tar.gz") || name === "checksums.txt")
+	.filter((name) => name.endsWith(".tar.gz") || ["checksums.txt", "install.sh", "install.ps1"].includes(name))
 	.map((name) => join("dist/release", name));
 
 if (assets.length === 0) {

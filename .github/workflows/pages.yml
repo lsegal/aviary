@@ -7,7 +7,6 @@ on:
       - 'docs/**'
       - '.agents/skills/**'
       - 'codingskills.go'
-      - 'installer/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 

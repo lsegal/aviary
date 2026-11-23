@@ -23,10 +23,10 @@ This tap works with Homebrew on macOS and Linux.
 #### Manual (cURL)
 
 ```bash
-curl -fsSL https://aviary.bot/install.sh | sh
+curl -fsSL https://github.com/lsegal/aviary/releases/latest/download/install.sh | sh
 ```
 
-The install script downloads the latest release binary to `~/.local/bin/` and adds it to your `PATH`.
+The install script is published with every release. It downloads the latest release binary for your OS and architecture, verifies it against the release's `checksums.txt`, installs it to `~/.local/bin/`, adds that directory to your `PATH`, and then runs `aviary install-skills` to install Aviary's `gh-*` skills (this step needs Node.js for `npx`). Re-running it upgrades in place. Pass `--skip-skills` (`curl -fsSL https://github.com/lsegal/aviary/releases/latest/download/install.sh | sh -s -- --skip-skills`) or set `AVIARY_SKIP_SKILLS=1` to skip the skills, and `--version <tag>` or `AVIARY_VERSION` to install a specific release.
 
 ### Windows
 
@@ -42,10 +42,10 @@ Scoop installs Aviary into Scoop's managed package directory and shims `aviary.e
 #### Manual (PowerShell)
 
 ```powershell
-iwr https://aviary.bot/install.ps1 | iex
+irm https://github.com/lsegal/aviary/releases/latest/download/install.ps1 | iex
 ```
 
-The install script downloads the latest release binary to `~/.local/bin/` and adds it to your `PATH`.
+The install script is published with every release. It downloads and verifies the latest release binary, installs it to `~/.local/bin/`, adds that directory to your `PATH`, and then runs `aviary install-skills`. Set `$env:AVIARY_SKIP_SKILLS = 1` to skip the skills, or `$env:AVIARY_VERSION` to install a specific release.
 
 ### Docker
 

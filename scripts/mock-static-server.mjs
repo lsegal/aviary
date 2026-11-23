@@ -33,6 +33,12 @@ const server = createServer(async (req, res) => {
 			res.writeHead(403).end("forbidden\n");
 			return;
 		}
+		// <path>.redirect holds the Location a request for <path> redirects to.
+		const redirect = await readFile(`${filePath}.redirect`, "utf8").catch(() => null);
+		if (redirect !== null) {
+			res.writeHead(302, { Location: redirect.trim() }).end();
+			return;
+		}
 		const data = await readFile(filePath);
 		res.writeHead(200).end(data);
 	} catch {

@@ -1,0 +1,81 @@
+name: Installer smoke test
+# Installs Aviary the way the README documents it: the installer fetched from
+# its public URLs with plain curl (no custom user agent) and piped into sh, in
+# a clean container on Linux and on macOS runners. Any status other than 200
+# from either URL fails the run (#983).
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag the latest installer must install
+        required: false
+        type: string
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: "Test: Public installer (${{ matrix.name }})"
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux amd64
+            os: ubuntu-latest
+            container: node:lts
+          - name: Linux arm64
+            os: ubuntu-24.04-arm
+            container: node:lts
+          - name: macOS arm64
+            os: macos-latest
+          - name: macOS amd64
+            os: macos-15-intel
+    steps:
+      - name: Check the installer URLs return 200
+        shell: sh
+        run: |
+          set -eu
+          for url in \
+            https://github.com/lsegal/aviary/releases/latest/download/install.sh \
+            https://github.com/lsegal/aviary/releases/latest/download/install.ps1 \
+            https://aviary.bot/install.sh \
+            https://aviary.bot/install.ps1; do
+            code="$(curl -sS -L -o /dev/null -w '%{http_code}' "$url")"
+            echo "$url -> $code"
+            if [ "$code" != 200 ]; then
+              echo "::error::$url returned HTTP $code"
+              exit 1
+            fi
+          done
+      - name: Install with the documented command
+        shell: sh
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          # macOS runners are not containers, so give the install a clean home.
+          if [ "$(uname -s)" = Darwin ]; then
+            export HOME="$RUNNER_TEMP/home"
+            mkdir -p "$HOME"
+          fi
+          curl -fsSL https://github.com/lsegal/aviary/releases/latest/download/install.sh | sh
+          version="$("$HOME/.local/bin/aviary" version)"
+          echo "$version"
+          if [ -n "$TAG" ]; then
+            case "$version" in
+            *"$TAG"*) ;;
+            *) echo "::error::installed $version, expected $TAG"; exit 1 ;;
+            esac
+          fi
+          for skill in gh-create gh-discuss gh-fix gh-safe-merge; do
+            test -f "$HOME/.agents/skills/$skill/SKILL.md"
+          done
+          # aviary.bot forwards to the same release asset.
+          curl -fsSL https://aviary.bot/install.sh | sh -s -- --skip-skills
+          "$HOME/.local/bin/aviary" version

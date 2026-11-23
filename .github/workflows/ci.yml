@@ -175,7 +175,7 @@ jobs:
       - name: Prepare mocked release API (POSIX)
         if: runner.os != 'Windows'
         shell: bash
-        run: node scripts/mock-installer-fixture.mjs --root "$RUNNER_TEMP/mock-api" --version v9.9.9 --os linux --arch amd64 --baseUrl http://127.0.0.1:8765
+        run: node scripts/mock-installer-fixture.mjs --root "$RUNNER_TEMP/mock-releases" --version v9.9.9 --os linux --arch amd64 --baseUrl http://127.0.0.1:8765
       - name: Run installer against mock server (POSIX)
         if: runner.os != 'Windows'
         shell: bash
@@ -183,30 +183,39 @@ jobs:
           set -euo pipefail
           export HOME="$RUNNER_TEMP/home"
           export XDG_CONFIG_HOME="$RUNNER_TEMP/xdg"
-          export AVIARY_API_BASE="http://127.0.0.1:8765"
+          export AVIARY_DOWNLOAD_BASE="http://127.0.0.1:8765"
           mkdir -p "$HOME" "$XDG_CONFIG_HOME"
-          node scripts/mock-static-server.mjs --root "$RUNNER_TEMP/mock-api" --port 8765 > /tmp/aviary-installer-http.log 2>&1 &
+          node scripts/mock-static-server.mjs --root "$RUNNER_TEMP/mock-releases" --port 8765 > /tmp/aviary-installer-http.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
           sleep 1
-          sh installer/install.sh --repo lsegal/aviary
+          # Resolves the latest tag through the releases/latest redirect,
+          # verifies the checksum, and runs install-skills.
+          sh installer/install.sh --repo lsegal/aviary </dev/null
           test -f "$HOME/.local/bin/aviary"
           test -f "$HOME/.bashrc"
           grep -F "export PATH=\"$HOME/.local/bin:\$PATH\"" "$HOME/.bashrc"
+          grep -Fx "installed gh-fix" "$HOME/.agents/skills/gh-fix/install.log"
+          # Piped like the documented command, re-running is idempotent.
+          sh <installer/install.sh
+          test "$(grep -c "local/bin" "$HOME/.bashrc")" = 1
+          rm -rf "$HOME/.agents"
+          AVIARY_SKIP_SKILLS=1 sh installer/install.sh </dev/null
+          test ! -e "$HOME/.agents"
       - name: Prepare mocked release API (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: node scripts/mock-installer-fixture.mjs --root "$env:RUNNER_TEMP/mock-api" --version v9.9.9 --os windows --arch amd64 --baseUrl http://127.0.0.1:8765
+        run: node scripts/mock-installer-fixture.mjs --root "$env:RUNNER_TEMP/mock-releases" --version v9.9.9 --os windows --arch amd64 --baseUrl http://127.0.0.1:8765
       - name: Run installer against mock server (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $env:HOME = Join-Path $env:RUNNER_TEMP 'home'
           New-Item -ItemType Directory -Path $env:HOME -Force | Out-Null
-          $server = Start-Process node -ArgumentList 'scripts/mock-static-server.mjs', '--root', (Join-Path $env:RUNNER_TEMP 'mock-api'), '--port', '8765' -PassThru -WindowStyle Hidden
+          $server = Start-Process node -ArgumentList 'scripts/mock-static-server.mjs', '--root', (Join-Path $env:RUNNER_TEMP 'mock-releases'), '--port', '8765' -PassThru -WindowStyle Hidden
           try {
             Start-Sleep -Seconds 1
-            ./installer/install.ps1 -Version v9.9.9 -Repo lsegal/aviary -ApiBase http://127.0.0.1:8765
+            ./installer/install.ps1 -Repo lsegal/aviary -DownloadBase http://127.0.0.1:8765 -SkipSkills
             $bin = Join-Path $env:HOME '.local\bin\aviary.exe'
             if (-not (Test-Path $bin)) {
               throw "installer did not create $bin"
@@ -248,6 +257,8 @@ jobs:
       - run: test -f dist/release/aviary_v0.0.0-ci_darwin_amd64.tar.gz
       - run: test -f dist/release/aviary_v0.0.0-ci_darwin_arm64.tar.gz
       - run: test -f dist/release/checksums.txt
+      - run: test -f dist/release/install.sh
+      - run: test -f dist/release/install.ps1
       - run: test -f bucket/aviary.json
       - run: test -f Formula/aviary.rb
       - run: node -e "const fs=require('node:fs'); const manifest=JSON.parse(fs.readFileSync('bucket/aviary.json', 'utf8')); if (manifest.version !== '0.0.0-ci') throw new Error('unexpected scoop version'); if (manifest.bin !== 'aviary.exe') throw new Error('unexpected scoop bin'); if (!manifest.architecture?.['64bit']?.hash) throw new Error('missing scoop hash');"
