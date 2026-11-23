@@ -503,7 +503,7 @@ func (p *WorkerPool) runCompiledProjectTask(ctx context.Context, job *domain.Job
 		return "", fmt.Errorf("cloning %s: %w", run.Project, err)
 	}
 	logf("running the precompiled script in %s", checkout)
-	ctx = agent.WithFilesystemGrant(ctx, checkout)
+	ctx = agent.WithProjectTaskScript(agent.WithFilesystemGrant(ctx, checkout))
 	ctx = agent.WithCommandEnv(ctx, map[string]string{"AVIARY_CHECKOUT_DIRECTORY": checkout, "GH_REPO": run.Project})
 	scriptJob := *job
 	scriptJob.Script = script

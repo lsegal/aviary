@@ -284,6 +284,8 @@ func analyzeTaskForEditor(ctx context.Context, args taskAnalyzeArgs) (*taskAnaly
 			return nil, fmt.Errorf("project is required for project tasks")
 		}
 		analyzedPrompt = projectTaskCompilePrompt(prompt, args.Project)
+		// It sees the tools its script would run with.
+		ctx = agent.WithProjectTaskScript(ctx)
 	}
 
 	key := taskAnalysisKey(agentName, analyzedPrompt, target)

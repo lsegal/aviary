@@ -48,6 +48,11 @@ func registerExecTools(s *sdkmcp.Server) {
 		if err != nil {
 			return nil, struct{}{}, err
 		}
+		if agent.IsProjectTaskScript(ctx) {
+			if err := confineExecCwd(agentDir, args.Cwd); err != nil {
+				return nil, struct{}{}, err
+			}
+		}
 		res, runErr := runExecCommand(ctx, perms, args, agentDir)
 		if runErr == nil {
 			return jsonResult(res)
@@ -78,7 +83,20 @@ func resolveAllowedAgentExec(ctx context.Context, command string) (*config.ExecP
 		return nil, "", fmt.Errorf("agent %q not found", agentID)
 	}
 	cfg := runner.Config()
-	if cfg == nil || cfg.Permissions == nil || cfg.Permissions.Exec == nil || len(cfg.Permissions.Exec.AllowedCommands) == 0 {
+	hasExec := cfg != nil && cfg.Permissions != nil && cfg.Permissions.Exec != nil && len(cfg.Permissions.Exec.AllowedCommands) > 0
+	if agent.IsProjectTaskScript(ctx) {
+		// A project task's script runs in a fresh clone of its project, as
+		// the coding agent the task otherwise runs as would, so it may run
+		// commands there without an exec allowlist; one the agent has still
+		// applies.
+		grantRoot, ok := agent.FilesystemGrantFromContext(ctx)
+		if !ok {
+			return nil, "", fmt.Errorf("exec in a project task script needs its clone")
+		}
+		if !hasExec {
+			return nil, grantRoot, nil
+		}
+	} else if !hasExec {
 		return nil, "", fmt.Errorf("agent %q has no exec allowedCommands configured", runner.Agent().Name)
 	}
 	policy, err := commandpolicy.New(cfg.Permissions.Exec.AllowedCommands)
@@ -92,6 +110,23 @@ func resolveAllowedAgentExec(ctx context.Context, command string) (*config.ExecP
 		return cfg.Permissions.Exec, grantRoot, nil
 	}
 	return cfg.Permissions.Exec, store.AgentDir(agentID), nil
+}
+
+// confineExecCwd refuses a cwd outside root, the clone a project task's
+// script runs in.
+func confineExecCwd(root, cwd string) error {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return nil
+	}
+	if !filepath.IsAbs(cwd) {
+		cwd = filepath.Join(root, cwd)
+	}
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(cwd))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("refused by Aviary: a project task script's exec cwd must be inside its clone %s: %s", root, cwd)
+	}
+	return nil
 }
 
 // refusingRule describes the allowlist rule behind a refusal: the deny rule
