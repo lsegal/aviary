@@ -14,6 +14,13 @@ const outputDir = path.join(
 const baseURL =
 	process.env.DOCS_SCREENSHOT_BASE_URL ?? "https://127.0.0.1:5173";
 const themes = ["light", "dark"];
+// Optional name prefixes passed on the command line (for example `projects`)
+// limit the run to matching screenshots.
+const only = process.argv.slice(2);
+
+function wanted(outputName) {
+	return only.length === 0 || only.some((name) => outputName.startsWith(name));
+}
 
 function themedOutputName(outputName, theme) {
 	const extensionIndex = outputName.lastIndexOf(".");
@@ -956,6 +963,8 @@ async function waitForServer(browser, url, timeoutMs = 30_000) {
 async function configurePage(page, fixtures) {
 	await page.addInitScript(() => {
 		localStorage.setItem("aviary_token", "docs-shot-token");
+		// The mocked server has no providers, so skip the setup wizard.
+		sessionStorage.setItem("aviary_onboarding_skipped", "1");
 
 		class MockWebSocket {
 			static CONNECTING = 0;
@@ -1056,7 +1065,12 @@ async function configurePage(page, fixtures) {
 
 		if (body.method === "tools/call") {
 			const name = body.params?.name ?? "";
-			const result = name in fixtures ? fixtures[name] : [];
+			const fixture = name in fixtures ? fixtures[name] : [];
+			// A function fixture computes its result from the call's arguments.
+			const result =
+				typeof fixture === "function"
+					? fixture(body.params?.arguments ?? {})
+					: fixture;
 			await route.fulfill({
 				status: 200,
 				contentType: "application/json",
@@ -1097,6 +1111,7 @@ async function captureSimple({
 	viewport,
 	theme,
 }) {
+	if (!wanted(outputName)) return;
 	const page = await browser.newPage({ viewport, colorScheme: theme });
 	try {
 		await configurePage(page, fixtures);
@@ -1111,6 +1126,7 @@ async function captureSimple({
 }
 
 async function captureTools(browser, theme) {
+	if (!wanted("system-tools.png")) return;
 	const page = await browser.newPage({
 		viewport: { width: 1040, height: 1120 },
 		colorScheme: theme,
@@ -1131,6 +1147,7 @@ async function captureTools(browser, theme) {
 }
 
 async function captureJobs(browser, theme) {
+	if (!wanted("system-jobs.png")) return;
 	const page = await browser.newPage({
 		viewport: { width: 1040, height: 1120 },
 		colorScheme: theme,
@@ -1160,6 +1177,7 @@ async function captureSettingsPage({
 	readySelector,
 	theme,
 }) {
+	if (!wanted(outputName)) return;
 	const page = await browser.newPage({
 		viewport: { width: 1040, height: 1120 },
 		colorScheme: theme,
