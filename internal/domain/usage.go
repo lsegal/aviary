@@ -29,6 +29,9 @@ type UsageRecord struct {
 	// workflow run.
 	Task    string `json:"task,omitempty"`
 	Channel string `json:"channel,omitempty"`
+	// Delivery is set instead of token counts on a record that logs where a
+	// task's or workflow's output was delivered.
+	Delivery *JobDelivery `json:"delivery,omitempty"`
 }
 
 // UsageSourceTaskEditor marks the tokens a task editor's live determinism

@@ -1187,7 +1187,7 @@ func TestValidate_InvalidTaskTarget(t *testing.T) {
 		}},
 	}
 	issues := Validate(cfg, nil)
-	assert.True(t, hasIssue(issues, "invalid value"))
+	assert.True(t, hasIssue(issues, "invalid target"))
 
 }
 

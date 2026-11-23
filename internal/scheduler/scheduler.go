@@ -703,7 +703,7 @@ func (s *Scheduler) SetTaskScriptReporter(fn TaskScriptReporter) {
 
 // SetTaskOutputDelivery registers an optional function used to deliver
 // completed task output to configured task channels.
-func (s *Scheduler) SetTaskOutputDelivery(fn func(agentName, route, text string) error) {
+func (s *Scheduler) SetTaskOutputDelivery(fn TaskOutputDelivery) {
 	s.pool.SetTaskOutputDelivery(fn)
 }
 

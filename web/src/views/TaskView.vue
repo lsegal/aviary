@@ -19,7 +19,8 @@
 						<TaskPrecompileBadge :task="task" />
 					</div>
 					<p class="truncate text-xs text-gray-500 dark:text-gray-400" data-testid="task-schedule">
-						{{ typeLabel }} · {{ scheduleText }}
+						{{ typeLabel }} · {{ scheduleText }}<template v-if="codeLoopTarget"> · sends to
+							<CodeLoopTargetLink :target="codeLoopTarget" /></template>
 					</p>
 				</div>
 				<div class="ml-auto flex flex-wrap items-center gap-2" role="group" aria-label="Task actions">
@@ -130,6 +131,7 @@ import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
+import CodeLoopTargetLink from "../components/CodeLoopTargetLink.vue";
 import StatChipRow, {
 	type StatChip,
 } from "../components/projects/StatChipRow.vue";
@@ -150,6 +152,7 @@ import { useTaskPause } from "../composables/useTaskPause";
 import { workflowSettingsPath } from "../lib/channels";
 import { age, until } from "../lib/projects";
 import { RESULT_LABELS } from "../lib/taskRuns";
+import { isCodeLoopTarget } from "../lib/taskTargets";
 import { formatDuration } from "../stores/jobs";
 import {
 	agentTaskPath,
@@ -239,6 +242,10 @@ watch(
 	],
 	() => void loadCompileAttempts(),
 	{ immediate: true },
+);
+// A Code Loop target links to its job from the header.
+const codeLoopTarget = computed(() =>
+	isCodeLoopTarget(task.value?.target) ? (task.value?.target ?? "") : "",
 );
 
 // ── Runs ────────────────────────────────────────────────────────────────────

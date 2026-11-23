@@ -316,10 +316,12 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 				if !workflow {
 					v.errorf(tf+".target", "only workflows can reply to the conversation that triggered them")
 				}
-			} else if !validTaskTarget(t.Target) {
-				v.errorf(tf+".target", "invalid value %q; must be empty, \"silent\", \"reply\" (workflows), session:<name-or-id>, or channel:<channel name>", t.Target)
-			} else if name, ok := ChannelTargetName(t.Target); ok && a.ChannelByName(name) < 0 {
-				v.errorf(tf+".target", "agent %q has no channel named %q", a.Name, name)
+			} else if target, err := ParseTaskTarget(t.Target); err != nil {
+				v.errorf(tf+".target", "%v", err)
+			} else if target.Kind == TargetChannel && a.ChannelByName(target.Channel) < 0 {
+				v.errorf(tf+".target", "agent %q has no channel named %q", a.Name, target.Channel)
+			} else if target.Kind == TargetCodeLoop && !HasProject(agents, target.Project) {
+				v.errorf(tf+".target", "no agent has a Code Loop project %q; add it before sending output to its jobs", target.Project)
 			}
 		}
 	}
@@ -332,24 +334,6 @@ const ReplyTarget = "reply"
 // IsReplyTarget reports whether target is ReplyTarget.
 func IsReplyTarget(target string) bool {
 	return strings.EqualFold(strings.TrimSpace(target), ReplyTarget)
-}
-
-// ValidTaskTarget reports whether target is a valid task delivery target:
-// empty, "silent", "session:<name-or-id>", or "channel:<channel name>".
-func ValidTaskTarget(target string) bool {
-	return IsReplyTarget(target) || validTaskTarget(target)
-}
-
-func validTaskTarget(target string) bool {
-	target = strings.TrimSpace(target)
-	if target == "" || strings.EqualFold(target, "silent") {
-		return true
-	}
-	if strings.HasPrefix(target, "session:") {
-		return strings.TrimSpace(strings.TrimPrefix(target, "session:")) != ""
-	}
-	name, ok := ChannelTargetName(target)
-	return ok && name != ""
 }
 
 // checkModel validates a "<provider>/<name>" model string and checks for required credentials.

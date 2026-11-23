@@ -82,7 +82,7 @@ Add, edit, pause, resume and delete a channel's workflows in its settings, on th
 - **Source entry** is the conversation to watch: a Slack or Discord channel, or a Signal contact or group. Empty watches every conversation on the channel.
 - **Text match** is a case-insensitive wildcard over the whole message text: `*` matches anything (including line breaks) and `?` one character. `*crash*` matches every message containing "crash". Empty matches every message, like `*`.
 - **Would match** tests the current text match against the entry's recent messages as you type.
-- **Model override**, **Send Via** and **While a run is active** work as they do for tasks. Send Via can be **silent**, **reply to the source conversation**, a session, or another channel.
+- **Model override**, **Send Via** and **While a run is active** work as they do for tasks. Send Via can be **silent**, **reply to the source conversation**, a session, a [Code Loop job](/guide/scheduled-tasks#sending-output-to-a-code-loop-job), or another channel.
 - The prompt, its live analysis, **Try to precompile** and the model override are the same section the task editors use. As you type, the prompt is analyzed (debounced, and a newer edit cancels the analysis in flight) and the form shows whether it can be precompiled, with the reason when it can't, and the estimated tokens and cost of each run. The estimate includes the triggering message and the messages before it that each run's prompt carries, so it is higher than for the same scheduled task. When the workflow will be precompiled, the estimate is 0 tokens per run, with the model's cost beside it for comparison.
 
 ### Precompiled workflows

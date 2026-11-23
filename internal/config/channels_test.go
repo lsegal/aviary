@@ -59,7 +59,7 @@ func TestValidateChannelNamesAndTargets(t *testing.T) {
 	issues := Validate(cfg, nil)
 	assert.True(t, hasIssue(issues, `duplicate channel name "team"`))
 	assert.True(t, hasIssue(issues, `agent "bot" has no channel named "Nope"`))
-	assert.True(t, hasIssue(issues, `invalid value "slack:a:C1"`))
+	assert.True(t, hasIssue(issues, `invalid target "slack:a:C1"`))
 	assert.False(t, hasIssue(issues, `no channel named "Team"`))
 }
 

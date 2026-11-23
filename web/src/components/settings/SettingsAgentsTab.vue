@@ -800,6 +800,17 @@ placeholder="Default project agent model"
 </div>
 </div>
 
+<div v-if="taskChannelSelection(selectedTask) === 'codeloop'" class="grid gap-3 lg:grid-cols-2 mt-3">
+<div>
+<label class="field-label">Code Loop job</label>
+<CodeLoopJobSelect
+	:model-value="selectedTaskTarget(selectedTask)"
+	aria-label="Code Loop job"
+	@update:model-value="setSelectedTaskTarget(selectedTask, $event)"
+/>
+</div>
+</div>
+
 <div v-if="taskChannelSelection(selectedTask) === 'session'" class="grid gap-3 lg:grid-cols-2 mt-3">
 <div>
 <label class="field-label">Session</label>
@@ -876,6 +887,7 @@ import {
 	precompilesBesidePrompt,
 	useSettingsStore,
 } from "../../stores/settings";
+import CodeLoopJobSelect from "../CodeLoopJobSelect.vue";
 import ChannelWorkflows from "../channels/ChannelWorkflows.vue";
 import FilePreviewSplit from "../files/FilePreviewSplit.vue";
 import FilePreviewToggle from "../files/FilePreviewToggle.vue";
@@ -905,6 +917,7 @@ export default defineComponent({
 		MessagingLogo,
 		ModelSelector,
 		SecretSelect,
+		CodeLoopJobSelect,
 		SessionSelect,
 		SwitchRoot,
 		SwitchThumb,

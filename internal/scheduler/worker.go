@@ -30,7 +30,7 @@ type WorkerPool struct {
 	stop     chan struct{}
 	ctxMu    sync.RWMutex
 	ctx      context.Context
-	deliver  func(agentName, route, text string) error
+	deliver  TaskOutputDelivery
 	activeMu sync.Mutex
 	active   map[string]activeJob
 	// held stops workers from claiming new jobs while a safe restart waits.
@@ -646,16 +646,29 @@ func (p *WorkerPool) runCompiledProjectTask(ctx context.Context, job *domain.Job
 	return output, true, err
 }
 
+// TaskOutputDelivery sends a task or workflow run's output to its target and
+// reports the outcome for the run log; a silent target reports nil.
+type TaskOutputDelivery func(source domain.OutputSource, agentName, route, text string) (*domain.JobDelivery, error)
+
 // deliverFor returns how job's output reaches its target: the "reply" target
 // of a workflow run answers in the conversation that triggered it, and every
-// other target goes through the task output delivery.
+// other target goes through the task output delivery, whose outcome is
+// recorded on the run.
 func (p *WorkerPool) deliverFor(job *domain.Job) func(agentName, route, text string) error {
 	return func(agentName, route, text string) error {
 		if !config.IsReplyTarget(route) {
 			if p.deliver == nil {
 				return nil
 			}
-			return p.deliver(agentName, route, text)
+			source := domain.OutputSource{Task: job.TaskID, JobID: job.ID, Workflow: job.TriggerContext != nil}
+			delivery, err := p.deliver(source, agentName, route, text)
+			if delivery != nil {
+				slog.Info("job: output delivery", "id", job.ID, "task", job.TaskID, "target", delivery.Target, "status", delivery.Status, "message", delivery.Message)
+				if setErr := p.queue.SetDelivery(job.ID, delivery); setErr != nil {
+					slog.Warn("job: failed to record output delivery", "id", job.ID, "err", setErr)
+				}
+			}
+			return err
 		}
 		if job.TriggerContext == nil {
 			return fmt.Errorf("only a run triggered by a channel message can reply to it")
@@ -699,7 +712,7 @@ func (p *WorkerPool) recordWorkflowAfter(job *domain.Job) {
 }
 
 // SetTaskOutputDelivery configures the callback used to forward completed task output.
-func (p *WorkerPool) SetTaskOutputDelivery(fn func(agentName, route, text string) error) {
+func (p *WorkerPool) SetTaskOutputDelivery(fn TaskOutputDelivery) {
 	p.deliver = fn
 }
 

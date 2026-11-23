@@ -982,9 +982,9 @@ func TestWorkerPool_ExecuteProjectJob(t *testing.T) {
 	q := NewJobQueue()
 	p := NewWorkerPool(q, mgr, 1)
 	var delivered []string
-	p.SetTaskOutputDelivery(func(agentName, route, text string) error {
+	p.SetTaskOutputDelivery(func(_ domain.OutputSource, agentName, route, text string) (*domain.JobDelivery, error) {
 		delivered = append(delivered, agentName+"|"+route+"|"+text)
-		return nil
+		return nil, nil
 	})
 
 	job, err := q.EnqueueWithType("alpha/triage", "project", "alpha", "Triage new issues", "Triage new issues", "", 1, "", "")

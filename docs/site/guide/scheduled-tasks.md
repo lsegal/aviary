@@ -256,7 +256,19 @@ tasks:
 A channel target picks one of the agent's channels by name: `channel:<name>`. The output lands in that channel's own session, under the agent's **Channels** sidebar section, and is sent on to the channel's `deliver_to` conversation. See [Delivery Targets](/guide/channels#delivery-targets).
 
 - For sessions, use `session:<session-name>`
-- In the control panel, a task's **Send Via** picks **Session** or one of the agent's channels by name
+- For a Code Loop job, use `codeloop:<project>#<number>`, such as `codeloop:owner/repo#123`
+- In the control panel, a task's **Send Via** picks **Session**, **Code Loop job**, or one of the agent's channels by name
+
+### Sending output to a Code Loop job
+
+A `codeloop:<project>#<number>` target hands the output to a [Code Loop](/guide/code-loop) issue job the way a comment from an allowed commenter reaches it. `<project>` is the project as configured on an agent (`owner/repo`, or a project board URL), and saving a target whose project no agent has is rejected. What happens depends on the job's state:
+
+- **Running or waiting:** the agent is interrupted and resumed in the same session with the output, so it sees it on its next turn.
+- **Paused, queued, or failed:** the output is queued and the job keeps its state. The agent sees it when the job next runs.
+- **Complete:** the delivery fails with an error in the run log.
+- **No longer exists:** the delivery fails, and the task's page warns that its job is gone.
+
+The job's transcript labels the output with the task or workflow that sent it, linking to the run. Each run's log records the delivery ("delivered to Code Loop owner/repo#123", linking to the job), and every delivery is written to the usage log. Discussion jobs and scheduled project runs have no live session to relay into, so they reject Code Loop output.
 
 Any text printed from a script — or returned from a prompt run — is delivered to that route. If the output is `SKIP` or empty, delivery is suppressed. This lets scripts opt out of noisy no-op notifications cheaply.
 
