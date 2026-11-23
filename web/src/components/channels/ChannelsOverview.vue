@@ -39,7 +39,7 @@
 					<SectionHeading id="channels-overview-channels" title="Channels" :count="channels.length" />
 					<EmptyStateCard v-if="!channels.length" title="No channels yet" data-testid="channels-empty">
 						<template #icon><ChatBubbleLeftRightIcon class="h-5 w-5" /></template>
-						No channels yet. A channel connects this agent to Slack, Discord or Signal, and keeps its conversation here.
+						A channel connects this agent to Slack, Discord or Signal, and keeps its conversation here.
 						<template #actions>
 							<button type="button" data-testid="channels-empty-add"
 								class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"

@@ -282,7 +282,7 @@ test("the empty Channels overview offers to add a channel and a workflow", async
 	const overview = page.getByTestId("channels-overview");
 	await expect(overview.getByTestId("channels-empty")).toMatchAriaSnapshot(`
 		- paragraph: No channels yet
-		- paragraph: No channels yet. A channel connects this agent to Slack, Discord or Signal, and keeps its conversation here.
+		- paragraph: A channel connects this agent to Slack, Discord or Signal, and keeps its conversation here.
 		- button "Add channel"
 	`);
 	await expect(overview.getByTestId("workflows-empty")).toContainText(
