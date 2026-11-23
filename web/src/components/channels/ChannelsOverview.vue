@@ -1,51 +1,126 @@
 <template>
 	<div class="min-h-0 flex-1 overflow-y-auto" data-testid="channels-overview">
-		<div class="space-y-6 px-4 py-4 sm:px-6">
-			<section aria-labelledby="channels-overview-workflows" data-testid="channels-overview-workflows">
-				<h2 id="channels-overview-workflows" class="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-200">Workflows</h2>
-				<p v-if="!workflows.length" class="text-sm text-gray-500 dark:text-gray-400">
-					No workflows yet. Add one from a channel's settings, under Workflows.
-				</p>
-				<div v-else class="flex flex-wrap gap-2">
-					<WorkflowCard v-for="w in sortedWorkflows" :key="w.name" :agent="agent" :workflow="w" :status="statusOf(w.name)" />
-				</div>
-			</section>
+		<div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+			<SettingsPageHeader :crumbs="[{ label: 'Channels' }]">
+				<template #icon>
+					<span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300" aria-hidden="true">
+						<ChatBubbleLeftRightIcon class="h-5 w-5" />
+					</span>
+				</template>
+				<template #actions>
+					<AddWorkflowMenu :agent="agent" :channels="channels" />
+					<button type="button" data-testid="channels-add"
+						class="inline-flex items-center gap-1 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+						@click="openCreate">
+						<PlusIcon aria-hidden="true" class="h-4 w-4" />
+						Add channel
+					</button>
+				</template>
+			</SettingsPageHeader>
 
-			<section aria-labelledby="channels-overview-recent" data-testid="channels-overview-recent">
-				<h2 id="channels-overview-recent" class="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-200">Recent messages</h2>
-				<div class="space-y-4">
-					<div v-for="c in channels" :key="channelName(c)" data-testid="channels-overview-channel" :data-channel="channelName(c)">
-						<router-link :to="channelPath(agent, channelName(c))" data-testid="channels-overview-channel-link"
-							class="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400">
-							<MessagingLogo v-if="isKnownType(c.type)" :name="c.type" :disabled="c.enabled === false" class="h-3.5 w-3.5" />
-							{{ channelName(c) }}
-						</router-link>
-						<ul v-if="recent[channelName(c)]?.length" class="mt-1 space-y-0.5 text-sm">
-							<li v-for="(m, i) in recent[channelName(c)]" :key="i" data-testid="channels-overview-message"
-								class="flex gap-2 text-gray-700 dark:text-gray-300">
-								<span class="shrink-0 text-xs tabular-nums text-gray-400">{{ time(m.timestamp) }}</span>
-								<span class="min-w-0 truncate"><span class="font-semibold">{{ m.sender || "Unknown sender" }}:</span> {{ m.text }}</span>
-							</li>
-						</ul>
-						<p v-else class="mt-1 text-xs text-gray-500 dark:text-gray-400">No messages yet.</p>
+			<div class="space-y-8">
+				<section aria-label="Channel summary" class="space-y-3">
+					<p class="text-sm text-gray-600 dark:text-gray-400">
+						Channels connect {{ agent }} to Slack, Discord and Signal. Each keeps its conversations here, and its workflows act on the messages it receives.
+					</p>
+					<div class="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="channels-stats">
+						<StatCard label="Channels" :value="channels.length" tone="neutral" data-testid="stat-channels"
+							:caption="`${enabledCount} enabled`" />
+						<StatCard label="Messages 24h" :value="loaded ? messages24h : '…'" tone="green" data-testid="stat-messages"
+							:caption="lastActivity ? `last ${lastActivity}` : 'no messages yet'" />
+						<StatCard label="Workflows" :value="workflows.length" tone="purple" data-testid="stat-workflows"
+							:caption="`${activeWorkflows} active`" />
+						<StatCard label="Running" :value="runningWorkflows" tone="blue" data-testid="stat-running"
+							:pulse="runningWorkflows > 0" :caption="runningWorkflows === 1 ? 'workflow running' : 'workflows running'" />
 					</div>
-				</div>
-			</section>
+				</section>
+
+				<section aria-labelledby="channels-overview-channels" data-testid="channels-overview-channels">
+					<SectionHeading id="channels-overview-channels" title="Channels" :count="channels.length" />
+					<EmptyStateCard v-if="!channels.length" title="No channels yet" data-testid="channels-empty">
+						<template #icon><ChatBubbleLeftRightIcon class="h-5 w-5" /></template>
+						A channel connects this agent to Slack, Discord or Signal, and keeps its conversation here.
+						<template #actions>
+							<button type="button" data-testid="channels-empty-add"
+								class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+								@click="openCreate">
+								<PlusIcon aria-hidden="true" class="h-4 w-4" />
+								Add channel
+							</button>
+						</template>
+					</EmptyStateCard>
+					<div v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+						<ChannelCard v-for="c in channels" :key="channelName(c)" :agent="agent" :channel="c"
+							:activity="activity[channelName(c)]" :workflow-count="channelWorkflows(c, workflows).length" :now="now" />
+						<button type="button" data-testid="channel-card-add"
+							class="flex min-h-32 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 px-4 py-3 text-sm font-medium text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-700 dark:text-gray-300 dark:hover:border-blue-600 dark:hover:text-blue-400"
+							@click="openCreate">
+							<PlusIcon aria-hidden="true" class="h-5 w-5" />
+							Add channel
+						</button>
+					</div>
+				</section>
+
+				<section aria-labelledby="channels-overview-workflows-heading" data-testid="channels-overview-workflows">
+					<SectionHeading id="channels-overview-workflows-heading" title="Workflows" :count="workflows.length">
+						<AddWorkflowMenu v-if="workflows.length" :agent="agent" :channels="channels" />
+					</SectionHeading>
+					<EmptyStateCard v-if="!workflows.length" title="No workflows yet" data-testid="workflows-empty">
+						<template #icon><BoltIcon class="h-5 w-5" /></template>
+						A workflow runs when a message matching its pattern arrives on a channel, and replaces the agent's reply to it.
+						<template #actions>
+							<AddWorkflowMenu :agent="agent" :channels="channels" primary />
+						</template>
+					</EmptyStateCard>
+					<div v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+						<WorkflowCard v-for="w in sortedWorkflows" :key="w.name" :agent="agent" :workflow="w" :status="statusOf(w.name)" wide />
+					</div>
+				</section>
+
+				<section v-if="channels.length" aria-labelledby="channels-overview-recent" data-testid="channels-overview-recent">
+					<SectionHeading id="channels-overview-recent" title="Recent messages">
+						<div class="relative w-full min-w-0 sm:w-64">
+							<span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400 dark:text-gray-500" aria-hidden="true">
+								<MagnifyingGlassIcon class="h-4 w-4" />
+							</span>
+							<input v-model="search" type="search" aria-label="Search recent messages" placeholder="Search messages…"
+								data-testid="channels-overview-search" class="field-input pl-9!" />
+						</div>
+					</SectionHeading>
+					<div class="grid items-start gap-3 lg:grid-cols-2">
+						<ChannelMessagesCard v-for="c in channels" :key="channelName(c)" :agent="agent" :channel="c"
+							:messages="shownMessages(c)" :loading="!activity[channelName(c)]" :filtered="Boolean(search.trim())" :now="now" />
+					</div>
+				</section>
+			</div>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import BoltIcon from "@heroicons/vue/24/outline/BoltIcon";
+import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
+import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
+import PlusIcon from "@heroicons/vue/24/outline/PlusIcon";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useChannelDialogs } from "../../composables/useChannelDialogs";
 import { useMCP } from "../../composables/useMCP";
 import type { WorkflowStatus } from "../../composables/useWorkflowStatus";
-import { channelName, channelPath } from "../../lib/channels";
+import { channelName, channelWorkflows } from "../../lib/channels";
 import type { AgentChannel, AgentTask } from "../../stores/settings";
-import MessagingLogo from "../MessagingLogo.vue";
+import SettingsPageHeader from "../settings/SettingsPageHeader.vue";
+import EmptyStateCard from "../ui/EmptyStateCard.vue";
+import SectionHeading from "../ui/SectionHeading.vue";
+import StatCard from "../ui/StatCard.vue";
+import AddWorkflowMenu from "./AddWorkflowMenu.vue";
+import ChannelCard from "./ChannelCard.vue";
+import ChannelMessagesCard from "./ChannelMessagesCard.vue";
+import { ago, type ChannelActivity } from "./channelActivity";
 import WorkflowCard from "./WorkflowCard.vue";
 
-// The Channels page before a channel is picked: every workflow of the agent,
-// then each channel's latest messages under a heading that opens its chat.
+// The Channels page before a channel is picked: a summary of the agent's
+// channels, a card per channel, every workflow, and each channel's latest
+// messages under a heading that opens its chat.
 
 const props = defineProps<{
 	agent: string;
@@ -55,6 +130,21 @@ const props = defineProps<{
 }>();
 
 const { callTool } = useMCP();
+const { open } = useChannelDialogs();
+
+function openCreate() {
+	open({ mode: "create", agent: props.agent });
+}
+
+// Relative times stay current while the page is open.
+const now = ref(Date.now());
+let clock: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+	clock = setInterval(() => {
+		now.value = Date.now();
+	}, 30_000);
+});
+onUnmounted(() => clearInterval(clock));
 
 const sortedWorkflows = computed(() =>
 	props.workflows
@@ -66,53 +156,78 @@ const sortedWorkflows = computed(() =>
 		),
 );
 
-function isKnownType(type: string): type is "slack" | "discord" | "signal" {
-	return type === "slack" || type === "discord" || type === "signal";
-}
+const enabledCount = computed(
+	() => props.channels.filter((c) => c.enabled !== false).length,
+);
+const activeWorkflows = computed(
+	() => props.workflows.filter((w) => w.enabled !== false).length,
+);
+const runningWorkflows = computed(
+	() =>
+		props.workflows.filter((w) => props.statusOf(w.name).activity !== "idle")
+			.length,
+);
 
-function time(ts: string): string {
-	const d = new Date(ts);
-	return Number.isNaN(d.getTime())
-		? ""
-		: d.toLocaleString([], {
-				month: "short",
-				day: "numeric",
-				hour: "2-digit",
-				minute: "2-digit",
-			});
-}
+const activity = ref<Record<string, ChannelActivity>>({});
+const loaded = computed(() =>
+	props.channels.every((c) => activity.value[channelName(c)]),
+);
+const messages24h = computed(() =>
+	Object.values(activity.value).reduce((n, a) => n + a.messages_24h, 0),
+);
+const lastActivity = computed(() => {
+	const latest = Object.values(activity.value)
+		.map((a) => a.last_activity ?? "")
+		.sort()
+		.at(-1);
+	return ago(latest, now.value);
+});
 
-interface RecentMessage {
-	sender?: string;
-	text: string;
-	timestamp: string;
+const search = ref("");
+function shownMessages(c: AgentChannel) {
+	const all = (activity.value[channelName(c)]?.messages ?? [])
+		.slice()
+		.reverse();
+	const q = search.value.trim().toLowerCase();
+	if (!q) return all;
+	return all.filter((m) =>
+		[m.text, m.sender, m.conversation, ...(m.workflows ?? [])].some((s) =>
+			s?.toLowerCase().includes(q),
+		),
+	);
 }
-const recent = ref<Record<string, RecentMessage[]>>({});
 
 async function load() {
-	const next: Record<string, RecentMessage[]> = {};
 	// One at a time: the live server's MCP transport prefers sequential calls.
 	for (const c of props.channels) {
 		const name = channelName(c);
+		let got: Partial<ChannelActivity> | null = null;
 		try {
-			const raw = await callTool("workflow_preview", {
-				agent: props.agent,
-				channel: name,
-				limit: 5,
-			});
-			next[name] = (
-				(JSON.parse(raw) as RecentMessage[] | null) ?? []
-			).reverse();
+			got = JSON.parse(
+				await callTool("channel_activity", {
+					agent: props.agent,
+					channel: name,
+					limit: 5,
+				}),
+			);
 		} catch {
-			next[name] = [];
+			// Shown as a channel with no traffic.
 		}
+		const value: ChannelActivity = {
+			last_activity: got?.last_activity,
+			messages_24h: got?.messages_24h ?? 0,
+			messages: Array.isArray(got?.messages) ? got.messages : [],
+		};
+		activity.value = { ...activity.value, [name]: value };
 	}
-	recent.value = next;
 }
 
 watch(
 	() => [props.agent, props.channels.map((c) => channelName(c)).join("\n")],
-	() => void load(),
+	() => {
+		activity.value = {};
+		void load();
+	},
 	{ immediate: true },
 );
 </script>

@@ -20,7 +20,14 @@ Each agent's **Channels** section lists its channels:
 
 Channel sessions live under their channel, not under **Chats**.
 
-With no channel picked, the **Channels** page shows an overview: every workflow of the agent as a card, with its active or paused state, its last run's result and the running animation, and below them each channel's recent messages under a heading that opens that channel's chat.
+With no channel picked, the **Channels** page shows an overview:
+
+- **Summary**: how many channels the agent has and how many are enabled, the messages received in the last 24 hours, the workflows and how many are running. **Add channel** and **Add workflow** sit in the header. **Add workflow** asks which channel the workflow watches, then opens that channel's Workflows tab.
+- **Channels**: a card per channel with its type, whether it's enabled, its last activity, its messages in the last 24 hours and its workflow count. From a card you can open the chat, open its settings, or enable and disable it.
+- **Workflows**: every workflow of the agent as a card, with its active or paused state, its last run's result and the running animation.
+- **Recent messages**: each channel's latest messages, under a heading that opens that channel's chat. Each row shows the sender's name, how long ago it was sent, its attachments and the workflow that handled it. A long message fits one line: hover it to read it all, or click it to expand it. Search filters the messages across channels.
+
+Senders are named by the latest name the channel has seen for them, so a message that only recorded a phone number, such as a Signal contact's first message before their profile name arrived, still shows their name. Phone numbers and IDs are never shown; a sender the channel only knows by ID is labelled **Unknown sender**.
 
 For the exact `agents[].channels` schema, see the [Configuration Reference](/reference/config#agents-channels).
 

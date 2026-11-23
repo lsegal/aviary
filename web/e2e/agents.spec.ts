@@ -1292,7 +1292,8 @@ test("settings deep links scroll to their section", async ({ page }) => {
 	// Channels moved to their own sidebar section; the old address goes there.
 	await page.goto("/agents/assistant/settings/channels");
 	await expect(page).toHaveURL(/\/agents\/assistant\/channels$/);
-	await expect(heading("Channels")).toHaveCount(0);
+	await expect(page.getByTestId("channels-overview")).toBeVisible();
+	await expect(page.getByTestId("channel-settings")).toHaveCount(0);
 
 	await agentPageLink(page, "Agent Settings").click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/settings$/);

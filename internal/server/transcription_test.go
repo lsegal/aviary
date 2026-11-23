@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -162,6 +163,45 @@ func TestTranscribeHandler_WebMSilenceEndToEnd(t *testing.T) {
 	assert.True(t, resp.NoSpeech)
 	assert.Empty(t, resp.Text)
 	assert.InDelta(t, 3000, resp.DurationMS, 100)
+}
+
+// derivedFixture converts testdata/speech.webm with ffmpeg filter and
+// output options, the way a USB audio interface would have recorded it.
+func derivedFixture(t *testing.T, name string, args ...string) string {
+	t.Helper()
+	out := filepath.Join(t.TempDir(), name)
+	cmd := append([]string{"-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", filepath.Join("testdata", "speech.webm")}, args...)
+	data, err := exec.Command(transcribe.Detect("").FFmpeg.Path, append(cmd, out)...).CombinedOutput()
+	require.NoError(t, err, string(data))
+	data, err = os.ReadFile(out)
+	require.NoError(t, err)
+	return string(data)
+}
+
+func assertTestOneTwoThree(t *testing.T, body string) {
+	t.Helper()
+	code, resp := postRecording(t, &Server{cfg: &config.Config{}}, body)
+	require.Equal(t, http.StatusOK, code, resp.Error)
+	assert.False(t, resp.NoSpeech)
+	assert.Regexp(t, `(?i)^test (one|1), (two|2), (three|3)\.?$`, resp.Text)
+}
+
+func TestTranscribeHandler_StereoLeftChannelEndToEnd(t *testing.T) {
+	useLocalWhisper(t)
+	// A mic on input 1 of a stereo interface at modest gain: speech on the
+	// left, nothing on the right. Averaging the channels would halve it.
+	assertTestOneTwoThree(t, derivedFixture(t, "left.webm", "-af", "volume=-40dB,pan=stereo|c0=c0|c1=0*c0", "-c:a", "libopus"))
+}
+
+func TestTranscribeHandler_192kHzEndToEnd(t *testing.T) {
+	useLocalWhisper(t)
+	assertTestOneTwoThree(t, derivedFixture(t, "hires.wav", "-af", "pan=stereo|c0=c0|c1=0*c0", "-ar", "192000", "-c:a", "pcm_s24le"))
+}
+
+func TestTranscribeHandler_LowLevelSpeechEndToEnd(t *testing.T) {
+	useLocalWhisper(t)
+	// About -50 dBFS peak, like a low-gain interface preamp.
+	assertTestOneTwoThree(t, derivedFixture(t, "quiet.webm", "-af", "volume=-46dB", "-c:a", "libopus"))
 }
 
 func TestTranscriptionHandler_ReportsStatus(t *testing.T) {

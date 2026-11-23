@@ -40,14 +40,8 @@
 						</div>
 					</div>
 				</div>
-				<div v-for="s in statCards" :key="s.label" class="rounded-xl border px-4 py-3" :class="s.cls" :data-testid="s.testid">
-					<p class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide opacity-80">
-						<span v-if="s.pulse" class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
-						{{ s.label }}
-					</p>
-					<p class="text-2xl font-bold">{{ s.value }}</p>
-					<p v-if="s.caption" class="truncate text-[11px] opacity-70">{{ s.caption }}</p>
-				</div>
+				<StatCard v-for="s in statCards" :key="s.label" :label="s.label" :value="s.value" :caption="s.caption"
+					:pulse="s.pulse" :tone="s.tone" :data-testid="s.testid" />
 			</div>
 
 			<div>
@@ -91,10 +85,10 @@
 
 			<p v-if="actionError" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{{ actionError }}</p>
 
-			<div v-if="!rows.length" class="rounded-lg border border-dashed border-gray-300 px-3 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+			<EmptyStateCard v-if="!rows.length">
 				<template v-if="tasks.length">No tasks match.</template>
 				<template v-else>No scheduled tasks configured for this agent. Add one with + New task.</template>
-			</div>
+			</EmptyStateCard>
 
 			<div v-else-if="layout === 'cards'" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="task-cards">
 				<!-- The whole card opens the task's page, the same one its sidebar row
@@ -199,6 +193,8 @@ import {
 	taskSessionPath,
 	useSettingsStore,
 } from "../../stores/settings";
+import EmptyStateCard from "../ui/EmptyStateCard.vue";
+import StatCard from "../ui/StatCard.vue";
 import PausedChip from "./PausedChip.vue";
 import TaskActions from "./TaskActions.vue";
 import TaskAnalytics from "./TaskAnalytics.vue";
@@ -407,7 +403,7 @@ const statCards = computed(() => {
 				? `${Math.round((jobs.completed.length / finished.length) * 100)}%`
 				: "—",
 			caption: `${finished.length} finished`,
-			cls: "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300",
+			tone: "green" as const,
 		},
 		{
 			label: "Avg duration",
@@ -416,14 +412,14 @@ const statCards = computed(() => {
 			caption: durations.length
 				? `median ${formatDuration(median(durations))}`
 				: "",
-			cls: "border-gray-200 text-gray-900 dark:border-gray-800 dark:text-white",
+			tone: "neutral" as const,
 		},
 		{
 			label: "Next 24h",
 			testid: "stat-upcoming",
 			value: upcoming,
 			caption: "runs coming up",
-			cls: "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900 dark:bg-purple-950/40 dark:text-purple-300",
+			tone: "purple" as const,
 		},
 		{
 			label: "Running",
@@ -431,7 +427,7 @@ const statCards = computed(() => {
 			value: jobs.running.length,
 			caption: `${jobs.pending.length} pending`,
 			pulse: jobs.running.length > 0,
-			cls: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
+			tone: "blue" as const,
 		},
 		{
 			label: "Failures",
@@ -440,7 +436,7 @@ const statCards = computed(() => {
 			caption: lastFailure
 				? `last ${lastFailure.task_id.split("/").pop()} ${ago(lastFailure.created_at)}`
 				: "none in range",
-			cls: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
+			tone: "red" as const,
 		},
 	];
 });
