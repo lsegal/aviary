@@ -441,6 +441,24 @@ func (q *JobQueue) SetTriggerContext(id string, tc *domain.TriggerContext) error
 	return store.WriteJSON(path, &job)
 }
 
+// SetDelivery records where a job's output was sent and how that went.
+func (q *JobQueue) SetDelivery(id string, delivery *domain.JobDelivery) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	path := store.FindJobPath(id)
+	if path == "" {
+		return fmt.Errorf("job %s not found", id)
+	}
+	job, err := store.ReadJSON[domain.Job](path)
+	if err != nil {
+		return fmt.Errorf("reading job %s: %w", id, err)
+	}
+	job.Delivery = delivery
+	job.UpdatedAt = time.Now()
+	return store.WriteJSON(path, &job)
+}
+
 // UpdateOutput persists the text output captured during a job's execution.
 func (q *JobQueue) UpdateOutput(id, output string) error {
 	q.mu.Lock()

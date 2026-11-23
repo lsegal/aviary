@@ -113,7 +113,7 @@ func New(cfg *config.Config, token string) *Server {
 
 	s.channels = channels.NewManager()
 	if s.sched != nil {
-		s.sched.SetTaskOutputDelivery(s.deliverTaskOutput)
+		s.sched.SetTaskOutputDelivery(s.deliverOutput)
 		s.sched.SetWorkflowHooks(s.replyToWorkflowTrigger, workflowMessagesAfter)
 	}
 	s.sampler = NewProcSampler()
@@ -1006,30 +1006,11 @@ func (s *Server) Addr() string {
 // Agents returns the agent manager.
 func (s *Server) Agents() *agent.Manager { return s.agents }
 
+// deliverTaskOutput sends output that no task or workflow run produced, such
+// as a Code Loop report, to route.
 func (s *Server) deliverTaskOutput(agentName, route, text string) error {
-	route = strings.TrimSpace(route)
-	if route == "" || strings.EqualFold(route, "silent") {
-		return nil
-	}
-	if strings.HasPrefix(route, "session:") {
-		sessionRef := strings.TrimSpace(strings.TrimPrefix(route, "session:"))
-		if sessionRef == "" {
-			return fmt.Errorf("task target session is required")
-		}
-		if store.FindSessionPath(agentName, sessionRef) != "" {
-			return agent.AppendReplyToSession(agentName, sessionRef, text)
-		}
-		sess, err := agent.NewSessionManager().GetOrCreateNamed(agentName, sessionRef)
-		if err != nil {
-			return fmt.Errorf("resolving task target session %q: %w", sessionRef, err)
-		}
-		return agent.AppendReplyToSession(agentName, sess.ID, text)
-	}
-	name, ok := config.ChannelTargetName(route)
-	if !ok || name == "" {
-		return fmt.Errorf("invalid task target %q; use channel:<channel name> or session:<name>", route)
-	}
-	return s.deliverToChannel(agentName, name, text)
+	_, err := s.deliverOutput(domain.OutputSource{}, agentName, route, text)
+	return err
 }
 
 // deliverToChannel appends text to the own session of agentName's channel
