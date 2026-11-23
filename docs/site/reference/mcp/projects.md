@@ -22,6 +22,7 @@ A job is named by its issue `number`. `target` is needed only when several proje
 | `project_unblock_run` | `aviary project unblock` | |
 | `project_issue_comment` | `aviary project issue comment` | |
 | `project_issue_create` | `aviary project issue create` | |
+| `project_issue_backfill_media` | `aviary project issue backfill-media` | |
 | `project_check` | `aviary project check` | read-only |
 
 Settings have no tool of their own. A project lives in the `projects:` list of the agent that owns it in `aviary.yaml` ([`agents[].projects`](/reference/config#agents-projects)), and the settings every project shares live in the top-level `projects:` section ([`projects`](/reference/config#projects)). Both are read and written with `config_get` and `config_save`, and are applied to the running engine when the file changes.
@@ -122,7 +123,21 @@ Images and videos are uploaded and embedded in the issue. See [Attachments](#att
 
 GitHub takes PNG, JPEG, GIF, WebP and SVG images up to 10 MB, and MP4, MOV and WebM videos up to 100 MB. If any file is missing, has another type, or is too large, the call fails with an error that names the file and the reason, and nothing is posted. The result's `attachments` lists the files that were attached. Uploading needs push access to the repository.
 
-## project_check
+## project_issue_backfill_media
+
+Post the screenshots and videos sent with the request that filed each issue, for issues filed before `project_issue_create` attached them. It never edits issue bodies.
+
+**Arguments:** `numbers`, and optional `repository` (defaults to the only watched repository) and `dry_run` (report what would be posted without posting).
+
+Each issue is matched to the user message whose turn called `project_issue_create` and got that issue's URL back, searched across every agent's session history. That message's images and videos (Signal media under `media/incoming/`, or web chat images saved from their data URLs under `media/turn/`) are uploaded and posted as one comment, checked the way [Attachments](#attachments) describes. Unlike `project_issue_comment`, the comment mentions no one, so it does not wake the job or the Code Loop agent. The result lists each issue with a `status`:
+
+- `posted`: the comment was posted; `url` links it and `attachments` lists the files.
+- `would_post`: with `dry_run`, the comment would be posted with `attachments`.
+- `already_posted`: the issue already has the comment, so running it again posts nothing new.
+- `no_media`: nothing to post; `reason` says why, such as no filing call for the issue in session history, a request without images or videos, or media that can no longer be read.
+- `failed`: the comment could not be checked or posted; `reason` has the error.
+
+
 
 Check whether a repository, Project board or Discussions board can be watched as a project. The add-project dialog runs it as you type. It is read-only and writes nothing.
 

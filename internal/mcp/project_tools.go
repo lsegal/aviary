@@ -102,6 +102,12 @@ type projectIssueCreateArgs struct {
 	SkipTurnMedia bool `json:"skip_turn_media,omitempty" jsonschema:"Do not attach the images and videos from the user message that started this turn, which are attached by default"`
 }
 
+type projectIssueBackfillMediaArgs struct {
+	Repository string `json:"repository,omitempty" jsonschema:"OWNER/REPO the issues are on; defaults to the only watched repository"`
+	Numbers    []int  `json:"numbers" jsonschema:"The issue numbers to backfill"`
+	DryRun     bool   `json:"dry_run,omitempty" jsonschema:"Report what would be posted without posting"`
+}
+
 // issueAttachmentsDescription tells agents how project_issue_create and
 // project_issue_comment attach media.
 const issueAttachmentsDescription = "Screenshots and videos are uploaded and embedded, never just described: by default the images and videos attached to the user message that started this turn are attached (its other files are left out and listed in skipped_turn_media), and attachments adds local image or video files; set skip_turn_media to leave the turn's media out. GitHub takes PNG, JPEG, GIF, WebP and SVG images up to 10 MB and MP4, MOV and WebM videos up to 100 MB. A file that is missing, of another type, or too large fails the call with an error naming it and the reason, and nothing is posted; the result lists the files attached"
@@ -433,6 +439,16 @@ func registerProjectTools(s *sdkmcp.Server) {
 			}
 			result, err := m.IssueCreate(ctx, args.Repository, args.Text, args.Model, attachments)
 			return withSkippedMedia(result, err, skipped)
+		})
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "project_issue_backfill_media",
+		Description: "Post the screenshots and videos sent with the request that filed each issue, for issues filed before project_issue_create attached them: each issue is matched to the user message whose turn called project_issue_create and got its URL back, and that message's images and videos are posted as one comment per issue that mentions no one, so no job or agent is woken; never edits issue bodies. Each issue's result says whether its comment was posted, was already there (a rerun posts nothing new), or why no media was found",
+		Annotations: mutatingTool,
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectIssueBackfillMediaArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
+			return m.BackfillIssueMedia(ctx, args.Repository, args.Numbers, args.DryRun)
 		})
 	})
 
