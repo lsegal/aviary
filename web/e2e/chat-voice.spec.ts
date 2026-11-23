@@ -1,7 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { openChat } from "./helpers/voice";
 
-type MicMode = "ok" | "denied" | "no-device";
+type MicMode = "ok" | "denied" | "no-device" | "muted";
 
 /** Replaces the microphone and MediaRecorder with fakes. */
 async function fakeMicrophone(
@@ -50,49 +51,21 @@ async function fakeMicrophone(
 					throw new DOMException("Permission denied", "NotAllowedError");
 				if (mode === "no-device")
 					throw new DOMException("Requested device not found", "NotFoundError");
+				const track = {
+					muted: mode === "muted",
+					readyState: "live",
+					stop() {
+						w.__micStops += 1;
+					},
+				};
 				return {
-					getTracks: () => [
-						{
-							stop() {
-								w.__micStops += 1;
-							},
-						},
-					],
+					getTracks: () => [track],
+					getAudioTracks: () => [track],
 				} as unknown as MediaStream;
 			};
 		},
 		{ mode: opts.mode ?? "ok", insecure: opts.insecure ?? false },
 	);
-}
-
-async function openChat(page: Page, runs: unknown[] = []) {
-	await setAuthToken(page);
-	await mockMCP(page, {
-		agent_list: [{ id: "a1", name: "assistant", model: "x/y", state: "idle" }],
-		session_list: [
-			{
-				id: "s1",
-				agent_id: "a1",
-				name: "main",
-				created_at: "2026-03-12T12:00:00Z",
-			},
-		],
-		session_messages: [],
-		config_validate: [],
-		agent_run: (args?: Record<string, unknown>) => {
-			runs.push(args);
-			return { stream: ["ok"], result: "" };
-		},
-	});
-	await page.goto("/agents/assistant/chat");
-	const composer = page.getByTestId("chat-composer");
-	await expect(composer).toBeVisible();
-	return {
-		composer,
-		mic: composer.getByTestId("voice-button"),
-		send: composer.getByRole("button", { name: "Send message" }),
-		input: composer.getByPlaceholder("Describe a task or ask a question"),
-	};
 }
 
 test("records, transcribes, and inserts the transcript for review", async ({
@@ -185,6 +158,32 @@ test("Cancel discards the recording", async ({ page }) => {
 			() => (window as unknown as { __micStops: number }).__micStops,
 		),
 	).toBe(1);
+});
+
+test("shows no speech detected instead of inserting text", async ({ page }) => {
+	await fakeMicrophone(page);
+	await page.route("**/api/transcribe", (route) =>
+		route.fulfill({ json: { duration_ms: 9000, no_speech: true } }),
+	);
+	const { composer, mic, input } = await openChat(page);
+	await input.fill("Draft");
+	await mic.click();
+	await mic.click();
+	await expect(composer.getByTestId("voice-error")).toContainText(
+		"No speech detected",
+	);
+	await expect(input).toHaveValue("Draft");
+});
+
+test("warns while recording from a muted microphone", async ({ page }) => {
+	await fakeMicrophone(page, { mode: "muted" });
+	const { composer, mic } = await openChat(page);
+	await mic.click();
+	await expect(composer.getByTestId("voice-mic-warning")).toContainText(
+		"microphone is muted",
+	);
+	await composer.getByRole("button", { name: "Cancel" }).click();
+	await expect(composer.getByTestId("voice-mic-warning")).toHaveCount(0);
 });
 
 test("explains a denied microphone permission", async ({ page }) => {
