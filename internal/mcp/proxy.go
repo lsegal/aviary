@@ -109,8 +109,10 @@ func remoteServerCertPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("loading config: %w", err)
 	}
-	if cfg != nil && cfg.Server.TLS != nil && strings.TrimSpace(cfg.Server.TLS.Cert) != "" {
-		return resolveConfigPath(cfg.Server.TLS.Cert), nil
+	if cfg != nil {
+		if cert := config.EffectiveServerTLS(cfg.Server).Cert; strings.TrimSpace(cert) != "" {
+			return resolveConfigPath(cert), nil
+		}
 	}
 	return filepath.Join(store.SubDir(store.DirCerts), "cert.pem"), nil
 }

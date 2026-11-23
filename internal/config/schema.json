@@ -60,6 +60,13 @@
               "x-placeholder": "/path/to/key.pem",
               "x-order": 5,
               "description": "Path to TLS private key file (PEM). Leave empty to use an auto-generated self-signed key."
+            },
+            "sans": {
+              "type": "array",
+              "items": { "type": "string" },
+              "x-label": "Extra certificate names",
+              "x-order": 5,
+              "description": "Extra hostnames and IP addresses the auto-generated self-signed cert covers, on top of localhost, the hostname, and the LAN IPv4 addresses."
             }
           }
         }

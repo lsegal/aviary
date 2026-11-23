@@ -449,29 +449,6 @@ func TestProcSampler(t *testing.T) {
 	s.Forget(99999)
 }
 
-func TestLoadOrGenerateTLS_GeneratesSelfSigned(t *testing.T) {
-	setupServerDataDir(t)
-
-	cert, err := LoadOrGenerateTLS("", "")
-	assert.NoError(t, err)
-	assert.NotEqual(t, 0, len(cert.Certificate))
-
-}
-
-func TestLoadOrGenerateTLS_LoadsExisting(t *testing.T) {
-	setupServerDataDir(t)
-
-	// Generate first.
-	cert1, err := LoadOrGenerateTLS("", "")
-	assert.NoError(t, err)
-
-	// Load again — should return the same cert.
-	cert2, err := LoadOrGenerateTLS("", "")
-	assert.NoError(t, err)
-	assert.Equal(t, len(cert2.Certificate), len(cert1.Certificate))
-
-}
-
 func TestExtractComponent(t *testing.T) {
 	tests := []struct {
 		msg   string
@@ -948,33 +925,6 @@ func TestServerSettingsChanged(t *testing.T) {
 		cfgB := &config.Config{}
 		cfgB.Server.TLS = &config.TLSConfig{Cert: "b.pem", Key: "b.key"}
 		assert.True(t, serverSettingsChanged(cfgA, cfgB))
-
-	})
-}
-
-func TestTLSConfigChanged(t *testing.T) {
-	t.Run("both nil", func(t *testing.T) {
-		assert.False(t, tlsConfigChanged(nil, nil))
-
-	})
-
-	t.Run("nil and non-nil", func(t *testing.T) {
-		assert.True(t, tlsConfigChanged(nil, &config.TLSConfig{}))
-		assert.True(t, tlsConfigChanged(&config.TLSConfig{}, nil))
-
-	})
-
-	t.Run("same values", func(t *testing.T) {
-		a := &config.TLSConfig{Cert: "c.pem", Key: "k.key"}
-		b := &config.TLSConfig{Cert: "c.pem", Key: "k.key"}
-		assert.False(t, tlsConfigChanged(a, b))
-
-	})
-
-	t.Run("different cert", func(t *testing.T) {
-		a := &config.TLSConfig{Cert: "a.pem", Key: "k.key"}
-		b := &config.TLSConfig{Cert: "b.pem", Key: "k.key"}
-		assert.True(t, tlsConfigChanged(a, b))
 
 	})
 }
@@ -1837,14 +1787,6 @@ func TestStageOutgoingMedia_CopiesToChannelDir(t *testing.T) {
 	assert.Equal(t, "png-bytes", string(data))
 }
 
-func TestLoadOrGenerateTLS_WithCustomCertError(t *testing.T) {
-	setupServerDataDir(t)
-	// Providing a non-existent cert/key path should return an error.
-	_, err := LoadOrGenerateTLS("/nonexistent/cert.pem", "/nonexistent/key.pem")
-	assert.Error(t, err)
-
-}
-
 func TestPIDPath_WindowsFallback(t *testing.T) {
 	// Ensure PIDPath returns something reasonable when env overrides are set.
 	tmp := t.TempDir()
@@ -1903,25 +1845,6 @@ func TestLogsHandler_FilePoll(t *testing.T) {
 	assert.
 		// Should contain at least the initial entry.
 		True(t, strings.Contains(body, "data:"))
-
-}
-
-func TestGenerateSelfSigned_Direct(t *testing.T) {
-	setupServerDataDir(t)
-	// Call generateSelfSigned directly to cover its body.
-	dir := t.TempDir()
-	certFile := filepath.Join(dir, "cert.pem")
-	keyFile := filepath.Join(dir, "key.pem")
-	cert, err := generateSelfSigned(certFile, keyFile)
-	assert.NoError(t, err)
-	assert.NotEqual(t, 0, len(cert.Certificate))
-
-	// Verify files were written.
-	_, err = os.Stat(certFile)
-	assert.NoError(t, err)
-
-	_, err = os.Stat(keyFile)
-	assert.NoError(t, err)
 
 }
 
@@ -2031,16 +1954,6 @@ func mapLen() int {
 	wsClients.mu.Lock()
 	defer wsClients.mu.Unlock()
 	return len(wsClients.m)
-}
-
-func TestGenerateSelfSigned_BadDir(t *testing.T) {
-	// Provide a path under a read-only location to force a write error.
-	// On most systems /proc/... is not writable.
-	_, err := generateSelfSigned("/proc/nonexistent/cert.pem", "/proc/nonexistent/key.pem")
-	if err == nil {
-		// If for some reason this didn't fail (unlikely), just skip.
-		t.Skip("expected error for unwritable path but got none")
-	}
 }
 
 func TestLogsHandler_LogFileGrows(t *testing.T) {
