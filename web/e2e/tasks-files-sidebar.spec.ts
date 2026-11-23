@@ -448,7 +448,11 @@ test("the … menu opens a task's settings and deletes tasks", async ({
 	const cleanup = taskRows(page).filter({ hasText: "cleanup" });
 	await cleanup.hover();
 	await cleanup.getByTestId("task-menu-button").click();
-	await expect(page.getByRole("menuitem")).toHaveText(["Settings", "Delete"]);
+	await expect(page.getByRole("menuitem")).toHaveText([
+		"Pause",
+		"Settings",
+		"Delete",
+	]);
 	await page.getByRole("menuitem", { name: "Settings" }).click();
 
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\?task=cleanup$/);

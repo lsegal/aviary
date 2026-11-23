@@ -23,7 +23,7 @@
 					</div>
 					<p data-testid="kanban-scheduled-next" class="tabular-nums text-violet-700 dark:text-violet-300"
 						:title="s.nextRun ? formatFire(s.nextRun) : ''">
-						<template v-if="scheduleNext(s).kind === 'paused'">Paused</template>
+						<PausedChip v-if="scheduleNext(s).kind === 'paused'" />
 						<template v-else-if="s.nextRun">Next {{ until(s.nextRun, now) }}</template>
 						<template v-else-if="scheduleNext(s).kind === 'running'">Running now</template>
 						<template v-else>No next run</template>
@@ -90,6 +90,7 @@ import {
 	waitText,
 } from "../../lib/projects";
 import { taskSessionPath, useSettingsStore } from "../../stores/settings";
+import PausedChip from "../tasks/PausedChip.vue";
 import PullRequestLink from "./PullRequestLink.vue";
 
 const props = withDefaults(

@@ -76,8 +76,8 @@
         <router-link v-for="child in mobileChildren" :key="child.key" :to="child.to"
           :title="child.paused ? 'Paused' : undefined" :data-paused="child.paused || undefined"
           :class="[mobileSubnavClass(child), 'inline-flex items-center gap-1.5', child.paused ? 'italic opacity-60' : '']">
-          <SystemPageIcon v-if="systemActive" :page-key="child.key" class="h-4 w-4" /><PauseIcon v-if="child.paused"
-            aria-hidden="true" data-testid="mobile-task-paused" class="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />{{ child.label }}<ProjectRunningBadge
+          <SystemPageIcon v-if="systemActive" :page-key="child.key" class="h-4 w-4" /><span v-if="child.paused"
+            data-testid="mobile-task-paused" class="inline-flex text-amber-600 dark:text-amber-400"><PauseIcon aria-hidden="true" class="h-3.5 w-3.5" /></span>{{ child.label }}<ProjectRunningBadge
             :running="child.running ?? 0" class="ml-1.5" />
         </router-link>
         <SidebarRowAction v-if="mobileAdd" :label="rowAddLabel(mobileAdd.page)" data-testid="mobile-row-action" @click="openAdd(mobileAdd.page, mobileAdd.agent)" />

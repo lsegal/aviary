@@ -333,7 +333,10 @@ test("board lists scheduled tasks as their own boxes with run details", async ({
 	await expect(nightly.getByTestId("scheduled-agent")).toHaveText(
 		"assistant · cli/claude/opus",
 	);
-	await expect(boxes.nth(1).getByTestId("scheduled-next")).toHaveText("paused");
+	await expect(boxes.nth(1).getByTestId("scheduled-next")).toHaveText(
+		"Next run: paused",
+	);
+	await expect(boxes.nth(1).getByTestId("paused-chip")).toBeVisible();
 	await expect(boxes.nth(1).getByTestId("scheduled-last")).toHaveText(
 		"Hasn't run yet",
 	);
