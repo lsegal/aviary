@@ -255,7 +255,7 @@ func TestServerRoutes_DisableTokenAuth(t *testing.T) {
 			s.mux.Handle("/api/logs/history", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})))
-			s.mux.HandleFunc("/api/health", healthHandler(s.authDisabled.Load))
+			s.mux.HandleFunc("/api/health", healthHandler(s.authDisabled.Load, false))
 
 			rr := httptest.NewRecorder()
 			s.mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/logs/history", nil))
@@ -378,7 +378,7 @@ func TestPIDLifecycle(t *testing.T) {
 func TestHealthHandler(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	rr := httptest.NewRecorder()
-	healthHandler(nil)(rr, req)
+	healthHandler(nil, false)(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var payload struct {

@@ -31,6 +31,7 @@ const (
 // checkpoint recovery, can read them while a test's cleanup resets them.
 var customDataDir atomic.Pointer[string]
 var customWorkspaceDir atomic.Pointer[string]
+var customAuthDir atomic.Pointer[string]
 
 // SetDataDir overrides the directory returned by DataDir.
 // Pass an empty string to restore automatic resolution via XDG_CONFIG_HOME or ~/.config.
@@ -41,6 +42,21 @@ func SetDataDir(dir string) { customDataDir.Store(&dir) }
 // Pass an empty string to restore automatic resolution via the process working directory.
 // This is intended for tests and tools that need repo-local artifacts.
 func SetWorkspaceDir(dir string) { customWorkspaceDir.Store(&dir) }
+
+// SetAuthDir makes SubDir(DirAuth) return dir instead of the auth directory
+// under DataDir. `aviary watch` runs against a temporary data directory but
+// reads and refreshes the user's own provider credentials in place, so it
+// points this at the global auth directory rather than copying secrets.
+// Pass an empty string to restore the default.
+func SetAuthDir(dir string) { customAuthDir.Store(&dir) }
+
+// sharedAuthDir is the SetAuthDir override, empty when unset.
+func sharedAuthDir() string {
+	if dir := customAuthDir.Load(); dir != nil {
+		return *dir
+	}
+	return ""
+}
 
 // DataDir returns the Aviary data directory.
 // Resolution order: SetDataDir value > XDG_CONFIG_HOME > ~/.config/aviary.
@@ -77,6 +93,11 @@ func WorkspaceDir() string {
 
 // SubDir returns the full path to a named subdirectory under DataDir.
 func SubDir(name string) string {
+	if name == DirAuth {
+		if dir := sharedAuthDir(); dir != "" {
+			return dir
+		}
+	}
 	return filepath.Join(DataDir(), name)
 }
 
@@ -295,6 +316,11 @@ func EnsureDirs() error {
 		SubDir(DirUsage),
 	}
 	for _, d := range dirs {
+		// A shared auth directory belongs to another data directory, which
+		// this one never creates anything in.
+		if d == sharedAuthDir() {
+			continue
+		}
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return fmt.Errorf("creating directory %s: %w", d, err)
 		}

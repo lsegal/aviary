@@ -34,7 +34,7 @@ Settings have no tool of their own. A project lives in the `projects:` list of t
 
 Instance identity, watched projects with issue counts, job counts, the jobs in each board state (`states`: `starting`, `paused`, `running`, `done`, `failed`; a schedule counts once, under `starting` or `running` while a run is in flight and under `failed` while its last run failed and was not dismissed, and never under `done`), delivery mode, poll interval, the issue filter that selects work (`issue_filter`, empty when every open issue is picked up), last check, quota per CLI provider, the configured agent specs, and recent log lines.
 
-**Arguments:** `log_offset` (optional): return only the lines logged after this offset. Each response's `log_offset` is the offset to pass next time. `aviary watch` tails the log this way. `targets` (optional): count `states` over only these projects' jobs, as `project_job_list` filters them; the board's stat cards pass the projects they show.
+**Arguments:** `log_offset` (optional): return only the lines logged after this offset. Each response's `log_offset` is the offset to pass next time. `aviary watch --no-tui` tails the log this way. `targets` (optional): count `states` over only these projects' jobs, as `project_job_list` filters them; the board's stat cards pass the projects they show.
 
 ## project_job_list
 
@@ -87,7 +87,7 @@ Watch a project. A saved project is added to its agent's `projects:` list.
 - `target`: `owner/repo`, a repository URL, a Project board, or a Discussions board.
 - `agent` (required unless `runtime` is set): the Aviary agent that owns the project; its model and fallbacks are the jobs' provider and model defaults. A target another agent already owns is refused. For a runtime watch it names the agent the watch runs under; left out, a runtime watch uses the target's owning agent, or `models.defaults`.
 - `reports` (optional, saved projects only): send this project's job events through an Aviary agent's channels, as `{agent, targets, events}`. See [Reports](/guide/projects#reports).
-- `runtime` (optional): watch until the server stops without writing `aviary.yaml`, as `aviary watch` does.
+- `runtime` (optional): watch until the server stops without writing `aviary.yaml`.
 - `settings` (optional, runtime only): projects settings that override the shared `projects:` settings while the watch runs.
 
 ## project_remove
