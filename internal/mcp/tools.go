@@ -1432,6 +1432,9 @@ func registerTaskTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, loadErr
 		}
 		target := normalizeTaskTarget(args.Target)
+		if config.IsReplyTarget(target) {
+			return nil, struct{}{}, fmt.Errorf("only workflows can reply to the conversation that triggered them; use trigger=message")
+		}
 		if target != "" && !config.ValidTaskTarget(target) {
 			return nil, struct{}{}, fmt.Errorf("invalid target %q: must be omitted, \"silent\", session:<name-or-id>, or channel:<channel name>", args.Target)
 		}
