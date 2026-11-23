@@ -41,11 +41,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   git \
   && rm -rf /var/lib/apt/lists/*
 
-# GGML_CPU_ALL_VARIANTS builds one CPU backend per instruction-set level and
-# picks the best one at runtime, so the binary runs on any amd64 or arm64 host
-# without being tied to the build machine's CPU. whisper-cli finds its shared
-# libraries and CPU backends next to itself through $ORIGIN.
-RUN git clone --depth 1 --branch "${WHISPER_CPP_VERSION}" https://github.com/ggml-org/whisper.cpp /src/whisper.cpp \
+ARG TARGETARCH
+
+# GGML_NATIVE=OFF keeps the build from targeting the build machine's CPU. On
+# amd64, GGML_CPU_ALL_VARIANTS builds one CPU backend per instruction-set level
+# and picks the best one at runtime. Bookworm's gcc cannot build ggml's armv9
+# variants, so arm64 gets one baseline armv8-a backend that runs on any arm64
+# host. whisper-cli finds its shared libraries and CPU backend next to itself
+# through $ORIGIN.
+RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+    amd64) cpu_variants=ON ;; \
+    *) cpu_variants=OFF ;; \
+  esac \
+  && git clone --depth 1 --branch "${WHISPER_CPP_VERSION}" https://github.com/ggml-org/whisper.cpp /src/whisper.cpp \
   && test "$(git -C /src/whisper.cpp rev-parse HEAD)" = "${WHISPER_CPP_COMMIT}" \
   && cmake -S /src/whisper.cpp -B /build \
     -DCMAKE_BUILD_TYPE=Release \
@@ -53,10 +61,10 @@ RUN git clone --depth 1 --branch "${WHISPER_CPP_VERSION}" https://github.com/ggm
     -DCMAKE_BUILD_RPATH='$ORIGIN' \
     -DGGML_NATIVE=OFF \
     -DGGML_BACKEND_DL=ON \
-    -DGGML_CPU_ALL_VARIANTS=ON \
+    -DGGML_CPU_ALL_VARIANTS="${cpu_variants}" \
     -DWHISPER_BUILD_TESTS=OFF \
     -DWHISPER_BUILD_SERVER=OFF \
-  && cmake --build /build --config Release -j"$(nproc)" \
+  && cmake --build /build --config Release --target whisper-cli -j"$(nproc)" \
   && mkdir -p /out/whisper.cpp /out/samples \
   && cp -a /build/bin/whisper-cli /build/bin/*.so* /out/whisper.cpp/ \
   && cp /src/whisper.cpp/samples/jfk.wav /out/samples/jfk.wav \
