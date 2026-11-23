@@ -12,6 +12,9 @@ export const useAuthStore = defineStore("auth", () => {
 	// True when the server runs with server.disable_token_auth, so no token is
 	// needed and the login prompt is skipped.
 	const authDisabled = ref(false);
+	// True for an `aviary watch` session, which serves only Code Loop and
+	// Scheduled Tasks; see lib/minimalMode.ts.
+	const minimal = ref(false);
 
 	const isLoggedIn = computed(() => token.value !== null || authDisabled.value);
 
@@ -40,8 +43,12 @@ export const useAuthStore = defineStore("auth", () => {
 				const res = await fetch("/api/health");
 				if (res.status < 500) {
 					if (res.ok) {
-						const body = (await res.json()) as { auth_disabled?: boolean };
+						const body = (await res.json()) as {
+							auth_disabled?: boolean;
+							minimal?: boolean;
+						};
 						authDisabled.value = body.auth_disabled === true;
+						minimal.value = body.minimal === true;
 					}
 					serverUnavailable.value = false;
 					return authDisabled.value;
@@ -82,6 +89,7 @@ export const useAuthStore = defineStore("auth", () => {
 
 	return {
 		authDisabled,
+		minimal,
 		isLoggedIn,
 		serverUnavailable,
 		token,

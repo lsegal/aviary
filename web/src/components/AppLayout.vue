@@ -31,16 +31,16 @@
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-1" data-testid="mobile-header-status">
-          <SidebarGearMenu :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+          <SidebarGearMenu v-if="!minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
             @restart="triggerRestart()" />
-          <VersionIndicator :version="version" :latest-version="latestVersion" :status="status"
+          <VersionIndicator v-if="!minimal" :version="version" :latest-version="latestVersion" :status="status"
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <ConnectionIndicator :status="status" @retry="reconnect()" />
         </div>
       </div>
       <div class="relative mt-2">
         <UpdateStatusBanner :restart="restart" class="mb-3" @cancel="cancelRestart()" />
-        <div v-if="upgradeAvailable"
+        <div v-if="upgradeAvailable && !minimal"
           class="mb-3 rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100">
           <div class="flex items-center justify-between gap-3">
             <span>New version available:
@@ -143,7 +143,7 @@
                 <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
                 <ProjectRunningBadge :running="child.running ?? 0" />
               </router-link>
-              <SidebarRowAction v-if="child.key === 'projects'" label="Add project" data-testid="sidebar-add-project"
+              <SidebarRowAction v-if="child.key === 'projects' && !minimal" label="Add project" data-testid="sidebar-add-project"
                 :to="addProjectLink(soleAgent.name)" />
               <SidebarRowAction v-else-if="child.key === 'chat'" label="New chat" data-testid="sidebar-new-chat"
                 :disabled="creatingChat" @click="newChat(soleAgent.name)" />
@@ -183,7 +183,7 @@
                     <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
                     <ProjectRunningBadge :running="child.running ?? 0" />
                   </router-link>
-                  <SidebarRowAction v-if="child.key === 'projects'" label="Add project" data-testid="sidebar-add-project"
+                  <SidebarRowAction v-if="child.key === 'projects' && !minimal" label="Add project" data-testid="sidebar-add-project"
                     :to="addProjectLink(a.name)" />
                   <SidebarRowAction v-else-if="child.key === 'chat'" label="New chat" data-testid="sidebar-new-chat"
                     :disabled="creatingChat" @click="newChat(a.name)" />
@@ -207,7 +207,7 @@
         </div>
         </template>
 
-        <div class="relative">
+        <div v-if="!minimal" class="relative">
           <router-link to="/system/overview" :class="[topLevelLinkClass(systemHeaderActive), 'flex items-center pr-9']" data-testid="sidebar-system">
             System
           </router-link>
@@ -219,7 +219,7 @@
             <span aria-hidden="true" class="inline-block transition-transform" :class="systemCollapsed ? '' : 'rotate-90'">›</span>
           </button>
         </div>
-        <div v-if="!systemCollapsed" class="mb-3 mt-1 space-y-1 pl-2" data-testid="sidebar-system-list">
+        <div v-if="!systemCollapsed && !minimal" class="mb-3 mt-1 space-y-1 pl-2" data-testid="sidebar-system-list">
           <router-link v-for="child in systemChildren" :key="child.key" :to="child.to"
             :data-testid="`sidebar-system-${child.key}`"
             :class="[childLinkClass(isChildActive(child), false), 'flex items-center gap-2']">
@@ -230,7 +230,7 @@
       </div>
       <div class="mt-auto flex flex-col gap-2">
         <UpdateStatusBanner :restart="restart" @cancel="cancelRestart()" />
-        <div v-if="upgradeAvailable"
+        <div v-if="upgradeAvailable && !minimal"
           class="rounded-xl border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-100">
           <div class="flex items-center justify-between gap-2">
             <span>New version available</span>
@@ -258,11 +258,11 @@
           <div v-if="versionMessage" class="mt-1 opacity-80">{{ versionMessage }}</div>
         </div>
         <div class="flex items-center gap-2 px-1" data-testid="sidebar-footer">
-          <VersionIndicator :version="version" :latest-version="latestVersion" :status="status"
+          <VersionIndicator v-if="!minimal" :version="version" :latest-version="latestVersion" :status="status"
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <div class="ml-auto flex shrink-0 items-center gap-1" data-testid="sidebar-footer-actions">
             <ConnectionIndicator :status="status" @retry="reconnect()" />
-            <SidebarGearMenu :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+            <SidebarGearMenu v-if="!minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
               @restart="triggerRestart()" />
           </div>
         </div>
@@ -308,25 +308,25 @@
             </template>
           </template>
         </template>
-        <SidebarRailItem label="System" to="/system/overview" :active="route.path === '/system/overview'"
+        <SidebarRailItem v-if="!minimal" label="System" to="/system/overview" :active="route.path === '/system/overview'"
           data-testid="sidebar-rail-system">
           <ServerStackIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
-        <SidebarRailItem v-if="currentSystemChild" :label="currentSystemChild.label" :to="currentSystemChild.to"
+        <SidebarRailItem v-if="currentSystemChild && !minimal" :label="currentSystemChild.label" :to="currentSystemChild.to"
           active :badge="currentSystemChild.running" :data-testid="`sidebar-rail-system-${currentSystemChild.key}`">
           <SystemPageIcon :page-key="currentSystemChild.key" class="h-5 w-5" />
         </SidebarRailItem>
       </div>
       <div class="mt-auto flex flex-col items-center gap-1 pt-2">
-        <SidebarRailItem v-if="upgradeAvailable" :label="railUpdateLabel" dot="bg-yellow-400"
+        <SidebarRailItem v-if="upgradeAvailable && !minimal" :label="railUpdateLabel" dot="bg-yellow-400"
           data-testid="sidebar-rail-update" :disabled="upgradeDisabled" @click="openUpgradeDialog()">
           <ArrowUpCircleIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
-        <SidebarRailItem v-else :label="railVersionLabel" data-testid="sidebar-rail-version">
+        <SidebarRailItem v-else-if="!minimal" :label="railVersionLabel" data-testid="sidebar-rail-version">
           <TagIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
         <ConnectionIndicator :status="status" @retry="reconnect()" />
-        <SidebarGearMenu rail :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+        <SidebarGearMenu v-if="!minimal" rail :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
           @restart="triggerRestart()" />
       </div>
     </nav>
@@ -394,6 +394,7 @@ import {
 import { agentFilePath, useAgentFilesStore } from "../stores/agentFiles";
 import { projectOwner } from "../lib/projectSettings";
 import { useRouteExpandedGroup } from "../composables/useRouteExpandedGroup";
+import { MINIMAL_AGENT_PAGES } from "../lib/minimalMode";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
 import { type ProjectSummary, projectPath } from "../lib/projects";
@@ -457,6 +458,8 @@ interface BrandLink {
 }
 
 const auth = useAuthStore();
+// An `aviary watch` session shows only Code Loop and Scheduled Tasks.
+const minimal = computed(() => auth.minimal);
 const route = useRoute();
 const router = useRouter();
 const {
@@ -742,7 +745,9 @@ const agentNav = computed<AgentNav[]>(() => {
 			running,
 			children:
 				active || names.length === 1
-				? AGENT_PAGES.map((page) => ({
+				? AGENT_PAGES.filter(
+						(page) => !minimal.value || MINIMAL_AGENT_PAGES.has(page.key),
+					).map((page) => ({
 						key: page.key,
 						label: page.label,
 						to: agentPagePath(name, page.key),
@@ -973,6 +978,7 @@ const mobileMainItems = computed<MobileNavItem[]>(() => {
 		to: "/system/overview",
 		active: systemActive.value,
 	};
+	const systemItems = minimal.value ? [] : [system];
 	const sole = soleAgent.value;
 	if (sole) {
 		return [
@@ -983,7 +989,7 @@ const mobileMainItems = computed<MobileNavItem[]>(() => {
 				active: isChildActive(child),
 				running: child.running,
 			})),
-			system,
+			...systemItems,
 		];
 	}
 	return [
@@ -993,7 +999,7 @@ const mobileMainItems = computed<MobileNavItem[]>(() => {
 			to: a.to,
 			active: a.active,
 		})),
-		system,
+		...systemItems,
 	];
 });
 

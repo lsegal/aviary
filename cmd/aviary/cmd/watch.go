@@ -172,6 +172,8 @@ func runWatch(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
+	// Past the flags, an error is the session's, not a usage mistake.
+	cmd.SilenceUsage = true
 	out := cmd.OutOrStdout()
 	sources, global, err := resolveGlobalWatchSources(cfgFile)
 	if err != nil {
@@ -242,15 +244,25 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 	if webUI {
 		webURL = fmt.Sprintf("http://localhost:%d/agents/%s/projects", session.Port, url.PathEscape(session.Agent))
 	}
+	title := strings.Join(targets, ", ")
+	if !tui {
+		_, _ = fmt.Fprintf(out, "Watching %s in an isolated session (Ctrl+C stops it).\n", title)
+		if webURL != "" {
+			_, _ = fmt.Fprintf(out, "Code Loop: %s\n", webURL)
+		}
+	}
 	call, closeCalls, err := watchToolCalls(ctx)
 	if err != nil {
 		cancel()
-		<-served
+		serveErr := <-served
+		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
+			// A signal arrived while the session was starting.
+			err = serveErr
+		}
 		return err
 	}
 	defer closeCalls()
 
-	title := strings.Join(targets, ", ")
 	if tui {
 		tuiDone := make(chan error, 1)
 		go func() { tuiDone <- runWatchTUI(ctx, call, title, webURL) }()
@@ -265,10 +277,6 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 			<-tuiDone
 		}
 	} else {
-		_, _ = fmt.Fprintf(out, "Watching %s in an isolated session (Ctrl+C stops it).\n", title)
-		if webURL != "" {
-			_, _ = fmt.Fprintf(out, "Code Loop: %s\n", webURL)
-		}
 		logsDone := make(chan struct{})
 		go func() {
 			printWatchLogs(ctx, out, call)

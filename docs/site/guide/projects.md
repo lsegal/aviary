@@ -12,7 +12,7 @@ Code Loop needs the [GitHub CLI](https://cli.github.com/) (`gh`) signed in with 
 aviary watch owner/repo
 ```
 
-`aviary watch` needs no configuration and writes nothing to `aviary.yaml`. It watches the target until you press Ctrl+C. When the Aviary server is running, the watch is added to it. Otherwise the server starts in the foreground for the watch. With no target, the current checkout's `origin` repository is watched.
+`aviary watch` needs no configuration and never changes your Aviary config. It watches the target in a one-off, isolated session until you press Ctrl+C. With no target, the current checkout's `origin` repository is watched.
 
 A target is one of:
 
@@ -22,6 +22,28 @@ A target is one of:
 - the `projects:` and `discussions:` shorthands, which default to the current checkout's repository
 
 Every target of every agent shares one concurrency limit, and work is drawn from them in turn.
+
+### Watch sessions
+
+`aviary watch` runs its own Aviary server against a temporary config and data directory, `aviary-watch-<PID>-*` in the system temp directory. The session's config, state, sessions, jobs and clone bookkeeping all live there, and nothing is written to your Aviary config directory, even when an Aviary server is already running.
+
+Only two things are shared with your own Aviary, and both are read in place rather than copied into the temporary directory:
+
+- the **browser profile**, so the GitHub sign-in browser delivery uses is reused;
+- **provider credentials**: CLI provider sign-ins, `auth:` references and stored tokens. No secret is copied into the session.
+
+The session starts from your providers, browser, approval and Code Loop settings, and the command's flags override the Code Loop settings. Its targets run under `--agent`, else the agent of yours that owns them, else a `watch` agent that takes `models.defaults`. Only the agent's model, fallbacks and permissions come along, never its channels, tasks or other projects.
+
+**Minimal web UI.** The session's server listens on `localhost` only, on the first free port from your `server.port` (default 16677) up, and prints the URL of its Code Loop board. The web UI asks for no token and shows only **Code Loop** and **Scheduled Tasks**: there is no chat, agent or channel settings, System page, or way to add agents. The server refuses those pages' API calls too, not just the links, and Code Loop Settings can change only the Code Loop settings and scheduled tasks.
+
+**TUI.** In a terminal the session shows a full-screen board: the Scheduled, Starting, Paused, Running, Done and Failed filters (`1`–`6`, `0` for all), scheduled tasks, board mode (`b`), job actions (`r` retry, `p` pause, `u` resume, `s` stop), the selected job's output (`Enter`), live logs (`l`) and the compact stats. `?` lists every key and `q` quits.
+
+| Flag | Effect |
+| --- | --- |
+| `--no-webui` | serve no web UI; the TUI or log still runs |
+| `--no-tui` | print the Code Loop log instead of the TUI, as happens anyway when output is not a terminal |
+
+**Cleanup.** Ctrl+C, `SIGTERM`, `SIGHUP`, quitting the TUI, or a fatal error ends the session: running jobs are stopped and checkpointed, then the temporary directory is removed. A directory left behind by a session that was killed outright (`SIGKILL`) or crashed is removed by the next `aviary watch`, once the PID in its name is no longer running; a live session's directory is left alone.
 
 To watch a project permanently, add it to an agent. A project belongs to exactly one Aviary agent: it is listed in that agent's `projects:` list in `aviary.yaml`, and managed on the agent's tab in **Code Loop Settings** (`/projects/settings?agent=<agent>`), where its projects are added and removed and their reports set. The **✕** on a saved project's row there deletes it: it stops watching the project and stops its in-flight jobs, after a confirmation; the repository and clones on disk are left alone. The agent's **Code Loop** page (`/agents/<agent>/projects`) is one board of every project it owns, each job card naming its project, with no settings on it. Each project's own board opens beneath it (`/agents/<agent>/projects/<owner%2Frepo>`) and shows the project's agent, with its Settings button opening the project in Code Loop Settings. A runtime watch no agent owns has its board under System → More (`/system/watches/<owner%2Frepo>`). Or run:
 
@@ -54,7 +76,7 @@ A repository issue is picked up when it is open and matches the issue filter (`a
 
 ## CLI providers
 
-A project's jobs run on the agent that owns it. The agent's model and fallbacks are the provider and model defaults of the project's jobs, in fallback order: a job runs on the first one whose quota is not used up. A `<cli>/<model>` model such as `claude/opus` or `codex/gpt-5.6-terra:high` (or the same with a `cli/` prefix, `cli/claude/opus`) runs the job on that CLI. A model that is not a CLI, such as `anthropic/claude-sonnet-5-5`, runs the job on the agent itself, as `aviary/<agent>` below. An agent without a model takes `models.defaults`, and so does a runtime watch (`aviary watch`) no agent owns, which then needs a CLI model there.
+A project's jobs run on the agent that owns it. The agent's model and fallbacks are the provider and model defaults of the project's jobs, in fallback order: a job runs on the first one whose quota is not used up. A `<cli>/<model>` model such as `claude/opus` or `codex/gpt-5.6-terra:high` (or the same with a `cli/` prefix, `cli/claude/opus`) runs the job on that CLI. A model that is not a CLI, such as `anthropic/claude-sonnet-5-5`, runs the job on the agent itself, as `aviary/<agent>` below. An agent without a model takes `models.defaults`, and so does an `aviary watch` session whose targets no agent of yours owns, which then needs a CLI model there.
 
 Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead, inside the Aviary server rather than as a child process; for the job's duration its file tools and `exec` may use the job's clone directory without a `permissions.filesystem.allowedPaths` entry (the agent still needs a permissions preset that enables file tools). Override a built-in field by field, or add a new CLI, under `models.cli_definitions`; [CLI provider definitions](/reference/cli-definitions) documents the schema: the CLI providers are core Aviary providers, shared with the rest of Aviary rather than owned by Code Loop. A `null` field drops the built-in's value. To run a CLI installed off `PATH`, set its `binary`, such as `models.cli_definitions.claude.binary: /opt/claude/bin/claude`; Settings → Providers & Authentication then reports it installed at that path, and jobs run the same executable.
 
