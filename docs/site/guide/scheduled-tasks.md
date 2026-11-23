@@ -237,6 +237,10 @@ Clicking the task in the sidebar opens its page, a dashboard for that one task:
 - **Run history** — every run, newest first, with its start time, duration, result (succeeded, failed, canceled or skipped), and trigger (schedule, catch-up, file watch or manual), twenty at a time and filterable by result. A failed or skipped run shows why. **Open run** opens a run's full logs at its own URL, `/agents/<agent>/tasks/<task>/runs/<job id>`.
 - **Chat** — the task's session, in a panel along the bottom. Drag its top edge to resize it. On a phone it opens as a bottom sheet. Whether it shows and how tall it is are remembered in the browser.
 
+### Workflows
+
+A task with `trigger: message` is a workflow: it runs when a matching message arrives on one of the agent's channels instead of on a schedule, and replaces the agent's own reply to that message. Workflows are managed from their channel's settings and stay out of the Scheduled Tasks list. See [Workflows](./channels.md#workflows).
+
 ## Output Delivery
 
 Tasks that produce output can deliver it to a channel automatically. Set `target` to a channel route:

@@ -251,3 +251,36 @@ Send a local file to the current conversation channel. Use this to share screens
 **Returns:** Text confirmation including the file path.
 
 **Side effects:** Delivers the file to the channel connected to the current session. If no channel target is set, the file is persisted as session media instead.
+
+---
+
+## workflow_entries
+
+List the conversations (entries) a channel has received messages on, such as Slack channels or Signal contacts and groups, for picking a [workflow](/guide/channels#workflows)'s source entry.
+
+**Arguments:**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent` | string | yes | Agent name |
+| `channel` | string | yes | Channel name or ID |
+
+**Returns:** JSON array of `{ entry, title }`.
+
+---
+
+## workflow_preview
+
+Test a workflow's text match against a channel's recent messages. Messages the agent sent are left out, because they never trigger workflows.
+
+**Arguments:**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent` | string | yes | Agent name |
+| `channel` | string | yes | Channel name or ID |
+| `entry` | string | | Only messages on this conversation |
+| `match` | string | | Case-insensitive wildcard (`*`, `?`); empty matches every message |
+| `limit` | number | | How many recent messages to test (default 20, at most 100) |
+
+**Returns:** JSON array of `{ entry, sender, text, timestamp, matches }`, oldest first. `sender` is a display name, empty when only a raw ID is known.

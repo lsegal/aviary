@@ -17,6 +17,10 @@ export interface UsageRecord {
 	has_throttle?: boolean;
 	cost_usd?: number;
 	project?: ProjectUsage;
+	/** The "<agent>/<task>" scheduled task or workflow whose run spent the tokens. */
+	task?: string;
+	/** The channel whose message fired a workflow run. */
+	channel?: string;
 }
 
 // ProjectUsage is the Projects work a usage record reports instead of token
@@ -289,6 +293,8 @@ export const useUsageStore = defineStore("usage", () => {
 			has_throttle: boolean;
 			first_ts: string;
 			last_ts: string;
+			task?: string;
+			channel?: string;
 		};
 		const m = new Map<string, S>();
 		for (const r of records.value) {
@@ -306,6 +312,8 @@ export const useUsageStore = defineStore("usage", () => {
 					has_throttle: r.has_throttle ?? false,
 					first_ts: r.timestamp,
 					last_ts: r.timestamp,
+					task: r.task,
+					channel: r.channel,
 				});
 			} else {
 				s.input += r.input_tokens;
