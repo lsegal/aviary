@@ -394,7 +394,7 @@ transcription:
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | Transcribe voice messages. When `false`, they reach the agent as plain file attachments and the mic button reports that transcription is off. |
 | `engine` | string | `"local"` | Transcription engine. `local` runs whisper.cpp's `whisper-cli`. |
-| `model` | string | `"base.en"` | whisper.cpp model name (`tiny`, `base`, `base.en`, `small`, `small.en`, `medium`, `large-v3`, …) or a path to a ggml model file. `aviary deps install` downloads named models. |
+| `model` | string | `"base.en"` | whisper.cpp model name (`tiny`, `base`, `base.en`, `small`, `small.en`, `medium`, `large-v3`, …) or a path to a ggml model file. `aviary deps install` downloads named models. When unset, the `AVIARY_CONFIG_TRANSCRIPTION_MODEL` environment variable is used if set; the Docker image sets it to its bundled `base.en` model. |
 | `language` | string | `"auto"` | Spoken language: `auto` to detect it, or an ISO 639-1 code such as `en`. |
 
 ---

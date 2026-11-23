@@ -129,6 +129,12 @@ func TestSettingsFrom(t *testing.T) {
 		SettingsFrom(config.TranscriptionConfig{Enabled: &off, Model: "small", Language: "FR"}))
 }
 
+func TestSettingsFrom_ModelEnv(t *testing.T) {
+	t.Setenv(ModelEnv, "/opt/aviary/models/ggml-base.en.bin")
+	assert.Equal(t, "/opt/aviary/models/ggml-base.en.bin", SettingsFrom(config.TranscriptionConfig{}).Model)
+	assert.Equal(t, "small", SettingsFrom(config.TranscriptionConfig{Model: "small"}).Model)
+}
+
 func TestNew_Disabled(t *testing.T) {
 	off := false
 	engine, _, err := New(config.TranscriptionConfig{Enabled: &off})
@@ -229,6 +235,18 @@ func TestDetect_ModelPath(t *testing.T) {
 	st := Detect(path)
 	assert.True(t, st.Model.Downloaded)
 	assert.Equal(t, path, st.Model.Path)
+}
+
+func TestDetect_ModelEnv(t *testing.T) {
+	useTempDataDir(t)
+	stubPath(t, "whisper-cli", "ffmpeg")
+	path := filepath.Join(t.TempDir(), "ggml-base.en.bin")
+	require.NoError(t, os.WriteFile(path, []byte("ggml"), 0o600))
+	t.Setenv(ModelEnv, path)
+	st := Detect("")
+	assert.True(t, st.Ready())
+	assert.Equal(t, path, st.Model.Path)
+	assert.Equal(t, "small", Detect("small").Model.Name)
 }
 
 func TestInstall_InstallsPackagesAndDownloadsModel(t *testing.T) {
