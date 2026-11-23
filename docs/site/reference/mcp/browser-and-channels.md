@@ -283,4 +283,20 @@ Test a workflow's text match against a channel's recent messages. Messages the a
 | `match` | string | | Case-insensitive wildcard (`*`, `?`); empty matches every message |
 | `limit` | number | | How many recent messages to test (default 20, at most 100) |
 
-**Returns:** JSON array of `{ entry, sender, text, timestamp, matches }`, oldest first. `sender` is a display name, empty when only a raw ID is known.
+**Returns:** JSON array of `{ entry, sender, text, timestamp, matches }`, oldest first. `sender` is the latest display name the channel has seen for the sender's ID, so an early message that only recorded a phone number still shows the member's name. It is empty when only a raw ID is known.
+
+---
+
+## channel_activity
+
+Summarize a channel's recent traffic, as the Channels overview shows it.
+
+**Arguments:**
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `agent` | string | yes | Agent name |
+| `channel` | string | yes | Channel name or ID |
+| `limit` | number | | How many recent messages to return (default 5, at most 100) |
+
+**Returns:** JSON object `{ last_activity, messages_24h, messages }`. `last_activity` is when the latest message on any of the channel's conversations was sent, from anyone. `messages_24h` counts the messages others sent in the last 24 hours. `messages` holds the latest messages others sent, oldest first, as `{ entry, conversation, sender, text, timestamp, attachments, workflows }`: `sender` is named the same way as in `workflow_preview`, `attachments` lists each attachment's kind (`image`, `audio`, `video` or `file`), and `workflows` names the workflows that handled the message.
