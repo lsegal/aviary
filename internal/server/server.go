@@ -443,6 +443,11 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			return err
 		}
 
+		if !listenerRestart && s.sched != nil {
+			// Stop scheduling first so nothing is enqueued or started while
+			// the rest of the server shuts down.
+			s.sched.Halt()
+		}
 		_ = s.httpSrv.Shutdown(context.Background())
 		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err

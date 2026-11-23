@@ -437,6 +437,11 @@ func (s *Server) performRestart(ctx context.Context, status saferestart.Status) 
 			slog.Warn("server: updating skills during upgrade", "component", "update", "error", err)
 		}
 	}
+	if s.sched != nil {
+		// The restart is committed: stop scheduling before checkpointing so
+		// no task is enqueued or started after shutdown begins.
+		s.sched.Halt()
+	}
 	if err := saferestart.Checkpoint(ctx, marker); err != nil {
 		slog.Warn("server: shutdown checkpoint", "component", "update", "error", err)
 	}

@@ -126,6 +126,28 @@ func (s *stateStore) finishRun(key, jobID string, status domain.TaskRunStatus, s
 	}
 }
 
+// reconcile rewrites history entries for which fn reports a new status and
+// summary, saving once if anything changed.
+func (s *stateStore) reconcile(fn func(domain.TaskRun) (domain.TaskRunStatus, string, bool)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	changed := false
+	for _, st := range s.tasks {
+		for i, run := range st.History {
+			status, summary, ok := fn(run)
+			if !ok {
+				continue
+			}
+			st.History[i].Status = status
+			st.History[i].Summary = summary
+			changed = true
+		}
+	}
+	if changed {
+		s.saveLocked()
+	}
+}
+
 // summarize shortens job output to the first non-empty line, capped for
 // display in run history.
 func summarize(output string) string {

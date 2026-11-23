@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -46,7 +47,10 @@ type Scheduler struct {
 	disabled map[string]config.TaskConfig
 	armed    map[string]*armed
 	gen      int
-	cancel   context.CancelFunc
+	// halted is set once shutdown begins; nothing is enqueued or started
+	// after it.
+	halted bool
+	cancel context.CancelFunc
 	// now returns the wall-clock time without a monotonic reading, so
 	// comparisons stay correct across sleeps.
 	now func() time.Time
@@ -72,6 +76,7 @@ func New(agents *agent.Manager, workers int) (*Scheduler, error) {
 		now:    func() time.Time { return time.Now().Round(0) },
 	}
 	s.pool.onAttemptDone = s.recordAttempt
+	s.reconcileStranded()
 	return s, nil
 }
 
@@ -85,17 +90,35 @@ func (s *Scheduler) Start(ctx context.Context) {
 	go s.wakeLoop(ctx, wake.Subscribe(ctx))
 }
 
-// Stop halts all scheduling and waits for workers to finish.
-func (s *Scheduler) Stop() {
-	if s.cancel != nil {
-		s.cancel()
-	}
+// errHalted is returned for runs requested after shutdown began.
+var errHalted = errors.New("scheduler is shutting down")
+
+// Halt stops scheduling when shutdown begins: it disarms every trigger, stops
+// file watching and claiming queued jobs, and refuses every later fire,
+// manual trigger, and force-start. Running jobs keep running until a
+// checkpoint or Stop ends them. Halt is idempotent.
+func (s *Scheduler) Halt() {
 	s.mu.Lock()
+	if s.halted {
+		s.mu.Unlock()
+		return
+	}
+	s.halted = true
 	for key := range s.armed {
 		s.disarmLocked(key)
 	}
 	s.mu.Unlock()
 	s.watch.Stop()
+	s.pool.Halt()
+	slog.Info("scheduler: halted for shutdown")
+}
+
+// Stop halts all scheduling and waits for workers to finish.
+func (s *Scheduler) Stop() {
+	s.Halt()
+	if s.cancel != nil {
+		s.cancel()
+	}
 	s.pool.Stop()
 }
 
@@ -104,6 +127,9 @@ func (s *Scheduler) Stop() {
 func (s *Scheduler) Reconcile(cfg *config.Config) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.halted {
+		return
+	}
 
 	desired := make(map[string]struct{})
 	s.disabled = make(map[string]config.TaskConfig)
@@ -224,7 +250,7 @@ func (s *Scheduler) onTimer(key string, gen int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	a := s.armed[key]
-	if a == nil || a.gen != gen {
+	if a == nil || a.gen != gen || s.halted {
 		return
 	}
 	delete(s.armed, key)
@@ -282,6 +308,10 @@ func (s *Scheduler) fireLocked(key string, spec schedule.Spec, reason string, du
 	if !ok {
 		return nil
 	}
+	if s.halted {
+		slog.Info("scheduler: fire dropped during shutdown", "key", key, "reason", reason)
+		return nil
+	}
 	now := s.now()
 	run := domain.TaskRun{FireTime: now, Reason: reason}
 	var job *domain.Job
@@ -317,18 +347,102 @@ func (s *Scheduler) fireLocked(key string, spec schedule.Spec, reason string, du
 	return job
 }
 
-// hasActiveJob reports whether key has a pending or running job.
+// Stale-run timeouts bound how long one stranded job can block the overlap
+// policy. A due pending job that nothing claimed for staleQueuedTimeout, or a
+// run in progress for longer than staleRunTimeout or without a heartbeat for
+// lockTimeout, no longer counts as active.
+var (
+	staleQueuedTimeout = time.Hour
+	staleRunTimeout    = 6 * time.Hour
+)
+
+// hasActiveJob reports whether key has a pending or running job that is not
+// stale.
 func (s *Scheduler) hasActiveJob(key string) bool {
 	jobs, err := s.queue.List(key)
 	if err != nil {
 		return false
 	}
+	now := s.now()
 	for _, j := range jobs {
-		if j.Status == domain.JobStatusPending || j.Status == domain.JobStatusInProgress {
-			return true
+		if j.Status != domain.JobStatusPending && j.Status != domain.JobStatusInProgress {
+			continue
 		}
+		if staleJob(j, now) {
+			slog.Warn("scheduler: ignoring stale run for overlap policy", "key", key, "job", j.ID, "status", j.Status)
+			continue
+		}
+		return true
 	}
 	return false
+}
+
+// staleJob reports whether the pending or in-progress job j is stranded.
+func staleJob(j domain.Job, now time.Time) bool {
+	if j.Status == domain.JobStatusInProgress {
+		if j.LockedAt == nil || now.Sub(*j.LockedAt) > lockTimeout {
+			return true
+		}
+		return now.Sub(j.CreatedAt) > staleRunTimeout
+	}
+	due := j.UpdatedAt
+	for _, t := range []*time.Time{j.NextRetryAt, j.ScheduledFor} {
+		if t != nil && t.After(due) {
+			due = *t
+		}
+	}
+	return now.Sub(due) > staleQueuedTimeout
+}
+
+// reconcileStranded settles run history entries left queued, running, or
+// retrying by an earlier process, so stranded runs clear before the scheduler
+// starts. Each takes its job's current status; a run whose job is gone is
+// marked canceled.
+func (s *Scheduler) reconcileStranded() {
+	jobs, err := s.queue.List("")
+	if err != nil {
+		slog.Warn("scheduler: listing jobs to reconcile stranded runs", "err", err)
+		return
+	}
+	byID := make(map[string]domain.Job, len(jobs))
+	for _, j := range jobs {
+		byID[j.ID] = j
+	}
+	s.state.reconcile(func(run domain.TaskRun) (domain.TaskRunStatus, string, bool) {
+		switch run.Status {
+		case domain.TaskRunQueued, domain.TaskRunRunning, domain.TaskRunRetrying:
+		default:
+			return "", "", false
+		}
+		j, ok := byID[run.JobID]
+		if !ok {
+			return domain.TaskRunCanceled, "run interrupted: Aviary stopped before it finished", true
+		}
+		status := taskRunStatus(j.Status)
+		if status == run.Status || (status == domain.TaskRunQueued && run.Status == domain.TaskRunRetrying) {
+			return "", "", false
+		}
+		summary := run.Summary
+		if j.Status == domain.JobStatusFailed && j.Error != "" {
+			summary = summarize(j.Error)
+		}
+		return status, summary, true
+	})
+}
+
+// taskRunStatus maps a job's status to the run history status it shows.
+func taskRunStatus(status domain.JobStatus) domain.TaskRunStatus {
+	switch status {
+	case domain.JobStatusPending:
+		return domain.TaskRunQueued
+	case domain.JobStatusInProgress:
+		return domain.TaskRunRunning
+	case domain.JobStatusFailed:
+		return domain.TaskRunFailed
+	case domain.JobStatusCanceled:
+		return domain.TaskRunCanceled
+	}
+	return domain.TaskRunCompleted
 }
 
 // recordAttempt updates run history when a job attempt finishes.
@@ -514,6 +628,9 @@ func (s *Scheduler) Trigger(name string) (*domain.Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.halted {
+		return nil, errHalted
+	}
 	key, tc, ok := s.findTaskLocked(name)
 	if !ok {
 		return nil, fmt.Errorf("task %q not found", name)
@@ -569,6 +686,11 @@ func (s *Scheduler) SetTaskOutputDelivery(fn func(agentName, route, text string)
 // RunJobNow force-starts an existing pending job immediately, bypassing queue
 // scheduling and worker-pool concurrency limits.
 func (s *Scheduler) RunJobNow(jobID string) (*domain.Job, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.halted {
+		return nil, errHalted
+	}
 	job, err := s.queue.ForceStart(jobID)
 	if err != nil {
 		return nil, err
