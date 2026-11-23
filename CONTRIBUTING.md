@@ -27,7 +27,7 @@ Open the repository in VS Code and run **Dev Containers: Reopen in Container**.
 
 This starts:
 
-- The Vite dev server at **http://localhost:5173**
+- The Vite dev server at **https://localhost:5173**
 - The docs dev server at **http://localhost:5174**
 - The Aviary backend at **https://localhost:16677**
 
@@ -53,7 +53,7 @@ docker compose up --build
 
 This starts:
 
-- The Vite dev server at **http://localhost:5173**
+- The Vite dev server at **https://localhost:5173**
 - The docs dev server at **http://localhost:5174**
 - The Aviary backend at **https://localhost:16677**
 
@@ -75,14 +75,25 @@ pnpm dev
 
 This starts:
 
-- The Vite dev server at **http://localhost:5173** (hot-reload, no HTTPS)
+- The Vite dev server at **https://localhost:5173** (hot-reload), also reachable from the LAN at `https://<lan-ip>:5173`
 - The Aviary Go backend at **https://localhost:16677** (hot-reloads Go file changes via [`forgo run --watch`](https://github.com/lsegal/forgo))
 
 The first `pnpm dev` installs the [forgo](https://github.com/lsegal/forgo) toolchain into `~/.forgo` if it is not already on `PATH`. It also updates a forgo in `~/.forgo` older than the release dev updates need (`MIN_FORGO_VERSION` in `scripts/dev-go.mjs`), because older releases crash the backend after some hot reloads; a forgo set with `FORGO_BIN` or found on `PATH` only gets a warning. Set `FORGO_INSTALL_DIR` to install elsewhere or `FORGO_BIN` to point at an existing binary. Platforms without a forgo release fall back to plain `go run` (no reload on change).
 
 `pnpm dev` (or `pnpm dev:go` for the backend alone) is the supported way to run the dev backend: it runs it under forgo hot reload, so updating the checkout from Aviary's update notice is just a `git pull` that hot-reloads the backend without stopping running jobs. Aviary restarts the backend only when a pull can't be hot-reloaded, such as a `go.mod` change; see [Dev checkouts](docs/site/guide/operations.md#dev-checkouts).
 
-Open http://localhost:5173 in your browser. The Vite dev server proxies MCP and API requests to the Go backend.
+Open https://localhost:5173 in your browser. The Vite dev server proxies MCP and API requests to the Go backend.
+
+#### HTTPS in development
+
+The Vite dev server serves HTTPS so the composer mic, which browsers only allow on HTTPS or `localhost`, also works from a phone on your LAN. It uses the backend's certificate (`aviary cert`): a self-signed certificate in `~/.config/aviary/certs/` covering `localhost`, `127.0.0.1`, `::1`, your hostname, and your current LAN IPv4 addresses. It is generated on first run, reused after that, and regenerated automatically when your LAN address changes.
+
+- Accept the browser warning, or trust the certificate on desktop, iOS, and Android, as described in [Trusting the certificate](docs/site/guide/operations.md#trusting-the-certificate).
+- For warning-free trust, use [mkcert](docs/site/guide/operations.md#trusted-certificates-with-mkcert) and point `server.tls.cert`/`server.tls.key` at its files; the dev server picks them up too.
+- Run `pnpm dev:cert` to regenerate the self-signed certificate, then restart `pnpm dev`.
+- Set `AVIARY_DEV_NO_TLS=1` to serve plain `http://localhost:5173` instead.
+
+In the dev container or Docker Compose setup, the certificate is generated inside the container. Add the names you reach it by, such as your host's LAN address, under `server.tls.sans` in `.devcontainer/aviary/aviary.yaml`.
 
 > **First run:** The backend generates an auth token on first start. Check the terminal output for `Your access token: aviary_tok_...` and paste it into the login screen.
 

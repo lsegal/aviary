@@ -50,7 +50,7 @@ The mic button sits beside **Send** in the chat composer.
 2. Click it again to stop. The recording is uploaded to the Aviary server and transcribed; the mic and **Send** buttons are disabled until the transcript comes back.
 3. The transcript is **inserted into the composer at the cursor**, after any text you already typed. It is never sent automatically: edit it if needed, then send it like any message.
 
-Browsers only allow microphone access on secure pages. Open the control panel over `https://` or at `localhost`; on a plain `http://` LAN address the mic button is disabled and explains why. If microphone access was denied, allow it in the browser's site settings and try again. When the server has no transcription engine, the composer shows what is missing and how to install it.
+Browsers only allow microphone access on secure pages. Open the control panel over `https://` or at `localhost`; on a plain `http://` LAN address the mic button is disabled and explains why. The Aviary server, the Docker image, and `pnpm dev` all serve HTTPS by default; from a phone, accept or trust the self-signed certificate as described in [TLS Certificates](/guide/operations#tls-certificates). If microphone access was denied, allow it in the browser's site settings and try again. When the server has no transcription engine, the composer shows what is missing and how to install it.
 
 ## Configuration
 

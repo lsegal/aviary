@@ -169,6 +169,8 @@ jobs:
               exit 1
             fi
           '
+      - name: Smoke test container TLS
+        run: scripts/docker-tls-smoke.sh "${SMOKE_IMAGE}"
       - name: Report image size
         if: steps.prep.outputs.push_image != 'true'
         shell: bash

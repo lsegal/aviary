@@ -59,7 +59,27 @@ docker run --rm -it \
   ghcr.io/lsegal/aviary:latest
 ```
 
-The image runs `aviary serve` by default. The bind mount keeps your config, TLS certs, and login token on the host in `~/.config/aviary/`.
+The image runs `aviary serve` by default. The bind mount keeps your config, TLS certs, and login token on the host in `~/.config/aviary/`. Without a mount, they live in a Docker volume for the container.
+
+The container serves HTTPS by default. On first start it generates a self-signed certificate unique to that container in `~/.config/aviary/certs/` (in the mounted directory or volume) and reuses it on later starts; the image itself contains no key. The certificate covers `localhost`, `127.0.0.1`, and `::1`. Add the names you reach the container by, such as the host's LAN address, with `AVIARY_CONFIG_SERVER_TLS_SANS`:
+
+```bash
+docker run --rm -it \
+  -p 16677:16677 \
+  -e AVIARY_CONFIG_SERVER_TLS_SANS=aviary.lan,192.168.1.20 \
+  -v ~/.config/aviary:/home/bot/.config/aviary \
+  ghcr.io/lsegal/aviary:latest
+```
+
+To serve your own certificate, mount it and set its paths:
+
+```bash
+  -v /path/to/certs:/certs:ro \
+  -e AVIARY_CONFIG_SERVER_TLS_CERT=/certs/cert.pem \
+  -e AVIARY_CONFIG_SERVER_TLS_KEY=/certs/key.pem \
+```
+
+Behind a reverse proxy that terminates TLS, serve plain HTTP with `-e AVIARY_CONFIG_SERVER_NO_TLS=true`. The image's healthcheck checks `/api/health` over HTTPS or HTTP, so it passes in both modes. See [TLS Certificates](/guide/operations#tls-certificates) for all TLS settings and how to trust the certificate.
 
 The Docker image also bundles a working Chrome/Chromium browser, so Aviary can run browser tasks in headless mode out of the box.
 
@@ -85,7 +105,7 @@ go install github.com/lsegal/aviary/cmd/aviary@latest
 aviary serve
 ```
 
-The server starts on `https://localhost:16677` by default. It generates a self-signed TLS certificate on first run and stores it in `~/.config/aviary/`. The port and TLS settings can be changed in `aviary.yaml` — see the [Configuration guide](/guide/configuration).
+The server starts on `https://localhost:16677` by default. It generates a self-signed TLS certificate on first run and stores it in `~/.config/aviary/certs/`; see [TLS Certificates](/guide/operations#tls-certificates). The port and TLS settings can be changed in `aviary.yaml` — see the [Configuration guide](/guide/configuration).
 
 If you are using Docker, the `docker run` command above already starts the server. To run CLI commands against the same config directory, override the container command:
 

@@ -8,39 +8,178 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
+	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/store"
 )
 
-// certPaths returns the paths to the cert and key files.
+// certPaths returns the paths to the generated cert and key files.
 func certPaths() (certFile, keyFile string) {
 	dir := store.SubDir(store.DirCerts)
 	return filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
 }
 
-// LoadOrGenerateTLS loads the existing TLS cert+key or generates a new self-signed one.
-func LoadOrGenerateTLS(customCert, customKey string) (tls.Certificate, error) {
-	if customCert != "" && customKey != "" {
-		return tls.LoadX509KeyPair(customCert, customKey)
+// TLSFiles returns the cert and key files the server serves with: the
+// configured ones when set, otherwise the self-signed pair, which is
+// generated or regenerated first when it does not cover the host's names.
+func TLSFiles(t config.TLSConfig, regenerate bool) (certFile, keyFile string, err error) {
+	if t.Cert != "" && t.Key != "" {
+		if _, err := tls.LoadX509KeyPair(t.Cert, t.Key); err != nil {
+			return "", "", err
+		}
+		return t.Cert, t.Key, nil
 	}
-
-	certFile, keyFile := certPaths()
-
-	// Try to load existing cert.
-	if cert, err := tls.LoadX509KeyPair(certFile, keyFile); err == nil {
-		return cert, nil
-	}
-
-	// Generate a new self-signed cert.
-	return generateSelfSigned(certFile, keyFile)
+	certFile, keyFile = certPaths()
+	_, err = loadOrGenerate(t, regenerate)
+	return certFile, keyFile, err
 }
 
-func generateSelfSigned(certFile, keyFile string) (tls.Certificate, error) {
+// LoadOrGenerateTLS loads the configured TLS cert+key, or the self-signed
+// one, generating a new self-signed cert when none exists or the existing
+// one is expired or does not cover every name in SelfSignedSANs.
+func LoadOrGenerateTLS(t config.TLSConfig) (tls.Certificate, error) {
+	if t.Cert != "" && t.Key != "" {
+		return tls.LoadX509KeyPair(t.Cert, t.Key)
+	}
+	return loadOrGenerate(t, false)
+}
+
+func loadOrGenerate(t config.TLSConfig, regenerate bool) (tls.Certificate, error) {
+	certFile, keyFile := certPaths()
+	unlock, err := lockCerts(filepath.Dir(certFile))
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	defer unlock()
+
+	if regenerate {
+		return generateSelfSigned(certFile, keyFile, t)
+	}
+	if cert, err := tls.LoadX509KeyPair(certFile, keyFile); err == nil && certCovers(cert, SelfSignedSANs(t)) {
+		return cert, nil
+	}
+	return generateSelfSigned(certFile, keyFile, t)
+}
+
+// lockCerts serializes self-signed cert generation across processes, such as
+// the dev server and the Vite dev cert helper starting together, so they
+// never write a mismatched cert and key.
+func lockCerts(dir string) (func(), error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("creating cert dir: %w", err)
+	}
+	lock := filepath.Join(dir, ".lock")
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_ = f.Close()
+			return func() { _ = os.Remove(lock) }, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, fmt.Errorf("locking cert dir: %w", err)
+		}
+		// A lock left behind by a crashed process is stale.
+		if info, statErr := os.Stat(lock); statErr == nil && time.Since(info.ModTime()) > 30*time.Second {
+			_ = os.Remove(lock)
+			continue
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timed out waiting for cert lock %s", lock)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// SelfSignedSANs returns the names a generated cert must cover: localhost,
+// the loopback addresses, the hostname and the host's current non-loopback
+// IPv4 addresses unless t.NoHostSANs is set, and t.SANs.
+func SelfSignedSANs(t config.TLSConfig) []string {
+	sans := []string{"localhost", "127.0.0.1", "::1"}
+	if !t.NoHostSANs {
+		if host, err := os.Hostname(); err == nil && host != "" {
+			host = strings.ToLower(host)
+			sans = append(sans, host)
+			// Bare hostnames are usually reachable over mDNS as host.local.
+			if !strings.Contains(host, ".") {
+				sans = append(sans, host+".local")
+			}
+		}
+		sans = append(sans, lanIPv4s()...)
+	}
+	for _, name := range t.SANs {
+		if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
+			sans = append(sans, name)
+		}
+	}
+	var out []string
+	for _, name := range sans {
+		if !slices.Contains(out, name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// lanIPv4s returns the IPv4 addresses of the host's up, non-loopback interfaces.
+func lanIPv4s() []string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var ips []string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			if ip4 := ipnet.IP.To4(); ip4 != nil && !ip4.IsLoopback() && !ip4.IsLinkLocalUnicast() {
+				ips = append(ips, ip4.String())
+			}
+		}
+	}
+	return ips
+}
+
+// certCovers reports whether cert is unexpired and lists every name in sans.
+func certCovers(cert tls.Certificate, sans []string) bool {
+	if len(cert.Certificate) == 0 {
+		return false
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil || time.Now().After(leaf.NotAfter) {
+		return false
+	}
+	for _, name := range sans {
+		if ip := net.ParseIP(name); ip != nil {
+			if !slices.ContainsFunc(leaf.IPAddresses, ip.Equal) {
+				return false
+			}
+		} else if !slices.Contains(leaf.DNSNames, name) {
+			return false
+		}
+	}
+	return true
+}
+
+func generateSelfSigned(certFile, keyFile string, t config.TLSConfig) (tls.Certificate, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("generating key: %w", err)
@@ -51,15 +190,27 @@ func generateSelfSigned(certFile, keyFile string) (tls.Certificate, error) {
 		return tls.Certificate{}, fmt.Errorf("generating serial: %w", err)
 	}
 
+	var dnsNames []string
+	var ips []net.IP
+	for _, name := range SelfSignedSANs(t) {
+		if ip := net.ParseIP(name); ip != nil {
+			ips = append(ips, ip)
+		} else {
+			dnsNames = append(dnsNames, name)
+		}
+	}
+
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
 			Organization: []string{"Aviary"},
 			CommonName:   "localhost",
 		},
-		DNSNames:              []string{"localhost"},
-		NotBefore:             time.Now().Add(-time.Minute),
-		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour), // 10 years
+		DNSNames:    dnsNames,
+		IPAddresses: ips,
+		NotBefore:   time.Now().Add(-time.Minute),
+		// Browsers reject leaf certs valid for more than 825 days.
+		NotAfter:              time.Now().Add(825 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,

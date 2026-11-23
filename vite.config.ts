@@ -1,8 +1,9 @@
 import tailwindcss from "@tailwindcss/vite";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
+import { devHttps } from "./scripts/dev-cert.mjs";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
 	root: "web",
 	plugins: [vue(), tailwindcss()],
 	build: {
@@ -10,6 +11,10 @@ export default defineConfig({
 		emptyOutDir: true,
 	},
 	server: {
+		// Expose the dev server on the LAN over HTTPS: browsers only allow the
+		// composer mic (getUserMedia) on secure origins or localhost.
+		host: true,
+		https: command === "serve" ? devHttps() : undefined,
 		proxy: {
 			"/mcp": {
 				target: "https://localhost:16677",
@@ -30,4 +35,4 @@ export default defineConfig({
 			},
 		},
 	},
-});
+}));

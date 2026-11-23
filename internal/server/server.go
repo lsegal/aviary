@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -931,7 +932,7 @@ func (s *Server) listen() (net.Listener, error) {
 	}
 	addr := fmt.Sprintf("%s:%d", host, port)
 
-	if s.cfg.Server.NoTLS {
+	if config.EffectiveServerNoTLS(s.cfg.Server) {
 		ln, err := net.Listen("tcp", addr)
 		if err != nil {
 			return nil, fmt.Errorf("listening on %s: %w", addr, err)
@@ -939,12 +940,7 @@ func (s *Server) listen() (net.Listener, error) {
 		return ln, nil
 	}
 
-	var tlsCert, tlsKey string
-	if s.cfg.Server.TLS != nil {
-		tlsCert = s.cfg.Server.TLS.Cert
-		tlsKey = s.cfg.Server.TLS.Key
-	}
-	cert, err := LoadOrGenerateTLS(tlsCert, tlsKey)
+	cert, err := LoadOrGenerateTLS(config.EffectiveServerTLS(s.cfg.Server))
 	if err != nil {
 		return nil, fmt.Errorf("loading TLS: %w", err)
 	}
@@ -959,14 +955,8 @@ func (s *Server) listen() (net.Listener, error) {
 	return ln, nil
 }
 
-func tlsConfigChanged(a, b *config.TLSConfig) bool {
-	if a == nil && b == nil {
-		return false
-	}
-	if a == nil || b == nil {
-		return true
-	}
-	return *a != *b
+func tlsConfigChanged(a, b config.TLSConfig) bool {
+	return a.Cert != b.Cert || a.Key != b.Key || !slices.Equal(a.SANs, b.SANs)
 }
 
 // serverSettingsChanged reports whether a config change affects server-level
@@ -974,9 +964,9 @@ func tlsConfigChanged(a, b *config.TLSConfig) bool {
 func serverSettingsChanged(oldCfg, newCfg *config.Config) bool {
 	return oldCfg.Server.Port != newCfg.Server.Port ||
 		config.EffectiveServerExternalAccess(oldCfg.Server) != config.EffectiveServerExternalAccess(newCfg.Server) ||
-		oldCfg.Server.NoTLS != newCfg.Server.NoTLS ||
+		config.EffectiveServerNoTLS(oldCfg.Server) != config.EffectiveServerNoTLS(newCfg.Server) ||
 		oldCfg.Server.DisableTokenAuth != newCfg.Server.DisableTokenAuth ||
-		tlsConfigChanged(oldCfg.Server.TLS, newCfg.Server.TLS)
+		tlsConfigChanged(config.EffectiveServerTLS(oldCfg.Server), config.EffectiveServerTLS(newCfg.Server))
 }
 
 // Addr returns the server address string.
@@ -986,7 +976,7 @@ func (s *Server) Addr() string {
 		port = 16677
 	}
 	scheme := "https"
-	if s.cfg.Server.NoTLS {
+	if config.EffectiveServerNoTLS(s.cfg.Server) {
 		scheme = "http"
 	}
 	return fmt.Sprintf("%s://localhost:%d", scheme, port)

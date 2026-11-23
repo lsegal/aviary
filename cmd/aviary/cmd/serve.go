@@ -162,7 +162,9 @@ func runStart(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("checking server status: %w", err)
 	}
-	if running {
+	// A stored PID equal to our own is stale: a container whose config dir
+	// outlives it runs the next server under the same PID, usually 1.
+	if running && pid != os.Getpid() {
 		return fmt.Errorf("aviary is already running (PID %d)", pid)
 	}
 

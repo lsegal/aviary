@@ -60,6 +60,19 @@
               "x-placeholder": "/path/to/key.pem",
               "x-order": 5,
               "description": "Path to TLS private key file (PEM). Leave empty to use an auto-generated self-signed key."
+            },
+            "sans": {
+              "type": "array",
+              "items": { "type": "string" },
+              "x-label": "Extra certificate names",
+              "x-order": 5,
+              "description": "Extra hostnames and IP addresses the auto-generated self-signed cert covers, on top of localhost, the hostname, and the LAN IPv4 addresses."
+            },
+            "no_host_sans": {
+              "type": "boolean",
+              "x-label": "Leave host names out of the certificate",
+              "x-order": 5,
+              "description": "Leave the hostname and LAN IPv4 addresses out of the auto-generated self-signed cert, so it covers only localhost and the extra names. Useful in containers, whose own hostname and addresses change."
             }
           }
         }

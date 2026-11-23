@@ -227,7 +227,7 @@ func configureServerSummary(cfg *config.Config) string {
 		host = "external"
 	}
 	scheme := "https"
-	if cfg.Server.NoTLS {
+	if config.EffectiveServerNoTLS(cfg.Server) {
 		scheme = "http"
 	}
 	return fmt.Sprintf("%s on %s:%d", scheme, host, cfg.Server.Port)

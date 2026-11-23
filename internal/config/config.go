@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -87,6 +88,12 @@ type ServerConfig struct {
 type TLSConfig struct {
 	Cert string `yaml:"cert,omitempty" json:"cert,omitempty"`
 	Key  string `yaml:"key,omitempty"  json:"key,omitempty"`
+	// SANs lists extra hostnames and IP addresses the generated self-signed
+	// cert covers, on top of localhost, the hostname, and the LAN addresses.
+	SANs []string `yaml:"sans,omitempty" json:"sans,omitempty"`
+	// NoHostSANs leaves the hostname and LAN addresses out of the generated
+	// cert, for hosts such as containers whose own names clients never use.
+	NoHostSANs bool `yaml:"no_host_sans,omitempty" json:"no_host_sans,omitempty"`
 }
 
 // FilesystemPermissionsConfig restricts file tool access to ordered allow/deny
@@ -559,6 +566,50 @@ func EffectiveServerExternalAccess(s ServerConfig) bool {
 	return s.ExternalAccess
 }
 
+// EffectiveServerNoTLS returns whether the server serves plain HTTP.
+// AVIARY_CONFIG_SERVER_NO_TLS overrides server.no_tls from aviary.yaml.
+func EffectiveServerNoTLS(s ServerConfig) bool {
+	if raw := strings.TrimSpace(os.Getenv("AVIARY_CONFIG_SERVER_NO_TLS")); raw != "" {
+		if parsed, err := strconv.ParseBool(raw); err == nil {
+			return parsed
+		}
+	}
+	return s.NoTLS
+}
+
+// EffectiveServerTLS returns the server's TLS settings.
+// AVIARY_CONFIG_SERVER_TLS_CERT and AVIARY_CONFIG_SERVER_TLS_KEY override
+// server.tls.cert and server.tls.key, and AVIARY_CONFIG_SERVER_TLS_SANS, a
+// comma-separated list, overrides server.tls.sans.
+// AVIARY_CONFIG_SERVER_TLS_NO_HOST_SANS overrides server.tls.no_host_sans.
+func EffectiveServerTLS(s ServerConfig) TLSConfig {
+	var t TLSConfig
+	if s.TLS != nil {
+		t = *s.TLS
+		t.SANs = slices.Clone(s.TLS.SANs)
+	}
+	if v := strings.TrimSpace(os.Getenv("AVIARY_CONFIG_SERVER_TLS_CERT")); v != "" {
+		t.Cert = v
+	}
+	if v := strings.TrimSpace(os.Getenv("AVIARY_CONFIG_SERVER_TLS_KEY")); v != "" {
+		t.Key = v
+	}
+	if raw := strings.TrimSpace(os.Getenv("AVIARY_CONFIG_SERVER_TLS_SANS")); raw != "" {
+		t.SANs = nil
+		for _, name := range strings.Split(raw, ",") {
+			if name = strings.TrimSpace(name); name != "" {
+				t.SANs = append(t.SANs, name)
+			}
+		}
+	}
+	if raw := strings.TrimSpace(os.Getenv("AVIARY_CONFIG_SERVER_TLS_NO_HOST_SANS")); raw != "" {
+		if parsed, err := strconv.ParseBool(raw); err == nil {
+			t.NoHostSANs = parsed
+		}
+	}
+	return t
+}
+
 // EffectiveAgentModel returns the runtime model for an agent, preferring the
 // agent-specific value and falling back to models.defaults.model.
 func EffectiveAgentModel(agent AgentConfig, models ModelsConfig) string {
@@ -632,7 +683,7 @@ func EffectiveCodingSkillsInstallNewCLIs(cfg *Config) bool {
 // It is called automatically by Save.
 func normalize(cfg *Config) {
 	// Nil out TLS block if no cert/key are configured.
-	if cfg.Server.TLS != nil && cfg.Server.TLS.Cert == "" && cfg.Server.TLS.Key == "" {
+	if cfg.Server.TLS != nil && cfg.Server.TLS.Cert == "" && cfg.Server.TLS.Key == "" && len(cfg.Server.TLS.SANs) == 0 && !cfg.Server.TLS.NoHostSANs {
 		cfg.Server.TLS = nil
 	}
 	// Nil out empty slices/maps so they are omitted from YAML.

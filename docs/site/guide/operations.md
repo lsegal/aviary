@@ -16,6 +16,79 @@ The server writes its PID to `~/.config/aviary/aviary.pid`. If the process crash
 
 ---
 
+## TLS Certificates
+
+The server serves HTTPS by default. Unless you configure your own certificate, it uses a self-signed one stored in `~/.config/aviary/certs/` (`cert.pem` and `key.pem`). The certificate covers:
+
+- `localhost`, `127.0.0.1`, and `::1`
+- the machine's hostname (plus `<hostname>.local` for a bare hostname)
+- the machine's current LAN IPv4 addresses
+- any extra names in `server.tls.sans`
+
+The server generates the certificate on first start. On later starts it reuses it, and regenerates it only when it has expired or no longer covers those names, for example after your LAN address changes. A regenerated certificate has to be trusted again on each device.
+
+```bash
+aviary cert                 # print the cert and key paths, generating them if needed
+aviary cert --regenerate    # replace the self-signed cert, then restart the server
+```
+
+The `pnpm dev` server uses the same certificate, so a device trusts one certificate for both. See [Development over HTTPS](#development-over-https).
+
+### TLS settings
+
+| `aviary.yaml` | Environment variable | Purpose |
+| --- | --- | --- |
+| `server.tls.cert`, `server.tls.key` | `AVIARY_CONFIG_SERVER_TLS_CERT`, `AVIARY_CONFIG_SERVER_TLS_KEY` | Serve your own certificate and key (PEM) instead of the self-signed one. |
+| `server.tls.sans` | `AVIARY_CONFIG_SERVER_TLS_SANS` (comma-separated) | Extra hostnames and IP addresses for the self-signed certificate. |
+| `server.tls.no_host_sans` | `AVIARY_CONFIG_SERVER_TLS_NO_HOST_SANS` | Leave the hostname and LAN addresses out of the self-signed certificate. |
+| `server.no_tls` | `AVIARY_CONFIG_SERVER_NO_TLS` | Serve plain HTTP, for example behind a reverse proxy that terminates TLS. |
+
+Environment variables override the config file. TLS changes take effect after a server restart.
+
+### Trusting the certificate
+
+Browsers warn about a self-signed certificate. You can accept the warning, or trust the certificate so the warning goes away.
+
+- **Desktop browsers:** choose **Advanced** and continue to the site. To trust it instead, import `cert.pem` into the system store: on macOS, open it in Keychain Access and set **Always Trust**; on Windows, import it into **Trusted Root Certification Authorities**; on Linux, add it to your browser's certificate settings.
+- **iOS:** open the address in Safari, tap **Show Details**, and then **visit this website**. iOS only offers full trust for CA certificates, so to remove the warning, use [mkcert](#trusted-certificates-with-mkcert) and install its root CA.
+- **Android:** in Chrome, tap **Advanced** and **Proceed**. To trust a certificate instead, install the mkcert root CA under **Settings > Security > Encryption & credentials > Install a certificate > CA certificate**.
+
+### Trusted certificates with mkcert
+
+[mkcert](https://github.com/FiloSottile/mkcert) creates a local certificate authority that your devices can trust, so no browser shows a warning:
+
+```bash
+mkcert -install
+mkcert -cert-file ~/.config/aviary/certs/mkcert.pem \
+  -key-file ~/.config/aviary/certs/mkcert-key.pem \
+  localhost 127.0.0.1 ::1 "$(hostname)" 192.168.1.20   # your LAN address
+```
+
+Then point Aviary at the files in `aviary.yaml` and restart the server (and `pnpm dev`):
+
+```yaml
+server:
+  tls:
+    cert: ~/.config/aviary/certs/mkcert.pem
+    key: ~/.config/aviary/certs/mkcert-key.pem
+```
+
+To trust it on a phone, copy `rootCA.pem` from `mkcert -CAROOT` to the device and install it. On iOS, install the profile under **Settings > General > VPN & Device Management**, then turn on full trust under **Settings > General > About > Certificate Trust Settings**. On Android, install it as a CA certificate as described above. Rerun `mkcert` when your LAN address changes.
+
+### Development over HTTPS
+
+`pnpm dev` serves the web UI at `https://<host>:5173` and listens on the LAN, so a phone can open it at `https://<lan-ip>:5173`. The composer mic only works on HTTPS or `localhost` pages, so this is what makes voice input work from other devices. Hot reload runs over `wss`, and the `/api` and `/mcp` proxies to the backend are unchanged.
+
+The dev server gets its certificate from `aviary cert`: the configured `server.tls.cert`/`server.tls.key`, or the self-signed certificate described above. Run `pnpm dev:cert` to regenerate it, then restart `pnpm dev`.
+
+Set `AVIARY_DEV_NO_TLS=1` to serve the dev server over plain `http://` instead:
+
+```bash
+AVIARY_DEV_NO_TLS=1 pnpm dev
+```
+
+---
+
 ## Running Agents
 
 Agents start automatically when the server starts. They are idle until a message arrives (via chat, a channel, or a task trigger). You do not need to "start" an individual agent.

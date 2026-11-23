@@ -12,7 +12,7 @@ const outputDir = path.join(
 	"screenshots",
 );
 const baseURL =
-	process.env.DOCS_SCREENSHOT_BASE_URL ?? "http://127.0.0.1:5173";
+	process.env.DOCS_SCREENSHOT_BASE_URL ?? "https://127.0.0.1:5173";
 const themes = ["light", "dark"];
 
 function themedOutputName(outputName, theme) {
@@ -930,19 +930,26 @@ const projectsFixtures = {
 	},
 };
 
-async function waitForServer(url, timeoutMs = 30_000) {
+// waitForServer loads url in the browser until it answers 2xx. The browser
+// accepts the dev server's self-signed cert.
+async function waitForServer(browser, url, timeoutMs = 30_000) {
 	const started = Date.now();
-	for (;;) {
-		try {
-			const response = await fetch(url);
-			if (response.ok) return;
-		} catch {
-			// Keep waiting.
+	const page = await browser.newPage();
+	try {
+		for (;;) {
+			try {
+				const response = await page.goto(url);
+				if (response?.ok()) return;
+			} catch {
+				// Keep waiting.
+			}
+			if (Date.now() - started > timeoutMs) {
+				throw new Error(`Timed out waiting for ${url}`);
+			}
+			await new Promise((resolve) => setTimeout(resolve, 500));
 		}
-		if (Date.now() - started > timeoutMs) {
-			throw new Error(`Timed out waiting for ${url}`);
-		}
-		await new Promise((resolve) => setTimeout(resolve, 500));
+	} finally {
+		await page.close();
 	}
 }
 
@@ -1171,10 +1178,11 @@ async function captureSettingsPage({
 
 async function main() {
 	await mkdir(outputDir, { recursive: true });
-	await waitForServer(baseURL);
-
-	const browser = await chromium.launch();
+	const browser = await chromium.launch({
+		args: ["--ignore-certificate-errors"],
+	});
 	try {
+		await waitForServer(browser, baseURL);
 		for (const theme of themes) {
 			await captureSimple({
 				browser,
