@@ -207,12 +207,13 @@
 							<ScheduleEditor :key="detailSchedule.id" :schedule="detailSchedule" :save="saveSchedule"
 								:remove="removeSchedule" :run-now="runScheduleNow" :preview="previewSchedule"
 								@deleted="router.replace(boardQuery)" />
+							<ScheduleRunHistory :schedule="detailSchedule" :entry="scheduleJob(scheduleEntries, detailSchedule.id)" :now="now" />
 						</section>
 
 						<template v-else>
 						<div v-if="loading && !boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
 						<KanbanBoard v-else-if="kanban" :jobs="boardJobs" :filters="filters" :now="now" :schedules="boardSchedules"
-							:schedule-to="aggregate ? undefined : scheduleTo" />
+							:schedule-entries="scheduleEntries" :schedule-to="aggregate ? undefined : scheduleTo" />
 						<div v-else-if="!boardJobs.length && !boardSchedules.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
 							<p>No jobs match “<b class="text-gray-800 dark:text-gray-100">{{ search.trim() }}</b>”.</p>
 							<button type="button" class="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -225,9 +226,10 @@
 						<div v-else-if="!boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
 						<section v-else class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Jobs">
 							<ScheduledCard v-for="s in boardSchedules" :key="s.id" :schedule="s" :now="now" :to="scheduleTo(s)"
-								:job="scheduleJob(jobs, s.id)" :busy="busySchedule === s.id"
+								:job="scheduleJob(scheduleEntries, s.id)" :busy="busySchedule === s.id"
 								@run="onScheduleAction(runScheduleNow, $event)"
-								@toggle="onScheduleAction(toggleSchedule, $event)" @settings="openScheduleSettings" />
+								@toggle="onScheduleAction(toggleSchedule, $event)" @settings="openScheduleSettings"
+								@dismiss="onAction(dismiss, $event)" />
 							<JobCard v-for="job in boardJobs" :key="job.id" :job="job" :now="now" :show-project="aggregate"
 								:busy="busyJob === job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
 								@summarize="onSummarize" />
@@ -278,6 +280,7 @@ import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
 import ProjectLogsPanel from "../components/projects/ProjectLogsPanel.vue";
 import ScheduledCard from "../components/projects/ScheduledCard.vue";
 import ScheduleEditor from "../components/projects/ScheduleEditor.vue";
+import ScheduleRunHistory from "../components/projects/ScheduleRunHistory.vue";
 import StatChipRow, {
 	type StatChip,
 } from "../components/projects/StatChipRow.vue";
@@ -485,7 +488,15 @@ const {
 	importProfile,
 	retry,
 	stop,
-} = useProjectBoard(targets, states, search, kanban);
+	dismiss,
+	scheduleEntries,
+} = useProjectBoard(
+	targets,
+	states,
+	search,
+	kanban,
+	computed(() => !aggregate.value),
+);
 const {
 	schedules,
 	upcoming,
@@ -497,13 +508,25 @@ const {
 	preview: previewSchedule,
 	refresh: refreshSchedules,
 } = useProjectSchedules(project);
-// The project's scheduled tasks are their own kind of box on the board: in
-// the list and in the kanban's Scheduled column, while the Scheduled chip or
-// no chip is selected.
+// The project's scheduled tasks are their own kind of box on the board, one
+// per task whatever its runs: in the list and in the kanban's Scheduled
+// column, while the Scheduled chip or no chip is selected, or a selected
+// job state is the task's own: Running while a run is in flight, Failed
+// while its last run failed.
+function scheduleInFilter(s: ProjectSchedule) {
+	if (showSchedules.value) return true;
+	const state = scheduleJob(scheduleEntries.value, s.id)?.schedule?.state;
+	return (
+		!aggregate.value &&
+		!!state &&
+		state !== "scheduled" &&
+		states.value.includes(state)
+	);
+}
 const boardSchedules = computed(() =>
-	showSchedules.value
-		? schedules.value.filter((s) => scheduleMatches(s, search.value))
-		: [],
+	schedules.value.filter(
+		(s) => scheduleInFilter(s) && scheduleMatches(s, search.value),
+	),
 );
 const boardJobs = computed(() => (showJobs.value ? jobs.value : []));
 // A scheduled box opens its editor on the board, at ?scheduled=<id>, so a
@@ -610,8 +633,19 @@ const allJobs = computed(() =>
 // The board counts its scheduled items with its jobs: "items" once the
 // project has any.
 const noun = computed(() => (schedules.value.length ? "item" : "job"));
-const allItems = computed(
-	() => allJobs.value + (aggregate.value ? 0 : schedules.value.length),
+// A schedule that is running or failed counts in its job state too, but is
+// one item.
+const scheduleJobStates = computed(
+	() =>
+		scheduleEntries.value.filter(
+			(e) => e.schedule && e.schedule.state !== "scheduled",
+		).length,
+);
+const allItems = computed(() =>
+	aggregate.value
+		? allJobs.value
+		: Math.max(allJobs.value - scheduleJobStates.value, 0) +
+			schedules.value.length,
 );
 const shownTotal = computed(
 	() => (showJobs.value ? total.value : 0) + boardSchedules.value.length,
@@ -619,7 +653,7 @@ const shownTotal = computed(
 const unfilteredShown = computed(
 	() =>
 		(showJobs.value ? unfilteredTotal.value : 0) +
-		(showSchedules.value ? schedules.value.length : 0),
+		schedules.value.filter(scheduleInFilter).length,
 );
 function chipCount(state: BoardFilter): number | null {
 	if (state === "scheduled") return schedules.value.length;

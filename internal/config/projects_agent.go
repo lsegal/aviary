@@ -25,6 +25,7 @@ var ProjectsAgentTools = []string{
 	"project_job_pause",
 	"project_job_resume",
 	"project_job_stop",
+	"project_job_dismiss",
 	"project_refresh",
 	"provider_cli_list",
 	"project_clone_list",

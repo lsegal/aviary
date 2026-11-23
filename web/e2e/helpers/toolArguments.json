@@ -316,6 +316,10 @@
 		"skip_turn_media",
 		"text"
 	],
+	"project_job_dismiss": [
+		"number",
+		"target"
+	],
 	"project_job_explain": [
 		"number",
 		"target"
@@ -327,6 +331,7 @@
 		"target"
 	],
 	"project_job_list": [
+		"kinds",
 		"limit",
 		"offset",
 		"query",

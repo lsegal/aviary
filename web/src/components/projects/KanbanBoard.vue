@@ -21,12 +21,23 @@
 							<PencilIcon aria-hidden="true" class="h-3.5 w-3.5" />
 						</router-link>
 					</div>
+					<!-- A run shows here in place; the card never moves columns. -->
+					<p v-if="scheduleRunning(entryOf(s)?.schedule)" data-testid="kanban-scheduled-running"
+						class="flex items-center gap-1.5 text-blue-700 dark:text-blue-300">
+						<span aria-hidden="true" class="h-2.5 w-2.5 animate-spin rounded-full border-2 border-blue-300 border-t-blue-600" />
+						Running<template v-if="entryOf(s)?.startedAt"> · {{ age(entryOf(s)!.startedAt, now) }}</template>
+					</p>
 					<p data-testid="kanban-scheduled-next" class="tabular-nums text-violet-700 dark:text-violet-300"
-						:title="s.nextRun ? formatFire(s.nextRun) : ''">
-						<PausedChip v-if="scheduleNext(s).kind === 'paused'" />
+						:title="nextOf(s).kind === 'next' ? formatFire(s.nextRun) : ''">
+						<PausedChip v-if="nextOf(s).kind === 'paused'" />
+						<template v-else-if="nextOf(s).kind === 'queued'">Queued</template>
 						<template v-else-if="s.nextRun">Next {{ until(s.nextRun, now) }}</template>
-						<template v-else-if="scheduleNext(s).kind === 'running'">Running now</template>
+						<template v-else-if="nextOf(s).kind === 'running'">Running now</template>
 						<template v-else>No next run</template>
+					</p>
+					<p v-if="lastOf(s)" data-testid="kanban-scheduled-last" class="flex items-center gap-1 text-gray-500 dark:text-gray-400">
+						<span :class="runResultClass(lastOf(s)!.result)">{{ runResultIcon(lastOf(s)!.result) }}</span>
+						Last run {{ age(lastOf(s)!.at, now) }} ago
 					</p>
 					<p data-testid="kanban-scheduled-prompt" class="truncate text-gray-500 dark:text-gray-400" :title="s.prompt">
 						{{ truncatePrompt(s.prompt, 60) }}
@@ -83,7 +94,12 @@ import {
 	jobStates,
 	type ProjectJob,
 	type ProjectSchedule,
+	runResultClass,
+	runResultIcon,
+	scheduleJob,
+	scheduleLastRun,
 	scheduleNext,
+	scheduleRunning,
 	stateLabel,
 	truncatePrompt,
 	until,
@@ -103,9 +119,21 @@ const props = withDefaults(
 		schedules?: ProjectSchedule[];
 		/** Where a scheduled box opens its detail view; without it there is no Scheduled column. */
 		scheduleTo?: (s: ProjectSchedule) => RouteLocationRaw;
+		/** The schedules' board entries: their last and next runs and any run in flight. */
+		scheduleEntries?: ProjectJob[];
 	}>(),
-	{ schedules: () => [], scheduleTo: undefined },
+	{ schedules: () => [], scheduleTo: undefined, scheduleEntries: () => [] },
 );
+
+function entryOf(s: ProjectSchedule) {
+	return scheduleJob(props.scheduleEntries, s.id);
+}
+function nextOf(s: ProjectSchedule) {
+	return scheduleNext(s, entryOf(s)?.schedule);
+}
+function lastOf(s: ProjectSchedule) {
+	return scheduleLastRun(s, entryOf(s)?.schedule);
+}
 
 const DOTS: Record<BoardState, string> = {
 	starting: "bg-orange-500",

@@ -72,7 +72,7 @@ func TestStateCacheColdStartServesNothingStale(t *testing.T) {
 	if _, ok := status["cached_at"]; ok {
 		t.Fatalf("cold start reported a cache: %v", status)
 	}
-	if list := m.ListJobs(nil, "", nil, "", 0, 0); list["total"] != 0 {
+	if list := m.ListJobs(nil, "", nil, nil, "", 0, 0); list["total"] != 0 {
 		t.Fatalf("cold start listed jobs: %v", list)
 	}
 }
@@ -98,7 +98,7 @@ func TestStateCacheWarmStartServesCachedState(t *testing.T) {
 	if states := status["states"].(map[string]int); states[core.BoardRunning] != 2 || states[core.BoardDone] != 1 {
 		t.Fatalf("board states = %v", states)
 	}
-	list := m.ListJobs(nil, "", nil, "", 0, 0)
+	list := m.ListJobs(nil, "", nil, nil, "", 0, 0)
 	if list["stale"] != true || !slices.Equal(jobNumbers(list), []int{1, 2, 3}) {
 		t.Fatalf("cached jobs = %v", list)
 	}
@@ -145,7 +145,7 @@ func TestStateCacheStaleClearsPerProjectAfterLivePoll(t *testing.T) {
 	if got := status["issue_counts"].(map[string]int); got["o/a"] != 7 || got["o/b"] != 5 {
 		t.Fatalf("issue counts = %v", got)
 	}
-	list := m.ListJobs(nil, "", nil, "", 0, 0)
+	list := m.ListJobs(nil, "", nil, nil, "", 0, 0)
 	if !slices.Equal(jobNumbers(list), []int{1, 2, 3}) {
 		t.Fatalf("jobs = %v", list)
 	}
@@ -166,7 +166,7 @@ func TestStateCacheStaleClearsPerProjectAfterLivePoll(t *testing.T) {
 	if status["stale"] != false || len(status["stale_targets"].([]string)) != 0 || status["cached_at"] != nil {
 		t.Fatalf("status still stale after a live poll: %v", status)
 	}
-	if list := m.ListJobs(nil, "", nil, "", 0, 0); !slices.Equal(jobNumbers(list), []int{1}) || list["stale"] != false {
+	if list := m.ListJobs(nil, "", nil, nil, "", 0, 0); !slices.Equal(jobNumbers(list), []int{1}) || list["stale"] != false {
 		t.Fatalf("jobs after a live poll = %v", list)
 	}
 }
@@ -209,7 +209,7 @@ func TestStateCacheReconcilesConfigChanges(t *testing.T) {
 	if got := status["issue_counts"].(map[string]int); got["o/b"] != 0 {
 		t.Fatalf("a removed project's count is shown: %v", got)
 	}
-	if list := m.ListJobs(nil, "", nil, "", 0, 0); !slices.Equal(jobNumbers(list), []int{1}) {
+	if list := m.ListJobs(nil, "", nil, nil, "", 0, 0); !slices.Equal(jobNumbers(list), []int{1}) {
 		t.Fatalf("a removed project's jobs are shown: %v", list)
 	}
 }

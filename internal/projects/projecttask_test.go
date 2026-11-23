@@ -90,6 +90,9 @@ func TestEngineRunsProjectTaskAsBoardJob(t *testing.T) {
 	if job.Kind != core.JobKindSchedule || job.ScheduleID != "bot/triage" || job.Title != "triage" || job.Status != "complete" {
 		t.Fatalf("job = %+v", job)
 	}
+	if job.Summary != "Opened issue #12 for the stale lockfile" || job.Finished.IsZero() || job.Fallback {
+		t.Fatalf("finished job summary = %q, finished %v, fallback %v", job.Summary, job.Finished, job.Fallback)
+	}
 	if job.IssueURL() != "" {
 		t.Fatalf("a scheduled job links an issue: %s", job.IssueURL())
 	}
@@ -138,8 +141,14 @@ func TestEngineStopsProjectTaskAndRefusesPauseAndRetry(t *testing.T) {
 	if err := <-errs; !errors.Is(err, context.Canceled) {
 		t.Fatalf("run error = %v, want it canceled", err)
 	}
-	if job, _ := scheduledJob(w, number); job.Status != "failed" {
-		t.Fatalf("stopped job status = %q", job.Status)
+	if job, _ := scheduledJob(w, number); job.Status != "failed" || job.Dismissed {
+		t.Fatalf("stopped job status = %q, dismissed %v", job.Status, job.Dismissed)
+	}
+	if err := w.handleJobAction(ctx, jobAction{Action: "dismiss", Target: "o/r", Number: number}); err != nil {
+		t.Fatalf("dismiss: %v", err)
+	}
+	if job, _ := scheduledJob(w, number); !job.Dismissed {
+		t.Fatal("dismiss left the failed run on the board's Failed state")
 	}
 }
 
@@ -370,6 +379,9 @@ func TestEnginePrecompiledProjectTaskFallsBackToTheAgent(t *testing.T) {
 			job, _ := scheduledJob(w, int(fire.Unix()))
 			if got := strings.Contains(job.Log, "precompiled script failed"); got != tc.failure {
 				t.Fatalf("log records the failure = %v, want %v:\n%s", got, tc.failure, job.Log)
+			}
+			if job.Fallback != tc.failure {
+				t.Fatalf("job fallback = %v, want %v", job.Fallback, tc.failure)
 			}
 		})
 	}
