@@ -44,59 +44,6 @@
       </div>
     </div>
 
-    <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-      <div class="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
-        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Compile Attempts</h3>
-        <span class="text-xs text-gray-400">{{ visibleTaskCompiles.length }} shown of {{ store.taskCompiles.length }} recorded</span>
-      </div>
-      <div v-if="store.compilesLoading" class="px-5 py-6 text-sm text-gray-400">
-        Loading compile attempts…
-      </div>
-      <div v-else-if="!store.taskCompiles.length" class="px-5 py-6 text-sm text-gray-400">
-        No compile attempts in this range.
-      </div>
-      <div v-else class="overflow-x-auto">
-        <table class="w-full text-left text-xs">
-          <thead>
-            <tr class="border-b border-gray-100 text-gray-400 dark:border-gray-800">
-              <th class="px-5 py-2.5 font-medium">Status</th>
-              <th class="px-4 py-2.5 font-medium">Task</th>
-              <th class="px-4 py-2.5 font-medium">Created</th>
-              <th class="px-4 py-2.5 font-medium">Result</th>
-              <th class="px-4 py-2.5 font-medium">Reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="compile in visibleTaskCompiles" :key="compile.id"
-              class="cursor-pointer border-b border-gray-50 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50"
-              :class="selectedCompile?.id === compile.id ? 'bg-sky-50 dark:bg-sky-950/20' : ''"
-              @click="selectCompile(compile)">
-              <td class="px-5 py-2.5">
-                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                  :class="compileStatusClass(compile.status)">
-                  {{ compileStatusLabel(compile.status) }}
-                </span>
-              </td>
-              <td class="px-4 py-2.5">
-                <div class="font-medium text-gray-700 dark:text-gray-200">
-                  {{ compile.task_name || "ad hoc task" }}
-                </div>
-                <div class="font-mono text-[11px] text-gray-400">{{ compile.id }}</div>
-              </td>
-              <td class="px-4 py-2.5 text-gray-400">{{ fmtTs(compile.created_at) }}</td>
-              <td class="px-4 py-2.5 font-mono text-gray-500">
-                {{ compile.requested_task_type || "prompt" }} → {{ compile.result_task_type || "prompt" }}
-              </td>
-              <td class="max-w-xl truncate px-4 py-2.5 text-gray-600 dark:text-gray-400"
-                :title="compile.reason || compile.prompt || ''">
-                {{ compile.reason || compile.prompt || "—" }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
     <!-- Jobs table -->
     <div ref="queueSection" data-testid="job-queue" class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
       <div class="flex flex-wrap items-center gap-3 border-b border-gray-100 px-5 py-3 dark:border-gray-800">
@@ -220,6 +167,59 @@
             Last
           </button>
         </div>
+      </div>
+    </div>
+
+    <div data-testid="compile-attempts" class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <div class="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
+        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Compile Attempts</h3>
+        <span class="text-xs text-gray-400">{{ visibleTaskCompiles.length }} shown of {{ store.taskCompiles.length }} recorded</span>
+      </div>
+      <div v-if="store.compilesLoading" class="px-5 py-6 text-sm text-gray-400">
+        Loading compile attempts…
+      </div>
+      <div v-else-if="!store.taskCompiles.length" class="px-5 py-6 text-sm text-gray-400">
+        No compile attempts in this range.
+      </div>
+      <div v-else class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead>
+            <tr class="border-b border-gray-100 text-gray-400 dark:border-gray-800">
+              <th class="px-5 py-2.5 font-medium">Status</th>
+              <th class="px-4 py-2.5 font-medium">Task</th>
+              <th class="px-4 py-2.5 font-medium">Created</th>
+              <th class="px-4 py-2.5 font-medium">Result</th>
+              <th class="px-4 py-2.5 font-medium">Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="compile in visibleTaskCompiles" :key="compile.id"
+              class="cursor-pointer border-b border-gray-50 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50"
+              :class="selectedCompile?.id === compile.id ? 'bg-sky-50 dark:bg-sky-950/20' : ''"
+              @click="selectCompile(compile)">
+              <td class="px-5 py-2.5">
+                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                  :class="compileStatusClass(compile.status)">
+                  {{ compileStatusLabel(compile.status) }}
+                </span>
+              </td>
+              <td class="px-4 py-2.5">
+                <div class="font-medium text-gray-700 dark:text-gray-200">
+                  {{ compile.task_name || "ad hoc task" }}
+                </div>
+                <div class="font-mono text-[11px] text-gray-400">{{ compile.id }}</div>
+              </td>
+              <td class="px-4 py-2.5 text-gray-400">{{ fmtTs(compile.created_at) }}</td>
+              <td class="px-4 py-2.5 font-mono text-gray-500">
+                {{ compile.requested_task_type || "prompt" }} → {{ compile.result_task_type || "prompt" }}
+              </td>
+              <td class="max-w-xl truncate px-4 py-2.5 text-gray-600 dark:text-gray-400"
+                :title="compile.reason || compile.prompt || ''">
+                {{ compile.reason || compile.prompt || "—" }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -531,7 +531,7 @@ const PAGE_SIZE_OPTIONS = [25, 50, 100].map((n) => ({
 }));
 
 // The Scheduled Tasks page's "More analytics": the agent's runs by day, its
-// compile attempts and its job queue, whose rows open a detail drawer.
+// job queue and its compile attempts, whose rows open a detail drawer.
 const props = defineProps<{
 	/** The task (<agent>/<name>) whose runs the job queue shows; empty shows all. */
 	task: string;

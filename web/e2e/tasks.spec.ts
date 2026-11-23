@@ -176,6 +176,19 @@ test("the summary stat cards and graphs render with data", async ({ page }) => {
 	await expect(page.getByTestId("job-count")).toHaveText("4 jobs");
 });
 
+test("more analytics shows the job queue above compile attempts", async ({
+	page,
+}) => {
+	await mockTasks(page);
+	await page.goto("/agents/assistant/tasks");
+	await page.getByTestId("more-analytics-toggle").click();
+	await expect(page.getByText("task_compile_1")).toBeVisible();
+
+	const queue = await page.getByTestId("job-queue").boundingBox();
+	const compiles = await page.getByTestId("compile-attempts").boundingBox();
+	expect(queue?.y).toBeLessThan(compiles?.y ?? 0);
+});
+
 test("tasks show as cards by default with every field", async ({ page }) => {
 	await mockTasks(page);
 	await page.goto("/agents/assistant/tasks");
