@@ -2,6 +2,8 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 const TOKEN_KEY = "aviary_token";
+const RETRY_MIN_MS = 500;
+const RETRY_MAX_MS = 10_000;
 
 export const useAuthStore = defineStore("auth", () => {
 	// Token is persisted in localStorage (the server also sets an HttpOnly session
@@ -13,18 +15,39 @@ export const useAuthStore = defineStore("auth", () => {
 
 	const isLoggedIn = computed(() => token.value !== null || authDisabled.value);
 
-	// checkAuthDisabled asks the server whether it needs a token at all.
-	async function checkAuthDisabled(): Promise<boolean> {
-		try {
-			const res = await fetch("/api/health");
-			if (res.ok) {
-				const body = (await res.json()) as { auth_disabled?: boolean };
-				authDisabled.value = body.auth_disabled === true;
+	// True while /api/health is unreachable (network error or proxy 5xx) and
+	// checkAuthDisabled is retrying; the app shows a reconnecting state then.
+	const serverUnavailable = ref(false);
+	let pendingCheck: Promise<boolean> | null = null;
+
+	// checkAuthDisabled asks the server whether it needs a token at all. An
+	// unreachable server says nothing about auth, so it retries with backoff
+	// until the server answers instead of falling back to the login prompt.
+	function checkAuthDisabled(): Promise<boolean> {
+		pendingCheck ??= pollHealth().finally(() => {
+			pendingCheck = null;
+		});
+		return pendingCheck;
+	}
+
+	async function pollHealth(): Promise<boolean> {
+		for (let delay = RETRY_MIN_MS; ; delay = Math.min(delay * 2, RETRY_MAX_MS)) {
+			try {
+				const res = await fetch("/api/health");
+				if (res.status < 500) {
+					if (res.ok) {
+						const body = (await res.json()) as { auth_disabled?: boolean };
+						authDisabled.value = body.auth_disabled === true;
+					}
+					serverUnavailable.value = false;
+					return authDisabled.value;
+				}
+			} catch {
+				// Network error: the server is down; retry below.
 			}
-		} catch {
-			// Unreachable server: keep requiring a token.
+			serverUnavailable.value = true;
+			await new Promise((resolve) => setTimeout(resolve, delay));
 		}
-		return authDisabled.value;
 	}
 
 	async function login(inputToken: string): Promise<boolean> {
@@ -56,6 +79,7 @@ export const useAuthStore = defineStore("auth", () => {
 	return {
 		authDisabled,
 		isLoggedIn,
+		serverUnavailable,
 		token,
 		checkAuthDisabled,
 		login,
