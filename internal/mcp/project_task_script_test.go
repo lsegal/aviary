@@ -119,7 +119,7 @@ print(r.stdout)`
 	assert.Equal(t, want, gotDir)
 
 	// exec stays in the clone.
-	refused, err := client.CallToolText(ctx, "exec", map[string]any{"command": "pwd", "cwd": "/"})
+	refused, err := client.CallToolText(ctx, "exec", map[string]any{"command": "git status", "cwd": t.TempDir()})
 	require.NoError(t, err)
 	assert.Contains(t, refused, "inside its clone")
 
@@ -128,7 +128,7 @@ print(r.stdout)`
 	plain, err := NewAgentToolClient(plainCtx)
 	require.NoError(t, err)
 	defer plain.Close() //nolint:errcheck
-	_, err = plain.CallToolText(plainCtx, "exec", map[string]any{"command": "pwd"})
+	_, err = plain.CallToolText(plainCtx, "exec", map[string]any{"command": "git status"})
 	assert.Error(t, err)
 }
 
