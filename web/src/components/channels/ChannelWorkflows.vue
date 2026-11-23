@@ -118,6 +118,12 @@
 					<SessionSelect v-model="form.session" :agent="agent" aria-label="Session" />
 				</div>
 			</div>
+			<div v-if="form.via === 'codeloop'" class="grid gap-3 lg:grid-cols-2">
+				<div>
+					<label class="field-label">Code Loop job</label>
+					<CodeLoopJobSelect v-model="form.job" aria-label="Code Loop job" />
+				</div>
+			</div>
 			<div class="grid gap-3 lg:grid-cols-2">
 				<div>
 					<label class="field-label">While a run is active</label>
@@ -155,12 +161,18 @@ import { useMCP } from "../../composables/useMCP";
 import { useTaskPause } from "../../composables/useTaskPause";
 import { channelName, channelTarget } from "../../lib/channels";
 import {
+	codeLoopTargetLabel,
+	isCodeLoopTarget,
+	parseCodeLoopTarget,
+} from "../../lib/taskTargets";
+import {
 	type AgentChannel,
 	type AgentTask,
 	isWorkflow,
 	taskSessionPath,
 	useSettingsStore,
 } from "../../stores/settings";
+import CodeLoopJobSelect from "../CodeLoopJobSelect.vue";
 import ModelSelector from "../ModelSelector.vue";
 import SessionSelect from "../SessionSelect.vue";
 import PausedChip from "../tasks/PausedChip.vue";
@@ -224,6 +236,8 @@ function describe(w: AgentTask): string {
 function viaLabel(target: string): string {
 	if (!target || target === "silent") return "silent";
 	if (target === "reply") return "replies in the conversation";
+	const job = parseCodeLoopTarget(target);
+	if (job) return `sends to ${codeLoopTargetLabel(job)}`;
 	return `sends to ${target.replace(/^channel:|^session:/, "")}`;
 }
 
@@ -241,6 +255,7 @@ const form = reactive({
 	model: "",
 	via: "reply",
 	session: "",
+	job: "",
 	overlap: "queue",
 	content: "",
 	enabled: true,
@@ -256,6 +271,7 @@ const viaOptions = computed(() => [
 	{ value: "", label: "silent" },
 	{ value: "reply", label: "reply to the source conversation" },
 	{ value: "session", label: "a session" },
+	{ value: "codeloop", label: "a Code Loop job" },
 	...otherChannels.value.map((c) => ({
 		value: channelTarget(c),
 		label: `channel: ${c}`,
@@ -280,7 +296,12 @@ function reset(w?: AgentTask) {
 	form.enabled = w ? w.enabled !== false : true;
 	const target = w ? (w.target ?? "") : "reply";
 	form.session = target.startsWith("session:") ? target.slice(8) : "";
-	form.via = target.startsWith("session:") ? "session" : target;
+	form.job = isCodeLoopTarget(target) ? target : "";
+	form.via = target.startsWith("session:")
+		? "session"
+		: isCodeLoopTarget(target)
+			? "codeloop"
+			: target;
 	editing.value = true;
 	void loadEntries();
 }
@@ -296,6 +317,7 @@ function startEdit(w: AgentTask) {
 function target(): string {
 	if (form.via === "session")
 		return form.session ? `session:${form.session}` : "";
+	if (form.via === "codeloop") return form.job;
 	return form.via;
 }
 

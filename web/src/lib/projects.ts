@@ -243,6 +243,8 @@ export type JobEvent =
 			author: string;
 			body: string;
 			url: string;
+			/** The task or workflow run whose output this is, when it came from one rather than a GitHub comment. */
+			source: string;
 	  }
 	| { kind: "system"; time: string; text: string };
 
@@ -531,6 +533,7 @@ function normalizeEvent(v: unknown): JobEvent | null {
 				author: str(raw.author),
 				body: str(raw.text),
 				url: str(raw.url),
+				source: str(raw.source),
 			};
 		case "system":
 			return { kind: "system", time, text: str(raw.text) };

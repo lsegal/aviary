@@ -47,7 +47,12 @@
 
 			<div v-else-if="e.kind === 'comment_relay'"
 				class="max-w-2xl rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-gray-900">
-				<p class="text-gray-600 dark:text-gray-300">
+				<p v-if="e.source" class="text-gray-600 dark:text-gray-300" data-testid="job-output-relay">
+					Output from <b class="text-gray-900 dark:text-white">{{ e.source }}</b>
+					· sent to the job
+					<router-link v-if="e.url" :to="e.url" class="text-blue-600 hover:underline">view run</router-link>
+				</p>
+				<p v-else class="text-gray-600 dark:text-gray-300">
 					<b class="text-gray-900 dark:text-white">{{ e.author }}</b> commented
 					· sent to the job
 					<a v-if="e.url" :href="e.url" target="_blank" rel="noreferrer" class="text-blue-600 hover:underline">view</a>
