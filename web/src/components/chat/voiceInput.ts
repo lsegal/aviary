@@ -31,8 +31,23 @@ function startError(e: unknown): string {
 	return `Couldn't start recording: ${e instanceof Error ? e.message : String(e)}`;
 }
 
-/** The input level, 0..1 of full scale, below which the mic counts as silent. */
-const SILENT_LEVEL = 0.01;
+/**
+ * The input level, 0..1 of full scale, below which the mic counts as silent
+ * (-60 dBFS, the server's floor too). Quiet speech from a low-gain audio
+ * interface can peak around -50 dBFS.
+ */
+const SILENT_LEVEL = 0.001;
+
+/**
+ * Capture constraints for transcription. Echo cancellation, noise
+ * suppression and auto gain can gate or squash audio-interface input, and
+ * the server normalizes the level itself, so the raw signal is requested.
+ */
+export const CAPTURE_CONSTRAINTS: MediaTrackConstraints = {
+	echoCancellation: false,
+	noiseSuppression: false,
+	autoGainControl: false,
+};
 
 /** Shown when the server finds no speech in a recording. */
 export const NO_SPEECH_MESSAGE =
@@ -43,10 +58,15 @@ export const SILENT_MIC_MESSAGE =
 	"No speech detected: the microphone picked up no sound. Check that it is unmuted and selected as this browser's input (and that the browser may use it in your system's privacy settings), then try again.";
 
 /**
- * Measures a stream's input level with an AnalyserNode. Returns null when
- * the browser can't analyse the stream; recording still works without it.
+ * Measures a stream's input level with one AnalyserNode per channel and
+ * reports the loudest, so a mic on one input of a stereo audio interface
+ * isn't halved by downmixing. Returns null when the browser can't analyse
+ * the stream; recording still works without it.
  */
-function levelMeter(stream: MediaStream): {
+function levelMeter(
+	stream: MediaStream,
+	channelCount: number,
+): {
 	read: () => number;
 	close: () => void;
 } | null {
@@ -58,19 +78,27 @@ function levelMeter(stream: MediaStream): {
 	let ctx: AudioContext | undefined;
 	try {
 		ctx = new Ctx();
-		const analyser = ctx.createAnalyser();
-		analyser.fftSize = 1024;
-		ctx.createMediaStreamSource(stream).connect(analyser);
+		const source = ctx.createMediaStreamSource(stream);
+		const splitter = ctx.createChannelSplitter(channelCount);
+		source.connect(splitter);
+		const analysers = Array.from({ length: channelCount }, (_, i) => {
+			const analyser = (ctx as AudioContext).createAnalyser();
+			analyser.fftSize = 1024;
+			splitter.connect(analyser, i);
+			return analyser;
+		});
 		// Started after an await, the context can begin suspended and read
 		// nothing but zeros.
 		void ctx.resume().catch(() => {});
-		const buf = new Float32Array(analyser.fftSize);
+		const buf = new Float32Array(1024);
 		const audio = ctx;
 		return {
 			read() {
-				analyser.getFloatTimeDomainData(buf);
 				let peak = 0;
-				for (const v of buf) peak = Math.max(peak, Math.abs(v));
+				for (const analyser of analysers) {
+					analyser.getFloatTimeDomainData(buf);
+					for (const v of buf) peak = Math.max(peak, Math.abs(v));
+				}
 				return Math.min(1, peak);
 			},
 			close() {
@@ -134,12 +162,24 @@ export function useVoiceInput(options: {
 		}
 		if (state.value !== "idle") return;
 		try {
-			stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			stream = await navigator.mediaDevices.getUserMedia({
+				audio: CAPTURE_CONSTRAINTS,
+			});
 		} catch (e) {
 			error.value = startError(e);
 			return;
 		}
 		const track = stream.getAudioTracks?.()[0];
+		const settings = track?.getSettings?.() ?? {};
+		console.debug("voice: capture settings", {
+			label: track?.label,
+			deviceId: settings.deviceId,
+			sampleRate: settings.sampleRate,
+			channelCount: settings.channelCount,
+			echoCancellation: settings.echoCancellation,
+			noiseSuppression: settings.noiseSuppression,
+			autoGainControl: settings.autoGainControl,
+		});
 		micWarning.value = "";
 		if (track) {
 			const update = () => {
@@ -158,7 +198,7 @@ export function useVoiceInput(options: {
 			track.onended = update;
 			update();
 		}
-		meter = levelMeter(stream);
+		meter = levelMeter(stream, Math.max(1, settings.channelCount ?? 2));
 		peakLevel = 0;
 		level.value = meter ? 0 : null;
 		const mimeType = recordingMimeType();
@@ -189,8 +229,11 @@ export function useVoiceInput(options: {
 		timer = setInterval(() => {
 			elapsedMs.value = Date.now() - startedAt;
 			if (meter) {
-				level.value = meter.read();
-				peakLevel = Math.max(peakLevel, level.value);
+				const now = meter.read();
+				peakLevel = Math.max(peakLevel, now);
+				// Hold peaks briefly so the meter doesn't drop to nothing
+				// between syllables.
+				level.value = Math.max(now, (level.value ?? 0) * 0.8);
 			}
 		}, 100);
 		state.value = "recording";
@@ -202,6 +245,7 @@ export function useVoiceInput(options: {
 			bytes: audio.size,
 			durationMs,
 			peakLevel,
+			silentLevel: SILENT_LEVEL,
 			heardSound,
 		});
 		if (audio.size === 0) {
