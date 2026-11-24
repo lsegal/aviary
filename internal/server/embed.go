@@ -85,10 +85,10 @@ func (h spaHandler) serveMissing(w http.ResponseWriter, r *http.Request) {
 	h.serveIndex(w, r)
 }
 
-func (h spaHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
+func (h spaHandler) serveIndex(w http.ResponseWriter, _ *http.Request) {
 	f, err := h.fs.Open("/index.html")
 	if err != nil {
-		http.NotFound(w, r)
+		webAssetsNotBuiltPage(w)
 		return
 	}
 	defer f.Close() //nolint:errcheck
