@@ -71,7 +71,7 @@ func activeDispatcher() *internalmcp.Dispatcher {
 	if dataDir != "" {
 		store.SetDataDir(dataDir)
 	}
-	return internalmcp.NewDispatcher(serverURL, token)
+	return internalmcp.NewDispatcher(resolvedServerURL(), token)
 }
 
 func parseToolArgs(raw string) (map[string]any, error) {
