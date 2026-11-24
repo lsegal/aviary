@@ -289,6 +289,90 @@ func TestWatchTUIBoardCardsAlignWithColumnHeaders(t *testing.T) {
 	}
 }
 
+func TestWatchTUIBoardGutterAndSpacing(t *testing.T) {
+	cols := []string{"Scheduled 1", "Starting 1", "Paused 1", "Running 1", "Done 1", "Failed 1"}
+	for _, width := range []int{80, 120} {
+		m := loadedWatchModel(t, newFakeWatchTools())
+		m = watchUpdate(t, m, tea.WindowSizeMsg{Width: width, Height: 40})
+		m, _ = watchKey(t, m, "b")
+		m, _ = watchKey(t, m, "right")
+		lines := strings.Split(watchStrip(m.View()), "\n")
+		filter, header := -1, -1
+		for i, line := range lines {
+			if filter < 0 && strings.Contains(line, "0 All") {
+				filter = i
+			}
+			if strings.HasPrefix(line, "Scheduled 1") {
+				header = i
+				break
+			}
+		}
+		if filter < 0 || header != filter+1+watchBoardSpacing {
+			t.Fatalf("width %d: filters at row %d, board header at %d, want %d blank rows between:\n%s", width, filter, header, watchBoardSpacing, strings.Join(lines, "\n"))
+		}
+		for _, line := range lines[filter+1 : header] {
+			if line != "" {
+				t.Errorf("width %d: row between filters and board = %q, want blank", width, line)
+			}
+		}
+		for _, line := range lines {
+			if w := len([]rune(line)); w > width {
+				t.Errorf("width %d: line is %d cells wide: %q", width, w, line)
+			}
+		}
+		colWidth := (width - watchBoardGutter*(len(cols)-1)) / len(cols)
+		rows := lines[header : header+3]
+		for c, col := range cols {
+			at := c * (colWidth + watchBoardGutter)
+			if got := []rune(rows[0]); !strings.HasPrefix(string(got[at:]), col) {
+				t.Errorf("width %d: %s header at %q, want column start %d", width, col, string(got[at:]), at)
+			}
+			if c == 0 {
+				continue
+			}
+			for _, row := range rows {
+				r := []rune(row)
+				if gutter := string(r[at-watchBoardGutter : at]); gutter != strings.Repeat(" ", watchBoardGutter) {
+					t.Errorf("width %d: gutter before %s = %q in %q", width, col, gutter, row)
+				}
+			}
+		}
+	}
+}
+
+func TestWatchTUIBoardNarrowNeverOverflows(t *testing.T) {
+	for _, width := range []int{20, 30, 40} {
+		m := loadedWatchModel(t, newFakeWatchTools())
+		m = watchUpdate(t, m, tea.WindowSizeMsg{Width: width, Height: 30})
+		m, _ = watchKey(t, m, "b")
+		for _, line := range m.boardView(10) {
+			if w := lipgloss.Width(line); w > width {
+				t.Errorf("width %d: board line is %d cells wide: %q", width, w, watchStrip(line))
+			}
+		}
+	}
+}
+
+func TestWatchTUIBoardPanesKeepFooter(t *testing.T) {
+	m := loadedWatchModel(t, newFakeWatchTools())
+	m = watchUpdate(t, m, tea.WindowSizeMsg{Width: 80, Height: 16})
+	m, _ = watchKey(t, m, "b")
+	m.showOutput, m.showLogs, m.chat.open = true, true, true
+	lines := strings.Split(watchStrip(m.View()), "\n")
+	if len(lines) != 16 {
+		t.Fatalf("view has %d lines, want 16", len(lines))
+	}
+	if footer := watchStrip(m.footerLine()); lines[len(lines)-1] != footer {
+		t.Errorf("last line = %q, want the footer %q", lines[len(lines)-1], footer)
+	}
+	if !strings.HasPrefix(lines[m.topRows()], "Scheduled 1") {
+		t.Errorf("board header missing below the spacing:\n%s", strings.Join(lines, "\n"))
+	}
+	if used := m.topRows() + 1 + m.chatPaneHeight() + m.outputPaneHeight() + m.logPaneHeight() + 1; used > 16 {
+		t.Errorf("rows used = %d, want at most 16", used)
+	}
+}
+
 func TestWatchTUIStatsLine(t *testing.T) {
 	m := loadedWatchModel(t, newFakeWatchTools())
 	got := watchStrip(m.statsLine())
