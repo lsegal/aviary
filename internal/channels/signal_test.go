@@ -985,9 +985,10 @@ func TestDaemonInfo_ManagedMode_Running(t *testing.T) {
 
 // ── RPC send methods ─────────────────────────────────────────────────────────
 
-// newSignalCloseImmediatelyServer creates a TCP server that accepts one
-// connection and closes it without writing a response.
-func newSignalCloseImmediatelyServer(t *testing.T) string {
+// newSignalNoResponseServer creates a TCP server that accepts one connection,
+// reads the request line, and closes without writing a response. Reading first
+// keeps the client's write from racing the close.
+func newSignalNoResponseServer(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	assert.NoError(t, err)
@@ -997,6 +998,7 @@ func newSignalCloseImmediatelyServer(t *testing.T) string {
 		if err != nil {
 			return
 		}
+		_, _ = bufio.NewReader(conn).ReadBytes('\n')
 		_ = conn.Close()
 	}()
 	t.Cleanup(func() { _ = ln.Close() })
@@ -1082,7 +1084,7 @@ func TestSignalChannel_RPCMethods(t *testing.T) {
 			})
 
 			t.Run("closed without response", func(t *testing.T) {
-				err := tt.call(newChannel(newSignalCloseImmediatelyServer(t)), direct)
+				err := tt.call(newChannel(newSignalNoResponseServer(t)), direct)
 				assert.ErrorContains(t, err, "read response")
 			})
 
