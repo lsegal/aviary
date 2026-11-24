@@ -15,6 +15,7 @@ import (
 
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/logging"
@@ -66,8 +67,10 @@ shared with your own Aviary, both read in place and never copied:
 
 The session copies your providers, browser, approval and Code Loop settings;
 flags override the Code Loop settings. The targets run under --agent, else the
-agent of yours that owns them, else models.defaults. Use 'aviary project add'
-to watch a project permanently.
+agent of yours that owns them, else models.defaults. --model replaces that
+agent's model for the session's jobs, and each --fallback, in order, replaces
+its fallbacks; models are <provider>/<model>, such as claude/opus. Use
+'aviary project add' to watch a project permanently.
 
 The session's server listens on localhost only, on the first free port from
 your server port (default 16677) up, and serves a minimal web UI with no token
@@ -88,6 +91,12 @@ watch once its PID is gone.`,
 func init() {
 	f := watchCmd.Flags()
 	f.StringVar(&watchOpts.agent, "agent", "", "Aviary agent the targets run under; its model and fallbacks pick the jobs' CLI providers (default: the agent that owns the target, else models.defaults)")
+	f.String("model", "", "model the jobs run with, <provider>/<model> such as claude/opus (default: the agent's model)")
+	f.StringArray("fallback", nil, "fallback model, repeatable, tried in the order given (default: the agent's fallbacks)")
+	// --provider is the deprecated name of --model, kept out of help and
+	// completions until it is removed.
+	f.String("provider", "", "deprecated: use --model")
+	_ = f.MarkHidden("provider")
 	f.IntVar(&watchOpts.concurrency, "concurrency", 0, "jobs that run at once (default 3)")
 	f.StringVar(&watchOpts.interval, "interval", "", "time between GitHub polls (default 20s for browser delivery, 30s otherwise)")
 	f.StringVar(&watchOpts.delivery, "delivery", "", "browser, poll or webhook (default browser: read GitHub through Aviary's browser, signed in as you)")
@@ -124,6 +133,50 @@ func watchTargets(args []string) ([]string, error) {
 		targets = append(targets, target)
 	}
 	return targets, nil
+}
+
+// watchAgent turns --agent, --model, --fallback and the deprecated
+// --provider into the agent the session runs under. --provider works as
+// --model with a warning on warn; passing both is an error.
+func watchAgent(flags *pflag.FlagSet, warn io.Writer) (watchAgentChoice, error) {
+	agent, _ := flags.GetString("agent")
+	model, _ := flags.GetString("model")
+	fallbacks, _ := flags.GetStringArray("fallback")
+	choice := watchAgentChoice{Name: agent}
+	modelFlag := "--model"
+	if flags.Changed("provider") {
+		if flags.Changed("model") {
+			return choice, errors.New("--provider is the deprecated name of --model; pass only --model")
+		}
+		_, _ = fmt.Fprintln(warn, "--provider is deprecated; use --model")
+		model, _ = flags.GetString("provider")
+		modelFlag = "--provider"
+	}
+	if flags.Changed("model") || flags.Changed("provider") {
+		spec, err := watchModelSpec(modelFlag, model)
+		if err != nil {
+			return choice, err
+		}
+		choice.Model = spec
+	}
+	for _, fallback := range fallbacks {
+		spec, err := watchModelSpec("--fallback", fallback)
+		if err != nil {
+			return choice, err
+		}
+		choice.Fallbacks = append(choice.Fallbacks, spec)
+	}
+	return choice, nil
+}
+
+// watchModelSpec checks that a model flag's value is <provider>/<model>.
+func watchModelSpec(flag, value string) (string, error) {
+	spec := strings.TrimSpace(value)
+	provider, name, ok := strings.Cut(spec, "/")
+	if !ok || provider == "" || strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("%s %q is not a model: expected <provider>/<model>, such as claude/opus", flag, value)
+	}
+	return spec, nil
 }
 
 // watchSettings turns the flags into the settings the watch overrides.
@@ -172,6 +225,10 @@ func runWatch(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
+	agent, err := watchAgent(cmd.Flags(), cmd.ErrOrStderr())
+	if err != nil {
+		return err
+	}
 	// Past the flags, an error is the session's, not a usage mistake.
 	cmd.SilenceUsage = true
 	out := cmd.OutOrStdout()
@@ -182,7 +239,7 @@ func runWatch(cmd *cobra.Command, args []string) (err error) {
 	for _, dir := range sweepStaleWatchDirs(os.TempDir()) {
 		_, _ = fmt.Fprintf(out, "Removed %s, left behind by an earlier watch.\n", dir)
 	}
-	session, err := startWatchSession(os.TempDir(), global, sources, watchOpts.agent, targets, settings)
+	session, err := startWatchSession(os.TempDir(), global, sources, agent, targets, settings)
 	// The session directory goes on every way out, a panic included.
 	defer func() {
 		if cleanupErr := endWatchSession(session); cleanupErr != nil {
