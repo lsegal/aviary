@@ -117,9 +117,14 @@
 
 		<div class="relative flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
 			<section class="flex min-w-0 shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:shrink" aria-label="Timeline">
-				<div data-testid="job-transcript" class="relative min-w-0 flex-1 px-4 py-4 sm:px-6 lg:overflow-y-auto">
-					<div v-if="!detail && !error" class="py-12 text-center text-sm text-gray-400">Loading…</div>
-					<JobTimeline v-else-if="detail" :events="detail.events" />
+				<div class="relative flex min-w-0 flex-1 flex-col lg:min-h-0">
+					<div ref="transcriptEl" data-testid="job-transcript"
+						class="relative min-w-0 flex-1 px-4 py-4 sm:px-6 lg:min-h-0 lg:overflow-y-auto" @scroll="transcript.onScroll">
+						<div v-if="!detail && !error" class="py-12 text-center text-sm text-gray-400">Loading…</div>
+						<JobTimeline v-else-if="detail" :events="detail.events" />
+					</div>
+					<MoreBelowPill v-if="transcript.showMore.value" :count="transcript.newCount.value"
+						data-testid="job-transcript-more-below" @click="transcript.scrollToBottom()" />
 				</div>
 				<footer v-if="job && !job.scheduled"
 					class="flex flex-col gap-3 border-t border-gray-200 px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-300 sm:px-6 2xl:flex-row 2xl:items-center">
@@ -149,16 +154,18 @@
 					<label class="ml-auto flex shrink-0 items-center gap-1 text-slate-400">
 						<input v-model="showHeartbeats" data-testid="raw-output-heartbeats" type="checkbox" class="h-3 w-3" /> heartbeats
 					</label>
-					<label class="flex shrink-0 items-center gap-1 text-slate-400">
-						<input v-model="follow" type="checkbox" class="h-3 w-3" /> following
-					</label>
 					<button type="button" aria-label="Close raw output" title="Hide the raw CLI output"
 						class="rounded p-0.5 text-slate-400 hover:bg-slate-800 hover:text-white" @click="showRaw = false">
 						<XMarkIcon aria-hidden="true" class="h-4 w-4" />
 					</button>
 				</div>
-				<pre ref="outputEl" data-testid="run-output"
-					class="flex-1 overflow-auto whitespace-pre-wrap break-all px-4 py-3 font-mono text-xs leading-relaxed">{{ outputLines.join("\n") || "No output yet." }}</pre>
+				<div class="relative flex min-h-0 flex-1 flex-col">
+					<pre ref="outputEl" data-testid="run-output"
+						class="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all px-4 py-3 font-mono text-xs leading-relaxed"
+						@scroll="output.onScroll">{{ outputLines.join("\n") || "No output yet." }}</pre>
+					<MoreBelowPill v-if="output.showMore.value" :count="output.newCount.value"
+						data-testid="run-output-more-below" @click="output.scrollToBottom()" />
+				</div>
 			</section>
 		</div>
 	</div>
@@ -170,15 +177,9 @@ import ClipboardDocumentIcon from "@heroicons/vue/24/outline/ClipboardDocumentIc
 import CodeBracketIcon from "@heroicons/vue/24/outline/CodeBracketIcon";
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import XMarkIcon from "@heroicons/vue/24/outline/XMarkIcon";
-import {
-	computed,
-	nextTick,
-	onBeforeUnmount,
-	onMounted,
-	ref,
-	watch,
-} from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { useAutoFollow } from "../../composables/useAutoFollow";
 import { useProjectJob } from "../../composables/useProjects";
 import {
 	githubURL,
@@ -187,6 +188,7 @@ import {
 	lifecycleStep,
 	projectPath,
 } from "../../lib/projects";
+import MoreBelowPill from "../MoreBelowPill.vue";
 import JobStatusPill from "./JobStatusPill.vue";
 import JobTimeline from "./JobTimeline.vue";
 import PullRequestLink from "./PullRequestLink.vue";
@@ -321,12 +323,19 @@ const outputLines = computed(() => {
 		: output.filter((line) => !isHeartbeatLine(line));
 });
 
-const follow = ref(true);
+// The transcript and the raw output each follow their newest entry.
+const transcriptEl = ref<HTMLElement | null>(null);
+const transcript = useAutoFollow(transcriptEl, {
+	count: () => detail.value?.events.length ?? 0,
+});
 const outputEl = ref<HTMLElement | null>(null);
-watch([() => outputLines.value.length, showRaw], async () => {
-	if (!follow.value || !showRaw.value) return;
-	await nextTick();
-	if (outputEl.value) outputEl.value.scrollTop = outputEl.value.scrollHeight;
+const output = useAutoFollow(outputEl, {
+	count: () => outputLines.value.length,
+});
+// Another job opens at its newest entry.
+watch([agent, number], () => {
+	transcript.scrollToBottom({ smooth: false });
+	output.scrollToBottom({ smooth: false });
 });
 
 const busy = ref(false);

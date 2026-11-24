@@ -96,7 +96,11 @@ func TestProjectRunInterruptedByEngineRestartIsRequeued(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, again)
 			require.Equal(t, job.ID, again.ID)
-			go s.pool.processJob(context.Background(), again)
+			againDone := make(chan struct{})
+			go func() {
+				defer close(againDone)
+				s.pool.processJob(context.Background(), again)
+			}()
 			select {
 			case prompt := <-prompts:
 				assert.Equal(t, projectRunInterruptedNote+"\n\nTriage new issues", prompt)
@@ -104,6 +108,13 @@ func TestProjectRunInterruptedByEngineRestartIsRequeued(t *testing.T) {
 				t.Fatal("the requeued project task never ran again")
 			}
 			_, _ = s.StopJobs("")
+			// Wait for the canceled run to persist its state before the
+			// TempDir cleanup removes the scheduler directory (#1076).
+			select {
+			case <-againDone:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the requeued project task never finished")
+			}
 		})
 	}
 }
