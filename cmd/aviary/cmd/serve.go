@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -19,11 +20,15 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/logging"
 	"github.com/lsegal/aviary/internal/server"
+	"github.com/lsegal/aviary/internal/startup"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
 )
 
-var serveDaemon bool
+var (
+	serveDaemon  bool
+	traceStartup bool
+)
 
 // startServer runs the server in the foreground; tests replace it.
 var startServer = runStart
@@ -125,6 +130,7 @@ var stopCmd = &cobra.Command{
 
 func init() {
 	serveCmd.PersistentFlags().BoolVarP(&serveDaemon, "daemon", "d", false, "Run in background (daemonize) for start")
+	serveCmd.PersistentFlags().BoolVar(&traceStartup, "trace-startup", false, "Print the per-phase startup trace once boot finishes")
 	rootCmd.AddCommand(serveCmd)
 	// Also add `serve stop` as an explicit subcommand for help clarity.
 	serveCmd.AddCommand(stopCmd)
@@ -182,6 +188,7 @@ func configServerRunning(path string) (bool, int, error) {
 
 // runStart is the former command implementation from start.go.
 func runStart(_ *cobra.Command, _ []string) error {
+	trace := startup.Begin()
 	// Check if already running.
 	running, pid, err := configServerRunning(cfgFile)
 	if err != nil {
@@ -205,14 +212,19 @@ func runStart(_ *cobra.Command, _ []string) error {
 	cfgFile = resolvedCfgPath
 
 	// Load config (including file-based tasks from agents' tasks/ directories).
+	endPhase := trace.Phase("config load")
 	cfg, err := config.Load(resolvedCfgPath)
+	endPhase()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
 	// Validate config — fail fast on any errors, print all issues before starting.
+	endPhase = trace.Phase("config validate")
 	st := authStore()
-	if issues := config.Validate(cfg, func(k string) (string, error) { return st.Get(k) }); len(issues) != 0 {
+	issues := config.Validate(cfg, func(k string) (string, error) { return st.Get(k) })
+	endPhase()
+	if len(issues) != 0 {
 		nerrs := 0
 		for _, issue := range issues {
 			fmt.Fprintf(os.Stderr, "[%s] %s: %s\n", issue.Level, issue.Field, issue.Message)
@@ -226,7 +238,9 @@ func runStart(_ *cobra.Command, _ []string) error {
 	}
 
 	// Load or generate auth token.
+	endPhase = trace.Phase("auth token load")
 	tok, isNew, err := server.LoadOrGenerateToken()
+	endPhase()
 	if err != nil {
 		return fmt.Errorf("loading token: %w", err)
 	}
@@ -258,6 +272,10 @@ func runStart(_ *cobra.Command, _ []string) error {
 		cancel()
 	}()
 
+	if traceStartup {
+		go printStartupTrace(ctx)
+	}
+
 	// Start server; restart when config changes require it.
 	for {
 		srv := server.New(cfg, tok)
@@ -277,8 +295,11 @@ func runStart(_ *cobra.Command, _ []string) error {
 			return update.Reexec(srv.ReexecPath(), os.Args[1:], os.Environ())
 		}
 		if errors.Is(err, server.ErrRestartRequired) {
+			trace = startup.Begin()
+			endPhase = trace.Phase("config load")
 			var loadErr error
 			cfg, loadErr = config.Load(resolvedCfgPath)
+			endPhase()
 			if loadErr != nil {
 				return fmt.Errorf("reloading config: %w", loadErr)
 			}
@@ -286,6 +307,24 @@ func runStart(_ *cobra.Command, _ []string) error {
 			continue
 		}
 		return err
+	}
+}
+
+// printStartupTrace prints the boot's per-phase trace once every subsystem
+// has finished initializing.
+func printStartupTrace(ctx context.Context) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		if r := startup.Current().Snapshot(); r.Ready {
+			_, _ = fmt.Fprintf(os.Stdout, "Startup trace\n%s", r.Detail())
+			return
+		}
 	}
 }
 

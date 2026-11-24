@@ -11,6 +11,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/saferestart"
+	"github.com/lsegal/aviary/internal/startup"
 	"github.com/lsegal/aviary/internal/update"
 )
 
@@ -205,4 +206,24 @@ func wsHandler(token string, authDisabled func() bool) http.HandlerFunc {
 
 func sessionTurnEvent(turn agent.ActiveTurn) wsEvent {
 	return wsEvent{Type: "session_turn", AgentID: turn.AgentID, SessionID: turn.SessionID, Turn: &turn}
+}
+
+// healthzHandler answers GET /healthz: the process is up and serving HTTP.
+func healthzHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// readyzHandler answers GET /readyz with the boot's per-subsystem readiness
+// and phase timings. It responds 503 while any subsystem is still
+// initializing, so "MCP up, Code Loop still loading" differs from "server
+// down", which does not answer at all. It is public, so error text, which
+// can name paths and accounts, is left out; `aviary doctor` shows it.
+func readyzHandler(w http.ResponseWriter, _ *http.Request) {
+	r := startup.Current().Snapshot().Redacted()
+	w.Header().Set("Content-Type", "application/json")
+	if !r.Ready {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+	_ = json.NewEncoder(w).Encode(r)
 }

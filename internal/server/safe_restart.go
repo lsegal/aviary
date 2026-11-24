@@ -63,7 +63,10 @@ var (
 	// does not repeat, so reloaded code's MCP tools go live too.
 	refreshAfterHotReload = mcp.RefreshLiveServer
 	executablePath        = os.Executable
-	idlePoll              = 2 * time.Second
+	// idlePoll is how often a restart waiting for jobs to finish checks
+	// again. Checking is an in-memory read, so a short interval keeps a
+	// restart from idling for up to a poll after the last job ends.
+	idlePoll = 250 * time.Millisecond
 	// autoUpdateWait is how long one self-updater round waits for a restart
 	// already in progress before checking for a newer update.
 	autoUpdateWait = update.CheckInterval
