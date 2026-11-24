@@ -26,6 +26,8 @@ A job is named by its issue `number`. `target` is needed only when several proje
 | `project_issue_comment` | `aviary project issue comment` | |
 | `project_issue_create` | `aviary project issue create` | |
 | `project_issue_backfill_media` | `aviary project issue backfill-media` | |
+| `project_github_read` | `aviary project github read` | read-only |
+| `project_site_fetch` | `aviary project site fetch` | read-only |
 | `project_task_list` | `aviary project task list` | read-only |
 | `project_task_get` | `aviary project task get` | read-only |
 | `project_task_create` | `aviary project task create` | |
@@ -183,6 +185,26 @@ Each issue is matched to the user message whose turn called `project_issue_creat
 - `already_posted`: the issue already has the comment, so running it again posts nothing new.
 - `no_media`: nothing to post; `reason` says why, such as no filing call for the issue in session history, a request without images or videos, or media that can no longer be read.
 - `failed`: the comment could not be checked or posted; `reason` has the error.
+
+## project_github_read
+
+One `GET` of the GitHub REST API under a watched repository, through `gh` with this instance's sign-in. The Code Loop agent uses it to read commits, comparisons, files, pull requests, comments and Actions runs. Only watched repositories, including the repositories of a watched Project board's jobs, can be read. Each read is written to the Code Loop log. A rate-limited read fails with a message to wait for the limit to reset.
+
+**Arguments:** `path` or `url`, and optional `repository` (defaults to the url's repository or the only watched repository) and `media`.
+
+- `path` is relative to `repos/OWNER/REPO`, such as `commits/SHA`, `compare/BASE...HEAD`, `contents/FILE?ref=REF`, `pulls/N/files`, `issues/comments/ID`, `commits/SHA/check-runs`, `actions/runs?branch=main` or `actions/jobs/ID/logs`. An empty path reads the repository itself.
+- `url` is a github.com URL to read instead: a commit, comparison, file, pull request, issue, issue or review comment, review, Actions run or job, or release.
+- `media` is `diff` or `patch` for a commit, comparison or pull request diff, or `raw` for a file's text, which is the default for `contents/` paths.
+
+The result has the `repository` and `path` read, and `data` for a JSON answer or `text` for anything else. A body over 64 KB is cut and `truncated` is set. A log keeps its tail, where failures are.
+
+## project_site_fetch
+
+Fetch a page from a watched project's own site to check what is deployed. Allowed sites are each watched repository's homepage, its GitHub Pages site and custom domain, and its owner's `github.io` site. Redirects must stay on those sites. Each fetch is written to the Code Loop log.
+
+**Arguments:** `url`.
+
+The result has the final `url`, `status`, `content_type`, `last_modified`, `etag`, `age` and `date` when the site sends them, and `body`, cut at 64 KB with `truncated` set.
 
 
 

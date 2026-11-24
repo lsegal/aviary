@@ -70,7 +70,7 @@ The TUI shows the watch's header (its targets and the web UI's URL), a stats lin
 
 ## Prompt chat
 
-`c` opens the [prompt chat](./projects#prompt-chat) as a pane under the board, and `/` opens it with the input focused. Ask the Code Loop agent about a job, retry or stop jobs, or file a new issue. It is the same conversation as the web board's prompt chat, so a conversation started in either shows up in the other.
+`c` opens the [prompt chat](./projects#prompt-chat) as a pane under the board, and `/` opens it with the input focused. Ask the Code Loop agent about a job, retry or stop jobs, or file a new issue. It can also read the watched repositories' commits, pull requests, comments and Actions runs, and fetch their deployed sites, so you can ask what a commit changed or whether a fix deployed. It is the same conversation as the web board's prompt chat, so a conversation started in either shows up in the other.
 
 | Key | Action |
 | --- | --- |
