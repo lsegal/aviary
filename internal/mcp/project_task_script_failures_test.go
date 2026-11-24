@@ -35,14 +35,17 @@ func TestProjectTaskCompileUsesExplicitRepositoryForMainSHA(t *testing.T) {
 		}
 		require.Contains(t, user, "acme/app")
 		require.Contains(t, user, "gh api repos/acme/app/commits/main --jq .sha", "the prompt gives the endpoint for main's SHA")
+		require.Contains(t, user, "gh api repos/acme/app/releases/latest --jq .tag_name", "the prompt gives the endpoint for the latest release")
+		require.NotContains(t, user, "gh release view")
 		return `local main = tool.exec({command = "gh api repos/acme/app/commits/main --jq .sha"})
-local tag = tool.exec({command = "gh release view --repo acme/app --json tagName --jq .tagName"})
+local tag = tool.exec({command = "gh api repos/acme/app/releases/latest --jq .tag_name"})
 print(main.stdout, tag.stdout)`, nil
 	}
 
 	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
 	require.NoError(t, err)
 	assert.Contains(t, got, "repos/acme/app/commits/main")
+	assert.Contains(t, got, "repos/acme/app/releases/latest")
 	assert.NotContains(t, got, "{owner}")
 	assert.NotContains(t, got, "$GH_REPO")
 	assert.Empty(t, projectScriptPlaceholderProblem(got))
