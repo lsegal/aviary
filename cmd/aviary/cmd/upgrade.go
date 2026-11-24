@@ -178,8 +178,8 @@ func runSourceUpgrade(check update.CheckResult) error {
 
 // runningServerInstall reports the running server's version check, which
 // says what kind of install it is. ok is false when no server is running or
-// it cannot be asked.
-func runningServerInstall() (update.CheckResult, bool) {
+// it cannot be asked. It is a variable so tests can stub it.
+var runningServerInstall = func() (update.CheckResult, bool) {
 	if running, _, _ := server.IsRunning(); !running {
 		return update.CheckResult{}, false
 	}
@@ -194,8 +194,8 @@ func runningServerInstall() (update.CheckResult, bool) {
 }
 
 // upgradeThroughServer runs server_upgrade with args and prints its message,
-// or fallback's when it has none.
-func upgradeThroughServer(args map[string]any, fallback func()) error {
+// or fallback's when it has none. It is a variable so tests can stub it.
+var upgradeThroughServer = func(args map[string]any, fallback func()) error {
 	out, err := dispatcher.CallTool(context.Background(), "server_upgrade", args)
 	if err != nil {
 		return err

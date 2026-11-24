@@ -21,6 +21,7 @@ import (
 	"github.com/lsegal/aviary/internal/server"
 	"github.com/lsegal/aviary/internal/startup"
 	"github.com/lsegal/aviary/internal/store"
+	"github.com/lsegal/aviary/internal/update"
 	"github.com/lsegal/aviary/internal/version"
 )
 
@@ -90,6 +91,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	_, _ = fmt.Fprintln(os.Stdout, "System information")
 	_, _ = fmt.Fprintln(os.Stdout, "──────────────────")
 	_, _ = fmt.Fprintf(os.Stdout, "  Aviary version : %s\n", buildinfo.Version)
+	_, _ = fmt.Fprintf(os.Stdout, "  Install type   : %s\n", update.DescribeInstall())
 	_, _ = fmt.Fprintf(os.Stdout, "  Go version     : %s\n", runtime.Version())
 	_, _ = fmt.Fprintf(os.Stdout, "  OS/Arch        : %s/%s\n", runtime.GOOS, runtime.GOARCH)
 
