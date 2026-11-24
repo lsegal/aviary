@@ -1,5 +1,5 @@
 <template>
-	<AppLayout>
+	<AppLayout :breadcrumb="isAgentFilesPage">
 		<div ref="scrollRoot" data-testid="settings-scroll" :class="isAgentFilesPage ? 'flex h-full flex-col overflow-hidden' : 'h-full overflow-y-auto'">
 			<div :class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'mx-auto max-w-7xl px-4 py-6 sm:px-6'">
 				<SettingsPageHeader v-if="!isAgentFilesPage" :crumbs="pageHeader.crumbs" :back="pageHeader.back">
@@ -1113,7 +1113,6 @@ const pageHeader = computed(
 		const agent = draft.value.agents[selectedAgentIdx.value];
 		if (!agent || route.path === "/agents")
 			return header([{ label: "Agents" }]);
-		if (tasksRoot.value) return header([{ label: "Scheduled Tasks" }]);
 		const name = agent.name || "New agent";
 		const agentCrumb: SettingsCrumb = agent.name
 			? {
@@ -1121,6 +1120,8 @@ const pageHeader = computed(
 					to: `/agents/${encodeURIComponent(selectedAgentRouteId())}/chat`,
 				}
 			: { label: name };
+		if (tasksRoot.value)
+			return header([agentCrumb, { label: "Scheduled Tasks" }]);
 		if (selectedAgentSubtab.value === "channels" && selectedChannel.value) {
 			const param = route.params.channel;
 			const channel =
