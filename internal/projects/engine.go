@@ -261,7 +261,12 @@ type Engine struct {
 	// Discussions-board targets. When nil, Discussions-board targets are
 	// never polled.
 	Discussions DiscussionSource
-	Runner      AgentRunner
+	// Candidates lists the open pull requests and Discussion threads the
+	// Queue menu offers. It is gh whatever the issue delivery mode, which
+	// only decides how issues are polled.
+	Candidates QueueCandidateSource
+	candidates candidateCache
+	Runner     AgentRunner
 	// RecordUsage receives the Code Loop usage the engine observes: each job
 	// run's wall time and each issue's merged or failed outcome. Nil records
 	// nothing.

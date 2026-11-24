@@ -159,6 +159,8 @@ The **Queue** menu in a project's header starts work that no poll picks up on it
 - **Discuss** opens a picker of open Discussion threads. Picked threads become `discuss` jobs that run `gh-discuss`.
 - **Fix issue** takes issue numbers. It retries an issue's finished job, or checks GitHub now so that an issue matching the project's filter is dispatched.
 
+The pull request and Discussion pickers list through the authenticated `gh` CLI whatever the project's delivery mode, and reuse a listing for 30 seconds. Both pickers also take numbers typed into their **Queue PR #…** or **Queue discussion #…** box. When nothing can be listed, for example because `gh` isn't signed in, the picker says so and suggests `gh auth login`, and typed numbers still queue.
+
 Queued jobs show as board cards with logs, a transcript, and pause, resume, stop and retry. They wait for a free agent slot like any other job, and they're saved, so they survive a restart. A number that a job already owns isn't queued again: the picker names the owning job. Safe merge is queued only from this menu, `aviary watch` and the queue tools, not from board cards. While `no_merge` is set, **Safe merge PR** is disabled with an explanation. In `aviary watch`'s TUI, `m` queues the selected job's pull request for a safe merge, and `Q` opens a prompt such as `merge 1201 1207`, `discuss 4` or `fix 12`. Agents and scripts use the `project_job_queue` and `project_queue_candidates` tools.
 
 ## Prompt chat

@@ -157,7 +157,19 @@ const SCHEDULE = {
 	created_at: "0001-01-01T00:00:00Z",
 };
 
-async function setup(page: Page, { noMerge = false } = {}) {
+async function setup(
+	page: Page,
+	{
+		noMerge = false,
+		delivery = "poll",
+		listing = "ok",
+	}: {
+		noMerge?: boolean;
+		delivery?: string;
+		/** ok lists; unavailable returns the server's notice; error fails the call. */
+		listing?: "ok" | "unavailable" | "error";
+	} = {},
+) {
 	const calls: Record<string, Record<string, unknown>[]> = {};
 	const record = (tool: string, args?: Record<string, unknown>) => {
 		calls[tool] ??= [];
@@ -190,7 +202,7 @@ async function setup(page: Page, { noMerge = false } = {}) {
 				failed: 1,
 			},
 			concurrency: 2,
-			delivery: "poll",
+			delivery,
 			poll_interval: "30s",
 			no_merge: noMerge,
 			last_check: minutesAgo(0.1),
@@ -209,6 +221,18 @@ async function setup(page: Page, { noMerge = false } = {}) {
 		}),
 		project_queue_candidates: (args?: Record<string, unknown>) => {
 			record("project_queue_candidates", args);
+			if (listing === "error") throw new Error("gh: connection refused");
+			if (listing === "unavailable")
+				return {
+					target: TARGET,
+					repository: TARGET,
+					skill: args?.skill,
+					no_merge: noMerge,
+					unavailable:
+						args?.skill === "gh-discuss"
+							? "Can't list discussions: sign in to GitHub (gh auth login) to enable this. You can still queue by number."
+							: "Can't list pull requests: sign in to GitHub (gh auth login) to enable this. You can still queue by number.",
+				};
 			if (args?.skill === "gh-discuss")
 				return {
 					target: TARGET,
@@ -451,6 +475,111 @@ test("Discuss queues picked threads and Fix issue queues typed issue numbers", a
 	await expect
 		.poll(() => calls.project_job_queue?.[1])
 		.toMatchObject({ skill: "gh-fix", numbers: [12, 15] });
+});
+
+test("in browser delivery mode the pickers list open PRs and Discussions", async ({
+	page,
+}) => {
+	const calls = await setup(page, { delivery: "browser" });
+	await page.goto(BOARD);
+	await page.getByTestId("queue-menu").click();
+	await page.getByTestId("queue-gh-safe-merge").click();
+	const dialog = page.getByTestId("queue-dialog");
+	const rows = dialog.getByTestId("queue-candidate");
+	await expect(rows).toHaveCount(4);
+	const conflicting = rows.filter({ hasText: "#1212" });
+	await expect(conflicting).toContainText("hubot");
+	await expect(conflicting).toContainText("pending");
+	await expect(conflicting).toContainText("review required");
+	await expect(conflicting).toContainText("conflicts");
+	await expect(
+		rows.filter({ hasText: "#1207" }).getByTestId("queue-owned"),
+	).toHaveText(`${TARGET}#1207`);
+	await expect(dialog.getByTestId("queue-unavailable")).toHaveCount(0);
+	await page.keyboard.press("Escape");
+
+	await page.getByTestId("queue-menu").click();
+	await page.getByTestId("queue-gh-discuss").click();
+	await expect(rows).toHaveCount(2);
+	await expect(rows.filter({ hasText: "#51" })).toContainText("Q&A");
+	// Each open asks once; the server caches the listing briefly.
+	expect(calls.project_queue_candidates).toHaveLength(2);
+});
+
+for (const c of [
+	{ skill: "gh-safe-merge", noun: "pull requests", number: 1156 },
+	{ skill: "gh-discuss", noun: "discussions", number: 44 },
+] as const) {
+	test(`when ${c.noun} can't be listed, a calm notice shows and numbers still queue`, async ({
+		page,
+	}) => {
+		const calls = await setup(page, {
+			delivery: "browser",
+			listing: "unavailable",
+		});
+		await page.goto(BOARD);
+		await page.getByTestId("queue-menu").click();
+		await page.getByTestId(`queue-${c.skill}`).click();
+		const dialog = page.getByTestId("queue-dialog");
+		const notice = dialog.getByTestId("queue-unavailable");
+		await expect(notice).toHaveText(
+			`Can't list ${c.noun}: sign in to GitHub (gh auth login) to enable this. You can still queue by number.`,
+		);
+		await expect(notice).not.toHaveClass(/red/);
+		await expect(dialog).not.toContainText("No open");
+		await expect(dialog).not.toContainText("SignInGuard");
+		await expect(dialog.getByRole("alert")).toHaveCount(0);
+		await expect(dialog.getByTestId("queue-candidates")).toHaveCount(0);
+
+		await dialog.getByTestId("queue-number").fill(`#${c.number}`);
+		await dialog.getByTestId("queue-number").press("Enter");
+		await expect
+			.poll(() => calls.project_job_queue?.[0])
+			.toEqual({
+				target: TARGET,
+				skill: c.skill,
+				numbers: [c.number],
+				titles: {},
+			});
+		await expect(dialog.getByTestId("queue-results")).toContainText(
+			`#${c.number}: queued`,
+		);
+	});
+}
+
+test("a failed listing call shows the notice, not an empty list or a red error", async ({
+	page,
+}) => {
+	await setup(page, { listing: "error" });
+	await page.goto(BOARD);
+	await page.getByTestId("queue-menu").click();
+	await page.getByTestId("queue-gh-safe-merge").click();
+	const dialog = page.getByTestId("queue-dialog");
+	await expect(dialog.getByTestId("queue-unavailable")).toHaveText(
+		"Can't list pull requests right now. You can still queue by number.",
+	);
+	await expect(dialog).not.toContainText("No open");
+	await expect(dialog).not.toContainText("connection refused");
+	await expect(dialog.getByRole("alert")).toHaveCount(0);
+	await expect(dialog.getByTestId("queue-number")).toBeEnabled();
+});
+
+test("typed PR numbers queue after the picked rows", async ({ page }) => {
+	const calls = await setup(page);
+	await page.goto(BOARD);
+	await page.getByTestId("queue-menu").click();
+	await page.getByTestId("queue-gh-safe-merge").click();
+	const dialog = page.getByTestId("queue-dialog");
+	await dialog
+		.getByTestId("queue-candidate")
+		.filter({ hasText: "#1210" })
+		.click();
+	await dialog.getByTestId("queue-number").fill("#1300, 1210");
+	await expect(dialog.getByTestId("queue-submit")).toHaveText("Queue 2 PRs");
+	await dialog.getByTestId("queue-submit").click();
+	await expect
+		.poll(() => calls.project_job_queue?.[0]?.numbers)
+		.toEqual([1210, 1300]);
 });
 
 test("a watch session's one-project board offers the Queue menu", async ({

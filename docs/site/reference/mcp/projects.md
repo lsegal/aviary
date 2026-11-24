@@ -92,7 +92,7 @@ Queue jobs on demand. `skill: gh-safe-merge` queues pull requests for a safe mer
 
 ## project_queue_candidates
 
-List what a project can queue: open pull requests for `gh-safe-merge`, with CI status, review decision, mergeability, author and the job that owns each, or open Discussion threads for `gh-discuss`. The result's `no_merge` says whether safe merge is turned off.
+List what a project can queue: open pull requests for `gh-safe-merge`, with CI status, review decision, mergeability, author and the job that owns each, or open Discussion threads for `gh-discuss`. The result's `no_merge` says whether safe merge is turned off. The listing goes through `gh` whatever the project's delivery mode and is reused for 30 seconds. When it can't be fetched, for example because `gh` isn't signed in, the result has an `unavailable` notice instead of a list; `project_job_queue` still queues by number.
 
 **Arguments:** `skill`, `target`, `repository`.
 
