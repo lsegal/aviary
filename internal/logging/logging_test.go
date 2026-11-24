@@ -233,3 +233,36 @@ func TestEnableConsole_WritesToStderr(t *testing.T) {
 
 	Shutdown()
 }
+
+func TestInitMemory_KeepsLogsOutOfTheDataDir(t *testing.T) {
+	setTestDataDir(t)
+	Shutdown()
+	t.Cleanup(Shutdown)
+	assert.NoError(t, InitMemory())
+	slog.Info("kept in memory", "component", "test")
+
+	data, end, ok := MemoryLog()
+	assert.True(t, ok)
+	assert.Contains(t, string(data), `"msg":"kept in memory"`)
+	assert.Equal(t, int64(len(data)), end)
+	_, err := os.Stat(LogDir())
+	assert.True(t, os.IsNotExist(err), "InitMemory created %s", LogDir())
+
+	// A later Init leaves logs in memory.
+	assert.NoError(t, Init())
+	_, _, ok = MemoryLog()
+	assert.True(t, ok)
+
+	Shutdown()
+	_, _, ok = MemoryLog()
+	assert.False(t, ok)
+}
+
+func TestMemoryLog_KeepsTheLatestWholeLines(t *testing.T) {
+	m := newMemoryLog(10)
+	_, _ = m.Write([]byte("aaaa\nbbbb\n"))
+	_, _ = m.Write([]byte("cccc\n"))
+	data, end := m.snapshot()
+	assert.Equal(t, "bbbb\ncccc\n", string(data))
+	assert.Equal(t, int64(15), end)
+}

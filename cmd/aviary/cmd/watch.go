@@ -259,7 +259,7 @@ func withWatchModelEnv(choice watchAgentChoice, getenv func(string) string) watc
 	return choice
 }
 
-func runWatch(cmd *cobra.Command, args []string) (err error) {
+func runWatch(cmd *cobra.Command, args []string) error {
 	targets, err := watchTargets(args)
 	if err != nil {
 		return err
@@ -285,14 +285,7 @@ func runWatch(cmd *cobra.Command, args []string) (err error) {
 	}
 	session, err := startWatchSession(os.TempDir(), global, sources, agent, targets, settings)
 	// The session directory goes on every way out, a panic included.
-	defer func() {
-		if cleanupErr := endWatchSession(session); cleanupErr != nil {
-			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), cleanupErr)
-			if err == nil {
-				err = cleanupErr
-			}
-		}
-	}()
+	defer endWatchSession(session, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
@@ -311,7 +304,9 @@ var watchSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP}
 // or the server fails, then stops it: Code Loop checkpoints running jobs and
 // agents stop before this returns.
 func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, targets []string, tui, webUI bool) error {
-	if err := logging.Init(); err != nil {
+	// The session keeps its logs in memory: a log file would hold its
+	// directory open, and Windows cannot remove an open file.
+	if err := logging.InitMemory(); err != nil {
 		_, _ = fmt.Fprintf(out, "warning: failed to initialize logging: %v\n", err)
 	}
 	cfg, err := config.Load(session.ConfigPath)
