@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A merge whose commit message skipped the push run is checked by hand
+  # (#1176).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -330,5 +333,5 @@ jobs:
     secrets: inherit
     with:
       ref: ${{ github.sha }}
-      branch_name: ${{ github.event_name == 'push' && github.ref_name || '' }}
+      branch_name: ${{ github.event_name != 'pull_request' && github.ref_name || '' }}
       push_image: ${{ github.event_name != 'pull_request' }}

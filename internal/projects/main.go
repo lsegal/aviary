@@ -278,6 +278,9 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 			Draft     bool       `json:"draft"`
 			Additions int        `json:"additions"`
 			Deletions int        `json:"deletions"`
+			// MergeCommitSHA is the commit the merge left on the base
+			// branch once MergedAt is set.
+			MergeCommitSHA string `json:"merge_commit_sha"`
 			// Comments and ReviewComments count the conversation and the
 			// review threads, and Head is the pushed head commit.
 			Comments       int `json:"comments"`
@@ -299,10 +302,12 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 		stacked := base.Ref != "" && base.Repo.DefaultBranch != "" && base.Ref != base.Repo.DefaultBranch
 		tasksDone, tasksTotal := core.ChecklistProgress(currentPullRequest.Body)
 		var mergedAt time.Time
+		var mergeCommitSHA string
 		if currentPullRequest.MergedAt != nil {
 			mergedAt = *currentPullRequest.MergedAt
+			mergeCommitSHA = currentPullRequest.MergeCommitSHA
 		}
-		state.PullRequests = append(state.PullRequests, PullRequestWorkState{Repository: pullRepo, Number: pullRequest.Number, State: currentPullRequest.State, Merged: currentPullRequest.MergedAt != nil, MergedAt: mergedAt, Additions: currentPullRequest.Additions, Deletions: currentPullRequest.Deletions, IsDraft: currentPullRequest.Draft, Stacked: stacked, TasksDone: tasksDone, TasksTotal: tasksTotal, HeadSHA: currentPullRequest.Head.SHA, Comments: currentPullRequest.Comments + currentPullRequest.ReviewComments})
+		state.PullRequests = append(state.PullRequests, PullRequestWorkState{Repository: pullRepo, Number: pullRequest.Number, State: currentPullRequest.State, Merged: currentPullRequest.MergedAt != nil, MergedAt: mergedAt, Additions: currentPullRequest.Additions, Deletions: currentPullRequest.Deletions, IsDraft: currentPullRequest.Draft, Stacked: stacked, TasksDone: tasksDone, TasksTotal: tasksTotal, HeadSHA: currentPullRequest.Head.SHA, Comments: currentPullRequest.Comments + currentPullRequest.ReviewComments, MergeCommitSHA: mergeCommitSHA})
 	}
 	return state, nil
 }

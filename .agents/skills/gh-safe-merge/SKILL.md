@@ -85,9 +85,9 @@ When validation recorded a hold, do not merge, even though the pull request is n
 Otherwise, follow "Merge and verify" in `gh-fix`, with these differences:
 
 1. Confirm again that the pull request is open, unowned, mergeable, still targets the default branch, and that its head is the reviewed SHA or this run's commits on top of it.
-2. Merge with the method order `gh-fix` uses, pinned to the head that passed CI: `gh pr merge <PRNUMBER> --repo <OWNER>/<REPO> --squash --match-head-commit <HEADSHA>`. When squashing, keep the pull request's own title and body as the commit message.
+2. Merge with the method order `gh-fix` uses, pinned to the head that passed CI, and with the explicit commit message its "Merge and verify" describes: `gh pr merge <PRNUMBER> --repo <OWNER>/<REPO> --squash --match-head-commit <HEADSHA> --subject "<PR TITLE> (#<PRNUMBER>)" --body-file <FILE>`, where the file is the pull request's own body with every skip-CI marker removed, its closing references kept, no commit list, and the `Co-authored-by:` trailers from its commits. Never let GitHub fill in the default message, which lists every commit, and rebase only when the head commit message has no skip-CI marker.
 3. Delete the head branch only when it is in this repository and policy permits; never touch a contributor's fork.
-4. Verify the merge and that the issues it closes closed. Post no comment on a successful merge; the merge is the acceptance.
+4. Verify the merge and that the issues it closes closed, then run the post-merge workflow check from step 6 of "Merge and verify" in `gh-fix`, dispatching any push workflow the merge skipped. Post no comment on a successful merge; the merge is the acceptance.
 
 ## Handle failures
 

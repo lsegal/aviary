@@ -2283,8 +2283,12 @@ func (w *Engine) Run(ctx context.Context) error {
 	merges := newRecentMerges(mergesPathFor(w.StatePath), time.Now())
 	// Each merge also records the merged pull request's diff size, so Usage
 	// can report the code each project's jobs changed (issue #787).
+	// It is also checked for a skip-CI marker in the merge commit, which
+	// would keep every push workflow from running for it (issue #1176).
+	commitReader, _ := w.Issues.(CommitMessageReader)
 	merges.onMerge = func(repo string, number int, pullRequest PullRequestWorkState) {
 		w.recordProjectUsage(pullRequest.MergedAt, repo, number, domain.ProjectUsage{Outcome: domain.ProjectOutcomeMerged, Additions: pullRequest.Additions, Deletions: pullRequest.Deletions})
+		warnSkipCIInMerge(ctx, commitReader, repo, number, pullRequest)
 	}
 	closureChecker = recordRecentMerges(closureChecker, merges)
 	// webhookRepos are the repositories configured with webhooks when the
