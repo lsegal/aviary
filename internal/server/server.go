@@ -589,8 +589,8 @@ func backgroundSubsystems(s *Server) []string {
 
 // startBackground starts the initialization that does not have to finish
 // before /mcp serves, each part concurrently: channel connections, the skills
-// Aviary ships, and Code Loop discovery. boot tracks the parts shutdown waits
-// for.
+// Aviary ships, and Code Loop discovery. boot tracks every part, so shutdown
+// waits for each, including its boot report write.
 func (s *Server) startBackground(ctx context.Context, trace *startup.Trace, boot *sync.WaitGroup) {
 	boot.Add(1)
 	trace.Go("channels", "channels connect", func() error {
@@ -605,10 +605,14 @@ func (s *Server) startBackground(ctx context.Context, trace *startup.Trace, boot
 	// installed and matching this release, and move them to the new release
 	// when Aviary upgrades.
 	install, syncSkills := installShippedSkills, syncShippedSkills
+	boot.Add(1)
 	trace.Go("skills", "skill sync", func() error {
 		install(ctx)
 		return nil
-	}, func() { syncSkills(ctx) })
+	}, func() {
+		defer boot.Done()
+		syncSkills(ctx)
+	})
 
 	if s.projects != nil {
 		boot.Add(1)
