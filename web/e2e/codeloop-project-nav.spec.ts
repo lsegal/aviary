@@ -175,7 +175,9 @@ const backToBoard = async (page: Page) => {
 	await page.getByTestId("settings-back").click();
 	await expect(page).toHaveURL(/\/agents\/coder\/projects(\?.*)?$/);
 	await expect(page.getByRole("heading", { name: "Code Loop" })).toBeVisible();
-	await expect(page.locator("header").getByText("coder /")).toHaveCount(0);
+	await expect(
+		page.getByTestId("settings-header").getByText("coder /"),
+	).toHaveCount(0);
 };
 
 test("a project page has no breadcrumb of its own, and the shared one leads back", async ({

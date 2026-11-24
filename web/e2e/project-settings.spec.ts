@@ -475,7 +475,7 @@ test("a project's board names its agent and links to its projects in Code Loop s
 	await expect(owner).toHaveText("agent: coder");
 	// The header's actions are icon buttons, Settings rightmost, and there is
 	// no Add project button (projects are added under their agent).
-	const header = page.locator("header").filter({ has: owner });
+	const header = page.getByTestId("settings-header");
 	const settings = header.getByRole("link", { name: "Settings", exact: true });
 	await expect(settings).toHaveAttribute("title", "Settings");
 	await expect(settings).toHaveText("");
