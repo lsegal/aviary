@@ -627,9 +627,9 @@ func (m watchModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.updateChatLayout(key) {
 			return m, nil
 		}
-		if m.chat.full && key != "c" && key != "q" && key != "?" {
-			// The full-screen chat hides the board, so board keys
-			// go nowhere.
+		if (m.chat.full || m.chat.focus == watchFocusTranscript) && key != "c" && key != "q" && key != "?" {
+			// Board keys act only from the board: the full-screen
+			// chat hides it, and the transcript has the focus.
 			return m, nil
 		}
 	}
