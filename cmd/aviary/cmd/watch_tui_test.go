@@ -247,6 +247,48 @@ func TestWatchTUIBoardRendersColumns(t *testing.T) {
 	}
 }
 
+func TestWatchTUIBoardCardsAlignWithColumnHeaders(t *testing.T) {
+	m := loadedWatchModel(t, newFakeWatchTools())
+	m, _ = watchKey(t, m, "b")
+	m, _ = watchKey(t, m, "right")
+	lines := strings.Split(watchStrip(m.View()), "\n")
+	row := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, "Scheduled 1") {
+			row = i
+			break
+		}
+	}
+	if row < 0 || row+2 >= len(lines) {
+		t.Fatalf("no board header in:\n%s", strings.Join(lines, "\n"))
+	}
+	header, title, detail := []rune(lines[row]), []rune(lines[row+1]), []rune(lines[row+2])
+	for _, col := range []string{"Scheduled 1", "Starting 1", "Paused 1", "Running 1", "Done 1", "Failed 1"} {
+		at := len([]rune(lines[row][:strings.Index(lines[row], col)]))
+		if col == "Starting 1" {
+			// The selected card alone shifts right by the caret.
+			if !strings.HasPrefix(string(title[at:]), "> #1 ") || !strings.HasPrefix(string(detail[at:]), "  o/r") {
+				t.Errorf("selected card = %q / %q, want the caret before the title and the details under it", string(title[at:]), string(detail[at:]))
+			}
+			continue
+		}
+		for _, line := range [][]rune{title, detail} {
+			if at >= len(line) || line[at] == ' ' || (at > 0 && line[at-1] != ' ') {
+				t.Errorf("%s card does not start under its header:\n%s\n%s", col, string(header), string(line))
+			}
+		}
+	}
+
+	it, ok := m.selectedItem()
+	if !ok {
+		t.Fatal("no selected item")
+	}
+	// The unselected title truncates at the full column width.
+	if got := watchStrip(m.boardCard(it, false, 6)[0]); got != "#1 Que" {
+		t.Errorf("unselected title = %q, want %q", got, "#1 Que")
+	}
+}
+
 func TestWatchTUIStatsLine(t *testing.T) {
 	m := loadedWatchModel(t, newFakeWatchTools())
 	got := watchStrip(m.statsLine())
