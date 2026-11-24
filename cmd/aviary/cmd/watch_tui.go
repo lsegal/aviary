@@ -16,9 +16,11 @@ import (
 // watchToolCaller calls an Aviary MCP tool in-process and returns its text result.
 type watchToolCaller func(ctx context.Context, name string, args map[string]any) (string, error)
 
-// runWatchTUI runs the full-screen watch TUI until the user quits (q / Ctrl+C) or ctx is cancelled. title is a short header such as the watched targets; webURL is the session's web UI URL or "" when it is off.
-func runWatchTUI(ctx context.Context, call watchToolCaller, title, webURL string) error {
-	p := tea.NewProgram(newWatchModel(ctx, call, title, webURL), tea.WithAltScreen(), tea.WithContext(ctx))
+// runWatchTUI runs the full-screen watch TUI until the user quits (q / Ctrl+C) or ctx is cancelled. stream runs the prompt chat's turns; title is a short header such as the watched targets; webURL is the session's web UI URL or "" when it is off.
+func runWatchTUI(ctx context.Context, call watchToolCaller, stream watchStreamCaller, title, webURL string) error {
+	model := newWatchModel(ctx, call, title, webURL)
+	model.stream = stream
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithContext(ctx))
 	_, err := p.Run()
 	if err != nil && ctx.Err() != nil && errors.Is(err, tea.ErrProgramKilled) {
 		// A cancelled session ends the TUI the way quitting does.
@@ -331,6 +333,7 @@ func (it watchItem) actionAvailable(verb string) (bool, string) {
 type watchModel struct {
 	ctx    context.Context
 	call   watchToolCaller
+	stream watchStreamCaller
 	title  string
 	webURL string
 	now    func() time.Time
@@ -368,6 +371,9 @@ type watchModel struct {
 
 	showHelp bool
 	confirm  *watchPendingAction
+
+	// chat is the prompt chat pane.
+	chat watchChat
 
 	fetching bool
 	refetch  bool
@@ -408,7 +414,7 @@ type watchActionMsg struct {
 }
 
 func newWatchModel(ctx context.Context, call watchToolCaller, title, webURL string) watchModel {
-	return watchModel{ctx: ctx, call: call, title: title, webURL: webURL, now: time.Now, showLogs: true}
+	return watchModel{ctx: ctx, call: call, title: title, webURL: webURL, now: time.Now, showLogs: true, chat: newWatchChat()}
 }
 
 func (m watchModel) Init() tea.Cmd {
@@ -550,7 +556,20 @@ func (m watchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, next
 		}
 		m.fetching = true
-		return m, tea.Batch(m.fetchCmd(), next)
+		cmds := []tea.Cmd{m.fetchCmd(), next}
+		if m.chat.open {
+			var chatCmd tea.Cmd
+			m, chatCmd = m.fetchChat()
+			cmds = append(cmds, chatCmd)
+		}
+		return m, tea.Batch(cmds...)
+	case watchChatDataMsg:
+		return m.applyChatData(msg), nil
+	case watchChatChunkMsg:
+		m = m.applyChatChunk(msg.chunk)
+		return m, watchChatWait(msg.ch)
+	case watchChatDoneMsg:
+		return m.finishChat(msg)
 	case watchDataMsg:
 		m.fetching = false
 		m = m.applyData(msg)
@@ -596,11 +615,36 @@ func (m watchModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.chat.open {
+		switch m.chat.focus {
+		case watchFocusInput:
+			return m.updateChatInput(msg)
+		case watchFocusTranscript:
+			if next, cmd, ok := m.updateChatTranscript(key); ok {
+				return next, cmd
+			}
+		}
+		if m.updateChatLayout(key) {
+			return m, nil
+		}
+		if m.chat.full && key != "c" && key != "q" && key != "?" {
+			// The full-screen chat hides the board, so board keys
+			// go nowhere.
+			return m, nil
+		}
+	}
 	switch key {
 	case "q":
 		return m, tea.Quit
 	case "?":
 		m.showHelp = true
+	case "c":
+		if m.chat.open {
+			return m.closeChat(), nil
+		}
+		return m.openChat(watchFocusInput)
+	case "/":
+		return m.openChat(watchFocusInput)
 	case "b":
 		m.board = !m.board
 		m.restoreSelection()

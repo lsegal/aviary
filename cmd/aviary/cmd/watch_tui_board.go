@@ -54,8 +54,32 @@ var watchHelpLines = []string{
 	"u          resume it",
 	"s          stop it (asks to confirm)",
 	"d          dismiss a failed scheduled run",
+	"c          open / close the prompt chat",
+	"/          open the prompt chat and type",
 	"?          toggle this help",
 	"q          quit",
+}
+
+// watchChatHelpLines are the help overlay's prompt chat lines.
+var watchChatHelpLines = []string{
+	"prompt chat keys (shared with the web prompt chat)",
+	"",
+	"enter          send",
+	"alt+enter      new line (shift+enter or ctrl+j where the terminal sends it)",
+	"↑ / ↓          earlier / later inputs",
+	"tab            switch between the input and the transcript",
+	"esc            back to the board",
+	"pgup / pgdn    scroll the transcript",
+	"",
+	"in the transcript:",
+	"↑↓ / j k       scroll; scrolling up stops following new output",
+	"g / G          top / bottom, following new output again",
+	"n / N          next / previous #123 reference",
+	"enter          focus the reference's job on the board",
+	"e              expand / collapse tool calls",
+	"",
+	"z              full screen chat",
+	"+ / -          taller / shorter chat pane",
 }
 
 func (m watchModel) View() string {
@@ -63,11 +87,23 @@ func (m watchModel) View() string {
 		return "Starting aviary watch..."
 	}
 	if m.showHelp {
-		box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(tuiAccent).Padding(1, 2).Render(strings.Join(watchHelpLines, "\n"))
+		board, chat := strings.Join(watchHelpLines, "\n"), strings.Join(watchChatHelpLines, "\n")
+		content := lipgloss.JoinHorizontal(lipgloss.Top, board, "    ", chat)
+		if lipgloss.Width(content)+6 > m.width {
+			content = board + "\n\n" + chat
+		}
+		box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(tuiAccent).Padding(1, 2).Render(content)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	}
+	if m.chat.open && m.chat.full {
+		lines := append([]string{m.headerLine()}, m.chatPane(m.chatPaneHeight())...)
+		return strings.Join(watchFitLines(append(lines, m.footerLine()), m.height), "\n")
 	}
 	top := []string{m.headerLine(), m.statsLine(), m.filterLine()}
 	bottom := []string{}
+	if h := m.chatPaneHeight(); h > 0 {
+		bottom = append(bottom, m.chatPane(h)...)
+	}
 	if h := m.outputPaneHeight(); h > 0 {
 		bottom = append(bottom, m.outputPane(h)...)
 	}
@@ -86,7 +122,7 @@ func (m watchModel) View() string {
 		body = m.listView(bodyHeight)
 	}
 	body = watchFitLines(body, bodyHeight)
-	return strings.Join(append(append(top, body...), bottom...), "\n")
+	return strings.Join(watchFitLines(append(append(top, body...), bottom...), m.height), "\n")
 }
 
 // headerLine names the watch and its targets, with the web UI's URL on the
@@ -370,21 +406,40 @@ func (m watchModel) boardCard(it watchItem, selected bool, width int) []string {
 	return []string{first, tuiDimStyle.Render(watchTruncate("  "+second, width))}
 }
 
-// logPaneHeight is the log pane's height, title included: a third of the
-// screen while it is shown.
-func (m watchModel) logPaneHeight() int {
-	if !m.showLogs {
-		return 0
-	}
-	return max(4, (m.height-4)/3)
+// watchMinPane is the shortest a log or output pane gets before it hides.
+const watchMinPane = 3
+
+// paneRoom is the height left for the output and log panes: the screen
+// below the header, stats and filters, less the footer, the chat pane and
+// one board line.
+func (m watchModel) paneRoom() int {
+	return max(0, m.height-5-m.chatPaneHeight())
 }
 
-// outputPaneHeight is the output pane's height while it is open.
+// outputPaneHeight is the output pane's height while it is open: a third of
+// the screen, less when the chat pane leaves no room for it.
 func (m watchModel) outputPaneHeight() int {
-	if !m.showOutput {
+	if !m.showOutput || (m.chat.open && m.chat.full) {
 		return 0
 	}
-	return max(4, (m.height-4)/3)
+	h := min(max(4, (m.height-4)/3), m.paneRoom())
+	if h < watchMinPane {
+		return 0
+	}
+	return h
+}
+
+// logPaneHeight is the log pane's height, title included: a third of the
+// screen while it is shown, less when the panes above leave no room for it.
+func (m watchModel) logPaneHeight() int {
+	if !m.showLogs || (m.chat.open && m.chat.full) {
+		return 0
+	}
+	h := min(max(4, (m.height-4)/3), m.paneRoom()-m.outputPaneHeight())
+	if h < watchMinPane {
+		return 0
+	}
+	return h
 }
 
 // logPane is the engine's log, its newest lines at the bottom unless
@@ -431,6 +486,11 @@ func (m watchModel) footerLine() string {
 	hint := tuiHelpStyle.Render("? help · q quit")
 	var text string
 	switch {
+	case m.chat.open && m.chat.focus == watchFocusInput && m.confirm == nil:
+		hint = tuiHelpStyle.Render("ctrl+c quit")
+		text = tuiHelpStyle.Render("enter send · alt+enter new line · ↑↓ history · tab transcript · esc board")
+	case m.chat.open && m.chat.focus == watchFocusTranscript && m.confirm == nil:
+		text = tuiHelpStyle.Render("↑↓ scroll · G follow · n/N reference · enter jump · e tools · z full · tab input · esc board")
 	case m.confirm != nil:
 		text = tuiErrorStyle.Render(fmt.Sprintf("%s %s? y/n", m.confirm.verb, watchJobKey(m.confirm.item.job)))
 	case m.errText != "":
@@ -440,7 +500,7 @@ func (m watchModel) footerLine() string {
 	case m.message != "":
 		text = tuiSuccessStyle.Render(m.message)
 	default:
-		text = tuiHelpStyle.Render("0-6 filter · b board · enter output · l logs · r retry · p pause · u resume · s stop")
+		text = tuiHelpStyle.Render("0-6 filter · b board · enter output · l logs · c chat · r retry · p pause · u resume · s stop")
 	}
 	gap := m.width - lipgloss.Width(text) - lipgloss.Width(hint)
 	if gap < 2 {
