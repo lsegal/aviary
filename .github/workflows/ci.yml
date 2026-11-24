@@ -162,8 +162,14 @@ jobs:
         include:
           - name: POSIX
             os: ubuntu-latest
-          - name: Windows
+          # Windows PowerShell 5.1 and PowerShell 7 both run the documented
+          # command (#1099).
+          - name: Windows PowerShell 5.1
             os: windows-latest
+            shell: powershell
+          - name: Windows PowerShell 7
+            os: windows-latest
+            shell: pwsh
     steps:
       - uses: actions/checkout@v6
         with:
@@ -202,26 +208,53 @@ jobs:
           rm -rf "$HOME/.agents"
           AVIARY_SKIP_SKILLS=1 sh installer/install.sh </dev/null
           test ! -e "$HOME/.agents"
-      - name: Prepare mocked release API (Windows)
+      - uses: actions/setup-go@v6.4.0
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: node scripts/mock-installer-fixture.mjs --root "$env:RUNNER_TEMP/mock-releases" --version v9.9.9 --os windows --arch amd64 --baseUrl http://127.0.0.1:8765
-      - name: Run installer against mock server (Windows)
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check architecture detection (Windows)
+        if: runner.os == 'Windows'
+        shell: ${{ matrix.shell }}
+        run: ./scripts/test-install-ps1-arch.ps1
+      - name: Prepare release fixture with a real build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $binary = Join-Path $env:RUNNER_TEMP 'aviary-build\aviary.exe'
+          node scripts/build-go.mjs --version v9.9.9 --goos windows --goarch amd64 --output $binary
+          node scripts/mock-installer-fixture.mjs --root "$env:RUNNER_TEMP/mock-releases" --version v9.9.9 --os windows --arch amd64 --baseUrl http://127.0.0.1:8765 --binary $binary
+      - name: Run installer against mock server (Windows)
+        if: runner.os == 'Windows'
+        shell: ${{ matrix.shell }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
           $env:HOME = Join-Path $env:RUNNER_TEMP 'home'
           New-Item -ItemType Directory -Path $env:HOME -Force | Out-Null
           $server = Start-Process node -ArgumentList 'scripts/mock-static-server.mjs', '--root', (Join-Path $env:RUNNER_TEMP 'mock-releases'), '--port', '8765' -PassThru -WindowStyle Hidden
           try {
             Start-Sleep -Seconds 1
-            ./installer/install.ps1 -Repo lsegal/aviary -DownloadBase http://127.0.0.1:8765 -SkipSkills
             $bin = Join-Path $env:HOME '.local\bin\aviary.exe'
+            ./installer/install.ps1 -Repo lsegal/aviary -DownloadBase http://127.0.0.1:8765 -SkipSkills
             if (-not (Test-Path $bin)) {
               throw "installer did not create $bin"
             }
             if (-not (($env:Path -split ';') -contains (Split-Path $bin))) {
               throw "installer did not prepend the bin directory to PATH"
+            }
+            Remove-Item $bin
+            # Piped into Invoke-Expression like the documented command.
+            $env:AVIARY_DOWNLOAD_BASE = 'http://127.0.0.1:8765'
+            $env:AVIARY_SKIP_SKILLS = '1'
+            Get-Content -Raw installer/install.ps1 | Invoke-Expression
+            $version = & $bin --version
+            if ($LASTEXITCODE -ne 0) {
+              throw "aviary --version exited with $LASTEXITCODE"
+            }
+            Write-Host $version
+            if ($version -notmatch 'v9\.9\.9') {
+              throw "installed $version, expected v9.9.9"
             }
           } finally {
             if ($server) {
@@ -250,10 +283,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build:release -- --version v0.0.0-ci --targets linux/amd64,linux/arm64,windows/amd64,darwin/amd64,darwin/arm64
+      - run: pnpm build:release -- --version v0.0.0-ci
       - run: test -f dist/release/aviary_v0.0.0-ci_linux_amd64.tar.gz
       - run: test -f dist/release/aviary_v0.0.0-ci_linux_arm64.tar.gz
       - run: test -f dist/release/aviary_v0.0.0-ci_windows_amd64.tar.gz
+      - run: test -f dist/release/aviary_v0.0.0-ci_windows_arm64.tar.gz
       - run: test -f dist/release/aviary_v0.0.0-ci_darwin_amd64.tar.gz
       - run: test -f dist/release/aviary_v0.0.0-ci_darwin_arm64.tar.gz
       - run: test -f dist/release/checksums.txt
@@ -261,7 +295,7 @@ jobs:
       - run: test -f dist/release/install.ps1
       - run: test -f bucket/aviary.json
       - run: test -f Formula/aviary.rb
-      - run: node -e "const fs=require('node:fs'); const manifest=JSON.parse(fs.readFileSync('bucket/aviary.json', 'utf8')); if (manifest.version !== '0.0.0-ci') throw new Error('unexpected scoop version'); if (manifest.bin !== 'aviary.exe') throw new Error('unexpected scoop bin'); if (!manifest.architecture?.['64bit']?.hash) throw new Error('missing scoop hash');"
+      - run: node -e "const fs=require('node:fs'); const manifest=JSON.parse(fs.readFileSync('bucket/aviary.json', 'utf8')); if (manifest.version !== '0.0.0-ci') throw new Error('unexpected scoop version'); if (manifest.bin !== 'aviary.exe') throw new Error('unexpected scoop bin'); if (!manifest.architecture?.['64bit']?.hash) throw new Error('missing scoop hash'); if (!manifest.architecture?.arm64?.url?.endsWith('_windows_arm64.tar.gz') || !manifest.architecture.arm64.hash) throw new Error('missing scoop arm64');"
       - run: node -e "const fs=require('node:fs'); const formula=fs.readFileSync('Formula/aviary.rb', 'utf8'); for (const expected of ['version \"0.0.0-ci\"','aviary_v0.0.0-ci_linux_amd64.tar.gz','aviary_v0.0.0-ci_linux_arm64.tar.gz','aviary_v0.0.0-ci_darwin_amd64.tar.gz','aviary_v0.0.0-ci_darwin_arm64.tar.gz']) { if (!formula.includes(expected)) throw new Error(`missing ${expected}`); }"
 
   web-lint:

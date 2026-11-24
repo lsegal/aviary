@@ -127,10 +127,10 @@ $null = New-Item -ItemType Directory -Path $tempRoot -Force
 $archivePath = Join-Path $tempRoot $assetName
 
 try {
-	Invoke-WebRequest -Uri $assetUrl -OutFile $archivePath
+	Invoke-WebRequest -UseBasicParsing -Uri $assetUrl -OutFile $archivePath
 
 	$checksumsPath = Join-Path $tempRoot "checksums.txt"
-	Invoke-WebRequest -Uri "$downloadUrl/checksums.txt" -OutFile $checksumsPath
+	Invoke-WebRequest -UseBasicParsing -Uri "$downloadUrl/checksums.txt" -OutFile $checksumsPath
 	$expected = Get-Content $checksumsPath | ForEach-Object {
 		$fields = $_ -split '\s+'
 		if ($fields.Length -ge 2 -and $fields[1] -eq $assetName) { $fields[0] }

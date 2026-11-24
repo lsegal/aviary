@@ -1,8 +1,9 @@
 name: Installer smoke test
 # Installs Aviary the way the README documents it: the installer fetched from
 # its public URLs with plain curl (no custom user agent) and piped into sh, in
-# a clean container on Linux and on macOS runners. Any status other than 200
-# from either URL fails the run (#983).
+# a clean container on Linux and on macOS runners, and piped into iex under
+# both Windows PowerShell 5.1 and PowerShell 7 on Windows (#1099). Any status
+# other than 200 from either URL fails the run (#983).
 on:
   workflow_call:
     inputs:
@@ -79,3 +80,38 @@ jobs:
           # aviary.bot forwards to the same release asset.
           curl -fsSL https://aviary.bot/install.sh | sh -s -- --skip-skills
           "$HOME/.local/bin/aviary" version
+
+  smoke-windows:
+    name: "Test: Public installer (${{ matrix.name }})"
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows amd64, PowerShell 5.1
+            shell: powershell
+          - name: Windows amd64, PowerShell 7
+            shell: pwsh
+    steps:
+      - name: Install with the documented command
+        shell: ${{ matrix.shell }}
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
+          $env:HOME = Join-Path $env:RUNNER_TEMP 'home'
+          New-Item -ItemType Directory -Path $env:HOME -Force | Out-Null
+          $env:AVIARY_SKIP_SKILLS = '1'
+          irm https://github.com/lsegal/aviary/releases/latest/download/install.ps1 | iex
+          $version = & (Join-Path $env:HOME '.local\bin\aviary.exe') --version
+          if ($LASTEXITCODE -ne 0) {
+            throw "aviary --version exited with $LASTEXITCODE"
+          }
+          Write-Host $version
+          if ($env:TAG -and -not $version.Contains($env:TAG)) {
+            throw "installed $version, expected $env:TAG"
+          }
+          # aviary.bot forwards to the same release asset.
+          irm https://aviary.bot/install.ps1 | iex
+          & (Join-Path $env:HOME '.local\bin\aviary.exe') --version

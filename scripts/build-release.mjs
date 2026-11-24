@@ -11,6 +11,7 @@ const scoopManifestPath = path.join(rootDir, "bucket", "aviary.json");
 const homebrewFormulaPath = path.join(rootDir, "Formula", "aviary.rb");
 const defaultTargets = [
 	{ goos: "windows", goarch: "amd64" },
+	{ goos: "windows", goarch: "arm64" },
 	{ goos: "linux", goarch: "amd64" },
 	{ goos: "linux", goarch: "arm64" },
 	{ goos: "darwin", goarch: "amd64" },
@@ -191,27 +192,37 @@ for (const installer of ["install.sh", "install.ps1"]) {
 
 if (windowsAmd64Hash) {
 	await mkdir(path.dirname(scoopManifestPath), { recursive: true });
+	const scoopArchitectures = { "64bit": "amd64" };
+	if (releaseHashes.windows_arm64) {
+		scoopArchitectures.arm64 = "arm64";
+	}
 	const manifest = {
 		version: scoopVersion(version),
 		description: "Aviary: the AI Agent Nest",
 		homepage: "https://aviary.bot",
 		license: "MIT",
-		architecture: {
-			"64bit": {
-				url: `https://github.com/lsegal/aviary/releases/download/${version}/aviary_${version}_windows_amd64.tar.gz`,
-				hash: windowsAmd64Hash,
-			},
-		},
+		architecture: Object.fromEntries(
+			Object.entries(scoopArchitectures).map(([scoopArch, goarch]) => [
+				scoopArch,
+				{
+					url: `https://github.com/lsegal/aviary/releases/download/${version}/aviary_${version}_windows_${goarch}.tar.gz`,
+					hash: releaseHashes[`windows_${goarch}`],
+				},
+			]),
+		),
 		bin: "aviary.exe",
 		checkver: {
 			github: "https://github.com/lsegal/aviary",
 		},
 		autoupdate: {
-			architecture: {
-				"64bit": {
-					url: "https://github.com/lsegal/aviary/releases/download/v$version/aviary_v$version_windows_amd64.tar.gz",
-				},
-			},
+			architecture: Object.fromEntries(
+				Object.entries(scoopArchitectures).map(([scoopArch, goarch]) => [
+					scoopArch,
+					{
+						url: `https://github.com/lsegal/aviary/releases/download/v$version/aviary_v$version_windows_${goarch}.tar.gz`,
+					},
+				]),
+			),
 		},
 	};
 	await writeFile(scoopManifestPath, `${JSON.stringify(manifest, null, "\t")}\n`);

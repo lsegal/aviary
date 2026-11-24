@@ -28,6 +28,8 @@ const version = args.version ?? "v0.0.0-test";
 const goos = args.os ?? "linux";
 const goarch = args.arch ?? "amd64";
 const baseUrl = args.baseUrl ?? "http://127.0.0.1:8765";
+// --binary packages a real build instead of the stub, so CI can run it.
+const binarySource = args.binary ? path.resolve(args.binary) : null;
 
 const binaryName = goos === "windows" ? "aviary.exe" : "aviary";
 const assetName = `aviary_${version}_${goos}_${goarch}.tar.gz`;
@@ -42,8 +44,9 @@ try {
 	await mkdir(downloadDir, { recursive: true });
 
 	const binaryPath = path.join(stageDir, binaryName);
-	const binaryContents =
-		goos === "windows"
+	const binaryContents = binarySource
+		? await readFile(binarySource)
+		: goos === "windows"
 			? Buffer.concat([Buffer.from([0x4d, 0x5a]), Buffer.from("mock aviary windows binary\n")])
 			: '#!/usr/bin/env sh\nif [ "$1" = install-skills ]; then mkdir -p "$HOME/.agents/skills/gh-fix" && echo "installed gh-fix" >>"$HOME/.agents/skills/gh-fix/install.log"; fi\necho mock aviary\n';
 	await writeFile(binaryPath, binaryContents, {

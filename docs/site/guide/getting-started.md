@@ -45,7 +45,7 @@ Scoop installs Aviary into Scoop's managed package directory and shims `aviary.e
 irm https://github.com/lsegal/aviary/releases/latest/download/install.ps1 | iex
 ```
 
-The install script is published with every release. It downloads and verifies the latest release binary, installs it to `~/.local/bin/`, adds that directory to your `PATH`, and then runs `aviary install-skills`. Set `$env:AVIARY_SKIP_SKILLS = 1` to skip the skills, or `$env:AVIARY_VERSION` to install a specific release.
+The install script is published with every release and runs in both Windows PowerShell 5.1 (`powershell`) and PowerShell 7 (`pwsh`). It downloads and verifies the latest release binary for x64 (amd64) or arm64 Windows, installs it to `~/.local/bin/`, adds that directory to your `PATH`, and then runs `aviary install-skills`. Set `$env:AVIARY_SKIP_SKILLS = 1` to skip the skills, or `$env:AVIARY_VERSION` to install a specific release.
 
 ### Docker
 
