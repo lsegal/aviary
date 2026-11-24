@@ -92,6 +92,8 @@
 				"fg": "#999999"
 			}
 		],
+		[],
+		[],
 		[
 			{
 				"t": "Scheduled",
@@ -142,7 +144,7 @@
 		],
 		[
 			{
-				"t": "acme/storefront/nightly-tri #219 Show stock on product  #212 Rename the checkout fe "
+				"t": "acme/storefront/nightly-tr  #219 Show stock on product  #212 Rename the checkout f  "
 			},
 			{
 				"t": "\u003e",
@@ -150,7 +152,7 @@
 				"b": true
 			},
 			{
-				"t": " #214 Fix cart total round #205 Search ignores accents #211 Flaky login e2e test"
+				"t": " #214 Fix cart total roun  #205 Search ignores accent  #211 Flaky login e2e test"
 			}
 		],
 		[
@@ -162,41 +164,41 @@
 				"t": "                 "
 			},
 			{
-				"t": "acme/storefront · claude/op",
+				"t": "acme/storefront · claude/o",
 				"fg": "#999999"
 			},
 			{
-				"t": " "
+				"t": "  "
 			},
 			{
-				"t": "acme/storefront · claude/op",
+				"t": "acme/storefront · claude/o",
 				"fg": "#999999"
 			},
 			{
-				"t": " "
+				"t": "  "
 			},
 			{
-				"t": "  acme/storefront · claude/",
+				"t": "  acme/storefront · claude",
 				"fg": "#999999"
 			},
 			{
-				"t": " "
+				"t": "  "
 			},
 			{
-				"t": "acme/storefront · claude/op",
+				"t": "acme/storefront · claude/o",
 				"fg": "#999999"
 			},
 			{
-				"t": " "
+				"t": "  "
 			},
 			{
-				"t": "acme/storefront · claude/op",
+				"t": "acme/storefront · claude/o",
 				"fg": "#999999"
 			}
 		],
 		[
 			{
-				"t": "acme/storefront/weekly-deps                             #208 Upgrade the payments S #216 Add order export to CS #203 Dark mode for checkout"
+				"t": "acme/storefront/weekly-dep                              #208 Upgrade the payments   #216 Add order export to C  #203 Dark mode for checkou"
 			}
 		],
 		[
@@ -208,27 +210,27 @@
 				"t": "                                             "
 			},
 			{
-				"t": "acme/storefront · claude/op",
+				"t": "acme/storefront · claude/o",
 				"fg": "#999999"
 			},
 			{
-				"t": " "
+				"t": "  "
 			},
 			{
-				"t": "acme/storefront · codex/gpt",
+				"t": "acme/storefront · codex/gp",
 				"fg": "#999999"
 			},
 			{
-				"t": " "
+				"t": "  "
 			},
 			{
-				"t": "acme/storefront · claude/op",
+				"t": "acme/storefront · claude/o",
 				"fg": "#999999"
 			}
 		],
 		[
 			{
-				"t": "                                                                                    #217 Paginate the admin ord"
+				"t": "                                                                                    #217 Paginate the admin or"
 			}
 		],
 		[
@@ -236,24 +238,16 @@
 				"t": "                                                                                    "
 			},
 			{
-				"t": "acme/storefront · claude/op",
+				"t": "acme/storefront · claude/o",
 				"fg": "#999999"
 			}
 		],
-		[],
 		[],
 		[],
 		[
 			{
 				"t": "── Prompt chat · projects · replying… ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
 				"fg": "#92a8ff"
-			}
-		],
-		[
-			{
-				"t": "you",
-				"fg": "#92a8ff",
-				"b": true
 			}
 		],
 		[
