@@ -38,6 +38,8 @@ type GitState struct {
 	Behind   int    `json:"behind"`
 	Ahead    int    `json:"ahead"`
 	Dirty    bool   `json:"dirty"`
+	// Fetched is true once the upstream was fetched before comparing.
+	Fetched bool `json:"fetched"`
 	// Supervised is true when a restart rebuilds the backend from the
 	// checkout (see RestartFileEnv), so pulled sources go live by restarting.
 	Supervised bool `json:"supervised"`
@@ -48,9 +50,17 @@ type GitState struct {
 
 // GitPullResult describes a git-mode update.
 type GitPullResult struct {
-	Dir        string `json:"dir"`
-	From       string `json:"from"`
-	To         string `json:"to"`
+	Dir string `json:"dir"`
+	// Upstream is the branch pulled from and UpstreamHead its fetched
+	// commit; Ahead counts local commits the upstream lacks.
+	Upstream     string `json:"upstream,omitempty"`
+	UpstreamHead string `json:"upstreamHead,omitempty"`
+	Ahead        int    `json:"ahead"`
+	Fetched      bool   `json:"fetched"`
+	From         string `json:"from"`
+	To           string `json:"to"`
+	// Head is the full commit checked out after the pull.
+	Head       string `json:"head,omitempty"`
 	Commits    int    `json:"commits"`
 	Supervised bool   `json:"supervised"`
 	HotReload  bool   `json:"hotReload"`
@@ -336,6 +346,7 @@ func readGitState(ctx context.Context, dir string) (GitState, error) {
 	if _, err := runGitWrite(ctx, dir, "fetch", "--quiet"); err != nil {
 		return st, err
 	}
+	st.Fetched = true
 	if st.Behind, err = gitCount(ctx, dir, "HEAD..@{upstream}"); err != nil {
 		return st, err
 	}
@@ -414,22 +425,38 @@ func gitPull(ctx context.Context, dir string) (GitPullResult, error) {
 	if blocker := gitBlocker(st); blocker != "" {
 		return GitPullResult{}, fmt.Errorf("not updating: %s", blocker)
 	}
-	res := GitPullResult{Dir: dir, Commits: st.Behind, Supervised: st.Supervised, HotReload: st.HotReload}
+	res := GitPullResult{Dir: dir, Upstream: st.Upstream, Ahead: st.Ahead, Fetched: st.Fetched, Commits: st.Behind, Supervised: st.Supervised, HotReload: st.HotReload}
 	res.From, _ = runGit(ctx, dir, "rev-parse", "--short", "HEAD")
+	res.UpstreamHead, _ = runGit(ctx, dir, "rev-parse", "--short", "@{upstream}")
 	if st.Behind > 0 {
 		if _, err := runGitWrite(ctx, dir, "pull", "--ff-only", "--quiet"); err != nil {
 			return GitPullResult{}, err
 		}
 	}
 	res.To, _ = runGit(ctx, dir, "rev-parse", "--short", "HEAD")
+	res.Head, _ = runGit(ctx, dir, "rev-parse", "HEAD")
 	ClearCache()
 	return res, nil
+}
+
+// GitCompareMessage says what a git-mode update compared: the checkout's
+// commit before the pull against its upstream's, whether the upstream was
+// fetched first, and how far apart the two were.
+func GitCompareMessage(res GitPullResult) string {
+	fetched := "Compared without fetching:"
+	if res.Fetched {
+		fetched = "Fetched " + res.Upstream + ":"
+	}
+	return fmt.Sprintf("%s local %s vs %s %s (%d ahead, %d behind).", fetched, res.From, res.Upstream, res.UpstreamHead, res.Ahead, res.Commits)
 }
 
 // GitPullMessage summarizes a git-mode update for the user, given how the
 // pulled code goes live.
 func GitPullMessage(res GitPullResult, plan DevReloadPlan) string {
 	if res.Commits == 0 {
+		if res.Upstream != "" {
+			return fmt.Sprintf("The source checkout at %s is already up to date with %s (%s).", res.Dir, res.Upstream, res.To)
+		}
 		return fmt.Sprintf("The source checkout at %s is already up to date (%s).", res.Dir, res.To)
 	}
 	msg := fmt.Sprintf("Pulled %d commit(s) into %s (%s → %s).", res.Commits, res.Dir, res.From, res.To)
