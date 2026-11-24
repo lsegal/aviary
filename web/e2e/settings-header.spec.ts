@@ -241,3 +241,24 @@ test("the header fits a phone without horizontal overflow", async ({
 	await expect(page).toHaveURL(/\/system\/overview$/);
 	await context.close();
 });
+
+test("short crumbs show in full when the row has room for them", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1040, height: 900 });
+	await mockSettings(page);
+	await page.goto("/agents/Aviary/settings/permissions");
+	const crumbs = breadcrumb(page);
+	await expect(crumbs.getByRole("listitem")).toHaveText([
+		"Aviary",
+		"Agent Settings",
+	]);
+	// The crumbs' width caps are shares of the row, not of the crumbs
+	// themselves, so neither one is cut off with an ellipsis.
+	for (const label of await crumbs.locator(".truncate").all()) {
+		const clipped = await label.evaluate(
+			(el) => el.scrollWidth - el.clientWidth,
+		);
+		expect(clipped).toBeLessThanOrEqual(0);
+	}
+});
