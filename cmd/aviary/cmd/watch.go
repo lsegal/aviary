@@ -80,7 +80,7 @@ projects.model and projects.fallbacks in your aviary.yaml. Each is a model of
 a provider reached through a CLI, as claude/opus or claude:opus, whose CLI
 must be installed:
 
-  aviary watch --model claude:opus --fallback codex:gpt-5.6
+  aviary watch --model claude:opus --fallback codex:gpt-6.1-terra
 
 The session's server listens on localhost only, on the first free port from
 your server port (default 16677) up, and serves a minimal web UI with no token

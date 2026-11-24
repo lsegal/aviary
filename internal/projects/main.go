@@ -383,7 +383,7 @@ func (s agentSpec) String() string {
 }
 
 // parseAgentSpec parses provider/model:level, where the model and level are
-// both optional (for example codex, claude/opus, or codex/gpt-5.6:high).
+// both optional (for example codex, claude/opus, or codex/gpt-6.1-terra:high).
 func parseAgentSpec(value string) (agentSpec, error) {
 	return parseAgentSpecIn(llm.CLIProviders(), value)
 }

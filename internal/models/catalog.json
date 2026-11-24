@@ -334,6 +334,30 @@
     "output_cost_per_mtok": 1.25
   },
   {
+    "id": "openai-codex/gpt-6.2-astra",
+    "input_tokens": 400000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-6.2-sol",
+    "input_tokens": 628000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-6.1-terra",
+    "input_tokens": 628000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
+    "id": "openai-codex/gpt-6.1-sol",
+    "input_tokens": 628000,
+    "output_tokens": 128000,
+    "supports_image_input": true
+  },
+  {
     "id": "openai-codex/gpt-6-astra",
     "input_tokens": 400000,
     "output_tokens": 128000,

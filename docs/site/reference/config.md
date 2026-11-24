@@ -289,7 +289,7 @@ The [projects](/guide/projects) this agent owns. A project belongs to exactly on
 agents:
   - name: coder
     model: cli/claude/opus
-    fallbacks: [cli/codex/gpt-5.6-terra:high]
+    fallbacks: [cli/codex/gpt-6.1-terra:high]
     projects:
       - target: owner/repo
       - target: https://github.com/orgs/acme/projects/3

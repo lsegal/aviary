@@ -99,7 +99,7 @@ func ProjectModelSource(cfg *Config, agentName string) string {
 // NormalizeProjectModel trims a projects.model or projects.fallbacks entry
 // and turns the provider:model shorthand, such as claude:opus, into the
 // claude/opus form models use everywhere else. A model that already names
-// a provider with a slash, such as codex/gpt-5.6:high, is left alone.
+// a provider with a slash, such as codex/gpt-6.1-terra:high, is left alone.
 func NormalizeProjectModel(models ModelsConfig, model string) string {
 	model = strings.TrimSpace(model)
 	if strings.Contains(model, "/") {
