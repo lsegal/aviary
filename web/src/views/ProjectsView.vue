@@ -121,7 +121,10 @@
 							</button>
 						</div>
 
-						<section v-if="status?.clis.length" class="flex flex-wrap items-center gap-2 text-xs" aria-label="CLI providers">
+						<!-- The projects' pills lead into each project, left of the CLI providers. -->
+						<div v-if="(aggregate && targets.length) || status?.clis.length" class="flex min-w-0 flex-wrap items-center gap-2" data-testid="board-nav-row">
+						<ProjectNavRow v-if="aggregate && targets.length" :agent="routeAgent" :targets="targets" />
+						<section v-if="status?.clis.length" class="ml-auto flex max-w-full flex-wrap items-center gap-2 text-xs" aria-label="CLI providers">
 							<span class="font-medium text-gray-600 dark:text-gray-300">CLI providers</span>
 							<span v-for="cli in status.clis" :key="cli.name"
 								class="inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-full border border-gray-200 px-2.5 py-1 dark:border-gray-700">
@@ -131,6 +134,7 @@
 								<span class="text-gray-500">{{ cli.quota || "no quota reported" }}</span>
 							</span>
 						</section>
+						</div>
 
 						<div class="flex flex-wrap items-center gap-3 text-sm" data-testid="job-toolbar">
 							<div class="relative min-w-0 flex-1 max-sm:basis-full sm:max-w-xs">
@@ -278,6 +282,7 @@ import JobCard from "../components/projects/JobCard.vue";
 import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
 import ProjectLogsPanel from "../components/projects/ProjectLogsPanel.vue";
+import ProjectNavRow from "../components/projects/ProjectNavRow.vue";
 import ScheduledCard from "../components/projects/ScheduledCard.vue";
 import ScheduleEditor from "../components/projects/ScheduleEditor.vue";
 import ScheduleRunHistory from "../components/projects/ScheduleRunHistory.vue";

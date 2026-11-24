@@ -535,7 +535,7 @@ const DefaultCDPPort = 9222
 func Default() Config {
 	return Config{
 		Server: ServerConfig{
-			Port: 16677,
+			Port: DefaultServerPort,
 		},
 	}
 }
@@ -620,6 +620,29 @@ func EffectiveServerNoTLS(s ServerConfig) bool {
 		}
 	}
 	return s.NoTLS
+}
+
+// DefaultServerPort is the port the server listens on when server.port is unset.
+const DefaultServerPort = 16677
+
+// EffectiveServerPort returns the port the server listens on.
+func EffectiveServerPort(s ServerConfig) int {
+	if s.Port > 0 {
+		return s.Port
+	}
+	return DefaultServerPort
+}
+
+// ServerURL returns the base URL local clients use to reach the server:
+// https://localhost:<port>, or http:// when the server serves plain HTTP.
+// Every internal client of the local server resolves its URL here, so none
+// of them talks plain HTTP to the TLS listener or TLS to a plain one.
+func ServerURL(s ServerConfig) string {
+	scheme := "https"
+	if EffectiveServerNoTLS(s) {
+		scheme = "http"
+	}
+	return fmt.Sprintf("%s://localhost:%d", scheme, EffectiveServerPort(s))
 }
 
 // EffectiveServerTLS returns the server's TLS settings.
