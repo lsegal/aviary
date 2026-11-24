@@ -607,11 +607,55 @@ func TestSafeRestart_GitModeHotReloadDoesNotRestart(t *testing.T) {
 		t.Fatal("a hot-reloaded dev update requested a re-exec")
 	case <-time.After(50 * time.Millisecond):
 	}
-	assert.Equal(t, []string{"pull /src/aviary", "refresh"}, *log, "no checkpoint; MCP tools are registered again")
+	assert.Equal(t, []string{"pull /src/aviary"}, *log, "no checkpoint")
 	held, markers := p.snapshot()
 	assert.Empty(t, held)
 	assert.Empty(t, markers)
 	assert.Equal(t, saferestart.PhaseIdle, srv.RestartStatus().Phase)
+}
+
+// Every reload forgo applies registers the MCP tools again, whichever process
+// changed the sources, such as aviary upgrade pulling the checkout itself.
+func TestRefreshOnHotReloadRegistersToolsAfterEveryAppliedReload(t *testing.T) {
+	srv, _, log := setupSafeRestart(t, "dev", update.CheckResult{})
+	hot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(hot, "agent"), []byte("pid 1\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(hot, "link-1"), []byte("patch 1 2\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(hot, "resp-1"), []byte("ok\n"), 0o600))
+	hotReloadGen, waitHotReload = update.HotReloadGeneration, update.WaitHotReload
+	hotReloadWait = update.HotReloadWait{Poll: 5 * time.Millisecond, Timeout: time.Second, Answer: time.Second, Settle: 10 * time.Millisecond}
+	var mu sync.Mutex
+	refreshAfterHotReload = func() {
+		mu.Lock()
+		*log = append(*log, "refresh")
+		mu.Unlock()
+	}
+	refreshes := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(*log)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		srv.refreshOnHotReload(ctx, hot)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	time.Sleep(50 * time.Millisecond)
+	assert.Zero(t, refreshes(), "a reload from before the server started is not refreshed again")
+	require.NoError(t, os.WriteFile(filepath.Join(hot, "link-2"), []byte("patch 2 3\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(hot, "resp-2"), []byte("err does not compile\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(hot, "link-3"), []byte("patch 3 4\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(hot, "resp-3"), []byte("ok\n"), 0o600))
+	require.Eventually(t, func() bool { return refreshes() == 1 }, 3*time.Second, 5*time.Millisecond)
+	require.NoError(t, os.WriteFile(filepath.Join(hot, "link-4"), []byte("patch 4 5\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(hot, "resp-4"), []byte("ok\n"), 0o600))
+	require.Eventually(t, func() bool { return refreshes() == 2 }, 3*time.Second, 5*time.Millisecond)
 }
 
 // When forgo refuses the reload, the backend would keep running old code, so
