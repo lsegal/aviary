@@ -46,9 +46,17 @@ func chromeHoldsProfile(profile string) bool {
 		return false
 	}
 	pid, err := strconv.Atoi(target[at+1:])
-	if err != nil || pid <= 0 {
+	if err != nil {
 		return false
 	}
-	err = syscall.Kill(pid, 0)
+	return processAlive(pid)
+}
+
+// processAlive reports whether a process with pid runs on this host.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
