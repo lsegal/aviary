@@ -282,6 +282,17 @@ test("the agent crumb opens the first page the user's sidebar shows", async ({
 	await expect(
 		breadcrumb(page).getByRole("link", { name: "Aviary" }),
 	).toHaveAttribute("href", "/agents/Aviary/projects");
+	// Settings pages' agent crumb and back link follow the same order (#1091).
+	for (const url of ["/agents/Aviary/settings", "/agents/Aviary/tasks"]) {
+		await page.goto(url);
+		await expect(
+			breadcrumb(page).getByRole("link", { name: "Aviary" }),
+		).toHaveAttribute("href", "/agents/Aviary/projects");
+		await expect(page.getByTestId("page-back")).toHaveAttribute(
+			"href",
+			"/agents/Aviary/projects",
+		);
+	}
 });
 
 test("on a phone the breadcrumb fits, truncating middle crumbs first", async ({

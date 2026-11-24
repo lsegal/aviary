@@ -198,7 +198,7 @@ test("settings pages' agent crumb opens the first page the user's sidebar shows"
 	]) {
 		await page.goto(url);
 		await expect(
-			breadcrumb(page).getByRole("link", { name: "Aviary" }),
+			breadcrumb(page).getByRole("link", { name: "Aviary", exact: true }),
 		).toHaveAttribute("href", home);
 	}
 	await expect(backLink(page)).toHaveAccessibleName("Back to Aviary");
