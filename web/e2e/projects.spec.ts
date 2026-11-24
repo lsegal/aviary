@@ -1125,6 +1125,59 @@ test("rich card output stays pinned to the bottom unless scrolled up (#769)", as
 	count = 38;
 	await expect(rich).toContainText("Step 38 of the plan");
 	expect(await rich.evaluate((el) => el.scrollTop)).toBe(0);
+
+	// The shared "More below" pill counts the new rows and follows again
+	// (#1072).
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	const pill = card.getByTestId("job-output-more-below");
+	await expect(pill).toHaveText("4 new · More below ↓");
+	await pill.click();
+	await expect.poll(gap).toBeLessThanOrEqual(1);
+	await expect(pill).toBeHidden();
+	count = 40;
+	await expect(rich).toContainText("Step 40 of the plan");
+	await expect.poll(gap).toBeLessThanOrEqual(1);
+});
+
+test("job detail's transcript opens at the bottom and pauses with the pill (#1072)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1600, height: 900 });
+	let count = 40;
+	const events = () =>
+		Array.from({ length: count }, (_, i) => ({
+			kind: "message",
+			time: at(1),
+			text: `Step ${i + 1} of the plan is done.`,
+		}));
+	await setup(page, () => STATUS, {
+		project_job_get: jobGetWithEvents(events),
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
+	const transcript = page.getByTestId("job-transcript");
+	const pill = page.getByTestId("job-transcript-more-below");
+	const gap = () =>
+		transcript.evaluate(
+			(el) => el.scrollHeight - el.scrollTop - el.clientHeight,
+		);
+	await expect(transcript).toContainText("Step 40 of the plan");
+	await expect.poll(gap).toBeLessThanOrEqual(8);
+
+	await transcript.evaluate((el) => {
+		el.scrollTop = 0;
+	});
+	await expect(pill).toBeVisible();
+	count = 42;
+	await expect(transcript).toContainText("Step 42 of the plan");
+	expect(await transcript.evaluate((el) => el.scrollTop)).toBe(0);
+	await expect(pill).toHaveText("2 new · More below ↓");
+
+	await pill.click();
+	await expect.poll(gap).toBeLessThanOrEqual(8);
+	await expect(pill).toBeHidden();
+	count = 44;
+	await expect(transcript).toContainText("Step 44 of the plan");
+	await expect.poll(gap).toBeLessThanOrEqual(8);
 });
 
 /** Asserts el's right edge sits at the card's right padding. */
@@ -2165,6 +2218,47 @@ test("logs panel docks below the board, streams lines, and resizes", async ({
 		page.getByRole("heading", { name: "lsegal/aviary" }),
 	).toBeVisible();
 	await expect(page.getByTestId("project-logs")).toHaveCount(0);
+});
+
+test("logs panel pauses following with the pill when scrolled up (#1072)", async ({
+	page,
+}) => {
+	let polls = 0;
+	const old = Array.from(
+		{ length: 40 },
+		(_, i) => `12:00:${String(i).padStart(2, "0")} old line ${i + 1}`,
+	);
+	await setup(page, () => {
+		polls++;
+		const extra = Array.from(
+			{ length: polls },
+			(_, i) => `12:05:${String(i).padStart(2, "0")} live line ${i + 1}`,
+		);
+		return { ...STATUS, recent_logs: [...old, ...extra].join("\n") };
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.getByTestId("logs-toggle").click();
+	const lines = page.getByTestId("project-logs-lines");
+	const pill = page.getByTestId("project-logs-more-below");
+	const gap = () =>
+		lines.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+	await expect(lines).toContainText("old line 40");
+	await expect.poll(gap).toBeLessThanOrEqual(8);
+
+	await lines.evaluate((el) => {
+		el.scrollTop = 0;
+	});
+	await expect(pill).toBeVisible();
+	const seen = polls;
+	await expect(lines).toContainText(`live line ${seen + 1}`, {
+		timeout: 10_000,
+	});
+	expect(await lines.evaluate((el) => el.scrollTop)).toBe(0);
+	await expect(pill).toContainText("new · More below ↓");
+
+	await pill.click();
+	await expect.poll(gap).toBeLessThanOrEqual(8);
+	await expect(pill).toBeHidden();
 });
 
 test("prompt chat inserts a newline on Shift+Enter and sends on Enter", async ({

@@ -32,7 +32,7 @@
 
 			<!-- Messages -->
 			<div class="relative flex-1 overflow-hidden">
-				<div ref="messagesEl" class="h-full overflow-y-auto px-6 py-4 space-y-4" @scroll="onMessagesScroll">
+				<div ref="messagesEl" data-testid="chat-messages" class="h-full overflow-y-auto px-6 py-4 space-y-4" @scroll="onMessagesScroll">
 					<div v-if="!selectedAgent" class="flex h-full items-center justify-center text-sm text-gray-400">
 						Pick an agent in the sidebar to start chatting.
 					</div>
