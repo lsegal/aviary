@@ -173,6 +173,43 @@ func TestEngineProjectTaskStopsWithItsCaller(t *testing.T) {
 	}
 }
 
+// #1028: an engine stopping under a project task run, as a settings change
+// restarts it, reports the run interrupted so core's scheduler requeues it,
+// not stopped.
+func TestEngineStoppingInterruptsProjectTask(t *testing.T) {
+	runner := &scheduledRunner{started: make(chan Issue, 1), block: true}
+	w := &Engine{
+		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
+		Issues: &fakeSource{batches: [][]Issue{{}}},
+		Runner: runner, UI: &snapshotReporter{},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+	errs := make(chan error, 1)
+	go func() {
+		_, err := w.runProjectTask(context.Background(), scheduler.ProjectRun{TaskID: "bot/watch", Project: "o/r", Prompt: "watch"}, "o/r", AgentSession{})
+		errs <- err
+	}()
+	select {
+	case <-runner.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the project task did not start")
+	}
+	cancel()
+	select {
+	case err := <-errs:
+		if !errors.Is(err, scheduler.ErrProjectRunInterrupted) || errors.Is(err, context.Canceled) {
+			t.Fatalf("run error = %v, want it interrupted, not canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stopping the engine did not end the run")
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProjectTaskOutcome(t *testing.T) {
 	if got := projectTaskOutcome(nil, nil, "a\n\nlast line\n"); got.err != nil || got.summary != "last line" || projectTaskStatus(got) != "complete" {
 		t.Fatalf("complete = %+v", got)
@@ -183,6 +220,9 @@ func TestProjectTaskOutcome(t *testing.T) {
 	if got := projectTaskOutcome(context.Canceled, errWorkStoppedFromWebUI, ""); !errors.Is(got.err, context.Canceled) || projectTaskStatus(got) != "stopped" {
 		t.Fatalf("stopped = %+v", got)
 	}
+	if got := (projectTaskResult{err: scheduler.ErrProjectRunInterrupted}); projectTaskStatus(got) != "interrupted" {
+		t.Fatalf("interrupted status = %q", projectTaskStatus(got))
+	}
 	if got := projectTaskOutcome(&scheduledWakeup{Delay: time.Minute}, nil, "done"); got.err != nil {
 		t.Fatalf("a pending wakeup = %+v, want complete", got)
 	}
@@ -192,6 +232,33 @@ func TestManagerRunProjectTaskNeedsAWatchedProject(t *testing.T) {
 	m := newTestManager(t)
 	if _, err := m.RunProjectTask(context.Background(), scheduler.ProjectRun{TaskID: "bot/x", Project: "o/unwatched", Prompt: "x"}); err == nil || !strings.Contains(err.Error(), "not watched") {
 		t.Fatalf("err = %v, want the unwatched project refused", err)
+	}
+}
+
+// #1028: a run requeued by an engine restart waits for the restart to finish
+// before it looks for the engine.
+func TestManagerRunProjectTaskWaitsForARestart(t *testing.T) {
+	m := newTestManager(t)
+	m.refreshMu.Lock()
+	errs := make(chan error, 1)
+	go func() {
+		_, err := m.RunProjectTask(context.Background(), scheduler.ProjectRun{TaskID: "bot/x", Project: "o/unwatched", Prompt: "x"})
+		errs <- err
+	}()
+	select {
+	case err := <-errs:
+		m.refreshMu.Unlock()
+		t.Fatalf("the run went ahead during a restart: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	m.refreshMu.Unlock()
+	select {
+	case err := <-errs:
+		if err == nil || !strings.Contains(err.Error(), "not watched") {
+			t.Fatalf("err = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run never went ahead after the restart")
 	}
 }
 
