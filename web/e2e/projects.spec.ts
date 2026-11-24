@@ -602,6 +602,8 @@ test("the collapsed rail's Code Loop icon counts running jobs", async ({
 	await page.goto("/system/overview");
 	await page.getByTestId("sidebar-collapse").click();
 	const icon = page.getByTestId("sidebar-rail-projects");
+	// Code Loop's own loop-arrow-around-</> icon, not a generic grid (#1033).
+	await expect(icon.getByTestId("code-loop-icon")).toBeVisible();
 	await expect(icon.getByTestId("sidebar-rail-badge")).toHaveText("2");
 	await icon.hover();
 	await expect(page.getByRole("tooltip")).toHaveText(

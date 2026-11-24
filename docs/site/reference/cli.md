@@ -297,14 +297,15 @@ aviary task stop
 Watch GitHub projects and fix ready issues with a CLI provider, in a one-off session isolated from your Aviary config. The session runs its own server against a temporary config and data directory that is removed when it ends; only the browser profile and provider credentials are shared, read in place. See [Watch sessions](/guide/projects#watch-sessions).
 
 ```
-aviary watch [TARGET ...] [--agent NAME] [--concurrency N] [--interval D]
+aviary watch [TARGET ...] [--agent NAME] [--model M] [--fallback M ...]
+             [--concurrency N] [--interval D]
              [--delivery browser|poll|webhook] [--ready-state S]
              [--filter F ...] [--all-issues] [--allowed-commenters LOGINS]
              [--yolo] [--no-merge] [--no-changelog]
              [--browser-vision] [--browser-visible] [--no-webui] [--no-tui]
 ```
 
-With no `TARGET`, the current checkout's `origin` repository is watched. `--agent` runs the targets under an Aviary agent, whose model and fallbacks pick the jobs' CLI providers; without it a target runs under the agent that owns it, or `models.defaults`. Flags override the shared `projects:` settings for the session.
+With no `TARGET`, the current checkout's `origin` repository is watched. `--agent` runs the targets under an Aviary agent, whose model and fallbacks pick the jobs' CLI providers; without it a target runs under the agent that owns it, or `models.defaults`. `--model` replaces that agent's model for the session's jobs, and each `--fallback`, in the order given, replaces its fallbacks; either keeps the agent's other one when given alone. Models are `<provider>/<model>`, such as `claude/opus`. `--provider` is a deprecated name for `--model`: it still works, prints `--provider is deprecated; use --model`, and is an error together with `--model`. Flags override the shared `projects:` settings for the session.
 
 The session serves a minimal web UI, Code Loop and Scheduled Tasks only with no token prompt, on the first free `localhost` port from `server.port` up, and shows a TUI board in the terminal. `--no-webui` serves no web UI; `--no-tui` prints the Code Loop log instead of the TUI. Ctrl+C, `SIGTERM` or `SIGHUP` stops and checkpoints running jobs, then removes the temporary directory; directories left by killed sessions are swept on the next start.
 
