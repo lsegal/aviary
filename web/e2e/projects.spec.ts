@@ -1288,10 +1288,11 @@ test("an agent's Code Loop is one board of all its projects, with no settings", 
 	// Every project's jobs share the board, each naming its project.
 	const cards = page.getByTestId("job-card");
 	await expect(cards).toHaveCount(6);
-	expect(calls.project_job_list.at(-1)?.targets).toEqual([
-		"lsegal/aviary",
-		"lsegal/zvidlib",
-	]);
+	// The board's own call names its targets; the project pills' poll reads
+	// every project's jobs (#1044).
+	expect(
+		calls.project_job_list.filter((c) => c.targets).at(-1)?.targets,
+	).toEqual(["lsegal/aviary", "lsegal/zvidlib"]);
 	const zvid = cards.filter({ hasText: "Decode B-frames" });
 	await expect(zvid.getByTestId("job-project")).toHaveText("lsegal/zvidlib");
 	await expect(zvid.getByTestId("job-project")).toHaveAttribute(
