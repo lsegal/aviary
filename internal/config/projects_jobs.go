@@ -79,3 +79,59 @@ func ProjectModelSpec(cfg *Config, agentName, model string) (spec, override stri
 	}
 	return aviarySpecPrefix + agentName, model, true
 }
+
+// ProjectCLIProviders returns the CLI providers, sorted, that a project
+// owned by the named agent uses, so its skills only need installing for
+// those: the CLIs of the jobs' models (models, when non-nil, in place of the
+// agent's saved model and fallbacks, as ProjectJobSpecs maps them), the Code
+// Loop chat agent's model and fallbacks, the unblock agent, and the model of
+// every scheduled task targeting the project.
+func ProjectCLIProviders(cfg *Config, agentName, target string, models []string) []string {
+	registry := cliRegistry(cfg.Models)
+	var providers []string
+	addSpec := func(spec string) {
+		name, _, _ := strings.Cut(strings.TrimSpace(spec), "/")
+		name, _, _ = strings.Cut(name, ":")
+		name = strings.TrimSpace(name)
+		if name != "" && !slices.Contains(providers, name) {
+			providers = append(providers, name)
+		}
+	}
+	addModels := func(models []string) {
+		for _, model := range models {
+			if spec, isCLI := cliModelSpec(registry, model); isCLI {
+				addSpec(spec)
+			}
+		}
+	}
+	if models != nil {
+		addModels(models)
+	} else {
+		for _, spec := range ProjectJobSpecs(cfg, agentName) {
+			if !strings.HasPrefix(spec, aviarySpecPrefix) {
+				addSpec(spec)
+			}
+		}
+	}
+	for _, agent := range EffectiveAgents(cfg) {
+		if agent.Name == ProjectsAgentName {
+			addModels(append([]string{EffectiveAgentModel(agent, cfg.Models)}, EffectiveAgentFallbacks(agent, cfg.Models)...))
+		}
+	}
+	if agent := strings.TrimSpace(cfg.Projects.UnblockAgent); agent != "" {
+		addSpec(strings.TrimPrefix(agent, cliagent.ModelPrefix))
+	}
+	target = strings.TrimSpace(target)
+	for _, agent := range cfg.Agents {
+		for _, task := range agent.Tasks {
+			if target == "" || !strings.EqualFold(strings.TrimSpace(task.Project), target) || strings.TrimSpace(task.Model) == "" {
+				continue
+			}
+			if spec, _, ok := ProjectModelSpec(cfg, agentName, task.Model); ok && !strings.HasPrefix(spec, aviarySpecPrefix) {
+				addSpec(spec)
+			}
+		}
+	}
+	slices.Sort(providers)
+	return providers
+}
