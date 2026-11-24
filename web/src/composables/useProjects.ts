@@ -218,11 +218,7 @@ export function useProjectBoard(
 	const { refresh } = usePoll(load, PROJECTS_POLL_MS);
 
 	watch(
-		[
-			() => targets.value.join(" "),
-			() => states.value.join(","),
-			kanban,
-		],
+		[() => targets.value.join(" "), () => states.value.join(","), kanban],
 		() => {
 			page.value = 0;
 			loading.value = true;
@@ -358,10 +354,7 @@ export const UP_NEXT_RUNS = 5;
 export const UP_NEXT_PER_SCHEDULE = 3;
 
 /** The projects' scheduled prompts and, for one project, its next runs, kept live. */
-export function useProjectSchedules(
-	projects: Ref<string[]>,
-	interval = 5_000,
-) {
+export function useProjectSchedules(projects: Ref<string[]>, interval = 5_000) {
 	const { callTool } = useMCP();
 	const schedules = ref<ProjectSchedule[]>([]);
 	const upcoming = ref<UpcomingRun[]>([]);

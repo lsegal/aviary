@@ -3,7 +3,10 @@ import { mockMCP } from "./helpers/mockMCP";
 
 // An `aviary watch` session: no token, and only Code Loop and Scheduled
 // Tasks (#991).
-async function mockWatchSession(page: Page) {
+async function mockWatchSession(
+	page: Page,
+	fixtures: Parameters<typeof mockMCP>[1] = {},
+) {
 	await page.addInitScript(() => localStorage.removeItem("aviary_token"));
 	await page.route("/api/health", (route) =>
 		route.fulfill({
@@ -31,6 +34,7 @@ async function mockWatchSession(page: Page) {
 			targets: ["owner/repo"],
 		},
 		project_job_list: { jobs: [], total: 0, offset: 0, limit: 50 },
+		...fixtures,
 	});
 }
 
@@ -130,4 +134,72 @@ test("saved navigation preferences can't bring back pages minimal mode hides (#1
 		.locator('[data-testid^="sidebar-row-"]')
 		.evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
 	expect(keys).toEqual(["sidebar-row-tasks", "sidebar-row-projects"]);
+});
+
+test("a watch session's Code Loop shows every project's schedules with a Scheduled filter (#1108)", async ({
+	page,
+}) => {
+	const task = (project: string, name: string) => ({
+		id: `watch/${name}`,
+		name,
+		agent_name: "watch",
+		type: "project",
+		project,
+		enabled: true,
+		trigger_type: "every",
+		every: "1h",
+	});
+	const issue = {
+		key: "owner/repo#7",
+		target: "owner/repo",
+		number: 7,
+		title: "Fix the parser",
+		status: "active",
+		state: "running",
+		kind: "issue",
+		actions: {},
+	};
+	await mockWatchSession(page, {
+		config_get: {
+			agents: [
+				{
+					name: "watch",
+					projects: [{ target: "owner/repo" }, { target: "owner/other" }],
+				},
+			],
+		},
+		project_status: {
+			states: { starting: 0, paused: 0, running: 1, done: 0, failed: 0 },
+			targets: ["owner/repo", "owner/other"],
+		},
+		task_list: [task("owner/repo", "release"), task("owner/other", "nightly")],
+		project_job_list: (args?: Record<string, unknown>) => {
+			const jobs = (args?.kinds as string[] | undefined)?.includes("schedule")
+				? []
+				: [issue];
+			return { jobs, total: jobs.length, offset: 0, limit: 50 };
+		},
+	});
+	await page.goto("/agents/watch/projects");
+	const scheduled = page.getByTestId("scheduled-card");
+	const jobs = page.getByTestId("job-card");
+	await expect(scheduled).toHaveCount(2);
+	await expect(scheduled.getByTestId("scheduled-project")).toHaveText([
+		"owner/other",
+		"owner/repo",
+	]);
+	await expect(jobs).toHaveCount(1);
+	await expect(page.getByTestId("job-total")).toHaveText("3 items");
+
+	const chip = page
+		.getByRole("group", { name: "Job filter" })
+		.getByRole("button", { name: /^Scheduled/ });
+	await expect(chip).toHaveText(/^Scheduled\s*2$/);
+	await chip.click();
+	await expect(page).toHaveURL(/[?&]state=scheduled$/);
+	await expect(scheduled).toHaveCount(2);
+	await expect(jobs).toHaveCount(0);
+	await chip.click();
+	await expect(scheduled).toHaveCount(2);
+	await expect(jobs).toHaveCount(1);
 });
