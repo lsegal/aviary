@@ -175,7 +175,7 @@ func TestCompileRejectsScriptThatAlwaysErrors(t *testing.T) {
 func TestCompileRejectsScriptWhoseReasonSaysStayAPromptTask(t *testing.T) {
 	setupProjectScriptAgent(t, "claude/opus")
 	stubCompileStages(t, deterministicExecAnalysis,
-		`local r = tool.exec({command = "gh release view --json tagName"}) print(r.stdout)`,
+		`local r = tool.exec({command = "gh api repos/acme/app/releases/latest --jq .tag_name"}) print(r.stdout)`,
 		`{"valid":true,"reason":"The script never dispatches release.yml, so a faithful deterministic script cannot be built from these tools. The task should stay a prompt task and not be auto-promoted."}`)
 
 	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
@@ -198,7 +198,7 @@ func TestCompileDeclinedWhenAnalysisReasonSaysStayAPromptTask(t *testing.T) {
 
 func TestCompilePromotesWorkingExecScript(t *testing.T) {
 	setupProjectScriptAgent(t, "claude/opus")
-	script := `local r = tool.exec({command = "gh release view --json tagName"}) print(r.stdout)`
+	script := `local r = tool.exec({command = "gh api repos/acme/app/releases/latest --jq .tag_name"}) print(r.stdout)`
 	stubCompileStages(t, deterministicExecAnalysis, script, `{"valid":true,"reason":"compares main with the release and dispatches the workflow"}`)
 
 	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
