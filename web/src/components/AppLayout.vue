@@ -413,12 +413,11 @@ import {
 import { agentFilePath, useAgentFilesStore } from "../stores/agentFiles";
 import { projectOwner } from "../lib/projectSettings";
 import { useRouteExpandedGroup } from "../composables/useRouteExpandedGroup";
-import { useNavPrefs } from "../composables/useNavPrefs";
-import { arrangeNav, type NavList } from "../lib/navPrefs";
+import { useAgentNav } from "../composables/useAgentNav";
+import type { NavList } from "../lib/navPrefs";
 import { AGENT_PAGES, agentPagePath } from "../lib/agentPages";
 import { type Crumb, routeCrumbs } from "../lib/breadcrumb";
 import { useCrumbSwitcher } from "../composables/useCrumbSwitcher";
-import { MINIMAL_AGENT_PAGES } from "../lib/minimalMode";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
 import { type ProjectSummary, projectPath } from "../lib/projects";
@@ -716,26 +715,14 @@ onBeforeUnmount(() => {
 });
 
 // The user's navigation order and visibility (#1003), shared by the
-// sidebar, the collapsed rail and the narrow-screen rows.
-const nav = useNavPrefs();
-// Pages that never show whatever the preferences say: those a minimal
-// `aviary watch` session leaves out (#991).
-const navForcedHidden = computed<ReadonlySet<string>>(() =>
-	minimal.value
-		? new Set([
-				...AGENT_PAGES.map((p) => p.key).filter(
-					(k) => !MINIMAL_AGENT_PAGES.has(k),
-				),
-				...SYSTEM_PAGES.map((p) => p.key),
-			])
-		: new Set(),
-);
-function arranged<T extends { key: string }>(items: T[], list: NavList): T[] {
-	return arrangeNav(items, list, nav.prefs.value, {
-		forcedHidden: navForcedHidden.value,
-		showHidden: nav.showHidden.value,
-	});
-}
+// sidebar, the collapsed rail, the narrow-screen rows and every page's agent
+// crumb (#1091).
+const {
+	nav,
+	forcedHidden: navForcedHidden,
+	arranged,
+	agentHome,
+} = useAgentNav();
 
 const settingsStore = useSettingsStore();
 if (!settingsStore.config && auth.isLoggedIn) void settingsStore.fetchConfig();
@@ -1114,8 +1101,7 @@ const navEditGroups = computed<NavEditGroup[]>(() => {
 const headerCrumbs = computed((): PageCrumb[] => {
 	if (props.crumbs) return props.crumbs;
 	const crumbs = routeCrumbs(route.path, {
-		agentHome: (agent) =>
-			agentPages(agent, 0)[0]?.to ?? agentPagePath(agent, "chat"),
+		agentHome,
 		chatLabel: (agent, id) => {
 			const s = chatSessions.sessions(agent).find((x) => x.id === id);
 			return s && chatDisplayName(s);
