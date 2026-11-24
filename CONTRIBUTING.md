@@ -73,6 +73,8 @@ Start the development server (runs Vite + Go backend concurrently):
 pnpm dev
 ```
 
+For watch mode (`aviary watch`), use `pnpm dev:watch` instead; see [Developing watch mode](#developing-watch-mode).
+
 This starts:
 
 - The Vite dev server at **https://localhost:5173** (hot-reload), also reachable from the LAN at `https://<lan-ip>:5173`
@@ -83,6 +85,18 @@ The first `pnpm dev` installs the [forgo](https://github.com/lsegal/forgo) toolc
 `pnpm dev` (or `pnpm dev:go` for the backend alone) is the supported way to run the dev backend: it runs it under forgo hot reload, so updating the checkout from Aviary's update notice is just a `git pull` that hot-reloads the backend without stopping running jobs. Aviary restarts the backend only when a pull can't be hot-reloaded, such as a `go.mod` change; see [Dev checkouts](docs/site/guide/operations.md#dev-checkouts).
 
 Open https://localhost:5173 in your browser. The Vite dev server proxies MCP and API requests to the Go backend.
+
+#### Developing watch mode
+
+To work on `aviary watch` and its minimal web UI, run:
+
+```shell
+pnpm dev:watch -- owner/repo --no-tui
+```
+
+Everything after `--` is passed to `aviary watch` (see [Watch sessions](docs/site/guide/projects.md#watch-sessions)). This runs the watch session from source under forgo hot reload, as `pnpm dev:go` does for `serve`, and starts its own Vite dev server on the first free port from 5173 up, so it can run alongside `pnpm dev`. Vite proxies `/api` and `/mcp` to whichever port the session chose (it writes the port to `AVIARY_WATCH_PORT_FILE`), and the session prints the Vite URL (for example `https://localhost:5174/agents/watch/projects`) as its Code Loop link. Web changes hot-reload there. With the TUI on, Vite's output goes to a log file whose path is printed at startup. Ctrl+C or `SIGTERM` stops both processes, and the session removes its temporary directory.
+
+Use `pnpm dev:watch` when you change watch mode or its web UI. A plain `forgo run ./cmd/aviary watch` (or `go run`) serves the web UI embedded in the binary, which a source checkout only has after `pnpm build`. Without a build the session's web UI shows a "Web assets not built" page, and a build older than the checkout's web sources gets a "web assets are stale" warning in the log. That is fine when you only work on the Go side or the TUI.
 
 #### HTTPS in development
 

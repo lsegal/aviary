@@ -377,7 +377,6 @@ import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
 import GlobeAltIcon from "@heroicons/vue/24/outline/GlobeAltIcon";
 import ServerStackIcon from "@heroicons/vue/24/outline/ServerStackIcon";
-import Squares2X2Icon from "@heroicons/vue/24/outline/Squares2X2Icon";
 import HashtagIcon from "@heroicons/vue/24/outline/HashtagIcon";
 import TagIcon from "@heroicons/vue/24/outline/TagIcon";
 import UsersIcon from "@heroicons/vue/24/outline/UsersIcon";
@@ -422,6 +421,7 @@ import {
 	taskSessionPath,
 	useSettingsStore,
 } from "../stores/settings";
+import CodeLoopIcon from "./CodeLoopIcon.vue";
 import SidebarRowAction from "./SidebarRowAction.vue";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
 import MobileMainNav, { type MobileNavItem } from "./MobileMainNav.vue";
@@ -553,7 +553,7 @@ const brandLinks: BrandLink[] = [
 // An agent page's icon on the collapsed sidebar rail.
 const pageIcons: Record<string, Component> = {
 	chat: markRaw(ChatBubbleLeftRightIcon),
-	projects: markRaw(Squares2X2Icon),
+	projects: markRaw(CodeLoopIcon),
 	channels: markRaw(HashtagIcon),
 	tasks: markRaw(ClockIcon),
 	files: markRaw(DocumentTextIcon),

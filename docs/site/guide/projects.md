@@ -32,7 +32,13 @@ Only two things are shared with your own Aviary, and both are read in place rath
 - the **browser profile**, so the GitHub sign-in browser delivery uses is reused;
 - **provider credentials**: CLI provider sign-ins, `auth:` references and stored tokens. No secret is copied into the session.
 
-The session starts from your providers, browser, approval and Code Loop settings, and the command's flags override the Code Loop settings. Its targets run under `--agent`, else the agent of yours that owns them, else a `watch` agent that takes `models.defaults`. Only the agent's model, fallbacks and permissions come along, never its channels, tasks or other projects.
+The session starts from your providers, browser, approval and Code Loop settings, and the command's flags override the Code Loop settings. Its targets run under `--agent`, else the agent of yours that owns them, else a `watch` agent that takes `models.defaults`. Only the agent's model, fallbacks and permissions come along, never its channels, tasks or other projects. `--model` and the repeatable `--fallback` replace that agent's model and fallbacks for the session, without touching the agent in your config:
+
+```bash
+aviary watch owner/repo --model claude/opus --fallback codex/gpt-5.6-terra:high
+```
+
+`--provider` is the old, deprecated name of `--model`. It still works with a warning, will be removed in a later release, and is an error together with `--model`.
 
 **Minimal web UI.** The session's server listens on `localhost` only, on the first free port from your `server.port` (default 16677) up, and prints the URL of its Code Loop board. The web UI asks for no token and shows only **Code Loop** and **Scheduled Tasks**: there is no chat, agent or channel settings, System page, or way to add agents. The server refuses those pages' API calls too, not just the links, and Code Loop Settings can change only the Code Loop settings and scheduled tasks.
 
@@ -42,6 +48,8 @@ The session starts from your providers, browser, approval and Code Loop settings
 | --- | --- |
 | `--no-webui` | serve no web UI; the TUI or log still runs |
 | `--no-tui` | print the Code Loop log instead of the TUI, as happens anyway when output is not a terminal |
+
+**From a source checkout.** `aviary watch` serves the web UI built into the binary. A binary built from a fresh checkout without `pnpm build` has none, and its web UI shows a "Web assets not built" page instead; a build older than the checkout's web sources logs a "web assets are stale" warning. To work on watch mode, run `pnpm dev:watch -- <watch arguments>` instead of `forgo run ./cmd/aviary watch`: it runs the session behind the Vite dev server, so the web UI hot-reloads. See [Developing watch mode](https://github.com/lsegal/aviary/blob/main/CONTRIBUTING.md#developing-watch-mode).
 
 **Cleanup.** Ctrl+C, `SIGTERM`, `SIGHUP`, quitting the TUI, or a fatal error ends the session: running jobs are stopped and checkpointed, then the temporary directory is removed. A directory left behind by a session that was killed outright (`SIGKILL`) or crashed is removed by the next `aviary watch`, once the PID in its name is no longer running; a live session's directory is left alone.
 

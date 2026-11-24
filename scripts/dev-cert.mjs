@@ -23,11 +23,17 @@ function aviaryCert(extraArgs) {
 	return JSON.parse(out);
 }
 
+// devTLSOptedOut reports whether AVIARY_DEV_NO_TLS asks the dev server to
+// serve plain HTTP.
+export function devTLSOptedOut() {
+	const optOut = process.env.AVIARY_DEV_NO_TLS?.trim().toLowerCase();
+	return Boolean(optOut) && !["0", "false", "no"].includes(optOut);
+}
+
 // devHttps returns Vite's server.https options, or undefined to serve plain
 // HTTP when AVIARY_DEV_NO_TLS is set or the cert cannot be loaded.
 export function devHttps() {
-	const optOut = process.env.AVIARY_DEV_NO_TLS?.trim().toLowerCase();
-	if (optOut && !["0", "false", "no"].includes(optOut)) return undefined;
+	if (devTLSOptedOut()) return undefined;
 	try {
 		const { cert, key } = aviaryCert([]);
 		return { cert: readFileSync(cert), key: readFileSync(key) };
