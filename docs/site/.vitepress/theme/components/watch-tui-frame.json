@@ -15,72 +15,18 @@
 				"fg": "#999999"
 			},
 			{
-				"t": " acme/storefront                                                                                                          "
-			},
-			{
-				"t": "https://localhost:16677/projects",
-				"fg": "#92a8ff"
-			}
-		],
-		[
-			{
-				"t": "3/3",
-				"b": true
-			},
-			{
-				"t": " slots"
-			},
-			{
-				"t": " · ",
-				"fg": "#999999"
-			},
-			{
-				"t": "1 starting",
-				"fg": "#fb923c"
-			},
-			{
-				"t": " · ",
-				"fg": "#999999"
-			},
-			{
-				"t": "2 paused",
-				"fg": "#fbbf24"
-			},
-			{
-				"t": " · ",
-				"fg": "#999999"
-			},
-			{
-				"t": "3 running",
-				"fg": "#60a5fa"
-			},
-			{
-				"t": " · ",
-				"fg": "#999999"
-			},
-			{
-				"t": "2 done",
-				"fg": "#49c26b"
-			},
-			{
-				"t": " · ",
-				"fg": "#999999"
-			},
-			{
-				"t": "1 failed",
-				"fg": "#ff6b5f"
-			},
-			{
-				"t": " · ",
-				"fg": "#999999"
-			},
-			{
-				"t": "2 merged 24h",
-				"fg": "#c083fc"
+				"t": " acme/storefront"
 			},
 			{
 				"t": " · poll every 1m",
 				"fg": "#999999"
+			},
+			{
+				"t": "                                                                                          "
+			},
+			{
+				"t": "https://localhost:16677/projects",
+				"fg": "#92a8ff"
 			}
 		],
 		[
@@ -97,72 +43,79 @@
 				"fg": "#a78bfa"
 			},
 			{
-				"t": "   "
+				"t": "  "
 			},
 			{
 				"t": "2 Starting 1",
 				"fg": "#fb923c"
 			},
 			{
-				"t": "   "
+				"t": "  "
 			},
 			{
 				"t": "3 Paused 2",
 				"fg": "#fbbf24"
 			},
 			{
-				"t": "   "
+				"t": "  "
 			},
 			{
 				"t": "4 Running 3",
 				"fg": "#60a5fa"
 			},
 			{
-				"t": "   "
+				"t": "  "
 			},
 			{
 				"t": "5 Done 2",
 				"fg": "#49c26b"
 			},
 			{
-				"t": "   "
+				"t": "  "
 			},
 			{
 				"t": "6 Failed 1",
 				"fg": "#ff6b5f"
 			},
 			{
-				"t": "   "
+				"t": "  "
 			},
 			{
 				"t": "[board]",
+				"fg": "#999999"
+			},
+			{
+				"t": "                                                 "
+			},
+			{
+				"t": "3/3 slots · 2 merged 24h",
 				"fg": "#999999"
 			}
 		],
 		[
 			{
-				"t": "Scheduled 2",
+				"t": "Scheduled",
 				"fg": "#a78bfa",
 				"b": true
 			},
 			{
-				"t": "                 "
+				"t": "                   "
 			},
 			{
-				"t": "Starting 1",
+				"t": "Starting",
 				"fg": "#fb923c",
 				"b": true
 			},
 			{
-				"t": "                  "
+				"t": "                    "
 			},
 			{
-				"t": "Paused 2",
+				"t": "Paused",
 				"fg": "#fbbf24",
 				"b": true
 			},
 			{
-				"t": "                    "
+				"t": "                      "
 			},
 			{
 				"t": "Running",
@@ -171,29 +124,18 @@
 				"u": true
 			},
 			{
-				"t": " ",
-				"fg": "#60a5fa",
-				"u": true
+				"t": "                     "
 			},
 			{
-				"t": "3",
-				"fg": "#60a5fa",
-				"b": true,
-				"u": true
-			},
-			{
-				"t": "                   "
-			},
-			{
-				"t": "Done 2",
+				"t": "Done",
 				"fg": "#49c26b",
 				"b": true
 			},
 			{
-				"t": "                      "
+				"t": "                        "
 			},
 			{
-				"t": "Failed 1",
+				"t": "Failed",
 				"fg": "#ff6b5f",
 				"b": true
 			}
@@ -298,6 +240,7 @@
 				"fg": "#999999"
 			}
 		],
+		[],
 		[],
 		[],
 		[

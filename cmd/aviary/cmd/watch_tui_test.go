@@ -224,13 +224,13 @@ func TestWatchTUIBoardRendersColumns(t *testing.T) {
 	}
 	var header string
 	for _, line := range lines {
-		if strings.Contains(line, "Scheduled 1") {
+		if strings.HasPrefix(line, "Scheduled") {
 			header = line
 			break
 		}
 	}
 	prev := -1
-	for _, col := range []string{"Scheduled 1", "Starting 1", "Paused 1", "Running 1", "Done 1", "Failed 1"} {
+	for _, col := range []string{"Scheduled", "Starting", "Paused", "Running", "Done", "Failed"} {
 		i := strings.Index(header, col)
 		if i <= prev {
 			t.Fatalf("column %q not in order in %q", col, header)
@@ -247,12 +247,60 @@ func TestWatchTUIBoardRendersColumns(t *testing.T) {
 	}
 }
 
-func TestWatchTUIStatsLine(t *testing.T) {
-	m := loadedWatchModel(t, newFakeWatchTools())
-	got := watchStrip(m.statsLine())
-	want := "2/4 slots · 1 starting · 1 paused · 1 running · 1 done · 1 failed · 3 merged 24h · poll"
-	if got != want {
-		t.Errorf("stats = %q, want %q", got, want)
+func TestWatchTUIHeaderIsOneRow(t *testing.T) {
+	for _, tc := range []struct {
+		cols           int
+		header, filter string
+	}{
+		{120, "aviary watch · o/r · poll", " 0 All 6   1 Scheduled 1  2 Starting 1  3 Paused 1  4 Running 1  5 Done 1  6 Failed 1  [list]   2/4 slots · 3 merged 24h"},
+		{80, "aviary watch · o/r · poll", " 0 All 6  1 Sched 1 2 Start 1 3 Pause 1 4 Run 1 5 Done 1 6 Fail 1 [list]     2/4"},
+		{40, "aviary watch · o/r · poll", " 0:6  1:1 2:1 3:1 4:1 5:1 6:1 [list]"},
+	} {
+		m := loadedWatchModel(t, newFakeWatchTools())
+		m = watchUpdate(t, m, tea.WindowSizeMsg{Width: tc.cols, Height: 20})
+		lines := strings.Split(watchStrip(m.View()), "\n")
+		if lines[0] != tc.header || lines[1] != tc.filter {
+			t.Errorf("%d cols header:\n%q\n%q\nwant\n%q\n%q", tc.cols, lines[0], lines[1], tc.header, tc.filter)
+		}
+		for i, line := range lines {
+			if w := lipgloss.Width(line); w > tc.cols {
+				t.Errorf("%d cols: line %d is %d wide: %q", tc.cols, i, w, line)
+			}
+		}
+		if strings.Contains(lines[2], "slots") {
+			t.Errorf("%d cols: separate stats line %q", tc.cols, lines[2])
+		}
+	}
+}
+
+func TestWatchTUIHeaderKeysAt80And120(t *testing.T) {
+	for _, cols := range []int{80, 120} {
+		m := loadedWatchModel(t, newFakeWatchTools())
+		m = watchUpdate(t, m, tea.WindowSizeMsg{Width: cols, Height: 20})
+		// The selected filter is the padded, highlighted chip.
+		for _, tc := range []struct{ key, chip string }{{"4", " 4 Run"}, {"0", " 0 All 6 "}, {"6", " 6 Fail"}} {
+			key, chip := tc.key, tc.chip
+			m, _ = watchKey(t, m, key)
+			if line := watchStrip(m.filterLine()); !strings.Contains(line, chip) {
+				t.Errorf("%d cols after %s: %q lacks %q", cols, key, line, chip)
+			}
+		}
+		if m.filter != watchFailed {
+			t.Errorf("%d cols: 6 selects %q", cols, m.filter)
+		}
+		m, _ = watchKey(t, m, "b")
+		if line := watchStrip(m.filterLine()); !m.board || !strings.Contains(line, "[board]") {
+			t.Errorf("%d cols: b shows %q", cols, line)
+		}
+		// Board column headers leave the counts to the filter row.
+		m, _ = watchKey(t, m, "0")
+		view := watchStrip(m.View())
+		if n := strings.Count(view, "Running 1"); n > 1 {
+			t.Errorf("%d cols: Running count shown %d times:\n%s", cols, n, view)
+		}
+		if lines := strings.Split(view, "\n"); !strings.HasPrefix(lines[2], "Sched") || strings.ContainsAny(lines[2], "0123456789") {
+			t.Errorf("%d cols: column headers %q", cols, lines[2])
+		}
 	}
 }
 
