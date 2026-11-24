@@ -19,6 +19,7 @@ require (
 	github.com/mattn/go-isatty v0.0.22
 	github.com/mattn/go-shellwords v1.0.13
 	github.com/modelcontextprotocol/go-sdk v1.6.1
+	github.com/muesli/termenv v0.16.0
 	github.com/openai/openai-go v1.12.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/slack-go/slack v0.36.0
@@ -180,7 +181,6 @@ require (
 	github.com/moricho/tparallel v0.3.2 // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
-	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/nakabonne/nestif v0.3.1 // indirect
 	github.com/nishanths/exhaustive v0.13.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect

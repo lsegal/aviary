@@ -124,6 +124,7 @@ export default defineConfig({
 						{ text: "Scheduled Tasks", link: "/guide/scheduled-tasks" },
 						{ text: "Code Loop", link: "/guide/projects" },
 						{ text: "The Code Loop on GitHub", link: "/guide/code-loop" },
+						{ text: "aviary watch", link: "/guide/watch" },
 						{ text: "Control Panel", link: "/guide/control-panel" },
 						{ text: "Operations", link: "/guide/operations" },
 					],

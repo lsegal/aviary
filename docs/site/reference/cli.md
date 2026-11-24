@@ -355,7 +355,7 @@ aviary task stop
 
 ## aviary watch
 
-Watch GitHub projects and fix ready issues with a CLI provider, in a one-off session isolated from your Aviary config. The session runs its own server against a temporary config and data directory that is removed when it ends; only the browser profile and provider credentials are shared, read in place. See [Watch sessions](/guide/projects#watch-sessions).
+Watch GitHub projects and fix ready issues with a CLI provider, in a one-off session isolated from your Aviary config. The session runs its own server against a temporary config and data directory that is removed when it ends; only the browser profile and provider credentials are shared, read in place. See [aviary watch](/guide/watch) and [Watch sessions](/guide/projects#watch-sessions).
 
 ```
 aviary watch [TARGET ...] [--agent NAME] [--model M] [--fallback M ...]

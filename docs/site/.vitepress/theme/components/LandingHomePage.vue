@@ -5,16 +5,21 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { data as skills } from "../../../skills/skills.data.mts";
 import LandingInstallBlock from "./LandingInstallBlock.vue";
 import SkillCard from "./skills/SkillCard.vue";
+import WatchTuiMock from "./WatchTuiMock.vue";
 
 interface ShowcaseItem {
 	title: string;
 	description: string;
 	bullets: string[];
-	lightSrc: string;
-	darkSrc: string;
-	alt: string;
-	// href links the entry to its guide page.
+	lightSrc?: string;
+	darkSrc?: string;
+	alt?: string;
+	// terminal shows the aviary watch TUI mock in place of a screenshot.
+	terminal?: boolean;
+	// href links the entry to its guide page, under linkText or "Read the
+	// {title} guide".
 	href?: string;
+	linkText?: string;
 }
 
 const showcaseItems: ShowcaseItem[] = [
@@ -125,6 +130,19 @@ const projectsItems: ShowcaseItem[] = [
 		lightSrc: "/screenshots/projects-run-light.png",
 		darkSrc: "/screenshots/projects-run-dark.png",
 		alt: "A Code Loop job's run view with plan, file changes, and test output",
+	},
+	{
+		title: "aviary watch",
+		description:
+			"The whole Code Loop in your terminal, no setup: a board and prompt chat beside the web UI.",
+		bullets: [
+			"Run aviary watch USER/REPO anywhere: a portable, no-configuration, minimal Code Loop instance.",
+			"It serves the Code Loop web UI and adds a terminal board with prompt chat, so you can follow and steer jobs from either.",
+			"Uses your existing gh login and CLI providers; nothing to install beyond the aviary binary.",
+		],
+		terminal: true,
+		href: "/guide/watch",
+		linkText: "Read the aviary watch docs",
 	},
 ];
 
@@ -257,7 +275,42 @@ function formatWholeNumber(value: number) {
 }
 
 function resolveShowcaseSrc(item: ShowcaseItem) {
-	return withBase(isDark.value ? item.darkSrc : item.lightSrc);
+	return withBase((isDark.value ? item.darkSrc : item.lightSrc) ?? "");
+}
+
+// onTabKey moves a tablist's selection with the arrow, Home and End keys,
+// focusing the newly selected tab.
+function onTabKey(
+	event: KeyboardEvent,
+	count: number,
+	index: number,
+	select: (next: number) => void,
+) {
+	let next: number;
+	switch (event.key) {
+		case "ArrowDown":
+		case "ArrowRight":
+			next = (index + 1) % count;
+			break;
+		case "ArrowUp":
+		case "ArrowLeft":
+			next = (index - 1 + count) % count;
+			break;
+		case "Home":
+			next = 0;
+			break;
+		case "End":
+			next = count - 1;
+			break;
+		default:
+			return;
+	}
+	event.preventDefault();
+	select(next);
+	const tabs = (
+		event.currentTarget as HTMLElement
+	).parentElement?.querySelectorAll<HTMLElement>("[role=tab]");
+	tabs?.[next]?.focus();
 }
 
 onMounted(() => {
@@ -550,10 +603,12 @@ onBeforeUnmount(() => {
 
 				<div class="landing-showcase reveal">
 					<div class="landing-showcase-head">
-						<div class="landing-showcase-tabs" role="tablist">
-							<button v-for="(item, index) in projectsItems" :key="item.title" type="button"
-								class="landing-showcase-tab" :class="{ active: projectsIndex === index }" role="tab"
-								:aria-selected="projectsIndex === index" @click="projectsIndex = index">
+						<div class="landing-showcase-tabs" role="tablist" aria-label="Code Loop views">
+							<button v-for="(item, index) in projectsItems" :id="`projects-tab-${index}`" :key="item.title"
+								type="button" class="landing-showcase-tab" :class="{ active: projectsIndex === index }" role="tab"
+								:aria-selected="projectsIndex === index" aria-controls="projects-tabpanel"
+								:tabindex="projectsIndex === index ? 0 : -1" @click="projectsIndex = index"
+								@keydown="onTabKey($event, projectsItems.length, index, (next) => (projectsIndex = next))">
 								<span class="num">{{ String(index + 1).padStart(2, "0") }}</span>
 								<span>
 									<span class="tit">{{ item.title }}</span>
@@ -561,8 +616,11 @@ onBeforeUnmount(() => {
 								</span>
 							</button>
 						</div>
-						<div class="landing-showcase-panel">
-							<div class="landing-showcase-image">
+						<div id="projects-tabpanel" class="landing-showcase-panel"
+							:class="{ 'landing-showcase-panel-terminal': activeProjectsItem.terminal }" role="tabpanel"
+							:aria-labelledby="`projects-tab-${projectsIndex}`">
+							<WatchTuiMock v-if="activeProjectsItem.terminal" />
+							<div v-else class="landing-showcase-image">
 								<img :src="resolveShowcaseSrc(activeProjectsItem)" :alt="activeProjectsItem.alt" />
 							</div>
 							<div class="landing-showcase-copy">
@@ -577,6 +635,14 @@ onBeforeUnmount(() => {
 										{{ bullet }}
 									</li>
 								</ul>
+								<a v-if="activeProjectsItem.href" class="landing-showcase-link"
+									:href="withBase(activeProjectsItem.href)">
+									{{ activeProjectsItem.linkText ?? `Read the ${activeProjectsItem.title} guide` }}
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+										aria-hidden="true">
+										<path d="M5 12h14M13 5l7 7-7 7" />
+									</svg>
+								</a>
 							</div>
 						</div>
 					</div>
@@ -599,18 +665,29 @@ onBeforeUnmount(() => {
 						</p>
 					</div>
 					<div class="card c-wide-3 reveal">
-						<h3>Scheduled project tasks</h3>
+						<h3>Scheduled tasks and reports</h3>
 						<p>
 							A nightly triage or a weekly dependency update runs on a timer
-							and shows on the board as a scheduled job.
+							and shows on the board as a scheduled job. When a job merges,
+							fails, or starts waiting, a short report goes to the Slack,
+							Discord, or Signal channel you pick.
 						</p>
 					</div>
 					<div class="card c-wide-3 reveal">
-						<h3>Per-project reports</h3>
+						<h3>aviary watch</h3>
 						<p>
-							When a job merges, fails, or starts waiting, a short report goes
-							to the Slack, Discord, or Signal channel you pick.
+							Use <code>aviary watch USER/REPO</code> for a portable,
+							no-configuration, minimal Aviary Code Loop instance. It serves
+							the web UI and adds a board with prompt chat right in your
+							terminal.
 						</p>
+						<a class="landing-btn landing-btn-ghost landing-card-btn" :href="withBase('/guide/watch')">
+							Read the aviary watch docs
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+								aria-hidden="true">
+								<path d="M5 12h14M13 5l7 7-7 7" />
+							</svg>
+						</a>
 					</div>
 				</div>
 
@@ -2320,6 +2397,18 @@ onBeforeUnmount(() => {
 .landing-projects-extras {
 	grid-auto-rows: auto;
 	margin-top: 16px;
+}
+
+.landing-card-btn {
+	align-self: flex-start;
+	margin-top: auto;
+}
+
+/* The aviary watch terminal is wide, so it takes the panel's full width with
+   its description under it. */
+.landing-showcase-panel-terminal {
+	grid-template-columns: 1fr;
+	align-items: start;
 }
 
 .landing-projects-links {
