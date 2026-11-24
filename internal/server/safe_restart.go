@@ -271,7 +271,7 @@ func (s *Server) gitUpgrade(ctx context.Context, dir, when string) (saferestart.
 			plan = update.DevReloadPlan{GoChanged: true, RestartReason: "listing the pulled changes failed: " + err.Error()}
 		}
 	}
-	msg := update.GitPullMessage(res, plan)
+	msg := update.GitCompareMessage(res) + " " + update.GitPullMessage(res, plan)
 	switch {
 	case res.Commits == 0:
 	case plan.RestartReason != "":

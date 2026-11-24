@@ -209,13 +209,17 @@ func CurrentVersion(ctx context.Context) string {
 }
 
 // buildRevision returns the VCS revision embedded in the binary, if any.
-var buildRevision = func() string {
+var buildRevision = func() string { return buildSetting("vcs.revision") }
+
+// buildSetting returns a setting Go embedded in the binary's build info, such
+// as vcs.revision, or "".
+func buildSetting(key string) string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return ""
 	}
 	for _, s := range info.Settings {
-		if s.Key == "vcs.revision" {
+		if s.Key == key {
 			return s.Value
 		}
 	}

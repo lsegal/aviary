@@ -23,6 +23,7 @@ var (
 	upgradeWhen          string
 	upgradeSource        bool
 	upgradeRelease       bool
+	upgradeVerbose       bool
 	doctorDisableVersion bool
 )
 
@@ -30,13 +31,18 @@ var upgradeCmd = &cobra.Command{
 	Use:   "upgrade",
 	Short: "Upgrade Aviary to the latest release",
 	Long: `Upgrade Aviary to the latest release, or to --version (with or without a
-leading v). Does nothing when Aviary is already at that version.
+leading v). Does nothing when Aviary is already at that version. The first
+line of output says what kind of install is being upgraded; --verbose also
+says how that was decided.
 
 The upgrade mode follows how this binary was built: a release build
 downloads the latest GitHub release, and a dev build running from a source
 checkout (the checkout holding the binary, or AVIARY_CHECKOUT) instead
 fast-forwards the checkout with git pull, and only when it has no local
-changes. The working directory never decides the mode. --release and
+changes. It reports the local and upstream commits it compared after
+fetching, says whether the running binary is older than the checkout's HEAD,
+and prints the command that rebuilds it. The working directory never decides
+the mode. --release and
 --source force a mode; --source looks in the working directory when no other
 checkout is known.
 
@@ -54,6 +60,7 @@ func init() {
 	upgradeCmd.Flags().StringVar(&upgradeWhen, "when", saferestart.WhenNow, "When the running server restarts: now, or idle (once no jobs are running)")
 	upgradeCmd.Flags().BoolVar(&upgradeRelease, "release", false, "Upgrade from GitHub releases, even on a dev build")
 	upgradeCmd.Flags().BoolVar(&upgradeSource, "source", false, "Upgrade by pulling the source checkout, even on a release build")
+	upgradeCmd.Flags().BoolVar(&upgradeVerbose, "verbose", false, "Explain how the install type was detected")
 	upgradeCmd.MarkFlagsMutuallyExclusive("release", "source")
 	rootCmd.AddCommand(upgradeCmd)
 }
@@ -79,6 +86,12 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	mode := upgradeMode()
 	if mode == update.InstallSource && upgradeVersion != "" {
 		return errors.New("--version picks a release, so it cannot be combined with --source")
+	}
+	fmt.Println(update.UpgradeSummary())
+	if upgradeVerbose {
+		for _, reason := range update.InstallReasons() {
+			fmt.Printf("  - %s\n", reason)
+		}
 	}
 	ctx, cancel := context.WithTimeout(update.WithCaller(context.Background(), "aviary upgrade"), 15*time.Second)
 	defer cancel()
@@ -159,9 +172,13 @@ func runSourceUpgrade(check update.CheckResult) error {
 	}
 	srv, running := runningServerInstall()
 	if running && srv.InstallType == update.InstallSource && srv.Git != nil && sameDir(srv.Git.Dir, dir) {
-		return upgradeThroughServer(map[string]any{"when": upgradeWhen}, func() {
+		err := upgradeThroughServer(map[string]any{"when": upgradeWhen}, func() {
 			fmt.Printf("Updating the running Aviary server from the source checkout at %s.\n", dir)
 		})
+		if err == nil && update.IsDevBuild() {
+			fmt.Println(releaseHint)
+		}
+		return err
 	}
 	pullCtx, pullCancel := context.WithTimeout(update.WithCaller(context.Background(), "aviary upgrade"), 2*time.Minute)
 	defer pullCancel()
@@ -169,12 +186,25 @@ func runSourceUpgrade(check update.CheckResult) error {
 	if err != nil {
 		return fmt.Errorf("updating the source checkout at %s: %w", dir, err)
 	}
+	fmt.Println(update.GitCompareMessage(res))
 	fmt.Println(update.GitPullMessage(res, update.DevReloadPlan{GoChanged: true, RestartReason: "the server is not running"}))
+	if update.IsDevBuild() {
+		if msg, stale := update.BinaryStaleness(res.Head); msg != "" {
+			fmt.Println(msg)
+			if stale {
+				fmt.Printf("Rebuild it with: %s\n", update.RebuildCommand(dir))
+			}
+		}
+		fmt.Println(releaseHint)
+	}
 	if running {
 		fmt.Println(otherServerNote(srv))
 	}
 	return nil
 }
+
+// releaseHint offers a dev build the switch to a release binary.
+const releaseHint = "To install the latest release binary instead, run: aviary upgrade --release"
 
 // runningServerInstall reports the running server's version check, which
 // says what kind of install it is. ok is false when no server is running or
