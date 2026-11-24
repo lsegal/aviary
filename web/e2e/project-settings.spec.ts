@@ -686,6 +686,74 @@ test("an agent's projects run their jobs on its model and fallbacks", async ({
 	);
 });
 
+test("a job model override replaces every agent's models for its projects' jobs", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/projects/settings?agent=coder");
+	const models = page.getByTestId("job-models").locator("li");
+	await expect(models.nth(0)).toHaveAttribute("data-spec", "claude/opus");
+	await expect(page.getByTestId("job-models-source")).toContainText(
+		"coder's model",
+	);
+
+	// The picker offers the installed CLI providers' models.
+	const model = page.locator('[data-field="model"]');
+	await chooseValue(model, "claude/sonnet");
+	const fallbacks = page.locator('[data-field="fallbacks"]');
+	await fallbacks.click();
+	await page
+		.getByRole("listbox")
+		.locator('[role="option"][data-value="codex/gpt-5.5-mini"]')
+		.click();
+	await page.keyboard.press("Escape");
+
+	const yaml = page.getByTestId("project-yaml");
+	await expect(yaml).toContainText("model: claude/sonnet");
+	await expect(yaml).toContainText("fallbacks: [codex/gpt-5.5-mini]");
+	await expect(models).toHaveCount(2);
+	await expect(models.nth(0)).toHaveAttribute("data-spec", "claude/sonnet");
+	await expect(models.nth(1)).toHaveAttribute(
+		"data-spec",
+		"codex/gpt-5.5-mini",
+	);
+	await expect(page.getByTestId("job-models-source")).toContainText(
+		"project override",
+	);
+
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(1);
+	expect(savedConfig(calls).projects).toEqual({
+		...PROJECTS,
+		model: "claude/sonnet",
+		fallbacks: ["codex/gpt-5.5-mini"],
+	});
+	expect(savedProjects(calls, "coder")).toEqual(CODER_PROJECTS);
+});
+
+test("a saved job model override loads into the picker", async ({ page }) => {
+	await setup(page, {
+		config: {
+			...CONFIG,
+			projects: {
+				...PROJECTS,
+				model: "claude:opus",
+				fallbacks: ["codex/gpt-5.5"],
+			},
+		},
+	});
+	await page.goto("/projects/settings?agent=atlas");
+	await expectValue(page.locator('[data-field="model"]'), "claude:opus");
+	await expect(
+		page.locator('[data-field="fallbacks"]').getByTestId("combobox-chip"),
+	).toHaveCount(1);
+	// Even an agent on an API model runs its projects' jobs on the override.
+	const models = page.getByTestId("job-models").locator("li");
+	await expect(models).toHaveCount(2);
+	await expect(models.nth(0)).toHaveAttribute("data-spec", "claude/opus");
+	await expect(models.nth(1)).toHaveAttribute("data-spec", "codex/gpt-5.5");
+});
+
 test("a CLI provider model without the cli/ prefix runs jobs on that CLI", async ({
 	page,
 }) => {
