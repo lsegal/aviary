@@ -429,10 +429,6 @@ func updateProjectTask(args projectTaskUpdateArgs, change string) (map[string]an
 		RunOnce: args.RunOnce, Overlap: args.Overlap, Missed: args.Missed,
 		Project: args.NewProject, Model: args.Model, Precompile: args.Precompile,
 	}
-	if update.Target != nil {
-		normalized := normalizeTaskTarget(*update.Target)
-		update.Target = &normalized
-	}
 	if _, _, err := updateTask(context.Background(), nil, update); err != nil {
 		return nil, err
 	}
