@@ -70,7 +70,13 @@ test("a watch session's nav shows only Code Loop and Scheduled Tasks", async ({
 			sidebar.getByRole("link", { name: label, exact: true }),
 		).toHaveCount(0);
 	}
-	await expect(page.getByTestId("sidebar-add-project")).toHaveCount(0);
+	// Code Loop keeps its blue + to add a project, as outside a watch (#1197).
+	const plus = page.getByTestId("sidebar-add-project");
+	await expect(plus).toHaveAttribute("href", "/agents/watch/projects?add=1");
+	await sidebar.getByRole("link", { name: "Code Loop", exact: true }).hover();
+	await expect
+		.poll(() => plus.evaluate((el) => Number(getComputedStyle(el).opacity)))
+		.toBe(1);
 });
 
 test("a watch session's Code Loop has the prompt chat (#1195)", async ({

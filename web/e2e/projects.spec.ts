@@ -1375,7 +1375,7 @@ test("an agent's Code Loop is one board of all its projects, with no settings", 
 	await expect.poll(() => calls.project_refresh?.[0]).toEqual({});
 });
 
-test("the Code Loop board's header starts with a + that adds a project (#739, #1147)", async ({
+test("the Code Loop board's header starts with a blue + that adds a project (#739, #1147, #1197)", async ({
 	page,
 }) => {
 	await setup(page);
@@ -1384,9 +1384,12 @@ test("the Code Loop board's header starts with a + that adds a project (#739, #1
 	const add = icons.locator(":scope > *").nth(1);
 	await expect(add).toHaveAttribute("aria-label", "Add project");
 	await expect(add).toHaveAttribute("title", "Add project");
-	// An outlined icon button, like every page header's actions.
-	await expect(add).toHaveClass(/\bborder-gray-200\b/);
-	await expect(add).not.toHaveClass(/\bbg-blue-600\b/);
+	// The sidebar's blue + (#1197): a white + on the same blue.
+	const blue = (el: Element) => getComputedStyle(el).backgroundColor;
+	await expect
+		.poll(() => add.evaluate(blue))
+		.toBe(await page.getByTestId("sidebar-add-project").evaluate(blue));
+	await expect(add).toHaveCSS("color", "rgb(255, 255, 255)");
 	await expect(icons.locator(":scope > *").nth(2)).toHaveAttribute(
 		"aria-label",
 		"Check now",

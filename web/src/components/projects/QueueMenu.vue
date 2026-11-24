@@ -3,7 +3,10 @@
 		<DropdownMenuTrigger asChild>
 			<button type="button" data-testid="queue-menu" title="Queue a job for this project"
 				class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-				<PlusIcon aria-hidden="true" class="h-5 w-5" />
+				<span data-testid="queue-menu-plus" aria-hidden="true"
+					class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-blue-600 text-white">
+					<PlusIcon class="h-3.5 w-3.5" />
+				</span>
 				Queue
 			</button>
 		</DropdownMenuTrigger>
@@ -27,10 +30,12 @@
 <script setup lang="ts">
 // The project header's "+ Queue" menu (#1095): fix an issue with gh-fix,
 // safely merge pull requests with gh-safe-merge, or answer a Discussion with
-// gh-discuss. Each choice opens that skill's picker.
+// gh-discuss. Each choice opens that skill's picker. Its "+" is the
+// sidebar's blue "+" (#1197).
+
+import PlusIcon from "@heroicons/vue/16/solid/PlusIcon";
 import ArrowsRightLeftIcon from "@heroicons/vue/24/outline/ArrowsRightLeftIcon";
 import ChatBubbleLeftEllipsisIcon from "@heroicons/vue/24/outline/ChatBubbleLeftEllipsisIcon";
-import PlusIcon from "@heroicons/vue/24/outline/PlusIcon";
 import WrenchScrewdriverIcon from "@heroicons/vue/24/outline/WrenchScrewdriverIcon";
 import {
 	DropdownMenuContent,

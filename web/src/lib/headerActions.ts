@@ -9,6 +9,10 @@ export const HEADER_ACTION_CLS =
 export const HEADER_ICON_CLS =
 	"inline-flex shrink-0 items-center justify-center rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800";
 
+/** The blue "+" add action, such as the Code Loop board's Add project (#739, #1197). */
+export const HEADER_ADD_CLS =
+	"inline-flex shrink-0 items-center justify-center rounded-lg border border-blue-600 bg-blue-600 p-1.5 text-white hover:bg-blue-700 disabled:opacity-50 dark:border-blue-500 dark:bg-blue-600 dark:hover:bg-blue-500";
+
 /** An icon-only toggle that is on, such as an open chat panel. */
 export const HEADER_ICON_ON_CLS =
 	"inline-flex shrink-0 items-center justify-center rounded-lg border border-blue-600 bg-blue-50 p-1.5 text-blue-700 dark:border-blue-500 dark:bg-blue-950/50 dark:text-blue-300";

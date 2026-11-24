@@ -146,7 +146,7 @@
                 <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
                 <ProjectRunningBadge :running="child.running ?? 0" />
               </router-link>
-              <SidebarRowAction v-if="child.key === 'projects' && !minimal" label="Add project" data-testid="sidebar-add-project"
+              <SidebarRowAction v-if="child.key === 'projects'" label="Add project" data-testid="sidebar-add-project"
                 :to="addProjectLink(soleAgent.name)" />
               <SidebarRowAction v-else-if="child.key === 'chat'" label="New chat" data-testid="sidebar-new-chat"
                 :disabled="creatingChat" @click="newChat(soleAgent.name)" />
@@ -186,7 +186,7 @@
                     <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
                     <ProjectRunningBadge :running="child.running ?? 0" />
                   </router-link>
-                  <SidebarRowAction v-if="child.key === 'projects' && !minimal" label="Add project" data-testid="sidebar-add-project"
+                  <SidebarRowAction v-if="child.key === 'projects'" label="Add project" data-testid="sidebar-add-project"
                     :to="addProjectLink(a.name)" />
                   <SidebarRowAction v-else-if="child.key === 'chat'" label="New chat" data-testid="sidebar-new-chat"
                     :disabled="creatingChat" @click="newChat(a.name)" />
