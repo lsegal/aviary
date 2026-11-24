@@ -335,6 +335,105 @@ func TestRunUpgradeSwapsTheBinaryTheServerRuns(t *testing.T) {
 	assert.NotContains(t, f.tools(), "server_upgrade")
 }
 
+// A release server already on the target is not reinstalled or restarted:
+// only this binary is behind, so only it is upgraded.
+func TestRunUpgradeLeavesAServerAlreadyOnTheTarget(t *testing.T) {
+	stubLatestRelease(t, "v0.7.3", "v0.7.5")
+	installs, _ := stubInstall(t)
+	exe := executable(t)
+	other := filepath.Join(t.TempDir(), "aviary")
+	f := startFakeServer(t, &runningServer{CheckResult: update.CheckResult{InstallType: update.InstallRelease, CurrentVersion: "v0.7.5"}, Executable: other})
+
+	out, err := captureUpgrade(t)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"v0.7.5 " + exe}, *installs, "only the binary that is behind is replaced")
+	assert.Contains(t, out, "Aviary upgraded to v0.7.5.")
+	assert.Contains(t, out, "The running Aviary server is already at v0.7.5.")
+	assert.NotContains(t, f.tools(), "server_restart")
+}
+
+// stubPrompt answers the doctor's upgrade prompt with answer, running
+// onPrompt first, and records the prompts asked.
+func stubPrompt(t *testing.T, answer bool, onPrompt func()) *[]string {
+	t.Helper()
+	orig := promptYesNo
+	t.Cleanup(func() { promptYesNo = orig })
+	asked := &[]string{}
+	promptYesNo = func(prompt string) (bool, error) {
+		*asked = append(*asked, prompt)
+		if onPrompt != nil {
+			onPrompt()
+		}
+		return answer, nil
+	}
+	return asked
+}
+
+// captureStdout runs fn and returns its stdout.
+func captureStdout(t *testing.T, fn func() error) (string, error) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	stdout := os.Stdout
+	os.Stdout = w
+	runErr := fn()
+	os.Stdout = stdout
+	require.NoError(t, w.Close())
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+	return string(out), runErr
+}
+
+// The doctor judges the install aviary upgrade acts on, so an install
+// already on the latest release is reported up to date with no prompt.
+func TestDoctorVersionCheckUpToDateDoesNotPrompt(t *testing.T) {
+	stubLatestRelease(t, "v0.7.5", "v0.7.5")
+	installs, _ := stubInstall(t)
+	startFakeServer(t, &runningServer{CheckResult: update.CheckResult{InstallType: update.InstallRelease, CurrentVersion: "v0.7.5"}, Executable: executable(t)})
+	asked := stubPrompt(t, true, nil)
+
+	out, err := captureStdout(t, maybeRunDoctorVersionCheck)
+	require.NoError(t, err)
+	assert.Contains(t, out, "Version check: [OK] v0.7.5")
+	assert.Empty(t, *asked)
+	assert.Empty(t, *installs)
+}
+
+// An older binary than the running server is named in the prompt, and
+// accepting upgrades that binary instead of answering "already at" from the
+// server's version.
+func TestDoctorVersionCheckUpgradesTheBinaryItPromptedFor(t *testing.T) {
+	stubLatestRelease(t, "v0.7.3", "v0.7.5")
+	installs, _ := stubInstall(t)
+	exe := executable(t)
+	f := startFakeServer(t, &runningServer{CheckResult: update.CheckResult{InstallType: update.InstallRelease, CurrentVersion: "v0.7.5"}, Executable: filepath.Join(t.TempDir(), "aviary")})
+	asked := stubPrompt(t, true, nil)
+
+	out, err := captureStdout(t, maybeRunDoctorVersionCheck)
+	require.NoError(t, err)
+	assert.Contains(t, out, "Version check: [WARN] upgrade available v0.7.3 -> v0.7.5 for "+exe+" (the running server is at v0.7.5)")
+	assert.Equal(t, []string{"Upgrade to v0.7.5 now? [y/N]: "}, *asked)
+	assert.Contains(t, out, "Upgrading v0.7.3 → v0.7.5")
+	assert.Equal(t, []string{"v0.7.5 " + exe}, *installs)
+	assert.Contains(t, out, "Aviary upgraded to v0.7.5.")
+	assert.NotContains(t, f.tools(), "server_upgrade")
+	assert.NotContains(t, f.tools(), "server_restart")
+}
+
+// Accepting the prompt installs the version it named, even when a newer
+// release appears before the upgrade runs.
+func TestDoctorVersionCheckInstallsThePromptedVersion(t *testing.T) {
+	stubLatestRelease(t, "v0.7.3", "v0.7.5")
+	installs, _ := stubInstall(t)
+	noServer(t)
+	stubPrompt(t, true, func() { stubLatestRelease(t, "v0.7.3", "v0.7.6") })
+
+	out, err := captureStdout(t, maybeRunDoctorVersionCheck)
+	require.NoError(t, err)
+	assert.Contains(t, out, "Upgrading v0.7.3 → v0.7.5")
+	assert.Equal(t, []string{"v0.7.5 " + executable(t)}, *installs)
+}
+
 // --when idle swaps the binary now and has the server restart on it once no
 // jobs are running.
 func TestRunUpgradeWhenIdleRestartsLater(t *testing.T) {
