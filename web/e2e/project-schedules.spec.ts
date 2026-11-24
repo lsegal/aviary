@@ -201,6 +201,8 @@ async function setup(
 		jobs?: unknown[];
 		entries?: unknown[];
 		job?: unknown;
+		/** More tool fixtures, given the task list the board reads. */
+		extra?: (tasks: unknown[]) => Record<string, unknown>;
 	} = {},
 ) {
 	await setAuthToken(page);
@@ -339,6 +341,7 @@ async function setup(
 						},
 					]
 				: [],
+		...opts.extra?.(tasks),
 	});
 	return calls;
 }
@@ -1045,6 +1048,124 @@ test("the header Schedule button creates a project scheduled task through the sh
 		"href",
 		"/agents/assistant/tasks?task=hourly-ci-watch",
 	);
+});
+
+test("the prompt chat creates a weekly scheduled task that shows on the board and in Scheduled Tasks (#1114)", async ({
+	page,
+}) => {
+	const reply =
+		"Created weekly-seo on lsegal/aviary: weekly on Mon at 09:00 (UTC). Next runs: Mon 09:00, then each Monday. Not deterministic, so each run uses the model: about 4,600–12,400 tokens per run.";
+	const SEO_PROMPT =
+		"Review the aviary docs site's SEO and file issues for what to fix.";
+	const runs: Args[] = [];
+	await setup(page, {
+		owner: "assistant",
+		extra: (tasks) => ({
+			agent_list: [{ name: "assistant" }, { name: "projects" }],
+			// The config lists the task once it is saved, as it lists a task
+			// saved from the Add task dialog.
+			config_get: () => ({
+				agents: [
+					{
+						name: "assistant",
+						model: "cli/codex/gpt-5.5",
+						projects: [{ target: "lsegal/aviary" }],
+						tasks: runs.length
+							? [
+									{
+										name: "weekly-seo",
+										type: "project",
+										project: "lsegal/aviary",
+										prompt: SEO_PROMPT,
+										trigger: "weekly",
+										days: "mon",
+										at: "09:00",
+										timezone: "UTC",
+										enabled: true,
+										from_file: true,
+									},
+								]
+							: [],
+					},
+				],
+			}),
+			session_messages: () =>
+				runs.flatMap((run, i) => [
+					{
+						id: `u${i}`,
+						session_id: "projects-chat",
+						role: "user",
+						content: run.message,
+						timestamp: minutesFromNow(0),
+					},
+					{
+						id: `a${i}`,
+						session_id: "projects-chat",
+						role: "assistant",
+						content: reply,
+						timestamp: minutesFromNow(0),
+					},
+				]),
+			// The mocked model calls project_task_create, which saves the task
+			// through task_schedule; the scheduler then lists it like a task
+			// made in the Add task dialog.
+			agent_run: (args?: Args) => {
+				runs.push(args ?? {});
+				tasks.push(
+					schedule({
+						id: "assistant/weekly-seo",
+						name: "weekly-seo",
+						prompt: SEO_PROMPT,
+						enabled: true,
+						trigger_type: "weekly",
+						days: "mon",
+						at: "09:00",
+						timezone: "UTC",
+						description: "weekly on Mon at 09:00 (UTC)",
+						next_run: minutesFromNow(60 * 24 * 3),
+					}),
+				);
+				return { stream: [reply], result: "" };
+			},
+		}),
+	});
+	await page.goto("/agents/assistant/projects/lsegal%2Faviary");
+	await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
+
+	await page.getByTestId("prompt-chat-toggle").click();
+	const chat = page.getByTestId("project-chat");
+	const input = chat.getByPlaceholder("Describe a task or ask a question");
+	await expect(input).toBeEnabled();
+	await input.fill("create a scheduled task to do SEO for aviary weekly");
+	await input.press("Enter");
+	await expect.poll(() => runs.length).toBe(1);
+	expect(runs[0]).toMatchObject({ name: "projects" });
+	// The reply previews the schedule, its next runs and its cost.
+	await expect(chat).toContainText("weekly on Mon at 09:00 (UTC)");
+	await expect(chat).toContainText("tokens per run");
+
+	// The task shows on the board with the others, as a UI-made one does.
+	const card = page
+		.getByTestId("scheduled-card")
+		.filter({ hasText: "weekly-seo" });
+	await expect(card).toHaveCount(1);
+	await expect(card.getByTestId("scheduled-trigger")).toHaveText(
+		"weekly on Mon at 09:00 (UTC)",
+	);
+	await card.getByRole("link", { name: "Edit schedule" }).click();
+	const link = page
+		.getByTestId("schedule-editor")
+		.getByTestId("schedule-task-link");
+	await expect(link).toHaveAttribute(
+		"href",
+		"/agents/assistant/tasks?task=weekly-seo",
+	);
+	// And in Scheduled Tasks.
+	await link.click();
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\?task=weekly-seo/);
+	const main = page.getByRole("main");
+	await expect(main).toContainText("Defined in: tasks/weekly-seo.md");
+	await expect(main.getByRole("textbox").first()).toHaveValue("weekly-seo");
 });
 
 test("new schedule on an owned project runs under the project's agent without asking", async ({

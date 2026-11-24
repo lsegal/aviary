@@ -379,6 +379,70 @@
 		"log_offset",
 		"targets"
 	],
+	"project_task_create": [
+		"at",
+		"content",
+		"days",
+		"dry_run",
+		"every",
+		"missed",
+		"model",
+		"name",
+		"overlap",
+		"precompile",
+		"project",
+		"run_once",
+		"schedule",
+		"send_to",
+		"start_at",
+		"timezone",
+		"trigger"
+	],
+	"project_task_delete": [
+		"confirm",
+		"name",
+		"project"
+	],
+	"project_task_get": [
+		"name",
+		"project"
+	],
+	"project_task_list": [
+		"project"
+	],
+	"project_task_pause": [
+		"name",
+		"project"
+	],
+	"project_task_resume": [
+		"name",
+		"project"
+	],
+	"project_task_run": [
+		"name",
+		"project"
+	],
+	"project_task_update": [
+		"at",
+		"content",
+		"days",
+		"enabled",
+		"every",
+		"missed",
+		"model",
+		"name",
+		"new_name",
+		"new_project",
+		"overlap",
+		"precompile",
+		"project",
+		"run_once",
+		"schedule",
+		"send_to",
+		"start_at",
+		"timezone",
+		"trigger"
+	],
 	"project_unblock_run": [
 		"number",
 		"target"

@@ -58,6 +58,31 @@ func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) 
 	return engine.runProjectTask(ctx, run, issueRepository(run.Project, Issue{}), session)
 }
 
+// WatchedProjects maps each project this instance watches to the Aviary
+// agent its scheduled tasks belong to, "" for a runtime watch no agent owns.
+// The Code Loop agent's project task tools are scoped to these projects.
+func (m *Manager) WatchedProjects() map[string]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	targets := config.AgentProjectsConfig(m.list).Targets()
+	for _, watch := range m.watches {
+		targets = append(targets, watch.Targets...)
+	}
+	watched := make(map[string]string, len(targets))
+	for _, target := range targets {
+		if target = strings.TrimSpace(target); target != "" {
+			watched[target] = m.projectAgentLocked(target)
+		}
+	}
+	return watched
+}
+
+// LogTaskChange records a change the Code Loop agent made to a project's
+// scheduled task in the Code Loop log.
+func (m *Manager) LogTaskChange(project, task, change string) {
+	m.logf("%s: scheduled task %s %s from the prompt chat", project, task, change)
+}
+
 // projectAgentLocked names the Aviary agent target runs under, as
 // settingsLocked resolves it: a watch's agent, else the agent that owns it.
 // It returns "" for a runtime watch no agent owns.
