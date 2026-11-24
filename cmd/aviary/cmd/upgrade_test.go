@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -230,7 +231,10 @@ func gitRun(t *testing.T, dir string, args ...string) {
 	require.NoError(t, err, "git %v: %s", args, out)
 }
 
-func TestRunUpgradeSourceOnAReleaseBinaryPullsTheCheckout(t *testing.T) {
+// checkoutBehindUpstream returns an Aviary git checkout one commit behind its
+// upstream.
+func checkoutBehindUpstream(t *testing.T) string {
+	t.Helper()
 	root := t.TempDir()
 	gitRun(t, root, "init", "-q", "--bare", "-b", "main", "remote.git")
 	gitRun(t, root, "clone", "-q", "remote.git", "other")
@@ -247,6 +251,11 @@ func TestRunUpgradeSourceOnAReleaseBinaryPullsTheCheckout(t *testing.T) {
 	gitRun(t, other, "push", "-q")
 	checkout, err := filepath.EvalSymlinks(filepath.Join(root, "checkout"))
 	require.NoError(t, err)
+	return checkout
+}
+
+func TestRunUpgradeSourceOnAReleaseBinaryPullsTheCheckout(t *testing.T) {
+	checkout := checkoutBehindUpstream(t)
 	t.Chdir(checkout)
 
 	stubLatestRelease(t, "v0.7.3", "v0.7.5")
@@ -256,8 +265,33 @@ func TestRunUpgradeSourceOnAReleaseBinaryPullsTheCheckout(t *testing.T) {
 
 	out, err := captureUpgrade(t)
 	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(out, "Installed release v0.7.3 at "), "the first line names the install: %q", out)
+	assert.Contains(t, out, "Fetched origin/main: local ")
+	assert.Contains(t, out, "(0 ahead, 1 behind).")
 	assert.Contains(t, out, "Pulled 1 commit(s) into "+checkout)
 	assert.NotContains(t, out, "v0.7.5", "--source never looks at releases")
+	assert.NotContains(t, out, "aviary upgrade --release", "a release binary needs no hint to switch to releases")
+	assert.Empty(t, *calls)
+}
+
+func TestRunUpgradeSourceOnADevBuildReportsTheBinary(t *testing.T) {
+	checkout := checkoutBehindUpstream(t)
+	t.Chdir(checkout)
+
+	stubLatestRelease(t, "dev", "v0.7.5")
+	calls := stubServer(t, nil)
+	upgradeSource, upgradeVerbose = true, true
+	t.Cleanup(func() { upgradeSource, upgradeVerbose = false, false })
+
+	out, err := captureUpgrade(t)
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(out, "Running a dev build"), "the first line names the install: %q", out)
+	assert.Contains(t, out, "  - the binary's stamped version \"dev\" is not a release")
+	assert.Contains(t, out, "working directory is never used")
+	assert.Contains(t, out, "Fetched origin/main: local ")
+	assert.Contains(t, out, "Pulled 1 commit(s) into "+checkout)
+	assert.Contains(t, out, "cannot be compared with the checkout's HEAD", "a test binary embeds no VCS revision")
+	assert.Contains(t, out, "To install the latest release binary instead, run: aviary upgrade --release")
 	assert.Empty(t, *calls)
 }
 

@@ -16,6 +16,7 @@ export default defineConfig(({ command }) => ({
 		// Expose the dev server on the LAN over HTTPS: browsers only allow the
 		// composer mic (getUserMedia) on secure origins or localhost.
 		host: true,
+		// Accept the same LAN host names as the docs dev server (#1105).
 		allowedHosts: devAllowedHosts(),
 		https: command === "serve" ? devHttps() : undefined,
 		// Target the backend with the scheme and port it serves, so the proxy
