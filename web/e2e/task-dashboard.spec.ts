@@ -53,7 +53,11 @@ async function mockTask(
 	jobs: MockJob[],
 	opts: { enabled?: boolean; history?: object[]; task?: object } = {},
 ) {
-	const state = { jobs, enabled: opts.enabled ?? true };
+	const state: { jobs: MockJob[]; enabled: boolean; task?: object } = {
+		jobs,
+		enabled: opts.enabled ?? true,
+		task: opts.task,
+	};
 	const calls: { tool: string; args: Record<string, unknown> }[] = [];
 	const logs = new Map<string, string>();
 	const record = (tool: string, args?: Record<string, unknown>) =>
@@ -74,7 +78,7 @@ async function mockTask(
 							every: "15m",
 							prompt: "Report",
 							enabled: state.enabled,
-							...opts.task,
+							...state.task,
 						},
 					],
 				},
@@ -119,6 +123,17 @@ async function mockTask(
 			});
 			state.jobs = [started, ...state.jobs];
 			return started;
+		},
+		config_task_convert_to_script: (args?: Record<string, unknown>) => {
+			record("config_task_convert_to_script", args);
+			state.task = {
+				...state.task,
+				precompile: true,
+				precompile_note: undefined,
+				compiled: 'print("fresh")',
+				compiled_key: "fresh",
+			};
+			return `recompiling task "${String(args?.task)}"`;
 		},
 		task_update: (args?: Record<string, unknown>) => {
 			record("task_update", args);
@@ -496,4 +511,44 @@ test("a precompiled project task's fallback runs are marked and counted", async 
 	const rows = page.getByTestId("task-run-row");
 	await expect(rows).toHaveCount(1);
 	await expect(rows.first()).toHaveAttribute("data-result", "fallback");
+});
+
+test("Recompile restarts a precompiled task whose script was turned off", async ({
+	page,
+}) => {
+	const { calls } = await mockTask(page, [job("done", "completed", 30)], {
+		task: {
+			type: "project",
+			project: "acme/app",
+			precompile: false,
+			precompile_note:
+				"Precompile was turned off after the compiled script failed 3 runs in a row (last: gh 404), so the task runs on the model. Use Recompile on the task page to compile it again.",
+		},
+	});
+	await page.goto("/agents/assistant/tasks/report");
+
+	const badge = page.getByTestId("task-precompile-badge");
+	await expect(badge).toHaveAttribute("data-state", "set-aside");
+	await expect(page.getByTestId("task-precompile-note")).toBeVisible();
+
+	await page.getByTestId("task-recompile").click();
+	await expect(page.getByTestId("task-precompile-note")).toHaveCount(0);
+	await expect(badge).toHaveAttribute("data-state", "compiled");
+	expect(
+		calls.filter((c) => c.tool === "config_task_convert_to_script"),
+	).toEqual([
+		{
+			tool: "config_task_convert_to_script",
+			args: { agent: "assistant", task: "report" },
+		},
+	]);
+});
+
+test("a task that does not precompile has no Recompile action", async ({
+	page,
+}) => {
+	await mockTask(page, [job("done", "completed", 30)]);
+	await page.goto("/agents/assistant/tasks/report");
+	await expect(page.getByTestId("task-title")).toHaveText("report");
+	await expect(page.getByTestId("task-recompile")).toHaveCount(0);
 });
