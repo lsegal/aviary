@@ -34,6 +34,14 @@ func TestMain(m *testing.M) {
 	case "muse":
 		fakeMuse()
 		os.Exit(0)
+	case "lingering":
+		fakeGeneric()
+		fakeLinger()
+		os.Exit(0)
+	case "lingering-unfinished":
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"type": "message", "role": "assistant", "content": "still working"})
+		fakeLinger()
+		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }

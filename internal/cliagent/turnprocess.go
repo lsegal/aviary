@@ -10,7 +10,7 @@ import (
 
 // turnWaitDelay is how long a turn's output may stay open after its CLI
 // exits, or is killed, before the turn stops waiting on it.
-const turnWaitDelay = 5 * time.Second
+var turnWaitDelay = 5 * time.Second
 
 // startTurn starts one turn's CLI process and returns its standard output
 // and a wait function, to call once that output is read to its end.

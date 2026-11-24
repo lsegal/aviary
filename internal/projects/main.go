@@ -1820,7 +1820,7 @@ func (r CommandRunner) RunSessionWithOutput(ctx context.Context, issue Issue, se
 
 // agentCommandWaitDelay is how long a cancelled agent's output pipes may stay
 // open after its process tree is killed before Wait gives up on them.
-const agentCommandWaitDelay = 5 * time.Second
+var agentCommandWaitDelay = 5 * time.Second
 
 // launchEnv is the environment an agent launch adds to aviary's own. When the
 // definition's settings overlay cannot be built, the agent still runs, against
