@@ -209,7 +209,9 @@ test("workflow rows show each compiled state in the shared chip", async ({
 	await expect(chip("off")).toHaveCount(0);
 });
 
-test("a failed compile shows Compile failed in the editor", async ({ page }) => {
+test("a failed compile shows Compile failed in the editor", async ({
+	page,
+}) => {
 	await mockCompiled(page, [{ ...COMPILED, compiled: "", compiled_key: "" }], {
 		attempts: {
 			triage: [
