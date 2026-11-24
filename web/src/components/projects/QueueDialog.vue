@@ -18,14 +18,18 @@
 						class="field-input mt-1" @keydown.enter.prevent="submit" />
 				</label>
 				<template v-else>
-					<div class="relative mt-4">
+					<div v-if="!unavailable" class="relative mt-4">
 						<span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400" aria-hidden="true">
 							<MagnifyingGlassIcon class="h-4 w-4" />
 						</span>
 						<input v-model="search" type="search" data-testid="queue-search" :aria-label="`Search ${copy.noun}s`"
 							:placeholder="`Search ${copy.noun}s by number, title or author`" class="field-input pl-9!" />
 					</div>
-					<div class="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-gray-200 dark:border-gray-800">
+					<p v-if="unavailable" data-testid="queue-unavailable" role="status"
+						class="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-800/60 dark:text-gray-300">
+						{{ unavailable }}
+					</p>
+					<div v-else class="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-gray-200 dark:border-gray-800">
 						<p v-if="loading" class="p-4 text-sm text-gray-500">Loading {{ copy.noun }}s…</p>
 						<p v-else-if="!shown.length" class="p-4 text-sm text-gray-500">No open {{ copy.noun }}s{{ search ? " match" : "" }}.</p>
 						<table v-else class="w-full text-left text-sm" data-testid="queue-candidates">
@@ -81,6 +85,12 @@
 							</tbody>
 						</table>
 					</div>
+					<label class="mt-3 block text-sm">
+						<span class="text-gray-700 dark:text-gray-200">Queue {{ shortNoun }} #…</span>
+						<input v-model="numberText" data-testid="queue-number" type="text" :disabled="mergeOff"
+							:placeholder="skill === 'gh-safe-merge' ? '#1156, #1159' : '#44'"
+							class="field-input mt-1" @keydown.enter.prevent="submit" />
+					</label>
 					<p v-if="skill === 'gh-safe-merge'" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
 						Merges run one at a time in the order picked, each against the latest default branch.
 					</p>
@@ -111,7 +121,8 @@
 // The Queue menu's picker (#1095): open pull requests for gh-safe-merge, with
 // CI, review, mergeability, author and the job that owns each, or open
 // Discussion threads for gh-discuss, searched and picked in order; or issue
-// numbers for gh-fix. A row a job already owns cannot be picked.
+// numbers for gh-fix. A row a job already owns cannot be picked. Numbers can
+// also be typed, which still works when the list cannot be fetched (#1161).
 import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
 import {
 	DialogClose,
@@ -147,6 +158,8 @@ const { callTool } = useMCP();
 const candidates = ref<QueueCandidate[]>([]);
 const picked = ref<number[]>([]);
 const issueText = ref("");
+const numberText = ref("");
+const unavailable = ref("");
 const search = ref("");
 const loading = ref(false);
 const queueing = ref(false);
@@ -220,14 +233,20 @@ const shown = computed(() => {
 	);
 });
 
-const chosen = computed(() =>
-	props.skill === "gh-fix" ? parseIssueNumbers(issueText.value) : picked.value,
+const chosen = computed(() => {
+	if (props.skill === "gh-fix") return parseIssueNumbers(issueText.value);
+	const typed = parseIssueNumbers(numberText.value);
+	return [...picked.value, ...typed.filter((n) => !picked.value.includes(n))];
+});
+
+const shortNoun = computed(() =>
+	props.skill === "gh-safe-merge" ? "PR" : copy.value.noun,
 );
 
 const submitLabel = computed(() => {
 	if (queueing.value) return "Queueing…";
 	const n = chosen.value.length;
-	const noun = props.skill === "gh-safe-merge" ? "PR" : copy.value.noun;
+	const noun = shortNoun.value;
 	return n ? `Queue ${n} ${n === 1 ? noun : `${noun}s`}` : "Queue";
 });
 
@@ -259,6 +278,8 @@ watch(
 		results.value = [];
 		search.value = "";
 		candidates.value = [];
+		unavailable.value = "";
+		numberText.value = "";
 		listedNoMerge.value = false;
 		picked.value = skill === "gh-fix" ? [] : [...(props.preselect ?? [])];
 		issueText.value =
@@ -277,14 +298,16 @@ watch(
 				),
 			);
 			candidates.value = listed.candidates;
+			unavailable.value = listed.unavailable;
 			listedNoMerge.value = listed.noMerge;
 			// A preselected row a job already owns cannot be picked.
 			const owned = new Set(
 				listed.candidates.filter((c) => c.ownedBy).map((c) => c.number),
 			);
 			picked.value = picked.value.filter((n) => !owned.has(n));
-		} catch (e) {
-			error.value = e instanceof Error ? e.message : String(e);
+		} catch {
+			// A list that could not be fetched is not an empty one.
+			unavailable.value = `Can't list ${copy.value.noun}s right now. You can still queue by number.`;
 		} finally {
 			loading.value = false;
 		}
@@ -314,6 +337,7 @@ async function submit() {
 		);
 		picked.value = [];
 		issueText.value = "";
+		numberText.value = "";
 		emit("queued");
 	} catch (e) {
 		error.value = e instanceof Error ? e.message : String(e);

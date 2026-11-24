@@ -1291,11 +1291,15 @@ export interface QueueCandidate {
 	answered: boolean;
 }
 
-/** project_queue_candidates' rows, pull requests or Discussion threads. */
+/**
+ * project_queue_candidates' rows, pull requests or Discussion threads, or the
+ * notice saying why they could not be listed.
+ */
 export function normalizeQueueCandidates(v: unknown): {
 	candidates: QueueCandidate[];
 	noMerge: boolean;
 	repository: string;
+	unavailable: string;
 } {
 	const raw = obj(v);
 	const rows = Array.isArray(raw.pull_requests)
@@ -1304,6 +1308,7 @@ export function normalizeQueueCandidates(v: unknown): {
 	return {
 		noMerge: raw.no_merge === true,
 		repository: str(raw.repository),
+		unavailable: str(raw.unavailable),
 		candidates: rows.map((row) => {
 			const r = obj(row);
 			return {
