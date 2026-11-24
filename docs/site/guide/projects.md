@@ -12,7 +12,7 @@ Code Loop needs the [GitHub CLI](https://cli.github.com/) (`gh`) signed in with 
 aviary watch owner/repo
 ```
 
-`aviary watch` needs no configuration and never changes your Aviary config. It watches the target in a one-off, isolated session until you press Ctrl+C. With no target, the current checkout's `origin` repository is watched.
+[`aviary watch`](./watch) needs no configuration and never changes your Aviary config. It watches the target in a one-off, isolated session until you press Ctrl+C. With no target, the current checkout's `origin` repository is watched.
 
 A target is one of:
 
