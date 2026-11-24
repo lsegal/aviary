@@ -294,7 +294,12 @@ test("the add-task modal's precompute choice follows the setting and applies to 
 	await expect(dialog).toBeHidden();
 	expect(saved.at(-1)?.agents[0].tasks).toMatchObject([
 		{ name: "stays-prompt" },
-		{ name: "compiled", type: "prompt", prompt: "Print the time", precompile: true },
+		{
+			name: "compiled",
+			type: "prompt",
+			prompt: "Print the time",
+			precompile: true,
+		},
 	]);
 	expect(converted).toEqual([{ agent: "assistant", task: "compiled" }]);
 
@@ -313,8 +318,15 @@ test("the add-task modal's precompute choice follows the setting and applies to 
 	await expect(edit).toBeHidden();
 	expect(
 		saved.at(-1)?.agents[0].tasks.find((t) => t.name === "stays-prompt"),
-	).toMatchObject({ type: "prompt", prompt: "Summarize the week", precompile: true });
-	expect(converted.at(-1)).toEqual({ agent: "assistant", task: "stays-prompt" });
+	).toMatchObject({
+		type: "prompt",
+		prompt: "Summarize the week",
+		precompile: true,
+	});
+	expect(converted.at(-1)).toEqual({
+		agent: "assistant",
+		task: "stays-prompt",
+	});
 });
 
 test("the add-task modal's Send To forwards runs to a channel by name, shown as Send Via in the editor", async ({

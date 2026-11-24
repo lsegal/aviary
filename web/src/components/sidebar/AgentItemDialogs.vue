@@ -44,7 +44,7 @@
 						</div>
 						<TaskPromptSection v-model:prompt="form.prompt" v-model:precompile="form.precompute" id-prefix="agent-task"
 							class="mt-3" :agent="feedbackAgent" :type="taskType" :target="form.target" :project="form.project"
-							:trigger="form.trigger" :show-precompile="canPrecompute" :saved-task="savedTask"
+							:trigger="form.trigger" :show-precompile="showPrecompute" :saved-task="savedTask"
 							:task-agent="dialog.agent" />
 						<label for="agent-task-send-to" class="field-label mt-3">Send To</label>
 						<AppCombobox id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
@@ -247,6 +247,10 @@ const taskType = computed(
  */
 const canPrecompute = computed(() =>
 	precompilesBesidePrompt({ type: taskType.value }),
+);
+// Creating shows the choice for every type, disabled for a script.
+const showPrecompute = computed(
+	() => dialog.value?.mode === "create" || canPrecompute.value,
 );
 /**
  * The precompile choice a task opens with: a saved task's own, where unset
