@@ -23,6 +23,7 @@ import (
 	"github.com/mattn/go-isatty"
 
 	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/projects/core"
 )
 
@@ -2046,7 +2047,8 @@ func TestCommandRunnerReportsResumeFailuresThatAreNotMissingSessions(t *testing.
 	runner := CommandRunner{Agent: "claude", ClaudeBinary: binary, Repo: "o/r"}
 	session := AgentSession{ID: "session-7", Agent: "claude", Resume: true}
 	err := runner.RunSession(context.Background(), Issue{Number: 7}, session, func(AgentSession) {})
-	if err == nil || !strings.Contains(err.Error(), "bug report") {
+	var failure *domain.RunFailure
+	if !errors.As(err, &failure) || failure.BugReportURL == "" {
 		t.Fatalf("unrelated resume failure = %v, want a reported agent failure", err)
 	}
 	if got := fakeAgentInvocations(t, log); len(got) != 1 {

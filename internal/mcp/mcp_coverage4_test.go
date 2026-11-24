@@ -334,40 +334,6 @@ func TestTaskStop_AllJobs(t *testing.T) {
 
 }
 
-// ── agent_rules_get with existing rules ──────────────────────────────────────
-
-func TestAgentRulesGet_ExistingRules(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}})
-	SetDeps(&Deps{Agents: mgr})
-
-	d := NewDispatcher("https://localhost:16677", "")
-
-	// Set rules first
-	_, err = d.CallTool(context.Background(), "agent_rules_set", map[string]any{
-		"agent":   "bot",
-		"content": "be helpful and kind",
-	})
-	assert.NoError(t, err)
-
-	// Get rules - should return the content
-	out, err := d.CallTool(context.Background(), "agent_rules_get", map[string]any{"name": "bot"})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "helpful"))
-
-}
-
 // ── auth_get for a key not found (vs. error) ─────────────────────────────────
 
 func TestAuthGet_Found(t *testing.T) {

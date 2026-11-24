@@ -15,6 +15,8 @@ A job is named by its issue `number`. `target` is needed only when several proje
 | `project_job_resume` | `aviary project job resume` | |
 | `project_job_stop` | `aviary project job stop` | destructive |
 | `project_job_dismiss` | `aviary project job dismiss` | |
+| `project_job_queue` | `aviary project job queue` | |
+| `project_queue_candidates` | `aviary project queue candidates` | read-only |
 | `project_refresh` | `aviary project refresh` | |
 | `project_add` | `aviary project add` | |
 | `project_remove` | `aviary project remove` | destructive |
@@ -24,6 +26,14 @@ A job is named by its issue `number`. `target` is needed only when several proje
 | `project_issue_comment` | `aviary project issue comment` | |
 | `project_issue_create` | `aviary project issue create` | |
 | `project_issue_backfill_media` | `aviary project issue backfill-media` | |
+| `project_task_list` | `aviary project task list` | read-only |
+| `project_task_get` | `aviary project task get` | read-only |
+| `project_task_create` | `aviary project task create` | |
+| `project_task_update` | `aviary project task update` | |
+| `project_task_pause` | `aviary project task pause` | |
+| `project_task_resume` | `aviary project task resume` | |
+| `project_task_run` | `aviary project task run` | |
+| `project_task_delete` | `aviary project task delete` | destructive |
 | `project_check` | `aviary project check` | read-only |
 
 Settings have no tool of their own. A project lives in the `projects:` list of the agent that owns it in `aviary.yaml` ([`agents[].projects`](/reference/config#agents-projects)), and the settings every project shares live in the top-level `projects:` section ([`projects`](/reference/config#projects)). Both are read and written with `config_get` and `config_save`, and are applied to the running engine when the file changes.
@@ -71,6 +81,20 @@ Why a job is paused, blocked, waiting, queued, or looks stuck, what will wake it
 Retry requeues a job so `gh-fix` reruns it with its saved session. On a paused job it clears the pause first. Pause holds an active, waiting or queued job: a running agent is stopped and its work pushed. Resume clears a pause and requeues the job. Stop stops a job's agent and waits for it to exit, or clears a paused job and releases its claim. Dismiss takes a schedule's failed runs off the `failed` state; its entry still reports the failure as its `last_run` until the next run. Each refuses what the job's status does not allow.
 
 **Arguments:** `number`, `target`.
+
+Merge and discuss jobs, which `project_job_queue` creates, accept the same actions: Pause holds the job in its place in the queue, stopping a running agent; Resume puts it back in its place; Stop takes a waiting job off the queue or stops a running one; Retry queues a finished job again at the end.
+
+## project_job_queue
+
+Queue jobs on demand. `skill: gh-safe-merge` queues pull requests for a safe merge as `merge` jobs, and `skill: gh-discuss` queues Discussion threads for an answer as `discuss` jobs. Each job is a board card with logs, a transcript, and pause, resume, stop and retry. Queued merges run one at a time per repository, in the order given, so each one rebases and rechecks on the latest default branch. Every job still waits for a free agent slot. Queued jobs are saved and survive a restart. A number that a job already owns isn't queued again: its result names the owning job in `owned_by`. While `no_merge` is set, safe merge is refused. `skill: gh-fix` retries an issue's finished job, or checks GitHub now so that a matching issue is dispatched.
+
+**Arguments:** `skill`, `numbers`, `target`, `repository`, `titles`.
+
+## project_queue_candidates
+
+List what a project can queue: open pull requests for `gh-safe-merge`, with CI status, review decision, mergeability, author and the job that owns each, or open Discussion threads for `gh-discuss`. The result's `no_merge` says whether safe merge is turned off.
+
+**Arguments:** `skill`, `target`, `repository`.
 
 ## project_refresh
 
@@ -131,6 +155,20 @@ Images and videos are uploaded and embedded in the issue. See [Attachments](#att
 - `skip_turn_media: true` leaves the turn's media out.
 
 GitHub takes PNG, JPEG, GIF, WebP and SVG images up to 10 MB, and MP4, MOV and WebM videos up to 100 MB. If any file is missing, has another type, or is too large, the call fails with an error that names the file and the reason, and nothing is posted. The result's `attachments` lists the files that were attached. Uploading needs push access to the repository.
+
+## Project scheduled tasks
+
+The `project_task_*` tools manage the [scheduled tasks](/guide/scheduled-tasks) of the projects this instance watches, and only theirs: a task of any other project, or one that is not a `project` task, is refused. They are how the [prompt chat](/guide/projects#prompt-chat) manages tasks. They validate, save, preview and run through the same code as `task_schedule`, `task_update`, `task_delete`, `task_preview` and `task_run`, so a task they create looks the same as one made on the Scheduled Tasks page. Every change they make is written to the Code Loop log.
+
+A task is named by `name`, or `<agent>/<task>` as `id` gives it. `project` is needed only when tasks of several watched projects share the name.
+
+- **`project_task_list`**: the tasks of every watched project, or of `project`. Each has `id`, `name`, `agent`, `project`, `enabled` and `paused`, `trigger` (the plain-language schedule), `next_run`, `last_run` (`fire_time`, `status`, `summary`), `precompile` (`enabled`, `compiled`, `verified`, `failures`, `note`), and `source`: `kind` `file` for a Markdown task file in its agent's `tasks/` directory, or `config` for `aviary.yaml`, with its `path`.
+- **`project_task_get`**: one task, adding `prompt`, `model`, `send_to`, `trigger_fields` (`schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`), `next_runs`, `runs_per_30_days`, and `recent_runs`, newest first.
+- **`project_task_create`**: `project`, `content` (the prompt), a schedule trigger (`schedule`, or `trigger` with `every`, `at`, `days` or `start_at`), and optional `name`, `timezone`, `overlap`, `missed`, `model`, `send_to` and `precompile`. The task belongs to the agent that owns the project; a runtime watch no agent owns is refused. The result's `preview` has `schedule`, `next_runs` and `runs_per_30_days`, and `estimate` has the determinism `verdict` and the `per_run` token and cost estimate, as `task_analyze` reports them. `dry_run: true` returns them without saving. An invalid trigger fails with `task_schedule`'s error.
+- **`project_task_update`**: changes only the fields passed, as `task_update` does; an empty string clears one. `new_name` renames the task, `new_project` moves it to another watched project of the same agent, and `enabled` pauses or resumes it. The result's `edit` says how it was saved: a task file is edited directly; a task defined in `aviary.yaml` is saved to a task file that replaces that definition.
+- **`project_task_pause`**, **`project_task_resume`**: stop or restart its fires. A run already in flight keeps going; pause it with `project_job_pause`.
+- **`project_task_run`**: fires it now, as `task_run` does.
+- **`project_task_delete`**: without `confirm`, deletes nothing and returns `removes`, a description of what goes, including its run history, to show before asking for confirmation. With `confirm: true` it deletes the task and its history through `task_delete`, which refuses a task defined in `aviary.yaml`.
 
 ## project_issue_backfill_media
 

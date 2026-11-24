@@ -21,9 +21,9 @@ import (
 const RestartFileEnv = "AVIARY_RESTART_FILE"
 
 // CheckoutEnv is set by scripts/dev-go.mjs to the root of the source checkout
-// the backend was built from. It is authoritative for git mode: the process's
-// working directory is only a fallback, since a daemonized or restarted
-// backend need not run inside the checkout.
+// the backend was built from. It is authoritative for git mode; without it a
+// dev build looks for the checkout around its own executable, never in the
+// process's working directory.
 const CheckoutEnv = "AVIARY_CHECKOUT"
 
 // aviaryModule is the module path a directory's go.mod must declare to be
@@ -38,8 +38,6 @@ type GitState struct {
 	Behind   int    `json:"behind"`
 	Ahead    int    `json:"ahead"`
 	Dirty    bool   `json:"dirty"`
-	// Fetched is true once the upstream was fetched before comparing.
-	Fetched bool `json:"fetched"`
 	// Supervised is true when a restart rebuilds the backend from the
 	// checkout (see RestartFileEnv), so pulled sources go live by restarting.
 	Supervised bool `json:"supervised"`
@@ -50,17 +48,9 @@ type GitState struct {
 
 // GitPullResult describes a git-mode update.
 type GitPullResult struct {
-	Dir string `json:"dir"`
-	// Upstream is the branch pulled from, and UpstreamHead its fetched
-	// commit; Ahead counts local commits it lacks.
-	Upstream     string `json:"upstream"`
-	UpstreamHead string `json:"upstreamHead"`
-	Ahead        int    `json:"ahead"`
-	Fetched      bool   `json:"fetched"`
-	From         string `json:"from"`
-	To           string `json:"to"`
-	// Head is the full commit checked out after the pull.
-	Head       string `json:"head"`
+	Dir        string `json:"dir"`
+	From       string `json:"from"`
+	To         string `json:"to"`
 	Commits    int    `json:"commits"`
 	Supervised bool   `json:"supervised"`
 	HotReload  bool   `json:"hotReload"`
@@ -71,32 +61,66 @@ var (
 		_, err := os.Stat("/.dockerenv")
 		return err == nil
 	}
-	// locateCheckout returns the checkout git mode works on and how it was found.
-	// It is a variable so tests can stub it.
-	locateCheckout = cachedCheckout
+	// checkoutDir returns the checkout git mode works on. It is a variable
+	// so tests can stub it.
+	checkoutDir = cachedCheckout
 )
 
 var (
 	checkoutMu    sync.Mutex
 	checkoutFound bool
-	checkoutDet   CheckoutDetection
+	checkoutTop   string
 )
 
-// cachedCheckout returns detectCheckout's answer, computed once per process:
-// a running backend never moves to another checkout, so request paths never
+// cachedCheckout returns findCheckout's answer, computed once per process: a
+// running backend never moves to another checkout, so request paths never
 // run git to find it again.
-func cachedCheckout() CheckoutDetection {
+func cachedCheckout() string {
 	checkoutMu.Lock()
 	defer checkoutMu.Unlock()
 	if !checkoutFound {
-		checkoutDet, checkoutFound = detectCheckout(), true
+		checkoutTop, checkoutFound = findCheckout(), true
 	}
-	return checkoutDet
+	return checkoutTop
 }
 
-// checkoutDir returns the checkout git mode works on, or "".
-func checkoutDir() string {
-	return locateCheckout().Dir
+// findCheckout locates the Aviary checkout from CheckoutEnv, else the
+// directory holding the running executable. The working directory never
+// counts: running any binary from inside a clone must not turn it into a
+// source install.
+func findCheckout() string {
+	if dir := os.Getenv(CheckoutEnv); dir != "" {
+		return verifyCheckout(dir)
+	}
+	exe, err := executablePath()
+	if err != nil {
+		return ""
+	}
+	return verifyCheckout(filepath.Dir(exe))
+}
+
+// executablePath returns the running binary's path with symlinks resolved. It
+// is a variable so tests can stub it.
+var executablePath = func() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(exe)
+}
+
+// SourceCheckout returns the checkout `aviary upgrade --source` updates: the
+// one git mode would use, else the checkout containing the working directory.
+// Only an explicit request for source mode looks at the working directory.
+func SourceCheckout() string {
+	if dir := checkoutDir(); dir != "" {
+		return dir
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return verifyCheckout(wd)
 }
 
 // verifyCheckout returns the top level of the git checkout containing dir
@@ -312,7 +336,6 @@ func readGitState(ctx context.Context, dir string) (GitState, error) {
 	if _, err := runGitWrite(ctx, dir, "fetch", "--quiet"); err != nil {
 		return st, err
 	}
-	st.Fetched = true
 	if st.Behind, err = gitCount(ctx, dir, "HEAD..@{upstream}"); err != nil {
 		return st, err
 	}
@@ -391,38 +414,25 @@ func gitPull(ctx context.Context, dir string) (GitPullResult, error) {
 	if blocker := gitBlocker(st); blocker != "" {
 		return GitPullResult{}, fmt.Errorf("not updating: %s", blocker)
 	}
-	res := GitPullResult{Dir: dir, Upstream: st.Upstream, Ahead: st.Ahead, Fetched: st.Fetched, Commits: st.Behind, Supervised: st.Supervised, HotReload: st.HotReload}
+	res := GitPullResult{Dir: dir, Commits: st.Behind, Supervised: st.Supervised, HotReload: st.HotReload}
 	res.From, _ = runGit(ctx, dir, "rev-parse", "--short", "HEAD")
-	res.UpstreamHead, _ = runGit(ctx, dir, "rev-parse", "--short", "@{upstream}")
 	if st.Behind > 0 {
 		if _, err := runGitWrite(ctx, dir, "pull", "--ff-only", "--quiet"); err != nil {
 			return GitPullResult{}, err
 		}
 	}
 	res.To, _ = runGit(ctx, dir, "rev-parse", "--short", "HEAD")
-	res.Head, _ = runGit(ctx, dir, "rev-parse", "HEAD")
 	ClearCache()
 	return res, nil
-}
-
-// GitCompareMessage says what a git-mode update compared: the checkout's
-// commit before the pull against its upstream's, whether the upstream was
-// fetched first, and how far the two had diverged.
-func GitCompareMessage(res GitPullResult) string {
-	fetched := "Not fetched;"
-	if res.Fetched {
-		fetched = "Fetched " + res.Upstream + ";"
-	}
-	return fmt.Sprintf("%s local %s vs %s %s (%d ahead, %d behind).", fetched, res.From, res.Upstream, res.UpstreamHead, res.Ahead, res.Commits)
 }
 
 // GitPullMessage summarizes a git-mode update for the user, given how the
 // pulled code goes live.
 func GitPullMessage(res GitPullResult, plan DevReloadPlan) string {
 	if res.Commits == 0 {
-		return fmt.Sprintf("The source checkout at %s is already up to date with %s (%s).", res.Dir, res.Upstream, res.To)
+		return fmt.Sprintf("The source checkout at %s is already up to date (%s).", res.Dir, res.To)
 	}
-	msg := fmt.Sprintf("Pulled %d commit(s) (%s → %s).", res.Commits, res.From, res.To)
+	msg := fmt.Sprintf("Pulled %d commit(s) into %s (%s → %s).", res.Commits, res.Dir, res.From, res.To)
 	switch {
 	case plan.RestartReason == "" && plan.GoChanged:
 		return msg + " The backend hot-reloads the new code, and restarts only if forgo cannot apply it."

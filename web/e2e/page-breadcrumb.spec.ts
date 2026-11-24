@@ -1,10 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expectSettingsHeader } from "./helpers/settingsHeader";
 
 // Every nested page shows where it is, from its agent or System down, with a
 // back link to its parent, also with the sidebar collapsed and on narrow
 // screens; the collapsed rail lists each page's items in a flyout (#1036).
-// Every one shows them in the same shared page header (#1064).
+// Every one shows them in the same shared page header (#1064):
+// the Settings page header (#1125).
 
 const LONG_PROJECT = "lsegal/a-repository-with-a-very-long-name-indeed";
 
@@ -42,7 +44,7 @@ async function mockAviary(page: Page) {
 }
 
 function breadcrumb(page: Page) {
-	return page.getByTestId("page-breadcrumb");
+	return page.getByTestId("settings-breadcrumb");
 }
 
 test.beforeEach(async ({ page }) => {
@@ -166,13 +168,13 @@ test("each nested page shows the shared header with its crumbs and parent link",
 	for (const c of cases) {
 		await page.goto(c.url);
 		// One header, and no back link or breadcrumb of the page's own.
-		const header = page.getByTestId("page-header");
+		const header = page.getByTestId("settings-header");
 		await expect(header).toHaveCount(1);
 		await expect(
 			page.getByRole("navigation", { name: "Breadcrumb" }),
 		).toHaveCount(1);
 		await expect(page.getByRole("link", { name: /^Back to/ })).toHaveCount(1);
-		const crumbs = header.getByTestId("page-breadcrumb");
+		const crumbs = header.getByTestId("settings-breadcrumb");
 		await expect(crumbs).toHaveRole("navigation");
 		await expect(crumbs).toHaveAccessibleName("Breadcrumb");
 		await expect(crumbs.getByRole("listitem")).toHaveText(c.crumbs);
@@ -186,9 +188,10 @@ test("each nested page shows the shared header with its crumbs and parent link",
 		const current = crumbs.locator('[aria-current="page"]');
 		await expect(current).toHaveText(c.crumbs.at(-1) as string);
 		await expect(current).not.toHaveRole("link");
-		const back = page.getByTestId("page-back");
+		const back = page.getByTestId("settings-back");
 		await expect(back).toHaveAccessibleName(`Back to ${c.back}`);
 		await expect(back).toHaveAttribute("href", c.parent);
+		await expectSettingsHeader(page);
 	}
 });
 
@@ -200,7 +203,7 @@ test("an agent page links no crumb back to itself", async ({ page }) => {
 	]);
 	// The agent's crumb would open this same page, so nothing links.
 	await expect(breadcrumb(page).getByRole("link")).toHaveCount(0);
-	await expect(page.getByTestId("page-back")).toHaveCount(0);
+	await expect(page.getByTestId("settings-back")).toHaveCount(0);
 	// The System overview is a top-level page with nothing above it.
 	await page.goto("/system/overview");
 	await expect(breadcrumb(page)).toHaveCount(0);
@@ -212,12 +215,12 @@ test("settings pages show the same breadcrumb as their title, once", async ({
 	await page.goto("/agents/Aviary/tasks");
 	const navs = page.getByRole("navigation", { name: "Breadcrumb" });
 	await expect(navs).toHaveCount(1);
-	await expect(navs).toHaveAttribute("data-testid", "page-breadcrumb");
+	await expect(navs).toHaveAttribute("data-testid", "settings-breadcrumb");
 	await expect(navs.getByRole("listitem")).toHaveText([
 		"Aviary",
 		"Scheduled Tasks",
 	]);
-	await expect(page.getByTestId("page-back")).toHaveAccessibleName(
+	await expect(page.getByTestId("settings-back")).toHaveAccessibleName(
 		"Back to Aviary",
 	);
 });
@@ -231,7 +234,7 @@ test("with the sidebar collapsed the breadcrumb and back link lead to the parent
 	await expect(breadcrumb(page)).toBeVisible();
 	await expect(breadcrumb(page)).toBeInViewport();
 
-	await page.getByTestId("page-back").click();
+	await page.getByTestId("settings-back").click();
 	await expect(page).toHaveURL("/agents/Aviary/channels");
 	await expect(breadcrumb(page).getByRole("listitem")).toHaveText([
 		"Aviary",
@@ -288,7 +291,7 @@ test("the agent crumb opens the first page the user's sidebar shows", async ({
 		await expect(
 			breadcrumb(page).getByRole("link", { name: "Aviary" }),
 		).toHaveAttribute("href", "/agents/Aviary/projects");
-		await expect(page.getByTestId("page-back")).toHaveAttribute(
+		await expect(page.getByTestId("settings-back")).toHaveAttribute(
 			"href",
 			"/agents/Aviary/projects",
 		);
@@ -304,7 +307,7 @@ test("on a phone the breadcrumb fits, truncating middle crumbs first", async ({
 	);
 	const crumbs = breadcrumb(page);
 	await expect(crumbs).toBeVisible();
-	await expect(page.getByTestId("page-back")).toBeVisible();
+	await expect(page.getByTestId("settings-back")).toBeVisible();
 	await expect(crumbs.getByRole("listitem")).toHaveText([
 		"Aviary",
 		"Code Loop",
@@ -312,7 +315,7 @@ test("on a phone the breadcrumb fits, truncating middle crumbs first", async ({
 		"#1013",
 	]);
 	const sizes = await page.evaluate(() => {
-		const nav = document.querySelector('[data-testid="page-breadcrumb"]');
+		const nav = document.querySelector('[data-testid="settings-breadcrumb"]');
 		const items = [...(nav?.querySelectorAll("li") ?? [])].map((li) => {
 			const text = li.querySelector("a, span:not([aria-hidden]), h2");
 			return {

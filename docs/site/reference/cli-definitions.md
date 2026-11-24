@@ -319,8 +319,13 @@ A **path** is dot-separated object keys, each optionally suffixed with `[]` to s
 | `jsonl.ignore` | string[] | Event types dropped before anything is read from them. |
 | `jsonl.textDelta` | bool | Each event's text is a fragment of a message: fragments are joined, and the line ends on the first event with no text. Needs `text`. |
 | `jsonl.events.<type>` | object | Per-type overrides of `text`, or of `toolName` with its `toolInput` and `toolNamePrefix`. A type listed in `ignore` cannot also be overridden. |
+| `jsonl.result.event` | string | The type of the event the CLI ends a finished turn with. Needs `type`. |
+| `jsonl.result.status` | path | Where that event says how the turn ended. Needs `success`. |
+| `jsonl.result.success` | string[] | The `status` values that mean the turn completed; any other value marks it failed, and a missing one does not. Needs `status`. |
 
 At least one of `text` or `toolName` is required, on the block or on one of its overrides. `events` is for an envelope that spreads one logical event over several typed events, where one set of paths cannot describe them all; `muse` uses it, with `toolNamePrefix: tool.`, to render `task.lifecycle.proposed` events as tool calls.
+
+`result` lets Aviary tell a turn that finished from one that died. A run whose stream reached a successful final result is recorded as succeeded even when something the agent started, such as a background shell, keeps its output open after the CLI exits; without one, that run fails with a "didn't exit cleanly" message. A type in `ignore` can still be the result event. The built-ins declare `done` with `event.reason: completed` for `cline`, `run.terminal.completed` for `muse`, and `step_finish` with `part.reason: stop` for `opencode`.
 
 ### `missingSession`
 

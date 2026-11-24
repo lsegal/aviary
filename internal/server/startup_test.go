@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -127,6 +128,42 @@ func TestTimeToMCPReady(t *testing.T) {
 	assert.Contains(t, subsystemStates(r), "skills=ready")
 	assert.Contains(t, subsystemStates(r), "channels=ready")
 	assert.Contains(t, subsystemStates(r), "projects=ready")
+}
+
+// TestShutdownWaitsForSkillSync guards #1143: ListenAndServe returns only
+// after the skill sync goroutine has finished, so it cannot write into the
+// data dir after the server has stopped.
+func TestShutdownWaitsForSkillSync(t *testing.T) {
+	stubBootSideEffects(t, func(context.Context) {})
+	var synced atomic.Bool
+	started := make(chan struct{})
+	syncShippedSkills = func(ctx context.Context) {
+		close(started)
+		<-ctx.Done()
+		time.Sleep(50 * time.Millisecond)
+		synced.Store(true)
+	}
+
+	cfg := &config.Config{Server: config.ServerConfig{Port: freeTCPPort(t), NoTLS: true}}
+	startup.Begin()
+	srv := New(cfg, "tok")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.ListenAndServe(ctx) }()
+
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("skill sync never started")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(15 * time.Second):
+		t.Fatal("server did not stop")
+	}
+	assert.True(t, synced.Load(), "ListenAndServe returned before skill sync finished")
 }
 
 func subsystemStates(r startup.Report) []string {

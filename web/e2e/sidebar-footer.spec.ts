@@ -104,7 +104,7 @@ test("the gear opens a Settings, Restart and Logout menu rather than navigating"
 
 	await openGearMenuItem(page, "Settings");
 	await expect(page).toHaveURL("/system/settings");
-	await expect(page.getByTestId("page-title")).toHaveText("Settings");
+	await expect(page.getByTestId("settings-title")).toHaveText("Settings");
 });
 
 test("connection icon follows connecting, connected and disconnected", async ({

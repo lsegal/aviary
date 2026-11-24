@@ -71,7 +71,7 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 	resetSlogForTest()
 	store.SetDataDir(t.TempDir())
 	origVersion, origCheck, origInstall, origExe, origPoll := buildinfo.Version, versionCheck, installRelease, executablePath, idlePoll
-	origCheckout, origPull, origLatest := gitCheckout, gitPull, latestRelease
+	origCheckout, origPull := gitCheckout, gitPull
 	origPlan, origHotDir, origHotGen, origWait, origHotWait, origRefresh := planDevReload, hotReloadDir, hotReloadGen, waitHotReload, hotReloadWait, refreshAfterHotReload
 	buildinfo.Version = current
 	gitCheckout = func() string { return "" }
@@ -102,7 +102,7 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 	})
 	t.Cleanup(func() {
 		buildinfo.Version, versionCheck, installRelease, executablePath, idlePoll = origVersion, origCheck, origInstall, origExe, origPoll
-		gitCheckout, gitPull, latestRelease = origCheckout, origPull, origLatest
+		gitCheckout, gitPull = origCheckout, origPull
 		planDevReload, hotReloadDir, hotReloadGen, waitHotReload, hotReloadWait, refreshAfterHotReload = origPlan, origHotDir, origHotGen, origWait, origHotWait, origRefresh
 		saferestart.MCPCalls = origGate
 		saferestart.Unregister("test")
@@ -266,30 +266,6 @@ func TestSafeRestart_GitModeRestartsOntoPulledCode(t *testing.T) {
 	_, markers := p.snapshot()
 	require.Len(t, markers, 1)
 	assert.Equal(t, []saferestart.Job{job}, markers[0].Jobs)
-}
-
-// release: true installs the latest release on a dev build instead of
-// pulling its checkout, looking the release up without a version check.
-func TestSafeRestart_ReleaseOnDevBuildInstallsInsteadOfPulling(t *testing.T) {
-	srv, _, log := setupSafeRestart(t, "dev", update.CheckResult{})
-	gitCheckout = func() string { return "/src/aviary" }
-	gitPull = func(_ context.Context, dir string) (update.GitPullResult, error) {
-		*log = append(*log, "pull "+dir)
-		return update.GitPullResult{}, nil
-	}
-	versionCheck = func(context.Context, *http.Client) (update.CheckResult, error) {
-		*log = append(*log, "check")
-		return update.CheckResult{}, nil
-	}
-	latestRelease = func(context.Context, *http.Client) (string, error) { return "v1.5.0", nil }
-
-	st, err := srv.requestRestart(context.Background(), saferestart.Request{When: saferestart.WhenNow, Upgrade: true, Release: true})
-	require.NoError(t, err)
-	assert.Equal(t, "v1.5.0", st.Version)
-	waitReexec(t, srv)
-	assert.Contains(t, *log, "install v1.5.0 /opt/aviary/bin/aviary")
-	assert.NotContains(t, *log, "pull /src/aviary")
-	assert.NotContains(t, *log, "check")
 }
 
 func TestSafeRestart_GitModeUnsupervisedSaysRestartNeeded(t *testing.T) {

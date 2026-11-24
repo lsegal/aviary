@@ -228,9 +228,6 @@ type Request struct {
 	When    string `json:"when,omitempty"`
 	Upgrade bool   `json:"upgrade,omitempty"`
 	Version string `json:"version,omitempty"`
-	// Release installs a release even on a dev build that would otherwise
-	// update its source checkout with git.
-	Release bool `json:"release,omitempty"`
 	// Cancel withdraws a restart that is still waiting for jobs to finish.
 	Cancel bool `json:"cancel,omitempty"`
 	// Force restarts without waiting for in-flight MCP calls to finish.

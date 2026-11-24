@@ -58,6 +58,9 @@ jobs:
           cache-dependency-path: docs/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: docs
+      # Checks the docs servers honor __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+      # (#1102); test:scripts covers the web app side.
+      - run: node --test scripts/dev-allowed-hosts.test.mjs
       # The build renders the /skills/ share cards and fails if a skill page
       # lacks og:image or twitter:card (#763).
       - run: pnpm build
@@ -162,8 +165,12 @@ jobs:
         include:
           - name: POSIX
             os: ubuntu-latest
-          - name: Windows
+          - name: Windows PowerShell 5.1
             os: windows-latest
+            powershell: powershell
+          - name: Windows PowerShell 7
+            os: windows-latest
+            powershell: pwsh
     steps:
       - uses: actions/checkout@v6
         with:
@@ -210,18 +217,16 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $env:HOME = Join-Path $env:RUNNER_TEMP 'home'
-          New-Item -ItemType Directory -Path $env:HOME -Force | Out-Null
-          $server = Start-Process node -ArgumentList 'scripts/mock-static-server.mjs', '--root', (Join-Path $env:RUNNER_TEMP 'mock-releases'), '--port', '8765' -PassThru -WindowStyle Hidden
+          $root = Join-Path $env:RUNNER_TEMP 'mock-releases'
+          Copy-Item installer/install.ps1 $root
+          $server = Start-Process node -ArgumentList 'scripts/mock-static-server.mjs', '--root', $root, '--port', '8765' -PassThru -WindowStyle Hidden
           try {
             Start-Sleep -Seconds 1
-            ./installer/install.ps1 -Repo lsegal/aviary -DownloadBase http://127.0.0.1:8765 -SkipSkills
-            $bin = Join-Path $env:HOME '.local\bin\aviary.exe'
-            if (-not (Test-Path $bin)) {
-              throw "installer did not create $bin"
-            }
-            if (-not (($env:Path -split ';') -contains (Split-Path $bin))) {
-              throw "installer did not prepend the bin directory to PATH"
+            # Runs the installer under ${{ matrix.powershell }}, from the file
+            # and piped through irm | iex (#1100).
+            & ${{ matrix.powershell }} -NoProfile -ExecutionPolicy Bypass -File scripts/test-install-ps1.ps1 -DownloadBase http://127.0.0.1:8765 -HomeDir (Join-Path $env:RUNNER_TEMP 'home')
+            if ($LASTEXITCODE -ne 0) {
+              throw "scripts/test-install-ps1.ps1 failed under ${{ matrix.powershell }}"
             }
           } finally {
             if ($server) {

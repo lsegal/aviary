@@ -150,6 +150,7 @@ export const SETTINGS_TABS = [
 		label: "Providers & Authentication",
 		to: "/system/providers",
 	},
+	{ key: "display", label: "Display", to: "/system/display" },
 ] as const;
 
 /** Whether path is one of Settings' tabs rather than a System page. */

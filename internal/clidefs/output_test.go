@@ -63,6 +63,12 @@ func TestOutputValidationRejectsWhatCannotBeDecoded(t *testing.T) {
 		{"override reading nothing", Output{Format: FormatJSONL, JSONL: &JSONL{Type: "kind", Text: "text", Events: map[string]JSONLEvent{"call": {ToolInput: "input"}}}}, `"output.jsonl.events.call.toolInput" needs`},
 		{"override with no paths", Output{Format: FormatJSONL, JSONL: &JSONL{Type: "kind", Text: "text", Events: map[string]JSONLEvent{"call": {}}}}, `"output.jsonl.events.call" needs at least one`},
 		{"override prefix without a name", Output{Format: FormatJSONL, JSONL: &JSONL{Type: "kind", Text: "text", Events: map[string]JSONLEvent{"call": {Text: "t", ToolNamePrefix: "tool."}}}}, `"output.jsonl.events.call.toolNamePrefix" needs`},
+		{"result without a type", Output{Format: FormatJSONL, JSONL: &JSONL{Text: "text", Result: &JSONLResult{Event: "done"}}}, `"output.jsonl.result" needs "output.jsonl.type"`},
+		{"result without an event", Output{Format: FormatJSONL, JSONL: &JSONL{Type: "kind", Text: "text", Result: &JSONLResult{Event: " "}}}, `"output.jsonl.result.event" is required`},
+		{"malformed result status", Output{Format: FormatJSONL, JSONL: &JSONL{Type: "kind", Text: "text", Result: &JSONLResult{Event: "done", Status: "a..b", Success: []string{"ok"}}}}, `"output.jsonl.result.status"`},
+		{"result status without success", Output{Format: FormatJSONL, JSONL: &JSONL{Type: "kind", Text: "text", Result: &JSONLResult{Event: "done", Status: "reason"}}}, `"output.jsonl.result.status" needs`},
+		{"result success without status", Output{Format: FormatJSONL, JSONL: &JSONL{Type: "kind", Text: "text", Result: &JSONLResult{Event: "done", Success: []string{"ok"}}}}, `"output.jsonl.result.success" needs`},
+		{"empty result success", Output{Format: FormatJSONL, JSONL: &JSONL{Type: "kind", Text: "text", Result: &JSONLResult{Event: "done", Status: "reason", Success: []string{" "}}}}, `"output.jsonl.result.success" cannot contain an empty value`},
 		{"malformed override path", Output{Format: FormatJSONL, JSONL: &JSONL{Type: "kind", Text: "text", Events: map[string]JSONLEvent{"call": {ToolName: "call..name"}}}}, `"output.jsonl.events.call.toolName"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -51,10 +51,56 @@ type CheckResult struct {
 	// NoCheckout is set for a dev build that would update in git mode but
 	// cannot locate its source checkout, so it has no way to check for updates.
 	NoCheckout bool `json:"noCheckout,omitempty"`
+	// InstallType is the upgrade mode the check ran in: release or source,
+	// or dev for a dev build with no checkout.
+	InstallType InstallType `json:"installType,omitempty"`
+}
+
+// InstallType says how the running binary was built and installed, which
+// decides how it upgrades.
+type InstallType string
+
+const (
+	// InstallRelease is a release build: it upgrades by downloading the
+	// latest GitHub release over its own executable.
+	InstallRelease InstallType = "release"
+	// InstallSource is a dev build run from an Aviary checkout: it upgrades
+	// by pulling the checkout.
+	InstallSource InstallType = "source"
+	// InstallDev is a dev build with no checkout to pull, such as go run
+	// without AVIARY_CHECKOUT, or a dev build inside Docker.
+	InstallDev InstallType = "dev"
+)
+
+// DetectInstall reports the running binary's install type. It depends only on
+// the version stamped at build time and on where the executable (or
+// AVIARY_CHECKOUT) points, never on the working directory, so a release
+// binary run from inside a clone is still a release install.
+func DetectInstall() InstallType {
+	if !IsDevBuild() {
+		return InstallRelease
+	}
+	if GitCheckout() != "" {
+		return InstallSource
+	}
+	return InstallDev
+}
+
+// DescribeInstall explains the detected install type for aviary version and
+// aviary doctor.
+func DescribeInstall() string {
+	switch DetectInstall() {
+	case InstallRelease:
+		return "release build " + NormalizeVersion(buildinfo.Version)
+	case InstallSource:
+		return "dev build from the source checkout at " + GitCheckout()
+	default:
+		return "dev build without a source checkout"
+	}
 }
 
 // noCheckoutMessage explains the NoCheckout state.
-const noCheckoutMessage = "This dev build found no source checkout, so updates cannot be checked. Run Aviary with " + CheckoutEnv + " set to the checkout root (pnpm dev sets it), or run aviary upgrade --release to install the latest release."
+const noCheckoutMessage = "This dev build found no source checkout, so updates cannot be checked. Run Aviary with " + CheckoutEnv + " set to the checkout root (pnpm dev sets it)."
 
 // InstallOptions controls how a release is downloaded and installed.
 type InstallOptions struct {
@@ -179,15 +225,40 @@ var buildRevision = func() string {
 // Check compares the current version with the latest available release, or
 // in git mode with the source checkout's upstream branch.
 func Check(ctx context.Context, client *http.Client) (CheckResult, error) {
+	return CheckMode(ctx, client, "")
+}
+
+// CheckMode is Check in a forced mode: InstallRelease checks GitHub releases
+// even on a dev build, and InstallSource checks the checkout SourceCheckout
+// finds even on a release build. An empty mode picks it as Check does.
+func CheckMode(ctx context.Context, client *http.Client, mode InstallType) (CheckResult, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	if gitModeEligible() {
-		if dir := checkoutDir(); dir != "" {
-			return cachedGitCheck(ctx, dir)
+	switch mode {
+	case "":
+		if gitModeEligible() {
+			if dir := checkoutDir(); dir != "" {
+				return cachedGitCheck(ctx, dir)
+			}
+			return CheckResult{CurrentVersion: CurrentVersion(ctx), CheckedAt: time.Now().UTC(), NoCheckout: true, Message: noCheckoutMessage, InstallType: InstallDev}, nil
 		}
-		return CheckResult{CurrentVersion: CurrentVersion(ctx), CheckedAt: time.Now().UTC(), NoCheckout: true, Message: noCheckoutMessage}, nil
+	case InstallSource:
+		dir := SourceCheckout()
+		if dir == "" {
+			return CheckResult{CurrentVersion: CurrentVersion(ctx), InstallType: InstallSource}, errors.New("no Aviary source checkout found: set " + CheckoutEnv + " to the checkout root, or run from inside it")
+		}
+		return cachedGitCheck(ctx, dir)
+	case InstallRelease:
+	default:
+		return CheckResult{}, fmt.Errorf("unknown upgrade mode %q", mode)
 	}
+	out, err := releaseCheck(ctx, client)
+	out.InstallType = InstallRelease
+	return out, err
+}
+
+func releaseCheck(ctx context.Context, client *http.Client) (CheckResult, error) {
 	if EmulationActive() {
 		emulateMu.RLock()
 		local := emulateLocal
@@ -216,6 +287,7 @@ func cachedGitCheck(ctx context.Context, dir string) (CheckResult, error) {
 		return gitCheckResult(ctx, dir)
 	})
 	out.CurrentVersion = CurrentVersion(ctx)
+	out.InstallType = InstallSource
 	return out, err
 }
 
@@ -335,6 +407,15 @@ func Install(ctx context.Context, opts InstallOptions) (InstallResult, error) {
 	return InstallResult{Version: version}, nil
 }
 
+// DisplayVersion formats a version for messages: a release as vX.Y.Z, and
+// anything else (a commit, "dev") unchanged.
+func DisplayVersion(v string) string {
+	if isComparableVersion(v) {
+		return NormalizeVersion(v)
+	}
+	return strings.TrimSpace(v)
+}
+
 // NormalizeVersion returns version as a release tag with a leading "v", so
 // "1.2.3" and "v1.2.3" name the same release. Empty input stays empty.
 func NormalizeVersion(version string) string {
@@ -404,6 +485,9 @@ func compareVersions(current, latest string, emulated bool) (CheckResult, error)
 	out.UpgradeAvailable = version.CompareReleases(cur, lat) < 0
 	return out, nil
 }
+
+// IsReleaseVersion reports whether v is a clean X.Y.Z release.
+func IsReleaseVersion(v string) bool { return isComparableVersion(v) }
 
 func isComparableVersion(v string) bool {
 	_, err := version.ParseRelease(v)

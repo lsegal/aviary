@@ -77,32 +77,62 @@ func TestFactoryForModel(t *testing.T) {
 	}
 }
 
-func TestFactoryForModel_VLLM(t *testing.T) {
-	f := NewFactory(func(_ string) (string, error) { return "test-key", nil }).WithProviderOptionsResolver(func(provider string) (ProviderOptions, bool) {
-		if provider != "vllm" {
-			return ProviderOptions{}, false
-		}
-		return ProviderOptions{BaseURI: "http://127.0.0.1:8000"}, true
-	})
-
-	p, err := f.ForModel("vllm/qwen2.5-coder")
-	assert.NoError(t, err)
-	_, ok := p.(*VLLMProvider)
-	assert.True(t, ok)
+// localOpenAIProvider is the surface shared by OpenAI-compatible local providers.
+type localOpenAIProvider interface {
+	Provider
+	ListModels(ctx context.Context) ([]string, error)
 }
 
-func TestFactoryForModel_Ollama(t *testing.T) {
-	f := NewFactory(func(_ string) (string, error) { return "test-key", nil }).WithProviderOptionsResolver(func(provider string) (ProviderOptions, bool) {
-		if provider != "ollama" {
-			return ProviderOptions{}, false
-		}
-		return ProviderOptions{BaseURI: "http://127.0.0.1:11434"}, true
-	})
+// localOpenAIProviders lists the OpenAI-compatible local providers that share
+// the same factory, normalization, ListModels and Stream behaviour.
+var localOpenAIProviders = []struct {
+	name        string
+	defaultBase string
+	model       string
+	listModels  []string
+	newProvider func(apiKey, model, baseURI string) localOpenAIProvider
+	normalize   func(string) string
+	isProvider  func(Provider) bool
+}{
+	{
+		name:        "vllm",
+		defaultBase: "http://127.0.0.1:8000",
+		model:       "qwen2.5-coder",
+		listModels:  []string{"qwen2.5-coder", "llama-3.1-8b"},
+		newProvider: func(apiKey, model, baseURI string) localOpenAIProvider {
+			return NewVLLMProvider(apiKey, model, baseURI)
+		},
+		normalize:  normalizeVLLMBaseURI,
+		isProvider: func(p Provider) bool { _, ok := p.(*VLLMProvider); return ok },
+	},
+	{
+		name:        "ollama",
+		defaultBase: "http://127.0.0.1:11434",
+		model:       "llama3.2",
+		listModels:  []string{"llama3.2", "qwen2.5"},
+		newProvider: func(apiKey, model, baseURI string) localOpenAIProvider {
+			return NewOllamaProvider(apiKey, model, baseURI)
+		},
+		normalize:  normalizeOllamaBaseURI,
+		isProvider: func(p Provider) bool { _, ok := p.(*OllamaProvider); return ok },
+	},
+}
 
-	p, err := f.ForModel("ollama/llama3.2")
-	assert.NoError(t, err)
-	_, ok := p.(*OllamaProvider)
-	assert.True(t, ok)
+func TestFactoryForModel_LocalOpenAIProviders(t *testing.T) {
+	for _, lp := range localOpenAIProviders {
+		t.Run(lp.name, func(t *testing.T) {
+			f := NewFactory(func(_ string) (string, error) { return "test-key", nil }).WithProviderOptionsResolver(func(provider string) (ProviderOptions, bool) {
+				if provider != lp.name {
+					return ProviderOptions{}, false
+				}
+				return ProviderOptions{BaseURI: lp.defaultBase}, true
+			})
+
+			p, err := f.ForModel(lp.name + "/" + lp.model)
+			assert.NoError(t, err)
+			assert.True(t, lp.isProvider(p))
+		})
+	}
 }
 
 func TestFactoryResolverError(t *testing.T) {
@@ -253,25 +283,6 @@ func TestWithTokenSetter(t *testing.T) {
 
 	// Calling the setter should work.
 	_ = called
-}
-
-func TestResolveOAuthToken_Empty(t *testing.T) {
-	// Factory with nil resolver → no token.
-	f := NewFactory(nil)
-	_, ok := f.resolveOAuthToken("anthropic:oauth", false)
-	assert.False(t, ok)
-
-}
-
-func TestResolveOAuthToken_PlainString(t *testing.T) {
-	// Auth resolver returns a plain API key.
-	f := NewFactory(func(_ string) (string, error) {
-		return "sk-test-key", nil
-	})
-	tok, ok := f.resolveOAuthToken("anthropic:oauth", false)
-	assert.True(t, ok)
-	assert.Equal(t, "sk-test-key", tok)
-
 }
 
 func TestForModel_UnknownProvider(t *testing.T) {
@@ -880,59 +891,103 @@ func TestAnthropicProvider_Stream_AssistantMessage(t *testing.T) {
 	collectEvents(t, ch)
 }
 
-func TestAnthropicProvider_Stream_WithMediaURL_Data(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		anthropicSSEResponse(w, "image")
-	}))
-	defer srv.Close()
+// TestProviderStream_MediaURLs checks how each provider encodes a user
+// message's media URLs, with and without accompanying text.
+func TestProviderStream_MediaURLs(t *testing.T) {
+	const dataURL = "data:image/png;base64,abc123"
+	const httpURL = "https://example.com/img.png"
 
-	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
-	req := Request{
-		Messages: []Message{
-			{Role: RoleUser, Content: "Look at this", MediaURLs: []string{"data:image/png;base64,abc123"}},
-		},
+	anthropicStream := func(url string, req Request) (<-chan Event, error) {
+		return newTestAnthropicProvider(url, "claude-3-5-sonnet-20241022").Stream(context.Background(), req)
 	}
-	ch, err := p.Stream(context.Background(), req)
-	assert.NoError(t, err)
+	openAIStream := func(url string, req Request) (<-chan Event, error) {
+		return NewOpenAIProvider("test-key", "gpt-4o", url).Stream(context.Background(), req)
+	}
+	codexStream := func(url string, req Request) (<-chan Event, error) {
+		p := NewOpenAICodexProvider("test-token", "gpt-4o")
+		p.httpClient = &http.Client{Transport: &rewriteURLTransport{target: url, base: http.DefaultTransport}}
+		return p.Stream(context.Background(), req)
+	}
+	codexRespond := func(w http.ResponseWriter, _ string) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	}
 
-	collectEvents(t, ch)
+	tests := []struct {
+		name      string
+		stream    func(url string, req Request) (<-chan Event, error)
+		respond   func(w http.ResponseWriter, text string)
+		messages  string // request body key holding the conversation
+		content   string
+		mediaURL  string
+		wantParts []string
+	}{
+		{"anthropic data URL", anthropicStream, anthropicSSEResponse, "messages", "Look at this", dataURL,
+			[]string{"text:Look at this", "image:base64:image/png:abc123"}},
+		{"anthropic HTTP URL", anthropicStream, anthropicSSEResponse, "messages", "Look", httpURL,
+			[]string{"text:Look", "image:url:" + httpURL}},
+		{"anthropic no content", anthropicStream, anthropicSSEResponse, "messages", "", dataURL,
+			[]string{"image:base64:image/png:abc123"}},
+		{"openai HTTP URL", openAIStream, openAISSEResponse, "messages", "Look", httpURL,
+			[]string{"text:Look", "image_url:" + httpURL}},
+		{"openai no content", openAIStream, openAISSEResponse, "messages", "", httpURL,
+			[]string{"image_url:" + httpURL}},
+		{"codex HTTP URL", codexStream, codexRespond, "input", "Look", httpURL,
+			[]string{"input_text:Look", "input_image:" + httpURL}},
+		{"codex no content", codexStream, codexRespond, "input", "", httpURL,
+			[]string{"input_image:" + httpURL}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var body map[string]any
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				raw, _ := io.ReadAll(r.Body)
+				assert.NoError(t, json.Unmarshal(raw, &body))
+				tc.respond(w, "ok")
+			}))
+			defer srv.Close()
+
+			ch, err := tc.stream(srv.URL, Request{Messages: []Message{
+				{Role: RoleUser, Content: tc.content, MediaURLs: []string{tc.mediaURL}},
+			}})
+			assert.NoError(t, err)
+			collectEvents(t, ch)
+
+			msgs, _ := body[tc.messages].([]any)
+			if !assert.Len(t, msgs, 1) {
+				return
+			}
+			msg, _ := msgs[0].(map[string]any)
+			assert.Equal(t, "user", msg["role"])
+			parts, _ := msg["content"].([]any)
+			got := make([]string, 0, len(parts))
+			for _, part := range parts {
+				got = append(got, describeMediaPart(part.(map[string]any)))
+			}
+			assert.Equal(t, tc.wantParts, got)
+		})
+	}
 }
 
-func TestAnthropicProvider_Stream_WithMediaURL_HTTP(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		anthropicSSEResponse(w, "image response")
-	}))
-	defer srv.Close()
-
-	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
-	req := Request{
-		Messages: []Message{
-			{Role: RoleUser, Content: "Look", MediaURLs: []string{"https://example.com/img.png"}},
-		},
+// describeMediaPart flattens a request content part into "type:payload".
+func describeMediaPart(part map[string]any) string {
+	typ, _ := part["type"].(string)
+	switch typ {
+	case "text", "input_text":
+		return typ + ":" + fmt.Sprint(part["text"])
+	case "image":
+		src, _ := part["source"].(map[string]any)
+		if src["type"] == "url" {
+			return "image:url:" + fmt.Sprint(src["url"])
+		}
+		return fmt.Sprintf("image:%v:%v:%v", src["type"], src["media_type"], src["data"])
+	case "image_url":
+		img, _ := part["image_url"].(map[string]any)
+		return "image_url:" + fmt.Sprint(img["url"])
+	case "input_image":
+		return "input_image:" + fmt.Sprint(part["image_url"])
 	}
-	ch, err := p.Stream(context.Background(), req)
-	assert.NoError(t, err)
-
-	collectEvents(t, ch)
-}
-
-func TestAnthropicProvider_Stream_WithMediaURL_NoContent(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		anthropicSSEResponse(w, "image only")
-	}))
-	defer srv.Close()
-
-	p := newTestAnthropicProvider(srv.URL, "claude-3-5-sonnet-20241022")
-	req := Request{
-		Messages: []Message{
-			// MediaURL with no text content
-			{Role: RoleUser, Content: "", MediaURLs: []string{"data:image/png;base64,abc123"}},
-		},
-	}
-	ch, err := p.Stream(context.Background(), req)
-	assert.NoError(t, err)
-
-	collectEvents(t, ch)
+	return typ
 }
 
 func TestAnthropicProvider_Stream_ServerError(t *testing.T) {
@@ -1097,42 +1152,6 @@ func TestOpenAIProvider_Stream_AllRoles(t *testing.T) {
 	collectEvents(t, ch)
 }
 
-func TestOpenAIProvider_Stream_WithMediaURL(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		openAISSEResponse(w, "image response")
-	}))
-	defer srv.Close()
-
-	p := NewOpenAIProvider("test-key", "gpt-4o", srv.URL)
-	req := Request{
-		Messages: []Message{
-			{Role: RoleUser, Content: "Look", MediaURLs: []string{"https://example.com/img.png"}},
-		},
-	}
-	ch, err := p.Stream(context.Background(), req)
-	assert.NoError(t, err)
-
-	collectEvents(t, ch)
-}
-
-func TestOpenAIProvider_Stream_MediaURLNoContent(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		openAISSEResponse(w, "image only")
-	}))
-	defer srv.Close()
-
-	p := NewOpenAIProvider("test-key", "gpt-4o", srv.URL)
-	req := Request{
-		Messages: []Message{
-			{Role: RoleUser, Content: "", MediaURLs: []string{"https://example.com/img.png"}},
-		},
-	}
-	ch, err := p.Stream(context.Background(), req)
-	assert.NoError(t, err)
-
-	collectEvents(t, ch)
-}
-
 func TestOpenAIProvider_Stream_ServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -1165,82 +1184,60 @@ func TestNewOpenAIProvider_EmptyKey(t *testing.T) {
 
 }
 
-func TestNormalizeVLLMBaseURI(t *testing.T) {
-	assert.Equal(t, "http://127.0.0.1:8000/v1", normalizeVLLMBaseURI(""))
-	assert.Equal(t, "http://127.0.0.1:8000/v1", normalizeVLLMBaseURI("http://127.0.0.1:8000"))
-	assert.Equal(t, "http://127.0.0.1:8000/v1", normalizeVLLMBaseURI("http://127.0.0.1:8000/"))
-	assert.Equal(t, "http://127.0.0.1:8000/v1", normalizeVLLMBaseURI("http://127.0.0.1:8000/v1"))
+func TestNormalizeLocalOpenAIBaseURI(t *testing.T) {
+	for _, lp := range localOpenAIProviders {
+		t.Run(lp.name, func(t *testing.T) {
+			want := lp.defaultBase + "/v1"
+			assert.Equal(t, want, lp.normalize(""))
+			assert.Equal(t, want, lp.normalize(lp.defaultBase))
+			assert.Equal(t, want, lp.normalize(lp.defaultBase+"/"))
+			assert.Equal(t, want, lp.normalize(lp.defaultBase+"/v1"))
+		})
+	}
 }
 
-func TestVLLMProvider_ListModels(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/v1/models", r.URL.Path)
-		assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"object":"list","data":[{"id":"qwen2.5-coder"},{"id":"llama-3.1-8b"}]}`)
-	}))
-	defer srv.Close()
+func TestLocalOpenAIProvider_ListModels(t *testing.T) {
+	for _, lp := range localOpenAIProviders {
+		t.Run(lp.name, func(t *testing.T) {
+			data := make([]map[string]string, 0, len(lp.listModels))
+			for _, id := range lp.listModels {
+				data = append(data, map[string]string{"id": id})
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/v1/models", r.URL.Path)
+				assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
+			}))
+			defer srv.Close()
 
-	p := NewVLLMProvider("test-key", "qwen2.5-coder", srv.URL)
-	models, err := p.ListModels(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, []string{"qwen2.5-coder", "llama-3.1-8b"}, models)
+			p := lp.newProvider("test-key", lp.model, srv.URL)
+			models, err := p.ListModels(context.Background())
+			require.NoError(t, err)
+			assert.Equal(t, lp.listModels, models)
+		})
+	}
 }
 
-func TestVLLMProvider_Stream_UsesOpenAICompatibleEndpoint(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/v1/chat/completions", r.URL.Path)
-		openAISSEResponse(w, "Hello from vllm")
-	}))
-	defer srv.Close()
+func TestLocalOpenAIProvider_Stream_UsesOpenAICompatibleEndpoint(t *testing.T) {
+	for _, lp := range localOpenAIProviders {
+		t.Run(lp.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/v1/chat/completions", r.URL.Path)
+				openAISSEResponse(w, "Hello from "+lp.name)
+			}))
+			defer srv.Close()
 
-	p := NewVLLMProvider("test-key", "qwen2.5-coder", srv.URL)
-	ch, err := p.Stream(context.Background(), Request{
-		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
-	})
-	require.NoError(t, err)
+			p := lp.newProvider("test-key", lp.model, srv.URL)
+			ch, err := p.Stream(context.Background(), Request{
+				Messages: []Message{{Role: RoleUser, Content: "Hi"}},
+			})
+			require.NoError(t, err)
 
-	events := collectEvents(t, ch)
-	assert.NotEmpty(t, events)
-}
-
-func TestNormalizeOllamaBaseURI(t *testing.T) {
-	assert.Equal(t, "http://127.0.0.1:11434/v1", normalizeOllamaBaseURI(""))
-	assert.Equal(t, "http://127.0.0.1:11434/v1", normalizeOllamaBaseURI("http://127.0.0.1:11434"))
-	assert.Equal(t, "http://127.0.0.1:11434/v1", normalizeOllamaBaseURI("http://127.0.0.1:11434/"))
-	assert.Equal(t, "http://127.0.0.1:11434/v1", normalizeOllamaBaseURI("http://127.0.0.1:11434/v1"))
-}
-
-func TestOllamaProvider_ListModels(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/v1/models", r.URL.Path)
-		assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"object":"list","data":[{"id":"llama3.2"},{"id":"qwen2.5"}]}`)
-	}))
-	defer srv.Close()
-
-	p := NewOllamaProvider("test-key", "llama3.2", srv.URL)
-	models, err := p.ListModels(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, []string{"llama3.2", "qwen2.5"}, models)
-}
-
-func TestOllamaProvider_Stream_UsesOpenAICompatibleEndpoint(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/v1/chat/completions", r.URL.Path)
-		openAISSEResponse(w, "Hello from ollama")
-	}))
-	defer srv.Close()
-
-	p := NewOllamaProvider("test-key", "llama3.2", srv.URL)
-	ch, err := p.Stream(context.Background(), Request{
-		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
-	})
-	require.NoError(t, err)
-
-	events := collectEvents(t, ch)
-	assert.NotEmpty(t, events)
+			events := collectEvents(t, ch)
+			assert.NotEmpty(t, events)
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1308,28 +1305,6 @@ func TestOpenAICodexProvider_Stream_AllRoles(t *testing.T) {
 			{Role: RoleAssistant, Content: "Asst msg"},
 			{Role: RoleSystem, Content: "Sys inline"},
 			{Role: RoleUser, Content: "Follow-up", MediaURLs: []string{"https://example.com/img.png"}},
-		},
-	}
-	ch, err := p.Stream(context.Background(), req)
-	assert.NoError(t, err)
-
-	collectEvents(t, ch)
-}
-
-func TestOpenAICodexProvider_Stream_WithMedia_NoContent(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
-	}))
-	defer srv.Close()
-
-	p := NewOpenAICodexProvider("test-token", "gpt-4o")
-	p.httpClient = &http.Client{Transport: &rewriteURLTransport{target: srv.URL, base: http.DefaultTransport}}
-
-	req := Request{
-		Messages: []Message{
-			{Role: RoleUser, Content: "", MediaURLs: []string{"https://example.com/img.png"}},
 		},
 	}
 	ch, err := p.Stream(context.Background(), req)
@@ -1734,37 +1709,27 @@ func TestFetchCodeAssistProject_Success(t *testing.T) {
 
 }
 
-func TestFetchCodeAssistProject_HTTPError(t *testing.T) {
-	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = fmt.Fprint(w, "access denied")
-	})
+func TestFetchCodeAssistProject_Errors(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"HTTP error", http.StatusForbidden, "access denied"},
+		{"missing project field", http.StatusOK, `{"someOtherField":"value"}`},
+		{"invalid JSON", http.StatusOK, `not-json`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = fmt.Fprint(w, tc.body)
+			})
 
-	_, err := fetchCodeAssistProject(context.Background(), "bad-token")
-	assert.Error(t, err)
-
-}
-
-func TestFetchCodeAssistProject_BadJSON(t *testing.T) {
-	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprint(w, `{"someOtherField":"value"}`)
-	})
-
-	_, err := fetchCodeAssistProject(context.Background(), "test-token")
-	assert.Error(t, err)
-
-}
-
-func TestFetchCodeAssistProject_InvalidJSON(t *testing.T) {
-	mockDefaultClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprint(w, `not-json`)
-	})
-
-	_, err := fetchCodeAssistProject(context.Background(), "test-token")
-	assert.Error(t, err)
-
+			_, err := fetchCodeAssistProject(context.Background(), "test-token")
+			assert.Error(t, err)
+		})
+	}
 }
 
 func TestGeminiCodeAssistProvider_Ping_Success(t *testing.T) {
@@ -2144,37 +2109,38 @@ func TestFactory_PingModel_Error(t *testing.T) {
 // Factory resolveOAuthToken with JSON token
 // ---------------------------------------------------------------------------
 
-func TestResolveOAuthToken_JSONToken(t *testing.T) {
-	// Build a JSON token that is already valid (not expired).
+// ---------------------------------------------------------------------------
+// Factory resolveOAuthToken
+// ---------------------------------------------------------------------------
+
+func TestResolveOAuthToken(t *testing.T) {
 	// OAuthToken uses "access", "refresh", "expires_at" (Unix ms).
-	expiresAt := time.Now().Add(1 * time.Hour).UnixMilli()
-	tokenJSON := fmt.Sprintf(`{"access":"at-valid","refresh":"rt","expires_at":%d}`, expiresAt)
+	validJSON := fmt.Sprintf(`{"access":"at-valid","refresh":"rt","expires_at":%d}`, time.Now().Add(1*time.Hour).UnixMilli())
+	stored := func(value string) func(string) (string, error) {
+		return func(string) (string, error) { return value, nil }
+	}
 
-	f := NewFactory(func(_ string) (string, error) {
-		return tokenJSON, nil
-	})
-	tok, ok := f.resolveOAuthToken("auth:anthropic:oauth", false)
-	assert.True(t, ok)
-	assert.NotEqual(t, "", tok)
-
-}
-
-func TestResolveOAuthToken_InvalidJSON(t *testing.T) {
-	f := NewFactory(func(_ string) (string, error) {
-		return `{invalid json`, nil
-	})
-	_, ok := f.resolveOAuthToken("auth:anthropic:oauth", false)
-	assert.False(t, ok)
-
-}
-
-func TestResolveOAuthToken_EmptyAccessToken(t *testing.T) {
-	f := NewFactory(func(_ string) (string, error) {
-		return `{"access_token":"","refresh_token":"rt"}`, nil
-	})
-	_, ok := f.resolveOAuthToken("auth:anthropic:oauth", false)
-	assert.False(t, ok)
-
+	tests := []struct {
+		name     string
+		resolver func(string) (string, error)
+		wantTok  string
+		wantOK   bool
+	}{
+		{"nil resolver", nil, "", false},
+		{"plain API key", stored("sk-test-key"), "sk-test-key", true},
+		{"valid JSON token", stored(validJSON), "at-valid", true},
+		{"invalid JSON", stored(`{invalid json`), "", false},
+		{"empty access token", stored(`{"access_token":"","refresh_token":"rt"}`), "", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tok, ok := NewFactory(tc.resolver).resolveOAuthToken("auth:anthropic:oauth", false)
+			assert.Equal(t, tc.wantOK, ok)
+			if tc.wantOK {
+				assert.Equal(t, tc.wantTok, tok)
+			}
+		})
+	}
 }
 
 func TestResolveOAuthToken_OpenAIRefreshesExpiredToken(t *testing.T) {
@@ -2217,36 +2183,35 @@ func TestResolveOAuthToken_OpenAIRefreshesExpiredToken(t *testing.T) {
 // CopilotProvider tests
 // ---------------------------------------------------------------------------
 
-func TestFactory_CopilotProvider_OAuth(t *testing.T) {
-	f := NewFactory(func(ref string) (string, error) {
-		if ref == "auth:github-copilot:oauth" {
-			return `{"access":"ya-access","refresh":"rt","expires_at":9999999999999}`, nil
-		}
-		return "", fmt.Errorf("not found")
-	})
-	p, err := f.ForModel("github-copilot/claude-sonnet-4.5")
-	assert.NoError(t, err)
-	_, ok := p.(*CopilotProvider)
-	assert.True(t, ok, "expected CopilotProvider for github-copilot/* when OAuth present")
-}
-
-func TestFactory_CopilotProvider_PatFallback(t *testing.T) {
-	f := NewFactory(func(ref string) (string, error) {
-		if ref == "auth:github-copilot:default" {
-			return "ghp-testpat", nil
-		}
-		return "", fmt.Errorf("not found")
-	})
-	p, err := f.ForModel("github-copilot/gpt-5")
-	assert.NoError(t, err)
-	_, ok := p.(*CopilotProvider)
-	assert.True(t, ok, "expected CopilotProvider for github-copilot/* when PAT present")
-}
-
-func TestFactory_CopilotProvider_MissingCreds(t *testing.T) {
-	f := NewFactory(func(_ string) (string, error) { return "", fmt.Errorf("not found") })
-	_, err := f.ForModel("github-copilot/gpt-5")
-	assert.Error(t, err)
+func TestFactory_CopilotProvider(t *testing.T) {
+	tests := []struct {
+		name    string
+		authRef string
+		secret  string
+		model   string
+		wantErr bool
+	}{
+		{"OAuth", "auth:github-copilot:oauth", `{"access":"ya-access","refresh":"rt","expires_at":9999999999999}`, "github-copilot/claude-sonnet-4.5", false},
+		{"PAT fallback", "auth:github-copilot:default", "ghp-testpat", "github-copilot/gpt-5", false},
+		{"missing credentials", "", "", "github-copilot/gpt-5", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := NewFactory(func(ref string) (string, error) {
+				if tc.authRef != "" && ref == tc.authRef {
+					return tc.secret, nil
+				}
+				return "", fmt.Errorf("not found")
+			})
+			p, err := f.ForModel(tc.model)
+			if tc.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.IsType(t, &CopilotProvider{}, p)
+		})
+	}
 }
 
 func TestCopilotProvider_PingAndStream(t *testing.T) {

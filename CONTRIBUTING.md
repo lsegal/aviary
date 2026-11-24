@@ -107,6 +107,16 @@ The Vite dev server serves HTTPS so the composer mic, which browsers only allow 
 - Run `pnpm dev:cert` to regenerate the self-signed certificate, then restart `pnpm dev`.
 - Set `AVIARY_DEV_NO_TLS=1` to serve plain `http://localhost:5173` instead.
 
+#### Custom hostnames
+
+The dev servers only answer requests for `localhost` and IP addresses by default; any other hostname gets a "Blocked request. This host is not allowed" page. To reach them by a LAN or local hostname, list the names, comma-separated, in `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` before starting them:
+
+```sh
+__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=myhost.local,devbox.lan pnpm dev
+```
+
+The setting applies to the app dev server (`:5173`), the docs dev server (`:5174`), and the app preview server (`pnpm preview`). The docs preview server (`pnpm docs:preview`) doesn't check the host. Both configs read it through `scripts/dev-allowed-hosts.mjs`, because the Vite version VitePress bundles ignores the variable on its own.
+
 In the dev container or Docker Compose setup, the certificate is generated inside the container. Add the names you reach it by, such as your host's LAN address, under `server.tls.sans` in `.devcontainer/aviary/aviary.yaml`.
 
 > **First run:** The backend generates an auth token on first start. Check the terminal output for `Your access token: aviary_tok_...` and paste it into the login screen.

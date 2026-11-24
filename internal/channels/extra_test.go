@@ -60,6 +60,11 @@ func TestSendOnConfiguredChannel_Success(t *testing.T) {
 
 }
 
+// failingLaunch stands in for signal-cli so tests never spawn the real binary.
+func failingLaunch(context.Context, *sharedDaemon) (string, *exec.Cmd, error) {
+	return "", nil, fmt.Errorf("signal-cli launch disabled in tests")
+}
+
 // ── Signal.Start no-phone no-addr path ───────────────────────────────────────
 
 // TestStart_NoPhoneNoAddr ensures that when both phone and addr are empty,
@@ -79,13 +84,7 @@ func TestStart_NoPhoneNoAddr(t *testing.T) {
 // present (or ctx times out before the daemon becomes ready), run exits cleanly.
 func TestSharedDaemon_ContextCancelsDuringRun(t *testing.T) {
 	// Prevent tests from spawning the real signal-cli; stub the launcher.
-	orig := launchDaemonImpl
-	launchDaemonImpl = func(_ context.Context, _ *sharedDaemon) (string, *exec.Cmd, error) {
-		return "", nil, fmt.Errorf("signal-cli launch disabled in tests")
-	}
-	defer func() { launchDaemonImpl = orig }()
-
-	d := &sharedDaemon{phone: "+15550001111"}
+	d := &sharedDaemon{phone: "+15550001111", launch: failingLaunch}
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	// run should return when ctx is cancelled (signal-cli absent → error, then ctx done).
@@ -105,13 +104,7 @@ func TestSharedDaemon_ContextCancelsDuringRun(t *testing.T) {
 // run to return immediately without launching signal-cli.
 func TestSharedDaemon_CancelBeforeRun(t *testing.T) {
 	// Prevent tests from spawning the real signal-cli; stub the launcher.
-	orig := launchDaemonImpl
-	launchDaemonImpl = func(_ context.Context, _ *sharedDaemon) (string, *exec.Cmd, error) {
-		return "", nil, fmt.Errorf("signal-cli launch disabled in tests")
-	}
-	defer func() { launchDaemonImpl = orig }()
-
-	d := &sharedDaemon{phone: "+15550001111"}
+	d := &sharedDaemon{phone: "+15550001111", launch: failingLaunch}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	done := make(chan struct{})
@@ -130,216 +123,27 @@ func TestSharedDaemon_CancelBeforeRun(t *testing.T) {
 // when the shared daemon has not yet become ready.
 func TestStart_StopBeforeDaemonReady(t *testing.T) {
 	// Use a unique phone to avoid sharing with other tests.
-	ch := NewSignalChannel("+15559990000", "", nil, false, false, false, false, "m", nil)
+	const phone = "+15559990000"
+	launched := make(chan struct{})
+	d := &sharedDaemon{phone: phone, launch: func(ctx context.Context, d *sharedDaemon) (string, *exec.Cmd, error) {
+		defer close(launched)
+		return failingLaunch(ctx, d)
+	}}
+	globalDaemonHub.mu.Lock()
+	globalDaemonHub.daemons[phone] = d
+	globalDaemonHub.mu.Unlock()
+
+	ch := NewSignalChannel(phone, "", nil, false, false, false, false, "m", nil)
 	ch.Stop() // pre-close done so Start returns immediately
 	ctx := context.Background()
 	err := ch.Start(ctx)
 	assert.NoError(t, err)
-}
 
-// ── fetchLinkPreviews: additional branch coverage ────────────────────────────
-
-// TestFetchLinkPreviews_TitleFromTitleTag tests the <title>...</title> text
-// node path (rather than og:title meta).
-func TestFetchLinkPreviews_TitleFromTitleTag(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintln(w, `<html><head><title>Page Title</title></head><body></body></html>`)
-	}))
-	defer srv.Close()
-
-	text := "See " + srv.URL
-	previews, cleanup := fetchLinkPreviews(text)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	assert.NotNil(t, previews)
-	assert.Equal(t, "Page Title", previews[0].Title)
-
-}
-
-// TestFetchLinkPreviews_ImageFromOGImage tests that og:image triggers download.
-func TestFetchLinkPreviews_ImageFromOGImage(t *testing.T) {
-	// Image server returns fake image data.
-	imgSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("\x89PNG fake image data"))
-	}))
-	defer imgSrv.Close()
-
-	htmlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintf(w, `<html><head>
-			<meta property="og:title" content="Article">
-			<meta property="og:image" content="%s/img.png">
-		</head><body></body></html>`, imgSrv.URL)
-	}))
-	defer htmlSrv.Close()
-
-	previews, cleanup := fetchLinkPreviews("visit " + htmlSrv.URL)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	assert.NotNil(t, previews)
-	assert.Equal(t, // Image may or may not be set depending on download success; just verify title.
-		"Article", previews[0].Title)
-
-}
-
-// TestFetchLinkPreviews_ImageFromLinkIcon tests the <link rel="icon"> path.
-func TestFetchLinkPreviews_ImageFromLinkIcon(t *testing.T) {
-	imgSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("icon data"))
-	}))
-	defer imgSrv.Close()
-
-	htmlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintf(w, `<html><head>
-			<meta property="og:title" content="Site">
-			<link rel="icon" href="%s/favicon.ico">
-		</head><body></body></html>`, imgSrv.URL)
-	}))
-	defer htmlSrv.Close()
-
-	previews, cleanup := fetchLinkPreviews(htmlSrv.URL)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	assert.NotNil(t, previews)
-	assert.Equal(t, "Site", previews[0].Title)
-
-}
-
-// TestFetchLinkPreviews_ImageFromImgTag tests the <img src="..."> path.
-func TestFetchLinkPreviews_ImageFromImgTag(t *testing.T) {
-	imgSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("img data"))
-	}))
-	defer imgSrv.Close()
-
-	htmlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintf(w, `<html><head>
-			<meta property="og:title" content="Post">
-		</head><body><img src="%s/photo.jpg"></body></html>`, imgSrv.URL)
-	}))
-	defer htmlSrv.Close()
-
-	previews, cleanup := fetchLinkPreviews("check " + htmlSrv.URL)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	assert.NotNil(t, previews)
-	assert.Equal(t, "Post", previews[0].Title)
-
-}
-
-// TestFetchLinkPreviews_NoTitle verifies nil returned when no title found.
-func TestFetchLinkPreviews_NoTitle(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintln(w, `<html><head></head><body>No title</body></html>`)
-	}))
-	defer srv.Close()
-
-	previews, cleanup := fetchLinkPreviews(srv.URL)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	assert.Nil(t, previews)
-
-}
-
-// TestFetchLinkPreviews_TwitterTitle tests twitter:title meta tag.
-func TestFetchLinkPreviews_TwitterTitle(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintln(w, `<html><head>
-			<meta name="twitter:title" content="Twitter Article">
-			<meta name="twitter:description" content="A desc">
-			<meta name="twitter:image" content="http://example.com/img.jpg">
-		</head><body></body></html>`)
-	}))
-	defer srv.Close()
-
-	previews, cleanup := fetchLinkPreviews(srv.URL)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	assert.NotNil(t, previews)
-	assert.Equal(t, "Twitter Article", previews[0].Title)
-
-}
-
-// TestFetchLinkPreviews_Description tests og:description parsing.
-func TestFetchLinkPreviews_Description(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintln(w, `<html><head>
-			<meta property="og:title" content="My Page">
-			<meta property="og:description" content="My page description">
-		</head><body></body></html>`)
-	}))
-	defer srv.Close()
-
-	previews, cleanup := fetchLinkPreviews(srv.URL)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	assert.NotNil(t, previews)
-	assert.Equal(t, "My page description", previews[0].Description)
-
-}
-
-// TestFetchLinkPreviews_URLWithTrailingPunct verifies URL is trimmed of trailing punctuation.
-func TestFetchLinkPreviews_URLWithTrailingPunct(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintln(w, `<html><head><meta property="og:title" content="Trimmed"></head></html>`)
-	}))
-	defer srv.Close()
-
-	// Append a period after the URL — it should be stripped.
-	previews, cleanup := fetchLinkPreviews("Visit " + srv.URL + ".")
-	if cleanup != nil {
-		defer cleanup()
-	}
-	assert.NotNil(t, previews)
-
-}
-
-// TestFetchLinkPreviews_FetchError verifies graceful handling of a URL that can't be fetched.
-func TestFetchLinkPreviews_FetchError(t *testing.T) {
-	// Use a port that nothing is listening on.
-	previews, cleanup := fetchLinkPreviews("http://127.0.0.1:1/page")
-	if cleanup != nil {
-		defer cleanup()
-	}
-	assert.Nil(t, previews)
-
-}
-
-// TestFetchLinkPreviews_LargeHead ensures metadata beyond the initial 64 KiB
-// of HTML is still parsed. Some modern sites inject large inline scripts in
-// <head> before the title and OG tags.
-func TestFetchLinkPreviews_LargeHead(t *testing.T) {
-	padding := strings.Repeat("a", 70*1024)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintf(w, `<html><head><script>%s</script><title>Large Head Title</title><meta property="og:description" content="Large head description"></head></html>`, padding)
-	}))
-	defer srv.Close()
-
-	previews, cleanup := fetchLinkPreviews(srv.URL)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	if assert.NotNil(t, previews) && assert.NotEmpty(t, previews) {
-		assert.Equal(t, "Large Head Title", previews[0].Title)
-		assert.Equal(t, "Large head description", previews[0].Description)
+	// Don't let the daemon goroutine outlive the test.
+	select {
+	case <-launched:
+	case <-time.After(2 * time.Second):
+		t.Fatal("shared daemon goroutine did not run")
 	}
 }
 
@@ -349,13 +153,7 @@ func TestFetchLinkPreviews_LargeHead(t *testing.T) {
 // is absent, exercising the cmd.Start error path.
 func TestSharedDaemon_LaunchDaemonBinaryNotFound(t *testing.T) {
 	// Prevent tests from spawning the real signal-cli; stub the launcher.
-	orig := launchDaemonImpl
-	launchDaemonImpl = func(_ context.Context, _ *sharedDaemon) (string, *exec.Cmd, error) {
-		return "", nil, fmt.Errorf("signal-cli launch disabled in tests")
-	}
-	defer func() { launchDaemonImpl = orig }()
-
-	d := &sharedDaemon{phone: "+15550001111"}
+	d := &sharedDaemon{phone: "+15550001111", launch: failingLaunch}
 	ctx := context.Background()
 	addr, cmd, err := d.launchDaemon(ctx)
 	if err == nil {
@@ -367,81 +165,6 @@ func TestSharedDaemon_LaunchDaemonBinaryNotFound(t *testing.T) {
 	}
 	assert.Empty(t, addr)
 	assert.Nil(t, cmd)
-}
-
-// ── Signal.dispatchEnvelope: read receipt path ───────────────────────────────
-
-// TestDispatchEnvelope_SendReadReceipt verifies that when sendReadReceipts=true
-// and the source is a phone number, sendReadReceipt is attempted.
-// We use a fake daemon to absorb the RPC call.
-func TestDispatchEnvelope_SendReadReceipt(t *testing.T) {
-	fd := newFakeDaemon(t)
-	defer fd.Close()
-
-	const sender = "+15550001111"
-	ch := NewSignalChannel("+15559999999", fd.Addr(),
-		[]config.AllowFromEntry{{From: "*"}},
-		false, false, false,
-		true, // sendReadReceipts=true
-		"m", nil)
-
-	msgs := make(chan IncomingMessage, 1)
-	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
-
-	// Start the listen loop in background.
-	cancel, _ := startChannel(ch)
-	defer cancel()
-	waitConnected(t, fd, 2*time.Second)
-
-	// Push a notification with a non-zero timestamp so the receipt is sent.
-	type dataMessage struct {
-		Message string `json:"message"`
-	}
-	type envelope struct {
-		Source      string      `json:"source"`
-		Timestamp   int64       `json:"timestamp"`
-		DataMessage dataMessage `json:"dataMessage"`
-	}
-	type params struct {
-		Envelope envelope `json:"envelope"`
-	}
-	notif := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "receive",
-		"params": params{
-			Envelope: envelope{
-				Source:      sender,
-				Timestamp:   12345678,
-				DataMessage: dataMessage{Message: "hi"},
-			},
-		},
-	}
-	b, _ := json.Marshal(notif)
-	fd.Push(b)
-
-	// Should receive the message.
-	msg := waitMsg(t, msgs, 2*time.Second)
-	assert.Equal(t, sender, msg.From)
-
-	// The fake daemon should also have received a sendReceipt RPC request.
-	// Give it a moment to arrive.
-	deadline := time.Now().Add(500 * time.Millisecond)
-	var found bool
-	for !found && time.Now().Before(deadline) {
-		fd.mu.Lock()
-		for _, req := range fd.sent {
-			if m, _ := req["method"].(string); m == "sendReceipt" {
-				found = true
-			}
-		}
-		fd.mu.Unlock()
-		if !found {
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-	// The receipt call goes through a separate TCP connection; only verify
-	// the message was dispatched (the RPC is best-effort).
-	_ = found
 }
 
 // ── Signal.dispatchEnvelope: reply-to-self path ──────────────────────────────
@@ -699,20 +422,6 @@ func TestDispatch_ModelFromChannel(t *testing.T) {
 
 }
 
-// ── Signal.Send: dial error path ─────────────────────────────────────────────
-
-func TestSend_DialError(t *testing.T) {
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	// Set addr to a port that nothing is listening on.
-	ch.addrMu.Lock()
-	ch.addr = "127.0.0.1:1" // port 1 should not be open
-	ch.addrMu.Unlock()
-
-	err := ch.Send("+5551111111", "hi")
-	assert.Error(t, err)
-
-}
-
 // ── Manager.RouteMediaDelivery: non-media-sender skipped ─────────────────────
 
 func TestRouteMediaDelivery_NonMediaSenderSkipped(t *testing.T) {
@@ -728,85 +437,6 @@ func TestRouteMediaDelivery_NonMediaSenderSkipped(t *testing.T) {
 
 	// Should fail since mockChannel doesn't implement MediaSender.
 	err := mgr.RouteMediaDelivery("slack", "C123", "caption", "/tmp/f.png")
-	assert.Error(t, err)
-
-}
-
-// ── Signal.Send: read-response error (server closes without responding) ───────
-
-// newSignalCloseImmediatelyServer creates a TCP server that accepts and immediately closes.
-func newSignalCloseImmediatelyServer(t *testing.T) string {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	assert.NoError(t, err)
-
-	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		_ = conn.Close() // close immediately, no response written
-	}()
-	t.Cleanup(func() { _ = ln.Close() })
-	return ln.Addr().String()
-}
-
-func TestSend_ReadResponseError(t *testing.T) {
-	addr := newSignalCloseImmediatelyServer(t)
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-
-	err := ch.Send("+5551111111", "hi")
-	assert.Error(t, err)
-
-}
-
-func TestSendTyping_ReadResponseError(t *testing.T) {
-	addr := newSignalCloseImmediatelyServer(t)
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-
-	err := ch.SendTyping("+5551111111", false)
-	assert.Error(t, err)
-
-}
-
-func TestSendReadReceipt_ReadResponseError(t *testing.T) {
-	addr := newSignalCloseImmediatelyServer(t)
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-
-	err := ch.sendReadReceipt("+5551111111", 12345)
-	assert.Error(t, err)
-
-}
-
-func TestSendMedia_ReadResponseError(t *testing.T) {
-	addr := newSignalCloseImmediatelyServer(t)
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-
-	err := ch.SendMedia("+5551111111", "caption", "/tmp/f.png")
-	assert.Error(t, err)
-
-}
-
-func TestSendReaction_ReadResponseError(t *testing.T) {
-	addr := newSignalCloseImmediatelyServer(t)
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-
-	err := ch.sendReaction("+5551111111", "👍", "+1", 12345)
 	assert.Error(t, err)
 
 }

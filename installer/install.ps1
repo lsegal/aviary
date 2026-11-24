@@ -55,11 +55,34 @@ function Get-DisplayPath {
 	return $Path
 }
 
-switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
-	"X64" { $goArch = "amd64" }
-	"Arm64" { $goArch = "arm64" }
-	default { throw "Unsupported architecture: $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)" }
+# Windows PowerShell 5.1 runs on .NET Framework, where RuntimeInformation is
+# often missing or reports nothing, so fall back to the environment and then
+# to Is64BitOperatingSystem (#1100). The first non-empty value decides.
+function Resolve-GoArch {
+	param(
+		[string]$OSArchitecture,
+		[string]$ProcessorArchitew6432,
+		[string]$ProcessorArchitecture,
+		[bool]$Is64BitOperatingSystem
+	)
+
+	$detected = "OSArchitecture='$OSArchitecture', PROCESSOR_ARCHITEW6432='$ProcessorArchitew6432', PROCESSOR_ARCHITECTURE='$ProcessorArchitecture', Is64BitOperatingSystem=$Is64BitOperatingSystem"
+	foreach ($raw in @($OSArchitecture, $ProcessorArchitew6432, $ProcessorArchitecture)) {
+		if (-not $raw) { continue }
+		switch ($raw.Trim()) {
+			{ $_ -in "AMD64", "X64" } { return "amd64" }
+			"ARM64" { return "arm64" }
+			default { throw "Unsupported architecture: $raw ($detected)" }
+		}
+	}
+	if ($Is64BitOperatingSystem) {
+		return "amd64"
+	}
+	throw "Unsupported architecture: could not detect a 64-bit OS ($detected)"
 }
+
+$osArchitecture = try { [string][System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture } catch { "" }
+$goArch = Resolve-GoArch -OSArchitecture $osArchitecture -ProcessorArchitew6432 $env:PROCESSOR_ARCHITEW6432 -ProcessorArchitecture $env:PROCESSOR_ARCHITECTURE -Is64BitOperatingSystem ([Environment]::Is64BitOperatingSystem)
 
 if (-not $Version) {
 	$Version = Get-LatestTag -RepoName $Repo -Base $DownloadBase

@@ -69,7 +69,7 @@ async function mockSettings(page: Page) {
 
 /** Asserts neither the document nor the settings scroller scrolls sideways. */
 async function expectNoHorizontalOverflow(page: Page, label: string) {
-	await expect(page.getByTestId("page-header")).toBeVisible();
+	await expect(page.getByTestId("settings-header")).toBeVisible();
 	const sizes = await page.evaluate(() => {
 		const scroller = document.querySelector("[data-testid=settings-scroll]");
 		return {
@@ -78,8 +78,8 @@ async function expectNoHorizontalOverflow(page: Page, label: string) {
 		};
 	});
 	expect(sizes, label).toEqual({ page: 0, scroller: 0 });
-	await expect(page.getByTestId("page-back")).toBeInViewport({ ratio: 1 });
-	await expect(page.getByTestId("page-title")).toBeInViewport();
+	await expect(page.getByTestId("settings-back")).toBeInViewport({ ratio: 1 });
+	await expect(page.getByTestId("settings-title")).toBeInViewport();
 }
 
 for (const width of [320, 375, 430]) {
@@ -100,6 +100,7 @@ for (const width of [320, 375, 430]) {
 			"/projects/settings?agent=Aviary&project=o%2Fr",
 			"/projects/settings",
 			"/system/settings",
+			"/system/display",
 		]) {
 			await page.goto(url);
 			await expectNoHorizontalOverflow(page, url);
@@ -121,3 +122,63 @@ for (const width of [320, 375, 430]) {
 		await context.close();
 	});
 }
+
+test("settings pages fit a phone at the largest text size (#1093)", async ({
+	browser,
+}) => {
+	const context = await browser.newContext({
+		viewport: { width: 375, height: 800 },
+		hasTouch: false,
+		isMobile: false,
+		ignoreHTTPSErrors: true,
+	});
+	const page = await context.newPage();
+	await page.addInitScript(() =>
+		localStorage.setItem(
+			"aviary.display.prefs",
+			JSON.stringify({ textSize: "xlarge" }),
+		),
+	);
+	await mockSettings(page);
+	// The server holds the same choice, as it does once the user saved it.
+	await page.route("/api/preferences/display", (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ textSize: "xlarge" }),
+		}),
+	);
+	for (const url of [
+		"/agents/Aviary/channels/signal/settings",
+		"/agents/Aviary/tasks?task=release-aviary",
+		"/agents/Aviary/settings",
+		"/projects/settings",
+		"/system/settings",
+		"/system/providers",
+		"/system/display",
+	]) {
+		await page.goto(url);
+		await expect(page.locator("html")).toHaveAttribute(
+			"data-text-size",
+			"xlarge",
+		);
+		await expectNoHorizontalOverflow(page, url);
+	}
+	// The tab bar scrolls sideways, keeping the open tab in view.
+	await expect(page.getByTestId("settings-tab-display")).toBeInViewport({
+		ratio: 0.95,
+	});
+	// The header's links give way rather than run under its status icons.
+	const status = await page.getByTestId("mobile-header-status").boundingBox();
+	for (const link of await page.locator("header a[aria-label]").all()) {
+		const box = await link.boundingBox();
+		if (!box || !(await link.isVisible())) continue;
+		const clipped = await link.evaluate((el) => {
+			const r = el.getBoundingClientRect();
+			const p = (el.parentElement as HTMLElement).getBoundingClientRect();
+			return r.top >= p.bottom;
+		});
+		if (!clipped) expect(box.x + box.width).toBeLessThanOrEqual(status?.x ?? 0);
+	}
+	await context.close();
+});

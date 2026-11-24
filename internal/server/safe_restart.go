@@ -50,7 +50,6 @@ func exitStalledRestart() {
 
 var (
 	versionCheck    = update.Check
-	latestRelease   = update.LatestRelease
 	installRelease  = update.Install
 	gitCheckout     = update.GitCheckout
 	gitPull         = update.GitPull
@@ -164,7 +163,7 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 		return saferestart.Status{}, fmt.Errorf("when must be %q or %q", saferestart.WhenNow, saferestart.WhenIdle)
 	}
 
-	if req.Upgrade && !req.Release {
+	if req.Upgrade {
 		if dir := gitCheckout(); dir != "" {
 			if req.RemoveStaleLock {
 				if err := removeStaleLock(ctx, dir); err != nil {
@@ -177,21 +176,12 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 
 	version := ""
 	if req.Upgrade {
-		version = update.NormalizeVersion(req.Version)
-		if version == "" && req.Release {
-			// A dev build's version check compares its checkout, not
-			// releases, so look the release up directly.
-			latest, err := latestRelease(ctx, &http.Client{Timeout: 15 * time.Second})
-			if err != nil {
-				return saferestart.Status{}, err
-			}
-			version = update.NormalizeVersion(latest)
+		check, err := versionCheck(ctx, &http.Client{Timeout: 15 * time.Second})
+		if err != nil && check.LatestVersion == "" {
+			return saferestart.Status{}, err
 		}
+		version = update.NormalizeVersion(req.Version)
 		if version == "" {
-			check, err := versionCheck(ctx, &http.Client{Timeout: 15 * time.Second})
-			if err != nil && check.LatestVersion == "" {
-				return saferestart.Status{}, err
-			}
 			if check.NoCheckout {
 				return saferestart.Status{}, errors.New(check.Message)
 			}
@@ -515,14 +505,18 @@ func (s *Server) runDone() <-chan struct{} {
 	return s.runCtx.Done()
 }
 
+// selfUpdaterApplies reports whether this build has anything for
+// runSelfUpdater to compare against: dev builds outside a checkout do not.
+func selfUpdaterApplies() bool {
+	return !update.IsDevBuild() || update.EmulationActive() || gitCheckout() != ""
+}
+
 // runSelfUpdater checks for a new release (or, in git mode, new upstream
 // commits) every update.CheckInterval, tells every dashboard about it, and
 // applies it when auto_update is on. Running jobs do not delay it: the restart
-// checkpoints them and they resume afterwards.
+// checkpoints them and they resume afterwards. Callers check
+// selfUpdaterApplies first.
 func (s *Server) runSelfUpdater(ctx context.Context) {
-	if update.IsDevBuild() && !update.EmulationActive() && gitCheckout() == "" {
-		return // dev builds outside a checkout have nothing to compare against
-	}
 	ctx = update.WithCaller(ctx, "self-updater")
 	var lastNotified string
 	notify := func(check update.CheckResult) {

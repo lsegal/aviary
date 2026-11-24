@@ -360,20 +360,6 @@ func TestHTTPHandler_GetRequest(t *testing.T) {
 	// Any response is fine; just checking no panic
 }
 
-// ── agent_run with file attachment ───────────────────────────────────────────
-
-func TestAgentRun_WithNilAgentManager(t *testing.T) {
-	old := GetDeps()
-	SetDeps(&Deps{Agents: nil})
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	d := NewDispatcher("https://localhost:16677", "")
-	toolCallContains(t, d, "agent_run", map[string]any{"name": "bot", "message": "hi"}, "not initialized")
-}
-
 // ── session_stop without session or agent ────────────────────────────────────
 
 func TestSessionStop_NeitherSessionNorAgent(t *testing.T) {

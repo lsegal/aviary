@@ -594,7 +594,8 @@ onBeforeUnmount(() => {
 						<h3>Prompt chat</h3>
 						<p>
 							Ask a board about its jobs, retry or stop them, or file a new
-							issue from a side panel, without leaving Aviary.
+							issue from a side panel, without leaving Aviary. The same chat
+							opens in the <code>aviary watch</code> terminal board.
 						</p>
 					</div>
 					<div class="card c-wide-3 reveal">

@@ -52,6 +52,10 @@ export interface TaskRunEntry {
 	durationMs?: number;
 	/** Why a failed, skipped or missed run did not succeed. */
 	error?: string;
+	/** The last lines a failed run's agent printed. */
+	errorOutput?: string;
+	/** A prefilled issue reporting a failed run. */
+	bugReportUrl?: string;
 	/** Whether the precompiled script failed and the model ran the task. */
 	scriptFailed?: boolean;
 	/** Why the run chose not to reply, when it sent nothing to its target. */
@@ -111,6 +115,7 @@ export function taskRunEntries(
 		let result = JOB_RESULTS[job.status] ?? "queued";
 		if (result === "succeeded" && scriptFailed) result = "fallback";
 		const active = result === "queued" || result === "running";
+		const failed = result === "failed";
 		return {
 			id: job.id,
 			job,
@@ -118,7 +123,9 @@ export function taskRunEntries(
 			trigger: job.trigger || reasons.get(job.id) || "",
 			startedAt: job.created_at,
 			durationMs: active ? undefined : jobDurationMs(job),
-			error: result === "failed" ? job.error || undefined : undefined,
+			error: failed ? job.error || undefined : undefined,
+			errorOutput: failed ? job.error_output || undefined : undefined,
+			bugReportUrl: failed ? job.bug_report_url || undefined : undefined,
 			scriptFailed,
 			skippedReply: skippedReplyReason(job),
 		};

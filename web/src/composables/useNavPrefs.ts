@@ -33,8 +33,6 @@ function storedPrefs(): NavPrefs {
 const prefs = ref<NavPrefs>(storedPrefs());
 /** Shows hidden items in the sidebar and top row for this visit. */
 const showHidden = ref(false);
-/** Whether the Edit sidebar dialog is open. */
-const editing = ref(false);
 let loaded = false;
 
 function storeLocally(value: NavPrefs) {
@@ -90,7 +88,6 @@ export function useNavPrefs() {
 	return {
 		prefs,
 		showHidden,
-		editing,
 		/** Saves the list's order, given the keys it shows now in order. */
 		setOrder(list: NavList, shown: string[]) {
 			const order = withOrder(prefs.value.order[list], shown);
