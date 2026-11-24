@@ -169,6 +169,7 @@ func (m watchModel) focusChat(focus string) watchModel {
 	m.chat.focus = focus
 	if focus == watchFocusInput {
 		m.chat.input.Focus()
+		m = m.fitChatInput()
 	} else {
 		m.chat.input.Blur()
 	}
@@ -900,8 +901,18 @@ func (m watchModel) chatInputHeight() int {
 // scrolls it to keep the cursor row visible.
 func (m watchModel) fitChatInput() watchModel {
 	m.chat.input.SetWidth(max(4, m.width))
-	m.chat.input.SetHeight(m.chatInputHeight())
-	// The textarea scrolls its view to the cursor on every update.
+	// The textarea's view state is shared by its copies, and it only scrolls
+	// the view as far as needed to show the cursor. When the height changes,
+	// reset a copy to scroll back to the top, so that rows that fit again
+	// show, then let the update below scroll down to the cursor.
+	if h := m.chatInputHeight(); h != m.chat.input.Height() {
+		top := m.chat.input
+		top.Reset()
+		m.chat.input.SetHeight(h)
+	}
+	// The textarea scrolls only as far as the text its last View laid out,
+	// so lay out the new text first.
+	_ = m.chat.input.View()
 	m.chat.input, _ = m.chat.input.Update(nil)
 	return m
 }
