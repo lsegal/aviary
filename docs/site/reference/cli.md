@@ -97,7 +97,11 @@ aviary ui [project]
 
 Validate `aviary.yaml` and verify that required credentials exist in the auth store. Exits with status 1 if any errors are found.
 
-The `System information` block starts with the Aviary version and an `Install type` line, the same install type `aviary version` prints.
+The `System information` block starts with the Aviary version and an `Install type` line naming how the binary was built:
+
+- `release build <version>`: a release binary, which upgrades from GitHub releases.
+- `dev build from the source checkout at <dir>`: a dev build that found its checkout, which upgrades with `git pull`.
+- `dev build without a source checkout`: a dev build with no checkout to pull, such as `go run` without `AVIARY_CHECKOUT`, or a dev build inside Docker.
 
 When the server is running, a `Startup` line summarizes its latest boot: total boot time, when `/mcp` became ready, any subsystems still initializing, and the slowest phases.
 
@@ -131,7 +135,7 @@ aviary upgrade [flags]
 
 `--release` and `--source` exclude each other, and `--source` rejects `--version`, which picks a release.
 
-Without either flag, the mode follows the install type `aviary version` shows, never the working directory. The first line of output names it, such as `Installed release v0.7.3 at /usr/local/bin/aviary.` or `Running a dev build of 588e26e2abcd from the source checkout at ~/src/aviary.`; `--verbose` adds the reasons: the stamped version, the embedded VCS revision, and whether `AVIARY_CHECKOUT` or the executable's location found the checkout.
+Without either flag, the mode follows the install type `aviary doctor` shows, never the working directory. The first line of output names it, such as `Installed release v0.7.3 at /usr/local/bin/aviary.` or `Running a dev build of 588e26e2abcd from the source checkout at ~/src/aviary.`; `--verbose` adds the reasons: the stamped version, the embedded VCS revision, and whether `AVIARY_CHECKOUT` or the executable's location found the checkout.
 
 - **Release mode** (a release build, or `--release`) prints `Aviary v0.7.4 is up to date.` when there is nothing to install, or `Upgrading v0.7.3 → v0.7.5` and then `Aviary upgraded to v0.7.5.` once the release replaces the binary. `--release` on a dev build installs the latest release.
 - **Source mode** (a dev build running from its checkout, or `--source`) fetches the checkout's upstream and prints what it compared, such as `Fetched origin/main: local 588e26e2 vs origin/main 9f1c0d3a (0 ahead, 2 behind).`, then runs `git pull --ff-only` and prints `Pulled N commit(s) into <dir> (<from> → <to>).`, or `The source checkout at <dir> is already up to date with origin/main (<sha>).`. On a dev build it then says whether the running binary was built from the checkout's HEAD; when it is stale it prints the `go build` command that rebuilds it, and it offers `aviary upgrade --release` to switch to the release binary. It never pulls over local changes or a diverged branch. The checkout is the one holding the binary or named by `AVIARY_CHECKOUT`; with no other checkout known, `--source` uses the checkout containing the working directory. See [Dev checkouts](../guide/operations.md#dev-checkouts).
@@ -144,24 +148,17 @@ When the server is running and is the same kind of install, the upgrade goes thr
 
 ## aviary version
 
-Show the Aviary version and the detected install type.
+Show the Aviary version.
 
 ```
 aviary version
 ```
 
-No flags. The output has two lines:
+No flags. The output is one line:
 
 ```
 aviary version v0.7.5
-install type: release build v0.7.5
 ```
-
-The install type is one of:
-
-- `release build <version>`: a release binary, which upgrades from GitHub releases.
-- `dev build from the source checkout at <dir>`: a dev build that found its checkout, which upgrades with `git pull`.
-- `dev build without a source checkout`: a dev build with no checkout to pull, such as `go run` without `AVIARY_CHECKOUT`, or a dev build inside Docker.
 
 ---
 

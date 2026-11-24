@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/lsegal/aviary/internal/buildinfo"
-	"github.com/lsegal/aviary/internal/update"
 )
 
 func TestVersionCommand(t *testing.T) {
@@ -20,7 +19,7 @@ func TestVersionCommand(t *testing.T) {
 		t.Fatalf("version command failed: %v", err)
 	}
 
-	want := "aviary version " + buildinfo.Version + "\ninstall type: " + update.DescribeInstall() + "\n"
+	want := "aviary version " + buildinfo.Version + "\n"
 	if got := out.String(); got != want {
 		t.Fatalf("unexpected output: got %q want %q", got, want)
 	}
