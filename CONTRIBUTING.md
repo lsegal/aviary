@@ -28,7 +28,7 @@ Open the repository in VS Code and run **Dev Containers: Reopen in Container**.
 This starts:
 
 - The Vite dev server at **https://localhost:5173**
-- The docs dev server at **http://localhost:5174**
+- The docs dev server at **https://localhost:5174**
 - The Aviary backend at **https://localhost:16677**
 
 The container persists Aviary runtime state under `.devcontainer/aviary/`, including the generated token at `.devcontainer/aviary/token`.
@@ -54,7 +54,7 @@ docker compose up --build
 This starts:
 
 - The Vite dev server at **https://localhost:5173**
-- The docs dev server at **http://localhost:5174**
+- The docs dev server at **https://localhost:5174**
 - The Aviary backend at **https://localhost:16677**
 
 The container persists Aviary runtime state under `.devcontainer/aviary/`, including the generated token at `.devcontainer/aviary/token`.
@@ -78,6 +78,7 @@ For watch mode (`aviary watch`), use `pnpm dev:watch` instead; see [Developing w
 This starts:
 
 - The Vite dev server at **https://localhost:5173** (hot-reload), also reachable from the LAN at `https://<lan-ip>:5173`
+- The docs dev server at **https://localhost:5174** (hot-reload), also reachable from the LAN at `https://<lan-ip>:5174`
 - The Aviary Go backend at **https://localhost:16677** (hot-reloads Go file changes via [`forgo run --watch`](https://github.com/lsegal/forgo))
 
 The first `pnpm dev` installs the [forgo](https://github.com/lsegal/forgo) toolchain into `~/.forgo` if it is not already on `PATH`. It also updates a forgo in `~/.forgo` older than the release dev updates need (`MIN_FORGO_VERSION` in `scripts/dev-go.mjs`), because older releases crash the backend after some hot reloads; a forgo set with `FORGO_BIN` or found on `PATH` only gets a warning. Set `FORGO_INSTALL_DIR` to install elsewhere or `FORGO_BIN` to point at an existing binary. Platforms without a forgo release fall back to plain `go run` (no reload on change).
@@ -105,7 +106,21 @@ The Vite dev server serves HTTPS so the composer mic, which browsers only allow 
 - Accept the browser warning, or trust the certificate on desktop, iOS, and Android, as described in [Trusting the certificate](docs/site/guide/operations.md#trusting-the-certificate).
 - For warning-free trust, use [mkcert](docs/site/guide/operations.md#trusted-certificates-with-mkcert) and point `server.tls.cert`/`server.tls.key` at its files; the dev server picks them up too.
 - Run `pnpm dev:cert` to regenerate the self-signed certificate, then restart `pnpm dev`.
-- Set `AVIARY_DEV_NO_TLS=1` to serve plain `http://localhost:5173` instead.
+- Set `AVIARY_DEV_NO_TLS=1` to serve plain `http://localhost:5173` and `http://localhost:5174` instead.
+
+The docs dev server serves HTTPS with the same certificate, so a device that trusts it reaches both servers.
+
+#### LAN access
+
+Both dev servers, the web UI on port 5173 and the docs on port 5174, listen on every interface and accept the same host names (`scripts/dev-hosts.mjs`). By default those are the names the certificate covers: `localhost`, the loopback addresses, your hostname, its `.local` name (for example `https://my-mac.local:5174`), and your current LAN IPv4 addresses. Vite rejects other names with "Blocked request. This host is not allowed".
+
+To reach them by another name, such as a DNS name or a Tailscale name pointing at your machine, list it in `AVIARY_DEV_HOSTS` before `pnpm dev`:
+
+```shell
+AVIARY_DEV_HOSTS=dev.example.com,.tailnet.ts.net pnpm dev
+```
+
+Names are comma-separated; a leading dot allows every subdomain. Vite's `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` is honored the same way by both servers. Add the extra names to `server.tls.sans` too, so the certificate covers them.
 
 In the dev container or Docker Compose setup, the certificate is generated inside the container. Add the names you reach it by, such as your host's LAN address, under `server.tls.sans` in `.devcontainer/aviary/aviary.yaml`.
 

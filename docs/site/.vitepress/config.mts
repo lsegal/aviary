@@ -1,4 +1,6 @@
 import { defineConfig, type HeadConfig } from "vitepress";
+import { devHttps } from "../../../scripts/dev-cert.mjs";
+import { devHosts } from "../../../scripts/dev-hosts.mjs";
 import {
 	checkSharePages,
 	defaultSharePage,
@@ -26,6 +28,20 @@ export default defineConfig({
 	base,
 	title,
 	description,
+	vite: {
+		plugins: [
+			{
+				// Serve the docs like the web UI dev server: HTTPS with the shared dev
+				// cert and the same LAN host names (#1105). HMR follows the page, so
+				// its websocket uses wss on whichever allowed host served it.
+				name: "aviary-dev-server",
+				config(_, { command }) {
+					if (command !== "serve") return;
+					return { server: { https: devHttps(), allowedHosts: devHosts() } };
+				},
+			},
+		],
+	},
 	transformPageData(pageData) {
 		const page = findSharePage(pageData.relativePath);
 		if (!page) return;
