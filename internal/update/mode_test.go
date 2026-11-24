@@ -123,8 +123,9 @@ func TestBinaryStaleness(t *testing.T) {
 }
 
 func TestRebuildCommand(t *testing.T) {
-	stubExecutable(t, "/usr/local/bin")
-	if got, want := RebuildCommand("/src/aviary"), "cd /src/aviary && go build -o /usr/local/bin/aviary ./cmd/aviary"; got != want {
+	bin := filepath.Join("/usr", "local", "bin")
+	stubExecutable(t, bin)
+	if got, want := RebuildCommand("/src/aviary"), "cd /src/aviary && go build -o "+filepath.Join(bin, "aviary")+" ./cmd/aviary"; got != want {
 		t.Fatalf("RebuildCommand() = %q, want %q", got, want)
 	}
 	stubExecutable(t, filepath.Join("/tmp", "go-build123", "b001", "exe"))
