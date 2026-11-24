@@ -1677,7 +1677,7 @@ func TestValidate_ProjectTask(t *testing.T) {
 	assert.True(t, hasIssue(issues, "project tasks require non-empty prompt"))
 
 	misplaced := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "t", Every: "1h", Prompt: "p", Project: "o/r"}}}}}
-	assert.True(t, hasIssue(Validate(misplaced, nil), "only supported for project tasks"))
+	assert.True(t, hasIssue(Validate(misplaced, nil), "project and model are only supported for project tasks"))
 
 	// The model override is checked as any model is.
 	badModel := &Config{Agents: []AgentConfig{{Name: "bot", Model: "ollama/llama3", Tasks: []TaskConfig{{
@@ -1776,7 +1776,7 @@ func TestServerConfig_DisableTokenAuth(t *testing.T) {
 	assert.NotContains(t, string(out), "disable_token_auth")
 }
 
-func TestProjectTaskPrecompileRoundTripsAndIsProjectOnly(t *testing.T) {
+func TestProjectTaskPrecompileRoundTrips(t *testing.T) {
 	dir := t.TempDir()
 	on := true
 	task := TaskConfig{
@@ -1793,12 +1793,40 @@ func TestProjectTaskPrecompileRoundTripsAndIsProjectOnly(t *testing.T) {
 	assert.Equal(t, "abc123", loaded.CompiledKey)
 	assert.Equal(t, "Label stale issues", loaded.Prompt)
 
-	cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{
-		task,
-		{Name: "report", Every: "1h", Prompt: "report", Precompile: &on},
-	}}}}
-	issues := Validate(cfg, nil)
-	assert.True(t, hasIssue(issues, "precompile, compiled and compiled_key are only supported for project tasks"))
-	cfg.Agents[0].Tasks = cfg.Agents[0].Tasks[:1]
+	cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{task}}}}
 	assert.False(t, hasIssue(Validate(cfg, nil), "precompile"))
+}
+
+func TestValidate_PrecompileFollowsPrecompilesBesidePrompt(t *testing.T) {
+	on := true
+	channels := []ChannelConfig{{Type: "signal", ID: "signal-1", Name: "signal", URL: "http://localhost:8080", Primary: "+15555550100"}}
+	tests := []struct {
+		name  string
+		task  TaskConfig
+		valid bool
+	}{
+		{"scheduled prompt task", TaskConfig{Name: "report", Every: "1h", Prompt: "report", Precompile: &on, Compiled: "print(1)", CompiledKey: "k"}, true},
+		{"explicit prompt type", TaskConfig{Name: "report", Type: "prompt", Every: "1h", Prompt: "report", Precompile: &on}, true},
+		{"prompt workflow", TaskConfig{Name: "be-nice", Type: "prompt", Trigger: TriggerMessage, Channel: "signal", Match: "test *", Target: "reply", Prompt: "be nice", Precompile: &on}, true},
+		{"project task", TaskConfig{Name: "triage", Type: "project", Every: "1h", Project: "o/r", Prompt: "triage", Precompile: &on}, true},
+		{"script task", TaskConfig{Name: "lua", Type: "script", Every: "1h", Prompt: "print(1)", Precompile: &on}, false},
+		{"script workflow", TaskConfig{Name: "lua", Type: "script", Trigger: TriggerMessage, Channel: "signal", Prompt: "print(1)", CompiledKey: "k"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.valid, tt.task.PrecompilesBesidePrompt())
+			cfg := &Config{Agents: []AgentConfig{{Name: "bot", Channels: channels, Tasks: []TaskConfig{tt.task}}}}
+			issues := Validate(cfg, nil)
+			for _, issue := range issues {
+				if !tt.valid {
+					continue
+				}
+				assert.NotEqual(t, LevelError, issue.Level, "%s: %s", issue.Field, issue.Message)
+			}
+			if !tt.valid {
+				assert.True(t, hasIssue(issues, "precompile, compiled and compiled_key only apply to prompt and project tasks"), "issues: %v", issues)
+				assert.True(t, hasIssue(issues, "script tasks have no prompt to compile"), "issues: %v", issues)
+			}
+		})
+	}
 }

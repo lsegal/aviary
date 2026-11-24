@@ -367,12 +367,12 @@ type TaskConfig struct {
 	// Model overrides the project agent's default model for a project task's
 	// runs; empty runs them with the agent's own model.
 	Model string `yaml:"model,omitempty"    json:"model,omitempty"`
-	// Precompile asks for a project task's prompt to be compiled into a
-	// script that runs in the job's clone without the model. Unset follows
-	// scheduler.precompute_tasks. Prompt tasks are compiled once on create
-	// and become script tasks instead, so only project tasks keep this.
+	// Precompile asks for a prompt or project task's prompt to be compiled
+	// into a script that runs without the model, falling back to the model
+	// when the script fails; the task keeps its prompt. See
+	// PrecompilesBesidePrompt for which tasks support it.
 	Precompile *bool `yaml:"precompile,omitempty" json:"precompile,omitempty"`
-	// Compiled is the project task's compiled Lua script, empty when its
+	// Compiled is the task's compiled Lua script, empty when its
 	// prompt did not pass the determinism gate, and CompiledKey identifies
 	// the prompt, project and tool set it was compiled from, so a change to
 	// any of them recompiles it.
@@ -406,6 +406,21 @@ const TriggerMessage = "message"
 // instead of a schedule or file watch.
 func (t TaskConfig) IsWorkflow() bool {
 	return strings.EqualFold(strings.TrimSpace(t.Trigger), TriggerMessage)
+}
+
+// PrecompilesBesidePrompt reports whether t can be precompiled: whether its
+// prompt can be compiled into a script stored beside it, in Compiled, which
+// runs in place of the model and falls back to it when the script fails.
+// Prompt tasks, scheduled or workflows, and project tasks can; a script task
+// already runs its own Lua script, so it has no prompt to compile. It is the
+// one rule the validator, the scheduler and compiler, the task tools and the
+// editors share.
+func (t TaskConfig) PrecompilesBesidePrompt() bool {
+	switch strings.ToLower(strings.TrimSpace(t.Type)) {
+	case "", "prompt", "project":
+		return true
+	}
+	return false
 }
 
 // UnmarshalYAML reads a task, accepting the old "run_agent" and "cli" keys
