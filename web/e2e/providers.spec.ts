@@ -219,12 +219,12 @@ test("Settings has General and Providers & Authentication tabs (#822)", async ({
 	const tabs = page.getByTestId("settings-tabs").getByRole("tab");
 	await expect(tabs).toHaveText(["General", "Providers & Authentication"]);
 	await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
-	await expect(page.getByTestId("settings-title")).toHaveText("Settings");
+	await expect(page.getByTestId("page-title")).toHaveText("Settings");
 
 	await tabs.nth(1).click();
 	await expect(page).toHaveURL("/system/providers");
 	await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
-	await expect(page.getByTestId("settings-title")).toHaveText("Settings");
+	await expect(page.getByTestId("page-title")).toHaveText("Settings");
 	await expect(page.getByTestId("providers-list")).toBeVisible();
 	// Providers & Auth is no longer a System page in the sidebar.
 	await page.getByTestId("sidebar-system-toggle").click();

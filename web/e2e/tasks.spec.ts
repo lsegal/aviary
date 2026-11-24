@@ -128,9 +128,7 @@ test("the Scheduled Tasks root page has no Reload or Save Changes", async ({
 	await mockTasks(page);
 	await page.goto("/agents/assistant/tasks");
 
-	await expect(page.getByTestId("settings-title")).toHaveText(
-		"Scheduled Tasks",
-	);
+	await expect(page.getByTestId("page-title")).toHaveText("Scheduled Tasks");
 	await expect(page.getByTestId("tasks-overview")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Reload" })).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "Save Changes" })).toHaveCount(
@@ -326,7 +324,7 @@ test("a task card opens the task's page, like its sidebar row (#950)", async ({
 	// Anywhere on the card body opens the task's page.
 	await clickCardAt(daily, daily.getByTestId("task-owner"));
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/daily-report$/);
-	await expect(page.getByTestId("task-title")).toHaveText("daily-report");
+	await expect(page.getByTestId("page-title")).toHaveText("daily-report");
 
 	// The card is focusable and Enter opens it.
 	await page.goto("/agents/assistant/tasks");
@@ -364,9 +362,7 @@ test("System → Jobs redirects to Scheduled Tasks and has no nav entry", async 
 	await page.goto("/system/jobs");
 
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks$/);
-	await expect(page.getByTestId("settings-title")).toHaveText(
-		"Scheduled Tasks",
-	);
+	await expect(page.getByTestId("page-title")).toHaveText("Scheduled Tasks");
 	await expect(page.locator('a[href="/system/jobs"]')).toHaveCount(0);
 });
 

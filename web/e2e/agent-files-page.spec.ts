@@ -98,7 +98,7 @@ test("the Files page is one file bar over a full-page editor", async ({
 
 	// No settings page header or its duplicate actions.
 	const main = page.locator("main");
-	await expect(page.getByTestId("settings-title")).toHaveCount(0);
+	await expect(page.getByTestId("page-title")).toHaveCount(0);
 	await expect(main.getByRole("button", { name: "Reload" })).toHaveCount(0);
 	await expect(main.getByRole("button", { name: "Save Changes" })).toHaveCount(
 		0,
@@ -279,7 +279,7 @@ test("the menu renames and deletes the open file", async ({ page }) => {
 test("other agent pages keep the settings page header", async ({ page }) => {
 	await mockFiles(page, { "AGENTS.md": "# Agents" });
 	await page.goto("/agents/assistant/settings");
-	await expect(page.getByTestId("settings-title")).toHaveText("Agent Settings");
+	await expect(page.getByTestId("page-title")).toHaveText("Agent Settings");
 	await expect(
 		page.locator("main").getByRole("button", { name: "Save Changes" }),
 	).toBeVisible();
