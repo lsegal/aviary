@@ -403,7 +403,7 @@ test("board lists scheduled tasks as their own boxes with run details", async ({
 	// state and the control that opens the run, beside its next fire time
 	// and its last finished result; no job card copies it (#977).
 	const running = nightly.getByTestId("scheduled-running");
-	await expect(running).toHaveText(/^\s*Running now · [12]m\s*$/);
+	await expect(running).toHaveText(/^\s*Running · [12]m\s*$/);
 	await expect(nightly.getByTestId("scheduled-state")).toHaveText("Running");
 	await expect(page.getByTestId("job-card")).toHaveCount(0);
 	// The pencil to its editor stays beside it.
@@ -695,7 +695,7 @@ for (const tc of [
 		};
 		if (tc.state === "during") {
 			await expect(card.getByTestId("scheduled-running")).toHaveText(
-				/^\s*Running now · \d+[sm]\s*$/,
+				/^\s*Running · \d+[sm]\s*$/,
 			);
 			await expect(card.getByTestId("scheduled-last")).toHaveCount(0);
 			// The run's output shows in rich and raw mode, like an issue card.
