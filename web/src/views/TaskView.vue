@@ -16,7 +16,8 @@
 							Enabled
 						</span>
 						<PausedChip v-else data-testid="task-state" data-enabled="false" />
-						<TaskPrecompileBadge :task="task" />
+						<CompiledStatusChip :task="task" :attempts="compileAttempts" detail :to="settingsLink"
+							@click="compiledPanelOpen = true" />
 					</div>
 					<p class="truncate text-xs text-gray-500 dark:text-gray-400" data-testid="task-schedule">
 						{{ typeLabel }} · {{ scheduleText }}<template v-if="codeLoopTarget"> · sends to
@@ -142,21 +143,23 @@ import CodeLoopTargetLink from "../components/CodeLoopTargetLink.vue";
 import StatChipRow, {
 	type StatChip,
 } from "../components/projects/StatChipRow.vue";
+import CompiledStatusChip from "../components/tasks/CompiledStatusChip.vue";
 import TaskRunHistory, {
 	type TaskRunFilter,
 } from "../components/tasks/dashboard/TaskRunHistory.vue";
 import TaskRunLog from "../components/tasks/dashboard/TaskRunLog.vue";
 import TriggerContextPanel from "../components/tasks/dashboard/TriggerContextPanel.vue";
 import PausedChip from "../components/tasks/PausedChip.vue";
-import TaskPrecompileBadge from "../components/tasks/TaskPrecompileBadge.vue";
 import { useMCP } from "../composables/useMCP";
 import {
 	TASK_CHAT_MIN_HEIGHT,
 	useTaskChatPanel,
 } from "../composables/useTaskChatPanel";
+import { useCompiledPanelOpen } from "../composables/useTaskCompiles";
 import { useTaskDashboard } from "../composables/useTaskDashboard";
 import { useTaskPause } from "../composables/useTaskPause";
 import { workflowSettingsPath } from "../lib/channels";
+import { compiledStatus, type TaskCompileAttempt } from "../lib/compiledStatus";
 import { age, until } from "../lib/projects";
 import { RESULT_LABELS } from "../lib/taskRuns";
 import { isCodeLoopTarget } from "../lib/taskTargets";
@@ -165,7 +168,6 @@ import {
 	agentTaskPath,
 	agentTaskType,
 	isWorkflow,
-	precompileState,
 	precompilesBesidePrompt,
 	useSettingsStore,
 } from "../stores/settings";
@@ -216,8 +218,11 @@ const precompiles = computed(
 		(task.value.precompile === true || !!task.value.precompile_note),
 );
 
+// The header's compiled chip opens the editor with the compiled script shown.
+const compiledPanelOpen = useCompiledPanelOpen();
+
 // How many times the task's script was compiled, and how the latest went.
-const compileAttempts = ref<{ status: string }[]>([]);
+const compileAttempts = ref<TaskCompileAttempt[]>([]);
 async function loadCompileAttempts() {
 	const name = taskParam.value;
 	if (!precompiles.value) {
@@ -229,10 +234,7 @@ async function loadCompileAttempts() {
 			agent: agent.value,
 			task: name,
 		});
-		const list = (JSON.parse(raw) ?? []) as {
-			status: string;
-			created_at: string;
-		}[];
+		const list = (JSON.parse(raw) ?? []) as TaskCompileAttempt[];
 		if (name !== taskParam.value) return;
 		compileAttempts.value = list.sort((a, b) =>
 			b.created_at.localeCompare(a.created_at),
@@ -424,7 +426,8 @@ async function recompile() {
 	await settings.fetchConfig();
 	let polls = 0;
 	const poll = async () => {
-		if (!task.value || precompileState(task.value) !== "compiling") return;
+		if (!task.value || compiledStatus(task.value)?.state !== "compiling")
+			return;
 		if (++polls > 60) return;
 		recompilePoll = setTimeout(async () => {
 			await settings.fetchConfig();

@@ -87,6 +87,11 @@ const props = withDefaults(
 	},
 );
 
+const emit = defineEmits<{
+	/** The analysis of the input as it stands, or null while there is none. */
+	analysis: [TaskAnalysis | null];
+}>();
+
 const { callTool } = useMCP();
 const editor = `task-editor-${Math.random().toString(36).slice(2)}`;
 
@@ -94,6 +99,9 @@ type State = "idle" | "checking" | "ready" | "error" | "script";
 const state = ref<State>("idle");
 const result = ref<TaskAnalysis | null>(null);
 const errorMessage = ref("");
+watch([state, result], () =>
+	emit("analysis", state.value === "ready" ? result.value : null),
+);
 let timer: ReturnType<typeof setTimeout> | undefined;
 // Only the latest request may set the result; older ones are discarded.
 let seq = 0;
