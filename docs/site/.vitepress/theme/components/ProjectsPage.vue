@@ -252,6 +252,30 @@ onBeforeUnmount(() => {
 					<img :src="screenshot('projects-run')" alt="A Code Loop job's run view with plan, file changes, and test output" />
 				</div>
 			</div>
+			<div class="pp-wrap pp-board pp-terminal">
+				<div class="pp-window pp-terminal-window reveal">
+					<div class="pp-window-bar">
+						<span class="tl"><span /><span /><span /></span>
+						<span>terminal · aviary watch owner/repo</span>
+					</div>
+					<img :src="withBase('/screenshots/watch-tui.png')" alt="The aviary watch terminal board with its prompt chat open: a question, a collapsed tool call, the agent's reply, and the log pane" />
+				</div>
+				<div>
+					<p class="pp-eyebrow">The terminal</p>
+					<h2>Or never leave the terminal</h2>
+					<p>
+						<code>aviary watch owner/repo</code> opens the same board in your
+						terminal. Press <kbd>c</kbd> or <kbd>/</kbd> for a prompt chat with
+						the Code Loop agent: ask what is running, or tell it what to do
+						next, and watch the reply and its tool calls stream in.
+					</p>
+					<p class="pp-muted">
+						The conversation is the one the web board's chat shows, so you can
+						start in one and pick it up in the other. Add
+						<code>--no-webui</code> to skip the web UI entirely.
+					</p>
+				</div>
+			</div>
 		</section>
 
 		<section id="skills" class="pp-wrap">
@@ -830,6 +854,24 @@ onBeforeUnmount(() => {
 .pp-window img {
 	display: block;
 	width: 100%;
+}
+
+.pp-terminal {
+	margin-top: 5rem;
+}
+
+.pp-terminal-window {
+	background: #0f1115;
+}
+
+.pp-board kbd {
+	padding: 0.05rem 0.35rem;
+	border: 1px solid var(--rule-strong);
+	border-bottom-width: 2px;
+	border-radius: 0.25rem;
+	background: var(--bg-soft);
+	font-family: var(--mono);
+	font-size: 0.85em;
 }
 
 /* skills */
