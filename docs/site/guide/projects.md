@@ -203,7 +203,7 @@ Each job keeps a structured transcript built from the CLI's machine-readable eve
 
 ## Scheduled prompts
 
-A project can also run prompts on a timer, such as a nightly triage or a weekly dependency update. They are Aviary scheduled tasks of type `project`, listed under the agent's **Scheduled Tasks** and in the project's **Schedules** tab, where **New schedule** creates one, and each shows on the board as one Scheduled card that its runs update in place. See [Scheduled prompts](./scheduled-tasks#scheduled-prompts).
+A project can also run prompts on a timer, such as a nightly triage or a weekly dependency update. They are Aviary scheduled tasks of type `project`, listed under the agent's **Scheduled Tasks** and on the project's board, where **Schedule** creates one. Each shows on the board as one Scheduled card that its runs update in place, and the card's gear opens the task's settings. See [Scheduled prompts](./scheduled-tasks#scheduled-prompts).
 
 ## Managing projects
 

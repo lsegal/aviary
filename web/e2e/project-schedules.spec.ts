@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { clickCardAt } from "./helpers/cards";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
-import { chooseOption, optionLabels, searchOption } from "./helpers/select";
+import { chooseOption, optionLabels } from "./helpers/select";
 import {
 	expectSavedTrigger,
 	expectTrigger,
@@ -792,7 +792,7 @@ test("scheduled cards have no pencil; the gear is the last action and opens the 
 	}
 
 	// The gear is reachable by keyboard and opens the full task settings,
-	// with the newer task options such as Send To and the project target.
+	// with the newer task options such as its type, target and Send To.
 	const gear = cards.first().getByRole("button", { name: "Task settings" });
 	await gear.focus();
 	await expect(gear).toBeFocused();
@@ -800,7 +800,11 @@ test("scheduled cards have no pencil; the gear is the last action and opens the 
 	const dialog = page.getByRole("dialog", { name: "Edit task" });
 	await expect(dialog).toBeVisible();
 	await expect(dialog.getByTestId("task-send-to")).toBeVisible();
-	await expect(dialog.getByTestId("task-project")).toBeVisible();
+	await expect(dialog.getByLabel("Task name")).toHaveValue("nightly-triage");
+	await expect(dialog.getByRole("radiogroup", { name: "Type" })).toBeVisible();
+	await expect(
+		dialog.getByRole("radiogroup", { name: "Target" }),
+	).toBeVisible();
 	// The board stays where it was underneath.
 	await expect(page).toHaveURL(/\/system\/watches\/lsegal%2Faviary$/);
 });
