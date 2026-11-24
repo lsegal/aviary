@@ -21,7 +21,9 @@
 							class="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
 						<component :is="title ? 'h2' : 'span'" v-if="i === crumbs.length - 1" aria-current="page"
 							:data-testid="`${testid}-title`" class="min-w-0 truncate" :class="title ? '' : 'font-medium'">
-							{{ crumb.label }}</component>
+							<BreadcrumbSwitcher v-if="switcher" :label="crumb.label" :title="switcher.title"
+								:items="switcher.items" />
+							<template v-else>{{ crumb.label }}</template></component>
 						<router-link v-else-if="crumb.to" :to="crumb.to"
 							class="min-w-0 truncate rounded text-gray-500 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-white">
 							{{ crumb.label }}</router-link>
@@ -48,6 +50,8 @@
 import ArrowLeftIcon from "@heroicons/vue/24/outline/ArrowLeftIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import type { RouteLocationRaw } from "vue-router";
+import type { SwitcherItem } from "../../lib/switcher";
+import BreadcrumbSwitcher from "./BreadcrumbSwitcher.vue";
 
 export interface PageCrumb {
 	label: string;
@@ -62,6 +66,8 @@ const props = defineProps<{
 	back?: { label: string; to: RouteLocationRaw } | null;
 	/** Shows the crumbs as the page's heading, with a labeled back link. */
 	title?: boolean;
+	/** Makes the current crumb a switcher between its siblings (#1063). */
+	switcher?: { title: string; items: SwitcherItem[] } | null;
 	/** The prefix of the test IDs: -back, -breadcrumb and -title. */
 	testid: string;
 }>();
