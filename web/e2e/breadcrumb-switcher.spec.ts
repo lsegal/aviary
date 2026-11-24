@@ -56,6 +56,12 @@ async function mockAviary(page: Page) {
 	});
 }
 
+/** Opens url once its breadcrumb shows; a cold dev server compiles slowly. */
+async function open(page: Page, url: string) {
+	await page.goto(url);
+	await expect(page.getByTestId("page-title")).toBeVisible({ timeout: 15_000 });
+}
+
 function trigger(page: Page) {
 	return page
 		.getByTestId("page-breadcrumb")
@@ -73,7 +79,7 @@ test.beforeEach(async ({ page }) => {
 test("a project leaf opens a focused, filterable switcher of the agent's projects", async ({
 	page,
 }) => {
-	await page.goto("/agents/Aviary/projects/o%2Fr?state=running");
+	await open(page, "/agents/Aviary/projects/o%2Fr?state=running");
 	const button = trigger(page);
 	await expect(button).toHaveAttribute("aria-haspopup", "listbox");
 	await expect(button).toHaveAttribute("aria-expanded", "false");
@@ -120,14 +126,14 @@ test("a project leaf opens a focused, filterable switcher of the agent's project
 test("a job page's leaf is the job, so it has no switcher", async ({
 	page,
 }) => {
-	await page.goto("/agents/Aviary/projects/o%2Fr/jobs/5");
+	await open(page, "/agents/Aviary/projects/o%2Fr/jobs/5");
 	await expect(trigger(page)).toHaveCount(0);
 });
 
 test("the shortcut opens the task switcher; arrows and Enter go to a sibling", async ({
 	page,
 }) => {
-	await page.goto("/agents/Aviary/tasks/release-aviary");
+	await open(page, "/agents/Aviary/tasks/release-aviary");
 	await expect(trigger(page)).toHaveAttribute("aria-keyshortcuts", "Alt+S");
 	await page.keyboard.press("Alt+KeyS");
 	const popover = page.getByTestId("crumb-switcher");
@@ -160,14 +166,14 @@ test("the shortcut opens the task switcher; arrows and Enter go to a sibling", a
 test("a run page's leaf is the run, so it has no switcher", async ({
 	page,
 }) => {
-	await page.goto("/agents/Aviary/tasks/release-aviary/runs/job_1");
+	await open(page, "/agents/Aviary/tasks/release-aviary/runs/job_1");
 	await expect(trigger(page)).toHaveCount(0);
 });
 
 test("Escape closes the channel switcher and returns focus to the leaf", async ({
 	page,
 }) => {
-	await page.goto("/agents/Aviary/channels/signal");
+	await open(page, "/agents/Aviary/channels/signal");
 	await trigger(page).click();
 	await expect(options(page)).toHaveText(["signal", "teamDisabled"]);
 	const icons = page.getByTestId("crumb-switcher-icon");
@@ -185,7 +191,7 @@ test("Escape closes the channel switcher and returns focus to the leaf", async (
 test("the Files page's leaf switches between files, marking built-in ones", async ({
 	page,
 }) => {
-	await page.goto("/agents/Aviary/files?file=AGENTS.md");
+	await open(page, "/agents/Aviary/files?file=AGENTS.md");
 	await expect(
 		page.getByTestId("page-breadcrumb").getByRole("listitem"),
 	).toHaveText(["Aviary", "Files", "AGENTS.md"]);
@@ -211,7 +217,8 @@ test("the switcher fits a phone screen and truncates long names", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 360, height: 700 });
-	await page.goto(
+	await open(
+		page,
 		`/agents/Aviary/projects/${encodeURIComponent(LONG_PROJECT)}`,
 	);
 	await trigger(page).click();
@@ -233,7 +240,7 @@ test("the switcher works with the sidebar collapsed", async ({ page }) => {
 	await page.addInitScript(() =>
 		localStorage.setItem("aviary.sidebar.collapsed", "1"),
 	);
-	await page.goto("/agents/Aviary/tasks/release-aviary");
+	await open(page, "/agents/Aviary/tasks/release-aviary");
 	await trigger(page).click();
 	await options(page).filter({ hasText: "triage" }).click();
 	await expect(page).toHaveURL("/agents/Aviary/tasks/triage");
@@ -272,7 +279,7 @@ test("an aviary watch session switches between its projects", async ({
 		project_status: { states, targets: ["owner/repo", "owner/other"] },
 		project_job_list: { jobs: [], total: 0, offset: 0, limit: 50 },
 	});
-	await page.goto("/agents/watch/projects/owner%2Frepo");
+	await open(page, "/agents/watch/projects/owner%2Frepo");
 	await trigger(page).click();
 	await expect(options(page)).toHaveText(["owner/repo", "owner/other"]);
 	await options(page).filter({ hasText: "owner/other" }).click();
