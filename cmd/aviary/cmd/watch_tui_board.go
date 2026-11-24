@@ -102,6 +102,9 @@ func (m watchModel) View() string {
 		return strings.Join(watchFitLines(append(lines, m.footerLine()), m.height), "\n")
 	}
 	top := []string{m.headerLine(), m.statsLine(), m.filterLine()}
+	if m.board {
+		top = append(top, make([]string, watchBoardSpacing)...)
+	}
 	bottom := []string{}
 	if h := m.chatPaneHeight(); h > 0 {
 		bottom = append(bottom, m.chatPane(h)...)
@@ -346,12 +349,19 @@ func (m watchModel) itemDetail(it watchItem) string {
 	return strings.Join(parts, " · ")
 }
 
+// watchBoardGutter is the blank cells between adjacent board columns, and
+// watchBoardSpacing the blank rows between the filters and the board.
+const (
+	watchBoardGutter  = 2
+	watchBoardSpacing = 2
+)
+
 // boardView lays the columns side by side, each a header and two-line cards,
 // scrolled to its cursor in the selected column.
 func (m watchModel) boardView(height int) []string {
 	cols := m.columns()
-	gap := 1
-	width := max(8, (m.width-gap*(len(cols)-1))/len(cols))
+	gap := watchBoardGutter
+	width := max(1, (m.width-gap*(len(cols)-1))/len(cols))
 	blocks := make([][]string, len(cols))
 	for c, col := range cols {
 		// One style, so the selected column's underline never wraps
@@ -391,7 +401,8 @@ func (m watchModel) boardView(height int) []string {
 				b.WriteString(strings.Repeat(" ", gap))
 			}
 		}
-		out = append(out, strings.TrimRight(b.String(), " "))
+		// Too narrow for every column at one cell: cut the row, never wrap.
+		out = append(out, strings.TrimRight(watchTruncate(b.String(), m.width), " "))
 	}
 	return out
 }
@@ -423,10 +434,18 @@ func (m watchModel) boardCard(it watchItem, selected bool, width int) []string {
 const watchMinPane = 3
 
 // paneRoom is the height left for the output and log panes: the screen
-// below the header, stats and filters, less the footer, the chat pane and
-// one board line.
+// below the topRows, less the footer, the chat pane and one board line.
 func (m watchModel) paneRoom() int {
-	return max(0, m.height-5-m.chatPaneHeight())
+	return max(0, m.height-m.topRows()-2-m.chatPaneHeight())
+}
+
+// topRows is the rows above the list or board: the header, stats and
+// filters, plus the blank rows above the board's column headers.
+func (m watchModel) topRows() int {
+	if m.board {
+		return 3 + watchBoardSpacing
+	}
+	return 3
 }
 
 // outputPaneHeight is the output pane's height while it is open: a third of
