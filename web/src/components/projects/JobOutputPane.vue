@@ -1,21 +1,23 @@
 <template>
-	<div v-if="rich" ref="outputEl" :data-testid="`${testid}-rich`"
-		class="min-h-0 flex-[1_1_7rem] overflow-y-auto bg-slate-950 px-4 py-3 text-xs text-slate-200"
-		@scroll="onScroll">
-		<JobOutputRows :events="job.events" />
+	<div class="relative flex min-h-0 flex-[1_1_7rem] flex-col">
+		<div v-if="rich" ref="outputEl" :data-testid="`${testid}-rich`"
+			class="min-h-0 flex-1 overflow-y-auto bg-slate-950 px-4 py-3 text-xs text-slate-200"
+			@scroll="onScroll">
+			<JobOutputRows :events="job.events" />
+		</div>
+		<pre v-else ref="outputEl" :data-testid="testid"
+			class="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-all bg-slate-950 px-4 py-3 font-mono text-xs leading-relaxed text-slate-200"
+			@scroll="onScroll">{{ outputText }}</pre>
+		<MoreBelowPill v-if="showMore" :count="newCount" :data-testid="`${testid}-more-below`" @click="scrollToBottom()" />
 	</div>
-	<pre v-else ref="outputEl" :data-testid="testid"
-		class="min-h-0 flex-[1_1_7rem] overflow-y-auto whitespace-pre-wrap break-all bg-slate-950 px-4 py-3 font-mono text-xs leading-relaxed text-slate-200"
-		@scroll="onScroll">{{ outputText }}</pre>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import {
-	useJobOutputMode,
-	useStickToBottom,
-} from "../../composables/useJobOutput";
+import { useAutoFollow } from "../../composables/useAutoFollow";
+import { useJobOutputMode } from "../../composables/useJobOutput";
 import type { ProjectJob } from "../../lib/projects";
+import MoreBelowPill from "../MoreBelowPill.vue";
 import JobOutputRows from "./JobOutputRows.vue";
 
 // A board card's job output: the rich transcript or the raw scrollback, as
@@ -42,8 +44,11 @@ const rich = computed(
 	() => mode.value === "rich" && props.job.events.length > 0,
 );
 const outputEl = ref<HTMLElement | null>(null);
-const { onScroll } = useStickToBottom(outputEl, () => [
-	props.job.events,
-	props.job.output,
-]);
+const { showMore, newCount, onScroll, scrollToBottom } = useAutoFollow(
+	outputEl,
+	{
+		count: () =>
+			rich.value ? props.job.events.length : props.job.output.length,
+	},
+);
 </script>
