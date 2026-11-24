@@ -1095,14 +1095,15 @@ func TestSPAHandler_FileNotFound_FallsBackToIndex(t *testing.T) {
 }
 
 func TestSPAHandler_ServeIndex_NoIndexHTML(t *testing.T) {
-	// FS with no index.html — serveIndex should return 404.
+	// FS with no index.html — serveIndex says the web assets are not built.
 	mfs := &memFS{files: map[string]string{}}
 	h := spaHandler{fs: mfs}
 
 	req := httptest.NewRequest(http.MethodGet, "/missing", nil)
 	rr := httptest.NewRecorder()
 	h.serveIndex(rr, req)
-	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Web assets not built")
 
 }
 
@@ -1155,7 +1156,7 @@ func TestWebFileServer_ReturnsHandler(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	assert.Contains(t, []int{http.StatusOK, http.StatusNotFound}, rr.Code)
+	assert.Contains(t, []int{http.StatusOK, http.StatusServiceUnavailable}, rr.Code)
 
 }
 

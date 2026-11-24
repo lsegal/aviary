@@ -16,6 +16,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { devTLSOptedOut } from "./dev-cert.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const viteBin = path.join(rootDir, "node_modules", "vite", "bin", "vite.js");
@@ -23,16 +24,22 @@ const viteBin = path.join(rootDir, "node_modules", "vite", "bin", "vite.js");
 const args = process.argv.slice(2);
 if (args[0] === "--") args.shift();
 
-// portFree reports whether nothing listens on port on any interface, where
-// Vite listens (server.host).
-function portFree(port) {
+// listenable reports whether port can be listened on at host.
+function listenable(port, host) {
 	return new Promise((resolve) => {
 		const srv = net.createServer();
 		srv.once("error", () => resolve(false));
-		srv.listen({ port, host: "::", ipv6Only: false }, () =>
+		srv.listen({ port, host, ipv6Only: host === "::" }, () =>
 			srv.close(() => resolve(true)),
 		);
 	});
+}
+
+// portFree reports whether nothing listens on port on any IPv4 or IPv6
+// interface, where Vite listens (server.host). A listener on one family
+// alone, such as the docs dev server's 0.0.0.0:5174, still takes the port.
+async function portFree(port) {
+	return (await listenable(port, "0.0.0.0")) && (await listenable(port, "::"));
 }
 
 async function freePort(start) {
@@ -52,7 +59,7 @@ function readPort(file) {
 }
 
 const vitePort = await freePort(5173);
-const webURL = `https://localhost:${vitePort}`;
+const webURL = `${devTLSOptedOut() ? "http" : "https"}://localhost:${vitePort}`;
 const portFile = path.join(tmpdir(), `aviary-watch-port-${process.pid}`);
 rmSync(portFile, { force: true });
 
@@ -149,7 +156,10 @@ function stop(signal) {
 	clearInterval(poll);
 	void stopVite(signal);
 	if (backend.exitCode === null && backend.signalCode === null) {
-		backend.kill(signal);
+		// SIGINT whatever the signal: forgo passes SIGINT on to the watch
+		// session but exits on SIGTERM, leaving the session running with
+		// its temporary directory. Both end a watch session the same way.
+		backend.kill("SIGINT");
 	}
 }
 
