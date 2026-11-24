@@ -31,6 +31,10 @@ export interface TaskAnalysis {
 	estimate: TaskRunEstimate;
 	/** What each run would cost on the model, when the task will be precompiled. */
 	without_precompile?: TaskRunEstimate;
+	/** Whether the result came from the server's analysis cache, with no model call. */
+	cached?: boolean;
+	/** When the analysis shown was run on the model, as an ISO time. */
+	analyzed_at?: string;
 }
 
 /** Parses task_analyze's result, or returns null when it is not one. */
