@@ -1,48 +1,46 @@
 <template>
-	<AppLayout :breadcrumb="isAgentFilesPage">
-		<div ref="scrollRoot" data-testid="settings-scroll" :class="isAgentFilesPage ? 'flex h-full flex-col overflow-hidden' : 'h-full overflow-y-auto'">
+	<AppLayout :crumbs="isAgentFilesPage ? undefined : pageHeader.crumbs"
+		:back="isAgentFilesPage ? undefined : pageHeader.back">
+		<template v-if="activeTab === 'sessions' || activeTab === 'skills'" #header-icon>
+			<SystemPageIcon :page-key="activeTab" tile />
+		</template>
+		<template v-if="!isAgentFilesPage" #header-actions>
+			<transition name="save-indicator">
+				<div v-if="saveSuccessVisible" class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"
+					:aria-label="headerNoticeText" :title="headerNoticeText">
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"
+						aria-hidden="true">
+						<path fill-rule="evenodd"
+							d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.78-9.72a.75.75 0 0 0-1.06-1.06L9.25 10.69 7.78 9.22a.75.75 0 1 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l4-4Z"
+							clip-rule="evenodd" />
+					</svg>
+					<span class="text-xs font-medium">{{ headerNoticeText }}</span>
+				</div>
+			</transition>
+			<button v-if="tasksRoot && draft.agents[selectedAgentIdx]?.name" type="button" data-testid="new-task-button"
+				aria-label="New task" title="New task"
+				class="inline-flex items-center gap-1 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
+				@click="openNewTask">
+				<PlusIcon aria-hidden="true" class="h-4 w-4" />
+				New task
+			</button>
+			<template v-if="!tasksRoot">
+			<button v-if="revertAvailable" type="button"
+				class="rounded-lg border border-amber-200 px-3 py-2 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
+				:disabled="loading || saving || reverting"
+				@click="revertToLatestBackup">{{ reverting ? "Reverting…" : "Revert" }}</button>
+			<button type="button"
+				class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+				:disabled="loading || saving || reverting"
+				@click="loadConfig">{{ loading ? "Loading…" : "Reload" }}</button>
+			<button type="button"
+				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+				:disabled="saving || reverting" @click="saveAll()">{{ saving ? "Saving…" : "Save Changes" }}</button>
+			</template>
+			<SystemSettingsLink v-if="activeTab === 'sessions' || activeTab === 'skills'" />
+		</template>
+		<div ref="scrollRoot" data-testid="settings-scroll" :class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'min-h-0 flex-1 overflow-y-auto'">
 			<div :class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'mx-auto max-w-7xl px-4 py-6 sm:px-6'">
-				<SettingsPageHeader v-if="!isAgentFilesPage" :crumbs="pageHeader.crumbs" :back="pageHeader.back">
-					<template #icon>
-						<SystemPageIcon v-if="activeTab === 'sessions' || activeTab === 'skills'" :page-key="activeTab" tile />
-					</template>
-					<template #actions>
-						<transition name="save-indicator">
-							<div v-if="saveSuccessVisible" class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"
-								:aria-label="headerNoticeText" :title="headerNoticeText">
-								<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"
-									aria-hidden="true">
-									<path fill-rule="evenodd"
-										d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.78-9.72a.75.75 0 0 0-1.06-1.06L9.25 10.69 7.78 9.22a.75.75 0 1 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l4-4Z"
-										clip-rule="evenodd" />
-								</svg>
-								<span class="text-xs font-medium">{{ headerNoticeText }}</span>
-							</div>
-						</transition>
-						<button v-if="tasksRoot && draft.agents[selectedAgentIdx]?.name" type="button" data-testid="new-task-button"
-							aria-label="New task" title="New task"
-							class="inline-flex items-center gap-1 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
-							@click="openNewTask">
-							<PlusIcon aria-hidden="true" class="h-4 w-4" />
-							New task
-						</button>
-						<template v-if="!tasksRoot">
-						<button v-if="revertAvailable" type="button"
-							class="rounded-lg border border-amber-200 px-3 py-2 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
-							:disabled="loading || saving || reverting"
-							@click="revertToLatestBackup">{{ reverting ? "Reverting…" : "Revert" }}</button>
-						<button type="button"
-							class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-							:disabled="loading || saving || reverting"
-							@click="loadConfig">{{ loading ? "Loading…" : "Reload" }}</button>
-						<button type="button"
-							class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-							:disabled="saving || reverting" @click="saveAll()">{{ saving ? "Saving…" : "Save Changes" }}</button>
-						</template>
-						<SystemSettingsLink v-if="activeTab === 'sessions' || activeTab === 'skills'" />
-					</template>
-				</SettingsPageHeader>
-
 				<div v-if="errorMessage" :class="isAgentFilesPage ? 'mx-4 mt-4 sm:mx-6' : 'mb-4'"
 					class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
 					{{ errorMessage }}
@@ -343,13 +341,11 @@ import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { settingsViewContextKey } from "../components/settings/context";
 import SettingsAgentsTab from "../components/settings/SettingsAgentsTab.vue";
 import SettingsGeneralTab from "../components/settings/SettingsGeneralTab.vue";
-import SettingsPageHeader, {
-	type SettingsCrumb,
-} from "../components/settings/SettingsPageHeader.vue";
 import SettingsProjectsTab from "../components/settings/SettingsProjectsTab.vue";
 import SettingsProvidersTab from "../components/settings/SettingsProvidersTab.vue";
 import SettingsSessionsTab from "../components/settings/SettingsSessionsTab.vue";
 import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
+import type { PageCrumb } from "../components/ui/PageHeader.vue";
 import { Skeleton } from "../components/ui/skeleton";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useAvailableModels } from "../composables/useAvailableModels";
@@ -363,6 +359,7 @@ import {
 	type KeepsEdits,
 	useUnsavedChanges,
 } from "../composables/useUnsavedChanges";
+import { agentPagePath } from "../lib/agentPages";
 import { APPROVAL_MODES } from "../lib/approval";
 import {
 	channelName,
@@ -1060,13 +1057,13 @@ function selectedAgentRouteId(): string {
  */
 const pageHeader = computed(
 	(): {
-		crumbs: SettingsCrumb[];
+		crumbs: PageCrumb[];
 		back: { label: string; to: string } | null;
 	} => {
 		const header = (
-			crumbs: SettingsCrumb[],
+			crumbs: PageCrumb[],
 		): {
-			crumbs: SettingsCrumb[];
+			crumbs: PageCrumb[];
 			back: { label: string; to: string } | null;
 		} => {
 			const parent = crumbs.at(-2);
@@ -1090,7 +1087,7 @@ const pageHeader = computed(
 				"";
 			const project =
 				typeof route.query.project === "string" ? route.query.project : "";
-			const crumbs: SettingsCrumb[] = agent
+			const crumbs: PageCrumb[] = agent
 				? [
 						{
 							label: "Code Loop",
@@ -1103,12 +1100,15 @@ const pageHeader = computed(
 			return header([...crumbs, { label: "Settings" }]);
 		}
 		if (activeTab.value !== "agents")
-			return header([{ label: systemTabLabels[activeTab.value] }]);
+			return header([
+				{ label: "System", to: "/system/overview" },
+				{ label: systemTabLabels[activeTab.value] },
+			]);
 		const agent = draft.value.agents[selectedAgentIdx.value];
 		if (!agent || route.path === "/agents")
 			return header([{ label: "Agents" }]);
 		const name = agent.name || "New agent";
-		const agentCrumb: SettingsCrumb = agent.name
+		const agentCrumb: PageCrumb = agent.name
 			? {
 					label: name,
 					to: `/agents/${encodeURIComponent(selectedAgentRouteId())}/chat`,
@@ -1122,6 +1122,10 @@ const pageHeader = computed(
 				typeof param === "string" ? param : channelName(selectedChannel.value);
 			return header([
 				agentCrumb,
+				{
+					label: "Channels",
+					to: agentPagePath(selectedAgentRouteId(), "channels"),
+				},
 				{
 					label: channelName(selectedChannel.value),
 					to: channelPath(selectedAgentRouteId(), channel),
@@ -1137,12 +1141,26 @@ const pageHeader = computed(
 			return header([
 				agentCrumb,
 				{
+					label: "Scheduled Tasks",
+					to: agentPagePath(selectedAgentRouteId(), "tasks"),
+				},
+				{
 					label: selectedTask.value.name || task,
 					to: taskSessionPath(selectedAgentRouteId(), task),
 				},
 				{ label: "Settings" },
 			]);
 		}
+		// A section of Agent Settings sits under the page it scrolls in.
+		if (selectedAgentSubtab.value === "permissions")
+			return header([
+				agentCrumb,
+				{
+					label: "Agent Settings",
+					to: agentPagePath(selectedAgentRouteId(), "settings"),
+				},
+				{ label: "Permissions" },
+			]);
 		return header([
 			agentCrumb,
 			{ label: agentSubtabLabels[selectedAgentSubtab.value] },
@@ -1151,8 +1169,8 @@ const pageHeader = computed(
 );
 
 /**
- * The Files page is a full-page editor: the open file's bar replaces the
- * page header, and the editor fills the rest of the page.
+ * The Files page is a full-page editor below the shared page header, which
+ * names the open file from the route and switches between files (#1063).
  */
 const isAgentFilesPage = computed(
 	() =>

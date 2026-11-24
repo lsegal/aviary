@@ -1,24 +1,23 @@
 <template>
   <AppLayout>
-    <div class="flex h-full flex-col overflow-hidden">
-
-      <!-- Header -->
-      <div class="flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 px-6 py-4 dark:border-gray-800">
-        <SystemPageIcon page-key="daemons" tile />
-        <h2 class="mr-2 text-xl font-bold text-gray-900 dark:text-white">Daemons</h2>
-        <span class="text-sm text-gray-500 dark:text-gray-400">{{ daemons.length }} process{{ daemons.length === 1 ? '' : 'es' }}</span>
-        <div class="ml-auto flex items-center gap-3">
-          <span v-if="lastRefresh" class="text-xs text-gray-400 dark:text-gray-500">
-            Updated {{ timeSince(lastRefresh) }}
-          </span>
-          <button
-            class="rounded-lg bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-            :disabled="loading" @click="fetchDaemons">
-            {{ loading ? "Loading…" : "Refresh" }}
-          </button>
-          <SystemSettingsLink />
-        </div>
-      </div>
+    <template #header-icon>
+      <SystemPageIcon page-key="daemons" tile />
+    </template>
+    <template #header>
+      <p class="text-sm text-gray-500 dark:text-gray-400">{{ daemons.length }} process{{ daemons.length === 1 ? '' : 'es' }}</p>
+    </template>
+    <template #header-actions>
+      <span v-if="lastRefresh" class="text-xs text-gray-400 dark:text-gray-500">
+        Updated {{ timeSince(lastRefresh) }}
+      </span>
+      <button
+        class="rounded-lg bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+        :disabled="loading" @click="fetchDaemons">
+        {{ loading ? "Loading…" : "Refresh" }}
+      </button>
+      <SystemSettingsLink />
+    </template>
+    <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 
       <!-- Error banner -->
       <div v-if="error"

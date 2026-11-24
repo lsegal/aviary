@@ -1,9 +1,5 @@
 <template>
 	<div class="space-y-3" data-testid="task-run-page">
-		<router-link :to="taskSessionPath(agent, task)" data-testid="task-run-back"
-			class="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
-			<ArrowLeftIcon aria-hidden="true" class="h-4 w-4" /> Back to {{ task }}
-		</router-link>
 		<template v-if="entry">
 			<TaskRunLog :entry="entry" :title="`Run ${entry.id}`" :now="dashboard.now.value"
 				:fetch-logs="dashboard.fetchLogs" class="h-[calc(100dvh-16rem)] min-h-80" @stop="dashboard.stop($event)" />
@@ -18,21 +14,18 @@
 </template>
 
 <script setup lang="ts">
-import ArrowLeftIcon from "@heroicons/vue/24/outline/ArrowLeftIcon";
 import { computed } from "vue";
 import { useRoute } from "vue-router";
 import type { TaskDashboard } from "../../../composables/useTaskDashboard";
-import { taskSessionPath } from "../../../stores/settings";
 import TaskRunLog from "./TaskRunLog.vue";
 import TriggerContextPanel from "./TriggerContextPanel.vue";
 
 // One run of a task at its own URL: its full logs, with a failed run's error
-// on top. It opens inside the task's dashboard, so the chat stays mounted.
+// on top. It opens inside the task's dashboard, so the chat stays mounted;
+// the page header's back link returns to the task (#1064).
 
 const props = defineProps<{
 	dashboard: TaskDashboard;
-	agent: string;
-	task: string;
 }>();
 
 const route = useRoute();

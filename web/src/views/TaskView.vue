@@ -1,61 +1,60 @@
 <template>
 	<AppLayout>
-		<div class="flex h-full min-h-0 flex-col">
-			<!-- One task: its runs and logs, with the session they share below. -->
-			<header v-if="task" data-testid="task-header"
-				class="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 sm:px-6 dark:border-gray-800">
-				<span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-					<BoltIcon v-if="workflow" aria-hidden="true" class="h-4 w-4" />
-					<ClockIcon v-else aria-hidden="true" class="h-4 w-4" />
+		<!-- One task: its runs and logs, with the session they share below. -->
+		<template v-if="task" #header-icon>
+			<span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+				<BoltIcon v-if="workflow" aria-hidden="true" class="h-5 w-5" />
+				<ClockIcon v-else aria-hidden="true" class="h-5 w-5" />
+			</span>
+		</template>
+		<template v-if="task" #header>
+			<div class="mt-1 flex min-w-0 flex-wrap items-center gap-2" data-testid="task-detail">
+				<span v-if="enabled" data-testid="task-state" data-enabled="true"
+					class="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700 dark:bg-green-950/50 dark:text-green-300">
+					Enabled
 				</span>
-				<div class="min-w-0">
-					<div class="flex items-center gap-2">
-						<h2 class="truncate text-lg font-bold text-gray-900 dark:text-white" data-testid="task-title">{{ task.name }}</h2>
-						<span v-if="enabled" data-testid="task-state" data-enabled="true"
-							class="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700 dark:bg-green-950/50 dark:text-green-300">
-							Enabled
-						</span>
-						<PausedChip v-else data-testid="task-state" data-enabled="false" />
-						<CompiledStatusChip :task="task" :attempts="compileAttempts" detail :to="settingsLink"
-							@click="compiledPanelOpen = true" />
-					</div>
-					<p class="truncate text-xs text-gray-500 dark:text-gray-400" data-testid="task-schedule">
-						{{ typeLabel }} · {{ scheduleText }}<template v-if="codeLoopTarget"> · sends to
-							<CodeLoopTargetLink :target="codeLoopTarget" /></template>
-					</p>
-				</div>
-				<div class="ml-auto flex flex-wrap items-center gap-2" role="group" aria-label="Task actions">
-					<button type="button" data-testid="task-run-now" :disabled="busy" :class="ACTION_CLS" @click="act(dash.runNow)">
-						<PlayIcon aria-hidden="true" class="h-4 w-4" /> Run now
-					</button>
-					<button type="button" data-testid="task-toggle-enabled" :disabled="busy" :class="ACTION_CLS"
-						@click="act(() => setEnabled(!enabled))">
-						<component :is="enabled ? PauseIcon : PlayCircleIcon" aria-hidden="true" class="h-4 w-4" />
-						{{ enabled ? "Pause" : "Resume" }}
-					</button>
-					<button v-if="precompiles" type="button" data-testid="task-recompile" :disabled="busy" :class="ACTION_CLS"
-						title="Discard the compiled script and compile a fresh one" @click="act(recompile)">
-						<ArrowPathIcon aria-hidden="true" class="h-4 w-4" /> Recompile
-					</button>
-					<button v-if="current?.job" type="button" data-testid="task-stop" :disabled="busy"
-						:class="[ACTION_CLS, 'text-red-600! dark:text-red-400!']" @click="act(() => dash.stop(current!.id))">
-						<StopIcon aria-hidden="true" class="h-4 w-4" /> Stop
-					</button>
-					<button type="button" data-testid="task-chat-toggle" :aria-pressed="chat.open.value"
-						:aria-label="chat.open.value ? 'Hide chat' : 'Show chat'" :title="chat.open.value ? 'Hide chat' : 'Show chat'"
-						class="rounded-lg border p-1.5"
-						:class="chat.open.value ? 'border-blue-600 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-950/50 dark:text-blue-300' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
-						@click="chat.open.value = !chat.open.value">
-						<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
-					</button>
-					<router-link :to="settingsLink" data-testid="task-settings-link"
-						:aria-label="workflow ? 'Workflow settings' : 'Task settings'" :title="workflow ? 'Workflow settings' : 'Task settings'"
-						class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-						<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
-					</router-link>
-				</div>
-			</header>
-
+				<PausedChip v-else data-testid="task-state" data-enabled="false" />
+				<CompiledStatusChip :task="task" :attempts="compileAttempts" detail :to="settingsLink"
+					@click="compiledPanelOpen = true" />
+				<p class="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400" data-testid="task-schedule">
+					{{ typeLabel }} · {{ scheduleText }}<template v-if="codeLoopTarget"> · sends to
+						<CodeLoopTargetLink :target="codeLoopTarget" /></template>
+				</p>
+			</div>
+		</template>
+		<template v-if="task" #header-actions>
+			<div class="flex flex-wrap items-center gap-2" role="group" aria-label="Task actions">
+				<button type="button" data-testid="task-run-now" :disabled="busy" :class="ACTION_CLS" @click="act(dash.runNow)">
+					<PlayIcon aria-hidden="true" class="h-4 w-4" /> Run now
+				</button>
+				<button type="button" data-testid="task-toggle-enabled" :disabled="busy" :class="ACTION_CLS"
+					@click="act(() => setEnabled(!enabled))">
+					<component :is="enabled ? PauseIcon : PlayCircleIcon" aria-hidden="true" class="h-4 w-4" />
+					{{ enabled ? "Pause" : "Resume" }}
+				</button>
+				<button v-if="precompiles" type="button" data-testid="task-recompile" :disabled="busy" :class="ACTION_CLS"
+					title="Discard the compiled script and compile a fresh one" @click="act(recompile)">
+					<ArrowPathIcon aria-hidden="true" class="h-4 w-4" /> Recompile
+				</button>
+				<button v-if="current?.job" type="button" data-testid="task-stop" :disabled="busy"
+					:class="[ACTION_CLS, 'text-red-600! dark:text-red-400!']" @click="act(() => dash.stop(current!.id))">
+					<StopIcon aria-hidden="true" class="h-4 w-4" /> Stop
+				</button>
+				<button type="button" data-testid="task-chat-toggle" :aria-pressed="chat.open.value"
+					:aria-label="chat.open.value ? 'Hide chat' : 'Show chat'" :title="chat.open.value ? 'Hide chat' : 'Show chat'"
+					class="rounded-lg border p-1.5"
+					:class="chat.open.value ? 'border-blue-600 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-950/50 dark:text-blue-300' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
+					@click="chat.open.value = !chat.open.value">
+					<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
+				</button>
+				<router-link :to="settingsLink" data-testid="task-settings-link"
+					:aria-label="workflow ? 'Workflow settings' : 'Task settings'" :title="workflow ? 'Workflow settings' : 'Task settings'"
+					class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+					<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
+				</router-link>
+			</div>
+		</template>
+		<div class="flex min-h-0 flex-1 flex-col">
 			<template v-if="task">
 				<div class="min-h-0 flex-1 overflow-y-auto" data-testid="task-dashboard">
 					<div class="space-y-4 px-4 py-4 sm:px-6">
@@ -68,7 +67,7 @@
 							{{ task.precompile_note }}
 						</p>
 
-						<router-view v-if="route.params.run" :dashboard="dash" :agent="agent" :task="task.name" />
+						<router-view v-if="route.params.run" :dashboard="dash" />
 						<template v-else>
 							<StatChipRow aria-label="Run stats" :cards="statChips" @select="filter = $event as TaskRunFilter" />
 

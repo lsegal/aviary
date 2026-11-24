@@ -96,9 +96,9 @@ test("the Files page is one file bar over a full-page editor", async ({
 		);
 	await page.keyboard.press("Escape");
 
-	// No settings page header or its duplicate actions.
+	// The shared page header (#1064), without the settings actions.
 	const main = page.locator("main");
-	await expect(page.getByTestId("settings-title")).toHaveCount(0);
+	await expect(page.getByTestId("page-title")).toHaveText("AGENTS.md");
 	await expect(main.getByRole("button", { name: "Reload" })).toHaveCount(0);
 	await expect(main.getByRole("button", { name: "Save Changes" })).toHaveCount(
 		0,
@@ -113,7 +113,7 @@ test("the Files page is one file bar over a full-page editor", async ({
 			'[data-testid="agent-file-editor"]',
 		);
 		const split = document.querySelector('[data-testid="file-preview-split"]');
-		const scroller = ed?.closest("main")?.querySelector(".h-full");
+		const scroller = document.querySelector('[data-testid="settings-scroll"]');
 		if (!bar || !ed || !split || !scroller) return null;
 		const b = bar.getBoundingClientRect();
 		const e = ed.getBoundingClientRect();
@@ -279,7 +279,7 @@ test("the menu renames and deletes the open file", async ({ page }) => {
 test("other agent pages keep the settings page header", async ({ page }) => {
 	await mockFiles(page, { "AGENTS.md": "# Agents" });
 	await page.goto("/agents/assistant/settings");
-	await expect(page.getByTestId("settings-title")).toHaveText("Agent Settings");
+	await expect(page.getByTestId("page-title")).toHaveText("Agent Settings");
 	await expect(
 		page.locator("main").getByRole("button", { name: "Save Changes" }),
 	).toBeVisible();

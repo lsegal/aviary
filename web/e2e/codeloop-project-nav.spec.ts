@@ -158,11 +158,13 @@ test("with the sidebar collapsed, the board's pills open every project and its s
 // draws its own "<agent> · Code Loop /" line above its title, and the
 // shared one leads back to the board everywhere.
 const expectSharedNavOnly = async (page: Page) => {
-	const header = page.locator("header").filter({
-		has: page.getByRole("heading", { name: "lsegal/forgo" }),
-	});
-	await expect(header).toBeVisible();
-	await expect(header.getByText("Code Loop")).toHaveCount(0);
+	// The project's title is the shared header's last crumb (#1064).
+	const header = page.getByTestId("page-header");
+	await expect(header.getByTestId("page-title")).toHaveText("lsegal/forgo");
+	await expect(
+		page.getByRole("navigation", { name: "Breadcrumb" }),
+	).toHaveCount(1);
+	await expect(page.getByText("coder · Code Loop")).toHaveCount(0);
 	await expect(header.getByText(/ \/$/)).toHaveCount(0);
 	await expect(page.getByTestId("page-back")).toHaveAccessibleName(
 		"Back to Code Loop",

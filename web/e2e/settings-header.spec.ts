@@ -3,6 +3,7 @@ import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 // Every Settings page shares one header: a back link to the page the
 // settings belong to and a breadcrumb whose crumbs link to their pages (#986).
+// It is the header every nested page shares (#1064).
 
 const NOW = new Date().toISOString();
 
@@ -56,7 +57,7 @@ function breadcrumb(page: Page) {
 }
 
 function backLink(page: Page) {
-	return page.getByTestId("settings-back");
+	return page.getByTestId("page-back");
 }
 
 test("channel settings link back to the agent and the channel's conversation", async ({
@@ -68,6 +69,7 @@ test("channel settings link back to the agent and the channel's conversation", a
 	const crumbs = breadcrumb(page);
 	await expect(crumbs.getByRole("listitem")).toHaveText([
 		"Aviary",
+		"Channels",
 		"signal",
 		"Settings",
 	]);
@@ -82,6 +84,8 @@ test("channel settings link back to the agent and the channel's conversation", a
 		    - listitem:
 		      - link "Aviary"
 		    - listitem:
+		      - link "Channels"
+		    - listitem:
 		      - link "signal"
 		    - listitem:
 		      - heading "Settings" [level=2]
@@ -90,7 +94,7 @@ test("channel settings link back to the agent and the channel's conversation", a
 
 	await backLink(page).click();
 	await expect(page).toHaveURL(/\/agents\/Aviary\/channels\/signal$/);
-	await expect(page.getByTestId("channel-title")).toHaveText("signal");
+	await expect(page.getByTestId("page-title")).toHaveText("signal");
 
 	await page.goBack();
 	await breadcrumb(page).getByRole("link", { name: "signal" }).click();
@@ -114,7 +118,7 @@ test("task, agent, project and System settings show crumbs to their own parents"
 	}> = [
 		{
 			url: "/agents/Aviary/tasks?task=release-aviary",
-			crumbs: ["Aviary", "release-aviary", "Settings"],
+			crumbs: ["Aviary", "Scheduled Tasks", "release-aviary", "Settings"],
 			back: "Back to release-aviary",
 			parent: /\/agents\/Aviary\/tasks\/release-aviary$/,
 		},
@@ -123,6 +127,12 @@ test("task, agent, project and System settings show crumbs to their own parents"
 			crumbs: ["Aviary", "Agent Settings"],
 			back: "Back to Aviary",
 			parent: /\/agents\/Aviary\/chat/,
+		},
+		{
+			url: "/agents/Aviary/settings/permissions",
+			crumbs: ["Aviary", "Agent Settings", "Permissions"],
+			back: "Back to Agent Settings",
+			parent: /\/agents\/Aviary\/settings$/,
 		},
 		{
 			url: "/projects/settings?agent=Aviary&project=o%2Fr",
@@ -139,6 +149,12 @@ test("task, agent, project and System settings show crumbs to their own parents"
 		{
 			url: "/system/settings",
 			crumbs: ["System", "Settings"],
+			back: "Back to System",
+			parent: /\/system\/overview$/,
+		},
+		{
+			url: "/system/sessions",
+			crumbs: ["System", "Sessions"],
 			back: "Back to System",
 			parent: /\/system\/overview$/,
 		},
@@ -166,6 +182,10 @@ test("the keyboard reaches the back link and each crumb in order", async ({
 	await page.keyboard.press("Tab");
 	await expect(
 		breadcrumb(page).getByRole("link", { name: "Aviary" }),
+	).toBeFocused();
+	await page.keyboard.press("Tab");
+	await expect(
+		breadcrumb(page).getByRole("link", { name: "Channels" }),
 	).toBeFocused();
 	await page.keyboard.press("Tab");
 	const channel = breadcrumb(page).getByRole("link", { name: "signal" });
@@ -225,7 +245,7 @@ test("the header fits a phone without horizontal overflow", async ({
 		"/system/settings",
 	]) {
 		await page.goto(url);
-		const header = page.getByTestId("settings-header");
+		const header = page.getByTestId("page-header");
 		await expect(breadcrumb(page)).toBeVisible();
 		await expect(backLink(page)).toBeInViewport();
 		const overflow = await header.evaluate(

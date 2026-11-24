@@ -1269,8 +1269,11 @@ test("a task saved with a session name selects that session", async ({
 
 test("settings deep links scroll to their section", async ({ page }) => {
 	await page.setViewportSize({ width: 1280, height: 720 });
+	// The section headings in the page, not the header's title crumb.
 	const heading = (name: string) =>
-		page.getByRole("heading", { name, exact: true });
+		page
+			.getByTestId("settings-scroll")
+			.getByRole("heading", { name, exact: true });
 
 	await openAgentPage(page, "settings/permissions");
 	await expect(heading("Permissions")).toBeInViewport();
@@ -1343,7 +1346,7 @@ test("Remove Agent sits in the danger zone and asks for confirmation", async ({
 	await expect(dialog).toContainText("Remove agent?");
 	await dialog.getByRole("button", { name: "Cancel" }).click();
 	await expect(dialog).toHaveCount(0);
-	await expect(page.getByTestId("settings-title")).toHaveText("Agent Settings");
+	await expect(page.getByTestId("page-title")).toHaveText("Agent Settings");
 });
 
 test("tasks use the shared trigger editor and save a daily trigger without cron", async ({

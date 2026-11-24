@@ -1590,7 +1590,9 @@ test("run view renders the typed event timeline read-only", async ({
 	await expect(page).toHaveURL(
 		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
 	);
-	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
+	await expect(
+		page.getByTestId("job-detail-header").getByRole("heading", { level: 2 }),
+	).toHaveText(
 		/^#218 • (Draft pull request)?PR #233 Cap scheduler retry backoff at 10 minutes$/,
 	);
 
@@ -2318,7 +2320,9 @@ test("job details open under the project header, keeping the chat and logs panel
 	);
 	// The project header and its buttons stay.
 	await expect(
-		page.getByRole("heading", { level: 1, name: "lsegal/aviary" }),
+		page
+			.getByTestId("page-breadcrumb")
+			.getByRole("link", { name: "lsegal/aviary", exact: true }),
 	).toBeVisible();
 	await expect(page.getByTestId("delivery-status")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
@@ -2387,11 +2391,13 @@ test("loading a job details URL shows the project header with that job open", as
 	await setup(page);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
 	await expect(
-		page.getByRole("heading", { level: 1, name: "lsegal/aviary" }),
+		page
+			.getByTestId("page-breadcrumb")
+			.getByRole("link", { name: "lsegal/aviary", exact: true }),
 	).toBeVisible();
 	await expect(page.getByTestId("prompt-chat-toggle")).toBeVisible();
 	await expect(page.getByTestId("logs-toggle")).toBeVisible();
-	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
+	await expect(page.getByTestId("job-detail-title")).toHaveText(
 		/^#218 • (Draft pull request)?PR #233 Cap scheduler retry backoff at 10 minutes$/,
 	);
 	await expect(page.getByTestId("job-card")).toHaveCount(0);
@@ -2552,7 +2558,7 @@ test.describe("phone width", () => {
 		test(`${path} has no horizontal overflow`, async ({ page }) => {
 			await setup(page);
 			await page.goto(path);
-			await expect(page.locator("h1").last()).toBeVisible();
+			await expect(page.getByTestId("page-title")).toBeVisible();
 			await page.waitForTimeout(500);
 			const overflow = await page.evaluate(() =>
 				[...document.querySelectorAll("main *")].some(
