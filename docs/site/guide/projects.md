@@ -4,7 +4,7 @@ Code Loop watches GitHub repositories, GitHub Project boards and Discussions boa
 
 [The code loop on GitHub](./code-loop) follows one issue through every stage, from the watch to the merged pull request.
 
-Code Loop needs the [GitHub CLI](https://cli.github.com/) (`gh`) signed in with repository access, at least one CLI provider, and the `gh-fix` skill installed for that CLI.
+Code Loop needs the [GitHub CLI](https://cli.github.com/) (`gh`) signed in with repository access, at least one CLI provider, and the `gh-fix` skill installed for every CLI the project runs on. CLIs you have installed but the project never uses don't need it.
 
 ## Watching a repository
 
