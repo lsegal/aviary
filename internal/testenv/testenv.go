@@ -12,17 +12,21 @@ import (
 const (
 	configHomeEnv = "AVIARY_TEST_CONFIG_HOME"
 	configBaseEnv = "AVIARY_CONFIG_BASE_DIR"
+	// checkoutEnv mirrors update.CheckoutEnv, which testenv cannot import.
+	checkoutEnv = "AVIARY_CHECKOUT"
 )
 
 var configHomeOnce sync.Once
 
 // A shell spawned by a running Aviary exports AVIARY_CONFIG_BASE_DIR pointing
 // at the real config directory, and config.BaseDir prefers it over every other
-// source. Drop the inherited value so test binaries never write there; tests
-// that need it still set it themselves with t.Setenv.
+// source. A dev server also exports AVIARY_CHECKOUT, which would make the
+// updater pull the real checkout. Drop both inherited values so test binaries
+// never touch either; tests that need them set them with t.Setenv.
 func init() {
 	if IsGoTestProcess() {
 		_ = os.Unsetenv(configBaseEnv)
+		_ = os.Unsetenv(checkoutEnv)
 	}
 }
 
