@@ -62,7 +62,11 @@ const rows = computed(() =>
 					: state === "waiting"
 						? "bg-amber-500"
 						: "bg-gray-400",
-			count: running ? `${running} running` : waiting ? `${waiting} waiting` : "0",
+			count: running
+				? `${running} running`
+				: waiting
+					? `${waiting} waiting`
+					: "0",
 			label: running
 				? `${running} running ${running === 1 ? "job" : "jobs"}`
 				: waiting
