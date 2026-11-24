@@ -396,7 +396,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	exe, _ := executablePath()
 	trace.Time("update staging cleanup", func() { update.CleanupStaging(exe) })
-	go s.runSelfUpdater(ctx)
+	if selfUpdaterApplies() {
+		go s.runSelfUpdater(ctx)
+	}
 	saferestart.RegisterSkillsUpdater("shipped", updateCodingSkills)
 	defer saferestart.UnregisterSkillsUpdater("shipped")
 
