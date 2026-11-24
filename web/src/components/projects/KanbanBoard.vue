@@ -21,6 +21,7 @@
 							<PencilIcon aria-hidden="true" class="h-3.5 w-3.5" />
 						</router-link>
 					</div>
+					<p v-if="showProject" data-testid="kanban-scheduled-project" class="truncate font-mono text-gray-500 dark:text-gray-400">{{ s.project }}</p>
 					<!-- A run shows here in place; the card never moves columns. -->
 					<p v-if="scheduleRunning(entryOf(s)?.schedule)" data-testid="kanban-scheduled-running"
 						class="flex items-center gap-1.5 text-blue-700 dark:text-blue-300">
@@ -121,8 +122,15 @@ const props = withDefaults(
 		scheduleTo?: (s: ProjectSchedule) => RouteLocationRaw;
 		/** The schedules' board entries: their last and next runs and any run in flight. */
 		scheduleEntries?: ProjectJob[];
+		/** Names each scheduled box's project, on a board of several. */
+		showProject?: boolean;
 	}>(),
-	{ schedules: () => [], scheduleTo: undefined, scheduleEntries: () => [] },
+	{
+		schedules: () => [],
+		scheduleTo: undefined,
+		scheduleEntries: () => [],
+		showProject: false,
+	},
 );
 
 function entryOf(s: ProjectSchedule) {

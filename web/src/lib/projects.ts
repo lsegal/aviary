@@ -667,7 +667,7 @@ export function summarizeProjects(
 			waiting: mine.filter((j) => isWaiting(j.status)).length,
 			...(tasks === undefined
 				? {}
-				: { scheduled: projectSchedules(tasks, t.name).length }),
+				: { scheduled: projectSchedules(tasks, [t.name]).length }),
 		};
 	});
 }
@@ -952,16 +952,19 @@ export function normalizeSchedule(v: unknown): ProjectSchedule {
 	};
 }
 
-/** The scheduled prompts of project from a task_list response. */
+/** The scheduled prompts of the projects from a task_list response. */
 export function projectSchedules(
 	v: unknown,
-	project: string,
+	projects: string[],
 ): ProjectSchedule[] {
 	return arr(v)
 		.filter((t) => str(obj(t).type) === "project")
 		.map(normalizeSchedule)
-		.filter((s) => s.project === project)
-		.sort((a, b) => a.name.localeCompare(b.name));
+		.filter((s) => projects.includes(s.project))
+		.sort(
+			(a, b) =>
+				a.name.localeCompare(b.name) || a.project.localeCompare(b.project),
+		);
 }
 
 export interface UpcomingRun {

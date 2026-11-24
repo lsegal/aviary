@@ -95,15 +95,14 @@ export function useProjectList(interval = 10_000, withSchedules = false) {
  * total then counts only the matches. In kanban mode it reads every job in
  * the filter instead, without their output. A schedule is one entry, never a
  * job per fire, and lists only while it is in a job state, so a finished run
- * is never done. With withSchedules, a project's board reads its schedules'
- * entries apart from the jobs, as scheduleEntries, for its scheduled cards.
+ * is never done. The board reads its projects' schedule entries apart from
+ * the jobs, as scheduleEntries, for its scheduled cards.
  */
 export function useProjectBoard(
 	targets: Ref<string[]>,
 	states: Ref<BoardState[]>,
 	search: Ref<string> = ref(""),
 	kanban: Ref<boolean> = ref(false),
-	withSchedules: Ref<boolean> = ref(false),
 ) {
 	const { callTool } = useMCP();
 	const status = ref<ProjectStatus | null>(null);
@@ -127,7 +126,7 @@ export function useProjectBoard(
 					targets: projects,
 					// Naming every job state leaves out schedules between runs.
 					states: states.value.length ? states.value : BOARD_STATES,
-					kinds: withSchedules.value ? ["issue", "discussion"] : undefined,
+					kinds: ["issue", "discussion"],
 					query: search.value.trim() || undefined,
 					offset: all ? 0 : page.value * JOBS_PAGE_SIZE,
 					limit: all ? ALL_JOBS_LIMIT : JOBS_PAGE_SIZE,
@@ -142,7 +141,6 @@ export function useProjectBoard(
 	}
 
 	async function listScheduleEntries(projects: string[]) {
-		if (!withSchedules.value) return [];
 		return normalizeJobList(
 			parseToolJSON(
 				await callTool("project_job_list", {
@@ -224,7 +222,6 @@ export function useProjectBoard(
 			() => targets.value.join(" "),
 			() => states.value.join(","),
 			kanban,
-			withSchedules,
 		],
 		() => {
 			page.value = 0;
@@ -360,8 +357,11 @@ export function useProjectJob(target: Ref<string>, number: Ref<number>) {
 export const UP_NEXT_RUNS = 5;
 export const UP_NEXT_PER_SCHEDULE = 3;
 
-/** A project's scheduled prompts and their next runs, kept live. */
-export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
+/** The projects' scheduled prompts and, for one project, its next runs, kept live. */
+export function useProjectSchedules(
+	projects: Ref<string[]>,
+	interval = 5_000,
+) {
 	const { callTool } = useMCP();
 	const schedules = ref<ProjectSchedule[]>([]);
 	const upcoming = ref<UpcomingRun[]>([]);
@@ -370,20 +370,26 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 	const loaded = ref(false);
 
 	const { refresh } = usePoll(async () => {
-		const target = project.value;
-		if (!target) return;
+		const targets = projects.value;
+		const key = targets.join(" ");
+		if (!targets.length) return;
+		// Up next lists one project's coming runs, so a board of several
+		// reads none.
+		const [only] = targets.length === 1 ? targets : [];
 		try {
 			const [taskText, upcomingText, agentText] = await Promise.all([
 				callTool("task_list", {}),
-				callTool("task_upcoming", {
-					project: target,
-					limit: UP_NEXT_RUNS,
-					per_task: UP_NEXT_PER_SCHEDULE,
-				}),
+				only
+					? callTool("task_upcoming", {
+							project: only,
+							limit: UP_NEXT_RUNS,
+							per_task: UP_NEXT_PER_SCHEDULE,
+						})
+					: Promise.resolve("[]"),
 				agents.value.length ? Promise.resolve("") : callTool("agent_list", {}),
 			]);
-			if (target !== project.value) return;
-			schedules.value = projectSchedules(parseToolJSON(taskText), target);
+			if (key !== projects.value.join(" ")) return;
+			schedules.value = projectSchedules(parseToolJSON(taskText), targets);
 			upcoming.value = normalizeUpcoming(parseToolJSON(upcomingText));
 			if (agentText) {
 				const list = parseToolJSON(agentText);
@@ -405,12 +411,15 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		}
 	}, interval);
 
-	watch(project, () => {
-		schedules.value = [];
-		upcoming.value = [];
-		loaded.value = false;
-		void refresh();
-	});
+	watch(
+		() => projects.value.join(" "),
+		() => {
+			schedules.value = [];
+			upcoming.value = [];
+			loaded.value = false;
+			void refresh();
+		},
+	);
 
 	// A task paused or resumed elsewhere, such as from the sidebar, shows on
 	// its box at once rather than at the next poll.
