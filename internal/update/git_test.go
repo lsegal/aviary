@@ -2,6 +2,7 @@ package update
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,6 +85,26 @@ func TestGitPull_FastForwardsCleanCheckout(t *testing.T) {
 	if msg := GitPullMessage(res, DevReloadPlan{GoChanged: true, RestartReason: "forgo hot reload is not active"}); !strings.Contains(msg, "Restart Aviary") {
 		t.Fatalf("message without hot reload = %q, want a restart hint", msg)
 	}
+	if res.Head != gitT(t, other, "rev-parse", "HEAD") || res.UpstreamHead != res.To || res.Upstream != "origin/main" || !res.Fetched {
+		t.Fatalf("result = %+v, want the fetched upstream and the new HEAD", res)
+	}
+	want := fmt.Sprintf("Fetched origin/main; local %s vs origin/main %s (0 ahead, 1 behind).", res.From, res.To)
+	if got := GitCompareMessage(res); got != want {
+		t.Fatalf("GitCompareMessage = %q, want %q", got, want)
+	}
+}
+
+func TestGitPull_UpToDateNamesTheCheckoutAndUpstream(t *testing.T) {
+	checkout, _ := setupCheckout(t)
+	gitT(t, checkout, "pull", "-q")
+	res, err := GitPull(context.Background(), checkout)
+	if err != nil {
+		t.Fatalf("GitPull: %v", err)
+	}
+	msg := GitPullMessage(res, DevReloadPlan{})
+	if want := fmt.Sprintf("The source checkout at %s is already up to date with origin/main (%s).", checkout, res.To); msg != want {
+		t.Fatalf("message = %q, want %q", msg, want)
+	}
 }
 
 func TestGitPull_RefusesDirtyTree(t *testing.T) {
@@ -112,13 +133,13 @@ func TestGitPull_RefusesDivergedBranch(t *testing.T) {
 
 func withGitMode(t *testing.T, version, dir string, docker bool) {
 	t.Helper()
-	origVersion, origDocker, origDir := buildinfo.Version, inDocker, checkoutDir
+	origVersion, origDocker, origDir := buildinfo.Version, inDocker, locateCheckout
 	buildinfo.Version = version
 	inDocker = func() bool { return docker }
-	checkoutDir = func() string { return dir }
+	locateCheckout = func() CheckoutDetection { return CheckoutDetection{Dir: dir} }
 	ClearCache()
 	t.Cleanup(func() {
-		buildinfo.Version, inDocker, checkoutDir = origVersion, origDocker, origDir
+		buildinfo.Version, inDocker, locateCheckout = origVersion, origDocker, origDir
 		_ = ConfigureEmulation("")
 		ClearCache()
 	})
@@ -249,33 +270,6 @@ func initCheckout(t *testing.T, gomod string) string {
 		t.Fatal(err)
 	}
 	return resolved
-}
-
-func TestCheckoutDir_EnvIsAuthoritativeOutsideTheCheckout(t *testing.T) {
-	checkout := initCheckout(t, "module github.com/lsegal/aviary\r\n\r\ngo 1.25\r\n")
-	t.Chdir(t.TempDir())
-	t.Setenv(CheckoutEnv, filepath.Join(checkout, "internal"))
-	if got := findCheckout(); got != checkout {
-		t.Fatalf("findCheckout() = %q, want %q from %s", got, checkout, CheckoutEnv)
-	}
-	t.Setenv(CheckoutEnv, t.TempDir())
-	if got := findCheckout(); got != "" {
-		t.Fatalf("findCheckout() = %q for a non-checkout %s, want none", got, CheckoutEnv)
-	}
-}
-
-func TestCheckoutDir_FallsBackToWorkingDirectory(t *testing.T) {
-	checkout := initCheckout(t, "module github.com/lsegal/aviary\r\n")
-	t.Setenv(CheckoutEnv, "")
-	t.Chdir(filepath.Join(checkout, "internal"))
-	if got := findCheckout(); got != checkout {
-		t.Fatalf("findCheckout() = %q, want %q", got, checkout)
-	}
-	other := initCheckout(t, "module example.com/other\n")
-	t.Chdir(other)
-	if got := findCheckout(); got != "" {
-		t.Fatalf("findCheckout() = %q in another module, want none", got)
-	}
 }
 
 func TestCheck_DevBuildWithoutCheckoutReportsNoCheckout(t *testing.T) {

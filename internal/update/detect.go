@@ -123,7 +123,7 @@ func DetectMode() Mode {
 	case inDocker():
 		m.Reasons = []string{"a dev build in Docker upgrades from GitHub releases"}
 	default:
-		det := checkout()
+		det := locateCheckout()
 		m.Checkout, m.Reasons = det.Dir, det.Reasons
 	}
 	return m

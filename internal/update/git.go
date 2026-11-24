@@ -71,9 +71,9 @@ var (
 		_, err := os.Stat("/.dockerenv")
 		return err == nil
 	}
-	// checkout returns the checkout git mode works on and how it was found.
+	// locateCheckout returns the checkout git mode works on and how it was found.
 	// It is a variable so tests can stub it.
-	checkout = cachedCheckout
+	locateCheckout = cachedCheckout
 )
 
 var (
@@ -96,7 +96,7 @@ func cachedCheckout() CheckoutDetection {
 
 // checkoutDir returns the checkout git mode works on, or "".
 func checkoutDir() string {
-	return checkout().Dir
+	return locateCheckout().Dir
 }
 
 // verifyCheckout returns the top level of the git checkout containing dir

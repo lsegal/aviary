@@ -71,6 +71,7 @@ func TestRunUpgradeUpToDateIsNoop(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, runErr)
+	assert.Contains(t, string(out), "Installed release 1.4.0 at ")
 	assert.Contains(t, string(out), "already up to date (1.4.0)")
 	assert.Equal(t, []string{"/lsegal/aviary/releases/latest"}, paths, "an up-to-date upgrade downloads nothing")
 }
@@ -96,4 +97,51 @@ func TestRunUpgradeErrorIsShortAndHidesIP(t *testing.T) {
 	assert.True(t, upgradeCmd.SilenceUsage, "runtime errors print without the usage block")
 	assert.Contains(t, err.Error(), "GitHub rate limited the request; retry in a few minutes")
 	assert.NotContains(t, err.Error(), "203.0.113.7")
+}
+
+func TestRunUpgradeReleaseFromDevBuildUsesTheRedirect(t *testing.T) {
+	orig := buildinfo.Version
+	buildinfo.Version = "dev"
+	update.ClearCache()
+	upgradeRelease, upgradeVerbose = true, true
+	t.Cleanup(func() {
+		buildinfo.Version = orig
+		upgradeRelease, upgradeVerbose = false, false
+		upgradeCmd.SilenceUsage = false
+		update.ClearCache()
+	})
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/lsegal/aviary/releases/latest" {
+			http.Redirect(w, r, "/lsegal/aviary/releases/tag/v1.5.0", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv(update.DownloadBaseEnv, srv.URL)
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	stdout := os.Stdout
+	os.Stdout = w
+	runErr := runUpgrade(upgradeCmd, nil)
+	os.Stdout = stdout
+	require.NoError(t, w.Close())
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	// The fake host has no checksums, so the install stops before touching
+	// the test binary.
+	require.Error(t, runErr)
+	assert.Contains(t, string(out), "Running a dev build")
+	assert.Contains(t, string(out), "  - ", "--verbose lists the detection reasons")
+	assert.Contains(t, string(out), "The latest release is v1.5.0.")
+	require.NotEmpty(t, paths)
+	assert.Equal(t, "/lsegal/aviary/releases/latest", paths[0])
+	assert.Equal(t, "/lsegal/aviary/releases/download/v1.5.0/checksums.txt", paths[len(paths)-1], "the release is installed, not the checkout pulled")
+	for _, p := range paths {
+		assert.NotContains(t, p, "/repos/", "no GitHub REST API calls")
+	}
 }

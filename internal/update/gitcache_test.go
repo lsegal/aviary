@@ -18,7 +18,7 @@ func resetGitCaches(t *testing.T) {
 	t.Helper()
 	reset := func() {
 		checkoutMu.Lock()
-		checkoutFound, checkoutTop = false, ""
+		checkoutFound, checkoutDet = false, CheckoutDetection{}
 		checkoutMu.Unlock()
 		headMu.Lock()
 		headDir, headSHA, headReadAt = "", "", time.Time{}
@@ -31,7 +31,7 @@ func resetGitCaches(t *testing.T) {
 func TestGitCheckout_DetectsTheCheckoutOncePerProcess(t *testing.T) {
 	checkout, _ := setupCheckout(t)
 	withGitMode(t, "dev", "", false)
-	checkoutDir = cachedCheckout
+	locateCheckout = cachedCheckout
 	resetGitCaches(t)
 	t.Setenv(CheckoutEnv, checkout)
 

@@ -43,7 +43,7 @@ func TestDevAssets_ReadsTheCheckoutInGitMode(t *testing.T) {
 		t.Fatalf("docker: read %q, want the embedded copy", got)
 	}
 	inDocker = func() bool { return false }
-	checkoutDir = func() string { return "" }
+	locateCheckout = func() CheckoutDetection { return CheckoutDetection{} }
 	if got := read(); got != "embedded" {
 		t.Fatalf("no checkout: read %q, want the embedded copy", got)
 	}

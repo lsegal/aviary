@@ -20,6 +20,8 @@ import (
 var (
 	upgradeVersion       string
 	upgradeWhen          string
+	upgradeRelease       bool
+	upgradeVerbose       bool
 	doctorDisableVersion bool
 )
 
@@ -27,11 +29,18 @@ var upgradeCmd = &cobra.Command{
 	Use:   "upgrade",
 	Short: "Upgrade Aviary to the latest release",
 	Long: `Upgrade Aviary to the latest release, or to --version (with or without a
-leading v). Does nothing when Aviary is already at that version.
+leading v). Does nothing when Aviary is already at that version. The first line
+of output says which kind of upgrade runs; --verbose also says why.
 
-A dev build running from a source checkout instead fast-forwards the checkout
-with git pull, and only when it has no local changes. Hot reload picks up the
-pulled sources, so nothing restarts.
+A dev build built from an Aviary source checkout instead fetches the checkout's
+upstream branch, reports the local and upstream commits, and fast-forwards the
+checkout with git pull, only when it has no local changes. Hot reload picks up
+the pulled sources, so nothing restarts; otherwise the output says whether the
+running binary is stale and gives the command that rebuilds it. A binary counts
+as built from a checkout when AVIARY_CHECKOUT names it, or when the working
+directory's checkout contains the commit the binary was built from (or the
+binary was built there by go run). --release, or --version, installs a release
+binary instead.
 
 When the server is running, the upgrade is a safe restart: running jobs are
 stopped at a checkpoint and resumed in their own sessions after the restart.
@@ -42,6 +51,8 @@ stopped at a checkpoint and resumed in their own sessions after the restart.
 func init() {
 	upgradeCmd.Flags().StringVar(&upgradeVersion, "version", "", "Upgrade to a specific release instead of the latest release")
 	upgradeCmd.Flags().StringVar(&upgradeWhen, "when", saferestart.WhenNow, "When the running server restarts: now, or idle (once no jobs are running)")
+	upgradeCmd.Flags().BoolVar(&upgradeRelease, "release", false, "Install the latest release binary even on a dev build from a source checkout")
+	upgradeCmd.Flags().BoolVar(&upgradeVerbose, "verbose", false, "Explain how the upgrade mode was chosen")
 	rootCmd.AddCommand(upgradeCmd)
 }
 
@@ -51,6 +62,17 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		// errors and the usage block after them is noise.
 		cmd.SilenceUsage = true
 	}
+	mode := update.DetectMode()
+	fmt.Println(mode.Summary())
+	if upgradeVerbose {
+		for _, reason := range mode.Reasons {
+			fmt.Printf("  - %s\n", reason)
+		}
+	}
+	if mode.Dev && (upgradeRelease || upgradeVersion != "") {
+		return runReleaseUpgrade(cmd)
+	}
+
 	ctx, cancel := context.WithTimeout(update.WithCaller(context.Background(), "aviary upgrade"), 15*time.Second)
 	defer cancel()
 
@@ -58,8 +80,11 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	if err != nil && check.LatestVersion == "" {
 		return err
 	}
-	if check.NoCheckout && upgradeVersion == "" {
+	if check.NoCheckout {
 		return errors.New(check.Message)
+	}
+	if mode.Checkout != "" && check.Git != nil {
+		return runGitUpgrade(cmd, mode.Checkout)
 	}
 	targetVersion, upToDate := resolveUpgradeTarget(check, upgradeVersion)
 	if upToDate {
@@ -69,12 +94,72 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	if targetVersion == "" {
 		return fmt.Errorf("unable to determine a target version")
 	}
+	return installUpgrade(cmd, targetVersion, false)
+}
 
+// runReleaseUpgrade installs a release binary over a dev build: --version,
+// else the latest release, looked up through the releases/latest redirect.
+func runReleaseUpgrade(cmd *cobra.Command) error {
+	target := update.NormalizeVersion(upgradeVersion)
+	if target == "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		latest, err := update.LatestRelease(ctx, &http.Client{Timeout: 15 * time.Second})
+		if err != nil {
+			return err
+		}
+		target = update.NormalizeVersion(latest)
+		fmt.Printf("The latest release is %s.\n", target)
+	}
+	return installUpgrade(cmd, target, true)
+}
+
+// runGitUpgrade pulls the dev checkout at dir, through the running server
+// when there is one, and reports what it compared and pulled and whether the
+// running binary needs rebuilding.
+func runGitUpgrade(cmd *cobra.Command, dir string) error {
 	if running, _, _ := server.IsRunning(); running {
-		out, err := dispatcher.CallTool(cmd.Context(), "server_upgrade", map[string]any{
-			"version": targetVersion,
-			"when":    upgradeWhen,
-		})
+		out, err := dispatcher.CallTool(commandContext(cmd), "server_upgrade", map[string]any{"when": upgradeWhen})
+		if err != nil {
+			return err
+		}
+		var st saferestart.Status
+		if json.Unmarshal([]byte(out), &st) == nil && st.Message != "" {
+			fmt.Println(st.Message)
+		}
+		fmt.Println(releaseHint)
+		return nil
+	}
+	pullCtx, pullCancel := context.WithTimeout(update.WithCaller(context.Background(), "aviary upgrade"), 2*time.Minute)
+	defer pullCancel()
+	res, err := update.GitPull(pullCtx, dir)
+	if err != nil {
+		return err
+	}
+	fmt.Println(update.GitCompareMessage(res))
+	fmt.Println(update.GitPullMessage(res, update.DevReloadPlan{GoChanged: true, RestartReason: "the server is not running"}))
+	if msg, stale := update.BinaryStaleness(res.Head); msg != "" {
+		fmt.Println(msg)
+		if stale {
+			fmt.Printf("Rebuild it with: %s\n", update.RebuildCommand(dir))
+		}
+	}
+	fmt.Println(releaseHint)
+	return nil
+}
+
+const releaseHint = "To switch to the latest release binary instead, run: aviary upgrade --release"
+
+// installUpgrade installs release target, through the running server's safe
+// restart when there is one. release asks the server to install it even when
+// it is a dev build that would otherwise pull its checkout.
+func installUpgrade(cmd *cobra.Command, target string, release bool) error {
+	if running, _, _ := server.IsRunning(); running {
+		args := map[string]any{"version": target, "when": upgradeWhen}
+		if release {
+			args["release"] = true
+		}
+		out, err := dispatcher.CallTool(commandContext(cmd), "server_upgrade", args)
 		if err != nil {
 			return err
 		}
@@ -84,25 +169,15 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 			return nil
 		}
 		if upgradeWhen == saferestart.WhenIdle {
-			fmt.Printf("Aviary will upgrade to %s once no jobs are running. New jobs are held until then.\n", targetVersion)
+			fmt.Printf("Aviary will upgrade to %s once no jobs are running. New jobs are held until then.\n", target)
 		} else {
-			fmt.Printf("Upgrading the running Aviary server to %s. Running jobs resume after the restart.\n", targetVersion)
+			fmt.Printf("Upgrading the running Aviary server to %s. Running jobs resume after the restart.\n", target)
 		}
 		return nil
 	}
 
-	if dir := update.GitCheckout(); dir != "" {
-		pullCtx, pullCancel := context.WithTimeout(update.WithCaller(context.Background(), "aviary upgrade"), 2*time.Minute)
-		defer pullCancel()
-		res, err := update.GitPull(pullCtx, dir)
-		if err != nil {
-			return err
-		}
-		fmt.Println(update.GitPullMessage(res, update.DevReloadPlan{GoChanged: true, RestartReason: "the server is not running"}))
-		return nil
-	}
 	if update.EmulationActive() {
-		fmt.Printf("Emulated upgrade to %s completed. No files were changed.\n", targetVersion)
+		fmt.Printf("Emulated upgrade to %s completed. No files were changed.\n", target)
 		return nil
 	}
 	exePath, err := os.Executable()
@@ -113,15 +188,22 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	installCtx, installCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer installCancel()
 	result, err := update.Install(installCtx, update.InstallOptions{
-		Version:    targetVersion,
+		Version:    target,
 		TargetPath: exePath,
 		Client:     &http.Client{Timeout: 2 * time.Minute},
 	})
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Aviary upgraded to %s.\n", result.Version)
+	fmt.Printf("Aviary upgraded to %s at %s.\n", result.Version, exePath)
 	return nil
+}
+
+func commandContext(cmd *cobra.Command) context.Context {
+	if cmd != nil && cmd.Context() != nil {
+		return cmd.Context()
+	}
+	return context.Background()
 }
 
 // resolveUpgradeTarget picks the release to install. upToDate is true when
