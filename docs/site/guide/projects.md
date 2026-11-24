@@ -42,7 +42,7 @@ Without the flags, the `AVIARY_WATCH_MODEL` and `AVIARY_WATCH_FALLBACKS` (comma-
 
 `--provider` is the old, deprecated name of `--model`. It still works with a warning, will be removed in a later release, and is an error together with `--model`.
 
-**Minimal web UI.** The session's server listens on `localhost` only, on the first free port from your `server.port` (default 16677) up, and prints the URL of its Code Loop board. The web UI asks for no token and shows only **Code Loop** and **Scheduled Tasks**: there is no chat, agent or channel settings, System page, or way to add agents. The server refuses those pages' API calls too, not just the links, and Code Loop Settings can change only the Code Loop settings and scheduled tasks.
+**Minimal web UI.** The session's server listens on `localhost` only, on the first free port from your `server.port` (default 16677) up, and prints the URL of its Code Loop board. The web UI asks for no token and shows only **Code Loop** and **Scheduled Tasks**: there are no Chats, agent or channel settings, System page, or way to add agents. The board keeps its [prompt chat](#prompt-chat), the same session as the TUI's, without the composer's mic. The server refuses those pages' API calls too, not just the links, runs agents only for the prompt chat, and Code Loop Settings can change only the Code Loop settings and scheduled tasks.
 
 **TUI.** In a terminal the session shows a full-screen board: the Scheduled, Starting, Paused, Running, Done and Failed filters (`1`–`6`, `0` for all), scheduled tasks, board mode (`b`), job actions (`r` retry, `p` pause, `u` resume, `s` stop), the selected job's output (`Enter`), live logs (`l`) and the compact stats. `?` lists every key and `q` quits.
 
