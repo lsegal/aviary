@@ -11,7 +11,7 @@ This page is the reference for that schema. To see how a definition is used in t
 | Name | CLI | Levels | Default model | Session | Output | Quota | skills.sh target |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `claude` | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `low`, `medium`, `high` | `sonnet` | Aviary assigns the ID | `stream-json` | `claude` | `claude-code` |
-| `codex` | [Codex CLI](https://developers.openai.com/codex/cli/) | `low`, `medium`, `high` | `gpt-5.6-terra` | captured from its output | `codex-json` | `codex` | `codex` |
+| `codex` | [Codex CLI](https://developers.openai.com/codex/cli/) | `low`, `medium`, `high` | `gpt-6.1-terra` | captured from its output | `codex-json` | `codex` | `codex` |
 | `gemini` | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | none (`[]`) | `gemini-3.5-flash` | Aviary assigns the ID | `gemini-json` | none | `gemini-cli` |
 | `muse` | [Meta Muse Code](https://dev.meta.ai/docs/muse-code) | `none` through `ultra` | `muse-spark-1.3` | Aviary assigns the ID | `jsonl` | none | `universal` |
 | `opencode` | [opencode](https://opencode.ai) | `low`, `medium`, `high` | none (per-account catalog) | none | `jsonl` | none | `opencode` |
@@ -21,7 +21,7 @@ This page is the reference for that schema. To see how a definition is used in t
 
 The documents themselves are in the repository under [`internal/clidefs/builtin/`](https://github.com/lsegal/aviary/tree/main/internal/clidefs/builtin), and they are the best worked examples of the schema.
 
-A model names a definition and, optionally, a model and a reasoning level: `claude/opus`, `codex/gpt-5.6-terra:high`, or the same with a `cli/` prefix (`cli/claude/opus`). An agent whose model or fallbacks name a CLI model runs on that CLI.
+A model names a definition and, optionally, a model and a reasoning level: `claude/opus`, `codex/gpt-6.1-terra:high`, or the same with a `cli/` prefix (`cli/claude/opus`). An agent whose model or fallbacks name a CLI model runs on that CLI.
 
 A CLI with no resumable session is not a degraded one. When its run exits early, the job is restarted with a recovery prompt, and `gh-fix` is re-entrant, so the restarted run adopts the branch and draft pull request the previous one left behind.
 
@@ -95,7 +95,7 @@ Anything wrong with an entry is an error naming the agent and the field: a field
 
 ### Allow-lists
 
-`levels` and `models` validate the two optional parts of a model such as `codex/gpt-5.6-terra:high`. Each has three distinct states, because "this definition names no list" and "this CLI has no such flag" are different claims:
+`levels` and `models` validate the two optional parts of a model such as `codex/gpt-6.1-terra:high`. Each has three distinct states, because "this definition names no list" and "this CLI has no such flag" are different claims:
 
 | Value | Meaning |
 | --- | --- |

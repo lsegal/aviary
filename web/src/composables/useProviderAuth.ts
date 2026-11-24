@@ -60,7 +60,7 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
 		keyHelp: "Find your key at platform.openai.com -> API keys.",
 		apiAuthKey: "openai:default",
 		defaultModel: "openai/gpt-6.2-sol",
-		oauthModel: "openai-codex/gpt-6-astra",
+		oauthModel: "openai-codex/gpt-6.2-astra",
 		defaultProviders: ["openai"],
 		oauthProviders: ["openai-codex"],
 		authKeys: ["openai:oauth", "openai:default"],

@@ -96,7 +96,7 @@ func TestManagerSettingsMergeConfigAndWatches(t *testing.T) {
 	}
 	// Each provider is listed once, carrying the models its jobs run on,
 	// including the default model a bare provider spec resolves to.
-	want := []StatusCLI{{Name: "codex", Models: []string{"gpt-5.6-terra"}}, {Name: "claude", Models: []string{"opus"}}}
+	want := []StatusCLI{{Name: "codex", Models: []string{"gpt-6.1-terra"}}, {Name: "claude", Models: []string{"opus"}}}
 	if got := m.Status(t.Context(), 0, nil)["clis"]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("status clis = %+v", got)
 	}
@@ -109,7 +109,7 @@ func TestStatusCLIsListEachProviderOnce(t *testing.T) {
 	)
 	want := []StatusCLI{
 		{Name: "claude", Models: []string{"opus", "sonnet"}, Quota: "week 66% left"},
-		{Name: "codex", Models: []string{"gpt-5.6-terra"}},
+		{Name: "codex", Models: []string{"gpt-6.1-terra"}},
 		{Name: "gemini", Models: []string{}, Quota: "signed out"},
 	}
 	if !reflect.DeepEqual(got, want) {

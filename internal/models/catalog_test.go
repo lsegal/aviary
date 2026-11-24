@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 func TestProviders(t *testing.T) {
@@ -65,6 +67,10 @@ func TestCurrentAnthropicModelsHaveMillionTokenContext(t *testing.T) {
 
 func TestCodexModelsMatchBackendLineup(t *testing.T) {
 	assert.Equal(t, []string{
+		"openai-codex/gpt-6.2-astra",
+		"openai-codex/gpt-6.2-sol",
+		"openai-codex/gpt-6.1-terra",
+		"openai-codex/gpt-6.1-sol",
 		"openai-codex/gpt-6-astra",
 		"openai-codex/gpt-6-sol",
 		"openai-codex/gpt-6-luna",
@@ -72,6 +78,16 @@ func TestCodexModelsMatchBackendLineup(t *testing.T) {
 		"openai-codex/gpt-5.6-terra",
 		"openai-codex/gpt-5.6-luna",
 	}, FilterByProvider("openai-codex"))
+}
+
+// TestCodexDefaultModelIsInTheCodexLineup ties the codex CLI's default model
+// to the catalog's codex lineup, so neither can be carried forward without the
+// other: issue #1199 was the catalog stuck a generation behind the CLI.
+func TestCodexDefaultModelIsInTheCodexLineup(t *testing.T) {
+	definition, ok := clidefs.MustBuiltin().Lookup("codex")
+	if assert.True(t, ok) {
+		assert.Contains(t, FilterByProvider("openai-codex"), "openai-codex/"+definition.ModelOrDefault(""))
+	}
 }
 
 // TestMetaModelsMatchTheMuseLineup pins the Muse models Meta's Model API

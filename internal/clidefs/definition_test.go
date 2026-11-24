@@ -787,7 +787,7 @@ func TestDefaultModelHasToBeOneTheAgentAccepts(t *testing.T) {
 func TestBuiltinDefaultModelsAreMidTier(t *testing.T) {
 	registry := MustBuiltin()
 	for name, want := range map[string]string{
-		"codex":    "gpt-5.6-terra",
+		"codex":    "gpt-6.1-terra",
 		"claude":   "sonnet",
 		"gemini":   "gemini-3.5-flash",
 		"agy":      "claude-sonnet-4-6",
