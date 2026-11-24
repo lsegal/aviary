@@ -185,8 +185,8 @@ test("a watch session's Code Loop shows every project's schedules with a Schedul
 	const jobs = page.getByTestId("job-card");
 	await expect(scheduled).toHaveCount(2);
 	await expect(scheduled.getByTestId("scheduled-project")).toHaveText([
-		"owner/other",
 		"owner/repo",
+		"owner/other",
 	]);
 	await expect(jobs).toHaveCount(1);
 	await expect(page.getByTestId("job-total")).toHaveText("3 items");
