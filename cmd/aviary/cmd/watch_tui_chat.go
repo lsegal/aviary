@@ -53,7 +53,8 @@ type watchChatEntry struct {
 	text string
 	tool *watchChatTool
 	// status marks a user message this TUI sent that the session read has
-	// not returned yet: "sending" while its turn runs, then "sent".
+	// not returned yet: "sending" while its turn runs, then "sent", or
+	// "failed" when its delivery failed.
 	status string
 }
 
@@ -307,7 +308,7 @@ func watchChatFailures(entries []watchChatEntry, turns []watchChatTurn) []watchC
 			continue
 		}
 		failure := watchChatFailure{at: len(entries), entries: []watchChatEntry{
-			{role: "user", text: t.entries[0].text},
+			{role: "user", text: t.entries[0].text, status: "failed"},
 			{role: "error", text: t.err},
 		}}
 		for i := from - 1; i >= 0; i-- {
@@ -473,7 +474,7 @@ func (m watchModel) finishChat(msg watchChatDoneMsg) (watchModel, tea.Cmd) {
 	streamed := len(t.entries) > 1
 	if msg.err != nil {
 		t.err = msg.err.Error()
-		t.entries[0].status = ""
+		t.entries[0].status = "failed"
 	} else if !streamed && strings.TrimSpace(msg.reply) != "" {
 		t.entries = watchAddText(t.entries, msg.reply)
 	}
@@ -727,6 +728,8 @@ func (m watchModel) chatLines(width int) watchChatView {
 				header += tuiDimStyle.Render(" · sending…")
 			case "sent":
 				header += tuiDimStyle.Render(" · sent")
+			case "failed":
+				header += tuiErrorStyle.Render(" · not delivered")
 			}
 			r.lines = append(r.lines, header)
 			r.markdown(entry.text, "  ")

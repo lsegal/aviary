@@ -84,7 +84,7 @@ The TUI shows the watch's header (its targets and the web UI's URL), a stats lin
 | `z` | full screen chat |
 | `+` / `-` | taller / shorter chat pane |
 
-Replies stream in live, with each tool call on one collapsed line. The chat works with `--no-webui` too.
+Replies stream in live, with each tool call on one collapsed line. You can keep sending while a reply streams, as in the web chat: the server queues or steers each message into the running turn, the transcript marks it **sending…** until the session saves it, and a message that could not be delivered shows its error under it. The chat works with `--no-webui` too.
 
 ## How it differs from the full server
 

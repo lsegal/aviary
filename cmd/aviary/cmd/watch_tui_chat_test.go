@@ -113,12 +113,12 @@ func TestWatchTUIChatSendsAndStreamsAReply(t *testing.T) {
 		map[string]any{"role": "assistant", "content": "**#3** is running."},
 	)
 	m, cmd = watchSpecialKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if !m.chat.streaming || m.chat.input.Value() != "" {
-		t.Fatalf("enter did not send: streaming %v input %q", m.chat.streaming, m.chat.input.Value())
+	if !m.chat.streaming() || m.chat.input.Value() != "" {
+		t.Fatalf("enter did not send: streaming %v input %q", m.chat.streaming(), m.chat.input.Value())
 	}
 	var midStream []string
 	m = watchPump(t, m, cmd, func(m watchModel) {
-		if m.chat.streaming {
+		if m.chat.streaming() {
 			midStream = append(midStream, watchStrip(strings.Join(m.chatLines(m.width).lines, "\n")))
 		}
 	})
@@ -143,8 +143,8 @@ func TestWatchTUIChatSendsAndStreamsAReply(t *testing.T) {
 	}
 	// Once the turn ends the transcript is the session as the server saved
 	// it.
-	if m.chat.streaming || len(m.chat.pending) != 0 || len(tools.callsTo("session_messages")) < 2 {
-		t.Fatalf("turn did not finish: streaming %v pending %d", m.chat.streaming, len(m.chat.pending))
+	if m.chat.streaming() || len(m.chat.turns) != 0 || len(tools.callsTo("session_messages")) < 2 {
+		t.Fatalf("turn did not finish: streaming %v pending %d", m.chat.streaming(), len(m.chat.turns))
 	}
 	got := watchStrip(strings.Join(m.chatLines(m.width).lines, "\n"))
 	if !strings.Contains(got, "#3 is running.") || strings.Count(got, "project_job_get") != 1 {
@@ -171,8 +171,8 @@ func TestWatchTUIChatInputKeys(t *testing.T) {
 	m = watchType(t, m, "one")
 	m = watchUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
 	m = watchType(t, m, "two")
-	if got := m.chat.input.Value(); got != "one\ntwo" || m.chat.streaming {
-		t.Fatalf("alt+enter: value %q streaming %v", got, m.chat.streaming)
+	if got := m.chat.input.Value(); got != "one\ntwo" || m.chat.streaming() {
+		t.Fatalf("alt+enter: value %q streaming %v", got, m.chat.streaming())
 	}
 	m, cmd := watchSpecialKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = watchPump(t, m, cmd, nil)
@@ -521,7 +521,7 @@ func TestWatchTUIChatSharesTheWebSession(t *testing.T) {
 	m, cmd = watchSpecialKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	streamed := false
 	m = watchPumpUntil(t, m, cmd, 10*time.Second, func(m watchModel) {
-		if m.chat.streaming && strings.Contains(watchStrip(strings.Join(m.chatLines(m.width).lines, "\n")), "echo:") {
+		if m.chat.streaming() && strings.Contains(watchStrip(strings.Join(m.chatLines(m.width).lines, "\n")), "echo:") {
 			streamed = true
 		}
 	})
@@ -586,4 +586,197 @@ func TestWatchTUIChatTranscriptKeepsBoardActionsAway(t *testing.T) {
 	if len(tools.callsTo("project_job_retry"))+len(tools.callsTo("project_job_resume")) != 0 {
 		t.Error("job actions ran from the transcript")
 	}
+}
+
+// gatedChatStream streams "<message>: one", then waits for the message's
+// release before streaming " two" and ending with its error, if any.
+type gatedChatStream struct {
+	mu      sync.Mutex
+	release map[string]chan error
+	sent    []string
+}
+
+func (g *gatedChatStream) gate(message string) chan error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.release == nil {
+		g.release = map[string]chan error{}
+	}
+	if g.release[message] == nil {
+		g.release[message] = make(chan error, 1)
+	}
+	return g.release[message]
+}
+
+func (g *gatedChatStream) stream(ctx context.Context, _ string, args map[string]any, onProgress func(string)) (string, error) {
+	message := fmt.Sprint(args["message"])
+	g.mu.Lock()
+	g.sent = append(g.sent, message)
+	g.mu.Unlock()
+	onProgress(message + ": one")
+	select {
+	case err := <-g.gate(message):
+		if err != nil {
+			return "", err
+		}
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	onProgress(" two")
+	return "", nil
+}
+
+// watchChatSend types text into the chat input and sends it, returning the
+// model after the turn's first streamed message and the command waiting for
+// its next one.
+func watchChatSend(t *testing.T, m watchModel, text string) (watchModel, tea.Cmd) {
+	t.Helper()
+	m = watchType(t, m, text)
+	m, cmd := watchSpecialKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatalf("enter did not send %q: %s", text, m.chat.errText)
+	}
+	next, wait := m.Update(cmd())
+	return next.(watchModel), wait
+}
+
+// watchChatFinish releases text's turn with err and feeds its remaining
+// messages in, returning the model and the command its end returned.
+func watchChatFinish(t *testing.T, m watchModel, g *gatedChatStream, wait tea.Cmd, text string, err error) (watchModel, tea.Cmd) {
+	t.Helper()
+	g.gate(text) <- err
+	for {
+		msg := wait()
+		var next tea.Model
+		next, wait = m.Update(msg)
+		m = next.(watchModel)
+		if _, ok := msg.(watchChatDoneMsg); ok {
+			return m, wait
+		}
+	}
+}
+
+func watchChatTranscript(m watchModel) string {
+	return watchStrip(strings.Join(m.chatLines(m.width).lines, "\n"))
+}
+
+func TestWatchTUIChatSendsWhileAReplyStreams(t *testing.T) {
+	tools := newFakeWatchTools()
+	g := &gatedChatStream{}
+	m := loadedWatchModel(t, tools)
+	m.stream = g.stream
+	m, cmd := watchSpecialKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = watchUpdate(t, m, cmd())
+
+	m, waitFirst := watchChatSend(t, m, "first")
+	if !strings.Contains(watchStrip(m.chatPane(m.chatPaneHeight())[0]), "replying…") {
+		t.Fatalf("title does not show the reply running:\n%s", m.chatPane(m.chatPaneHeight())[0])
+	}
+	// Two more sends while the first reply streams are taken at once.
+	m, waitSecond := watchChatSend(t, m, "second")
+	m, waitThird := watchChatSend(t, m, "third")
+	if m.chat.errText != "" || m.chat.input.Value() != "" {
+		t.Fatalf("send during a reply: error %q input %q", m.chat.errText, m.chat.input.Value())
+	}
+	if got := strings.Join(g.sent, ","); got != "first,second,third" {
+		t.Fatalf("agent_run messages = %q", got)
+	}
+	got := watchChatTranscript(m)
+	for _, want := range []string{"you · sending…\n  first\n\ncode-loop\n  first: one", "you · sending…\n  second\n\ncode-loop\n  second: one", "you · sending…\n  third"} {
+		if !strings.Contains(strings.ReplaceAll(got, config.ProjectsAgentName, "code-loop"), want) {
+			t.Errorf("transcript lacks %q:\n%s", want, got)
+		}
+	}
+	// The first reply keeps streaming after the later sends.
+	m, cmd = watchChatFinish(t, m, g, waitFirst, "first", nil)
+	if cmd != nil || !m.chat.streaming() {
+		t.Fatal("the session was read back while sends were still running")
+	}
+	got = watchChatTranscript(m)
+	if !strings.Contains(got, "first: one two") || !strings.Contains(got, "you · sent\n  first") {
+		t.Errorf("finished first turn:\n%s", got)
+	}
+	m, _ = watchChatFinish(t, m, g, waitSecond, "second", nil)
+	tools.responses["session_messages"] = chatHistoryResponse(
+		map[string]any{"role": "user", "content": "first"},
+		map[string]any{"role": "assistant", "content": "first: one two"},
+		map[string]any{"role": "user", "content": "second"},
+		map[string]any{"role": "assistant", "content": "second: one two"},
+		map[string]any{"role": "user", "content": "third"},
+		map[string]any{"role": "assistant", "content": "third: one two"},
+	)
+	m, cmd = watchChatFinish(t, m, g, waitThird, "third", nil)
+	if cmd == nil {
+		t.Fatal("the last turn's end did not read the session back")
+	}
+	m = watchUpdate(t, m, cmd())
+	// The read replaces the sends: every message shows once, in order.
+	got = watchChatTranscript(m)
+	if len(m.chat.turns) != 0 || strings.Contains(got, "sending") || strings.Contains(got, "· sent") {
+		t.Fatalf("pending sends survived the read:\n%s", got)
+	}
+	want := []string{"first", "first: one two", "second", "second: one two", "third", "third: one two"}
+	var seen []string
+	for _, line := range strings.Split(got, "\n") {
+		if strings.HasPrefix(line, "  ") {
+			seen = append(seen, strings.TrimSpace(line))
+		}
+	}
+	if strings.Join(seen, "|") != strings.Join(want, "|") {
+		t.Errorf("transcript messages = %q, want %q", seen, want)
+	}
+	// ↑ recalls the messages sent during the reply.
+	m = watchUpdate(t, m, tea.KeyMsg{Type: tea.KeyUp})
+	m = watchUpdate(t, m, tea.KeyMsg{Type: tea.KeyUp})
+	if got := m.chat.input.Value(); got != "second" {
+		t.Errorf("second ↑ = %q", got)
+	}
+}
+
+func TestWatchTUIChatShowsAFailedSendInPlace(t *testing.T) {
+	tools := newFakeWatchTools()
+	g := &gatedChatStream{}
+	m := loadedWatchModel(t, tools)
+	m.stream = g.stream
+	m, cmd := watchSpecialKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	m = watchUpdate(t, m, cmd())
+
+	m, waitFirst := watchChatSend(t, m, "first")
+	m, waitSecond := watchChatSend(t, m, "second")
+	m, waitThird := watchChatSend(t, m, "third")
+	m, _ = watchChatFinish(t, m, g, waitSecond, "second", fmt.Errorf("steer refused"))
+	if got := watchChatTranscript(m); !strings.Contains(got, "you · not delivered\n  second\n\n"+config.ProjectsAgentName+"\n  second: one\n\n  ! steer refused") {
+		t.Errorf("failed send lacks its error:\n%s", got)
+	}
+	m, _ = watchChatFinish(t, m, g, waitThird, "third", fmt.Errorf("lost"))
+	// The server saved the second message but not the third.
+	tools.responses["session_messages"] = chatHistoryResponse(
+		map[string]any{"role": "user", "content": "first"},
+		map[string]any{"role": "user", "content": "second"},
+		map[string]any{"role": "assistant", "content": "first: one two"},
+	)
+	m, cmd = watchChatFinish(t, m, g, waitFirst, "first", nil)
+	m = watchUpdate(t, m, cmd())
+	check := func(when string) {
+		t.Helper()
+		got := watchChatTranscript(m)
+		want := []string{"first", "second", "first: one two", "! steer refused", "third", "! lost"}
+		var seen []string
+		for _, line := range strings.Split(got, "\n") {
+			if strings.HasPrefix(line, "  ") {
+				seen = append(seen, strings.TrimSpace(line))
+			}
+		}
+		if strings.Join(seen, "|") != strings.Join(want, "|") {
+			t.Errorf("%s: transcript messages = %q, want %q", when, seen, want)
+		}
+	}
+	if got := watchChatTranscript(m); !strings.Contains(got, "you · not delivered\n  third") || strings.Count(got, "not delivered") != 1 {
+		t.Errorf("the unsaved failed send is not marked:\n%s", got)
+	}
+	check("after the read")
+	// The errors stay in place on later reads.
+	m, cmd = m.fetchChat()
+	m = watchUpdate(t, m, cmd())
+	check("after another read")
 }
