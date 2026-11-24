@@ -3439,7 +3439,7 @@ func registerServerTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "config_task_convert_to_script",
-		Description: "Attempt to compile a PROMPT-type task to a Lua script asynchronously; returns a compile ID immediately. For a project task or prompt workflow with precompile on, compiles its script beside its prompt instead, keeping its type.",
+		Description: "Attempt to compile a PROMPT-type task to a Lua script asynchronously; returns a compile ID immediately. For a project task or prompt workflow, recompiles its script beside its prompt instead, keeping its type: it discards the current, stale or set-aside script and turns precompile on.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args configTaskConvertToScriptArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "settings", "tool", "config_task_convert_to_script", "agent", args.Agent, "task", args.Task)
 		cfg, err := config.Load("")
@@ -3448,12 +3448,12 @@ func registerServerTools(s *sdkmcp.Server) {
 		}
 		// A project task keeps its prompt and stores its compiled script
 		// beside it, so a run whose script fails falls back to the model.
+		// Converting one recompiles it from scratch, turning precompile on.
 		if _, _, task, findErr := findConfiguredTask(args.Agent, args.Task); findErr == nil && precompilesBesidePrompt(task) {
-			if !EffectiveTaskPrecompile(task) {
-				return nil, struct{}{}, fmt.Errorf("task %q does not have precompile turned on", args.Task)
+			if err := RecompileTask(args.Agent, args.Task); err != nil {
+				return nil, struct{}{}, err
 			}
-			compileTaskInBackground(args.Agent, args.Task, "manual")
-			return text(fmt.Sprintf("compiling task %q", args.Task))
+			return text(fmt.Sprintf("recompiling task %q", args.Task))
 		}
 		agentIdx := -1
 		for i, a := range cfg.Agents {

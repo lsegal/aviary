@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -99,9 +100,18 @@ func projectScriptPlaceholderProblem(script string) string {
 	return ""
 }
 
+// taskCompilerVersion is part of every compile key. Bump it whenever the
+// compiler, its determinism gate, the compile prompts or the script runtime
+// change in a way that can change or fix a compiled script, so every existing
+// compiled task, including one whose script was set aside after failing, is
+// compiled again on its next run instead of keeping a script built by the old
+// compiler.
+var taskCompilerVersion = 2
+
 // projectTaskCompileKey identifies what a project task's script is compiled
-// from: its prompt, its project, and the tools it may call, including the
-// commands exec allows, so a change to any of them recompiles it.
+// from: the compiler version, its prompt, its project, and the tools it may
+// call, including the commands exec allows, so a change to any of them
+// recompiles it.
 func projectTaskCompileKey(prompt, project string, tools []agent.ToolInfo, agentCfg *config.AgentConfig) string {
 	names := make([]string, 0, len(tools))
 	for _, tool := range tools {
@@ -113,7 +123,7 @@ func projectTaskCompileKey(prompt, project string, tools []agent.ToolInfo, agent
 		commands = slices.Clone(agentCfg.Permissions.Exec.AllowedCommands)
 	}
 	sum := sha256.New()
-	for _, part := range []string{strings.TrimSpace(prompt), strings.TrimSpace(project), strings.Join(names, ","), strings.Join(commands, "\n")} {
+	for _, part := range []string{strconv.Itoa(taskCompilerVersion), strings.TrimSpace(prompt), strings.TrimSpace(project), strings.Join(names, ","), strings.Join(commands, "\n")} {
 		sum.Write([]byte(part))
 		sum.Write([]byte{0})
 	}
@@ -150,6 +160,30 @@ func compileTaskInBackground(agentName, taskName, trigger string) {
 			slog.Warn("task_compile: task compile failed", "component", "task_compile", "agent", agentName, "task", taskName, "error", err)
 		}
 	})
+}
+
+// RecompileTask discards a project task's or prompt workflow's compiled
+// script, whatever state it is in, turns precompile back on, and compiles it
+// again in the background. It is the Recompile action: it starts over a
+// script that is stale, was set aside after failing, or had precompile turned
+// off after repeated failures.
+func RecompileTask(agentName, taskName string) error {
+	_, agentCfg, task, err := findConfiguredTask(agentName, taskName)
+	if err != nil {
+		return err
+	}
+	if !precompilesBesidePrompt(task) {
+		return fmt.Errorf("task %q is not a project task or prompt workflow", task.Name)
+	}
+	on := true
+	task.Precompile = &on
+	task.Compiled, task.CompiledKey = "", ""
+	task.ScriptVerified, task.ScriptFailures, task.PrecompileNote = false, 0, ""
+	if err := saveConfiguredTask(agentCfg, task); err != nil {
+		return err
+	}
+	compileTaskInBackground(agentCfg.Name, task.Name, "manual")
+	return nil
 }
 
 // EnsureTaskCompiled returns the compiled script a precompiled project task
@@ -256,12 +290,12 @@ func RecordTaskScriptResult(agentName, taskName string, runErr error) error {
 	case !task.ScriptVerified:
 		// The key stays, so the same prompt is not compiled again.
 		task.Compiled = ""
-		task.PrecompileNote = "The compiled script failed on its first run (" + cause + "), so it was set aside and the task runs on the model. Turn precompile off and on to compile it again."
+		task.PrecompileNote = "The compiled script failed on its first run (" + cause + "), so it was set aside and the task runs on the model. Use Recompile on the task page to compile it again."
 	case task.ScriptFailures >= projectScriptFailureLimit:
 		off := false
 		task.Precompile = &off
 		task.Compiled, task.CompiledKey = "", ""
-		task.PrecompileNote = fmt.Sprintf("Precompile was turned off after the compiled script failed %d runs in a row (last: %s), so the task runs on the model.", task.ScriptFailures, cause)
+		task.PrecompileNote = fmt.Sprintf("Precompile was turned off after the compiled script failed %d runs in a row (last: %s), so the task runs on the model. Use Recompile on the task page to compile it again.", task.ScriptFailures, cause)
 	}
 	if task.PrecompileNote != "" {
 		slog.Warn("task_compile: set aside a failing compiled script", "component", "task_compile", "agent", agentCfg.Name,
