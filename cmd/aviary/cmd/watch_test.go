@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -83,7 +84,7 @@ func TestWatchAgentModelFlags(t *testing.T) {
 func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
 	bin := t.TempDir()
 	for _, name := range []string{"claude", "codex"} {
-		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		if err := os.WriteFile(filepath.Join(bin, exeName(name)), []byte("#!/bin/sh\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -171,4 +172,12 @@ func TestWatchHelpAndCompletionsHideProvider(t *testing.T) {
 			t.Errorf("%v lists the deprecated --provider:\n%s", args, out.String())
 		}
 	}
+}
+
+// exeName is name as an executable on PATH: Windows needs the .exe extension.
+func exeName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }

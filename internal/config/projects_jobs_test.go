@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -146,7 +147,7 @@ func TestNormalizeProjectModel(t *testing.T) {
 
 func TestValidateProjectModel(t *testing.T) {
 	bin := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\n"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(bin, exeName("claude")), []byte("#!/bin/sh\n"), 0o755))
 	t.Setenv("PATH", bin)
 
 	assert.NoError(t, ValidateProjectModel(ModelsConfig{}, ""))
@@ -168,4 +169,12 @@ func TestValidateProjectModel(t *testing.T) {
 		}
 	}
 	assert.Equal(t, []string{"projects.model"}, fields, issues)
+}
+
+// exeName is name as an executable on PATH: Windows needs the .exe extension.
+func exeName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }

@@ -245,7 +245,17 @@ DefaultTag.props = ["on"];
 
 // Jobs run only on providers reached through a CLI, so the job model picker
 // offers the installed CLI providers' models.
-const cliStatus = useProviderStatus();
+const cliStatus = useProviderStatus({ refreshOnMount: false });
+// Settings mounts every tab, so the slow probe runs only once this one is
+// open and nothing is cached yet.
+watch(
+	activeTab,
+	(tab) => {
+		if (tab === "projects" && cliStatus.clis.value === null)
+			void cliStatus.refresh();
+	},
+	{ immediate: true },
+);
 const cliModelOptions = computed(() =>
 	(cliStatus.clis.value ?? [])
 		.filter((cli) => cli.installed)

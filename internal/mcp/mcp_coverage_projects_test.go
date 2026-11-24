@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -219,7 +220,7 @@ func TestProjectAddRuntimeWritesNoConfig(t *testing.T) {
 func TestProjectAddRuntimeModelOverride(t *testing.T) {
 	d, m := setupProjects(t)
 	bin := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\n"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(bin, exeName("claude")), []byte("#!/bin/sh\n"), 0o755))
 	t.Setenv("PATH", bin)
 	m.Reconcile(&config.Config{Models: config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex/gpt-5.6-terra"}}})
 	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "runtime": true, "settings": map[string]any{"model": "nosuch/m"}}, `unknown provider "nosuch"`)
@@ -318,4 +319,12 @@ func TestProjectsAgentContextOnlyForProjectsAgent(t *testing.T) {
 
 	SetDeps(&Deps{})
 	assert.Empty(t, projectsAgentContext(context.Background(), config.ProjectsAgentName, "o/r"))
+}
+
+// exeName is name as an executable on PATH: Windows needs the .exe extension.
+func exeName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }
