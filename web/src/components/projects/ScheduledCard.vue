@@ -107,19 +107,19 @@
 				<PlayIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
 			<button type="button" aria-label="Settings" title="Open this scheduled task's settings"
-				:class="[ICON_BUTTON, '@max-[17rem]:hidden']" @click="emit('settings', schedule)">
+				:class="[ICON_BUTTON, '@max-[16rem]:hidden']" @click="emit('settings', schedule)">
 				<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
 			<button type="button" :disabled="busy" :aria-label="schedule.enabled ? 'Pause' : 'Resume'"
 				:title="schedule.enabled ? 'Pause this schedule' : 'Resume this schedule'"
-				:class="[ICON_BUTTON, '@max-[17rem]:hidden']" @click="emit('toggle', schedule)">
+				:class="[ICON_BUTTON, '@max-[16rem]:hidden']" @click="emit('toggle', schedule)">
 				<PauseIcon v-if="schedule.enabled" aria-hidden="true" class="h-4 w-4" />
 				<PlayCircleIcon v-else aria-hidden="true" class="h-4 w-4" />
 			</button>
 			<DropdownMenuRoot>
 				<DropdownMenuTrigger asChild>
 					<button type="button" aria-label="More actions" title="More actions" data-testid="scheduled-more"
-						:class="[ICON_BUTTON, 'hidden @max-[17rem]:block']">
+						:class="[ICON_BUTTON, 'hidden @max-[16rem]:block']">
 						<EllipsisHorizontalIcon aria-hidden="true" class="h-4 w-4" />
 					</button>
 				</DropdownMenuTrigger>
