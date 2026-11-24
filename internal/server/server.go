@@ -481,6 +481,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		case <-s.reexecCh:
 			reexec = true
 		case err := <-errCh:
+			endStreams()
 			if errors.Is(err, http.ErrServerClosed) {
 				continue
 			}
