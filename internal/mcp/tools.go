@@ -2610,7 +2610,10 @@ func registerAuthTools(s *sdkmcp.Server) {
 // the restart state and the running jobs an upgrade would stop.
 type serverVersionStatus struct {
 	update.CheckResult
-	Restart saferestart.Status `json:"restart"`
+	// Executable is the binary the server runs and re-executes on restart,
+	// so aviary upgrade can swap the right one.
+	Executable string             `json:"executable,omitempty"`
+	Restart    saferestart.Status `json:"restart"`
 }
 
 func currentRestartStatus() saferestart.Status {
@@ -2648,7 +2651,8 @@ func registerServerTools(s *sdkmcp.Server) {
 		if err != nil && check.LatestVersion == "" {
 			return nil, struct{}{}, err
 		}
-		return jsonResult(serverVersionStatus{CheckResult: check, Restart: currentRestartStatus()})
+		exe, _ := os.Executable()
+		return jsonResult(serverVersionStatus{CheckResult: check, Executable: exe, Restart: currentRestartStatus()})
 	})
 
 	type serverUpgradeArgs struct {
