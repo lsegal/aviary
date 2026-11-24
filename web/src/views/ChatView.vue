@@ -168,15 +168,15 @@ import {
 import ChatActivityIndicator from "../components/chat/ChatActivityIndicator.vue";
 import ChatComposer from "../components/chat/ChatComposer.vue";
 import ChatToolCall from "../components/chat/ChatToolCall.vue";
-import ImageLightbox, {
-	type LightboxImage,
-} from "../components/ui/ImageLightbox.vue";
 import {
 	chatDraftKey,
 	getChatDraft,
 	setChatDraft,
 } from "../components/chat/drafts";
 import MoreBelowPill from "../components/MoreBelowPill.vue";
+import ImageLightbox, {
+	type LightboxImage,
+} from "../components/ui/ImageLightbox.vue";
 import { useAutoFollow } from "../composables/useAutoFollow";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";

@@ -87,8 +87,12 @@ function onKeydown(e: KeyboardEvent) {
 		if (!buttons.length) return;
 		const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
 		const next = e.shiftKey
-			? at <= 0 ? buttons.length - 1 : at - 1
-			: at === buttons.length - 1 ? 0 : at + 1;
+			? at <= 0
+				? buttons.length - 1
+				: at - 1
+			: at === buttons.length - 1
+				? 0
+				: at + 1;
 		e.preventDefault();
 		buttons[next].focus();
 	}
