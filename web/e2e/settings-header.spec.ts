@@ -171,6 +171,41 @@ test("task, agent, project and System settings show crumbs to their own parents"
 	}
 });
 
+test("settings pages' agent crumb opens the first page the user's sidebar shows", async ({
+	page,
+}) => {
+	await mockSettings(page);
+	await page.route("/api/preferences/navigation", (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				order: { agentPages: ["chat", "projects", "channels"] },
+				hidden: { agentPages: ["chat"] },
+			}),
+		}),
+	);
+	// Chats is hidden, so the agent's first page is Code Loop, as on the
+	// task page (#1091).
+	const home = "/agents/Aviary/projects";
+	for (const url of [
+		"/agents/Aviary/tasks/release-aviary",
+		"/agents/Aviary/tasks?task=release-aviary",
+		"/agents/Aviary/tasks",
+		"/agents/Aviary/channels/signal/settings",
+		"/agents/Aviary/settings/permissions",
+		"/agents/Aviary/settings",
+	]) {
+		await page.goto(url);
+		await expect(
+			breadcrumb(page).getByRole("link", { name: "Aviary" }),
+		).toHaveAttribute("href", home);
+	}
+	await expect(backLink(page)).toHaveAccessibleName("Back to Aviary");
+	await backLink(page).click();
+	await expect(page).toHaveURL(home);
+});
+
 test("the keyboard reaches the back link and each crumb in order", async ({
 	page,
 }) => {
