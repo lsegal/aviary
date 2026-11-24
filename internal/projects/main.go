@@ -2297,7 +2297,7 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	}
 	// The final result event is read from the raw stream too, so a run that
 	// finished is told apart from one that died once its process exits.
-	turnResult := newTurnResultDetector(definition.Output.TranscriptFormat())
+	turnResult := newTurnResultDetector(definition.Output)
 	agentOutput = io.MultiWriter(turnResult, agentOutput)
 	var detector *missingSessionDetector
 	if session.Resume {

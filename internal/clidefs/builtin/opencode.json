@@ -11,7 +11,8 @@
       "text": "part.text",
       "toolName": "part.tool",
       "toolInput": "part.state.input",
-      "ignore": ["step_start", "step_finish"]
+      "ignore": ["step_start", "step_finish"],
+      "result": { "event": "step_finish", "status": "part.reason", "success": ["stop"] }
     }
   },
   "skills": {"target": "opencode"},

@@ -77,7 +77,41 @@ func (j JSONL) validate() error {
 			return fmt.Errorf(`field "output.jsonl.ignore" cannot contain an empty value`)
 		}
 	}
-	return j.validateEvents()
+	if err := j.validateEvents(); err != nil {
+		return err
+	}
+	return j.validateResult()
+}
+
+// validateResult checks the final result event. It is matched by type, so it
+// needs the type path, and a status nothing counts as success would fail
+// every turn, as a success list with no status to compare would pass them.
+func (j JSONL) validateResult() error {
+	r := j.Result
+	if r == nil {
+		return nil
+	}
+	if j.Type == "" {
+		return fmt.Errorf(`field "output.jsonl.result" needs "output.jsonl.type"; the final result event cannot be matched without knowing where the type is`)
+	}
+	if strings.TrimSpace(r.Event) == "" {
+		return fmt.Errorf(`field "output.jsonl.result.event" is required`)
+	}
+	if r.Status != "" && !jsonlPathPattern.MatchString(r.Status) {
+		return jsonlPathError("output.jsonl.result.status", r.Status)
+	}
+	if r.Status != "" && len(r.Success) == 0 {
+		return fmt.Errorf(`field "output.jsonl.result.status" needs "output.jsonl.result.success"; without it every final result would be a failure`)
+	}
+	if r.Status == "" && len(r.Success) > 0 {
+		return fmt.Errorf(`field "output.jsonl.result.success" needs "output.jsonl.result.status"; there is no value to compare it with`)
+	}
+	for _, value := range r.Success {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf(`field "output.jsonl.result.success" cannot contain an empty value`)
+		}
+	}
+	return nil
 }
 
 // validateEvents checks the per-event-type overrides. Each is keyed by a value

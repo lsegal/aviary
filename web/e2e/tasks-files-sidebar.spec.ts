@@ -436,7 +436,7 @@ test("Scheduled Tasks lists its tasks on every page and a row opens the task's s
 	const cleanup = taskRows(page).filter({ hasText: "cleanup" });
 	await cleanup.getByTestId("sidebar-item-link").click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/cleanup$/);
-	await expect(page.getByTestId("page-title")).toHaveText("cleanup");
+	await expect(page.getByTestId("settings-title")).toHaveText("cleanup");
 	await expect(page.getByText("cleanup: all green")).toBeVisible();
 	expect(taskSessions.at(-1)).toEqual({ agent: "assistant", name: "cleanup" });
 	await expect(cleanup).toHaveClass(/(^|\s)bg-gray-100/);
@@ -466,7 +466,9 @@ test("a renamed task's session takes the new name", async ({ page }) => {
 
 	await taskRows(page).getByTestId("sidebar-item-link").click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/nightly-cleanup$/);
-	await expect(page.getByTestId("page-title")).toHaveText("nightly-cleanup");
+	await expect(page.getByTestId("settings-title")).toHaveText(
+		"nightly-cleanup",
+	);
 	await expect(page.getByText("nightly-cleanup: all green")).toBeVisible();
 });
 

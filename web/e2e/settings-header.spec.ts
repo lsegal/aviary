@@ -1,9 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expectSettingsHeader } from "./helpers/settingsHeader";
 
 // Every Settings page shares one header: a back link to the page the
 // settings belong to and a breadcrumb whose crumbs link to their pages (#986).
-// It is the header every nested page shares (#1064).
+// It is the header every nested page shares (#1064). Every page keeps its
+// look: sticky, bordered and blurred, below the page's padding (#1125).
 
 const NOW = new Date().toISOString();
 
@@ -57,7 +59,7 @@ function breadcrumb(page: Page) {
 }
 
 function backLink(page: Page) {
-	return page.getByTestId("page-back");
+	return page.getByTestId("settings-back");
 }
 
 test("channel settings link back to the agent and the channel's conversation", async ({
@@ -94,7 +96,7 @@ test("channel settings link back to the agent and the channel's conversation", a
 
 	await backLink(page).click();
 	await expect(page).toHaveURL(/\/agents\/Aviary\/channels\/signal$/);
-	await expect(page.getByTestId("page-title")).toHaveText("signal");
+	await expect(page.getByTestId("settings-title")).toHaveText("signal");
 
 	await page.goBack();
 	await breadcrumb(page).getByRole("link", { name: "signal" }).click();
@@ -166,6 +168,7 @@ test("task, agent, project and System settings show crumbs to their own parents"
 			c.crumbs.at(-1) as string,
 		);
 		await expect(backLink(page)).toHaveAccessibleName(c.back);
+		await expectSettingsHeader(page);
 		await backLink(page).click();
 		await expect(page).toHaveURL(c.parent);
 	}
@@ -280,7 +283,7 @@ test("the header fits a phone without horizontal overflow", async ({
 		"/system/settings",
 	]) {
 		await page.goto(url);
-		const header = page.getByTestId("page-header");
+		const header = page.getByTestId("settings-header");
 		await expect(breadcrumb(page)).toBeVisible();
 		await expect(backLink(page)).toBeInViewport();
 		const overflow = await header.evaluate(

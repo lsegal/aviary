@@ -149,7 +149,7 @@ test("the populated Channels overview summarizes channels, workflows and recent 
 	await page.goto("/agents/assistant/channels");
 
 	const overview = page.getByTestId("channels-overview");
-	await expect(page.getByTestId("page-title")).toHaveText("Channels");
+	await expect(page.getByTestId("settings-title")).toHaveText("Channels");
 	await expect(overview.getByTestId("channels-stats")).toMatchAriaSnapshot(`
 		- paragraph: Channels
 		- paragraph: "3"

@@ -144,7 +144,6 @@ func (s *definitionSession) Send(ctx context.Context, turn Turn, onEvent func(Ev
 	}
 
 	m := newDefinitionMapper(s.definition, s.aviaryToolPrefix(), onEvent)
-	format := s.definition.Output.TranscriptFormat()
 	finished := false
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 0, 64*1024), 64*1024*1024)
@@ -156,7 +155,7 @@ func (s *definitionSession) Send(ctx context.Context, turn Turn, onEvent func(Ev
 		output.Write(line)         //nolint:errcheck
 		output.Write([]byte{'\n'}) //nolint:errcheck
 		m.handle(line)
-		if outcome := transcript.TurnResult(format, line); outcome != transcript.TurnUnfinished {
+		if outcome := s.definition.Output.TurnResult(line); outcome != transcript.TurnUnfinished {
 			finished = outcome == transcript.TurnSucceeded
 		}
 	}

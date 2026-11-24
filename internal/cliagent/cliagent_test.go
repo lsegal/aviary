@@ -39,6 +39,15 @@ func TestMain(m *testing.M) {
 		fakeGeneric()
 		fakeLinger()
 		os.Exit(0)
+	case "lingering-jsonl":
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"kind": "say", "text": "all done"})
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"kind": "end", "outcome": "ok"})
+		fakeLinger()
+		os.Exit(0)
+	case "lingering-jsonl-unfinished":
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"kind": "say", "text": "still working"})
+		fakeLinger()
+		os.Exit(0)
 	case "lingering-unfinished":
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"type": "message", "role": "assistant", "content": "still working"})
 		fakeLinger()
