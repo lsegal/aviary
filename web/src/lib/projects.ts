@@ -994,13 +994,6 @@ export function activeScheduleRun(
 	return latest && ACTIVE_RUNS.includes(latest.status) ? latest : undefined;
 }
 
-/** The schedule's latest run that is done, whatever its outcome. */
-export function lastScheduleRun(
-	s: Pick<ProjectSchedule, "history">,
-): ScheduleRun | undefined {
-	return s.history.find((r) => !ACTIVE_RUNS.includes(r.status));
-}
-
 /**
  * What a schedule's card says about its next run. Paused and queued, a fire
  * waiting on the overlap policy for the run in flight, take the place of its
@@ -1044,31 +1037,47 @@ export interface LastRun {
 	at: string;
 	summary: string;
 	status: string;
+	/** The run's job number on the board, when the board has it. */
+	number?: number;
 }
 
+// Fires the overlap or missed-run policy dropped: they never ran.
+const DROPPED_FIRES = ["skipped", "missed"];
+
 /**
- * A schedule's last finished run: its board entry's when the board has its
- * runs, else the scheduler's history's.
+ * A schedule's last finished run of any trigger, scheduled, manual or a
+ * catch-up: the newer of its board entry's and the scheduler history's, so a
+ * run the board has not caught up with still counts. Fires the overlap or
+ * missed-run policy dropped are not runs.
  */
 export function scheduleLastRun(
 	s: Pick<ProjectSchedule, "history">,
 	entry?: ScheduleEntry,
 ): LastRun | undefined {
 	const run = entry?.lastRun;
-	if (run)
-		return {
-			result: run.result,
-			at: run.finishedAt || run.startedAt,
-			summary: run.summary,
-			status: run.status,
-		};
-	const last = lastScheduleRun(s);
-	if (!last) return undefined;
+	const board: LastRun | undefined = run && {
+		result: run.result,
+		at: run.finishedAt || run.startedAt,
+		summary: run.summary,
+		status: run.status,
+		number: run.number,
+	};
+	const fire = s.history.find(
+		(r) => finishedScheduleRun(r) && !DROPPED_FIRES.includes(r.status),
+	);
+	const history = fire && finishedScheduleRun(fire);
+	if (!board || !history) return board ?? history;
+	return Date.parse(history.at) > Date.parse(board.at) ? history : board;
+}
+
+/** A history entry as a finished run, or undefined while it is in flight. */
+export function finishedScheduleRun(run: ScheduleRun): LastRun | undefined {
+	if (ACTIVE_RUNS.includes(run.status)) return undefined;
 	return {
-		result: historyResult(last),
-		at: last.fireTime,
-		summary: firstLine(last.summary),
-		status: last.status,
+		result: historyResult(run),
+		at: run.fireTime,
+		summary: firstLine(run.summary),
+		status: run.status,
 	};
 }
 

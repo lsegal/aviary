@@ -1691,6 +1691,89 @@ test.describe("one card per scheduled task (#977)", () => {
 			.toEqual({ target: "lsegal/aviary", number: 1795457053 });
 	});
 
+	test("Last run counts manual runs, skips missed fires and opens the run (#1013)", async ({
+		page,
+	}) => {
+		// The scheduler's history, oldest first: a scheduled run 6h ago, a
+		// missed fire after it, then a manual run a minute ago that the
+		// board's entry has not caught up with.
+		const fire = (minutesAgo: number, fields: Record<string, unknown>) => ({
+			fire_time: minutesFromNow(-minutesAgo),
+			...fields,
+		});
+		const history = [
+			fire(365, {
+				reason: "schedule",
+				status: "completed",
+				summary: "Nothing to release",
+			}),
+			fire(360, { reason: "missed", status: "missed" }),
+		];
+		const sixHoursAgo = finishedRun(
+			1795456753,
+			364,
+			"succeeded",
+			"Nothing to release",
+		);
+		const entries: unknown[] = [
+			releaseEntry({ last_run: sixHoursAgo, recent_runs: [sixHoursAgo] }),
+		];
+		await setup(page, { tasks: [{ ...RELEASE_TASK, history }], entries });
+		await page.setViewportSize({ width: 420, height: 900 });
+		await page.goto("/system/watches/lsegal%2Faviary");
+		const card = page.getByTestId("scheduled-card");
+		const line = card.getByTestId("scheduled-last-run");
+
+		// The missed fire is not a run: the last run is the scheduled one,
+		// with its result, and it opens that run.
+		await expect(card.getByTestId("scheduled-last-result")).toHaveText("✓");
+		await expect(card.getByTestId("scheduled-last-time")).toHaveText(
+			/^Last run 6h ago · succeeded$/,
+		);
+		await card.getByTestId("scheduled-last-time").click();
+		await expect(page).toHaveURL(/\/jobs\/1795456753/);
+		await page.goBack();
+
+		// A manual run finishes: the card shows it, newest of any trigger.
+		history.push(
+			fire(1, {
+				reason: "manual",
+				status: "completed",
+				summary: "Triggered release.yml on main",
+			}),
+		);
+		await page.reload();
+		await expect(card.getByTestId("scheduled-last-time")).toHaveText(
+			/^Last run 1m ago · succeeded$/,
+		);
+		await expect(line).not.toHaveText(/^\s*[·•]/);
+	});
+
+	test("a missed fire never shows as the last run while a manual run is in flight (#1013)", async ({
+		page,
+	}) => {
+		// The issue's history, oldest first: the last scheduled run 6h ago, a
+		// missed fire, and a manual run still running, which the board has
+		// no finished run for yet.
+		const history = [
+			{
+				fire_time: minutesFromNow(-365),
+				reason: "schedule",
+				status: "completed",
+				summary: "Nothing to release",
+			},
+			{ fire_time: minutesFromNow(-360), reason: "missed", status: "missed" },
+			{ fire_time: minutesFromNow(-1), reason: "manual", status: "running" },
+		];
+		await setup(page, { tasks: [{ ...RELEASE_TASK, history }], entries: [] });
+		await page.goto("/system/watches/lsegal%2Faviary");
+		const line = page
+			.getByTestId("scheduled-card")
+			.getByTestId("scheduled-last-run");
+		await expect(line).toHaveText(/^\s*✓\s*Last run 6h ago · succeeded$/);
+		await expect(line).not.toHaveText(/^\s*[·•]/);
+	});
+
 	test("Paused and Queued take the next run's place", async ({ page }) => {
 		await setup(page, {
 			tasks: [

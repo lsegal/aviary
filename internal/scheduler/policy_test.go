@@ -139,6 +139,57 @@ func TestMissedPolicyOnStartup(t *testing.T) {
 	}
 }
 
+func TestMissedFireKeepsFiring(t *testing.T) {
+	setupSchedulerDataDir(t)
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	prior := loadStateStore(scheduleStatePath())
+	prior.update("alpha/t", func(st *taskState) { st.LastFire = now.Add(-time.Hour) })
+
+	s := newPolicyScheduler(t, &now)
+	s.Reconcile(singleTask(config.TaskConfig{Name: "t", Every: "5m", Overlap: "skip", Missed: "skip", Prompt: "p"}))
+	key := "alpha/t"
+	require.Equal(t, domain.TaskRunMissed, lastRun(t, s, key).Status)
+	require.Contains(t, s.armed, key)
+
+	// The next two timers each fire and re-arm.
+	for range 2 {
+		a := s.armed[key]
+		now = a.next
+		s.onTimer(key, a.gen)
+		require.Contains(t, s.armed, key)
+		assert.Equal(t, now.Add(5*time.Minute), s.armed[key].next)
+	}
+	assert.Equal(t, 2, len(s.state.get(key).History)-1, "two fires after the missed one")
+	assert.Equal(t, "schedule", lastRun(t, s, key).Reason)
+}
+
+func TestResumingPausedTaskDoesNotRecordMissedFire(t *testing.T) {
+	setupSchedulerDataDir(t)
+	now := time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC)
+	s := newPolicyScheduler(t, &now)
+	tc := config.TaskConfig{Name: "t", Every: "5m", Missed: "run_once", Prompt: "p"}
+	s.Reconcile(singleTask(tc))
+	key := "alpha/t"
+	s.mu.Lock()
+	s.fireLocked(key, s.armed[key].spec, "schedule", now, nil)
+	s.mu.Unlock()
+
+	paused := tc
+	paused.Enabled = new(bool)
+	s.Reconcile(singleTask(paused))
+	require.NotContains(t, s.armed, key)
+
+	// Hours later the task is resumed: nothing was missed while it was
+	// paused, so it neither catches up nor records a missed fire, and its
+	// next fire is armed.
+	now = now.Add(7 * time.Hour)
+	s.Reconcile(singleTask(tc))
+	assert.Equal(t, 1, jobCount(t, s, key))
+	assert.Equal(t, domain.TaskRunQueued, lastRun(t, s, key).Status)
+	require.Contains(t, s.armed, key)
+	assert.Equal(t, now.Add(5*time.Minute), s.armed[key].next)
+}
+
 func TestNewTaskDoesNotCatchUp(t *testing.T) {
 	setupSchedulerDataDir(t)
 	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)

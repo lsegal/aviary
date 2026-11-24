@@ -827,6 +827,28 @@ const jobGetWithEvents =
 		};
 	};
 
+test("a job card's wrapped meta line never starts with a separator (#1013)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	const separator = card.getByTestId("job-meta-separator");
+	const pr = card.getByTestId("job-pr");
+	await expect(pr).toContainText("PR #233");
+	// Squeeze the card until the PR wraps onto its own line.
+	await card.evaluate((el) => {
+		(el as HTMLElement).style.width = "90px";
+	});
+	const top = async (l: typeof pr) => (await l.boundingBox())?.y ?? 0;
+	const number = card.getByRole("link", { name: "#218", exact: true });
+	await expect.poll(() => top(pr)).toBeGreaterThan(await top(number));
+	// The separator stays at the end of the line above it.
+	expect(Math.abs((await top(separator)) - (await top(number)))).toBeLessThan(
+		4,
+	);
+});
+
 test("job cards show the transcript in a rich view by default, falling back to raw (#769)", async ({
 	page,
 }) => {

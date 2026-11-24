@@ -24,16 +24,15 @@
 					:title="job.scheduleID">{{ scheduleTask }}</span></template>
 			</p>
 			<p v-else class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500 dark:text-gray-400">
-				<a v-if="job.number && job.repo" :href="job.issueURL || githubURL(job.repo, 'issues', job.number)"
-					target="_blank" rel="noreferrer" class="hover:underline">#{{ job.number }}</a>
-				<template v-if="job.pr">
-					<span>·</span>
-					<PullRequestLink :job="job" />
-				</template>
-				<template v-else-if="job.status !== 'queued' && job.number">
-					<span>·</span>
-					<span>no PR yet</span>
-				</template>
+				<!-- The separator ends the item before it, so a wrapped line never
+					starts with one. -->
+				<span class="inline-flex items-center gap-x-1 whitespace-nowrap">
+					<a v-if="job.number && job.repo" :href="job.issueURL || githubURL(job.repo, 'issues', job.number)"
+						target="_blank" rel="noreferrer" class="hover:underline">#{{ job.number }}</a>
+					<span v-if="job.pr || (job.status !== 'queued' && job.number)" data-testid="job-meta-separator">·</span>
+				</span>
+				<PullRequestLink v-if="job.pr" :job="job" />
+				<span v-else-if="job.status !== 'queued' && job.number">no PR yet</span>
 			</p>
 			<p v-if="waitingText" data-testid="job-waiting" class="text-xs text-amber-700 dark:text-amber-400">
 				{{ waitingText }}
