@@ -218,14 +218,15 @@ export function isWorkflow(task: Pick<AgentTask, "trigger">): boolean {
 }
 
 /**
- * Whether task keeps its prompt when precompiled, with its compiled script
- * beside it to fall back from: a project task or a prompt workflow.
+ * Whether task can be precompiled, keeping its prompt with its compiled
+ * script beside it to fall back from: a prompt task, scheduled or a
+ * workflow, or a project task. A script task has no prompt to compile. It
+ * mirrors config.TaskConfig.PrecompilesBesidePrompt on the server.
  */
 export function precompilesBesidePrompt(
-	task: Pick<AgentTask, "trigger" | "type">,
+	task: Pick<AgentTask, "type">,
 ): boolean {
-	const type = agentTaskType(task.type);
-	return type === "project" || (isWorkflow(task) && type === "prompt");
+	return agentTaskType(task.type) !== "script";
 }
 
 /**
