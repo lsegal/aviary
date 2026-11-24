@@ -141,7 +141,7 @@ test("with the sidebar collapsed, the board's pills open every project and its s
 		page.getByRole("heading", { name: "lsegal/aviary" }),
 	).toBeVisible();
 	await page
-		.getByTestId("page-breadcrumb")
+		.getByTestId("settings-breadcrumb")
 		.getByRole("link", { name: "Code Loop", exact: true })
 		.click();
 	await expect(page).toHaveURL(/\/agents\/coder\/projects(\?.*)?$/);
@@ -159,20 +159,20 @@ test("with the sidebar collapsed, the board's pills open every project and its s
 // shared one leads back to the board everywhere.
 const expectSharedNavOnly = async (page: Page) => {
 	// The project's title is the shared header's last crumb (#1064).
-	const header = page.getByTestId("page-header");
-	await expect(header.getByTestId("page-title")).toHaveText("lsegal/forgo");
+	const header = page.getByTestId("settings-header");
+	await expect(header.getByTestId("settings-title")).toHaveText("lsegal/forgo");
 	await expect(
 		page.getByRole("navigation", { name: "Breadcrumb" }),
 	).toHaveCount(1);
 	await expect(page.getByText("coder · Code Loop")).toHaveCount(0);
 	await expect(header.getByText(/ \/$/)).toHaveCount(0);
-	await expect(page.getByTestId("page-back")).toHaveAccessibleName(
+	await expect(page.getByTestId("settings-back")).toHaveAccessibleName(
 		"Back to Code Loop",
 	);
 };
 
 const backToBoard = async (page: Page) => {
-	await page.getByTestId("page-back").click();
+	await page.getByTestId("settings-back").click();
 	await expect(page).toHaveURL(/\/agents\/coder\/projects(\?.*)?$/);
 	await expect(page.getByRole("heading", { name: "Code Loop" })).toBeVisible();
 	await expect(page.locator("header").getByText("coder /")).toHaveCount(0);
@@ -185,7 +185,7 @@ test("a project page has no breadcrumb of its own, and the shared one leads back
 	await page.goto("/agents/coder/projects/lsegal%2Fforgo");
 	await expectSharedNavOnly(page);
 	await page
-		.getByTestId("page-breadcrumb")
+		.getByTestId("settings-breadcrumb")
 		.getByRole("link", { name: "Code Loop", exact: true })
 		.click();
 	await expect(page).toHaveURL(/\/agents\/coder\/projects(\?.*)?$/);
@@ -292,7 +292,7 @@ test.describe("on a phone", () => {
 		await setup(page, () => []);
 		await page.goto("/agents/coder/projects/lsegal%2Fforgo");
 		await expectSharedNavOnly(page);
-		await expect(page.getByTestId("page-back")).toBeInViewport();
+		await expect(page.getByTestId("settings-back")).toBeInViewport();
 		await backToBoard(page);
 	});
 });

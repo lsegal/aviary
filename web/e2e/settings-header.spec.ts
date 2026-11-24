@@ -57,7 +57,7 @@ function breadcrumb(page: Page) {
 }
 
 function backLink(page: Page) {
-	return page.getByTestId("page-back");
+	return page.getByTestId("settings-back");
 }
 
 test("channel settings link back to the agent and the channel's conversation", async ({
@@ -94,7 +94,7 @@ test("channel settings link back to the agent and the channel's conversation", a
 
 	await backLink(page).click();
 	await expect(page).toHaveURL(/\/agents\/Aviary\/channels\/signal$/);
-	await expect(page.getByTestId("page-title")).toHaveText("signal");
+	await expect(page.getByTestId("settings-title")).toHaveText("signal");
 
 	await page.goBack();
 	await breadcrumb(page).getByRole("link", { name: "signal" }).click();
@@ -280,7 +280,7 @@ test("the header fits a phone without horizontal overflow", async ({
 		"/system/settings",
 	]) {
 		await page.goto(url);
-		const header = page.getByTestId("page-header");
+		const header = page.getByTestId("settings-header");
 		await expect(breadcrumb(page)).toBeVisible();
 		await expect(backLink(page)).toBeInViewport();
 		const overflow = await header.evaluate(

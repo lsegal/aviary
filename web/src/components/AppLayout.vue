@@ -342,12 +342,12 @@
     </nav>
 
     <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <PageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back" :title-link="titleLink"
+      <SettingsPageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back" :title-link="titleLink"
         :switcher="leafSwitcher">
         <template v-if="$slots['header-icon']" #icon><slot name="header-icon" /></template>
         <template v-if="$slots['header-actions']" #actions><slot name="header-actions" /></template>
         <slot name="header" />
-      </PageHeader>
+      </SettingsPageHeader>
       <!-- The page fills what the header leaves. -->
       <div class="flex min-h-0 flex-1 flex-col">
         <slot />
@@ -444,7 +444,10 @@ import ConnectionIndicator from "./ConnectionIndicator.vue";
 import AgentTaskList from "./sidebar/AgentTaskList.vue";
 import SidebarGearMenu from "./sidebar/SidebarGearMenu.vue";
 import SidebarRailItem, { type RailFlyoutItem } from "./sidebar/SidebarRailItem.vue";
-import PageHeader, { type PageBack, type PageCrumb } from "./ui/PageHeader.vue";
+import SettingsPageHeader, {
+	type SettingsBack,
+	type SettingsCrumb,
+} from "./settings/SettingsPageHeader.vue";
 import SystemPageIcon from "./SystemPageIcon.vue";
 import ToastStack from "./ui/ToastStack.vue";
 import NavEditDialog, { type NavEditGroup } from "./nav/NavEditDialog.vue";
@@ -491,14 +494,14 @@ const props = defineProps<{
 	 * The page header's crumbs (#1064), for a page the route alone cannot
 	 * name, such as a settings form; by default the route's (#1036).
 	 */
-	crumbs?: PageCrumb[];
+	crumbs?: SettingsCrumb[];
 	/** The header's back link, when not the nearest linking crumb. */
-	back?: PageBack | null;
+	back?: SettingsBack | null;
 	/**
 	 * Crumbs below the route's, for a panel its query opens; the route's
 	 * last crumb then links to from, the page without the panel.
 	 */
-	trail?: { from: RouteLocationRaw; crumbs: PageCrumb[] } | null;
+	trail?: { from: RouteLocationRaw; crumbs: SettingsCrumb[] } | null;
 	/** An outside page the header's title opens in a new tab. */
 	titleLink?: { href: string; title: string } | null;
 }>();
@@ -1098,7 +1101,7 @@ const navEditGroups = computed<NavEditGroup[]>(() => {
 // shows with the sidebar collapsed and on narrow screens too. An agent's
 // crumb opens its first page in the user's order. Every nested page shows
 // it in the one shared header (#1064); a top-level page has none.
-const headerCrumbs = computed((): PageCrumb[] => {
+const headerCrumbs = computed((): SettingsCrumb[] => {
 	if (props.crumbs) return props.crumbs;
 	const crumbs = routeCrumbs(route.path, {
 		agentHome,

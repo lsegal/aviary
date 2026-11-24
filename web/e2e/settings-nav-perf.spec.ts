@@ -59,7 +59,7 @@ async function clickSettings(page: Page) {
 					const start = performance.now();
 					const shown = () =>
 						location.pathname === "/system/settings" &&
-						document.querySelector("[data-testid=page-title]");
+						document.querySelector("[data-testid=settings-title]");
 					const check = () => {
 						if (shown()) resolve(performance.now() - start);
 						else requestAnimationFrame(check);
@@ -72,7 +72,7 @@ async function clickSettings(page: Page) {
 	});
 	await item.click();
 	await expect(page).toHaveURL("/system/settings");
-	await expect(page.getByTestId("page-title")).toBeVisible();
+	await expect(page.getByTestId("settings-title")).toBeVisible();
 	return page.evaluate(
 		() => (window as unknown as { settingsNav: Promise<number> }).settingsNav,
 	);

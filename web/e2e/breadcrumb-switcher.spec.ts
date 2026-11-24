@@ -59,12 +59,12 @@ async function mockAviary(page: Page) {
 /** Opens url once its breadcrumb shows; a cold dev server compiles slowly. */
 async function open(page: Page, url: string) {
 	await page.goto(url);
-	await expect(page.getByTestId("page-title")).toBeVisible({ timeout: 15_000 });
+	await expect(page.getByTestId("settings-title")).toBeVisible({ timeout: 15_000 });
 }
 
 function trigger(page: Page) {
 	return page
-		.getByTestId("page-breadcrumb")
+		.getByTestId("settings-breadcrumb")
 		.getByTestId("crumb-switcher-trigger");
 }
 
@@ -120,7 +120,7 @@ test("a project leaf opens a focused, filterable switcher of the agent's project
 		`/agents/Aviary/projects/${encodeURIComponent(LONG_PROJECT)}?state=running`,
 	);
 	await expect(popover).toHaveCount(0);
-	await expect(page.getByTestId("page-title")).toHaveText(LONG_PROJECT);
+	await expect(page.getByTestId("settings-title")).toHaveText(LONG_PROJECT);
 });
 
 test("a job page's leaf is the job, so it has no switcher", async ({
@@ -193,7 +193,7 @@ test("the Files page's leaf switches between files, marking built-in ones", asyn
 }) => {
 	await open(page, "/agents/Aviary/files?file=AGENTS.md");
 	await expect(
-		page.getByTestId("page-breadcrumb").getByRole("listitem"),
+		page.getByTestId("settings-breadcrumb").getByRole("listitem"),
 	).toHaveText(["Aviary", "Files", "AGENTS.md"]);
 	await trigger(page).click();
 	await expect(page.getByTestId("crumb-switcher-title")).toHaveText(
@@ -210,7 +210,7 @@ test("the Files page's leaf switches between files, marking built-in ones", asyn
 	await page.getByTestId("crumb-switcher-search").fill("notes");
 	await page.keyboard.press("Enter");
 	await expect(page).toHaveURL("/agents/Aviary/files?file=notes.md");
-	await expect(page.getByTestId("page-title")).toHaveText("notes.md");
+	await expect(page.getByTestId("settings-title")).toHaveText("notes.md");
 });
 
 test("the switcher fits a phone screen and truncates long names", async ({
