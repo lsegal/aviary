@@ -1299,7 +1299,6 @@ type taskScheduleArgs struct {
 	Target       string `json:"target,omitempty"`
 	TriggerType  string `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
 	Precompile   *bool  `json:"precompile,omitempty"`
-	RunDiscovery bool   `json:"run_discovery,omitempty"`
 	taskTriggerArgs
 }
 
@@ -1370,7 +1369,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
-		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, channel:<channel name> (e.g. channel:Team Slack), which lands in that channel's own session, or codeloop:<project>#<number> (e.g. codeloop:owner/repo#123), which hands the output to that Code Loop job like an allowed commenter's comment: a running or waiting job is woken with it, a paused or queued job sees it when it next runs, and a completed job rejects it — an agent name like \"assistant\" is not a valid target. Prompt tasks may be precomputed into script tasks automatically when scheduler.precompute_tasks is enabled; a project task keeps its prompt and, when precompiled, runs its compiled script in the clone, falling back to the model if the script fails. Set precompile=false to opt out when the user's intent implies the task should stay as a prompt task; make that decision from the overall request, not direct keyword extraction. Instead of schedule, a recurring task may use trigger=interval with every=<duration> (e.g. 30m, 2h, 1d), trigger=daily with at=HH:MM (comma-separate several times), trigger=weekly with days=mon,wed and at=HH:MM, or trigger=once with start_at. timezone=<IANA zone> sets the zone triggers are evaluated in; set it only when the user names a zone. overlap=skip drops a fire while the previous run is still active (default queue); missed=run_once runs one catch-up fire for runs missed while Aviary was stopped or the machine slept (default skip). Use task_preview to check the next fires. trigger=message defines a workflow instead: it runs when a message arrives on the agent's channel=<channel name> (optionally only on entry=<conversation ID>, such as a Slack channel ID or Signal number or group; see workflow_entries) whose text matches match=<case-insensitive wildcard; * and ?; empty matches every message>, and it replaces the agent's own chat reply to that message. Workflows take no schedule; target may also be \"reply\" to answer in the triggering conversation, model overrides the agent's model, and overlap applies as for scheduled tasks. A prompt workflow keeps its prompt; with precompile (default scheduler.precompute_tasks) a deterministic one runs a compiled script on each matching message, reading it from the Lua global trigger, and falls back to the model if the script fails. Use workflow_preview to test a match against recent messages. type=project runs content as a Code Loop job on the board of project=<watched project> (owner/repo) in an isolated clone, with cli=<model spec such as claude:opus> or the project's agent; it needs a schedule trigger.",
+		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, channel:<channel name> (e.g. channel:Team Slack), which lands in that channel's own session, or codeloop:<project>#<number> (e.g. codeloop:owner/repo#123), which hands the output to that Code Loop job like an allowed commenter's comment: a running or waiting job is woken with it, a paused or queued job sees it when it next runs, and a completed job rejects it — an agent name like \"assistant\" is not a valid target. A recurring prompt or project task keeps its prompt and, with precompile (default scheduler.precompute_tasks), compiles a script beside it in the background; when its prompt is deterministic, runs execute that script (a project task in its clone) and fall back to the model if the script fails. Set precompile=false to opt out when the user's intent implies the task should always run on the model; make that decision from the overall request, not direct keyword extraction. One-time tasks (in, or neither in nor a schedule) always run their prompt on the model. Instead of schedule, a recurring task may use trigger=interval with every=<duration> (e.g. 30m, 2h, 1d), trigger=daily with at=HH:MM (comma-separate several times), trigger=weekly with days=mon,wed and at=HH:MM, or trigger=once with start_at. timezone=<IANA zone> sets the zone triggers are evaluated in; set it only when the user names a zone. overlap=skip drops a fire while the previous run is still active (default queue); missed=run_once runs one catch-up fire for runs missed while Aviary was stopped or the machine slept (default skip). Use task_preview to check the next fires. trigger=message defines a workflow instead: it runs when a message arrives on the agent's channel=<channel name> (optionally only on entry=<conversation ID>, such as a Slack channel ID or Signal number or group; see workflow_entries) whose text matches match=<case-insensitive wildcard; * and ?; empty matches every message>, and it replaces the agent's own chat reply to that message. Workflows take no schedule; target may also be \"reply\" to answer in the triggering conversation, model overrides the agent's model, and overlap applies as for scheduled tasks. A prompt workflow keeps its prompt; with precompile (default scheduler.precompute_tasks) a deterministic one runs a compiled script on each matching message, reading it from the Lua global trigger, and falls back to the model if the script fails. Use workflow_preview to test a match against recent messages. type=project runs content as a Code Loop job on the board of project=<watched project> (owner/repo) in an isolated clone, with cli=<model spec such as claude:opus> or the project's agent; it needs a schedule trigger.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
 		d := GetDeps()
@@ -1440,86 +1439,13 @@ func registerTaskTools(s *sdkmcp.Server) {
 		if _, err := config.ParseTaskTarget(target); err != nil {
 			return nil, struct{}{}, err
 		}
-		effectiveTarget := target
-		if recurring {
-			effectiveTarget = firstNonEmpty(target, defaultScheduledTaskRoute(ctx, loadedCfg, args.Agent))
-		}
-		precomputeEnabled := config.EffectivePrecomputeTasks(loadedCfg.Scheduler)
-		shouldPrecompute := precomputeEnabled
+		// A recurring prompt or project task keeps its prompt and, when
+		// precompiled, runs a compiled script beside it, falling back to the
+		// model if the script fails. The choice defaults to
+		// scheduler.precompute_tasks.
+		shouldPrecompute := config.EffectivePrecomputeTasks(loadedCfg.Scheduler)
 		if args.Precompile != nil {
 			shouldPrecompute = *args.Precompile
-		}
-		if taskType == "prompt" && promptText != "" && scriptText == "" {
-			trigger := "immediate"
-			if strings.TrimSpace(args.In) != "" {
-				trigger = "delay"
-			}
-			if recurring {
-				trigger = "schedule"
-			}
-			tracker := newTaskCompileTracker(args.Agent, strings.TrimSpace(args.Name), taskType, promptText, effectiveTarget, trigger, args.RunDiscovery)
-			slog.Info(
-				"task_compile: schedule precompute decision",
-				"component", "task_compile",
-				"agent", args.Agent,
-				"target", effectiveTarget,
-				"precompute_enabled", precomputeEnabled,
-				"precompile_requested", args.Precompile,
-				"should_precompute", shouldPrecompute,
-				"run_discovery", args.RunDiscovery,
-			)
-			if shouldPrecompute {
-				compiled, compileErr := resolveTryCompileTaskPrompt()(withTaskCompileTracker(ctx, tracker), args.Agent, promptText, effectiveTarget, args.RunDiscovery)
-				if compileErr != nil {
-					tracker.record.Status = domain.TaskCompileStatusFailed
-					tracker.record.Reason = compileErr.Error()
-					slog.Warn("task_compile: precompute errored; continuing with prompt task", "component", "task_compile", "agent", args.Agent, "error", compileErr)
-				} else if compiled.Type == "script" && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
-					taskType = "script"
-					scriptText = strings.TrimSpace(compiled.Script)
-					tracker.record.Status = domain.TaskCompileStatusSucceeded
-					tracker.record.ResultTaskType = "script"
-					tracker.record.NeedsDiscovery = compiled.NeedsDiscovery
-					tracker.record.Validated = compiled.Validated
-					tracker.record.Reason = strings.TrimSpace(compiled.Reason)
-					tracker.record.Steps = toDomainCompileSteps(compiled.Steps)
-					tracker.record.Script = scriptText
-					slog.Info(
-						"task_compile: promoted prompt to script",
-						"component", "task_compile",
-						"agent", args.Agent,
-						"validated", compiled.Validated,
-						"steps", len(compiled.Steps),
-						"reason", strings.TrimSpace(compiled.Reason),
-					)
-				} else {
-					tracker.record.Status = domain.TaskCompileStatusSkipped
-					tracker.record.ResultTaskType = compiled.Type
-					tracker.record.NeedsDiscovery = compiled.NeedsDiscovery
-					tracker.record.Validated = compiled.Validated
-					tracker.record.Reason = strings.TrimSpace(compiled.Reason)
-					tracker.record.Steps = toDomainCompileSteps(compiled.Steps)
-					slog.Info(
-						"task_compile: kept prompt after precompute",
-						"component", "task_compile",
-						"agent", args.Agent,
-						"compiled_type", compiled.Type,
-						"needs_discovery", compiled.NeedsDiscovery,
-						"reason", strings.TrimSpace(compiled.Reason),
-					)
-				}
-				if persistErr := tracker.persist(); persistErr != nil {
-					slog.Warn("task_compile: failed to persist compile record", "component", "task_compile", "agent", args.Agent, "error", persistErr)
-				}
-			} else {
-				slog.Info(
-					"task_compile: skipped precompute",
-					"component", "task_compile",
-					"agent", args.Agent,
-					"precompute_enabled", precomputeEnabled,
-					"precompile_requested", args.Precompile,
-				)
-			}
 		}
 		triggerType := strings.ToLower(strings.TrimSpace(args.TriggerType))
 		if triggerType != "" && triggerType != "cron" && triggerType != "watch" {
@@ -1580,7 +1506,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 				Project:  strings.TrimSpace(args.Project),
 				Model:    strings.TrimSpace(args.Model),
 			}
-			if taskType == "project" {
+			if nextTask.PrecompilesBesidePrompt() {
 				nextTask.Precompile = &shouldPrecompute
 			}
 			// Check whether a task with this name already exists (for action message).
@@ -1616,6 +1542,11 @@ func registerTaskTools(s *sdkmcp.Server) {
 			compileNote := ""
 			if taskType == "project" && shouldPrecompute {
 				compileNote = projectTaskCompileNote(ctx, args.Agent, taskName)
+			} else if EffectiveTaskPrecompile(nextTask) {
+				// Compiling calls the model several times, so it runs in the
+				// background; a run that comes first compiles before it starts.
+				compileTaskInBackground(args.Agent, taskName, "schedule")
+				compileNote = " Precompiling: when its prompt is deterministic, runs execute the compiled script and fall back to the model if it fails."
 			}
 			if nextTask.Schedule != "" {
 				return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.%s", taskName, action, args.Agent, nextTask.Schedule, compileNote))
@@ -3440,276 +3371,16 @@ func registerServerTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "config_task_convert_to_script",
-		Description: "Attempt to compile a PROMPT-type task to a Lua script asynchronously; returns a compile ID immediately. For a project task, a prompt workflow, or a prompt task that sets precompile, recompiles its script beside its prompt instead, keeping its type: it discards the current, stale or set-aside script and turns precompile on.",
+		Description: "Recompile a prompt task, project task or prompt workflow in the background, keeping its type and prompt: it discards the current, stale or set-aside compiled script, turns precompile on, and compiles a fresh script beside the prompt. Runs execute that script and fall back to the model if it fails. Script tasks have no prompt to compile.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args configTaskConvertToScriptArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "settings", "tool", "config_task_convert_to_script", "agent", args.Agent, "task", args.Task)
-		cfg, err := config.Load("")
-		if err != nil {
+		// A prompt, project or workflow task keeps its prompt and stores its
+		// compiled script beside it, so a run whose script fails falls back to
+		// the model. This recompiles it from scratch, turning precompile on.
+		if err := RecompileTask(args.Agent, args.Task); err != nil {
 			return nil, struct{}{}, err
 		}
-		// A project task, a workflow, or a prompt task that opted into
-		// precompile keeps its prompt and stores its compiled script beside
-		// it, so a run whose script fails falls back to the model.
-		// Converting one recompiles it from scratch, turning precompile on;
-		// any other prompt task becomes a script task.
-		if _, _, task, findErr := findConfiguredTask(args.Agent, args.Task); findErr == nil && task.PrecompilesBesidePrompt() &&
-			(task.Precompile != nil || task.IsWorkflow() || strings.EqualFold(task.Type, "project")) {
-			if err := RecompileTask(args.Agent, args.Task); err != nil {
-				return nil, struct{}{}, err
-			}
-			return text(fmt.Sprintf("recompiling task %q", args.Task))
-		}
-		agentIdx := -1
-		for i, a := range cfg.Agents {
-			if a.Name == args.Agent {
-				agentIdx = i
-				break
-			}
-		}
-		if agentIdx < 0 {
-			return nil, struct{}{}, fmt.Errorf("agent %q not found", args.Agent)
-		}
-
-		// Locate task and determine prompt/body and whether it's file-backed.
-		taskIdx := -1
-		for i, t := range cfg.Agents[agentIdx].Tasks {
-			if t.Name == args.Task {
-				taskIdx = i
-				break
-			}
-		}
-		if taskIdx < 0 {
-			// Try to find via markdown files as a fallback.
-			tasksDir := config.AgentTasksDir(cfg.Agents[agentIdx])
-			pattern := filepath.Join(tasksDir, "*.md")
-			files, gerr := filepath.Glob(pattern)
-			if gerr != nil {
-				return nil, struct{}{}, fmt.Errorf("globbing task files: %w", gerr)
-			}
-			found := false
-			var taskCfg config.TaskConfig
-			for _, f := range files {
-				tc, terr := config.LoadMarkdownTask(f)
-				if terr != nil {
-					continue
-				}
-				if tc.Name == args.Task {
-					taskCfg = tc
-					found = true
-					break
-				}
-			}
-			if !found {
-				return nil, struct{}{}, fmt.Errorf("task %q not found in agent %q", args.Task, args.Agent)
-			}
-			// For file-backed tasks found via file, treat as file-backed and use that prompt body.
-			prompt := taskCfg.Prompt
-			target := taskCfg.Target
-			tracker := newTaskCompileTracker(args.Agent, args.Task, "prompt", prompt, target, "manual", false)
-			if err := tracker.persist(); err != nil {
-				slog.Warn("task_compile: failed to persist initial record", "component", "task_compile", "agent", args.Agent, "err", err)
-			}
-			go func() {
-				ctx2 := withTaskCompileTracker(context.Background(), tracker)
-				compiled, cerr := resolveTryCompileTaskPrompt()(ctx2, args.Agent, prompt, target, false)
-				if cerr != nil {
-					tracker.record.Status = domain.TaskCompileStatusFailed
-					tracker.record.Reason = cerr.Error()
-					_ = tracker.persist()
-					return
-				}
-				tracker.record.ResultTaskType = compiled.Type
-				tracker.record.NeedsDiscovery = compiled.NeedsDiscovery
-				tracker.record.Validated = compiled.Validated
-				tracker.record.Reason = strings.TrimSpace(compiled.Reason)
-				tracker.record.Steps = toDomainCompileSteps(compiled.Steps)
-				tracker.record.Script = strings.TrimSpace(compiled.Script)
-				if compiled.Type == "script" && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
-					// Overwrite the existing markdown file with the script body.
-					nextTask := taskCfg
-					nextTask.Type = "script"
-					nextTask.Prompt = strings.TrimSpace(compiled.Script)
-					tasksDir := config.AgentTasksDir(cfg.Agents[agentIdx])
-					if _, serr := config.SaveMarkdownTask(tasksDir, nextTask); serr != nil {
-						tracker.record.Status = domain.TaskCompileStatusFailed
-						tracker.record.Reason = serr.Error()
-						_ = tracker.persist()
-						return
-					}
-					tracker.record.Status = domain.TaskCompileStatusSucceeded
-					_ = tracker.persist()
-					// Reload and reconcile runtime state.
-					reloadedCfg, reloadErr := config.Load("")
-					if reloadErr == nil {
-						deps := GetDeps()
-						if deps != nil && deps.Agents != nil {
-							deps.Agents.Reconcile(reloadedCfg)
-						}
-						if deps != nil && deps.Scheduler != nil {
-							deps.Scheduler.Reconcile(reloadedCfg)
-						}
-					}
-					return
-				}
-				// If not promoted to script, mark as skipped.
-				tracker.record.Status = domain.TaskCompileStatusSkipped
-				_ = tracker.persist()
-			}()
-			return text(tracker.record.ID)
-		}
-
-		// Found inline task in aviary.yaml
-		task := cfg.Agents[agentIdx].Tasks[taskIdx]
-		if task.FromFile {
-			// If FromFile is true, treat similar to file-backed case by loading file.
-			tasksDir := config.AgentTasksDir(cfg.Agents[agentIdx])
-			pattern := filepath.Join(tasksDir, "*.md")
-			files, gerr := filepath.Glob(pattern)
-			if gerr != nil {
-				return nil, struct{}{}, fmt.Errorf("globbing task files: %w", gerr)
-			}
-			found := false
-			var taskCfg config.TaskConfig
-			for _, f := range files {
-				tc, terr := config.LoadMarkdownTask(f)
-				if terr != nil {
-					continue
-				}
-				if tc.Name == args.Task {
-					taskCfg = tc
-					found = true
-					break
-				}
-			}
-			if !found {
-				return nil, struct{}{}, fmt.Errorf("task %q not found in agent %q", args.Task, args.Agent)
-			}
-			prompt := taskCfg.Prompt
-			target := taskCfg.Target
-			tracker := newTaskCompileTracker(args.Agent, args.Task, "prompt", prompt, target, "manual", false)
-			if err := tracker.persist(); err != nil {
-				slog.Warn("task_compile: failed to persist initial record", "component", "task_compile", "agent", args.Agent, "err", err)
-			}
-			go func() {
-				ctx2 := withTaskCompileTracker(context.Background(), tracker)
-				compiled, cerr := resolveTryCompileTaskPrompt()(ctx2, args.Agent, prompt, target, false)
-				if cerr != nil {
-					tracker.record.Status = domain.TaskCompileStatusFailed
-					tracker.record.Reason = cerr.Error()
-					_ = tracker.persist()
-					return
-				}
-				tracker.record.ResultTaskType = compiled.Type
-				tracker.record.NeedsDiscovery = compiled.NeedsDiscovery
-				tracker.record.Validated = compiled.Validated
-				tracker.record.Reason = strings.TrimSpace(compiled.Reason)
-				tracker.record.Steps = toDomainCompileSteps(compiled.Steps)
-				tracker.record.Script = strings.TrimSpace(compiled.Script)
-				if compiled.Type == "script" && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
-					// Update the markdown file backing this task with the script.
-					nextTask := taskCfg
-					nextTask.Type = "script"
-					nextTask.Prompt = strings.TrimSpace(compiled.Script)
-					tasksDir := config.AgentTasksDir(cfg.Agents[agentIdx])
-					if _, serr := config.SaveMarkdownTask(tasksDir, nextTask); serr != nil {
-						tracker.record.Status = domain.TaskCompileStatusFailed
-						tracker.record.Reason = serr.Error()
-						_ = tracker.persist()
-						return
-					}
-					tracker.record.Status = domain.TaskCompileStatusSucceeded
-					_ = tracker.persist()
-					reloadedCfg, reloadErr := config.Load("")
-					if reloadErr == nil {
-						deps := GetDeps()
-						if deps != nil && deps.Agents != nil {
-							deps.Agents.Reconcile(reloadedCfg)
-						}
-						if deps != nil && deps.Scheduler != nil {
-							deps.Scheduler.Reconcile(reloadedCfg)
-						}
-					}
-					return
-				}
-				tracker.record.Status = domain.TaskCompileStatusSkipped
-				_ = tracker.persist()
-			}()
-			return text(tracker.record.ID)
-		}
-
-		// Inline prompt task: attempt to compile and, on success, update aviary.yaml
-		prompt := task.Prompt
-		target := task.Target
-		tracker := newTaskCompileTracker(args.Agent, args.Task, "prompt", prompt, target, "manual", false)
-		if err := tracker.persist(); err != nil {
-			slog.Warn("task_compile: failed to persist initial record", "component", "task_compile", "agent", args.Agent, "err", err)
-		}
-		go func() {
-			ctx2 := withTaskCompileTracker(context.Background(), tracker)
-			compiled, cerr := resolveTryCompileTaskPrompt()(ctx2, args.Agent, prompt, target, false)
-			if cerr != nil {
-				tracker.record.Status = domain.TaskCompileStatusFailed
-				tracker.record.Reason = cerr.Error()
-				_ = tracker.persist()
-				return
-			}
-			tracker.record.ResultTaskType = compiled.Type
-			tracker.record.NeedsDiscovery = compiled.NeedsDiscovery
-			tracker.record.Validated = compiled.Validated
-			tracker.record.Reason = strings.TrimSpace(compiled.Reason)
-			tracker.record.Steps = toDomainCompileSteps(compiled.Steps)
-			tracker.record.Script = strings.TrimSpace(compiled.Script)
-			if compiled.Type == "script" && strings.TrimSpace(compiled.Script) != "" && !compiled.NeedsDiscovery {
-				// Update inline task in aviary.yaml to script type and store Lua in Prompt
-				cfg2, lerr := config.Load("")
-				if lerr != nil {
-					tracker.record.Status = domain.TaskCompileStatusFailed
-					tracker.record.Reason = lerr.Error()
-					_ = tracker.persist()
-					return
-				}
-				agentIdx2 := -1
-				for i, a := range cfg2.Agents {
-					if a.Name == args.Agent {
-						agentIdx2 = i
-						break
-					}
-				}
-				if agentIdx2 < 0 {
-					tracker.record.Status = domain.TaskCompileStatusFailed
-					tracker.record.Reason = fmt.Sprintf("agent %q not found during save", args.Agent)
-					_ = tracker.persist()
-					return
-				}
-				for i := range cfg2.Agents[agentIdx2].Tasks {
-					if cfg2.Agents[agentIdx2].Tasks[i].Name == args.Task {
-						cfg2.Agents[agentIdx2].Tasks[i].Type = "script"
-						cfg2.Agents[agentIdx2].Tasks[i].Prompt = strings.TrimSpace(compiled.Script)
-						break
-					}
-				}
-				if serr := config.Save("", cfg2); serr != nil {
-					tracker.record.Status = domain.TaskCompileStatusFailed
-					tracker.record.Reason = serr.Error()
-					_ = tracker.persist()
-					return
-				}
-				tracker.record.Status = domain.TaskCompileStatusSucceeded
-				_ = tracker.persist()
-				// Reconcile runtime state
-				deps := GetDeps()
-				if deps != nil && deps.Agents != nil {
-					deps.Agents.Reconcile(cfg2)
-				}
-				if deps != nil && deps.Scheduler != nil {
-					deps.Scheduler.Reconcile(cfg2)
-				}
-				return
-			}
-			tracker.record.Status = domain.TaskCompileStatusSkipped
-			_ = tracker.persist()
-		}()
-		return text(tracker.record.ID)
+		return text(fmt.Sprintf("recompiling task %q", args.Task))
 	})
 }
 

@@ -1063,6 +1063,8 @@ func TestTaskSchedule_NilScheduler(t *testing.T) {
 	old := GetDeps()
 	SetDeps(&Deps{Scheduler: nil})
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })

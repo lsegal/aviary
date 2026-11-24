@@ -592,6 +592,8 @@ func TestTaskScheduleRecurringCreatesConfiguredTask(t *testing.T) {
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -651,6 +653,8 @@ func TestTaskScheduleRecurringAcceptsStandardCron(t *testing.T) {
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -729,7 +733,7 @@ func TestTaskListReturnsConfiguredTasks(t *testing.T) {
 
 }
 
-func TestTaskSchedule_AutoCompilesPromptTaskToScript(t *testing.T) {
+func TestTaskSchedule_PrecompilesPromptTaskBesidePrompt(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
 	store.SetDataDir(filepath.Join(base, "aviary"))
@@ -740,6 +744,8 @@ func TestTaskSchedule_AutoCompilesPromptTaskToScript(t *testing.T) {
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -787,6 +793,8 @@ func TestTaskSchedule_AutoCompilesPromptTaskToScript(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")
+	assert.Contains(t, out, "Precompiling")
+	backgroundCompiles.Wait()
 
 	loaded, err := config.Load("")
 	assert.NoError(t, err)
@@ -794,8 +802,11 @@ func TestTaskSchedule_AutoCompilesPromptTaskToScript(t *testing.T) {
 	require.Len(t, loaded.Agents[0].Tasks, 1)
 
 	got := loaded.Agents[0].Tasks[0]
-	assert.Equal(t, "script", got.Type)
-	assert.Contains(t, got.Prompt, "compiled")
+	assert.Equal(t, "prompt", got.Type, "the task keeps its prompt to fall back to")
+	assert.Equal(t, "check subscript uptime", got.Prompt)
+	require.NotNil(t, got.Precompile)
+	assert.True(t, *got.Precompile)
+	assert.Contains(t, got.Compiled, "compiled", "the script is compiled beside the prompt")
 }
 
 func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
@@ -809,6 +820,8 @@ func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -849,6 +862,7 @@ func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")
+	backgroundCompiles.Wait()
 
 	loaded, err := config.Load("")
 	assert.NoError(t, err)
@@ -858,77 +872,8 @@ func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 	got := loaded.Agents[0].Tasks[0]
 	assert.Equal(t, "prompt", got.Type)
 	assert.Equal(t, "review the latest emails and decide what matters", got.Prompt)
+	assert.Empty(t, got.Compiled, "a nondeterministic prompt runs on the model")
 
-}
-
-func TestTaskSchedule_ExplicitPromptTypeStillAutoCompiles(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	store.SetDataDir(filepath.Join(base, "aviary"))
-	t.Cleanup(func() { store.SetDataDir("") })
-	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	prevCompiler := tryCompileTaskPromptFunc
-	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
-	called := false
-	tryCompileTaskPromptFunc = func(_ context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
-		called = true
-		assert.Equal(t, "bot", agentName)
-		assert.Equal(t, "check subscript uptime", prompt)
-		assert.Empty(t, target)
-		assert.False(t, runDiscovery)
-		return &compiledTaskResult{
-			Type:   "script",
-			Script: "print('compiled')\n",
-		}, nil
-	}
-
-	cfg := &config.Config{
-		Agents: []config.AgentConfig{{
-			Name:  "bot",
-			Model: "test/x",
-		}},
-	}
-	err = config.Save("", cfg)
-	assert.NoError(t, err)
-
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(cfg)
-	s, err := scheduler.New(mgr, 1)
-	assert.NoError(t, err)
-
-	t.Cleanup(s.Stop)
-	s.Reconcile(cfg)
-	SetDeps(&Deps{Agents: mgr, Scheduler: s})
-
-	d := NewDispatcher("https://localhost:16677", "")
-	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
-		"agent":    "bot",
-		"name":     "forced-prompt",
-		"type":     "prompt",
-		"content":  "check subscript uptime",
-		"schedule": "0 */10 * * * *",
-	})
-	assert.NoError(t, err)
-	assert.Contains(t, out, "Recurring task")
-	assert.True(t, called)
-
-	loaded, err := config.Load("")
-	assert.NoError(t, err)
-	require.Len(t, loaded.Agents, 1)
-	require.Len(t, loaded.Agents[0].Tasks, 1)
-
-	got := loaded.Agents[0].Tasks[0]
-	assert.Equal(t, "script", got.Type)
-	assert.Contains(t, got.Prompt, "compiled")
 }
 
 func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
@@ -939,6 +884,8 @@ func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -987,6 +934,7 @@ func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")
+	backgroundCompiles.Wait()
 	assert.True(t, called)
 }
 
@@ -1001,6 +949,8 @@ func TestTaskSchedule_PrecomputeDisabledSkipsCompilation(t *testing.T) {
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -1055,6 +1005,8 @@ func TestTaskSchedule_PrecomputeDisabledSkipsCompilation(t *testing.T) {
 	got := loaded.Agents[0].Tasks[0]
 	assert.Equal(t, "prompt", got.Type)
 	assert.Equal(t, "check subscript uptime", got.Prompt)
+	require.NotNil(t, got.Precompile)
+	assert.False(t, *got.Precompile)
 
 }
 
@@ -1069,6 +1021,8 @@ func TestTaskSchedule_PrecompileFalseSkipsCompilation(t *testing.T) {
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -1122,6 +1076,8 @@ func TestTaskSchedule_PrecompileFalseSkipsCompilation(t *testing.T) {
 	got := loaded.Agents[0].Tasks[0]
 	assert.Equal(t, "prompt", got.Type)
 	assert.Equal(t, "check subscript uptime", got.Prompt)
+	require.NotNil(t, got.Precompile)
+	assert.False(t, *got.Precompile)
 }
 
 func TestTaskSchedule_RejectsLegacyStructuredTaskPayload(t *testing.T) {
@@ -1132,6 +1088,8 @@ func TestTaskSchedule_RejectsLegacyStructuredTaskPayload(t *testing.T) {
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -1230,6 +1188,8 @@ func TestTaskScheduleRejectsMixedRecurringAndDelayArgs(t *testing.T) {
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -1276,6 +1236,8 @@ func TestTaskSchedule_OneShotUsesBareNamedTaskID(t *testing.T) {
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -1320,6 +1282,8 @@ func TestTaskSchedule_OneShotGeneratedTaskIDIsNotAgentPrefixed(t *testing.T) {
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -2952,6 +2916,8 @@ func TestTaskCompileScriptIsNotExposedAndTaskScheduleStillPrecomputes(t *testing
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -3010,13 +2976,14 @@ func TestTaskCompileScriptIsNotExposedAndTaskScheduleStillPrecomputes(t *testing
 	})
 	require.NoError(t, err)
 	assert.Contains(t, out, "Recurring task")
+	backgroundCompiles.Wait()
 
 	loaded, err := config.Load("")
 	require.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
-	assert.Equal(t, "script", loaded.Agents[0].Tasks[0].Type)
-	assert.Contains(t, loaded.Agents[0].Tasks[0].Prompt, `print('compiled')`)
+	assert.Equal(t, "prompt", loaded.Agents[0].Tasks[0].Type)
+	assert.Contains(t, loaded.Agents[0].Tasks[0].Compiled, `print('compiled')`)
 }
 
 func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T) {
@@ -3030,6 +2997,8 @@ func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
@@ -3075,16 +3044,18 @@ func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T
 	firstOut, err := d.CallTool(context.Background(), "task_schedule", args)
 	require.NoError(t, err)
 	assert.Contains(t, firstOut, "Recurring task")
+	backgroundCompiles.Wait()
 	secondOut, err := d.CallTool(context.Background(), "task_schedule", args)
 	require.NoError(t, err)
 	assert.Contains(t, secondOut, "updated")
+	backgroundCompiles.Wait()
 
 	loaded, err := config.Load("")
 	require.NoError(t, err)
 	require.Len(t, loaded.Agents, 1)
 	require.Len(t, loaded.Agents[0].Tasks, 1)
-	assert.Equal(t, "script", loaded.Agents[0].Tasks[0].Type)
-	assert.Contains(t, loaded.Agents[0].Tasks[0].Prompt, `print('compiled')`)
+	assert.Equal(t, "prompt", loaded.Agents[0].Tasks[0].Type)
+	assert.Contains(t, loaded.Agents[0].Tasks[0].Compiled, `print('compiled')`)
 }
 
 func TestTaskScheduleUnnamedRecurringTaskReusesMatchingGeneratedTask(t *testing.T) {
@@ -3098,6 +3069,8 @@ func TestTaskScheduleUnnamedRecurringTaskReusesMatchingGeneratedTask(t *testing.
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })

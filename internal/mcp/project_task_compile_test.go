@@ -110,6 +110,29 @@ func TestTaskScheduleSavesPrecompiledProjectTask(t *testing.T) {
 	assert.Len(t, *prompts, 1, "a project task with precompile off is not compiled")
 }
 
+func TestConvertToScriptCompilesPromptTaskBesidePrompt(t *testing.T) {
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x", Tasks: []config.TaskConfig{{
+		Name: "uptime", Prompt: "Check uptime", Schedule: "0 */10 * * * *",
+	}}}}}
+	setupProjectTaskCompile(t, cfg, compiledScript(`print("up")`))
+
+	out, err := NewDispatcher("https://localhost:16677", "").CallTool(context.Background(), "config_task_convert_to_script", map[string]any{
+		"agent": "bot", "task": "uptime",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "recompiling")
+	backgroundCompiles.Wait()
+
+	// The task stays a prompt task, so a run whose script fails falls back
+	// to the model.
+	task := loadedTask(t, "uptime")
+	assert.Equal(t, "Check uptime", task.Prompt)
+	assert.NotEqual(t, "script", task.Type)
+	require.NotNil(t, task.Precompile)
+	assert.True(t, *task.Precompile)
+	assert.Equal(t, `print("up")`, task.Compiled)
+}
+
 func TestEnsureTaskCompiledRecompilesOnChange(t *testing.T) {
 	on := true
 	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x", Tasks: []config.TaskConfig{{
