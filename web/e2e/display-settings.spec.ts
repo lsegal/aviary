@@ -136,8 +136,9 @@ test("the cached theme and size apply before the app loads", async ({
 		),
 	);
 	await mockDisplay(page);
-	// Replace the app with nothing: only index.html's own script runs.
-	await page.route(/\/src\/main\.ts/, (route) =>
+	// Replace the app's entry, in dev or in a build, with nothing: only
+	// index.html's own script runs.
+	await page.route(/\/(src\/main\.ts|assets\/index-[^/]*\.js)(\?|$)/, (route) =>
 		route.fulfill({ contentType: "text/javascript", body: "" }),
 	);
 	await page.goto("/system/display", { waitUntil: "domcontentloaded" });
