@@ -282,6 +282,11 @@ const props = defineProps<{
 	 * the Code Loop prompt chat does with its hidden session. */
 	session?: string;
 }>();
+const emit = defineEmits<{
+	/** A turn's reply stream ended, with or without an error, so whatever
+	 * its tool calls changed can be reloaded now. */
+	turnEnd: [];
+}>();
 
 /** A workflow's run, or the workflow's page when the run is unknown. */
 function workflowRunLink(w: MessageWorkflow): string {
@@ -1346,6 +1351,7 @@ async function runTurn(
 		// This client streamed the turn itself, so the server's copy of it
 		// is stale and must not show once the stream is gone.
 		if (activeStreams.value === 0) liveTurn.value = null;
+		emit("turnEnd");
 	}
 	// The last reply to finish reloads the canonical messages; reloading
 	// earlier would drop replies still streaming. Skip if we showed an inline
