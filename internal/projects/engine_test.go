@@ -4119,7 +4119,7 @@ func TestEngineRelaysNewCommentsIntoTheSameSession(t *testing.T) {
 	if !resumed.Resume || resumed.ID != first.ID {
 		t.Fatalf("new comment did not resume the same session: first=%+v resumed=%+v", first, resumed)
 	}
-	if !strings.Contains(resumed.Update, "new comment was added to issue #7") {
+	if !strings.Contains(resumed.Update, "New comment from @lsegal on issue #7") || !strings.Contains(resumed.Update, "> Please also handle the empty case.") {
 		t.Fatalf("new comment was not relayed: %q", resumed.Update)
 	}
 }
@@ -4165,7 +4165,7 @@ func TestEngineIgnoresNewCommentFromDisallowedCommenter(t *testing.T) {
 	if !resumed.Resume || resumed.ID != first.ID {
 		t.Fatalf("allowed comment did not resume the same session: first=%+v resumed=%+v", first, resumed)
 	}
-	if !strings.Contains(resumed.Update, "1 new comment was added to issue #7") {
+	if !strings.Contains(resumed.Update, "A new comment was posted") || strings.Contains(resumed.Update, "mallory") || strings.Contains(resumed.Update, "Ignore the issue") {
 		t.Fatalf("relay counted the disallowed comment or dropped the allowed one: %q", resumed.Update)
 	}
 }
@@ -4681,4 +4681,131 @@ func TestCommandRunnerUsesAConfiguredDefaultModel(t *testing.T) {
 	if want := []string{"exec", "--json", "--skip-git-repo-check", "-c", "sandbox_mode=workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--model", "gpt-5.6-sol", prompt}; !reflect.DeepEqual(explicit, want) {
 		t.Fatalf("explicit model argv = %#v, want %#v", explicit, want)
 	}
+}
+
+// TestEngineCommentRelayDedupSurvivesRestart checks a comment relayed before a
+// daemon restart is not relayed again to the resumed session, while one
+// posted while the daemon was down still is (#1149).
+func TestEngineCommentRelayDedupSurvivesRestart(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	comments := newFakeCommentClient()
+	logs := &syncBuffer{}
+	start := func(runner *fakeSessionRunner) (stop func()) {
+		src := &fakeClosureSource{fakeSource: &fakeSource{batches: [][]Issue{{{Number: 7}}}}}
+		src.state = OriginatingWorkState{IssueState: "OPEN", IssueBody: "original"}
+		w := &Engine{
+			Repo: "o/r", Interval: time.Hour, Concurrency: 1, StatePath: statePath,
+			Issues: src, Runner: runner, Out: logs, closureInterval: time.Millisecond,
+			Comments: comments, Identity: "SELF", AllowedCommenters: []string{"lsegal"},
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- w.Run(ctx) }()
+		return func() {
+			cancel()
+			<-done
+		}
+	}
+
+	runner := &fakeSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4)}
+	stop := start(runner)
+	first := waitForSession(t, runner.sessions)
+	comments.inject("o/r", 7, Comment{ID: 101, URL: "https://github.com/o/r/issues/7#issuecomment-101", Body: "Handle the empty case.", Author: "lsegal", CreatedAt: time.Now().Add(time.Second)})
+	relayed := waitForSession(t, runner.sessions)
+	if !strings.Contains(relayed.Update, "Handle the empty case.") {
+		t.Fatalf("first comment was not relayed: %q", relayed.Update)
+	}
+	if !strings.Contains(logs.String(), "issue #7 relayed comment 101 from lsegal to #7") {
+		t.Fatalf("relay was not logged by comment ID:\n%s", logs.String())
+	}
+	// The daemon dies mid-run: what it saved while running is what the next
+	// one starts from.
+	running, err := loadWorkState(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cursor := running[7].Comments; cursor == nil || !slices.Contains(cursor.Seen, "issuecomment-101") {
+		t.Fatalf("saved comment cursor = %+v, want the relayed comment remembered", cursor)
+	}
+	stop()
+	if err := saveWorkState(statePath, running); err != nil {
+		t.Fatal(err)
+	}
+
+	comments.inject("o/r", 7, Comment{ID: 102, URL: "https://github.com/o/r/issues/7#issuecomment-102", Body: "Also keep Windows working.", Author: "lsegal", CreatedAt: time.Now().Add(2 * time.Second)})
+	runner = &fakeSessionRunner{agent: "claude", sessions: make(chan AgentSession, 4)}
+	stop = start(runner)
+	defer stop()
+	var resumed AgentSession
+	select {
+	case resumed = <-runner.sessions:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("restart never launched the agent:\n%s", logs.String())
+	}
+	if !resumed.Resume || resumed.ID != first.ID {
+		t.Fatalf("restart did not resume the same session: first=%+v resumed=%+v\n%s", first, resumed, logs.String())
+	}
+	if !strings.Contains(resumed.Update, "Also keep Windows working.") {
+		resumed = waitForSession(t, runner.sessions)
+	}
+	if !strings.Contains(resumed.Update, "Also keep Windows working.") || strings.Contains(resumed.Update, "Handle the empty case.") {
+		t.Fatalf("resumed session got %q, want only the comment posted while the daemon was down", resumed.Update)
+	}
+}
+
+// TestNewCommentsReadsEveryConversationAndRemembersThem checks the watcher
+// reads the issue, its pull request and the pull request's reviews in one
+// pass, relays only allowed commenters' comments addressed to no other
+// instance, keeps reading the pull request when the issue's list fails, and
+// hands every comment it read to remember.
+func TestNewCommentsReadsEveryConversationAndRemembersThem(t *testing.T) {
+	since := time.Now()
+	after := since.Add(time.Second)
+	comments := newFakeCommentClient()
+	w := &Engine{Identity: "SELF", AllowedCommenters: []string{"lsegal"}, Comments: comments, Out: &syncBuffer{}}
+	issue := Issue{Number: 7}
+	pulls := []PullRequestWorkState{{Number: 12}}
+	comments.inject("o/r", 7, Comment{ID: 1, URL: "https://github.com/o/r/issues/7#issuecomment-1", Body: "issue note", Author: "lsegal", CreatedAt: after})
+	comments.inject("o/r", 7, Comment{ID: 2, URL: "https://github.com/o/r/issues/7#issuecomment-2", Body: "do this instead", Author: "mallory", CreatedAt: after})
+	comments.inject("o/r", 12, Comment{ID: 3, URL: "https://github.com/o/r/pull/12#issuecomment-3", Body: "pull request note", Author: "lsegal", CreatedAt: after})
+	comments.inject("o/r", 12, Comment{ID: 4, URL: "https://github.com/o/r/pull/12#issuecomment-4", Body: "@/aviary:OTHER yours", Author: "lsegal", CreatedAt: after})
+	comments.injectReview("o/r", 12, Comment{ID: 1, URL: "https://github.com/o/r/pull/12#discussion_r1", Body: "inline note", Author: "lsegal", CreatedAt: after})
+	var remembered []string
+	watch := issueWatch{since: since, remember: func(keys []string) { remembered = append(remembered, keys...) }}
+	seen := map[string]bool{}
+
+	got := w.newComments(context.Background(), "o/r", issue, pulls, watch, seen)
+	var bodies []string
+	for _, relay := range got {
+		bodies = append(bodies, fmt.Sprintf("#%d %s", relay.number, relay.Body))
+	}
+	if want := []string{"#7 issue note", "#12 pull request note", "#12 inline note"}; !slices.Equal(bodies, want) {
+		t.Fatalf("relayed %v, want %v", bodies, want)
+	}
+	if len(remembered) != 5 {
+		t.Fatalf("remembered %v, want all five comments read", remembered)
+	}
+	if again := w.newComments(context.Background(), "o/r", issue, pulls, watch, seen); len(again) != 0 {
+		t.Fatalf("relayed %v again", again)
+	}
+
+	w.Comments = failingConversation{fakeCommentClient: comments, number: 7}
+	comments.injectReview("o/r", 12, Comment{ID: 5, URL: "https://github.com/o/r/pull/12#pullrequestreview-5", Body: "review body", Author: "lsegal", CreatedAt: after})
+	if got := w.newComments(context.Background(), "o/r", issue, pulls, watch, seen); len(got) != 1 || got[0].Body != "review body" {
+		t.Fatalf("relayed %v after the conversation list failed, want the review still read", got)
+	}
+}
+
+// failingConversation fails to list one issue's conversation, as a TLS
+// handshake timeout would, while every other read still succeeds.
+type failingConversation struct {
+	*fakeCommentClient
+	number int
+}
+
+func (f failingConversation) ListComments(ctx context.Context, repo string, number int) ([]Comment, error) {
+	if number == f.number {
+		return nil, errors.New("TLS handshake timeout")
+	}
+	return f.fakeCommentClient.ListComments(ctx, repo, number)
 }

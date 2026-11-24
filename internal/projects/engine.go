@@ -2633,7 +2633,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				mentionKey := issue.Repository + "#" + strconv.Itoa(issue.Number)
 				mentioned := directMentions[mentionKey]
 				switch {
-				case wake == core.PausedStay && mentioned && !mentions.rechecks[mentionKey] && w.routeMention(ctx, mentions, issue, "paused", directMentions):
+				case wake == core.PausedStay && mentioned && w.routeMention(ctx, mentions, issue, "paused", directMentions):
 					// The Code Loop agent decides whether the comment needs
 					// work; the job stays paused until it resumes it.
 					pauseJob(issue, key, wakeReason, pausedOwn)
@@ -2673,7 +2673,6 @@ func (w *Engine) Run(ctx context.Context) error {
 			}
 			mentionKey := issue.Repository + "#" + strconv.Itoa(issue.Number)
 			directMention := directMentions[mentionKey]
-			addressed := directMention && !mentions.rechecks[mentionKey]
 			swept := sweep[key] || sweep[mentionKey]
 			workMu.Lock()
 			state := work[key]
@@ -2730,7 +2729,6 @@ func (w *Engine) Run(ctx context.Context) error {
 					// #693). Keeping it queued as well would start a second, fresh
 					// run on the same comment once this one finishes.
 					delete(directMentions, mentionKey)
-					delete(mentions.rechecks, mentionKey)
 					if nudge != nil {
 						select {
 						case nudge <- struct{}{}:
@@ -2742,14 +2740,13 @@ func (w *Engine) Run(ctx context.Context) error {
 					w.logChanged("mention-active-"+key, "waiting", "issue #%d direct mention of instance %s waits for the run in progress to finish: that run's session cannot be resumed to relay it", issue.Number, w.Identity)
 				}
 			}
-			if addressed && wasCompleted && !isActive && w.routeMention(ctx, mentions, issue, "finished", directMentions) {
+			if directMention && wasCompleted && !isActive && w.routeMention(ctx, mentions, issue, "finished", directMentions) {
 				continue
 			}
 			if issue.Number > 0 && (wasFailed || rejected > 0 || wasPaused || (staleRestoredState && remoteIssueAllowsDispatch(issue.Target, issue, w.ReadyState)) || shouldDispatchIssue(issue.Target, issue, isActive, wasActive, wasCompleted, seen[key], w.ReadyState) || (swept && !isActive && remoteIssueAllowsDispatch(issue.Target, issue, w.ReadyState)) || (directMention && !isActive)) {
 				seen[key] = true
 				delete(restored, key)
 				delete(directMentions, mentionKey)
-				delete(mentions.rechecks, mentionKey)
 				// A known local failure or an active resume is unambiguously
 				// this instance's own work; anything else reappearing after
 				// having a local record is a reclaim that must be negotiated
@@ -2806,7 +2803,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					contested = false
 				}
 				fresh := !hadLocalRecord && !contested && !directMention && !wasPaused && !session.Resume
-				newIssues = append(newIssues, pendingIssue{issue: issue, contested: contested, session: session, mentioned: addressed, woken: wasPaused, fresh: fresh})
+				newIssues = append(newIssues, pendingIssue{issue: issue, contested: contested, session: session, mentioned: directMention, woken: wasPaused, fresh: fresh})
 			}
 		}
 		// Paused work whose issue the poll no longer lists cannot be woken by
@@ -3044,7 +3041,6 @@ func (w *Engine) Run(ctx context.Context) error {
 			workMu.Lock()
 			key := issueKey(issue)
 			active[key] = session.ID
-			mentions.agentStarted(issue.Repository + "#" + strconv.Itoa(issue.Number))
 			spec, _ := parseAgentSpec(session.Agent)
 			jobMu.Lock()
 			jobs[key] = JobSnapshot{Kind: core.JobKindIssue, Number: issue.Number, Target: issue.Target, Repository: issueRepository(issue.Target, issue), Title: issue.Title, Status: "queued", CheckoutDirectory: session.CheckoutDirectory, SessionID: session.ID, Agent: spec.Name, Model: spec.Model, Effort: spec.Level, Started: time.Now()}
@@ -3524,7 +3520,6 @@ func (w *Engine) Run(ctx context.Context) error {
 					// Its project item stays in progress.
 					workMu.Lock()
 					delete(active, key)
-					mentions.agentStopped(i.Repository+"#"+strconv.Itoa(i.Number), time.Now())
 					jobMu.Lock()
 					job := jobs[key]
 					job.Status, job.WaitReason = "paused", core.ManualPauseReason
@@ -3550,7 +3545,6 @@ func (w *Engine) Run(ctx context.Context) error {
 					workMu.Lock()
 					key := issueKey(i)
 					delete(active, key)
-					mentions.agentStopped(i.Repository+"#"+strconv.Itoa(i.Number), time.Now())
 					jobMu.Lock()
 					job := jobs[key]
 					job.Status = "failed"
@@ -3590,7 +3584,6 @@ func (w *Engine) Run(ctx context.Context) error {
 					workMu.Lock()
 					key := issueKey(i)
 					delete(active, key)
-					mentions.agentStopped(i.Repository+"#"+strconv.Itoa(i.Number), time.Now())
 					jobMu.Lock()
 					job := jobs[key]
 					job.Status = "complete"
@@ -3969,7 +3962,6 @@ func (w *Engine) Run(ctx context.Context) error {
 				state.Status, state.Paused = "paused", &core.PausedWork{Kind: core.PausedManual}
 				work[key] = state
 				delete(active, key)
-				mentions.agentStopped(job.Repository+"#"+strconv.Itoa(job.Number), time.Now())
 				err := saveScopedWorkState(w.StatePath, work, targets)
 				workMu.Unlock()
 				jobMu.Lock()
@@ -4539,7 +4531,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					w.logf("issue #%d direct mention is still pending; using the scheduled follow-up refresh", number)
 				}
 			}
-			if kind, ok := webhookMentionKind(event); ok && mentionedIdentity(event.CommentBody, w.Identity) {
+			if kind, ok := webhookMentionKind(event); ok && w.addressedTo(event.CommentBody) {
 				// Acknowledge the mention was read regardless of whether it goes on
 				// to authorize a run: a human watching the thread should
 				// see the eyes reaction even when the mention is stale or from an
@@ -4554,7 +4546,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				if authorized && w.Comments != nil {
 					var err error
 					if kind == ConversationComment {
-						authorized, err = authorizedDirectMention(ctx, w.Comments, event.Repository, event.IssueNumber, w.Identity, w.AllowedCommenters)
+						authorized, err = authorizedDirectMention(ctx, w.Comments, event.Repository, event.IssueNumber, w.addressedTo, w.AllowedCommenters)
 					} else if lister, ok := w.Comments.(ReviewCommentLister); ok {
 						authorized, err = reviewMentionOnGitHub(ctx, lister, event.Repository, event.IssueNumber, event.CommentBody, event.CommentAuthor)
 					}
@@ -4577,7 +4569,6 @@ func (w *Engine) Run(ctx context.Context) error {
 					key := keys[0]
 					for _, mentioned := range keys {
 						directMentions[mentioned] = true
-						delete(mentions.rechecks, mentioned)
 						mentions.comments[mentioned] = mentionComment{Kind: kind, Repository: event.Repository, Number: event.IssueNumber, ID: event.CommentID, Author: event.CommentAuthor}
 					}
 					if event.OnPullRequest {
@@ -4590,35 +4581,6 @@ func (w *Engine) Run(ctx context.Context) error {
 					}
 					followQueuedRun(key, event.IssueNumber)
 					continue
-				}
-			}
-			if kind, ok := webhookMentionKind(event); ok && !mentionedIdentity(event.CommentBody, w.Identity) && w.commentRequestsRecheck(event.CommentBody, event.CommentAuthor) {
-				// The delivery marks the comment as new, so only its author, its
-				// mention of the login, and its presence on GitHub need checking
-				//.
-				verified, err := w.commentOnGitHub(ctx, kind, event.Repository, event.IssueNumber, event.CommentBody, event.CommentAuthor)
-				if err != nil {
-					w.logf("issue #%d failed to verify comment mentioning %s: %v", event.IssueNumber, w.SelfLogin, err)
-				} else if !verified {
-					w.logf("issue #%d ignoring comment mentioning %s: not found on GitHub", event.IssueNumber, w.SelfLogin)
-				} else {
-					keys := webhookMentionKeys(event)
-					if event.OnPullRequest {
-						keys = mentions.linkedIssueKeys(event.Repository, event.IssueNumber, keys)
-					}
-					if slices.ContainsFunc(keys, func(key string) bool { return !observed[key] }) {
-						if err := poll(nil); err != nil && ctx.Err() == nil {
-							reportPollError("comment-recheck", err)
-						}
-					}
-					if queued := w.queueCommentRecheck(mentions, keys, mentionComment{Kind: kind, Repository: event.Repository, Number: event.IssueNumber, ID: event.CommentID, Author: event.CommentAuthor}, time.Now(), observed, directMentions); len(queued) > 0 {
-						w.reactToMention(ctx, event.Repository, kind, event.IssueNumber, event.CommentID, event.CommentNodeID)
-						if err := poll(nil); err != nil && ctx.Err() == nil {
-							reportPollError("comment-recheck", err)
-						}
-						followQueuedRun(queued[0], event.IssueNumber)
-						continue
-					}
 				}
 			}
 			// The payload alone decides whether this delivery could have

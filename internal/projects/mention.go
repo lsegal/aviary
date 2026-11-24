@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -84,10 +83,6 @@ type ReviewMentionSource interface {
 // already handled are skipped by ID.
 const mentionScanOverlap = time.Minute
 
-// agentCommentGrace is how long after an agent finishes a comment from aviary's
-// own login is still attributed to that agent rather than to a human.
-const agentCommentGrace = 30 * time.Second
-
 // markdownNonMentions matches the parts of a comment where GitHub does not
 // treat @name as a mention: fenced code, inline code, and quoted lines.
 var markdownNonMentions = regexp.MustCompile("(?s)```.*?```|`[^`\\n]*`|(?m:^[ \\t]*>.*$)")
@@ -105,100 +100,20 @@ func mentionedLogin(body, login string) bool {
 	return regexp.MustCompile(pattern).MatchString(markdownNonMentions.ReplaceAllString(body, " "))
 }
 
-// commentRequestsRecheck reports whether a comment that does not mention this
-// instance still triggers a recheck of its issue: it must come
-// from an allowed commenter and mention the login aviary runs as. An empty
-// allowed list names nobody here, handshake comments are aviary's own, and a
-// comment addressed to another instance is not an instruction to this one.
-func (w *Engine) commentRequestsRecheck(body, author string) bool {
-	if len(w.AllowedCommenters) == 0 || !commenterAllowed(author, w.AllowedCommenters) || !mentionedLogin(body, w.SelfLogin) {
+// addressedTo reports whether a comment addresses this instance: either the
+// @/aviary:ID mention of its identity, or an ordinary @login mention of the
+// GitHub login aviary runs as, which is treated exactly the same. A
+// comment that names another instance is addressed to that one, and a
+// handshake comment is aviary's own bookkeeping.
+func (w *Engine) addressedTo(body string) bool {
+	if mentionedIdentity(body, w.Identity) {
+		return true
+	}
+	if !mentionedLogin(body, w.SelfLogin) || anyInstanceMention.MatchString(body) {
 		return false
 	}
-	if _, _, ok := parseClaim(body); ok {
-		return false
-	}
-	return !anyInstanceMention.MatchString(body)
-}
-
-// queueCommentRecheck queues a run for each key a login-mention comment
-// addresses and returns the keys it queued. Only issues this instance watches
-// qualify. A comment from aviary's own login posted while its agent ran on the
-// issue is left out: agents post as that login, so it may be the agent's own,
-// and a human's is relayed by that run's watcher.
-func (w *Engine) queueCommentRecheck(scan *mentionScan, keys []string, comment mentionComment, at time.Time, listed, directMentions map[string]bool) []string {
-	author := comment.Author
-	var queued []string
-	for _, key := range keys {
-		if !listed[key] {
-			w.logf("%s ignoring comment mentioning %s: it is not among the open issues this instance watches", key, w.SelfLogin)
-			continue
-		}
-		if strings.EqualFold(author, w.SelfLogin) && scan.agentWasRunning(key, at) {
-			w.logf("%s not queuing a recheck for a comment from %s posted during this instance's agent run", key, author)
-			continue
-		}
-		if !directMentions[key] {
-			directMentions[key] = true
-			scan.rechecks[key] = true
-		}
-		scan.comments[key] = comment
-		w.logf("%s comment from %s mentions %s; queuing a threaded gh-fix run", key, author, w.SelfLogin)
-		queued = append(queued, key)
-	}
-	return queued
-}
-
-// handleScannedRecheck acts on one scanned comment that requests a recheck. It
-// reports false only when the issues it addresses could not be read and the
-// comment should be read again on the next scan.
-func (w *Engine) handleScannedRecheck(ctx context.Context, scan *mentionScan, repo string, comment RecentComment, listed, directMentions map[string]bool) bool {
-	numbers := []int{comment.Number}
-	linked := scan.linked.issues(repo, comment.Number)
-	if len(linked) == 0 && (comment.Kind != ConversationComment || !listed[repo+"#"+strconv.Itoa(comment.Number)]) {
-		closing, err := w.Mentions.ClosingIssues(ctx, repo, comment.Number)
-		if err != nil {
-			w.logf("%s#%d failed to read which issues it closes: %v", repo, comment.Number, err)
-			return false
-		}
-		numbers = closing
-	}
-	keys := make([]string, 0, len(numbers))
-	for _, number := range numbers {
-		keys = append(keys, repo+"#"+strconv.Itoa(number))
-	}
-	if len(linked) > 0 {
-		keys = linked
-	}
-	if len(w.queueCommentRecheck(scan, keys, comment.routed(repo), comment.CreatedAt, listed, directMentions)) > 0 {
-		w.reactToMention(ctx, repo, comment.Kind, comment.Number, comment.ID, comment.NodeID)
-	}
-	return true
-}
-
-// commentOnGitHub reports whether repo#number carries a comment of kind from
-// author with exactly body, so a webhook delivery is reverified rather than
-// trusted from its payload.
-func (w *Engine) commentOnGitHub(ctx context.Context, kind CommentKind, repo string, number int, body, author string) (bool, error) {
-	if w.Comments == nil {
-		return true, nil
-	}
-	if kind != ConversationComment {
-		lister, ok := w.Comments.(ReviewCommentLister)
-		if !ok {
-			return true, nil
-		}
-		return reviewMentionOnGitHub(ctx, lister, repo, number, body, author)
-	}
-	comments, err := w.Comments.ListComments(ctx, repo, number)
-	if err != nil {
-		return false, err
-	}
-	for _, comment := range comments {
-		if comment.Body == body && strings.EqualFold(comment.Author, author) {
-			return true, nil
-		}
-	}
-	return false, nil
+	_, _, claim := parseClaim(body)
+	return !claim
 }
 
 // mentionScan is the run loop's memory of the direct mentions it has already
@@ -215,14 +130,9 @@ type mentionScan struct {
 	// scan of a cursor returns is already there when watching starts, so it
 	// seeds seen rather than counting as new.
 	seeded map[string]bool
-	// seen is every comment already considered for a login-mention recheck, so
-	// a comment is new only the first time it appears.
+	// seen is every comment already considered for a login mention, so a
+	// comment is new only the first time it appears.
 	seen map[mentionScanKey]bool
-	// rechecks names the "repo#number" keys in the direct-mention queue only
-	// because a comment mentioned the login, not this instance. It is not
-	// addressed to one instance, so unlike a direct mention it stays subject to
-	// the claims standing on the ticket. Webhook deliveries use it as well.
-	rechecks map[string]bool
 	// comments is the latest comment that queued each "repo#number" key in
 	// the direct-mention queue, so a job's issue can route it to the prompt
 	// agent instead of restarting the job.
@@ -230,11 +140,6 @@ type mentionScan struct {
 	// linked is the derived watch on pull requests that work on an issue
 	// from another repository, such as a fork.
 	linked *linkedPullRequests
-
-	// agentMu guards agentRunning and agentEnded, which run goroutines update.
-	agentMu      sync.Mutex
-	agentRunning map[string]bool
-	agentEnded   map[string]time.Time
 }
 
 type mentionScanKey struct {
@@ -245,37 +150,9 @@ type mentionScanKey struct {
 func newMentionScan(start time.Time) *mentionScan {
 	return &mentionScan{
 		start: start, since: make(map[string]time.Time), handled: make(map[mentionScanKey]bool),
-		seeded: make(map[string]bool), seen: make(map[mentionScanKey]bool), rechecks: make(map[string]bool), comments: make(map[string]mentionComment),
-		agentRunning: make(map[string]bool), agentEnded: make(map[string]time.Time),
+		seeded: make(map[string]bool), seen: make(map[mentionScanKey]bool), comments: make(map[string]mentionComment),
 		linked: newLinkedPullRequests(),
 	}
-}
-
-// agentStarted records that this instance began running an agent on key.
-func (s *mentionScan) agentStarted(key string) {
-	s.agentMu.Lock()
-	defer s.agentMu.Unlock()
-	s.agentRunning[key] = true
-}
-
-// agentStopped records that the agent running on key has finished.
-func (s *mentionScan) agentStopped(key string, at time.Time) {
-	s.agentMu.Lock()
-	defer s.agentMu.Unlock()
-	delete(s.agentRunning, key)
-	s.agentEnded[key] = at
-}
-
-// agentWasRunning reports whether this instance had an agent on key at the
-// given time, allowing agentCommentGrace for clocks and listing delay.
-func (s *mentionScan) agentWasRunning(key string, at time.Time) bool {
-	s.agentMu.Lock()
-	defer s.agentMu.Unlock()
-	if s.agentRunning[key] {
-		return true
-	}
-	ended, ok := s.agentEnded[key]
-	return ok && !at.After(ended.Add(agentCommentGrace))
 }
 
 // mentionScanRepos lists the repositories a poll scans for mentions: every
@@ -373,18 +250,14 @@ func (w *Engine) scanMentionStream(ctx context.Context, scan *mentionScan, repo,
 			if scan.handled[key] || scan.seen[key] {
 				continue
 			}
-			// An edit brings an old comment back into the listing, so one
-			// posted before this watch began is history whatever its ID.
-			fresh := !seeding && !comment.CreatedAt.Before(scan.start)
-			if fresh && w.commentRequestsRecheck(comment.Body, comment.Author) && !w.handleScannedRecheck(ctx, scan, repo, comment, listed, directMentions) {
-				if next.After(comment.UpdatedAt.Add(-mentionScanOverlap)) {
-					next = comment.UpdatedAt.Add(-mentionScanOverlap)
-				}
-				stopped = true
-				break
+			// Unlike an identity, which is new on every start, a login can be
+			// mentioned before this watch began, and an edit brings an old
+			// comment back into the listing, so only a comment posted since
+			// then, and not already there on the first scan, is new.
+			if fresh := !seeding && !comment.CreatedAt.Before(scan.start); !fresh || !w.addressedTo(comment.Body) {
+				scan.seen[key] = true
+				continue
 			}
-			scan.seen[key] = true
-			continue
 		}
 		if scan.handled[key] {
 			continue
@@ -419,7 +292,7 @@ func (w *Engine) handleScannedMention(ctx context.Context, scan *mentionScan, re
 	authorized := commenterAllowed(comment.Author, w.AllowedCommenters)
 	if authorized && w.Comments != nil && comment.Kind == ConversationComment {
 		var err error
-		authorized, err = authorizedDirectMention(ctx, w.Comments, repo, comment.Number, w.Identity, w.AllowedCommenters)
+		authorized, err = authorizedDirectMention(ctx, w.Comments, repo, comment.Number, w.addressedTo, w.AllowedCommenters)
 		if err != nil {
 			w.logf("%s#%d failed to verify direct mention of instance %s: %v", repo, comment.Number, w.Identity, err)
 			return false
@@ -439,7 +312,6 @@ func (w *Engine) handleScannedMention(ctx context.Context, scan *mentionScan, re
 		w.logf("%s pull request #%d directly mentioned instance %s%s; it is linked to %s", repo, comment.Number, w.Identity, mentionLocationSuffix(comment.Kind), strings.Join(linked, ", "))
 		for _, key := range linked {
 			directMentions[key] = true
-			delete(scan.rechecks, key)
 			scan.comments[key] = comment.routed(repo)
 			w.logf("issue %s directly mentioned instance %s; queuing a threaded gh-fix run", key, w.Identity)
 		}
@@ -462,7 +334,6 @@ func (w *Engine) handleScannedMention(ctx context.Context, scan *mentionScan, re
 	}
 	for _, number := range issues {
 		directMentions[repo+"#"+strconv.Itoa(number)] = true
-		delete(scan.rechecks, repo+"#"+strconv.Itoa(number))
 		scan.comments[repo+"#"+strconv.Itoa(number)] = comment.routed(repo)
 		w.logf("issue #%d directly mentioned instance %s; queuing a threaded gh-fix run", number, w.Identity)
 	}
@@ -845,7 +716,6 @@ func (w *Engine) routeMention(ctx context.Context, scan *mentionScan, issue Issu
 		return false
 	}
 	delete(directMentions, key)
-	delete(scan.rechecks, key)
 	delete(scan.comments, key)
 	w.logf("issue #%d direct mention of instance %s on its %s job sent to the Code Loop agent", issue.Number, w.Identity, state)
 	return true
