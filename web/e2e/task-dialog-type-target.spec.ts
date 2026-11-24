@@ -114,7 +114,7 @@ async function openEdit(page: Page, agent: string, task: string) {
 	await page
 		.getByTestId("task-card")
 		.filter({ hasText: task })
-		.getByRole("button", { name: "Edit" })
+		.getByRole("button", { name: "Task settings" })
 		.click();
 	const dialog = page.getByRole("dialog", { name: "Edit task" });
 	await expect(dialog).toBeVisible();

@@ -81,7 +81,7 @@
 				</template>
 			</p>
 		</div>
-		<div class="relative z-10 flex shrink-0 cursor-auto flex-wrap items-center gap-2 border-t border-gray-100 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
+		<div data-testid="scheduled-actions" class="relative z-10 flex shrink-0 cursor-auto flex-wrap items-center gap-2 border-t border-gray-100 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
 			<!-- The running state shows once: as the control that opens the run. -->
 			<router-link v-if="running" :to="runTo" data-testid="scheduled-running"
 				:title="runOpen ? 'Open this run' : 'Open this task'"

@@ -210,8 +210,17 @@ test("tasks show as cards by default with every field", async ({ page }) => {
 	await expect(daily.getByTestId("task-last-run")).toHaveText(
 		"Succeeded 3h ago",
 	);
-	for (const action of ["Run now", "Pause", "Edit", "View runs"])
-		await expect(daily.getByRole("button", { name: action })).toBeVisible();
+	// Run now and Pause first, the gear to the task's settings last; no
+	// pencil (#1165).
+	const actions = daily
+		.getByRole("group", { name: "daily-report actions" })
+		.getByRole("button");
+	expect(
+		await actions.evaluateAll((els) =>
+			els.map((e) => e.getAttribute("aria-label")),
+		),
+	).toEqual(["Run now", "Pause", "View runs", "Task settings"]);
+	await expect(actions.last()).toHaveAttribute("title", "Task settings");
 
 	const weekly = cards.filter({ hasText: "weekly-cleanup" });
 	await expect(weekly.getByTestId("task-schedule")).toHaveText(
@@ -248,6 +257,18 @@ test("the list toggle switches the layout and survives a reload", async ({
 	await expect(
 		page.getByTestId("task-row-item").filter({ hasText: "daily-report" }),
 	).toContainText("daily at 02:00 (America/Toronto)");
+	// The list rows have the same actions: no pencil, the gear last (#1165).
+	const rowActions = page
+		.getByRole("group", { name: "daily-report actions" })
+		.getByRole("button");
+	expect(
+		await rowActions.evaluateAll((els) =>
+			els.map((e) => e.getAttribute("aria-label")),
+		),
+	).toEqual(["Run now", "Pause", "View runs", "Task settings"]);
+	await rowActions.last().click();
+	await expect(page.getByRole("dialog", { name: "Edit task" })).toBeVisible();
+	await page.keyboard.press("Escape");
 
 	await page.reload();
 	await expect(page.getByTestId("task-row-item")).toHaveCount(3);
@@ -290,8 +311,8 @@ test("card quick actions work", async ({ page }) => {
 	// None of the controls opens the card's task page.
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks$/);
 
-	// The pencil opens the task's settings editor, without leaving the page.
-	await daily.getByRole("button", { name: "Edit" }).click();
+	// The gear opens the task's settings editor, without leaving the page.
+	await daily.getByRole("button", { name: "Task settings" }).click();
 	await expect(page.getByRole("dialog", { name: "Edit task" })).toBeVisible();
 	await page.keyboard.press("Escape");
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks$/);

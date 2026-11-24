@@ -239,11 +239,11 @@ test("the add-task modal sets every trigger type, timezone and policy, and they 
 		await expect(page).toHaveURL(new RegExp(`\\?task=${name}$`));
 		await expectTrigger(page.locator("main"), c);
 
-		// Reopening it in the Tasks overview's edit modal keeps every field.
+		// Reopening it in the Tasks overview's settings modal keeps every field.
 		await page.goto("/agents/assistant/tasks");
 		await page
 			.getByRole("group", { name: `${name} actions` })
-			.getByRole("button", { name: "Edit" })
+			.getByRole("button", { name: "Task settings" })
 			.click();
 		const edit = page.getByRole("dialog", { name: "Edit task" });
 		await expectTrigger(edit, c);
@@ -308,7 +308,7 @@ test("the add-task modal's precompute choice follows the setting and applies to 
 	await page.goto("/agents/assistant/tasks");
 	await page
 		.getByRole("group", { name: "stays-prompt actions" })
-		.getByRole("button", { name: "Edit" })
+		.getByRole("button", { name: "Task settings" })
 		.click();
 	const edit = page.getByRole("dialog", { name: "Edit task" });
 	const editPrecompute = edit.getByLabel("Try to precompile");
