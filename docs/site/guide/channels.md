@@ -89,12 +89,16 @@ Add, edit, pause, resume and delete a channel's workflows in its settings, on th
 
 A prompt workflow can be precompiled like a [project task](./scheduled-tasks.md#precompiled-project-tasks). **Try to precompile** follows `scheduler.precompute_tasks` for a new workflow (on by default), and `task_schedule` and `task_update` take `precompile`. Saving compiles the prompt in the background when it passes the determinism gate. The workflow keeps its prompt, and each matching message then:
 
-1. Runs the compiled script, which reads the message from the Lua global `trigger` (`trigger.message.text`, `.sender`, `trigger.before`, `trigger.channel`, `trigger.entry`). What the script prints is the workflow's reply.
+1. Runs the compiled script, which reads the message from the Lua global `trigger` (`trigger.message.text`, `.sender`, `trigger.before`, `trigger.channel`, `trigger.entry`). What the script prints is the workflow's reply; a script that decides not to reply calls `tool.task_no_reply({reason = "..."})` instead (see [Not replying](#not-replying)).
 2. Falls back to a normal model run on the prompt if the script or the compile fails. The run shows **Succeeded via fallback**, the script's error is in the run's logs, and the workflow's card says its last run fell back to the model.
 
 A script that fails on its first run is set aside, and one that fails 3 runs in a row turns precompile off, exactly as for project tasks; the workflow's page says why. Workflow cards, the Workflows tab and the workflow's page show a badge with the compiled state (**Compiled**, **Compiling…**, **Not precompiled** or **Runs on model**), and the page also counts compile attempts, fallback runs and script failures.
 
 When a message matches one or more active workflows, **the workflows replace the agent's own reply**: every matching workflow runs, in name order, and the agent does not answer the message itself. Whether anything is said back is up to each workflow's Send Via. The message is still recorded in the channel's conversation, marked **Handled by workflow** with a link to each run. The agent replies as usual only when no active workflow matches. Paused workflows never match, so a message that matches only paused workflows gets the normal reply. A workflow with an empty text match takes over every message on its entry, and the form says so.
+
+### Not replying
+
+A workflow's final message is sent verbatim as its reply, so a run that decides not to answer must not explain itself in its final message: that explanation would be the reply. Instead the run calls the `task_no_reply` tool with a short reason, and the prompt every delivering run gets says so. A run that called it sends nothing, whatever it wrote afterwards. Its run log shows **Skipped reply:** with the reason, its row in the workflow's run history says "Skipped reply: …", and the workflow's card says its last run did not reply, with the reason on hover. The message stays **Handled by workflow**, so the agent does not reply to it either. Scheduled tasks use the same tool when there is nothing to report.
 
 Workflows only see messages the channel accepts through its `allow_from` rules, and never run on the agent's own messages, so a workflow cannot loop on its replies.
 

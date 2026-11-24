@@ -32,8 +32,9 @@ export interface Job {
 /** The outcome of sending a run's output to its target. */
 export interface JobDelivery {
 	target: string;
-	status: "delivered" | "queued" | "failed";
-	/** What happened, such as "delivered to Code Loop owner/repo#12". */
+	/** skipped: the run chose not to reply, so nothing was sent. */
+	status: "delivered" | "queued" | "failed" | "skipped";
+	/** What happened, such as "delivered to Code Loop owner/repo#12", or why the run did not reply. */
 	message: string;
 	/** The Code Loop job a codeloop target reached, and the agent whose board shows it. */
 	project?: string;

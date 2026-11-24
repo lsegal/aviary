@@ -174,6 +174,14 @@ Stop scheduled task jobs. Stops all matching pending and running jobs.
 
 ---
 
+## task_no_reply
+
+Only in a scheduled task or workflow run: end the run without replying, so nothing is sent to its target or the conversation that triggered it, even if the run writes a final message afterwards. The run log records the skip and its reason (delivery status `skipped`). Precompiled scripts call it as `tool.task_no_reply({reason = "..."})`. Outside a run it returns an error. Agent tool allowlists never hide it.
+
+**Arguments:** `reason` (required), a short note on why, such as `message was negative`.
+
+---
+
 ## task_compile_query
 
 Return task compile attempt records, optionally filtered.

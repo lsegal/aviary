@@ -679,3 +679,48 @@ test("workflow cards and the detail view show the compiled state and fallback ru
 	await expect(stats).toContainText("2compile attempts · last succeeded");
 	await expect(stats.getByTitle("Succeeded via fallback: 1")).toBeVisible();
 });
+
+test("workflow cards and the run history show a run that chose not to reply", async ({
+	page,
+}) => {
+	await mockWorkflows(
+		page,
+		[TRIAGE],
+		[
+			{
+				id: "job-1",
+				task_id: "assistant/triage",
+				agent_id: "assistant",
+				status: "completed",
+				trigger: "message",
+				trigger_context: TRIGGER_CONTEXT,
+				delivery: {
+					target: "reply",
+					status: "skipped",
+					message: "message was negative",
+					at: NOW,
+				},
+				prompt: "",
+				attempts: 1,
+				max_retries: 0,
+				created_at: AGO,
+				updated_at: NOW,
+			},
+		],
+	);
+	await page.goto("/agents/assistant/channels/Team%20Slack");
+	const card = page.getByTestId("workflow-card");
+	const last = card.getByTestId("workflow-card-last");
+	await expect(last).toHaveAttribute("data-last", "no_reply");
+	await expect(last).toHaveText("last run: no reply");
+	await expect(last).toHaveAttribute(
+		"title",
+		"Skipped reply: message was negative",
+	);
+
+	await card.click();
+	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/triage$/);
+	await expect(page.getByTestId("task-run-skipped-reply")).toHaveText(
+		"Skipped reply: message was negative",
+	);
+});
