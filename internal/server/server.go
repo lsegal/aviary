@@ -64,12 +64,19 @@ type Server struct {
 	reexecCh          chan struct{}
 	restart           restartState
 	msgFn             func(agentName, channelType, configuredID string, ch channels.Channel, msg channels.IncomingMessage)
+	// channelsMu orders the channel connections started at boot with those
+	// a config reload makes, and channelsCfg is the config they were last
+	// made from, so a reload during boot is never undone by the boot's older
+	// config.
+	channelsMu  sync.Mutex
+	channelsCfg *config.Config
 }
 
 // New creates a new Server with the given config and auth token.
 func New(cfg *config.Config, token string) *Server {
 	s := &Server{
 		cfg:               cfg,
+		channelsCfg:       cfg,
 		token:             token,
 		mux:               http.NewServeMux(),
 		listenerRestartCh: make(chan struct{}, 1),
@@ -245,12 +252,15 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 		s.projects.SetBrowser(newCfg.Browser)
 		go s.projects.Reconcile(newCfg)
 	}
+	s.channelsMu.Lock()
+	s.channelsCfg = newCfg
 	if s.runCtx != nil && s.msgFn != nil && s.channels != nil {
 		s.channels.Reconcile(s.runCtx, newCfg, s.msgFn)
 	}
 	if err := sessiontarget.EnsureChannels(newCfg, s.channels); err != nil {
 		slog.Warn("server: failed to set up channel sessions", "err", err)
 	}
+	s.channelsMu.Unlock()
 	cdpPort := newCfg.Browser.CDPPort
 	if cdpPort == 0 {
 		cdpPort = config.DefaultCDPPort
@@ -584,9 +594,11 @@ func backgroundSubsystems(s *Server) []string {
 func (s *Server) startBackground(ctx context.Context, trace *startup.Trace, boot *sync.WaitGroup) {
 	boot.Add(1)
 	trace.Go("channels", "channels connect", func() error {
-		s.channels.Reconcile(ctx, s.cfg, s.msgFn)
+		s.channelsMu.Lock()
+		defer s.channelsMu.Unlock()
+		s.channels.Reconcile(ctx, s.channelsCfg, s.msgFn)
 		s.loadSessionDeliveries()
-		return sessiontarget.EnsureChannels(s.cfg, s.channels)
+		return sessiontarget.EnsureChannels(s.channelsCfg, s.channels)
 	}, boot.Done)
 
 	// Install the skills Aviary ships globally on first launch, keep them

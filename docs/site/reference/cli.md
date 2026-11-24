@@ -18,10 +18,15 @@ These flags apply to every `aviary` command.
 Start the Aviary server over HTTPS on the configured port (default: 16677).
 
 ```
-aviary serve
+aviary serve [flags]
 ```
 
-No flags.
+| Flag | Default | Description |
+| --- | --- | --- |
+| `-d, --daemon` | `false` | Run in the background |
+| `--trace-startup` | `false` | Print the per-phase startup trace once every subsystem has finished initializing |
+
+The HTTP server and `/mcp` accept requests as soon as config and state are loaded, with a target of under 2 seconds on a warm restart. Channel connections, the skills Aviary ships, and Code Loop discovery initialize afterwards in the background. Until a subsystem is ready, MCP tools that need it answer with an "initializing, retry in Ns" error. `GET /healthz` answers while the process is serving, and `GET /readyz` reports each subsystem's readiness and the boot's phase timings, answering 503 until every subsystem is ready.
 
 ---
 
@@ -91,6 +96,8 @@ aviary ui [project]
 ## aviary doctor
 
 Validate `aviary.yaml` and verify that required credentials exist in the auth store. Exits with status 1 if any errors are found.
+
+When the server is running, a `Startup` line summarizes its latest boot: total boot time, when `/mcp` became ready, any subsystems still initializing, and the slowest phases.
 
 ```
 aviary doctor [flags]

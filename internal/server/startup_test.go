@@ -108,7 +108,7 @@ func TestTimeToMCPReady(t *testing.T) {
 	readyz := func() (int, startup.Report) {
 		resp, err := client.Get(base + "/readyz")
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		var r startup.Report
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&r))
 		return resp.StatusCode, r
@@ -187,7 +187,7 @@ func TestShutdownHTTPEndsEventStreams(t *testing.T) {
 	req.Header.Set("Accept", "text/event-stream")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	<-streaming
 
 	start := time.Now()
