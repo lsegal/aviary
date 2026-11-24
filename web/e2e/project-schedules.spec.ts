@@ -2130,7 +2130,9 @@ test.describe("a running scheduled card keeps its size (#1157)", () => {
 			(el as HTMLElement).style.width = "240px";
 		});
 		await expect(release.getByTestId("scheduled-more")).toBeVisible();
-		await expect(footer.getByRole("button", { name: "Task settings" })).toBeHidden();
+		await expect(
+			footer.getByRole("button", { name: "Task settings" }),
+		).toBeHidden();
 		await expect(footer.getByRole("button", { name: "Pause" })).toBeHidden();
 		const tops = await footerButtonTops(footer);
 		// Run now and More actions; the gear folds into the menu.
@@ -2143,6 +2145,10 @@ test.describe("a running scheduled card keeps its size (#1157)", () => {
 		);
 
 		await release.getByTestId("scheduled-more").click();
+		// Task settings stays the last action in the folded menu (#1165).
+		await expect(
+			page.getByTestId("scheduled-more-items").getByRole("menuitem"),
+		).toHaveText(["Pause", "Task settings"]);
 		await page
 			.getByTestId("scheduled-more-items")
 			.getByRole("menuitem", { name: "Pause" })
