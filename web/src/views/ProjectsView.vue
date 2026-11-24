@@ -55,7 +55,7 @@
 				@click="logsOpen = !logsOpen">
 				<DocumentTextIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
-			<button v-if="!auth.minimal" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
+			<button type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
 				aria-label="Prompt chat" title="Prompt chat"
 				:class="chatOpen ? HEADER_ICON_ON_CLS : HEADER_ICON_CLS"
 				@click="chatOpen = !chatOpen">
@@ -223,7 +223,7 @@
 			</div>
 			<ProjectLogsPanel v-if="(project || aggregate) && logsOpen" :lines="status?.log ?? []" @close="logsOpen = false" />
 			</div>
-			<ProjectChatPanel v-if="(project || aggregate) && chatOpen && !auth.minimal" ref="chatPanel" :project="project" @close="chatOpen = false"
+			<ProjectChatPanel v-if="(project || aggregate) && chatOpen" ref="chatPanel" :project="project" @close="chatOpen = false"
 				@turn-end="void refreshSchedules()" />
 		</div>
 		<QueueDialog :target="queueTarget" :skill="queueSkill" :no-merge="status?.noMerge"
@@ -303,7 +303,6 @@ import {
 	targetURL,
 } from "../lib/projects";
 import { shortVersion } from "../lib/version";
-import { useAuthStore } from "../stores/auth";
 import { taskSessionPath, useSettingsStore } from "../stores/settings";
 
 // A selected state chip fills with that state's color; Starting is orange.
@@ -711,8 +710,6 @@ async function onGitHub(fn: () => Promise<void>) {
 	}
 }
 
-// A watch session has no chat, so it offers no prompt chat either.
-const auth = useAuthStore();
 // The prompt chat's open state survives reloads.
 const CHAT_OPEN_KEY = "aviary.projects.chatOpen";
 const chatOpen = ref(localStorage.getItem(CHAT_OPEN_KEY) === "1");

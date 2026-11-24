@@ -43,6 +43,31 @@ func TestCheckMinimalToolCalls(t *testing.T) {
 	}
 }
 
+func TestCheckMinimalAgentRun(t *testing.T) {
+	chat := func(args map[string]any) error {
+		return checkMinimalToolCalls([]byte(toolCallBody("agent_run", args)))
+	}
+	// The board's prompt chat names the session; the watch TUI's chat too.
+	for _, args := range []map[string]any{
+		{"name": config.ProjectsAgentName, "session": config.ProjectsChatSession, "message": "hi"},
+		{"name": config.ProjectsAgentName, "session": config.ProjectsChatSession, "session_id": config.ProjectsChatSession, "message": "hi"},
+	} {
+		if err := chat(args); err != nil {
+			t.Errorf("prompt chat %v refused: %v", args, err)
+		}
+	}
+	for _, args := range []map[string]any{
+		{"name": "watch", "session": config.ProjectsChatSession, "message": "hi"},
+		{"name": config.ProjectsAgentName, "message": "hi"},
+		{"name": config.ProjectsAgentName, "session": "main", "message": "hi"},
+		{"name": config.ProjectsAgentName, "session": config.ProjectsChatSession, "session_id": "other", "message": "hi"},
+	} {
+		if err := chat(args); !errors.Is(err, errMinimalBlocked) {
+			t.Errorf("agent_run %v = %v, want refused", args, err)
+		}
+	}
+}
+
 func TestCheckMinimalConfigSave(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "aviary.yaml")
 	config.SetDefaultPath(path)

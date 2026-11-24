@@ -46,6 +46,9 @@ type GitState struct {
 	// HotReload is true when the backend runs under forgo's hot reload, so
 	// pulled Go changes go live without a restart where forgo can apply them.
 	HotReload bool `json:"hotReload"`
+	// HotReloadDir is forgo's control directory when HotReload is set, so
+	// aviary upgrade can wait for the reload of the code it pulled.
+	HotReloadDir string `json:"hotReloadDir,omitempty"`
 }
 
 // GitPullResult describes a git-mode update.
@@ -328,7 +331,8 @@ func ReadGitState(ctx context.Context, dir string) (GitState, error) {
 }
 
 func readGitState(ctx context.Context, dir string) (GitState, error) {
-	st := GitState{Dir: dir, Supervised: Supervised(), HotReload: HotReloadDir() != ""}
+	hotDir := HotReloadDir()
+	st := GitState{Dir: dir, Supervised: Supervised(), HotReload: hotDir != "", HotReloadDir: hotDir}
 	var err error
 	if st.Branch, err = runGit(ctx, dir, "rev-parse", "--abbrev-ref", "HEAD"); err != nil {
 		return st, err

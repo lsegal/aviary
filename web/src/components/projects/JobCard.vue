@@ -67,7 +67,7 @@
 				@click="emit('retry', job)">
 				<ArrowPathIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
-			<button v-if="job.number && job.repo && !auth.minimal" type="button" data-testid="job-summarize"
+			<button v-if="job.number && job.repo" type="button" data-testid="job-summarize"
 				aria-label="Summarize" title="Ask the prompt chat to summarize this job's session log"
 				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 				@click="emit('summarize', job)">
@@ -105,15 +105,12 @@ import {
 	projectPath,
 	waitText,
 } from "../../lib/projects";
-import { useAuthStore } from "../../stores/auth";
 import { useSettingsStore } from "../../stores/settings";
 import JobOutputPane from "./JobOutputPane.vue";
 import JobOutputToggle from "./JobOutputToggle.vue";
 import JobStatusPill from "./JobStatusPill.vue";
 import PullRequestLink from "./PullRequestLink.vue";
 
-// A watch session has no prompt chat to summarize with.
-const auth = useAuthStore();
 const props = defineProps<{
 	job: ProjectJob;
 	now: number;
