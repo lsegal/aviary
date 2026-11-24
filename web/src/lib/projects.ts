@@ -1227,13 +1227,6 @@ export function formatFire(iso: string): string {
 			});
 }
 
-/** A schedule run's duration as "42s" or "5m 12s"; empty when unknown. */
-export function runDuration(ms: number): string {
-	if (!ms) return "";
-	const s = Math.round(ms / 1000);
-	return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
-}
-
 /** The schedule's trigger in words, as the scheduler describes it. */
 export function triggerSummary(s: ProjectSchedule): string {
 	if (s.description) return s.description;

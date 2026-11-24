@@ -17,10 +17,8 @@ import {
 	summarizeProjects,
 	type UpcomingRun,
 } from "../lib/projects";
-import { triggerArgs } from "../lib/trigger";
 import { useSettingsStore } from "../stores/settings";
 import { useMCP } from "./useMCP";
-import { useTriggerPreview } from "./useTriggerPreview";
 
 /** How often the board and run view re-read the engine, in milliseconds. */
 export const PROJECTS_POLL_MS = 2_000;
@@ -453,34 +451,10 @@ export function useProjectSchedules(
 		},
 	);
 
-	/**
-	 * Saves an existing project scheduled task. New ones are created through
-	 * the shared Add task dialog, as any scheduled task is.
-	 */
-	async function save(s: ProjectSchedule) {
-		await callTool("task_update", {
-			name: s.id,
-			...triggerArgs(s),
-			content: s.prompt.trim(),
-			model: s.model.trim(),
-			project: s.project,
-			enabled: s.enabled,
-			precompile: s.precompile,
-		});
-		await refresh();
-	}
-
-	async function remove(s: ProjectSchedule) {
-		await callTool("task_delete", { name: s.id });
-		await refresh();
-	}
-
 	async function runNow(s: ProjectSchedule) {
 		await callTool("task_run", { name: s.id });
 		await refresh();
 	}
-
-	const preview = useTriggerPreview();
 
 	return {
 		schedules,
@@ -489,9 +463,6 @@ export function useProjectSchedules(
 		error,
 		loaded,
 		refresh,
-		save,
-		remove,
 		runNow,
-		preview,
 	};
 }

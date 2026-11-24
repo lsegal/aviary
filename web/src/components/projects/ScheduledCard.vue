@@ -90,12 +90,9 @@
 			</p>
 		</div>
 		<!-- The footer is one row in every state: a run adds nothing to it, and
-			on a narrow card Settings and Pause fold into a menu (#1157). -->
+			on a narrow card Pause and Task settings fold into a menu (#1157). -->
 		<div data-testid="scheduled-footer"
 			class="relative z-10 flex min-w-0 shrink-0 cursor-auto flex-nowrap items-center gap-2 border-t border-gray-100 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
-			<router-link :to="to" aria-label="Edit schedule" title="Edit this schedule" :class="ICON_BUTTON">
-				<PencilIcon aria-hidden="true" class="h-4 w-4" />
-			</router-link>
 			<button v-if="failed && job" type="button" :disabled="busy" data-testid="scheduled-dismiss"
 				title="Dismiss this failed run; the card still shows it until the next run"
 				class="shrink-0 rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
@@ -106,15 +103,17 @@
 				@click="emit('run', schedule)">
 				<PlayIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
-			<button type="button" aria-label="Settings" title="Open this scheduled task's settings"
-				:class="[ICON_BUTTON, '@max-[16rem]:hidden']" @click="emit('settings', schedule)">
-				<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
-			</button>
 			<button type="button" :disabled="busy" :aria-label="schedule.enabled ? 'Pause' : 'Resume'"
 				:title="schedule.enabled ? 'Pause this schedule' : 'Resume this schedule'"
 				:class="[ICON_BUTTON, '@max-[16rem]:hidden']" @click="emit('toggle', schedule)">
 				<PauseIcon v-if="schedule.enabled" aria-hidden="true" class="h-4 w-4" />
 				<PlayCircleIcon v-else aria-hidden="true" class="h-4 w-4" />
+			</button>
+			<!-- The gear, always the last action, edits the task in the full task
+				settings, as the sidebar's gear does. -->
+			<button type="button" data-testid="scheduled-settings" aria-label="Task settings" title="Task settings"
+				:class="[ICON_BUTTON, '@max-[16rem]:hidden']" @click="emit('settings', schedule)">
+				<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
 			<DropdownMenuRoot>
 				<DropdownMenuTrigger asChild>
@@ -126,14 +125,14 @@
 				<DropdownMenuPortal>
 					<DropdownMenuContent align="end" :side-offset="6" data-testid="scheduled-more-items"
 						class="z-50 min-w-40 rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-						<DropdownMenuItem :class="MENU_ITEM" @select="emit('settings', schedule)">
-							<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
-							Settings
-						</DropdownMenuItem>
 						<DropdownMenuItem :disabled="busy" :class="MENU_ITEM" @select="emit('toggle', schedule)">
 							<PauseIcon v-if="schedule.enabled" aria-hidden="true" class="h-4 w-4" />
 							<PlayCircleIcon v-else aria-hidden="true" class="h-4 w-4" />
 							{{ schedule.enabled ? "Pause" : "Resume" }}
+						</DropdownMenuItem>
+						<DropdownMenuItem :class="MENU_ITEM" @select="emit('settings', schedule)">
+							<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
+							Task settings
 						</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenuPortal>
@@ -149,7 +148,6 @@
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import EllipsisHorizontalIcon from "@heroicons/vue/24/outline/EllipsisHorizontalIcon";
 import PauseIcon from "@heroicons/vue/24/outline/PauseIcon";
-import PencilIcon from "@heroicons/vue/24/outline/PencilIcon";
 import PlayCircleIcon from "@heroicons/vue/24/outline/PlayCircleIcon";
 import PlayIcon from "@heroicons/vue/24/outline/PlayIcon";
 import {
@@ -192,8 +190,6 @@ import JobOutputToggle from "./JobOutputToggle.vue";
 const props = defineProps<{
 	schedule: ProjectSchedule;
 	now: number;
-	/** Where the box's Edit schedule link opens the schedule's editor. */
-	to: RouteLocationRaw;
 	/**
 	 * The schedule's board entry, its latest run with its last and next run
 	 * and recent runs, whose output the box shows while it runs.
