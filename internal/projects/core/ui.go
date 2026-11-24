@@ -521,6 +521,11 @@ type IssueCreate struct {
 	// Attachments are local image or video files gh-create uploads and
 	// embeds in the issue.
 	Attachments []string `json:"attachments,omitempty"`
+	// Session is the chat session asking, when there is one. A second,
+	// different request from it on the same repository while one is filing
+	// or shortly after one filed is refused unless Distinct is set.
+	Session  string `json:"session,omitempty"`
+	Distinct bool   `json:"distinct,omitempty"`
 }
 
 // IssueCreateResult is the issue an IssueCreate filed and the agent that

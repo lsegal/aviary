@@ -329,6 +329,7 @@
 	],
 	"project_issue_create": [
 		"attachments",
+		"distinct",
 		"model",
 		"repository",
 		"skip_turn_media",
