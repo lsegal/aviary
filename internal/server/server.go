@@ -336,6 +336,7 @@ func (s *Server) registerRoutes() {
 
 	// The web UI's navigation order and visibility, kept per user.
 	s.mux.Handle("/api/preferences/navigation", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(navPreferencesHandler)))
+	s.mux.Handle("/api/preferences/display", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(displayPreferencesHandler)))
 
 	// Web UI: SPA served from embedded web/dist.
 	defer trace.Phase("web/static handler")()

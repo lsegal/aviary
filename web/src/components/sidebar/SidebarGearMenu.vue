@@ -9,36 +9,47 @@
 		<DropdownMenuContent :side="rail ? 'right' : 'top'" align="end" :side-offset="6"
 			data-testid="gear-menu"
 			class="z-50 min-w-40 rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-			<DropdownMenuItem :class="itemClass" data-testid="gear-menu-settings" @select="router.push('/system/settings')">
-				<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
-				Settings
+			<DropdownMenuItem v-if="minimal" :class="itemClass" data-testid="gear-menu-display"
+				@select="router.push('/system/display')">
+				<SwatchIcon aria-hidden="true" class="h-4 w-4" />
+				Display
 			</DropdownMenuItem>
-			<DropdownMenuItem :class="itemClass" data-testid="gear-menu-edit-nav" @select="nav.editing.value = true">
-				<AdjustmentsHorizontalIcon aria-hidden="true" class="h-4 w-4" />
-				Edit sidebar
-			</DropdownMenuItem>
-			<DropdownMenuItem :class="itemClass" :disabled="restartDisabled" data-testid="restart-button"
-				@select="emit('restart')">
-				<ArrowPathIcon aria-hidden="true" class="h-4 w-4" :class="restartPending ? 'animate-spin' : ''" />
-				Restart
-			</DropdownMenuItem>
-			<DropdownMenuItem :class="dangerClass" data-testid="gear-menu-logout" @select="logout">
-				<ArrowRightOnRectangleIcon aria-hidden="true" class="h-4 w-4" />
-				Logout
-			</DropdownMenuItem>
+			<template v-else>
+				<DropdownMenuItem :class="itemClass" data-testid="gear-menu-settings" @select="router.push('/system/settings')">
+					<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
+					Settings
+				</DropdownMenuItem>
+				<DropdownMenuItem :class="itemClass" data-testid="gear-menu-edit-nav"
+					@select="router.push({ path: '/system/display', hash: '#sidebar' })">
+					<AdjustmentsHorizontalIcon aria-hidden="true" class="h-4 w-4" />
+					Edit sidebar
+				</DropdownMenuItem>
+				<DropdownMenuItem :class="itemClass" :disabled="restartDisabled" data-testid="restart-button"
+					@select="emit('restart')">
+					<ArrowPathIcon aria-hidden="true" class="h-4 w-4" :class="restartPending ? 'animate-spin' : ''" />
+					Restart
+				</DropdownMenuItem>
+				<DropdownMenuItem :class="dangerClass" data-testid="gear-menu-logout" @select="logout">
+					<ArrowRightOnRectangleIcon aria-hidden="true" class="h-4 w-4" />
+					Logout
+				</DropdownMenuItem>
+			</template>
 		</DropdownMenuContent>
 	</DropdownMenuRoot>
 </template>
 
 <script setup lang="ts">
 // The sidebar's gear (#822): a menu of Settings, Edit sidebar (#1003), the
-// safe Restart, and Logout, rather than a link straight to Settings. Hovering, focusing or
+// safe Restart, and Logout, rather than a link straight to Settings. Edit
+// sidebar opens Settings → Display at its Sidebar section (#1093), and a
+// watch session's menu is Display alone (#991). Hovering, focusing or
 // opening it prefetches the Settings chunk so choosing Settings routes at
 // once (#897).
 import AdjustmentsHorizontalIcon from "@heroicons/vue/24/outline/AdjustmentsHorizontalIcon";
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowRightOnRectangleIcon from "@heroicons/vue/24/outline/ArrowRightOnRectangleIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
+import SwatchIcon from "@heroicons/vue/24/outline/SwatchIcon";
 import {
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -47,7 +58,6 @@ import {
 } from "radix-vue";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { useNavPrefs } from "../../composables/useNavPrefs";
 import { isSettingsPath } from "../../lib/systemNav";
 import { prefetchSettingsView } from "../../router/settingsView";
 import { useAuthStore } from "../../stores/auth";
@@ -55,6 +65,8 @@ import { useAuthStore } from "../../stores/auth";
 const props = defineProps<{
 	/** Sized as a collapsed-rail icon, opening to its right. */
 	rail?: boolean;
+	/** A watch session's menu (#991), offering only Display. */
+	minimal?: boolean;
 	restartDisabled?: boolean;
 	restartPending?: boolean;
 }>();
@@ -66,7 +78,6 @@ watch(open, (isOpen) => {
 });
 const router = useRouter();
 const auth = useAuthStore();
-const nav = useNavPrefs();
 
 function logout() {
 	auth.logout();

@@ -131,3 +131,24 @@ test("saved navigation preferences can't bring back pages minimal mode hides (#1
 		.evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
 	expect(keys).toEqual(["sidebar-row-tasks", "sidebar-row-projects"]);
 });
+
+test("a watch session keeps Settings → Display, behind a Display-only gear (#1093)", async ({
+	page,
+}) => {
+	await mockWatchSession(page);
+	await page.goto("/agents/watch/projects");
+	await page.getByTestId("sidebar").getByTestId("gear-menu-button").click();
+	const menu = page.getByTestId("gear-menu");
+	await expect(menu.getByRole("menuitem")).toHaveText(["Display"]);
+	await menu.getByTestId("gear-menu-display").click();
+	await expect(page).toHaveURL("/system/display");
+	await expect(page.getByTestId("settings-display")).toBeVisible();
+	await expect(page.getByTestId("settings-tabs").getByRole("tab")).toHaveText([
+		"Display",
+	]);
+	await page
+		.getByTestId("display-theme")
+		.locator('[data-value="dark"]')
+		.click();
+	await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+});

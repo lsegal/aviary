@@ -2,10 +2,12 @@
   <div class="flex h-full flex-col bg-white dark:bg-gray-950 lg:flex-row">
     <header class="border-b border-gray-200 bg-gray-50 px-4 py-2 dark:border-gray-800 dark:bg-gray-900 lg:hidden">
       <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-2">
-          <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 object-contain" />
-          <span class="text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
-          <div class="flex items-center gap-1">
+        <div class="flex min-w-0 items-center gap-2">
+          <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 shrink-0 object-contain" />
+          <span class="shrink-0 text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
+          <!-- Links that don't fit, as at a large text size (#1093), wrap
+               out of sight rather than under the status icons. -->
+          <div class="flex h-8 min-w-0 flex-wrap items-center gap-1 overflow-hidden">
             <a
               v-for="link in brandLinks"
               :key="link.label"
@@ -31,7 +33,7 @@
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-1" data-testid="mobile-header-status">
-          <SidebarGearMenu v-if="!minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+          <SidebarGearMenu :minimal="minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
             @restart="triggerRestart()" />
           <VersionIndicator v-if="!minimal" :version="version" :latest-version="latestVersion" :status="status"
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
@@ -269,7 +271,7 @@
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <div class="ml-auto flex shrink-0 items-center gap-1" data-testid="sidebar-footer-actions">
             <ConnectionIndicator :status="status" @retry="reconnect()" />
-            <SidebarGearMenu v-if="!minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+            <SidebarGearMenu :minimal="minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
               @restart="triggerRestart()" />
           </div>
         </div>
@@ -336,7 +338,7 @@
           <TagIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
         <ConnectionIndicator :status="status" @retry="reconnect()" />
-        <SidebarGearMenu v-if="!minimal" rail :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+        <SidebarGearMenu :minimal="minimal" rail :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
           @restart="triggerRestart()" />
       </div>
     </nav>
@@ -354,7 +356,6 @@
       </div>
     </main>
 
-    <NavEditDialog :groups="navEditGroups" />
     <AgentItemDialogs />
     <ChannelDialogs />
     <ToastStack />
@@ -394,6 +395,7 @@ import {
 	markRaw,
 	onBeforeUnmount,
 	onMounted,
+	provide,
 	ref,
 	watch,
 } from "vue";
@@ -413,8 +415,10 @@ import {
 import { agentFilePath, useAgentFilesStore } from "../stores/agentFiles";
 import { projectOwner } from "../lib/projectSettings";
 import { useRouteExpandedGroup } from "../composables/useRouteExpandedGroup";
+import { useDisplayPrefs } from "../composables/useDisplayPrefs";
 import { useAgentNav } from "../composables/useAgentNav";
 import type { NavList } from "../lib/navPrefs";
+import { type NavEditGroup, navEditGroupsKey } from "../lib/navEditGroups";
 import { AGENT_PAGES, agentPagePath } from "../lib/agentPages";
 import { type Crumb, routeCrumbs } from "../lib/breadcrumb";
 import { useCrumbSwitcher } from "../composables/useCrumbSwitcher";
@@ -450,7 +454,6 @@ import SettingsPageHeader, {
 } from "./settings/SettingsPageHeader.vue";
 import SystemPageIcon from "./SystemPageIcon.vue";
 import ToastStack from "./ui/ToastStack.vue";
-import NavEditDialog, { type NavEditGroup } from "./nav/NavEditDialog.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 import VersionIndicator from "./VersionIndicator.vue";
 
@@ -726,6 +729,8 @@ const {
 	arranged,
 	agentHome,
 } = useAgentNav();
+// Loads the server's display preferences on any page (#1093).
+useDisplayPrefs();
 
 const settingsStore = useSettingsStore();
 if (!settingsStore.config && auth.isLoggedIn) void settingsStore.fetchConfig();
@@ -1075,8 +1080,8 @@ const hiddenNavCount = computed(() => {
 	);
 });
 
-// The Edit sidebar dialog's lists: the agent pages, whose order the top
-// row follows too, and System pages.
+// The sidebar editor's lists, shown in Settings → Display (#1093): the
+// agent pages, whose order the top row follows too, and System pages.
 const navEditGroups = computed<NavEditGroup[]>(() => {
 	const shown = (items: { key: string; label: string }[]) =>
 		items
@@ -1096,6 +1101,7 @@ const navEditGroups = computed<NavEditGroup[]>(() => {
 	];
 	return groups.filter((g) => g.items.length);
 });
+provide(navEditGroupsKey, navEditGroups);
 
 // The current page's place, from its agent or System down (#1036), so it
 // shows with the sidebar collapsed and on narrow screens too. An agent's
