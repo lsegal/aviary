@@ -45,6 +45,11 @@ func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) 
 		}
 		session = AgentSession{Agent: spec, Model: override}
 	}
+	// A settings change restarting the engine holds refreshMu until the
+	// new engine is running, so a run its restart interrupted and requeued
+	// waits for that engine instead of finding none (issue #1028).
+	m.refreshMu.Lock()
+	m.refreshMu.Unlock() //nolint:staticcheck // waits out a refresh in progress
 	engine := m.engine()
 	if engine == nil {
 		return "", ErrNotWatching
@@ -234,6 +239,8 @@ func projectTaskStatus(result projectTaskResult) string {
 		return "complete"
 	case errors.Is(result.err, context.Canceled):
 		return "stopped"
+	case errors.Is(result.err, scheduler.ErrProjectRunInterrupted):
+		return "interrupted"
 	}
 	return "failed"
 }

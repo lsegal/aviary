@@ -24,6 +24,7 @@ import (
 	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/projects/core"
+	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/transcript"
 	"github.com/lsegal/aviary/internal/wake"
@@ -4153,6 +4154,12 @@ func (w *Engine) Run(ctx context.Context) error {
 			jobMu.Lock()
 			job := jobs[key]
 			result = projectTaskOutcome(runErr, context.Cause(runCtx), job.Log)
+			// The engine stopping under a run, as a settings change restarts
+			// it, is no stop of the run: core's scheduler requeues it for
+			// when the engine is back (issue #1028).
+			if result.err != nil && ctx.Err() != nil && request.ctx.Err() == nil && !errors.Is(context.Cause(runCtx), errWorkStoppedFromWebUI) {
+				result = projectTaskResult{summary: "interrupted by the Code Loop engine restarting; requeued to run again", err: scheduler.ErrProjectRunInterrupted}
+			}
 			status := projectTaskStatus(result)
 			job.Status, job.Finished, job.Summary, job.Fallback = "complete", time.Now(), result.summary, fellBack
 			if result.err != nil {
