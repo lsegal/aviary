@@ -35,6 +35,9 @@ type Issue struct {
 	// issue, and ScheduleID names the schedule it fired from.
 	Prompt     string `json:"-"`
 	ScheduleID string `json:"-"`
+	// Skill is the skill a job queued on demand runs, gh-safe-merge or
+	// gh-discuss, in place of the target's own (issue #1095).
+	Skill string `json:"-"`
 }
 
 // IssueLabel is one label on an issue.

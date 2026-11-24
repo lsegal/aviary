@@ -65,14 +65,22 @@
 					</router-link>
 					<p class="flex flex-wrap items-center gap-x-1.5 text-gray-500 dark:text-gray-400">
 						<span v-if="job.scheduled">Scheduled</span>
+						<a v-else-if="job.kind === 'merge' || job.kind === 'discuss'" :href="job.issueURL" target="_blank" rel="noreferrer"
+							data-testid="kanban-kind" class="hover:underline">{{ job.kind === "merge" ? "Safe merge PR" : "Discuss" }} #{{ job.number }}</a>
 						<a v-else-if="job.number && job.repo" :href="job.issueURL || githubURL(job.repo, 'issues', job.number)"
 							target="_blank" rel="noreferrer" class="hover:underline">#{{ job.number }}</a>
-						<PullRequestLink v-if="job.pr" :job="job" />
+						<PullRequestLink v-if="job.pr && job.kind !== 'merge'" :job="job" />
+						<span v-if="job.kind === 'merge' && job.status === 'queued' && job.queuePosition" data-testid="kanban-queue-position">#{{ job.queuePosition }} in queue</span>
 						<span v-if="job.startedAt" data-testid="kanban-timing" class="ml-auto tabular-nums"
 							:title="`Started ${new Date(job.startedAt).toLocaleString()}`">{{ age(job.startedAt, now) }}</span>
 					</p>
 					<p v-if="job.state === 'paused'" data-testid="kanban-paused-reason" class="text-amber-700 dark:text-amber-400">
 						{{ waitText(job, now) || "No pause reason recorded" }}
+					</p>
+					<p v-if="(job.kind === 'merge' || job.kind === 'discuss') && job.summary && (job.state === 'done' || job.state === 'failed')"
+						data-testid="kanban-reason" class="truncate" :title="job.summary"
+						:class="job.state === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'">
+						{{ job.summary }}
 					</p>
 				</article>
 				<p v-if="!col.jobs.length" class="px-1 py-3 text-center text-gray-400">No jobs</p>

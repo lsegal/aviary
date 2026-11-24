@@ -356,6 +356,13 @@
 		"number",
 		"target"
 	],
+	"project_job_queue": [
+		"numbers",
+		"repository",
+		"skill",
+		"target",
+		"titles"
+	],
 	"project_job_resume": [
 		"number",
 		"target"
@@ -366,6 +373,11 @@
 	],
 	"project_job_stop": [
 		"number",
+		"target"
+	],
+	"project_queue_candidates": [
+		"repository",
+		"skill",
 		"target"
 	],
 	"project_refresh": [

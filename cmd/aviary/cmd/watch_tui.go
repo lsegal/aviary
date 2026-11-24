@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -76,6 +77,7 @@ type watchStatus struct {
 		Failed    int `json:"failed"`
 	} `json:"jobs"`
 	Concurrency   int      `json:"concurrency"`
+	NoMerge       bool     `json:"no_merge"`
 	Delivery      string   `json:"delivery"`
 	PollInterval  string   `json:"poll_interval"`
 	LastCheck     string   `json:"last_check"`
@@ -101,6 +103,7 @@ type watchJob struct {
 	Repository       string          `json:"repository"`
 	ScheduleID       string          `json:"schedule_id"`
 	Summary          string          `json:"summary"`
+	QueuePosition    int             `json:"queue_position"`
 	PullRequest      int             `json:"pull_request"`
 	PullRequestState string          `json:"pull_request_state"`
 	Started          string          `json:"started"`
@@ -371,6 +374,8 @@ type watchModel struct {
 
 	showHelp bool
 	confirm  *watchPendingAction
+	// queueInput is the queue prompt while it is open.
+	queueInput *textinput.Model
 
 	// chat is the prompt chat pane.
 	chat watchChat
@@ -587,6 +592,8 @@ func (m watchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errText = ""
 		m.message = fmt.Sprintf("%s sent for %s", msg.verb, msg.key)
 		return m.refresh()
+	case watchQueueMsg:
+		return m.applyQueue(msg)
 	case tea.KeyMsg:
 		return m.updateKey(msg)
 	}
@@ -606,6 +613,9 @@ func (m watchModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.message = pending.verb + " cancelled"
 		return m, nil
+	}
+	if m.queueInput != nil {
+		return m.updateQueueInput(msg)
 	}
 	if m.showHelp {
 		// Any key closes the help; q still quits.
@@ -648,6 +658,10 @@ func (m watchModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "b":
 		m.board = !m.board
 		m.restoreSelection()
+	case "m":
+		return m.safeMergeSelected()
+	case "Q":
+		return m.openQueue()
 	case "l":
 		m.showLogs = !m.showLogs
 		m.logScroll = 0

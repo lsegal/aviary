@@ -382,6 +382,8 @@ aviary project remove <target> [--runtime]
 aviary project refresh [target]
 aviary project job list [--target T] [--status S] [--offset N] [--limit N]
 aviary project job get|explain|retry|pause|resume|stop <number> [--target T]
+aviary project job queue <gh-safe-merge|gh-discuss|gh-fix> --numbers N,N [--target T]
+aviary project queue candidates <gh-safe-merge|gh-discuss> [--target T]
 aviary project clone list|clear
 aviary project unblock [number] [--target T]
 aviary project issue comment <number> --text TEXT [--repository R]

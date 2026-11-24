@@ -41,6 +41,8 @@ var projectToolCommands = []projectToolCommand{
 	{[]string{"job", "resume"}, "project_job_resume", "number", "Resume a paused job"},
 	{[]string{"job", "stop"}, "project_job_stop", "number", "Stop a job and wait for its agent to exit"},
 	{[]string{"job", "dismiss"}, "project_job_dismiss", "number", "Dismiss a failed scheduled run from the Failed state"},
+	{[]string{"job", "queue"}, "project_job_queue", "skill", "Queue pull requests for gh-safe-merge or Discussion threads for gh-discuss with --numbers"},
+	{[]string{"queue", "candidates"}, "project_queue_candidates", "skill", "List the open pull requests or Discussion threads a project can queue"},
 	{[]string{"clone", "list"}, "project_clone_list", "", "List job clones and whether they are in use"},
 	{[]string{"clone", "clear"}, "project_clone_clear", "", "Remove unused job clones"},
 	{[]string{"unblock"}, "project_unblock_run", "number", "Run a stuck-job watchdog round now"},

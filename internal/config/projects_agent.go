@@ -11,7 +11,8 @@ const ProjectsAgentName = "projects"
 const ProjectsChatSession = "projects-chat"
 
 // ProjectsAgentTools are the only tools the Code Loop agent may call. It reads
-// live state, retries, pauses, resumes or stops jobs, runs unblock rounds,
+// live state, retries, pauses, resumes or stops jobs, queues pull requests for
+// gh-safe-merge and Discussion threads for gh-discuss, runs unblock rounds,
 // files issues, and updates an issue or pull request with
 // project_issue_comment: one comment mentioning its author, which the job
 // working it also hears. It also manages the watched projects' scheduled
@@ -27,6 +28,8 @@ var ProjectsAgentTools = []string{
 	"project_job_resume",
 	"project_job_stop",
 	"project_job_dismiss",
+	"project_job_queue",
+	"project_queue_candidates",
 	"project_refresh",
 	"provider_cli_list",
 	"project_clone_list",
