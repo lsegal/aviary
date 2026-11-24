@@ -201,8 +201,9 @@ func ProjectModelSpec(cfg *Config, agentName, model string) (spec, override stri
 
 // ProjectCLIProviders returns the CLI providers, sorted, that a project
 // owned by the named agent uses, so its skills only need installing for
-// those: the CLIs of the jobs' models (models, when non-nil, in place of the
-// agent's saved model and fallbacks, as ProjectJobSpecs maps them), the Code
+// those: the CLIs of the jobs' models (projects.model and projects.fallbacks
+// when model is set, else models, when non-nil, in place of the agent's
+// saved model and fallbacks, as ProjectJobSpecs maps them), the Code
 // Loop chat agent's model and fallbacks, the unblock agent, and the model of
 // every scheduled task targeting the project.
 func ProjectCLIProviders(cfg *Config, agentName, target string, models []string) []string {
@@ -223,7 +224,9 @@ func ProjectCLIProviders(cfg *Config, agentName, target string, models []string)
 			}
 		}
 	}
-	if models != nil {
+	if override, ok := projectModelOverride(cfg); ok {
+		addModels(override)
+	} else if models != nil {
 		addModels(models)
 	} else {
 		for _, spec := range ProjectJobSpecs(cfg, agentName) {

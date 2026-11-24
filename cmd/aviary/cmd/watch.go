@@ -26,6 +26,8 @@ import (
 // watchOptions holds the watch command flags.
 type watchOptions struct {
 	agent             string
+	model             string
+	fallbacks         []string
 	concurrency       int
 	interval          string
 	delivery          string
@@ -69,6 +71,15 @@ flags override the Code Loop settings. The targets run under --agent, else the
 agent of yours that owns them, else models.defaults. Use 'aviary project add'
 to watch a project permanently.
 
+Jobs run on that agent's model and fallbacks unless a job model is set:
+--model and repeatable --fallback, else the AVIARY_WATCH_MODEL and
+AVIARY_WATCH_FALLBACKS (comma-separated) environment variables, else
+projects.model and projects.fallbacks in your aviary.yaml. Each is a model of
+a provider reached through a CLI, as claude/opus or claude:opus, whose CLI
+must be installed:
+
+  aviary watch --model claude:opus --fallback codex:gpt-5.6
+
 The session's server listens on localhost only, on the first free port from
 your server port (default 16677) up, and serves a minimal web UI with no token
 prompt: Code Loop and Scheduled Tasks only. Chat, agent and channel settings,
@@ -88,6 +99,8 @@ watch once its PID is gone.`,
 func init() {
 	f := watchCmd.Flags()
 	f.StringVar(&watchOpts.agent, "agent", "", "Aviary agent the targets run under; its model and fallbacks pick the jobs' CLI providers (default: the agent that owns the target, else models.defaults)")
+	f.StringVar(&watchOpts.model, "model", "", "CLI provider model jobs run on in place of the agent's, such as claude:opus or claude/opus (env AVIARY_WATCH_MODEL; config projects.model)")
+	f.StringArrayVar(&watchOpts.fallbacks, "fallback", nil, "CLI provider model jobs fall back to when --model's quota is used up, repeatable, in order (env AVIARY_WATCH_FALLBACKS, comma-separated; config projects.fallbacks)")
 	f.IntVar(&watchOpts.concurrency, "concurrency", 0, "jobs that run at once (default 3)")
 	f.StringVar(&watchOpts.interval, "interval", "", "time between GitHub polls (default 20s for browser delivery, 30s otherwise)")
 	f.StringVar(&watchOpts.delivery, "delivery", "", "browser, poll or webhook (default browser: read GitHub through Aviary's browser, signed in as you)")
@@ -141,6 +154,7 @@ func watchSettings() (config.ProjectsConfig, error) {
 		BrowserVision:     watchOpts.browserVision,
 		BrowserVisible:    watchOpts.browserVisible,
 	}
+	settings.Model, settings.Fallbacks = watchModels(os.Getenv)
 	if watchOpts.concurrency < 0 {
 		return settings, errors.New("--concurrency cannot be negative")
 	}
@@ -163,6 +177,37 @@ func watchSettings() (config.ProjectsConfig, error) {
 	return settings, nil
 }
 
+// Environment variables that set the watch's job model when the flags don't.
+const (
+	watchModelEnv     = "AVIARY_WATCH_MODEL"
+	watchFallbacksEnv = "AVIARY_WATCH_FALLBACKS"
+)
+
+// watchModels returns the job model and fallbacks from --model and
+// --fallback, else from AVIARY_WATCH_MODEL and AVIARY_WATCH_FALLBACKS. The
+// flags and the variables are taken separately, so --model with
+// AVIARY_WATCH_FALLBACKS set keeps those fallbacks.
+func watchModels(getenv func(string) string) (string, []string) {
+	model := strings.TrimSpace(watchOpts.model)
+	if model == "" {
+		model = strings.TrimSpace(getenv(watchModelEnv))
+	}
+	var fallbacks []string
+	for _, fallback := range watchOpts.fallbacks {
+		if fallback = strings.TrimSpace(fallback); fallback != "" {
+			fallbacks = append(fallbacks, fallback)
+		}
+	}
+	if len(fallbacks) == 0 {
+		for _, fallback := range strings.Split(getenv(watchFallbacksEnv), ",") {
+			if fallback = strings.TrimSpace(fallback); fallback != "" {
+				fallbacks = append(fallbacks, fallback)
+			}
+		}
+	}
+	return model, fallbacks
+}
+
 func runWatch(cmd *cobra.Command, args []string) (err error) {
 	targets, err := watchTargets(args)
 	if err != nil {
@@ -177,6 +222,9 @@ func runWatch(cmd *cobra.Command, args []string) (err error) {
 	out := cmd.OutOrStdout()
 	sources, global, err := resolveGlobalWatchSources(cfgFile)
 	if err != nil {
+		return err
+	}
+	if err := config.ValidateProjectModels(global.Models, global.Projects.Override(settings)); err != nil {
 		return err
 	}
 	for _, dir := range sweepStaleWatchDirs(os.TempDir()) {

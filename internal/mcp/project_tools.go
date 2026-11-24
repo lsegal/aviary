@@ -70,7 +70,7 @@ type projectAddArgs struct {
 	// Reports opts a saved project in to job reports.
 	Reports *config.ProjectReportsConfig `json:"reports,omitempty" jsonschema:"Send this project's job events (merged, failed, waiting) through an Aviary agent's channels; leave out for no reports"`
 	// Settings overrides the shared projects settings for a runtime watch.
-	Settings *config.ProjectsConfig `json:"settings,omitempty" jsonschema:"For a runtime watch, projects settings that override aviary.yaml while it runs"`
+	Settings *config.ProjectsConfig `json:"settings,omitempty" jsonschema:"For a runtime watch, projects settings that override aviary.yaml while it runs. model and fallbacks (CLI provider models such as claude/opus) replace the owning agent's model and fallbacks for its jobs"`
 }
 
 type projectRemoveArgs struct {
@@ -306,6 +306,13 @@ func registerProjectTools(s *sdkmcp.Server) {
 				}
 				watch := projects.Watch{Targets: []string{target}, Agent: strings.TrimSpace(args.Agent)}
 				if args.Settings != nil {
+					cfg, err := config.Load("")
+					if err != nil {
+						return nil, err
+					}
+					if err := config.ValidateProjectModels(cfg.Models, *args.Settings); err != nil {
+						return nil, fmt.Errorf("settings: %w", err)
+					}
 					watch.Settings = *args.Settings
 				}
 				if err := m.AddWatch(watch); err != nil {

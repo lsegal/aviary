@@ -1,9 +1,12 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProjectJobSpecsComeFromTheOwningAgent(t *testing.T) {
@@ -106,4 +109,63 @@ func TestProjectCLIProvidersAreOnlyTheOnesTheProjectUses(t *testing.T) {
 	}
 	assert.Equal(t, []string{"agy", "claude", "cline", "codex", "gemini", "muse"}, ProjectCLIProviders(cfg, "coder", "o/r", nil),
 		"fallbacks, the chat agent, the unblock agent and tasks targeting the project count")
+}
+
+func TestProjectModelOverrideWinsOverTheAgent(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{{Name: "coder", Model: "cli/claude/sonnet", Fallbacks: []string{"gemini/gemini-3.5-flash"},
+			Projects: AgentProjectsConfig{{Target: "o/r"}}}},
+	}
+	assert.Equal(t, []string{"claude/sonnet", "gemini/gemini-3.5-flash"}, ProjectJobSpecs(cfg, "coder"), "an empty override inherits the agent's")
+	assert.Equal(t, "from agent coder", ProjectModelSource(cfg, "coder"))
+	assert.Equal(t, "from models.defaults", ProjectModelSource(cfg, ""))
+
+	cfg.Projects.Fallbacks = []string{"codex/gpt-5.6"}
+	assert.Equal(t, []string{"claude/sonnet", "gemini/gemini-3.5-flash"}, ProjectJobSpecs(cfg, "coder"), "fallbacks alone override nothing")
+
+	cfg.Projects.Model = "claude:opus"
+	assert.Equal(t, []string{"claude/opus", "codex/gpt-5.6"}, ProjectJobSpecs(cfg, "coder"), "the override replaces the agent's model and fallbacks")
+	assert.Equal(t, []string{"claude/opus", "codex/gpt-5.6"}, ProjectJobSpecs(cfg, ""), "the override applies to a watch no agent owns")
+	assert.Equal(t, "project override", ProjectModelSource(cfg, "coder"))
+	assert.Equal(t, []string{"claude", "codex"}, ProjectCLIProviders(cfg, "coder", "o/r", []string{"gemini/gemini-3.5-flash"}),
+		"the skills check follows the override, not the agent's models")
+}
+
+func TestNormalizeProjectModel(t *testing.T) {
+	for in, want := range map[string]string{
+		" claude:opus ":      "claude/opus",
+		"claude/opus":        "claude/opus",
+		"codex/gpt-5.6:high": "codex/gpt-5.6:high",
+		"cli/claude/opus":    "cli/claude/opus",
+		"nosuch:model":       "nosuch:model",
+		"":                   "",
+	} {
+		assert.Equal(t, want, NormalizeProjectModel(ModelsConfig{}, in), in)
+	}
+}
+
+func TestValidateProjectModel(t *testing.T) {
+	bin := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\n"), 0o755))
+	t.Setenv("PATH", bin)
+
+	assert.NoError(t, ValidateProjectModel(ModelsConfig{}, ""))
+	assert.NoError(t, ValidateProjectModel(ModelsConfig{}, "claude:opus"))
+	assert.NoError(t, ValidateProjectModel(ModelsConfig{}, "cli/claude/opus"))
+	assert.ErrorContains(t, ValidateProjectModel(ModelsConfig{}, "nosuch/model"), `unknown provider "nosuch"`)
+	assert.ErrorContains(t, ValidateProjectModel(ModelsConfig{}, "cli/nosuch/model"), `unknown provider "nosuch"`)
+	assert.ErrorContains(t, ValidateProjectModel(ModelsConfig{}, "anthropic/claude-sonnet-5-5"), "not a model of a provider reached through a CLI")
+	assert.ErrorContains(t, ValidateProjectModel(ModelsConfig{}, "codex/gpt-5.6"), "the codex CLI is not installed")
+
+	assert.ErrorContains(t, ValidateProjectModels(ModelsConfig{}, ProjectsConfig{Fallbacks: []string{"claude/opus"}}), "only with projects.model set")
+	assert.ErrorContains(t, ValidateProjectModels(ModelsConfig{}, ProjectsConfig{Model: "claude/opus", Fallbacks: []string{"codex/gpt-5.6"}}), "projects.fallbacks[0]")
+
+	issues := Validate(&Config{Projects: ProjectsConfig{Model: "nosuch/model", Fallbacks: []string{"claude/opus"}}}, nil)
+	fields := []string{}
+	for _, issue := range issues {
+		if issue.Level == LevelError {
+			fields = append(fields, issue.Field)
+		}
+	}
+	assert.Equal(t, []string{"projects.model"}, fields, issues)
 }
