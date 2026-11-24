@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +39,32 @@ func init() {
 	rootCmd.AddCommand(doctorCmd)
 }
 
+// doctorServerStatus describes the server for the config at cfgPath: its PID
+// and memory from the PID file that server writes, in the config's own
+// directory. A server without a live PID there, such as one whose PID file
+// was removed, is still reported running when it answers on its port.
+func doctorServerStatus(cfgPath string, port int) string {
+	if running, pid, _ := configServerRunning(cfgPath); running {
+		sampler := server.NewProcSampler()
+		sampler.Sample([]int{pid})
+		stats, _ := sampler.Get(pid)
+		memStr := "unavailable"
+		if stats.RSSBytes > 0 {
+			memStr = fmt.Sprintf("%d MB", stats.RSSBytes/1024/1024)
+		}
+		return fmt.Sprintf("running (PID %d, mem %s)", pid, memStr)
+	}
+	if port == 0 {
+		port = 16677
+	}
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("localhost", strconv.Itoa(port)), time.Second)
+	if err != nil {
+		return "not running"
+	}
+	_ = conn.Close()
+	return fmt.Sprintf("running (answering on port %d; no live PID in %s)", port, server.PIDPath())
+}
+
 func runDoctor(_ *cobra.Command, _ []string) error {
 	cfgPath := cfgFile
 	if cfgPath == "" {
@@ -55,20 +83,11 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	_, _ = fmt.Fprintf(os.Stdout, "  Config file    : %s\n", cfgPath)
 	_, _ = fmt.Fprintf(os.Stdout, "  Data dir       : %s\n", store.DataDir())
 
-	// Server status + memory
-	running, pid, _ := server.IsRunning()
-	if running {
-		sampler := server.NewProcSampler()
-		sampler.Sample([]int{pid})
-		stats, _ := sampler.Get(pid)
-		memStr := "unavailable"
-		if stats.RSSBytes > 0 {
-			memStr = fmt.Sprintf("%d MB", stats.RSSBytes/1024/1024)
-		}
-		_, _ = fmt.Fprintf(os.Stdout, "  Server         : running (PID %d, mem %s)\n", pid, memStr)
-	} else {
-		_, _ = fmt.Fprintln(os.Stdout, "  Server         : not running")
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return fmt.Errorf("parsing config: %w", err)
 	}
+	_, _ = fmt.Fprintf(os.Stdout, "  Server         : %s\n", doctorServerStatus(cfgPath, cfg.Server.Port))
 
 	// ── Config file ───────────────────────────────────────────────────────────
 	_, _ = fmt.Fprintln(os.Stdout)
@@ -76,11 +95,6 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		_, _ = fmt.Fprintln(os.Stdout, "[WARN] config: file not found; using built-in defaults")
 		_, _ = fmt.Fprintln(os.Stdout, "       Run 'aviary configure' to create one.")
 		_, _ = fmt.Fprintln(os.Stdout)
-	}
-
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		return fmt.Errorf("parsing config: %w", err)
 	}
 
 	// ── Configured agents ─────────────────────────────────────────────────────

@@ -294,8 +294,8 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 			if taskType != "project" && (t.Project != "" || (t.Model != "" && !workflow)) {
 				v.errorf(tf, "project and model are only supported for project tasks and workflows")
 			}
-			if taskType != "project" && (t.Precompile != nil || t.Compiled != "" || t.CompiledKey != "") {
-				v.errorf(tf, "precompile, compiled and compiled_key are only supported for project tasks; prompt tasks are compiled into script tasks")
+			if !t.PrecompilesBesidePrompt() && (t.Precompile != nil || t.Compiled != "" || t.CompiledKey != "") {
+				v.errorf(tf, "precompile, compiled and compiled_key only apply to prompt and project tasks, which compile their prompt into a script; %s tasks have no prompt to compile", taskType)
 			}
 			if model := strings.TrimSpace(t.Model); model != "" && workflow {
 				v.checkModel(tf+".model", model)

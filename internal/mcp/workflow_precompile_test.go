@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -74,7 +75,7 @@ func TestWorkflowPrecompileSavesAndCompiles(t *testing.T) {
 	assert.Nil(t, loadedTask(t, "lua").Precompile)
 	out, err = d.CallTool(ctx, "task_update", map[string]any{"name": "bot/lua", "precompile": true})
 	require.NoError(t, err)
-	assert.Contains(t, out, "only supported for project tasks and prompt workflows")
+	assert.Contains(t, out, "script tasks have no prompt to compile")
 }
 
 func TestWorkflowScriptFailureIsFlagged(t *testing.T) {
@@ -141,4 +142,57 @@ func TestTaskAnalyzeWorkflowAddsTriggerContext(t *testing.T) {
 
 	_, err = analyzeTaskForEditor(ctx, taskAnalyzeArgs{Agent: "bot", Content: prompt, Type: "project", Project: "acme/app", Trigger: "message"})
 	require.ErrorContains(t, err, "workflows run prompt or script content")
+}
+
+func TestScheduledPromptTaskPrecompilesBesidePrompt(t *testing.T) {
+	cfg := workflowCompileConfig()
+	cfg.Agents[0].Tasks = []config.TaskConfig{{Name: "digest", Type: "prompt", Every: "1h", Prompt: "Post the digest"}}
+	prompts, _ := setupProjectTaskCompile(t, cfg, compiledScript(`print("digest")`))
+	d := NewDispatcher("https://localhost:16677", "")
+	ctx := context.Background()
+
+	// task_update accepts precompile on a scheduled prompt task, which keeps
+	// its prompt and compiles it as is, without workflow or project context.
+	_, err := d.CallTool(ctx, "task_update", map[string]any{"name": "bot/digest", "precompile": true})
+	require.NoError(t, err)
+	backgroundCompiles.Wait()
+	task := loadedTask(t, "digest")
+	assert.Equal(t, "prompt", task.Type)
+	assert.Equal(t, "Post the digest", task.Prompt)
+	assert.Equal(t, `print("digest")`, task.Compiled)
+	assert.Equal(t, []string{"Post the digest"}, *prompts)
+
+	// Converting it recompiles beside the prompt rather than replacing it.
+	_, err = d.CallTool(ctx, "config_task_convert_to_script", map[string]any{"agent": "bot", "task": "digest"})
+	require.NoError(t, err)
+	backgroundCompiles.Wait()
+	task = loadedTask(t, "digest")
+	assert.Equal(t, "prompt", task.Type)
+	assert.Equal(t, `print("digest")`, task.Compiled)
+	assert.Len(t, *prompts, 2)
+}
+
+func TestConfigSaveAcceptsPrecompiledPromptTasks(t *testing.T) {
+	setupProjectTaskCompile(t, workflowCompileConfig(), compiledScript(`print("x")`))
+	d := NewDispatcher("https://localhost:16677", "")
+	agentJSON := `{"name":"bot","model":"anthropic/claude-sonnet-4-5","channels":[{"type":"slack","id":"team","name":"Team"}],"tasks":[%s]}`
+	save := func(task string) (string, error) {
+		return d.CallTool(context.Background(), "config_save", map[string]any{"config": `{"agents":[` + fmt.Sprintf(agentJSON, task) + `]}`})
+	}
+
+	for _, task := range []string{
+		`{"name":"be-nice","type":"prompt","trigger":"message","channel":"Team","match":"test *","target":"reply","prompt":"Be nice","precompile":true}`,
+		`{"name":"digest","type":"prompt","every":"1h","prompt":"Post the digest","precompile":true}`,
+		`{"name":"triage","type":"project","every":"1h","project":"o/r","prompt":"Triage","precompile":true}`,
+	} {
+		out, err := save(task)
+		require.NoError(t, err, task)
+		assert.Contains(t, out, "saved")
+	}
+
+	// The dispatcher returns a tool's error as its text.
+	out, err := save(`{"name":"lua","type":"script","every":"1h","prompt":"print(1)","precompile":true}`)
+	require.NoError(t, err)
+	assert.Contains(t, out, "script tasks have no prompt to compile")
+	assert.NotContains(t, out, "saved")
 }

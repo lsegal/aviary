@@ -143,7 +143,7 @@ func resolveConfigPath(path string) (string, error) {
 }
 
 func chdirToConfigDir(path string) (string, error) {
-	resolved, err := resolveConfigPath(path)
+	resolved, err := useConfigBaseDir(path)
 	if err != nil {
 		return "", err
 	}
@@ -154,16 +154,36 @@ func chdirToConfigDir(path string) (string, error) {
 	if err := os.Chdir(dir); err != nil {
 		return "", fmt.Errorf("changing to config dir: %w", err)
 	}
-	if err := os.Setenv("AVIARY_CONFIG_BASE_DIR", dir); err != nil {
+	return resolved, nil
+}
+
+// useConfigBaseDir makes the directory of the config at path (default:
+// config.DefaultPath) the config base dir, as the server for that config
+// does, so the PID file this process reads is the one that server writes.
+func useConfigBaseDir(path string) (string, error) {
+	resolved, err := resolveConfigPath(path)
+	if err != nil {
+		return "", err
+	}
+	if err := os.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Dir(resolved)); err != nil {
 		return "", fmt.Errorf("setting config base dir: %w", err)
 	}
 	return resolved, nil
 }
 
+// configServerRunning reports whether the server for the config at path is
+// running, reading the PID file that server writes.
+func configServerRunning(path string) (bool, int, error) {
+	if _, err := useConfigBaseDir(path); err != nil {
+		return false, 0, err
+	}
+	return server.IsRunning()
+}
+
 // runStart is the former command implementation from start.go.
 func runStart(_ *cobra.Command, _ []string) error {
 	// Check if already running.
-	running, pid, err := server.IsRunning()
+	running, pid, err := configServerRunning(cfgFile)
 	if err != nil {
 		return fmt.Errorf("checking server status: %w", err)
 	}
@@ -281,7 +301,7 @@ func shutdownErr(err error) error {
 
 // runStop is the former command implementation from stop.go.
 func runStop(_ *cobra.Command, _ []string) error {
-	running, pid, err := server.IsRunning()
+	running, pid, err := configServerRunning(cfgFile)
 	if err != nil {
 		return fmt.Errorf("checking server status: %w", err)
 	}

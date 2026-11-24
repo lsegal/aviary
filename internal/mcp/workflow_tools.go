@@ -181,7 +181,7 @@ func createWorkflow(args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, er
 		Overlap: strings.ToLower(strings.TrimSpace(args.Overlap)),
 		Model:   strings.TrimSpace(args.Model),
 	}
-	if taskType == "prompt" {
+	if task.PrecompilesBesidePrompt() {
 		// A prompt workflow keeps its prompt and, when precompiled, runs a
 		// compiled script beside it, as a project task does. The choice
 		// defaults to scheduler.precompute_tasks, as the task editor's does.

@@ -678,3 +678,38 @@ test.describe("on a phone", () => {
 		await expect(page.getByRole("dialog", { name: "Add file" })).toBeVisible();
 	});
 });
+
+test("a scheduled prompt task can turn on precompile in its editor (#1032)", async ({
+	page,
+}) => {
+	const { saved } = await mockAgent(
+		page,
+		[
+			{ name: "cleanup", schedule: "0 0 * * *", prompt: "Clean" },
+			{
+				name: "lua",
+				type: "script",
+				schedule: "0 0 * * *",
+				prompt: "print(1)",
+			},
+		],
+		FILES,
+	);
+	await page.goto("/agents/assistant/tasks?task=cleanup");
+	const precompile = page.getByLabel("Try to precompile");
+	await expect(precompile).not.toBeChecked();
+	await expect(page.getByTestId("settings-task-precompile-help")).toContainText(
+		"a run whose script fails falls back to the model",
+	);
+	await precompile.check();
+	if (process.env.CAPTURE_1032)
+		await page.locator("main").screenshot({ path: process.env.CAPTURE_1032 });
+	await page.getByRole("button", { name: "Save Changes" }).click();
+	await expect
+		.poll(() => saved.at(-1)?.agents[0].tasks.find((t) => t.name === "cleanup"))
+		.toMatchObject({ precompile: true, prompt: "Clean" });
+
+	// A script task has no prompt to compile.
+	await page.goto("/agents/assistant/tasks?task=lua");
+	await expect(page.getByLabel("Try to precompile")).toHaveCount(0);
+});

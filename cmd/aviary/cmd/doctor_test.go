@@ -2,6 +2,10 @@ package cmd
 
 import (
 	"errors"
+	"net"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -53,4 +57,41 @@ func TestDescribeCLIBackend(t *testing.T) {
 	assert.Equal(t, "codex, signed in; quota weekly 60% left", line)
 	_, line = describeCLIBackend(clidoctor.Report{Binary: "codex", Path: "/opt/codex", Auth: clidoctor.SignedIn, TracksQuota: true, QuotaErr: errors.New("boom")})
 	assert.Equal(t, "codex, signed in; quota unavailable: boom", line)
+}
+
+func TestDoctorServerStatus_ReadsPIDFileBesideConfig(t *testing.T) {
+	// A server started with --config writes its PID file beside that config,
+	// wherever the default config dir is.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", "")
+	t.Setenv("AVIARY_PID_FILE", "")
+	cfgPath := filepath.Join(t.TempDir(), "aviary.yaml")
+	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(cfgPath), "aviary.pid"), []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600))
+
+	got := doctorServerStatus(cfgPath, freePort(t))
+	assert.Contains(t, got, "running (PID "+strconv.Itoa(os.Getpid()))
+}
+
+func TestDoctorServerStatus_ProbesPortWithoutPIDFile(t *testing.T) {
+	t.Setenv("AVIARY_PID_FILE", "")
+	cfgPath := filepath.Join(t.TempDir(), "aviary.yaml")
+	port := freePort(t)
+	assert.Equal(t, "not running", doctorServerStatus(cfgPath, port))
+
+	ln, err := net.Listen("tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
+	require.NoError(t, err)
+	defer ln.Close() //nolint:errcheck
+	got := doctorServerStatus(cfgPath, port)
+	assert.Contains(t, got, "running (answering on port "+strconv.Itoa(port))
+	assert.Contains(t, got, filepath.Join(filepath.Dir(cfgPath), "aviary.pid"))
+}
+
+// freePort returns a localhost TCP port nothing listens on.
+func freePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+	require.NoError(t, ln.Close())
+	return port
 }
