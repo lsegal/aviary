@@ -1,8 +1,5 @@
 <template>
   <AppLayout>
-    <template #header-icon>
-      <SystemPageIcon page-key="logs" tile />
-    </template>
     <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
       <!-- Filter bar -->
       <div class="shrink-0 border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
@@ -112,7 +109,6 @@
 import { ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import MoreBelowPill from "../components/MoreBelowPill.vue";
-import SystemPageIcon from "../components/SystemPageIcon.vue";
 import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { AppSelect, type SelectOption } from "../components/ui/select";
 import { useAutoFollow } from "../composables/useAutoFollow";

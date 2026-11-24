@@ -345,10 +345,11 @@
 
     <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <SettingsPageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back" :title-link="titleLink"
-        :switcher="leafSwitcher">
+        :switcher="leafSwitcher" :identity="pageIdentity(route.path)">
         <template v-if="$slots['header-icon']" #icon><slot name="header-icon" /></template>
+        <template v-if="$slots['header-status']" #status><slot name="header-status" /></template>
         <template v-if="$slots['header-actions']" #actions><slot name="header-actions" /></template>
-        <slot name="header" />
+        <template v-if="$slots.header" #default><slot name="header" /></template>
       </SettingsPageHeader>
       <!-- The page fills what the header leaves. -->
       <div class="flex min-h-0 flex-1 flex-col">
@@ -378,15 +379,10 @@ const systemGroupState = createRouteExpandedGroupState();
 import NoSymbolIcon from "@heroicons/vue/20/solid/NoSymbolIcon";
 import PauseIcon from "@heroicons/vue/20/solid/PauseIcon";
 import ArrowUpCircleIcon from "@heroicons/vue/24/outline/ArrowUpCircleIcon";
-import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronDoubleLeftIcon from "@heroicons/vue/24/outline/ChevronDoubleLeftIcon";
 import ChevronDoubleRightIcon from "@heroicons/vue/24/outline/ChevronDoubleRightIcon";
-import ClockIcon from "@heroicons/vue/24/outline/ClockIcon";
-import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
-import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
 import GlobeAltIcon from "@heroicons/vue/24/outline/GlobeAltIcon";
 import ServerStackIcon from "@heroicons/vue/24/outline/ServerStackIcon";
-import HashtagIcon from "@heroicons/vue/24/outline/HashtagIcon";
 import TagIcon from "@heroicons/vue/24/outline/TagIcon";
 import UsersIcon from "@heroicons/vue/24/outline/UsersIcon";
 import {
@@ -421,6 +417,7 @@ import type { NavList } from "../lib/navPrefs";
 import { type NavEditGroup, navEditGroupsKey } from "../lib/navEditGroups";
 import { AGENT_PAGES, agentPagePath } from "../lib/agentPages";
 import { type Crumb, routeCrumbs } from "../lib/breadcrumb";
+import { AGENT_PAGE_ICONS, pageIdentity } from "../lib/pageIdentity";
 import { useCrumbSwitcher } from "../composables/useCrumbSwitcher";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
@@ -433,7 +430,6 @@ import {
 	taskSessionPath,
 	useSettingsStore,
 } from "../stores/settings";
-import CodeLoopIcon from "./CodeLoopIcon.vue";
 import SidebarRowAction from "./SidebarRowAction.vue";
 import AutoUpdateError from "./AutoUpdateError.vue";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
@@ -568,14 +564,7 @@ const brandLinks: BrandLink[] = [
 ];
 
 // An agent page's icon on the collapsed sidebar rail.
-const pageIcons: Record<string, Component> = {
-	chat: markRaw(ChatBubbleLeftRightIcon),
-	projects: markRaw(CodeLoopIcon),
-	channels: markRaw(HashtagIcon),
-	tasks: markRaw(ClockIcon),
-	files: markRaw(DocumentTextIcon),
-	settings: markRaw(Cog6ToothIcon),
-};
+const pageIcons = AGENT_PAGE_ICONS;
 
 // The desktop sidebar collapses to an icon rail with Cmd/Ctrl+B or its
 // header toggle, and its right edge drags to resize it (#724).
@@ -1106,7 +1095,7 @@ provide(navEditGroupsKey, navEditGroups);
 // The current page's place, from its agent or System down (#1036), so it
 // shows with the sidebar collapsed and on narrow screens too. An agent's
 // crumb opens its first page in the user's order. Every nested page shows
-// it in the one shared header (#1064); a top-level page has none.
+// it in the one shared header (#1064, #1147).
 const headerCrumbs = computed((): SettingsCrumb[] => {
 	if (props.crumbs) return props.crumbs;
 	const crumbs = routeCrumbs(route.path, {
@@ -1116,8 +1105,7 @@ const headerCrumbs = computed((): SettingsCrumb[] => {
 			return s && chatDisplayName(s);
 		},
 	}, typeof route.query.file === "string" ? route.query.file : "");
-	if (crumbs.length < 2) return [];
-	if (!props.trail?.crumbs.length) return crumbs;
+	if (!crumbs.length || !props.trail?.crumbs.length) return crumbs;
 	const here = crumbs.at(-1) as Crumb;
 	return [
 		...crumbs.slice(0, -1),

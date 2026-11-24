@@ -415,7 +415,7 @@ test("the Files + creates a file that joins the sidebar, and the page has no fil
 		"PROFILE.md",
 	]);
 	await expect(page).toHaveURL(/\/agents\/assistant\/files\?file=PROFILE\.md$/);
-	await expect(page.getByTestId("agent-file-name")).toHaveText("PROFILE.md");
+	await expect(page.getByTestId("settings-title")).toHaveText("PROFILE.md");
 	expect(store.has("PROFILE.md")).toBe(true);
 });
 
@@ -712,7 +712,7 @@ test.describe("on a phone", () => {
 		await page.goto("/agents/assistant/files");
 		await page.getByRole("link", { name: "IDENTITY.md" }).tap();
 		await expect(page).toHaveURL(/\?file=IDENTITY\.md$/);
-		await expect(page.getByTestId("agent-file-name")).toHaveText("IDENTITY.md");
+		await expect(page.getByTestId("settings-title")).toHaveText("IDENTITY.md");
 
 		await page.getByTestId("mobile-row-action").tap();
 		await expect(page.getByRole("dialog", { name: "Add file" })).toBeVisible();

@@ -52,69 +52,9 @@
 						</section>
 
 						<!-- Files page: the sidebar lists the files; the page is the open
-						     file's editor, under one bar with its name and actions. -->
+						     file's editor, below the shared page header that names it and
+						     holds its actions (#1147). -->
 						<div v-show="selectedAgentSubtab === 'files'" class="flex min-h-0 flex-1 flex-col">
-							<div data-testid="agent-file-bar"
-								class="flex items-center justify-between gap-3 border-b border-gray-200/80 bg-white/90 px-4 pb-4 pt-10 backdrop-blur sm:px-6 dark:border-gray-800/80 dark:bg-gray-950/88">
-								<h2 class="flex min-w-0 items-center gap-2 text-xl font-bold text-gray-900 dark:text-white">
-									<span data-testid="agent-file-name" class="truncate font-mono">{{ getAgentFileState(agent.name).selectedFile || 'Files' }}</span>
-									<span v-if="isProtectedAgentFile(getAgentFileState(agent.name).selectedFile)" data-testid="agent-file-builtin"
-										class="shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-700 dark:bg-gray-700 dark:text-gray-200">Built-in</span>
-									<span data-testid="agent-file-hint" role="img" :aria-label="agentFileHint" :title="agentFileHint"
-										class="shrink-0 cursor-help text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">
-										<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-											<path fill-rule="evenodd"
-												d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z"
-												clip-rule="evenodd" />
-										</svg>
-									</span>
-								</h2>
-								<div class="flex shrink-0 items-center gap-2">
-									<transition name="save-indicator">
-										<div v-if="getAgentFileState(agent.name).saveFlash"
-											class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-											<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"
-												aria-hidden="true">
-												<path fill-rule="evenodd"
-													d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.78-9.72a.75.75 0 0 0-1.06-1.06L9.25 10.69 7.78 9.22a.75.75 0 1 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l4-4Z"
-													clip-rule="evenodd" />
-											</svg>
-											<span class="text-xs font-medium">Saved</span>
-										</div>
-									</transition>
-									<FilePreviewToggle :file-name="getAgentFileState(agent.name).selectedFile" />
-									<DropdownMenuRoot>
-										<DropdownMenuTrigger asChild>
-											<button type="button" data-testid="agent-file-menu" aria-label="More file actions" title="More file actions"
-												class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-												:disabled="!agent.name">
-												<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" class="h-4 w-4">
-													<circle cx="3" cy="8" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="13" cy="8" r="1.4" />
-												</svg>
-											</button>
-										</DropdownMenuTrigger>
-										<DropdownMenuContent align="end" :side-offset="4"
-											class="z-50 min-w-40 rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-											<DropdownMenuItem v-for="action in agentFileMenuActions(agent.name)" :key="action.key"
-												:disabled="action.disabled" :title="action.title"
-												class="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none data-[disabled]:cursor-default data-[disabled]:opacity-40"
-												:class="action.danger
-													? 'text-red-600 data-[highlighted]:bg-red-50 dark:text-red-400 dark:data-[highlighted]:bg-red-950/40'
-													: 'text-gray-700 data-[highlighted]:bg-gray-100 dark:text-gray-200 dark:data-[highlighted]:bg-gray-800'"
-												@select="runAgentFileMenuAction(agent.name, action.key)">
-												<component :is="action.icon" aria-hidden="true" class="h-4 w-4" />
-												{{ action.label }}
-											</DropdownMenuItem>
-										</DropdownMenuContent>
-									</DropdownMenuRoot>
-									<button type="button"
-										class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-										:disabled="!agent.name || !getAgentFileState(agent.name).selectedFile || getAgentFileState(agent.name).saving"
-										@click="saveAgentFile(agent.name)">
-										{{ getAgentFileState(agent.name).saving ? 'Saving…' : 'Save' }}
-									</button>
-								</div>
-							</div>
 							<p v-if="getAgentFileState(agent.name).error"
 								class="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 sm:px-6 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
 								{{ getAgentFileState(agent.name).error }}
@@ -864,19 +804,8 @@ Select a task to edit.
 </template>
 
 <script lang="ts">
-import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
-import DocumentDuplicateIcon from "@heroicons/vue/24/outline/DocumentDuplicateIcon";
-import PencilIcon from "@heroicons/vue/24/outline/PencilIcon";
-import TrashIcon from "@heroicons/vue/24/outline/TrashIcon";
-import {
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuRoot,
-	DropdownMenuTrigger,
-	SwitchRoot,
-	SwitchThumb,
-} from "radix-vue";
-import { type Component, computed, defineComponent, inject } from "vue";
+import { SwitchRoot, SwitchThumb } from "radix-vue";
+import { computed, defineComponent, inject } from "vue";
 import { useRoute } from "vue-router";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
 import { channelName, channelPath } from "../../lib/channels";
@@ -892,7 +821,6 @@ import {
 import CodeLoopJobSelect from "../CodeLoopJobSelect.vue";
 import ChannelWorkflows from "../channels/ChannelWorkflows.vue";
 import FilePreviewSplit from "../files/FilePreviewSplit.vue";
-import FilePreviewToggle from "../files/FilePreviewToggle.vue";
 import MessagingLogo from "../MessagingLogo.vue";
 import ModelSelector from "../ModelSelector.vue";
 import SecretSelect from "../SecretSelect.vue";
@@ -907,15 +835,10 @@ import { settingsViewContextKey } from "./context";
 export default defineComponent({
 	name: "SettingsAgentsTab",
 	components: {
-		DropdownMenuContent,
-		DropdownMenuItem,
-		DropdownMenuRoot,
-		DropdownMenuTrigger,
 		AppCombobox,
 		AppSelect,
 		ChannelWorkflows,
 		FilePreviewSplit,
-		FilePreviewToggle,
 		MessagingLogo,
 		ModelSelector,
 		SecretSelect,
@@ -965,71 +888,8 @@ export default defineComponent({
 		const channelTab = computed(() =>
 			route.query.tab === "workflows" ? "workflows" : "settings",
 		);
-		const agentFileHint =
-			"Root-level .md only. AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md are built in and cannot be renamed or deleted.";
 		const store = useSettingsStore();
 		const { open: openItemDialog } = useAgentItemDialogs();
-		// The Files page's "..." menu, left of Save. Rename and Delete act on
-		// the open file through the sidebar's dialogs.
-		const agentFileMenuActions = (agentName: string) => {
-			const state = settings.getAgentFileState(agentName);
-			const file = state.selectedFile;
-			const locked = settings.isProtectedAgentFile(file);
-			const fileTitle = !file
-				? "Open a file first"
-				: locked
-					? "Built-in files cannot be renamed or deleted"
-					: undefined;
-			const actions: {
-				key: string;
-				label: string;
-				icon: Component;
-				disabled: boolean;
-				title?: string;
-				danger?: boolean;
-			}[] = [
-				{
-					key: "refresh",
-					label: state.loading ? "Loading…" : "Refresh",
-					icon: ArrowPathIcon,
-					disabled: state.loading,
-				},
-				{
-					key: "sync",
-					label: state.syncing ? "Syncing…" : "Sync Templates",
-					icon: DocumentDuplicateIcon,
-					disabled: state.syncing,
-				},
-				{
-					key: "rename",
-					label: "Rename",
-					icon: PencilIcon,
-					disabled: !file || locked,
-					title: fileTitle,
-				},
-				{
-					key: "delete",
-					label: "Delete",
-					icon: TrashIcon,
-					disabled: !file || locked,
-					title: fileTitle,
-					danger: true,
-				},
-			];
-			return actions;
-		};
-		const runAgentFileMenuAction = (agentName: string, key: string) => {
-			const file = settings.getAgentFileState(agentName).selectedFile;
-			if (key === "refresh") void settings.refreshAgentFiles(agentName);
-			else if (key === "sync") void settings.syncAgentTemplates(agentName);
-			else if (file)
-				openItemDialog({
-					kind: "file",
-					agent: agentName,
-					mode: key === "delete" ? "delete" : "edit",
-					name: file,
-				});
-		};
 		// A project scheduled task is also edited from its project's board.
 		const projectScheduleLink = (agentName: string, task: AgentTask) => ({
 			path: projectPath(
@@ -1065,11 +925,8 @@ export default defineComponent({
 			channelDeliverToPlaceholder,
 			channelName,
 			channelPath,
-			agentFileHint,
 			CHANNEL_TYPE_OPTIONS,
 			TASK_TYPE_OPTIONS,
-			agentFileMenuActions,
-			runAgentFileMenuAction,
 			projectScheduleLink,
 			permissionPresetDescription,
 			permissionPresetOptions,
@@ -1082,17 +939,3 @@ export default defineComponent({
 });
 </script>
 
-<style scoped>
-.save-indicator-enter-active,
-.save-indicator-leave-active {
-  transition:
-    opacity 180ms ease,
-    transform 180ms ease;
-}
-
-.save-indicator-enter-from,
-.save-indicator-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-</style>

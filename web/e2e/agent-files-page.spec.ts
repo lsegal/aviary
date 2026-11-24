@@ -46,48 +46,50 @@ async function mockFiles(page: Page, files: Record<string, string>) {
 	return { store, synced, configSaves };
 }
 
-/** Picks an action from the file bar's "..." menu, left of Save. */
+/**
+ * Runs one of the file's actions in the page header (#1147): Refresh and
+ * Sync Templates are buttons; Rename and Delete sit in its "..." menu.
+ */
 async function fileMenu(page: Page, name: string) {
-	await page.getByTestId("agent-file-menu").click();
-	await page.getByRole("menuitem", { name, exact: true }).click();
+	if (name === "Rename" || name === "Delete") {
+		await page.getByTestId("agent-file-menu").click();
+		await page.getByRole("menuitem", { name, exact: true }).click();
+		return;
+	}
+	await page
+		.getByTestId("agent-file-bar")
+		.getByRole("button", { name, exact: true })
+		.click();
 }
 
 const LONG = Array.from({ length: 300 }, (_, i) => `line ${i + 1}`).join("\n");
 
-test("the Files page is one file bar over a full-page editor", async ({
+test("the Files page is the shared page header over a full-page editor (#1147)", async ({
 	page,
 }) => {
 	await mockFiles(page, { "AGENTS.md": LONG, "PROFILE.md": "# Profile" });
 	await page.goto("/agents/assistant/files?file=AGENTS.md");
 
+	// The file's name is the header's title; the built-in badge is its status.
+	const header = page.getByTestId("settings-header");
 	const bar = page.getByTestId("agent-file-bar");
-	await expect(page.getByTestId("agent-file-name")).toHaveText("AGENTS.md");
-	await expect(bar.getByTestId("agent-file-builtin")).toBeVisible();
-	await expect(bar.getByTestId("agent-file-hint")).toHaveAttribute(
+	await expect(page.getByTestId("settings-title")).toHaveText("AGENTS.md");
+	await expect(header.getByTestId("agent-file-builtin")).toBeVisible();
+	await expect(header.getByTestId("agent-file-hint")).toHaveAttribute(
 		"title",
 		/built in and cannot be renamed or deleted/,
 	);
-	// The bar's actions are a "..." menu directly left of Save.
-	const menu = bar.getByRole("button", { name: "More file actions" });
-	const save = bar.getByRole("button", { name: "Save", exact: true });
-	await expect(menu).toBeVisible();
-	await expect(save).toBeVisible();
-	for (const name of ["Refresh", "Sync Templates"])
-		await expect(bar.getByRole("button", { name, exact: true })).toHaveCount(0);
-	const [menuBox, saveBox] = await Promise.all([
-		menu.boundingBox(),
-		save.boundingBox(),
+	// Refresh, Sync Templates and Save are labeled actions, then the
+	// Preview toggle and the "..." menu with Rename and Delete.
+	await expect(bar.locator(":scope > button")).toHaveText([
+		/^\s*Refresh$/,
+		/^\s*Sync Templates$/,
+		/^\s*Save$/,
+		/^\s*Preview\s*$/,
+		"",
 	]);
-	expect((menuBox?.x ?? 0) + (menuBox?.width ?? 0)).toBeLessThanOrEqual(
-		saveBox?.x ?? 0,
-	);
-	await menu.click();
-	await expect(page.getByRole("menuitem")).toHaveText([
-		"Refresh",
-		"Sync Templates",
-		"Rename",
-		"Delete",
-	]);
+	await bar.getByRole("button", { name: "More file actions" }).click();
+	await expect(page.getByRole("menuitem")).toHaveText(["Rename", "Delete"]);
 	// Built-in files cannot be renamed or deleted.
 	for (const name of ["Rename", "Delete"])
 		await expect(page.getByRole("menuitem", { name })).toHaveAttribute(
@@ -96,9 +98,8 @@ test("the Files page is one file bar over a full-page editor", async ({
 		);
 	await page.keyboard.press("Escape");
 
-	// The shared page header (#1064), without the settings actions.
+	// No settings actions.
 	const main = page.locator("main");
-	await expect(page.getByTestId("settings-title")).toHaveText("AGENTS.md");
 	await expect(main.getByRole("button", { name: "Reload" })).toHaveCount(0);
 	await expect(main.getByRole("button", { name: "Save Changes" })).toHaveCount(
 		0,
@@ -108,7 +109,7 @@ test("the Files page is one file bar over a full-page editor", async ({
 	const editor = page.getByTestId("agent-file-editor");
 	await expect(editor).toHaveValue(LONG);
 	const layout = await page.evaluate(() => {
-		const bar = document.querySelector('[data-testid="agent-file-bar"]');
+		const bar = document.querySelector('[data-testid="settings-header"]');
 		const ed = document.querySelector<HTMLTextAreaElement>(
 			'[data-testid="agent-file-editor"]',
 		);
@@ -140,11 +141,11 @@ test("the Files page is one file bar over a full-page editor", async ({
 		.getByTestId("file-row")
 		.filter({ hasText: "PROFILE.md" })
 		.click();
-	await expect(page.getByTestId("agent-file-name")).toHaveText("PROFILE.md");
+	await expect(page.getByTestId("settings-title")).toHaveText("PROFILE.md");
 	await expect(page.getByTestId("agent-file-builtin")).toHaveCount(0);
 });
 
-test("the file bar's Save, Cmd/Ctrl+S, and its menu's Refresh and Sync Templates work", async ({
+test("the header's Save, Cmd/Ctrl+S, Refresh and Sync Templates work", async ({
 	page,
 }) => {
 	const { store, synced, configSaves } = await mockFiles(page, {
@@ -187,7 +188,9 @@ test("Refresh re-reads the open file and asks before discarding edits", async ({
 	const { store } = await mockFiles(page, { "MEMORY.md": "# Memory v1" });
 	await page.goto("/agents/assistant/files?file=MEMORY.md");
 	const refresh = { click: () => fileMenu(page, "Refresh") };
-	const menuButton = page.getByTestId("agent-file-menu");
+	const menuButton = page
+		.getByTestId("agent-file-bar")
+		.getByRole("button", { name: "Refresh", exact: true });
 	const editor = page.getByTestId("agent-file-editor");
 	await expect(editor).toHaveValue("# Memory v1");
 
@@ -247,7 +250,7 @@ test("the menu renames and deletes the open file", async ({ page }) => {
 	await dialog.getByRole("button", { name: "Save" }).click();
 	await expect(dialog).toBeHidden();
 	await expect(page).toHaveURL(/\?file=IDEAS\.md$/);
-	await expect(page.getByTestId("agent-file-name")).toHaveText("IDEAS.md");
+	await expect(page.getByTestId("settings-title")).toHaveText("IDEAS.md");
 	await expect(editor).toHaveValue("# Notes");
 	await expect(rows).toHaveText(["AGENTS.md", "IDEAS.md"]);
 	expect(store.has("NOTES.md")).toBe(false);
@@ -260,7 +263,7 @@ test("the menu renames and deletes the open file", async ({ page }) => {
 	await expect(confirm).toBeHidden();
 	await expect(rows).toHaveText(["AGENTS.md"]);
 	expect(store.has("IDEAS.md")).toBe(false);
-	await expect(page.getByTestId("agent-file-name")).toHaveText("Files");
+	await expect(page.getByTestId("settings-title")).toHaveText("Files");
 	await expect(editor).toHaveValue("");
 	await expect(editor).toHaveAttribute(
 		"placeholder",
@@ -304,7 +307,7 @@ function splitWidths(page: Page) {
 			document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect()
 				.width ?? 0;
 		return {
-			bar: width("agent-file-bar"),
+			bar: width("settings-header"),
 			editor: width("agent-file-editor"),
 			preview: width("file-preview-pane"),
 		};
@@ -394,7 +397,7 @@ test("dragging the divider resizes the panes within their minimums and is rememb
 	expect((await splitWidths(page)).preview).toBeCloseTo(256, 0);
 });
 
-test("the file bar's Preview toggle collapses and expands the panel and is remembered", async ({
+test("the header's Preview toggle collapses and expands the panel and is remembered", async ({
 	page,
 }) => {
 	await mockFiles(page, { "AGENTS.md": PREVIEW_MD });
@@ -438,7 +441,7 @@ test("a file with no previewer has no Preview toggle and a full-width editor", a
 	await expect(page.getByTestId("file-preview")).toHaveCount(0);
 	await expect(page.getByTestId("file-preview-divider")).toHaveCount(0);
 	const [bar, ed] = await Promise.all([
-		page.getByTestId("agent-file-bar").boundingBox(),
+		page.getByTestId("settings-header").boundingBox(),
 		editor.boundingBox(),
 	]);
 	expect(ed?.width).toBeCloseTo(bar?.width ?? 0, 0);

@@ -1,8 +1,5 @@
 <template>
   <AppLayout>
-    <template #header-icon>
-      <SystemPageIcon page-key="usage" tile />
-    </template>
     <div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6">
       <!-- Filters -->
       <div class="mb-6 flex flex-wrap items-center gap-3">
@@ -274,7 +271,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
-import SystemPageIcon from "../components/SystemPageIcon.vue";
 import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { chatDisplayName, useChatSessionsStore } from "../stores/chatSessions";
 import { useUsageStore } from "../stores/usage";

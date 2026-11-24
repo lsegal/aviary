@@ -1,43 +1,40 @@
 <template>
 	<AppLayout :crumbs="isAgentFilesPage ? undefined : pageHeader.crumbs"
 		:back="isAgentFilesPage ? undefined : pageHeader.back">
-		<template v-if="activeTab === 'sessions' || activeTab === 'skills'" #header-icon>
-			<SystemPageIcon :page-key="activeTab" tile />
+		<template v-if="isAgentFilesPage && agentFileSelected" #header-status>
+			<span v-if="isProtectedAgentFile(agentFileSelected)" data-testid="agent-file-builtin"
+				class="shrink-0 rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-700 dark:bg-gray-700 dark:text-gray-200">Built-in</span>
 		</template>
-		<template v-if="!isAgentFilesPage" #header-actions>
+		<template v-if="isAgentFilesPage" #header>
+			<p data-testid="agent-file-hint" class="truncate" :title="AGENT_FILE_HINT">{{ AGENT_FILE_HINT }}</p>
+		</template>
+		<template #header-actions>
+			<AgentFileActions v-if="isAgentFilesPage" :agent="draft.agents[selectedAgentIdx]?.name ?? ''" />
+			<template v-else>
 			<transition name="save-indicator">
 				<div v-if="saveSuccessVisible" class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"
 					:aria-label="headerNoticeText" :title="headerNoticeText">
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"
-						aria-hidden="true">
-						<path fill-rule="evenodd"
-							d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.78-9.72a.75.75 0 0 0-1.06-1.06L9.25 10.69 7.78 9.22a.75.75 0 1 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l4-4Z"
-							clip-rule="evenodd" />
-					</svg>
+					<CheckCircleIcon aria-hidden="true" class="h-5 w-5" />
 					<span class="text-xs font-medium">{{ headerNoticeText }}</span>
 				</div>
 			</transition>
 			<button v-if="tasksRoot && draft.agents[selectedAgentIdx]?.name" type="button" data-testid="new-task-button"
-				aria-label="New task" title="New task"
-				class="inline-flex items-center gap-1 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
-				@click="openNewTask">
+				:class="HEADER_ACTION_CLS" @click="openNewTask">
 				<PlusIcon aria-hidden="true" class="h-4 w-4" />
 				New task
 			</button>
 			<template v-if="!tasksRoot && activeTab !== 'display'">
-			<button v-if="revertAvailable" type="button"
-				class="rounded-lg border border-amber-200 px-3 py-2 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
+			<button v-if="revertAvailable" type="button" :class="HEADER_ACTION_CLS"
 				:disabled="loading || saving || reverting"
-				@click="revertToLatestBackup">{{ reverting ? "Reverting…" : "Revert" }}</button>
-			<button type="button"
-				class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+				@click="revertToLatestBackup"><ArrowUturnLeftIcon aria-hidden="true" class="h-4 w-4" />{{ reverting ? "Reverting…" : "Revert" }}</button>
+			<button type="button" :class="HEADER_ACTION_CLS"
 				:disabled="loading || saving || reverting"
-				@click="loadConfig">{{ loading ? "Loading…" : "Reload" }}</button>
-			<button type="button"
-				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-				:disabled="saving || reverting" @click="saveAll()">{{ saving ? "Saving…" : "Save Changes" }}</button>
+				@click="loadConfig"><ArrowPathIcon aria-hidden="true" class="h-4 w-4" />{{ loading ? "Loading…" : "Reload" }}</button>
+			<button type="button" :class="HEADER_ACTION_CLS"
+				:disabled="saving || reverting" @click="saveAll()"><ArrowDownTrayIcon aria-hidden="true" class="h-4 w-4" />{{ saving ? "Saving…" : "Save Changes" }}</button>
 			</template>
 			<SystemSettingsLink v-if="activeTab === 'sessions' || activeTab === 'skills'" />
+			</template>
 		</template>
 		<div ref="scrollRoot" data-testid="settings-scroll" :class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'min-h-0 flex-1 overflow-y-auto'">
 			<div :class="isAgentFilesPage ? 'flex min-h-0 flex-1 flex-col' : 'mx-auto max-w-7xl px-4 py-6 sm:px-6'">
@@ -313,6 +310,10 @@
 </template>
 
 <script setup lang="ts">
+import ArrowDownTrayIcon from "@heroicons/vue/24/outline/ArrowDownTrayIcon";
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
+import ArrowUturnLeftIcon from "@heroicons/vue/24/outline/ArrowUturnLeftIcon";
+import CheckCircleIcon from "@heroicons/vue/24/outline/CheckCircleIcon";
 import PlusIcon from "@heroicons/vue/24/outline/PlusIcon";
 import {
 	AlertDialogAction,
@@ -337,7 +338,7 @@ import {
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
-import SystemPageIcon from "../components/SystemPageIcon.vue";
+import AgentFileActions from "../components/files/AgentFileActions.vue";
 import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { settingsViewContextKey } from "../components/settings/context";
 import SettingsAgentsTab from "../components/settings/SettingsAgentsTab.vue";
@@ -370,6 +371,7 @@ import {
 	channelTarget,
 	channelTargetName,
 } from "../lib/channels";
+import { HEADER_ACTION_CLS } from "../lib/headerActions";
 import { projectTargets } from "../lib/projectSettings";
 import { projectPath } from "../lib/projects";
 import { SETTINGS_TABS } from "../lib/systemNav";
@@ -1214,6 +1216,15 @@ const isAgentFilesPage = computed(
 		selectedAgentSubtab.value === "files" &&
 		selectedAgentIdx.value < draft.value.agents.length,
 );
+// The open file, read without creating the agent's editor state.
+const agentFileSelected = computed(
+	() =>
+		agentFileEditorState.value[
+			draft.value.agents[selectedAgentIdx.value]?.name ?? ""
+		]?.selectedFile ?? "",
+);
+const AGENT_FILE_HINT =
+	"Root-level .md only. AGENTS.md, SYSTEM.md, MEMORY.md, and RULES.md are built in and cannot be renamed or deleted.";
 
 const selectedAgentAsSingletonList = computed(() =>
 	selectedAgentIdx.value < draft.value.agents.length

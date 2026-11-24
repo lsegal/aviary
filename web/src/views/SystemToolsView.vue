@@ -1,20 +1,13 @@
 <template>
   <AppLayout>
-    <template #header-icon>
-      <SystemPageIcon page-key="tools" tile />
-    </template>
     <template #header>
-      <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
+      <p class="truncate">
         Read-only catalog of MCP tool groups, individual tools, and currently activated skills.
       </p>
     </template>
     <template #header-actions>
-      <button
-        type="button"
-        class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
-        :disabled="loading"
-        @click="loadCatalog"
-      >
+      <button type="button" :class="HEADER_ACTION_CLS" :disabled="loading" @click="loadCatalog">
+        <ArrowPathIcon aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" />
         {{ loading ? "Refreshing…" : "Refresh" }}
       </button>
       <SystemSettingsLink />
@@ -274,14 +267,15 @@
 </template>
 
 <script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import { computed, onMounted, ref, watch } from "vue";
 import AppLayout from "../components/AppLayout.vue";
-import SystemPageIcon from "../components/SystemPageIcon.vue";
 import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import TranscriptionStatusCard from "../components/TranscriptionStatusCard.vue";
 import { AppSelect } from "../components/ui/select";
 import { Skeleton } from "../components/ui/skeleton";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
+import { HEADER_ACTION_CLS } from "../lib/headerActions";
 import { groupTools, toolCategoryLabel } from "../lib/toolPermissions";
 
 interface InstalledSkill {

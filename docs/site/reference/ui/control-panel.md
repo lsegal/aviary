@@ -36,7 +36,7 @@ The System sidebar item is the Overview; the section lists the other pages and s
 
 ## Settings
 
-Settings opens from the sidebar's gear menu, which also holds **Edit sidebar** (opens the Display tab's Sidebar section), **Restart** and **Logout**. Every nested page shares one header, the Settings page header: a **← Back to** link to the parent page above a breadcrumb that is the page's title. The collapsed rail shows subpages in flyouts, and the title crumb on project, task, channel and file pages opens a sibling switcher (`Alt+S`); see [Navigation](/guide/control-panel#navigation).
+Settings opens from the sidebar's gear menu, which also holds **Edit sidebar** (opens the Display tab's Sidebar section), **Restart** and **Logout**. Every page shares one page header: a breadcrumb bar with a **←** arrow back to the parent page, then a title row with the section's icon tile, the page's title, an optional status chip and subtitle, and the page's actions on the right (outlined icon-and-label buttons, then icon-only buttons). On narrow screens the breadcrumb shortens to `← Parent › Page` and the actions wrap below the title. The collapsed rail shows subpages in flyouts, and the current crumb on project, task, channel and file pages opens a sibling switcher (`Alt+S`); see [Navigation](/guide/control-panel#navigation).
 
 | Tab | Route | Exposed Functionality |
 | --- | --- | --- |
