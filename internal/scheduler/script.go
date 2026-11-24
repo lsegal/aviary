@@ -17,7 +17,9 @@ type scriptExecutionResult struct {
 	Logs   string
 }
 
-func executeScriptJob(ctx context.Context, job *domain.Job, cfg *config.AgentConfig, deliver func(agentName, route, text string) error) (scriptExecutionResult, error) {
+// executeScriptJob runs a script task and delivers what it printed, unless
+// skipReply reports that the script called task_no_reply.
+func executeScriptJob(ctx context.Context, job *domain.Job, cfg *config.AgentConfig, deliver func(agentName, route, text string) error, skipReply func() bool) (scriptExecutionResult, error) {
 	_ = cfg
 	// Prefer explicit script body on the job; fall back to Prompt for
 	// backwards compatibility.
@@ -32,8 +34,12 @@ func executeScriptJob(ctx context.Context, job *domain.Job, cfg *config.AgentCon
 	scriptJob := *job
 	scriptJob.Script = script
 	output, err := executeScriptJobOutput(ctx, &scriptJob, logs.Addf)
+	skipped := skipReply != nil && skipReply()
+	if skipped {
+		deliver = nil
+	}
 	if output != "" {
-		if job.ReplyAgentID != "" && job.ReplySessionID != "" {
+		if !skipped && job.ReplyAgentID != "" && job.ReplySessionID != "" {
 			if replyErr := agent.AppendReplyToSession(job.ReplyAgentID, job.ReplySessionID, output); replyErr != nil {
 				return scriptExecutionResult{Output: output, Logs: logs.String()}, replyErr
 			}

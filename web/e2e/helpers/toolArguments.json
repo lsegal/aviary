@@ -478,6 +478,9 @@
 		"name"
 	],
 	"task_list": [],
+	"task_no_reply": [
+		"reason"
+	],
 	"task_preview": [
 		"agent",
 		"at",
