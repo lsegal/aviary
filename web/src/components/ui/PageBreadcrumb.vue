@@ -9,9 +9,11 @@
 			<span v-if="title" class="truncate">Back to {{ back.label }}</span>
 		</router-link>
 		<div :class="title ? 'flex flex-wrap items-center justify-between gap-3' : 'min-w-0 flex-1'">
-		<div :class="title ? 'flex min-w-0 items-center gap-3' : 'min-w-0'">
+		<!-- As a title the trail grows into the row's free space, so the crumbs'
+			percentage caps measure the row rather than the crumbs themselves. -->
+		<div :class="title ? 'flex min-w-0 flex-[1_1_auto] items-center gap-3' : 'min-w-0'">
 			<slot name="icon" />
-			<nav v-if="crumbs.length > 1" aria-label="Breadcrumb" :data-testid="`${testid}-breadcrumb`" class="min-w-0">
+			<nav v-if="crumbs.length > 1" aria-label="Breadcrumb" :data-testid="`${testid}-breadcrumb`" class="min-w-0 flex-1">
 				<!-- Middle crumbs give up their width first, then the outer ones. -->
 				<ol class="flex min-w-0 items-center gap-1.5 overflow-hidden"
 					:class="title ? 'text-xl font-bold text-gray-900 dark:text-white' : 'text-sm text-gray-900 dark:text-white'">

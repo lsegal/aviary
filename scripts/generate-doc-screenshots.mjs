@@ -1502,6 +1502,9 @@ const workflowsFixtures = {
 		will_precompile: false,
 		model_steps: ["judging whether the message is positive"],
 		model: "anthropic/claude-sonnet-4-5",
+		// The server's cached analysis, so the editor shows when it was checked.
+		cached: true,
+		analyzed_at: minutesAgo(120),
 		estimate: {
 			available: true,
 			min_tokens: 1800,
