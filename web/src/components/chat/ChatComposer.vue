@@ -5,8 +5,13 @@
 		@submit.prevent="submit" @dragover.prevent="onDragOver" @dragleave="dragging = false" @drop.prevent="onDrop">
 		<ul v-if="attachments.length" aria-label="Attachments" class="flex flex-wrap gap-2 px-1 pt-1">
 			<li v-for="att in attachments" :key="att.id" class="relative" :data-testid="`attachment-${att.kind}`">
-				<img v-if="att.kind === 'image'" :src="att.dataURL" :alt="att.name"
-					class="h-16 w-16 rounded-lg border border-gray-200 object-cover dark:border-gray-700" />
+				<button v-if="att.kind === 'image'" type="button" :aria-label="`Preview ${att.name}`"
+					:title="`Preview ${att.name}`" data-testid="attachment-preview"
+					class="block cursor-pointer rounded-lg transition hover:opacity-80 hover:ring-2 hover:ring-blue-500/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:hover:ring-blue-400/50 dark:focus-visible:ring-blue-400"
+					@click="openPreview(att.id)">
+					<img :src="att.dataURL" :alt="att.name"
+						class="h-16 w-16 rounded-lg border border-gray-200 object-cover dark:border-gray-700" />
+				</button>
 				<span v-else
 					class="inline-flex h-16 max-w-48 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
 					<svg viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 shrink-0 text-gray-400" aria-hidden="true">
@@ -103,12 +108,14 @@
 				</svg>
 			</button>
 		</div>
+		<ImageLightbox v-model:index="previewIndex" :images="previewImages" />
 	</form>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
 import { useAuthStore } from "../../stores/auth";
+import ImageLightbox from "../ui/ImageLightbox.vue";
 import { type ChatAttachment, readAttachment } from "./attachments";
 import ChatComposerInput from "./ChatComposerInput.vue";
 import {
@@ -143,6 +150,19 @@ const textarea = computed(() => inputRef.value?.textarea ?? null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const notice = ref("");
 const dragging = ref(false);
+
+const imageAttachments = computed(() =>
+	props.attachments.filter((a) => a.kind === "image"),
+);
+const previewImages = computed(() =>
+	imageAttachments.value.map((a) => ({ src: a.dataURL, alt: a.name })),
+);
+const previewIndex = ref<number | null>(null);
+
+function openPreview(id: string) {
+	const at = imageAttachments.value.findIndex((a) => a.id === id);
+	if (at >= 0) previewIndex.value = at;
+}
 
 const hasContent = computed(
 	() => props.modelValue.trim() !== "" || props.attachments.length > 0,

@@ -140,6 +140,23 @@ const PULLS = [
 	},
 ];
 
+// A scheduled task of the project, which shows as a scheduled card.
+const SCHEDULE = {
+	id: "coder/nightly-triage",
+	name: "nightly-triage",
+	agent_name: "coder",
+	agent_id: "coder",
+	type: "project",
+	project: TARGET,
+	prompt: "Triage issues opened since the last run and label them.",
+	enabled: true,
+	trigger_type: "daily",
+	at: "02:00",
+	description: "daily at 02:00",
+	next_run: new Date(Date.now() + 42 * 60_000).toISOString(),
+	created_at: "0001-01-01T00:00:00Z",
+};
+
 async function setup(page: Page, { noMerge = false } = {}) {
 	const calls: Record<string, Record<string, unknown>[]> = {};
 	const record = (tool: string, args?: Record<string, unknown>) => {
@@ -178,7 +195,13 @@ async function setup(page: Page, { noMerge = false } = {}) {
 			no_merge: noMerge,
 			last_check: minutesAgo(0.1),
 		},
-		project_job_list: { jobs: JOBS, total: JOBS.length, offset: 0, limit: 500 },
+		// The board reads its schedules' entries apart from its jobs.
+		project_job_list: (args?: Record<string, unknown>) => {
+			const kinds = args?.kinds as string[] | undefined;
+			const jobs = kinds?.includes("schedule") ? [] : JOBS;
+			return { jobs, total: jobs.length, offset: 0, limit: 500 };
+		},
+		task_list: [SCHEDULE],
 		project_job_get: (args?: Record<string, unknown>) => ({
 			...JOBS.find((j) => j.number === args?.number),
 			scrollback: "",
@@ -354,31 +377,39 @@ test("merge and discuss jobs show as board cards with their place and reason", a
 	await expect(discuss.getByTestId("job-agent")).toContainText("gh-discuss");
 });
 
-test("a fix job's linked PR offers Safe merge, which opens the picker with it picked", async ({
-	page,
-}) => {
-	const calls = await setup(page);
-	await page.goto(BOARD);
-	const fix = page.getByTestId("job-card").filter({ hasText: "#218" });
-	await fix.getByRole("button", { name: "Safe merge" }).click();
-	const dialog = page.getByTestId("queue-dialog");
-	await expect(
-		dialog
-			.getByTestId("queue-candidate")
-			.filter({ hasText: "#230" })
-			.getByTestId("queue-order"),
-	).toHaveText("1");
-	await dialog.getByTestId("queue-submit").click();
-	await expect.poll(() => calls.project_job_queue?.[0]?.numbers).toEqual([230]);
-	// Merge jobs never offer a Safe merge of their own.
-	await page.keyboard.press("Escape");
-	const merge = page.getByTestId("job-card").filter({ hasText: "Bump vite" });
-	await expect(merge.getByRole("button", { name: "Safe merge" })).toHaveCount(
-		0,
-	);
-});
+// Safe merge is queued only from the header's Queue menu, never from a card
+// (#1163): a fix job already drives its own pull request to a merge.
+for (const [board, path] of [
+	["a project board", BOARD],
+	["the root board", "/agents/coder/projects"],
+]) {
+	test(`job and scheduled cards on ${board} offer no safe-merge queue button`, async ({
+		page,
+	}) => {
+		await setup(page);
+		await page.goto(path);
+		const cards = page.getByTestId("job-card");
+		await expect(cards).toHaveCount(JOBS.length, { timeout: 15_000 });
+		await expect(page.getByTestId("scheduled-card")).toHaveCount(1);
+		// The fix job with an open linked pull request, which used to offer it.
+		const fix = cards.filter({ hasText: "#218" });
+		await expect(fix.getByTestId("job-pr")).toContainText("PR #230");
+		await expect(page.getByTestId("job-safe-merge")).toHaveCount(0);
+		await expect(page.getByRole("button", { name: "Safe merge" })).toHaveCount(
+			0,
+		);
 
-test("with no_merge, safe merge is disabled with an explanation and hidden on cards", async ({
+		// The header's Queue menu still opens the safe-merge picker.
+		await page.getByTestId("queue-menu").click();
+		await page.getByTestId("queue-gh-safe-merge").click();
+		const dialog = page.getByTestId("queue-dialog");
+		await expect(dialog).toHaveAttribute("data-skill", "gh-safe-merge");
+		await expect(dialog.getByTestId("queue-candidate")).toHaveCount(4);
+		await expect(dialog.getByTestId("queue-order")).toHaveCount(0);
+	});
+}
+
+test("with no_merge, safe merge is disabled with an explanation", async ({
 	page,
 }) => {
 	await setup(page, { noMerge: true });
@@ -391,9 +422,6 @@ test("with no_merge, safe merge is disabled with an explanation and hidden on ca
 		"title",
 		/no_merge setting leaves pull requests for a human/,
 	);
-	await page.keyboard.press("Escape");
-	const fix = page.getByTestId("job-card").filter({ hasText: "#218" });
-	await expect(fix.getByRole("button", { name: "Safe merge" })).toHaveCount(0);
 });
 
 test("Discuss queues picked threads and Fix issue queues typed issue numbers", async ({

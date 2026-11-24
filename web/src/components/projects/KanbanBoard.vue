@@ -16,6 +16,14 @@
 							class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 after:absolute after:inset-0 after:rounded-lg hover:underline focus:outline-none dark:text-white">
 							{{ s.name }}
 						</router-link>
+						<!-- A run shows here in place, on the name's line, so the card
+							never moves columns or changes height (#1157). -->
+						<span v-if="scheduleRunning(entryOf(s)?.schedule)" data-testid="kanban-scheduled-running"
+							:title="entryOf(s)?.startedAt ? `Running since ${formatFire(entryOf(s)!.startedAt)}` : 'Running'"
+							class="inline-flex shrink-0 items-center gap-1 tabular-nums text-blue-700 dark:text-blue-300">
+							<span aria-hidden="true" class="h-2.5 w-2.5 animate-spin rounded-full border-2 border-blue-300 border-t-blue-600" />
+							<span class="sr-only">Running</span><template v-if="entryOf(s)?.startedAt">{{ age(entryOf(s)!.startedAt, now) }}</template>
+						</span>
 						<button type="button" data-testid="kanban-scheduled-settings" aria-label="Task settings" title="Task settings"
 							class="relative z-10 shrink-0 rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
 							@click="emit('settings', s)">
@@ -25,12 +33,6 @@
 					<router-link v-if="showProject" :to="projectBoardPath(s.project)" data-testid="kanban-scheduled-project"
 						class="relative z-10 block w-fit max-w-full truncate rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
 						:title="`Open ${s.project}'s board`">{{ s.project }}</router-link>
-					<!-- A run shows here in place; the card never moves columns. -->
-					<p v-if="scheduleRunning(entryOf(s)?.schedule)" data-testid="kanban-scheduled-running"
-						class="flex items-center gap-1.5 text-blue-700 dark:text-blue-300">
-						<span aria-hidden="true" class="h-2.5 w-2.5 animate-spin rounded-full border-2 border-blue-300 border-t-blue-600" />
-						Running<template v-if="entryOf(s)?.startedAt"> · {{ age(entryOf(s)!.startedAt, now) }}</template>
-					</p>
 					<p data-testid="kanban-scheduled-next" class="tabular-nums text-violet-700 dark:text-violet-300"
 						:title="nextOf(s).kind === 'next' ? formatFire(s.nextRun) : ''">
 						<PausedChip v-if="nextOf(s).kind === 'paused'" />

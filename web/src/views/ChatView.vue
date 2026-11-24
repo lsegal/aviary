@@ -64,7 +64,7 @@
 											: 'inline-flex flex-col items-start gap-1 rounded-xl bg-gray-100 px-4 py-2 text-base text-gray-900 max-w-[90%] dark:bg-gray-800 dark:text-gray-100'">
 									<template v-for="(mediaURL, mi) in item.msg.mediaURLs ?? []" :key="mi">
 										<button v-if="isImageMedia(mediaURL)" type="button"
-											class="cursor-zoom-in" @click="openExpandedImage(mediaURL)">
+											class="cursor-zoom-in" @click="openExpandedImage(item.msg.mediaURLs ?? [], mediaURL)">
 											<img :src="mediaURL" class="max-w-full rounded-lg" style="max-height:320px" />
 										</button>
 										<video v-else-if="isVideoMedia(mediaURL)" :src="mediaURL"
@@ -144,15 +144,7 @@
 					:history="userMessageHistory" @submit="send" @stop="stopSession" />
 			</div>
 		</div>
-		<div v-if="expandedImageURL" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6"
-			@click="closeExpandedImage">
-			<button type="button"
-				class="absolute right-4 top-4 rounded-full bg-black/50 px-3 py-1 text-sm text-white hover:bg-black/70"
-				aria-label="Close image" @click.stop="closeExpandedImage">
-				Close
-			</button>
-			<img :src="expandedImageURL" class="max-h-full max-w-full rounded-xl shadow-2xl" @click.stop />
-		</div>
+		<ImageLightbox v-model:index="expandedImageIndex" :images="expandedImages" />
 
 	</component>
 </template>
@@ -182,6 +174,9 @@ import {
 	setChatDraft,
 } from "../components/chat/drafts";
 import MoreBelowPill from "../components/MoreBelowPill.vue";
+import ImageLightbox, {
+	type LightboxImage,
+} from "../components/ui/ImageLightbox.vue";
 import { useAutoFollow } from "../composables/useAutoFollow";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
@@ -554,7 +549,8 @@ const sessionProcessing = ref<Record<string, boolean>>({});
 const activeStreams = ref(0);
 const isStreaming = computed(() => activeStreams.value > 0);
 const hasInlineError = ref(false);
-const expandedImageURL = ref("");
+const expandedImages = ref<LightboxImage[]>([]);
+const expandedImageIndex = ref<number | null>(null);
 const messagesEl = ref<HTMLElement | null>(null);
 let ws: WebSocket | null = null;
 let wsReconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -759,12 +755,6 @@ const onVisible = async () => {
 	}
 };
 
-const onWindowKeydown = (e: KeyboardEvent) => {
-	if (e.key === "Escape" && expandedImageURL.value) {
-		closeExpandedImage();
-	}
-};
-
 let mounted: Promise<void> = Promise.resolve();
 onMounted(async () => {
 	let markMounted = () => {};
@@ -789,7 +779,6 @@ async function mountChat() {
 		await mountRouteChat();
 	}
 	document.addEventListener("visibilitychange", onVisible);
-	window.addEventListener("keydown", onWindowKeydown);
 	connectSessionWS();
 }
 
@@ -830,19 +819,17 @@ onUnmounted(() => {
 	clearTimeout(wsReconnectTimer);
 	clearInterval(activityTimer);
 	document.removeEventListener("visibilitychange", onVisible);
-	window.removeEventListener("keydown", onWindowKeydown);
 	if (ws) {
 		ws.close();
 		ws = null;
 	}
 });
 
-function openExpandedImage(mediaURL: string) {
-	expandedImageURL.value = mediaURL;
-}
-
-function closeExpandedImage() {
-	expandedImageURL.value = "";
+// The preview steps through the clicked message's images.
+function openExpandedImage(mediaURLs: string[], mediaURL: string) {
+	const images = mediaURLs.filter(isImageMedia);
+	expandedImages.value = images.map((src) => ({ src }));
+	expandedImageIndex.value = images.indexOf(mediaURL);
 }
 
 function connectSessionWS(reconnect = false) {

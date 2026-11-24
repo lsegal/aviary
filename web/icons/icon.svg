@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<title>Aviary</title>
+	<!--
+		Source for every app icon in web/public (#1155): the bird mark from
+		web/public/logo.png on an opaque white rounded tile. Regenerate the PNGs
+		with `pnpm icons` (scripts/generate-icons.mjs), which also derives the
+		full-bleed maskable, apple-touch and favicon variants from this file.
+	-->
+	<rect id="tile" x="0" y="0" width="1024" height="1024" rx="225" fill="#ffffff" />
+	<image id="mark" href="../public/logo.png" x="56" y="81" width="922" height="922" />
+</svg>
