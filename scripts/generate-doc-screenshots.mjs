@@ -1502,6 +1502,9 @@ const workflowsFixtures = {
 		will_precompile: false,
 		model_steps: ["judging whether the message is positive"],
 		model: "anthropic/claude-sonnet-4-5",
+		// The server's cached analysis, so the editor shows when it was checked.
+		cached: true,
+		analyzed_at: minutesAgo(120),
 		estimate: {
 			available: true,
 			min_tokens: 1800,
@@ -1747,7 +1750,7 @@ async function captureTools(browser, theme) {
 	});
 	try {
 		await configurePage(page, systemToolsFixtures);
-		await openPage(page, "/system/tools", 'h2:has-text("System Tools")');
+		await openPage(page, "/system/tools", '[data-testid="run-tool-calendar_events_today"]');
 		await page.getByTestId("run-tool-calendar_events_today").click();
 		await page.getByRole("button", { name: "Run Tool" }).click();
 		await page.getByTestId("tool-run-output").getByText("Docs review").waitFor();
@@ -1886,7 +1889,7 @@ async function main() {
 				browser,
 				fixtures: {},
 				pathname: "/system/models",
-				readySelector: 'h2:has-text("Supported Models")',
+				readySelector: '[data-testid="models-count"]',
 				outputName: "system-models.png",
 				viewport: { width: 1040, height: 1120 },
 				theme,
