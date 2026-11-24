@@ -121,9 +121,10 @@ func (m *memoryLog) Write(p []byte) (int, error) {
 	m.buf = append(m.buf, p...)
 	m.total += int64(len(p))
 	if over := len(m.buf) - m.max; over > 0 {
+		// Cut after the newline ending the line that byte over-1 is in.
 		cut := over
-		if i := bytes.IndexByte(m.buf[over:], '\n'); i >= 0 {
-			cut = over + i + 1
+		if i := bytes.IndexByte(m.buf[over-1:], '\n'); i >= 0 {
+			cut = over + i
 		}
 		m.buf = append([]byte(nil), m.buf[cut:]...)
 	}

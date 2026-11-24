@@ -446,6 +446,10 @@ func startWatchProcess(t *testing.T, args ...string) *watchProcess {
 // is the user's Ctrl+C, which works on Windows too.
 func (p *watchProcess) stop(t *testing.T, sig syscall.Signal) {
 	t.Helper()
+	// Logs stay in memory: a log file would hold the directory open.
+	if _, err := os.Stat(filepath.Join(p.sessionDir, "logs", "aviary.log")); err == nil {
+		t.Errorf("the session wrote a log file into its directory")
+	}
 	var err error
 	if sig == syscall.SIGINT {
 		err = interruptWatchProcess(p.cmd)
@@ -475,9 +479,7 @@ func (p *watchProcess) stop(t *testing.T, sig syscall.Signal) {
 	if strings.Contains(out, "watch session directory") || strings.Contains(out, "Error:") {
 		t.Errorf("ending the session reported a cleanup problem; output:\n%s", out)
 	}
-	if _, err := os.Stat(filepath.Join(p.sessionDir, "logs", "aviary.log")); err == nil {
-		t.Errorf("the session wrote a log file into its directory")
-	}
+
 	if got := snapshotDir(t, p.globalDir); fmt.Sprint(got) != fmt.Sprint(p.before) {
 		t.Errorf("the global config dir changed during the watch:\nbefore %v\nafter  %v", p.before, got)
 	}
