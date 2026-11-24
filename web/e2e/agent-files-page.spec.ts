@@ -113,7 +113,7 @@ test("the Files page is one file bar over a full-page editor", async ({
 			'[data-testid="agent-file-editor"]',
 		);
 		const split = document.querySelector('[data-testid="file-preview-split"]');
-		const scroller = ed?.closest("main")?.querySelector(".h-full");
+		const scroller = document.querySelector('[data-testid="settings-scroll"]');
 		if (!bar || !ed || !split || !scroller) return null;
 		const b = bar.getBoundingClientRect();
 		const e = ed.getBoundingClientRect();

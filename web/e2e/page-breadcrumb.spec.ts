@@ -180,7 +180,7 @@ test("each nested page shows the shared header with its crumbs and parent link",
 		await expect(
 			crumbs
 				.getByRole("listitem")
-				.filter({ hasNot: crumbs.locator('[aria-current="page"]') })
+				.filter({ hasNot: page.locator('[aria-current="page"]') })
 				.getByRole("link"),
 		).toHaveText(c.crumbs.slice(0, -1));
 		const current = crumbs.locator('[aria-current="page"]');

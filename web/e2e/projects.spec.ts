@@ -2303,7 +2303,7 @@ test("loading a job details URL shows the project header with that job open", as
 	).toBeVisible();
 	await expect(page.getByTestId("prompt-chat-toggle")).toBeVisible();
 	await expect(page.getByTestId("logs-toggle")).toBeVisible();
-	await expect(page.getByRole("heading", { level: 2 })).toHaveText(
+	await expect(page.getByTestId("job-detail-title")).toHaveText(
 		/^#218 • (Draft pull request)?PR #233 Cap scheduler retry backoff at 10 minutes$/,
 	);
 	await expect(page.getByTestId("job-card")).toHaveCount(0);
