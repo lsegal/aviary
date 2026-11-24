@@ -66,7 +66,7 @@ func TestWatchTUIChatShiftEnterAddsALine(t *testing.T) {
 	m, _ = watchKey(t, m, "/")
 	// Shift+Enter alone sends nothing.
 	m = watchUpdate(t, m, watchShiftEnterMsg("\x1b[27;2;13~"))
-	if m.chat.streaming || len(stream.args) != 0 {
+	if m.chat.streaming() || len(stream.args) != 0 {
 		t.Fatal("shift+enter alone sent the input")
 	}
 	m.chat.input.Reset()
@@ -75,8 +75,8 @@ func TestWatchTUIChatShiftEnterAddsALine(t *testing.T) {
 	m = watchType(t, m, "b")
 	m = watchUpdate(t, m, watchShiftEnterMsg("\x1b[13;2u"))
 	m = watchType(t, m, "c")
-	if got := m.chat.input.Value(); got != "a\nb\nc" || m.chat.streaming {
-		t.Fatalf("shift+enter: value %q streaming %v", got, m.chat.streaming)
+	if got := m.chat.input.Value(); got != "a\nb\nc" || m.chat.streaming() {
+		t.Fatalf("shift+enter: value %q streaming %v", got, m.chat.streaming())
 	}
 	m, cmd := watchSpecialKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	watchPump(t, m, cmd, nil)
