@@ -103,7 +103,7 @@ Schedule a one-time or recurring task.
 
 Change fields of an existing task. Only the fields passed change; an empty string clears a field.
 
-**Arguments:** `name` (required; `agent/task` or a task name), `agent`, and any of `enabled`, `content`, `target`, `schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`, `watch`, `project`, `model`, `precompile` (project tasks and prompt workflows only: turns the precompiled script on or off), and for workflows `channel`, `entry` and `match`.
+**Arguments:** `name` (required; `agent/task` or a task name), `agent`, and any of `enabled`, `content`, `target`, `schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`, `watch`, `project`, `model`, `precompile` (prompt and project tasks, scheduled or workflows: turns the precompiled script on or off; script tasks have no prompt to compile), and for workflows `channel`, `entry` and `match`.
 
 **Side effects:** Writes the task's markdown file in the agent's `tasks/` directory and reloads the scheduler.
 

@@ -223,7 +223,9 @@ export function isWorkflow(task: Pick<AgentTask, "trigger">): boolean {
  * workflow, or a project task. A script task has no prompt to compile. It
  * mirrors config.TaskConfig.PrecompilesBesidePrompt on the server.
  */
-export function precompilesBesidePrompt(task: Pick<AgentTask, "type">): boolean {
+export function precompilesBesidePrompt(
+	task: Pick<AgentTask, "type">,
+): boolean {
 	return agentTaskType(task.type) !== "script";
 }
 

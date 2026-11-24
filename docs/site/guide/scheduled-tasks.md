@@ -310,6 +310,10 @@ scheduler:
   precompute_tasks: false
 ```
 
+### Precompiled prompt tasks
+
+A scheduled prompt task can also keep its prompt and be precompiled beside it, as a project task is. Turn on **Try to precompile** in the task's editor under Settings → Agents, set `precompile: true` in its definition, or pass `precompile=true` to `task_update`. Aviary compiles the prompt into a script stored in `compiled` and `compiled_key`. Each run then executes the script without the model and falls back to a model run if the script fails. Recompiling, setting a failing script aside and **Recompile** work as they do for [project tasks](#precompiled-project-tasks). `precompile`, `compiled` and `compiled_key` apply only to prompt and project tasks. A `type: script` task is already a script, so `aviary doctor` and config validation report those fields on it as an error.
+
 ### Precompiled project tasks
 
 [Project tasks](#scheduled-prompts) can be precompiled too. Turn on **Try to precompile** in the **Add task** dialog or in the project board's schedule editor, or pass `precompile=true` to `task_schedule` or `task_update`. New project tasks follow `precompute_tasks`; a project task without `precompile` set stays on the model. Both editors show the same live feedback for project tasks as for agent tasks: ✔ deterministic, ◐ partial, or ✖ not deterministic, with the per-run token estimate and the monthly projection.
