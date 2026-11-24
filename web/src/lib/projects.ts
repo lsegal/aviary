@@ -1197,6 +1197,62 @@ export function scheduleJob(
 	return latest;
 }
 
+/** How soon a scheduled card's next run must be for it to lead the board. */
+export const SCHEDULE_SOON_MS = 5 * 60_000;
+
+/** A box of the board's list, in the order it shows. */
+export type BoardItem =
+	| { kind: "schedule"; schedule: ProjectSchedule }
+	| { kind: "job"; job: ProjectJob };
+
+/**
+ * Orders the board's list (#1207): scheduled cards due within five minutes
+ * lead, soonest first, then scheduled cards with a run in flight and the
+ * running jobs. Every other scheduled card sits behind them by its next run,
+ * soonest first, with paused and finished ones last, then the other jobs.
+ */
+export function boardItems(
+	schedules: ProjectSchedule[],
+	entries: ProjectJob[],
+	jobs: ProjectJob[],
+	now: number,
+): BoardItem[] {
+	const timed = schedules.map((schedule) => {
+		const entry = scheduleJob(entries, schedule.id)?.schedule;
+		const next = scheduleNext(schedule, entry);
+		const at = next.kind === "next" ? Date.parse(next.at) : Infinity;
+		const inFlight =
+			!!activeScheduleRun(schedule) ||
+			scheduleRunning(entry) ||
+			next.kind === "running" ||
+			next.kind === "queued";
+		return { schedule, at, inFlight };
+	});
+	// Ties, as between untimed cards, keep their name order.
+	const byTime = (a: { at: number }, b: { at: number }) =>
+		a.at === b.at ? 0 : a.at < b.at ? -1 : 1;
+	const soon = timed
+		.filter((t) => !t.inFlight && t.at - now <= SCHEDULE_SOON_MS)
+		.sort(byTime);
+	const inFlight = timed.filter((t) => t.inFlight);
+	const later = timed
+		.filter((t) => !t.inFlight && !soon.includes(t))
+		.sort(byTime);
+	const running = (j: ProjectJob) => STATUS_ORDER[j.status] === 0;
+	const schedule = (t: { schedule: ProjectSchedule }): BoardItem => ({
+		kind: "schedule",
+		schedule: t.schedule,
+	});
+	const job = (j: ProjectJob): BoardItem => ({ kind: "job", job: j });
+	return [
+		...soon.map(schedule),
+		...inFlight.map(schedule),
+		...jobs.filter(running).map(job),
+		...later.map(schedule),
+		...jobs.filter((j) => !running(j)).map(job),
+	];
+}
+
 /** The dot color of a schedule run's status. */
 export function scheduleRunDot(status: string): string {
 	switch (status) {
