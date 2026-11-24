@@ -140,7 +140,10 @@ test("with the sidebar collapsed, the board's pills open every project and its s
 	await expect(
 		page.getByRole("heading", { name: "lsegal/aviary" }),
 	).toBeVisible();
-	await page.getByRole("link", { name: "coder · Code Loop" }).click();
+	await page
+		.getByTestId("page-breadcrumb")
+		.getByRole("link", { name: "Code Loop", exact: true })
+		.click();
 	await expect(page).toHaveURL(/\/agents\/coder\/projects(\?.*)?$/);
 
 	// Scheduled opens the project's scheduled tasks.
@@ -149,6 +152,68 @@ test("with the sidebar collapsed, the board's pills open every project and its s
 		"/agents/coder/projects/lsegal%2Fforgo?state=scheduled",
 	);
 	await expect(page.getByText("nightly-triage").first()).toBeVisible();
+});
+
+// Code Loop pages rely on the shared breadcrumb alone (#1066): no page
+// draws its own "<agent> · Code Loop /" line above its title, and the
+// shared one leads back to the board everywhere.
+const expectSharedNavOnly = async (page: Page) => {
+	const header = page.locator("header").filter({
+		has: page.getByRole("heading", { name: "lsegal/forgo" }),
+	});
+	await expect(header).toBeVisible();
+	await expect(header.getByText("Code Loop")).toHaveCount(0);
+	await expect(header.getByText(/ \/$/)).toHaveCount(0);
+	await expect(page.getByTestId("page-back")).toHaveAccessibleName(
+		"Back to Code Loop",
+	);
+};
+
+const backToBoard = async (page: Page) => {
+	await page.getByTestId("page-back").click();
+	await expect(page).toHaveURL(/\/agents\/coder\/projects(\?.*)?$/);
+	await expect(page.getByRole("heading", { name: "Code Loop" })).toBeVisible();
+	await expect(page.locator("header").getByText("coder /")).toHaveCount(0);
+};
+
+test("a project page has no breadcrumb of its own, and the shared one leads back", async ({
+	page,
+}) => {
+	await setup(page, () => []);
+	await page.goto("/agents/coder/projects/lsegal%2Fforgo");
+	await expectSharedNavOnly(page);
+	await page
+		.getByTestId("page-breadcrumb")
+		.getByRole("link", { name: "Code Loop", exact: true })
+		.click();
+	await expect(page).toHaveURL(/\/agents\/coder\/projects(\?.*)?$/);
+	await page.goBack();
+	await backToBoard(page);
+});
+
+test("with the sidebar collapsed the shared breadcrumb leads back to the board", async ({
+	page,
+}) => {
+	await setup(page, () => []);
+	await page.goto("/agents/coder/projects/lsegal%2Fforgo");
+	await page.getByTestId("sidebar-collapse").click();
+	await expect(page.getByTestId("sidebar-rail")).toBeVisible();
+	await expectSharedNavOnly(page);
+	await backToBoard(page);
+});
+
+test("in an aviary watch session the shared breadcrumb leads back to the board", async ({
+	page,
+}) => {
+	await setup(page, () => [], {
+		ok: true,
+		version: "dev",
+		auth_disabled: true,
+		minimal: true,
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Fforgo");
+	await expectSharedNavOnly(page);
+	await backToBoard(page);
 });
 
 test("a project's pill keeps the board's job filter", async ({ page }) => {
@@ -217,6 +282,16 @@ test.describe("on a phone", () => {
 			return wide;
 		});
 		expect(overflowing).toEqual([]);
+	});
+
+	test("a project page has no breadcrumb of its own, and the shared one leads back", async ({
+		page,
+	}) => {
+		await setup(page, () => []);
+		await page.goto("/agents/coder/projects/lsegal%2Fforgo");
+		await expectSharedNavOnly(page);
+		await expect(page.getByTestId("page-back")).toBeInViewport();
+		await backToBoard(page);
 	});
 });
 

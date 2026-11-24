@@ -7,8 +7,6 @@
 					<header
 						class="flex shrink-0 flex-col gap-3 border-b border-gray-200 px-4 py-4 dark:border-gray-800 sm:px-6 xl:flex-row xl:items-center">
 						<div class="min-w-0">
-							<p v-if="aggregate" class="text-xs text-gray-500">{{ routeAgent }} /</p>
-							<p v-else class="text-xs text-gray-500"><router-link :to="projectsIndexPath" class="hover:underline">{{ projectsIndexLabel }}</router-link> /</p>
 							<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 								<h1 v-if="aggregate" class="truncate text-xl font-bold text-gray-900 dark:text-white">Code Loop</h1>
 								<span v-if="aggregate" data-testid="board-projects"
@@ -351,14 +349,6 @@ const owner = computed(() => projectOwner(settingsStore.config, project.value));
 // owns sits under System instead.
 const routeAgent = computed(() =>
 	typeof route.params.agent === "string" ? route.params.agent : "",
-);
-const projectsIndexPath = computed(() =>
-	routeAgent.value
-		? `/agents/${encodeURIComponent(routeAgent.value)}/projects`
-		: route.path,
-);
-const projectsIndexLabel = computed(() =>
-	routeAgent.value ? `${routeAgent.value} · Code Loop` : "Watches",
 );
 // Without a project the route is the agent's Code Loop: one board of
 // every project it owns.
