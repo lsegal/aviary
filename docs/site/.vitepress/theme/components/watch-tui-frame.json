@@ -1,0 +1,484 @@
+{
+	"cols": 168,
+	"rows": [
+		[
+			{
+				"t": "aviary watch",
+				"fg": "#92a8ff",
+				"b": true
+			},
+			{
+				"t": " "
+			},
+			{
+				"t": "·",
+				"fg": "#999999"
+			},
+			{
+				"t": " acme/storefront                                                                                                          "
+			},
+			{
+				"t": "https://localhost:16677/projects",
+				"fg": "#92a8ff"
+			}
+		],
+		[
+			{
+				"t": "2/3",
+				"b": true
+			},
+			{
+				"t": " slots"
+			},
+			{
+				"t": " · ",
+				"fg": "#999999"
+			},
+			{
+				"t": "1 starting",
+				"fg": "#fb923c"
+			},
+			{
+				"t": " · ",
+				"fg": "#999999"
+			},
+			{
+				"t": "1 paused",
+				"fg": "#fbbf24"
+			},
+			{
+				"t": " · ",
+				"fg": "#999999"
+			},
+			{
+				"t": "2 running",
+				"fg": "#60a5fa"
+			},
+			{
+				"t": " · ",
+				"fg": "#999999"
+			},
+			{
+				"t": "2 done",
+				"fg": "#49c26b"
+			},
+			{
+				"t": " · ",
+				"fg": "#999999"
+			},
+			{
+				"t": "1 failed",
+				"fg": "#ff6b5f"
+			},
+			{
+				"t": " · ",
+				"fg": "#999999"
+			},
+			{
+				"t": "2 merged 24h",
+				"fg": "#c083fc"
+			},
+			{
+				"t": " · poll every 1m",
+				"fg": "#999999"
+			}
+		],
+		[
+			{
+				"t": " 0 All 9 ",
+				"b": true,
+				"r": true
+			},
+			{
+				"t": "  "
+			},
+			{
+				"t": "1 Scheduled 2",
+				"fg": "#a78bfa"
+			},
+			{
+				"t": "   "
+			},
+			{
+				"t": "2 Starting 1",
+				"fg": "#fb923c"
+			},
+			{
+				"t": "   "
+			},
+			{
+				"t": "3 Paused 1",
+				"fg": "#fbbf24"
+			},
+			{
+				"t": "   "
+			},
+			{
+				"t": "4 Running 2",
+				"fg": "#60a5fa"
+			},
+			{
+				"t": "   "
+			},
+			{
+				"t": "5 Done 2",
+				"fg": "#49c26b"
+			},
+			{
+				"t": "   "
+			},
+			{
+				"t": "6 Failed 1",
+				"fg": "#ff6b5f"
+			},
+			{
+				"t": "   "
+			},
+			{
+				"t": "[board]",
+				"fg": "#999999"
+			}
+		],
+		[
+			{
+				"t": "Scheduled 2",
+				"fg": "#a78bfa",
+				"b": true
+			},
+			{
+				"t": "                 "
+			},
+			{
+				"t": "Starting 1",
+				"fg": "#fb923c",
+				"b": true
+			},
+			{
+				"t": "                  "
+			},
+			{
+				"t": "Paused 1",
+				"fg": "#fbbf24",
+				"b": true
+			},
+			{
+				"t": "                    "
+			},
+			{
+				"t": "Running",
+				"fg": "#60a5fa",
+				"b": true,
+				"u": true
+			},
+			{
+				"t": " ",
+				"fg": "#60a5fa",
+				"u": true
+			},
+			{
+				"t": "2",
+				"fg": "#60a5fa",
+				"b": true,
+				"u": true
+			},
+			{
+				"t": "                   "
+			},
+			{
+				"t": "Done 2",
+				"fg": "#49c26b",
+				"b": true
+			},
+			{
+				"t": "                      "
+			},
+			{
+				"t": "Failed 1",
+				"fg": "#ff6b5f",
+				"b": true
+			}
+		],
+		[
+			{
+				"t": "  acme/storefront/nightly-t   #219 Show stock on produc   #208 Upgrade the payments "
+			},
+			{
+				"t": "\u003e",
+				"fg": "#92a8ff",
+				"b": true
+			},
+			{
+				"t": " #214 Fix cart total round   #205 Search ignores accen   #211 Flaky login e2e test"
+			}
+		],
+		[
+			{
+				"t": "  next in 14h",
+				"fg": "#999999"
+			},
+			{
+				"t": "               "
+			},
+			{
+				"t": "  acme/storefront · claude/",
+				"fg": "#999999"
+			},
+			{
+				"t": " "
+			},
+			{
+				"t": "  acme/storefront · claude/",
+				"fg": "#999999"
+			},
+			{
+				"t": " "
+			},
+			{
+				"t": "  acme/storefront · claude/",
+				"fg": "#999999"
+			},
+			{
+				"t": " "
+			},
+			{
+				"t": "  acme/storefront · claude/",
+				"fg": "#999999"
+			},
+			{
+				"t": " "
+			},
+			{
+				"t": "  acme/storefront · claude/",
+				"fg": "#999999"
+			}
+		],
+		[
+			{
+				"t": "  acme/storefront/weekly-de                                                           #216 Add order export to    #203 Dark mode for checko"
+			}
+		],
+		[
+			{
+				"t": "  next in 45h",
+				"fg": "#999999"
+			},
+			{
+				"t": "                                                                       "
+			},
+			{
+				"t": "  acme/storefront · codex/g",
+				"fg": "#999999"
+			},
+			{
+				"t": " "
+			},
+			{
+				"t": "  acme/storefront · claude/",
+				"fg": "#999999"
+			}
+		],
+		[],
+		[],
+		[],
+		[],
+		[
+			{
+				"t": "── Prompt chat · projects · replying… ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+				"fg": "#92a8ff"
+			}
+		],
+		[
+			{
+				"t": "you",
+				"fg": "#92a8ff",
+				"b": true
+			}
+		],
+		[
+			{
+				"t": "  Why did "
+			},
+			{
+				"t": "#211",
+				"fg": "#60a5fa",
+				"b": true,
+				"u": true
+			},
+			{
+				"t": " fail?"
+			}
+		],
+		[],
+		[
+			{
+				"t": "projects",
+				"fg": "#a78bfa",
+				"b": true
+			}
+		],
+		[
+			{
+				"t": "  "
+			},
+			{
+				"t": "▸ ",
+				"fg": "#999999"
+			},
+			{
+				"t": "project_job_output",
+				"b": true
+			},
+			{
+				"t": " "
+			},
+			{
+				"t": "number=211 target=acme/storefront",
+				"fg": "#999999"
+			},
+			{
+				"t": " "
+			},
+			{
+				"t": "✓",
+				"fg": "#49c26b",
+				"b": true
+			}
+		],
+		[],
+		[
+			{
+				"t": "  CI failed in "
+			},
+			{
+				"t": "login.spec.ts",
+				"fg": "#fb923c"
+			},
+			{
+				"t": ": the e2e test timed out waiting for the redirect, the same flake as "
+			},
+			{
+				"t": "#198",
+				"fg": "#60a5fa",
+				"b": true,
+				"u": true
+			},
+			{
+				"t": ". The fix itself passed every other check. Want me to retry it?"
+			}
+		],
+		[],
+		[
+			{
+				"t": "you",
+				"fg": "#92a8ff",
+				"b": true
+			}
+		],
+		[
+			{
+				"t": "  Yes, retry it."
+			}
+		],
+		[],
+		[
+			{
+				"t": "projects",
+				"fg": "#a78bfa",
+				"b": true
+			}
+		],
+		[
+			{
+				"t": "  "
+			},
+			{
+				"t": "▸ ",
+				"fg": "#999999"
+			},
+			{
+				"t": "project_job_retry",
+				"b": true
+			},
+			{
+				"t": " "
+			},
+			{
+				"t": "number=211 target=acme/storefront",
+				"fg": "#999999"
+			},
+			{
+				"t": " …"
+			}
+		],
+		[
+			{
+				"t": "› ",
+				"fg": "#92a8ff"
+			},
+			{
+				"t": "A",
+				"r": true
+			},
+			{
+				"t": "sk the Code Loop agent… (enter sends, alt+enter adds a line)",
+				"fg": "#999999"
+			},
+			{
+				"t": "                                                                                                         "
+			}
+		],
+		[
+			{
+				"t": "── Output · acme/storefront#214 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+				"fg": "#92a8ff"
+			}
+		],
+		[
+			{
+				"t": "▸ Read internal/cart/total.go"
+			}
+		],
+		[
+			{
+				"t": "▸ Edit internal/cart/total.go: round each line item to cents before summing"
+			}
+		],
+		[
+			{
+				"t": "▸ Bash go test ./internal/cart/..."
+			}
+		],
+		[
+			{
+				"t": "  ok   acme/storefront/internal/cart  0.412s"
+			}
+		],
+		[
+			{
+				"t": "▸ Bash git commit -m \"Checkpoint issue #214 progress\""
+			}
+		],
+		[
+			{
+				"t": "▸ Edit internal/cart/total_test.go: add the 3 × $19.99 case from the issue"
+			}
+		],
+		[],
+		[],
+		[],
+		[],
+		[
+			{
+				"t": "enter send · alt+enter new line · ↑↓ history · tab transcript · esc board",
+				"fg": "#999999"
+			},
+			{
+				"t": "                                                                                    "
+			},
+			{
+				"t": "ctrl+c quit",
+				"fg": "#999999"
+			}
+		]
+	]
+}
