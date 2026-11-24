@@ -1,11 +1,8 @@
 import tailwindcss from "@tailwindcss/vite";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
-import { devHttps } from "./scripts/dev-cert.mjs";
-
-// The Go backend the dev server proxies to. scripts/dev-watch.mjs points it
-// at the port an `aviary watch` session chose.
-const backend = process.env.AVIARY_DEV_BACKEND || "https://localhost:16677";
+import { devHttps, devServerURL } from "./scripts/dev-cert.mjs";
+import { devProxy } from "./scripts/dev-proxy.mjs";
 
 export default defineConfig(({ command }) => ({
 	root: "web",
@@ -19,24 +16,12 @@ export default defineConfig(({ command }) => ({
 		// composer mic (getUserMedia) on secure origins or localhost.
 		host: true,
 		https: command === "serve" ? devHttps() : undefined,
-		proxy: {
-			"/mcp": {
-				target: backend,
-				secure: false,
-				changeOrigin: true,
-				headers: {
-					Origin: backend,
-				},
-			},
-			"/api": {
-				target: backend,
-				secure: false,
-				changeOrigin: true,
-				ws: true,
-				headers: {
-					Origin: backend,
-				},
-			},
-		},
+		// Target the backend with the scheme and port it serves, so the proxy
+		// never sends plain HTTP to its TLS listener. scripts/dev-watch.mjs
+		// points AVIARY_DEV_BACKEND at the port an `aviary watch` session chose.
+		proxy: devProxy(
+			process.env.AVIARY_DEV_BACKEND ||
+				(command === "serve" ? devServerURL() : undefined),
+		),
 	},
 }));

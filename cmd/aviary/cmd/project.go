@@ -98,7 +98,7 @@ func applyGlobalFlags(args []string) []string {
 		if dataDir != "" {
 			store.SetDataDir(dataDir)
 		}
-		dispatcher = internalmcp.NewDispatcher(serverURL, token)
+		dispatcher = internalmcp.NewDispatcher(resolvedServerURL(), token)
 	}
 	return rest
 }

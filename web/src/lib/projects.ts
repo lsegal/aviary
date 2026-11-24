@@ -60,6 +60,8 @@ export interface ProjectSummary {
 	running: number;
 	waiting: number;
 	issues: number;
+	/** The project's scheduled tasks, when the list read them. */
+	scheduled?: number;
 }
 
 /** One CLI provider: the models the board's jobs run on and its quota. */
@@ -647,10 +649,14 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 	};
 }
 
-/** Per-target live counts for the sidebar, from status plus the job list. */
+/**
+ * Per-target live counts for the sidebar, from status plus the job list, and
+ * each target's scheduled tasks when a task_list response is given.
+ */
 export function summarizeProjects(
 	status: ProjectStatus,
 	jobs: ProjectJob[],
+	tasks?: unknown,
 ): ProjectSummary[] {
 	return status.targets.map((t) => {
 		const mine = jobs.filter((j) => j.target === t.name);
@@ -659,6 +665,9 @@ export function summarizeProjects(
 			issues: t.issues,
 			running: mine.filter((j) => isRunning(j.status)).length,
 			waiting: mine.filter((j) => isWaiting(j.status)).length,
+			...(tasks === undefined
+				? {}
+				: { scheduled: projectSchedules(tasks, t.name).length }),
 		};
 	});
 }

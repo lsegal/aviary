@@ -107,8 +107,17 @@ env.AVIARY_CHECKOUT = rootDir;
 env.AVIARY_RESTART_FILE = restartFile;
 
 let child;
+// The signal this process was asked to stop with, re-raised once the backend
+// has exited.
+let stopSignal = null;
 for (const signal of ["SIGINT", "SIGTERM"]) {
-	process.on(signal, () => child.kill(signal));
+	process.on(signal, () => {
+		stopSignal ??= signal;
+		// SIGINT whatever the signal: forgo passes SIGINT on to the backend
+		// but exits on SIGTERM, leaving the backend running and holding its
+		// port. Both stop the backend the same way.
+		child.kill("SIGINT");
+	});
 }
 
 function run() {
@@ -118,14 +127,17 @@ function run() {
 		stdio: "inherit",
 	});
 	child.on("exit", (code, signal) => {
-		if (existsSync(restartFile)) {
+		if (existsSync(restartFile) && !stopSignal) {
 			rmSync(restartFile, { force: true });
 			console.log("Restarting Aviary from the current sources...");
 			run();
 			return;
 		}
-		if (signal) {
-			process.kill(process.pid, signal);
+		rmSync(restartFile, { force: true });
+		const exitSignal = stopSignal ?? signal;
+		if (exitSignal) {
+			process.removeAllListeners(exitSignal);
+			process.kill(process.pid, exitSignal);
 			return;
 		}
 		process.exit(code ?? 0);
