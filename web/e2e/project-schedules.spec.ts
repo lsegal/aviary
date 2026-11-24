@@ -772,7 +772,7 @@ test("a scheduled card's pencil opens its editor within the project page", async
 
 	// The project header and its actions stay put around the editor.
 	await expect(
-		page.getByTestId("page-breadcrumb").getByRole("listitem"),
+		page.getByTestId("settings-breadcrumb").getByRole("listitem"),
 	).toHaveText(["System", "Watch: lsegal/aviary", "nightly-triage"]);
 	await expect(page.getByTestId("schedule-new")).toBeVisible();
 	const detail = page.getByTestId("schedule-detail");
@@ -819,7 +819,7 @@ test("a scheduled card's pencil opens its editor within the project page", async
 		.toEqual({ name: "assistant/nightly-triage" });
 
 	// The other card's pencil opens its own editor.
-	await page.getByTestId("page-back").click();
+	await page.getByTestId("settings-back").click();
 	await expect(page).not.toHaveURL(/scheduled=/);
 	await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
 	await page
@@ -1121,7 +1121,7 @@ test("new schedule sets every trigger type, timezone and policy, and they round-
 		const editor = page.getByTestId("schedule-editor");
 		await expect(editor.getByLabel("Name")).toHaveValue(name);
 		await expectTrigger(editor, c);
-		await page.getByTestId("page-back").click();
+		await page.getByTestId("settings-back").click();
 	}
 });
 
@@ -1165,9 +1165,9 @@ test("leaving a schedule with unsaved edits asks first", async ({ page }) => {
 	);
 	// The schedule sits under its board in the page header (#1064).
 	await expect(
-		page.getByTestId("page-breadcrumb").getByRole("listitem"),
+		page.getByTestId("settings-breadcrumb").getByRole("listitem"),
 	).toHaveText(["System", "Watch: lsegal/aviary", "nightly-triage"]);
-	const back = page.getByTestId("page-back");
+	const back = page.getByTestId("settings-back");
 	await expect(back).toHaveAccessibleName("Back to Watch: lsegal/aviary");
 	const dialog = page.getByTestId("unsaved-changes-dialog");
 

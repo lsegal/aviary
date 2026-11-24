@@ -164,7 +164,7 @@ test("a task with no runs shows empty states and its schedule", async ({
 	const { calls } = await mockTask(page, [], { enabled: false });
 	await page.goto("/agents/assistant/tasks/report");
 
-	await expect(page.getByTestId("page-title")).toHaveText("report");
+	await expect(page.getByTestId("settings-title")).toHaveText("report");
 	await expect(page.getByTestId("task-state")).toHaveText("Paused");
 	await expect(page.getByTestId("task-schedule")).toContainText(
 		"every 15m0s (Local) · paused",
@@ -422,7 +422,7 @@ test("a run opens at its own URL that survives a reload", async ({ page }) => {
 		"connection refused",
 	);
 
-	await page.getByTestId("page-back").click();
+	await page.getByTestId("settings-back").click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/report$/);
 	await expect(page.getByTestId("task-run-history")).toBeVisible();
 
@@ -501,7 +501,7 @@ test("the chat panel toggles and resizes, and both persist", async ({
 		.toBeGreaterThan(withChat + 150);
 
 	await page.reload();
-	await expect(page.getByTestId("page-title")).toHaveText("report");
+	await expect(page.getByTestId("settings-title")).toHaveText("report");
 	await expect(panel).toHaveCount(0);
 	await expect(toggle).toHaveAttribute("aria-pressed", "false");
 });
@@ -626,6 +626,6 @@ test("a task that does not precompile has no Recompile action", async ({
 }) => {
 	await mockTask(page, [job("done", "completed", 30)]);
 	await page.goto("/agents/assistant/tasks/report");
-	await expect(page.getByTestId("page-title")).toHaveText("report");
+	await expect(page.getByTestId("settings-title")).toHaveText("report");
 	await expect(page.getByTestId("task-recompile")).toHaveCount(0);
 });

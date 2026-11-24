@@ -25,11 +25,11 @@ The **Pages** order is shared: every agent's pages in the sidebar, the collapsed
 
 ### Navigation
 
-Nested pages, such as a project board, a task's dashboard, a channel, a file or a settings page, show a breadcrumb from their agent or System down to the current page. Every crumb but the last links to its page, and a back link beside it returns to the parent page. Settings pages show the breadcrumb as their title; other pages show it above their content, including with the sidebar collapsed and on narrow screens.
+Nested pages, such as a project board, a task's dashboard, a channel, a file or a settings page, show a breadcrumb from their agent or System down to the current page. Every nested page shares the same header, the one Settings pages use: a **← Back to** link to the parent page, such as a task's settings back to the task or a task back to **Scheduled Tasks**, above the breadcrumb, which is the page's title. Every crumb but the last links to its page. The header sits at the top of the page, below its padding, and stays there as the page scrolls, including with the sidebar collapsed and on narrow screens, where the middle crumbs shorten first. Leaving a page with unsaved changes through the back link or a crumb asks first.
 
 With the sidebar collapsed to its icon rail, hovering or focusing an icon that has subpages opens a flyout listing them: another agent's icon lists its pages, **System** lists the System pages, and an agent page's icon lists its projects, tasks, channels or files.
 
-On a project, task, channel or file page, the breadcrumb's last crumb has a caret that opens a switcher, like GitHub's repository switcher: a search box over that page's siblings, so you can jump straight to another project, task, channel or file. `Alt+S` (`⌥S` on a Mac) opens it from anywhere on the page.
+On a project, task, channel or file page, the header's last crumb, its title, has a caret that opens a switcher, like GitHub's repository switcher: a search box over that page's siblings, so you can jump straight to another project, task, channel or file. `Alt+S` (`⌥S` on a Mac) opens it from anywhere on the page.
 
 ### Reconnecting
 

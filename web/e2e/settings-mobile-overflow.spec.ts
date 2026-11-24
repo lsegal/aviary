@@ -69,7 +69,7 @@ async function mockSettings(page: Page) {
 
 /** Asserts neither the document nor the settings scroller scrolls sideways. */
 async function expectNoHorizontalOverflow(page: Page, label: string) {
-	await expect(page.getByTestId("page-header")).toBeVisible();
+	await expect(page.getByTestId("settings-header")).toBeVisible();
 	const sizes = await page.evaluate(() => {
 		const scroller = document.querySelector("[data-testid=settings-scroll]");
 		return {
@@ -78,8 +78,8 @@ async function expectNoHorizontalOverflow(page: Page, label: string) {
 		};
 	});
 	expect(sizes, label).toEqual({ page: 0, scroller: 0 });
-	await expect(page.getByTestId("page-back")).toBeInViewport({ ratio: 1 });
-	await expect(page.getByTestId("page-title")).toBeInViewport();
+	await expect(page.getByTestId("settings-back")).toBeInViewport({ ratio: 1 });
+	await expect(page.getByTestId("settings-title")).toBeInViewport();
 }
 
 for (const width of [320, 375, 430]) {
