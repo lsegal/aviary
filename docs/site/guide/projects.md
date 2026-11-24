@@ -151,6 +151,16 @@ Every Aviary server has an instance identity, an 8-character ID generated on fir
 
 On a finished or paused job, a mention goes to the Code Loop agent instead, as `look at comment <link> on issue OWNER/REPO#N and determine next steps`. The job stays as it is unless the agent decides the comment needs more work and retries or resumes it.
 
+## Queueing jobs on demand
+
+The **Queue** menu in a project's header starts work that no poll picks up on its own:
+
+- **Safe merge PR** opens a picker of the repository's open pull requests, with each one's CI status, review decision, mergeability, author, and the job that already owns it. Picked pull requests become `merge` jobs that run `gh-safe-merge`. They merge one at a time per repository, in the order you picked them, so each one rebases and rechecks on the latest default branch. A merge that's skipped or fails shows its reason on its card. A fix job's card also offers **Safe merge** for its open pull request.
+- **Discuss** opens a picker of open Discussion threads. Picked threads become `discuss` jobs that run `gh-discuss`.
+- **Fix issue** takes issue numbers. It retries an issue's finished job, or checks GitHub now so that an issue matching the project's filter is dispatched.
+
+Queued jobs show as board cards with logs, a transcript, and pause, resume, stop and retry. They wait for a free agent slot like any other job, and they're saved, so they survive a restart. A number that a job already owns isn't queued again: the picker names the owning job. While `no_merge` is set, **Safe merge PR** is disabled with an explanation, and cards don't offer it. In `aviary watch`'s TUI, `m` queues the selected job's pull request for a safe merge, and `Q` opens a prompt such as `merge 1201 1207`, `discuss 4` or `fix 12`. Agents and scripts use the `project_job_queue` and `project_queue_candidates` tools.
+
 ## Prompt chat
 
 **Prompt chat** on the board opens a side panel, or a bottom drawer on phones (in `aviary watch`'s TUI, a pane opened with `c`: see [Watch sessions](#watch-sessions)), for chatting with the built-in `projects` Aviary agent. Each prompt carries the board's project and a live snapshot of this instance (its watched projects and the agent each belongs to, issue and job counts, and a summary of every job), so a question like "status of issues?" is answered for the board it was opened from. It can retry, pause, resume or stop jobs, run an unblock round, and file issues through `gh-create`. Asked to update an issue or pull request, it posts one comment mentioning the author, which the job working it also hears, and replies with the comment's URL; it never edits an issue's body or title. It is limited to the `project_*` tools and refuses anything outside this instance. Images work in both directions. **Summarize** on a job card asks it to summarize that job's session log.
