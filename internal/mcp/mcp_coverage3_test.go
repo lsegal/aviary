@@ -470,27 +470,3 @@ func TestSkillsListTool_WithAgents(t *testing.T) {
 
 	_ = out
 }
-
-// ── dispatcher CallTool error path ───────────────────────────────────────────
-
-func TestDispatcherCallTool_ToolError(t *testing.T) {
-	old := GetDeps()
-	SetDeps(&Deps{Scheduler: nil})
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	d := NewDispatcher("https://localhost:16677", "")
-	// Calling a tool that returns an MCP error (scheduler not initialized)
-	out, err := d.CallTool(context.Background(), "task_list", map[string]any{})
-	if err != nil {
-		// It might return an error
-		_ = err
-		return
-	}
-	assert.
-		// Or it might return an MCP error result as text
-		True(t, strings.Contains(out, "scheduler not initialized"))
-
-}

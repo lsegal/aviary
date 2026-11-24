@@ -683,7 +683,7 @@ test("workflow cards and the detail view show the compiled state and fallback ru
 	await card.click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/triage$/);
 	await expect(
-		page.getByTestId("page-header").getByTestId("compiled-status-chip"),
+		page.getByTestId("settings-header").getByTestId("compiled-status-chip"),
 	).toHaveAttribute("data-state", "fallback");
 	await expect(page.getByTestId("task-precompile-note")).toContainText(
 		"failed on its first run",

@@ -5,6 +5,8 @@ package process
 import (
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/mattn/go-isatty"
@@ -57,4 +59,44 @@ func unixSignal(signal processSignal) syscall.Signal {
 	default:
 		return syscall.Signal(0)
 	}
+}
+
+// reapLeftovers kills what is left of an exited child's process group and
+// returns the PIDs it found there. The group outlives its leader while any
+// member is alive, so its ID cannot have been reused by an unrelated group.
+func reapLeftovers(cmd *exec.Cmd) []int {
+	if cmd == nil || cmd.Process == nil || cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
+		return nil
+	}
+	pgid := cmd.Process.Pid
+	if pgid <= 0 || pgid == syscall.Getpgrp() {
+		return nil
+	}
+	pids := groupMembers(pgid)
+	if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
+		return nil
+	}
+	return pids
+}
+
+// groupMembers lists the processes in process group pgid, read from ps,
+// whose -A -o pid=,pgid= form is the same on Linux and macOS.
+func groupMembers(pgid int) []int {
+	out, err := exec.Command("ps", "-A", "-o", "pid=,pgid=").Output()
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		pid, pidErr := strconv.Atoi(fields[0])
+		group, groupErr := strconv.Atoi(fields[1])
+		if pidErr == nil && groupErr == nil && group == pgid {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
 }

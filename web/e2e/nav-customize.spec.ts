@@ -1,9 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
-// Customizing the navigation (#1003): the Edit sidebar dialog reorders and
-// hides pages, the result persists on the server with a localStorage
-// fallback, and Reset restores the built-in order.
+// Customizing the navigation (#1003): the sidebar editor, in Settings →
+// Display (#1093), reorders and hides pages, the result persists on the
+// server with a localStorage fallback, and Reset restores the built-in
+// order.
 
 const DEFAULT_PAGES = [
 	"chat",
@@ -59,7 +60,8 @@ async function systemPages(page: Page): Promise<string[]> {
 async function openEditor(page: Page) {
 	await page.getByTestId("sidebar").getByTestId("gear-menu-button").click();
 	await page.getByTestId("gear-menu-edit-nav").click();
-	await expect(page.getByTestId("nav-edit-dialog")).toBeVisible();
+	await expect(page).toHaveURL("/system/display#sidebar");
+	await expect(page.getByTestId("nav-edit-agentPages")).toBeVisible();
 }
 
 function editRow(page: Page, list: string, key: string) {
@@ -89,8 +91,6 @@ test("pages reorder by keyboard and hide, and persist on the server", async ({
 		"data-hidden",
 		"true",
 	);
-	await page.getByTestId("nav-edit-done").click();
-	await expect(page.getByTestId("nav-edit-dialog")).toHaveCount(0);
 
 	const arranged = ["chat", "tasks", "projects", "channels", "settings"];
 	expect(await sidebarPages(page)).toEqual(arranged);
@@ -133,8 +133,12 @@ test("System pages reorder by dragging their handle", async ({ page }) => {
 		steps: 8,
 	});
 	await page.mouse.up();
-	await page.getByTestId("nav-edit-done").click();
+	await expect
+		.poll(async () => (await rowKeys(page, "systemPages")).slice(0, 3))
+		.toEqual(["skills", "usage", "tools"]);
 
+	// The sidebar lists System pages on System pages.
+	await page.goto("/system/usage");
 	expect((await systemPages(page)).slice(0, 3)).toEqual([
 		"skills",
 		"usage",
@@ -174,7 +178,6 @@ test("Reset to default restores the order on the server and locally", async ({
 
 	await reset.click();
 	await expect(reset).toBeDisabled();
-	await page.getByTestId("nav-edit-done").click();
 	expect(await sidebarPages(page)).toEqual(DEFAULT_PAGES);
 	await expect(page.getByTestId("sidebar-show-hidden")).toHaveCount(0);
 	expect(deletes).toHaveLength(1);
@@ -198,7 +201,6 @@ test("without the server's preferences, localStorage keeps them", async ({
 	await editRow(page, "agentPages", "channels")
 		.getByTestId("nav-edit-visibility")
 		.click();
-	await page.getByTestId("nav-edit-done").click();
 
 	await page.reload();
 	expect(await sidebarPages(page)).toEqual(
@@ -254,7 +256,7 @@ test.describe("the top row", () => {
 		await page.getByTestId("gear-menu-edit-nav").click();
 		await expect(page.getByTestId("nav-edit-agentPages")).toBeVisible();
 		await expect(page.getByTestId("nav-edit-top")).toHaveCount(0);
-		await expect(page.getByTestId("nav-edit-dialog")).not.toContainText(
+		await expect(page.getByTestId("nav-editor")).not.toContainText(
 			/top buttons/i,
 		);
 		await editRow(page, "agentPages", "files")
@@ -263,7 +265,6 @@ test.describe("the top row", () => {
 		await editRow(page, "agentPages", "channels")
 			.getByTestId("nav-edit-visibility")
 			.click();
-		await page.getByTestId("nav-edit-done").click();
 
 		await expect
 			.poll(() => mobileRowKeys(page))
@@ -397,8 +398,8 @@ test.describe("dragging", () => {
 		await page.mouse.move((target?.x ?? 0) + 20, target?.y ?? 0, { steps: 8 });
 		await page.keyboard.press("Escape");
 		await page.mouse.up();
-		// The dialog stays open, and the order is unchanged.
-		await expect(page.getByTestId("nav-edit-dialog")).toBeVisible();
+		// The editor stays, and the order is unchanged.
+		await expect(page.getByTestId("nav-editor")).toBeVisible();
 		await expect.poll(() => rowKeys(page, "agentPages")).toEqual(DEFAULT_PAGES);
 	});
 
@@ -460,7 +461,7 @@ test.describe("dragging", () => {
 		await mockAgents(page, ["assistant"]);
 		await page.goto("/system/overview");
 		await openEditor(page);
-		const scroller = page.getByTestId("nav-edit-scroll");
+		const scroller = page.getByTestId("settings-scroll");
 		const box = await scroller.boundingBox();
 		expect(
 			await scroller.evaluate((el) => el.scrollHeight > el.clientHeight),
@@ -497,7 +498,7 @@ test.describe("dragging on touch", () => {
 		await page.goto("/agents/assistant/chat");
 		await page.locator("header").getByTestId("gear-menu-button").click();
 		await page.getByTestId("gear-menu-edit-nav").click();
-		await expect(page.getByTestId("nav-edit-dialog")).toBeVisible();
+		await expect(page.getByTestId("nav-edit-agentPages")).toBeVisible();
 		const cdp = await page.context().newCDPSession(page);
 		const touch = (
 			type: "touchStart" | "touchMove" | "touchEnd",
@@ -525,7 +526,22 @@ test.describe("dragging on touch", () => {
 		await touch("touchEnd");
 		expect(await rowKeys(page, "agentPages")).toEqual(DEFAULT_PAGES);
 
-		// A long press anywhere on the row picks it up.
+		// A long press anywhere on the row picks it up. The swipe flung the
+		// page, so let the fling settle, then bring the rows clear of the
+		// autoscrolling edges.
+		const scroller = page.getByTestId("settings-scroll");
+		let last = -1;
+		await expect
+			.poll(async () => {
+				const top = await scroller.evaluate((el) => el.scrollTop);
+				const settled = top === last;
+				last = top;
+				return settled;
+			})
+			.toBe(true);
+		await editRow(page, "agentPages", "chat").evaluate((el) =>
+			el.scrollIntoView({ block: "center" }),
+		);
 		from = await label("tasks");
 		to = await label("chat");
 		await touch("touchStart", from.x, from.y);
@@ -544,7 +560,7 @@ test.describe("dragging on touch", () => {
 	});
 });
 
-/** A section's rows in the Edit sidebar dialog, by key, in order. */
+/** A section's rows in the sidebar editor, by key, in order. */
 function rowKeys(page: Page, list: string): Promise<string[]> {
 	return page
 		.getByTestId(`nav-edit-${list}`)

@@ -54,6 +54,8 @@ var watchHelpLines = []string{
 	"u          resume it",
 	"s          stop it (asks to confirm)",
 	"d          dismiss a failed scheduled run",
+	"m          queue the selected job's pull request for gh-safe-merge",
+	"Q          queue jobs: merge 1201 1207 · discuss 4 · fix 12",
 	"c          open / close the prompt chat",
 	"/          open the prompt chat and type",
 	"?          toggle this help",
@@ -303,6 +305,9 @@ func (m watchModel) itemDetail(it watchItem) string {
 		return strings.Join(parts, " · ")
 	}
 	job := it.job
+	if kind := watchKindLabel(job); kind != "" {
+		parts = append(parts, kind)
+	}
 	if job.Agent != "" {
 		cli := job.Agent
 		if job.Model != "" {
@@ -328,6 +333,12 @@ func (m watchModel) itemDetail(it watchItem) string {
 			}
 		}
 		parts = append(parts, wait)
+	}
+	if job.Kind == "merge" || job.Kind == "discuss" {
+		// A finished merge or discuss job's last line says why it ended.
+		if job.Summary != "" && (job.Status == "complete" || job.Status == "failed") {
+			parts = append(parts, job.Summary)
+		}
 	}
 	if job.Stale {
 		parts = append(parts, "stale")
@@ -491,6 +502,8 @@ func (m watchModel) footerLine() string {
 		text = tuiHelpStyle.Render("enter send · alt+enter new line · ↑↓ history · tab transcript · esc board")
 	case m.chat.open && m.chat.focus == watchFocusTranscript && m.confirm == nil:
 		text = tuiHelpStyle.Render("↑↓ scroll · G follow · n/N reference · enter jump · e tools · z full · tab input · esc board")
+	case m.queueInput != nil:
+		text = m.queueInput.View()
 	case m.confirm != nil:
 		text = tuiErrorStyle.Render(fmt.Sprintf("%s %s? y/n", m.confirm.verb, watchJobKey(m.confirm.item.job)))
 	case m.errText != "":

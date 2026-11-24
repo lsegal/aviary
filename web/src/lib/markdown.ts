@@ -36,6 +36,18 @@ export function renderMarkdown(text: string): string {
 	}) as string;
 }
 
+/**
+ * Renders an untrusted user chat message as Markdown. Single newlines stay
+ * line breaks, as typed, so plain multi-line messages read as before.
+ */
+export function renderUserMarkdown(text: string): string {
+	return marked.parse(text, {
+		async: false,
+		breaks: true,
+		renderer: markdownRenderer,
+	}) as string;
+}
+
 const bareURLPattern = /https?:\/\/[^\s<>"']*[^\s<>"'.,;:!?)\]}]/g;
 
 /**

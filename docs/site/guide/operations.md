@@ -236,7 +236,9 @@ server_upgrade {}                  # now
 server_upgrade { when: "idle" }    # once no jobs are running
 ```
 
-From a terminal, `aviary upgrade` does the same. It checks first and does nothing when Aviary is current. `--version` accepts versions with or without a leading `v`, and `--when idle` waits for running jobs.
+From a terminal, `aviary upgrade` does the same. It checks first and prints `Aviary v0.7.4 is up to date` when Aviary is current, or `Upgrading v0.7.3 → v0.7.5` before it installs. `--version` accepts versions with or without a leading `v`, and `--when idle` waits for running jobs.
+
+The upgrade mode comes from how the binary was built: a release build always upgrades from GitHub releases, even when run from inside an Aviary clone, and only a dev build running from its checkout pulls with git (see [Dev checkouts](#dev-checkouts)). `aviary version` and `aviary doctor` show the detected install type. `--release` and `--source` force a mode. `aviary upgrade` goes through the running server only when the server is the same kind of install; a dev server from a checkout is left alone by a release binary's upgrade, and the reverse.
 
 An upgrade is a safe restart. Aviary installs the release, updates the skills for every signed-in CLI provider, stops running jobs at a checkpoint and saves their sessions, then restarts. Each job then resumes in its own session and is told that Aviary restarted. Waiting jobs aren't touched. The upgrade dialog in the control panel names the jobs it will stop before you confirm. It offers **Now**, or **When no jobs are running**, which holds new jobs until the restart is done. A waiting upgrade can be canceled from the panel or with `server_restart { cancel: true }`.
 
@@ -250,7 +252,7 @@ Every restart, manual or automatic, first waits for in-flight MCP tool calls to 
 
 A dev build running from an Aviary git checkout (for example under `pnpm dev`, outside Docker) updates from git instead of releases. The check fetches the checkout's upstream branch and compares it with `HEAD`, and `git status` tells it whether the working tree has local changes. The notice appears when the upstream branch has new commits.
 
-`pnpm dev` tells the backend where the checkout is through `AVIARY_CHECKOUT`, so the backend finds it even when it runs, or restarts, outside the checkout directory. To run a dev build any other way, set `AVIARY_CHECKOUT` to the checkout root yourself; without it, Aviary looks for a checkout around its working directory. A dev build that finds no checkout says so in the update notice instead of appearing up to date.
+`pnpm dev` tells the backend where the checkout is through `AVIARY_CHECKOUT`, so the backend finds it even when it runs, or restarts, outside the checkout directory. To run a dev build any other way, set `AVIARY_CHECKOUT` to the checkout root yourself; without it, Aviary looks for a checkout around its own executable (for example `./aviary` built by `pnpm build:go`), never its working directory. `aviary upgrade --source` is the one exception: with no other checkout known, it pulls the checkout containing the working directory. A dev build that finds no checkout says so in the update notice instead of appearing up to date.
 
 Updating, manually or automatically, runs `git pull --ff-only` in the checkout. `pnpm dev` runs the backend under forgo's hot reload (`forgo run --watch`), so pulled Go changes go live in the running backend without a restart: running jobs keep running, the Projects board keeps its jobs, and chat and MCP sessions stay connected (reloaded MCP tools are registered again). Aviary waits for forgo's verdict and logs `dev update applied via hot reload` when the new code is live. A pull that changes no Go code needs nothing more.
 

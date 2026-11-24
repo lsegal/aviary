@@ -11,6 +11,9 @@
 					class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
 					Scheduled
 				</span>
+				<span v-if="kindBadge" data-testid="job-kind" :class="kindBadge.cls"
+					class="rounded-full px-2 py-0.5 font-medium">{{ kindBadge.label }}</span>
+				<span v-if="queueText" data-testid="job-queue-position" class="text-gray-500 dark:text-gray-400">{{ queueText }}</span>
 				<span v-if="job.startedAt" data-testid="job-time" class="ml-auto whitespace-nowrap text-gray-400"
 					:title="`Started ${new Date(job.startedAt).toLocaleString()}`">{{ age(job.startedAt, now) }}</span>
 			</div>
@@ -26,13 +29,19 @@
 			<p v-else class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500 dark:text-gray-400">
 				<!-- The separator ends the item before it, so a wrapped line never
 					starts with one. -->
-				<span class="inline-flex items-center gap-x-1 whitespace-nowrap">
+				<a v-if="queued" :href="job.issueURL" target="_blank" rel="noreferrer" class="hover:underline">
+					{{ job.kind === "merge" ? "PR" : "Discussion" }} #{{ job.number }}</a>
+				<span v-else class="inline-flex items-center gap-x-1 whitespace-nowrap">
 					<a v-if="job.number && job.repo" :href="job.issueURL || githubURL(job.repo, 'issues', job.number)"
 						target="_blank" rel="noreferrer" class="hover:underline">#{{ job.number }}</a>
 					<span v-if="job.pr || (job.status !== 'queued' && job.number)" data-testid="job-meta-separator">·</span>
 				</span>
-				<PullRequestLink v-if="job.pr" :job="job" />
-				<span v-else-if="job.status !== 'queued' && job.number">no PR yet</span>
+				<PullRequestLink v-if="job.pr && !queued" :job="job" />
+				<span v-else-if="!queued && job.status !== 'queued' && job.number">no PR yet</span>
+			</p>
+			<p v-if="reason" data-testid="job-reason" class="text-xs"
+				:class="job.state === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-300'">
+				{{ reason }}
 			</p>
 			<p v-if="waitingText" data-testid="job-waiting" class="text-xs text-amber-700 dark:text-amber-400">
 				{{ waitingText }}
@@ -64,6 +73,12 @@
 				@click="emit('summarize', job)">
 				<SparklesIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
+			<button v-if="canSafeMerge" type="button" :disabled="busy" data-testid="job-safe-merge"
+				aria-label="Safe merge" :title="`Queue PR #${job.pr} for gh-safe-merge`"
+				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+				@click="emit('safe-merge', job)">
+				<ArrowsRightLeftIcon aria-hidden="true" class="h-4 w-4" />
+			</button>
 			<button v-if="job.actions.stop" type="button" :disabled="busy"
 				aria-label="Stop" title="Stop this job"
 				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-red-950/40"
@@ -84,6 +99,7 @@
 <script setup lang="ts">
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowsPointingOutIcon from "@heroicons/vue/24/outline/ArrowsPointingOutIcon";
+import ArrowsRightLeftIcon from "@heroicons/vue/24/outline/ArrowsRightLeftIcon";
 import SparklesIcon from "@heroicons/vue/24/outline/SparklesIcon";
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import { computed } from "vue";
@@ -111,11 +127,14 @@ const props = defineProps<{
 	busy?: boolean;
 	/** Names the job's project, on a board of several. */
 	showProject?: boolean;
+	/** no_merge leaves pull requests for a human, so Safe merge is hidden. */
+	noMerge?: boolean;
 }>();
 const emit = defineEmits<{
 	retry: [job: ProjectJob];
 	stop: [job: ProjectJob];
 	summarize: [job: ProjectJob];
+	"safe-merge": [job: ProjectJob];
 }>();
 
 const settings = useSettingsStore();
@@ -139,6 +158,46 @@ const scheduleTask = computed(() => {
 });
 
 const waitingText = computed(() => waitText(props.job, props.now));
+
+// Pull requests queued for gh-safe-merge and threads queued for gh-discuss
+// (#1095) name their own pull request or thread, their place in the merge
+// lane while waiting, and why they ended.
+const queued = computed(
+	() => props.job.kind === "merge" || props.job.kind === "discuss",
+);
+const kindBadge = computed(() => {
+	if (props.job.kind === "merge")
+		return {
+			label: "Safe merge",
+			cls: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
+		};
+	if (props.job.kind === "discuss")
+		return {
+			label: "Discuss",
+			cls: "bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300",
+		};
+	return null;
+});
+const queueText = computed(() => {
+	const position = props.job.queuePosition;
+	if (props.job.kind !== "merge" || !position) return "";
+	return props.job.status === "queued"
+		? `#${position} in the merge queue`
+		: "merging now";
+});
+const reason = computed(() =>
+	queued.value && (props.job.state === "done" || props.job.state === "failed")
+		? props.job.summary
+		: "",
+);
+// A fix job's open pull request can be handed to gh-safe-merge.
+const canSafeMerge = computed(
+	() =>
+		!props.noMerge &&
+		props.job.kind === "issue" &&
+		props.job.pr > 0 &&
+		props.job.prState !== "merged",
+);
 
 const progressPct = computed(() =>
 	Math.round((props.job.progressDone / props.job.progressTotal) * 100),

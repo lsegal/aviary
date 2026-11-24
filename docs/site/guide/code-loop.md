@@ -101,6 +101,10 @@ A scheduled task or workflow can steer a job too: its `codeloop:<project>#<numbe
 
 A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass on that instance. On a finished or paused job, the mention goes to the Code Loop agent, which decides whether to retry or resume it. See [Steering jobs](./projects#steering-jobs).
 
+### Queueing pull requests and threads
+
+The board's **Queue** menu hands open pull requests to `gh-safe-merge`, which merges them one at a time in the order picked, and Discussion threads to `gh-discuss`. Each becomes a job card with the usual controls. See [Queueing jobs on demand](./projects#queueing-jobs-on-demand).
+
 ### Prompt chat
 
 **Prompt chat** on the board talks to the built-in `projects` agent with a live snapshot of this instance's projects and jobs. It answers questions such as "status of issues?", retries, pauses, resumes or stops jobs, runs an unblock round, files issues through `gh-create`, and posts comments on issues or pull requests that the job working them also hears. See [Prompt chat](./projects#prompt-chat).

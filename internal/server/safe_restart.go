@@ -505,14 +505,18 @@ func (s *Server) runDone() <-chan struct{} {
 	return s.runCtx.Done()
 }
 
+// selfUpdaterApplies reports whether this build has anything for
+// runSelfUpdater to compare against: dev builds outside a checkout do not.
+func selfUpdaterApplies() bool {
+	return !update.IsDevBuild() || update.EmulationActive() || gitCheckout() != ""
+}
+
 // runSelfUpdater checks for a new release (or, in git mode, new upstream
 // commits) every update.CheckInterval, tells every dashboard about it, and
 // applies it when auto_update is on. Running jobs do not delay it: the restart
-// checkpoints them and they resume afterwards.
+// checkpoints them and they resume afterwards. Callers check
+// selfUpdaterApplies first.
 func (s *Server) runSelfUpdater(ctx context.Context) {
-	if update.IsDevBuild() && !update.EmulationActive() && gitCheckout() == "" {
-		return // dev builds outside a checkout have nothing to compare against
-	}
 	ctx = update.WithCaller(ctx, "self-updater")
 	var lastNotified string
 	notify := func(check update.CheckResult) {

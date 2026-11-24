@@ -21,7 +21,9 @@
 							<PencilIcon aria-hidden="true" class="h-3.5 w-3.5" />
 						</router-link>
 					</div>
-					<p v-if="showProject" data-testid="kanban-scheduled-project" class="truncate font-mono text-gray-500 dark:text-gray-400">{{ s.project }}</p>
+					<router-link v-if="showProject" :to="projectBoardPath(s.project)" data-testid="kanban-scheduled-project"
+						class="relative z-10 block w-fit max-w-full truncate rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+						:title="`Open ${s.project}'s board`">{{ s.project }}</router-link>
 					<!-- A run shows here in place; the card never moves columns. -->
 					<p v-if="scheduleRunning(entryOf(s)?.schedule)" data-testid="kanban-scheduled-running"
 						class="flex items-center gap-1.5 text-blue-700 dark:text-blue-300">
@@ -63,14 +65,22 @@
 					</router-link>
 					<p class="flex flex-wrap items-center gap-x-1.5 text-gray-500 dark:text-gray-400">
 						<span v-if="job.scheduled">Scheduled</span>
+						<a v-else-if="job.kind === 'merge' || job.kind === 'discuss'" :href="job.issueURL" target="_blank" rel="noreferrer"
+							data-testid="kanban-kind" class="hover:underline">{{ job.kind === "merge" ? "Safe merge PR" : "Discuss" }} #{{ job.number }}</a>
 						<a v-else-if="job.number && job.repo" :href="job.issueURL || githubURL(job.repo, 'issues', job.number)"
 							target="_blank" rel="noreferrer" class="hover:underline">#{{ job.number }}</a>
-						<PullRequestLink v-if="job.pr" :job="job" />
+						<PullRequestLink v-if="job.pr && job.kind !== 'merge'" :job="job" />
+						<span v-if="job.kind === 'merge' && job.status === 'queued' && job.queuePosition" data-testid="kanban-queue-position">#{{ job.queuePosition }} in queue</span>
 						<span v-if="job.startedAt" data-testid="kanban-timing" class="ml-auto tabular-nums"
 							:title="`Started ${new Date(job.startedAt).toLocaleString()}`">{{ age(job.startedAt, now) }}</span>
 					</p>
 					<p v-if="job.state === 'paused'" data-testid="kanban-paused-reason" class="text-amber-700 dark:text-amber-400">
 						{{ waitText(job, now) || "No pause reason recorded" }}
+					</p>
+					<p v-if="(job.kind === 'merge' || job.kind === 'discuss') && job.summary && (job.state === 'done' || job.state === 'failed')"
+						data-testid="kanban-reason" class="truncate" :title="job.summary"
+						:class="job.state === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'">
+						{{ job.summary }}
 					</p>
 				</article>
 				<p v-if="!col.jobs.length" class="px-1 py-3 text-center text-gray-400">No jobs</p>
@@ -95,6 +105,7 @@ import {
 	jobStates,
 	type ProjectJob,
 	type ProjectSchedule,
+	projectPath,
 	runResultClass,
 	runResultIcon,
 	scheduleJob,
@@ -122,7 +133,7 @@ const props = withDefaults(
 		scheduleTo?: (s: ProjectSchedule) => RouteLocationRaw;
 		/** The schedules' board entries: their last and next runs and any run in flight. */
 		scheduleEntries?: ProjectJob[];
-		/** Names each scheduled box's project, on a board of several. */
+		/** Names each scheduled card's project, on a board of several. */
 		showProject?: boolean;
 	}>(),
 	{
@@ -165,6 +176,9 @@ const columns = computed(() =>
 );
 
 const settings = useSettingsStore();
+function projectBoardPath(target: string) {
+	return projectPath(projectOwner(settings.config, target), target);
+}
 function runPath(job: ProjectJob) {
 	return jobPath(
 		projectOwner(settings.config, job.target),

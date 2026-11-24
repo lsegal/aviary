@@ -38,6 +38,9 @@
 				@click="openAdd">
 				<PlusIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
+			<!-- A watch session's board is one agent's, so it queues when it has one project. -->
+			<QueueMenu v-if="!aggregate || targets.length === 1" :no-merge="status?.noMerge"
+				@pick="openQueue($event, project || targets[0])" />
 			<button v-if="!aggregate" type="button" data-testid="schedule-new" title="Schedule a task for this project"
 				class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 				:disabled="!scheduleAgent" @click="onNewSchedule">
@@ -216,13 +219,14 @@
 						<div v-else-if="!boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
 						<section v-else class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Jobs">
 							<ScheduledCard v-for="s in boardSchedules" :key="s.id" :schedule="s" :now="now" :to="scheduleTo(s)"
-								:job="scheduleJob(scheduleEntries, s.id)" :busy="busySchedule === s.id" :show-project="aggregate"
+								:show-project="aggregate"
+								:job="scheduleJob(scheduleEntries, s.id)" :busy="busySchedule === s.id"
 								@run="onScheduleAction(runScheduleNow, $event)"
 								@toggle="onScheduleAction(toggleSchedule, $event)" @settings="openScheduleSettings"
 								@dismiss="onAction(dismiss, $event)" />
 							<JobCard v-for="job in boardJobs" :key="job.id" :job="job" :now="now" :show-project="aggregate"
-								:busy="busyJob === job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
-								@summarize="onSummarize" />
+								:busy="busyJob === job.id" :no-merge="status?.noMerge" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
+								@summarize="onSummarize" @safe-merge="openQueue('gh-safe-merge', $event.target, [$event.pr])" />
 						</section>
 						</template>
 
@@ -240,6 +244,8 @@
 			</div>
 			<ProjectChatPanel v-if="(project || aggregate) && chatOpen && !auth.minimal" ref="chatPanel" :project="project" @close="chatOpen = false" />
 		</div>
+		<QueueDialog :target="queueTarget" :skill="queueSkill" :preselect="queuePreselect" :no-merge="status?.noMerge"
+			@close="queueSkill = null" @queued="refresh" />
 		<AddProjectDialog v-if="adding" :agent="routeAgent" @close="closeAdd" @added="onAdded" />
 	</AppLayout>
 </template>
@@ -268,6 +274,8 @@ import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
 import ProjectLogsPanel from "../components/projects/ProjectLogsPanel.vue";
 import ProjectNavRow from "../components/projects/ProjectNavRow.vue";
+import QueueDialog from "../components/projects/QueueDialog.vue";
+import QueueMenu from "../components/projects/QueueMenu.vue";
 import ScheduledCard from "../components/projects/ScheduledCard.vue";
 import ScheduleEditor from "../components/projects/ScheduleEditor.vue";
 import ScheduleRunHistory from "../components/projects/ScheduleRunHistory.vue";
@@ -301,6 +309,7 @@ import {
 	type ProjectSchedule,
 	parseBoardStates,
 	projectPath,
+	type QueueSkill,
 	scheduleJob,
 	scheduleMatches,
 	stateLabel,
@@ -459,6 +468,7 @@ const {
 	page,
 	error,
 	loading,
+	refresh,
 	checkNow,
 	signInToGitHub,
 	switchToPolling,
@@ -467,7 +477,7 @@ const {
 	stop,
 	dismiss,
 	scheduleEntries,
-} = useProjectBoard(targets, states, search, kanban);
+} = useProjectBoard(targets, states, search, kanban, ref(true));
 const {
 	schedules,
 	upcoming,
@@ -478,7 +488,7 @@ const {
 	runNow: runScheduleNow,
 	preview: previewSchedule,
 	refresh: refreshSchedules,
-} = useProjectSchedules(targets);
+} = useProjectSchedules(project, targets);
 // The projects' scheduled tasks are their own kind of box on the board, one
 // per task whatever its runs: in the list and in the kanban's Scheduled
 // column, while the Scheduled chip or no chip is selected, or a selected
@@ -496,8 +506,17 @@ const boardSchedules = computed(() =>
 );
 const boardJobs = computed(() => (showJobs.value ? jobs.value : []));
 // A scheduled box opens its editor on the board, at ?scheduled=<id>, so a
-// reload or a shared link opens the same place.
+// reload or a shared link opens the same place. A board of several projects
+// opens it on its own project's board, where the editor lives.
 function scheduleTo(s: ProjectSchedule) {
+	if (aggregate.value)
+		return {
+			path: projectPath(
+				projectOwner(settingsStore.config, s.project),
+				s.project,
+			),
+			query: { scheduled: s.id },
+		};
 	return { query: { ...boardQuery.value.query, scheduled: s.id } };
 }
 const boardQuery = computed(() => {
@@ -701,6 +720,17 @@ async function onAction(
 	} finally {
 		busyJob.value = "";
 	}
+}
+
+// The Queue menu's picker, or a job card's Safe merge on its linked pull
+// request, which opens it with that pull request picked (#1095).
+const queueSkill = ref<QueueSkill | null>(null);
+const queueTarget = ref("");
+const queuePreselect = ref<number[]>([]);
+function openQueue(skill: QueueSkill, target: string, numbers: number[] = []) {
+	queueTarget.value = target;
+	queuePreselect.value = numbers;
+	queueSkill.value = skill;
 }
 
 const checking = ref(false);

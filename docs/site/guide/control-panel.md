@@ -19,17 +19,17 @@ On narrow screens the sidebar becomes a row of buttons along the top: one per ag
 
 ### Edit sidebar
 
-**Edit sidebar** opens a dialog with two lists: **Agent pages** (**Pages** when there is only one agent) and **System pages**. Drag an item by its handle (on touch screens, long-press the row) and the other items slide aside to make room, or move it one place with its up and down buttons or the arrow keys on its handle. Each item's eye button hides or shows it. Changes save as you go and are stored on the server per user, so they follow you to other devices.
+**Edit sidebar** opens [Settings → Display](#settings-display) at its **Sidebar** section, which has two lists: **Agent pages** (**Pages** when there is only one agent) and **System pages**. Drag an item by its handle (on touch screens, long-press the row) and the other items slide aside to make room, or move it one place with its up and down buttons or the arrow keys on its handle. Each item's eye button hides or shows it. Changes save as you go and are stored on the server per user, so they follow you to other devices.
 
-The **Pages** order is shared: every agent's pages in the sidebar, the collapsed rail and the top row on narrow screens all follow it. When pages are hidden, the sidebar offers **Show N hidden pages** to list them for the current visit. **Reset to default** restores the built-in order and shows every page again.
+The **Pages** order is shared: every agent's pages in the sidebar, the collapsed rail and the top row on narrow screens all follow it. When pages are hidden, the sidebar offers **Show N hidden pages** to list them for the current visit. **Reset sidebar** restores the built-in order and shows every page again.
 
 ### Navigation
 
-Nested pages, such as a project board, a task's dashboard, a channel, a file or a settings page, show a breadcrumb from their agent or System down to the current page. Every crumb but the last links to its page, and a back link beside it returns to the parent page. Settings pages show the breadcrumb as their title; other pages show it above their content, including with the sidebar collapsed and on narrow screens.
+Nested pages, such as a project board, a task's dashboard, a channel, a file or a settings page, show a breadcrumb from their agent or System down to the current page. Every nested page shares the same header, the one Settings pages use: a **← Back to** link to the parent page, such as a task's settings back to the task or a task back to **Scheduled Tasks**, above the breadcrumb, which is the page's title. Every crumb but the last links to its page. The header sits at the top of the page, below its padding, and stays there as the page scrolls, including with the sidebar collapsed and on narrow screens, where the middle crumbs shorten first. Leaving a page with unsaved changes through the back link or a crumb asks first.
 
 With the sidebar collapsed to its icon rail, hovering or focusing an icon that has subpages opens a flyout listing them: another agent's icon lists its pages, **System** lists the System pages, and an agent page's icon lists its projects, tasks, channels or files.
 
-On a project, task, channel or file page, the breadcrumb's last crumb has a caret that opens a switcher, like GitHub's repository switcher: a search box over that page's siblings, so you can jump straight to another project, task, channel or file. `Alt+S` (`⌥S` on a Mac) opens it from anywhere on the page.
+On a project, task, channel or file page, the header's last crumb, its title, has a caret that opens a switcher, like GitHub's repository switcher: a search box over that page's siblings, so you can jump straight to another project, task, channel or file. `Alt+S` (`⌥S` on a Mac) opens it from anywhere on the page.
 
 ### Reconnecting
 
@@ -104,7 +104,7 @@ The home screen. It shows:
 
 ### Settings (`/system/settings`)
 
-Opened from the sidebar's gear menu, with two tabs. **General** covers the `server`, `models`, `browser`, `scheduler`, and `search` config sections. Port and TLS changes require a server restart to take effect.
+Opened from the sidebar's gear menu, with three tabs: **General**, **Providers & Authentication** and **Display**. **General** covers the `server`, `models`, `browser`, `scheduler`, and `search` config sections. Port and TLS changes require a server restart to take effect.
 
 ### Settings → Providers & Authentication (`/system/providers`)
 
@@ -113,6 +113,17 @@ Manages API credentials and OAuth sessions:
 - **Stored keys** — list, add, and delete named credentials.
 - **OAuth login** — one-click flows for Anthropic, Gemini, OpenAI, and GitHub Copilot.
 - Provider connectivity status is shown alongside each entry (cached for 30 seconds).
+
+### Settings → Display (`/system/display`) {#settings-display}
+
+Your own display preferences. Every change applies at once, with no Save button, and is stored on the server per user, so it follows you to other devices; the browser keeps a copy so pages open in your theme and size without a flash.
+
+- **Text size** — Small, Default, Large or Extra large; scales the whole control panel.
+- **Theme** — Light, Dark or System. System follows your device's light or dark setting and switches with it.
+- **Sidebar** — the [Edit sidebar](#edit-sidebar) lists.
+- **Reset to defaults** — restores the default text size, theme and sidebar.
+
+An `aviary watch` session's gear menu has only **Display**, and Settings shows only this tab.
 
 ### Usage (`/system/usage`)
 

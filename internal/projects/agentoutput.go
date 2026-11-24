@@ -215,8 +215,8 @@ func (w *jsonlOutputWriter) toolCalls(event any, paths clidefs.JSONLEvent) []str
 	// prefix, so a call is never rendered with another call's arguments.
 	prefix, name, input := splitJSONLPaths(paths.ToolName, paths.ToolInput)
 	var calls []string
-	for _, block := range jsonlLookup(event, prefix) {
-		tool := firstJSONLString(jsonlLookup(block, name))
+	for _, block := range clidefs.LookupJSONL(event, prefix) {
+		tool := firstJSONLString(clidefs.LookupJSONL(block, name))
 		if tool == "" {
 			continue
 		}
@@ -231,7 +231,7 @@ func (w *jsonlOutputWriter) toolCalls(event any, paths clidefs.JSONLEvent) []str
 			tool = trimmed
 		}
 		var arguments json.RawMessage
-		if values := jsonlLookup(block, input); paths.ToolInput != "" && len(values) > 0 {
+		if values := clidefs.LookupJSONL(block, input); paths.ToolInput != "" && len(values) > 0 {
 			if encoded, err := json.Marshal(values[0]); err == nil {
 				arguments = encoded
 			}
@@ -286,44 +286,6 @@ func splitJSONLPaths(name, input string) (prefix, nameRest, inputRest string) {
 	return strings.Join(nameSegments[:shared], "."), strings.Join(nameSegments[shared:], "."), strings.Join(inputSegments[shared:], ".")
 }
 
-// jsonlLookup walks a field path through a decoded event, returning every
-// value it names. A key suffixed with [] steps into an array and continues
-// into each of its elements, so one path can name a value per content block.
-// An empty path names the value it was given.
-func jsonlLookup(value any, path string) []any {
-	current := []any{value}
-	if path == "" {
-		return current
-	}
-	for _, segment := range strings.Split(path, ".") {
-		key, array := strings.CutSuffix(segment, "[]")
-		var next []any
-		for _, item := range current {
-			object, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			field, ok := object[key]
-			if !ok || field == nil {
-				continue
-			}
-			if !array {
-				next = append(next, field)
-				continue
-			}
-			items, ok := field.([]any)
-			if !ok {
-				continue
-			}
-			next = append(next, items...)
-		}
-		if current = next; len(current) == 0 {
-			return nil
-		}
-	}
-	return current
-}
-
 // jsonlStrings returns the non-empty strings a path names, ignoring values of
 // any other type: a field the agent sometimes fills with an object is skipped
 // rather than rendered as Go's idea of one.
@@ -332,7 +294,7 @@ func jsonlStrings(value any, path string) []string {
 		return nil
 	}
 	var found []string
-	for _, item := range jsonlLookup(value, path) {
+	for _, item := range clidefs.LookupJSONL(value, path) {
 		text, ok := item.(string)
 		if !ok {
 			continue
@@ -352,7 +314,7 @@ func jsonlFragments(value any, path string) []string {
 		return nil
 	}
 	var found []string
-	for _, item := range jsonlLookup(value, path) {
+	for _, item := range clidefs.LookupJSONL(value, path) {
 		if text, ok := item.(string); ok && text != "" {
 			found = append(found, text)
 		}

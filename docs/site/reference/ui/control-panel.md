@@ -36,12 +36,13 @@ The System sidebar item is the Overview; the section lists the other pages and s
 
 ## Settings
 
-Settings opens from the sidebar's gear menu, which also holds **Edit sidebar** (reorder and hide agent and System pages; the agent pages' order also sets the narrow-screen top row; **Reset to default** restores it), **Restart** and **Logout**. Nested pages show a breadcrumb with a back link, the collapsed rail shows subpages in flyouts, and the breadcrumb leaf on project, task, channel and file pages opens a sibling switcher (`Alt+S`); see [Navigation](/guide/control-panel#navigation).
+Settings opens from the sidebar's gear menu, which also holds **Edit sidebar** (opens the Display tab's Sidebar section), **Restart** and **Logout**. Every nested page shares one header, the Settings page header: a **← Back to** link to the parent page above a breadcrumb that is the page's title. The collapsed rail shows subpages in flyouts, and the title crumb on project, task, channel and file pages opens a sibling switcher (`Alt+S`); see [Navigation](/guide/control-panel#navigation).
 
 | Tab | Route | Exposed Functionality |
 | --- | --- | --- |
 | General | `/system/settings` | Server, models, browser, scheduler, and search settings. |
 | Providers & Authentication | `/system/providers` | API keys, OAuth flows, and secret management. |
+| Display | `/system/display` | Per-user text size, Light/Dark/System theme, and the sidebar editor (reorder and hide agent and System pages; the agent pages' order also sets the narrow-screen top row), with **Reset to defaults**. Saved on the server at `/api/preferences/display` and applied at once; an `aviary watch` session keeps this tab. |
 
 Skills detects built-in skills plus disk-installed skills from `~/.config/aviary/skills` and `~/.agents/skills`, and is where users can confirm installs from `npx skills find`, [skills.sh](https://skills.sh/), or commands like `npx skills add --global -a universal 4ier/notion-cli`.
 

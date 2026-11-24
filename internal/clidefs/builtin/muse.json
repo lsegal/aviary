@@ -12,6 +12,7 @@
       "text": "payload.text",
       "textDelta": true,
       "ignore": ["run.terminal.completed", "run.terminal.failed", "run.terminal.cancelled", "tool.result"],
+      "result": { "event": "run.terminal.completed" },
       "events": {
         "task.lifecycle.proposed": {"toolName": "payload.task.kind", "toolNamePrefix": "tool."}
       }

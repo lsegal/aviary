@@ -119,6 +119,12 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 		"quotas":             snapshot.Quotas,
 		"recent_logs":        logs,
 		"log_offset":         nextOffset,
+		// The boards hide safe merge while no_merge leaves pull requests
+		// for a human.
+		"no_merge": settings.NoMerge,
+	}
+	if engine := m.engine(); engine != nil {
+		status["no_merge"] = engine.noMerge.Load()
 	}
 	if snapshot.UseWebhooks {
 		status["webhook_online"] = snapshot.WebhookOnline
@@ -246,6 +252,8 @@ func (m *Manager) ListJobs(targets []string, status string, states, kinds []stri
 var jobSearchKinds = map[string]string{
 	core.JobKindIssue:      "gh-fix",
 	core.JobKindDiscussion: "gh-discuss",
+	core.JobKindMerge:      "gh-safe-merge",
+	core.JobKindDiscuss:    "gh-discuss",
 }
 
 // jobMatches reports whether a lowercased query appears in any of a job's
@@ -649,6 +657,19 @@ func jobSummary(job core.JobSnapshot) map[string]any {
 		}
 		if runFinished(job) {
 			summary["result"] = runResult(job)
+		}
+	}
+	if core.Queued(job.Kind) {
+		// A merge or discuss job's last line says why it ended, such as
+		// the conflict or failing check that stopped a merge.
+		if job.Summary != "" {
+			summary["summary"] = job.Summary
+		}
+		if !job.Finished.IsZero() {
+			summary["finished"] = job.Finished
+		}
+		if job.QueuePosition > 0 {
+			summary["queue_position"] = job.QueuePosition
 		}
 	}
 	if url := job.IssueURL(); url != "" {

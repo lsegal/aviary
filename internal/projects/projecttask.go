@@ -13,6 +13,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/scheduler"
@@ -55,6 +56,31 @@ func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) 
 		return "", ErrNotWatching
 	}
 	return engine.runProjectTask(ctx, run, issueRepository(run.Project, Issue{}), session)
+}
+
+// WatchedProjects maps each project this instance watches to the Aviary
+// agent its scheduled tasks belong to, "" for a runtime watch no agent owns.
+// The Code Loop agent's project task tools are scoped to these projects.
+func (m *Manager) WatchedProjects() map[string]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	targets := config.AgentProjectsConfig(m.list).Targets()
+	for _, watch := range m.watches {
+		targets = append(targets, watch.Targets...)
+	}
+	watched := make(map[string]string, len(targets))
+	for _, target := range targets {
+		if target = strings.TrimSpace(target); target != "" {
+			watched[target] = m.projectAgentLocked(target)
+		}
+	}
+	return watched
+}
+
+// LogTaskChange records a change the Code Loop agent made to a project's
+// scheduled task in the Code Loop log.
+func (m *Manager) LogTaskChange(project, task, change string) {
+	m.logf("%s: scheduled task %s %s from the prompt chat", project, task, change)
 }
 
 // projectAgentLocked names the Aviary agent target runs under, as
@@ -226,8 +252,15 @@ func projectTaskOutcome(runErr, cause error, log string) projectTaskResult {
 		summary := clidoctor.FirstLine(cause.Error())
 		return projectTaskResult{summary: summary, err: fmt.Errorf("%s: %w", summary, context.Canceled)}
 	case runErr != nil && !errors.As(runErr, &wakeup):
-		summary := clidoctor.FirstLine(runErr.Error())
-		return projectTaskResult{summary: summary, err: errors.New(summary)}
+		summary := truncate(clidoctor.FirstLine(runErr.Error()), 300)
+		err := errors.New(summary)
+		// The agent's last output and bug report travel beside the summary,
+		// so the run's page shows them apart from its error.
+		var failure *domain.RunFailure
+		if errors.As(runErr, &failure) {
+			err = &domain.RunFailure{Err: err, Output: failure.Output, BugReportURL: failure.BugReportURL}
+		}
+		return projectTaskResult{summary: summary, err: err}
 	}
 	return projectTaskResult{summary: lastLine(log)}
 }

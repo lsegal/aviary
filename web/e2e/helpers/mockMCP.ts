@@ -113,6 +113,19 @@ export async function mockMCP(page: Page, fixtures: ToolFixtures = {}) {
 		});
 	});
 
+	// Display preferences (#1093), kept the same way.
+	let displayPrefs = {};
+	await page.route("/api/preferences/display", async (route) => {
+		const method = route.request().method();
+		if (method === "PUT") displayPrefs = route.request().postDataJSON();
+		if (method === "DELETE") displayPrefs = {};
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify(displayPrefs),
+		});
+	});
+
 	await page.route("/mcp", async (route) => {
 		const body = route.request().postDataJSON() as {
 			jsonrpc: string;

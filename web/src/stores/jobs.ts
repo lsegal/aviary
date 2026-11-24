@@ -18,6 +18,10 @@ export interface Job {
 	output?: string;
 	/** Why the latest attempt failed; cleared when an attempt completes. */
 	error?: string;
+	/** The last lines a failed attempt's agent printed, shown beside the error. */
+	error_output?: string;
+	/** A prefilled issue reporting the failed attempt. */
+	bug_report_url?: string;
 	/** A precompiled project task's script error, when the model ran the task instead. */
 	script_error?: string;
 	locked_at?: string;

@@ -1,6 +1,6 @@
 {
 	"name": "aviary",
-	"version": "0.7.22",
+	"version": "0.7.25",
 	"private": true,
 	"packageManager": "pnpm@8.15.9",
 	"type": "module",
@@ -45,7 +45,7 @@
 		"format": "biome format --write .",
 		"test": "concurrently -n go,scripts,web \"pnpm test:go\" \"pnpm test:scripts\" \"pnpm test:e2e\"",
 		"test:go": "go test ./...",
-		"test:scripts": "node --test scripts/dev-proxy.test.mjs scripts/dev-go.test.mjs",
+		"test:scripts": "node --test scripts/dev-proxy.test.mjs scripts/dev-go.test.mjs scripts/dev-allowed-hosts.test.mjs",
 		"test:e2e": "pnpm exec playwright install && playwright test",
 		"test:e2e:ui": "playwright test --ui",
 		"package": "pnpm exec vpr run -f pnpm package:stage",

@@ -96,6 +96,8 @@ export interface ProjectStatus {
 	issueFilter: string;
 	/** GitHub logins whose comments may steer jobs. */
 	allowedCommenters: string[];
+	/** no_merge leaves pull requests for a human, so safe merge is off. */
+	noMerge: boolean;
 	slotsUsed: number;
 	slotsTotal: number;
 	/** The jobs in each board state, counted as the board's filters count them. */
@@ -172,6 +174,12 @@ export interface ProjectJob {
 	output: string[];
 	/** The job's latest structured transcript events, when it emits them. */
 	events: JobEvent[];
+	/** The engine's job kind: issue, discussion, schedule, merge or discuss. */
+	kind: string;
+	/** A queued merge's place in its repository's serial merge lane, from 1 for the running merge; 0 otherwise. */
+	queuePosition: number;
+	/** The last line of a finished merge or discuss job, which says why it ended. */
+	summary: string;
 	/** A scheduled prompt's run, which has no issue: its number is its fire time. */
 	scheduled: boolean;
 	/** The `agent/task` key of the schedule a scheduled run fired from. */
@@ -346,6 +354,8 @@ const SKILLS: Record<string, string> = {
 	issue: "gh-fix",
 	discussion: "gh-discuss",
 	schedule: "schedule",
+	merge: "gh-safe-merge",
+	discuss: "gh-discuss",
 };
 
 /** The OWNER/REPO of a github.com issue or pull request URL. */
@@ -416,6 +426,9 @@ export function normalizeJob(v: unknown): ProjectJob {
 		},
 		output: lines(raw.scrollback),
 		events: normalizeEvents(raw.events),
+		kind: str(raw.kind),
+		queuePosition: num(raw.queue_position),
+		summary: str(raw.summary),
 		scheduled: str(raw.kind) === "schedule",
 		scheduleID: str(raw.schedule_id),
 		schedule: Array.isArray(raw.recent_runs)
@@ -622,6 +635,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		interval: str(raw.poll_interval),
 		issueFilter: str(raw.issue_filter),
 		allowedCommenters: arr(raw.allowed_commenters).map(str).filter(Boolean),
+		noMerge: raw.no_merge === true,
 		slotsUsed: num(jobs.running),
 		slotsTotal: num(raw.concurrency),
 		states: Object.fromEntries(
@@ -667,7 +681,7 @@ export function summarizeProjects(
 			waiting: mine.filter((j) => isWaiting(j.status)).length,
 			...(tasks === undefined
 				? {}
-				: { scheduled: projectSchedules(tasks, [t.name]).length }),
+				: { scheduled: projectSchedules(tasks, t.name).length }),
 		};
 	});
 }
@@ -952,19 +966,16 @@ export function normalizeSchedule(v: unknown): ProjectSchedule {
 	};
 }
 
-/** The scheduled prompts of the projects from a task_list response. */
+/** The scheduled prompts of project from a task_list response. */
 export function projectSchedules(
 	v: unknown,
-	projects: string[],
+	project: string,
 ): ProjectSchedule[] {
 	return arr(v)
 		.filter((t) => str(obj(t).type) === "project")
 		.map(normalizeSchedule)
-		.filter((s) => projects.includes(s.project))
-		.sort(
-			(a, b) =>
-				a.name.localeCompare(b.name) || a.project.localeCompare(b.project),
-		);
+		.filter((s) => s.project === project)
+		.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export interface UpcomingRun {
@@ -1254,4 +1265,96 @@ export function scheduleMatches(s: ProjectSchedule, search: string): boolean {
 	return [s.id, s.name, s.prompt, triggerSummary(s)].some((f) =>
 		f.toLowerCase().includes(q),
 	);
+}
+
+/** The skills the board's Queue menu queues jobs for (#1095). */
+export type QueueSkill = "gh-fix" | "gh-safe-merge" | "gh-discuss";
+
+/** One row of the safe-merge or gh-discuss picker. */
+export interface QueueCandidate {
+	number: number;
+	title: string;
+	author: string;
+	url: string;
+	/** The job that already owns it, which it cannot be queued beside. */
+	ownedBy: string;
+	/** Pull requests: passing, failing, pending or none. */
+	ci: string;
+	/** Pull requests: approved, changes_requested, review_required or none. */
+	review: string;
+	/** Pull requests: mergeable, conflicting or unknown. */
+	mergeable: string;
+	draft: boolean;
+	/** Discussions: its category and reply count. */
+	category: string;
+	comments: number;
+	answered: boolean;
+}
+
+/** project_queue_candidates' rows, pull requests or Discussion threads. */
+export function normalizeQueueCandidates(v: unknown): {
+	candidates: QueueCandidate[];
+	noMerge: boolean;
+	repository: string;
+} {
+	const raw = obj(v);
+	const rows = Array.isArray(raw.pull_requests)
+		? raw.pull_requests
+		: arr(raw.discussions);
+	return {
+		noMerge: raw.no_merge === true,
+		repository: str(raw.repository),
+		candidates: rows.map((row) => {
+			const r = obj(row);
+			return {
+				number: num(r.number),
+				title: str(r.title),
+				author: str(r.author),
+				url: str(r.url),
+				ownedBy: str(r.owned_by),
+				ci: str(r.ci),
+				review: str(r.review),
+				mergeable: str(r.mergeable),
+				draft: r.draft === true,
+				category: str(r.category),
+				comments: num(r.comments),
+				answered: r.answered === true,
+			};
+		}),
+	};
+}
+
+/** What project_job_queue did with one number. */
+export interface QueueResult {
+	number: number;
+	queued: boolean;
+	ownedBy: string;
+	reason: string;
+	position: number;
+}
+
+export function normalizeQueueResults(v: unknown): QueueResult[] {
+	return arr(obj(v).results).map((row) => {
+		const r = obj(row);
+		return {
+			number: num(r.number),
+			queued: r.queued === true,
+			ownedBy: str(r.owned_by),
+			reason: str(r.reason),
+			position: num(r.position),
+		};
+	});
+}
+
+/**
+ * Parses the issue numbers typed into the gh-fix picker: numbers separated by
+ * commas or spaces, each with an optional leading "#".
+ */
+export function parseIssueNumbers(text: string): number[] {
+	const numbers: number[] = [];
+	for (const part of text.split(/[\s,]+/)) {
+		const n = Number(part.replace(/^#/, ""));
+		if (Number.isInteger(n) && n > 0 && !numbers.includes(n)) numbers.push(n);
+	}
+	return numbers;
 }

@@ -59,3 +59,53 @@ func TestNavPreferencesHandler_RejectsBadInput(t *testing.T) {
 	code, _ = navRequest(t, http.MethodPost, `{}`)
 	assert.Equal(t, http.StatusMethodNotAllowed, code)
 }
+
+func displayRequest(t *testing.T, method, body string) (int, store.DisplayPreferences) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	displayPreferencesHandler(rec, httptest.NewRequest(method, "/api/preferences/display", strings.NewReader(body)))
+	var display store.DisplayPreferences
+	if rec.Code == http.StatusOK {
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &display))
+	}
+	return rec.Code, display
+}
+
+func TestDisplayPreferencesHandler_SaveReadReset(t *testing.T) {
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+
+	code, display := displayRequest(t, http.MethodGet, "")
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, store.DisplayPreferences{}, display)
+
+	navRequest(t, http.MethodPut, `{"hidden":{"systemPages":["logs"]}}`)
+	code, _ = displayRequest(t, http.MethodPut, `{"theme":"dark","textSize":"xlarge"}`)
+	require.Equal(t, http.StatusOK, code)
+
+	code, display = displayRequest(t, http.MethodGet, "")
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, store.DisplayPreferences{Theme: "dark", TextSize: "xlarge"}, display)
+	_, nav := navRequest(t, http.MethodGet, "")
+	assert.Equal(t, map[string][]string{"systemPages": {"logs"}}, nav.Hidden, "display updates keep navigation")
+
+	code, display = displayRequest(t, http.MethodDelete, "")
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, store.DisplayPreferences{}, display)
+	_, nav = navRequest(t, http.MethodGet, "")
+	assert.Equal(t, map[string][]string{"systemPages": {"logs"}}, nav.Hidden, "display reset keeps navigation")
+}
+
+func TestDisplayPreferencesHandler_DropsUnknownValues(t *testing.T) {
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+
+	code, display := displayRequest(t, http.MethodPut, `{"theme":"sepia","textSize":"huge"}`)
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, store.DisplayPreferences{}, display)
+
+	code, _ = displayRequest(t, http.MethodPut, `{"theme":`)
+	assert.Equal(t, http.StatusBadRequest, code)
+	code, _ = displayRequest(t, http.MethodPost, `{}`)
+	assert.Equal(t, http.StatusMethodNotAllowed, code)
+}

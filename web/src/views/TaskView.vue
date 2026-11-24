@@ -76,7 +76,7 @@
 							<TaskRunLog v-else-if="dash.stats.value.last" :entry="dash.stats.value.last" title="Last run"
 								:now="dash.now.value" :fetch-logs="dash.fetchLogs" class="h-72" />
 							<TriggerContextPanel v-if="shownRunContext" :context="shownRunContext" />
-							<p v-else-if="dash.loaded.value" data-testid="task-run-log-empty"
+							<p v-if="dash.loaded.value && !current && !dash.stats.value.last" data-testid="task-run-log-empty"
 								class="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
 								{{ workflow ? "This workflow hasn't run yet. A matching message starts a run; its logs show here while it runs, and the last run's after." : "This task hasn't run yet. Its current run's logs show here while it runs, and the last run's after." }}
 							</p>

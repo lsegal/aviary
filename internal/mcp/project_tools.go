@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -33,7 +34,7 @@ type projectJobListArgs struct {
 	Targets []string `json:"targets,omitempty" jsonschema:"Only list jobs of these projects, together with target"`
 	Status  string   `json:"status,omitempty" jsonschema:"Only list jobs with this status, such as active, waiting, queued, paused, failed or complete"`
 	States  []string `json:"states,omitempty" jsonschema:"Only list jobs the board shows in any of these states: starting, paused, running, done, failed, or scheduled for a schedule between runs"`
-	Kinds   []string `json:"kinds,omitempty" jsonschema:"Only list jobs of these kinds: issue, discussion or schedule"`
+	Kinds   []string `json:"kinds,omitempty" jsonschema:"Only list jobs of these kinds: issue, discussion, schedule, merge or discuss"`
 	Query   string   `json:"query,omitempty" jsonschema:"Only list jobs with this text, case-insensitively, in any field: number, pull request, title, repository, status, skill, agent, session, schedule, or output"`
 	Offset  int      `json:"offset,omitempty" jsonschema:"Index of the first job to return"`
 	Limit   int      `json:"limit,omitempty" jsonschema:"Most jobs to return; defaults to 50"`
@@ -57,6 +58,21 @@ type projectJobGetArgs struct {
 	Target string `json:"target,omitempty" jsonschema:"The job's project; needed only when several projects have a job with this number"`
 	Lines  int    `json:"lines,omitempty" jsonschema:"Scrollback lines to return; defaults to 200, negative returns all"`
 	Events int    `json:"events,omitempty" jsonschema:"Transcript events to return; defaults to 200, negative returns all"`
+}
+
+type projectJobQueueArgs struct {
+	Skill      string `json:"skill" jsonschema:"gh-safe-merge to queue pull requests for a safe merge, gh-discuss to queue Discussion threads for an answer, or gh-fix to have issues fixed"`
+	Numbers    []int  `json:"numbers" jsonschema:"Pull request, Discussion or issue numbers, in the order to run them; queued merges run one at a time per repository in this order"`
+	Target     string `json:"target,omitempty" jsonschema:"The project to queue on; needed only when several projects are watched"`
+	Repository string `json:"repository,omitempty" jsonschema:"OWNER/REPO the numbers live in; needed only when the project is a GitHub Project board"`
+	// Titles names the numbers on their cards before their runs read them.
+	Titles map[string]string `json:"titles,omitempty" jsonschema:"Optional card titles by number"`
+}
+
+type projectQueueCandidatesArgs struct {
+	Skill      string `json:"skill" jsonschema:"gh-safe-merge to list open pull requests, or gh-discuss to list open Discussion threads"`
+	Target     string `json:"target,omitempty" jsonschema:"The project to list for; needed only when several projects are watched"`
+	Repository string `json:"repository,omitempty" jsonschema:"OWNER/REPO to list; needed only when the project is a GitHub Project board"`
 }
 
 type projectTargetArgs struct {
@@ -279,6 +295,34 @@ func registerProjectTools(s *sdkmcp.Server) {
 			})
 		})
 	}
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "project_job_queue",
+		Description: "Queue Code Loop jobs on demand: pull requests for gh-safe-merge, which merge one at a time per repository in the order given, or Discussion threads for gh-discuss. Each becomes a board job with logs, transcript and pause, resume, stop and retry; queued jobs survive a restart. A number a job already owns is reported with that job and not queued twice. Safe merge is refused while no_merge is set. gh-fix retries an issue's finished job, or checks GitHub now so a matching issue is dispatched",
+		Annotations: mutatingTool,
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectJobQueueArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
+			titles := map[int]string{}
+			for number, title := range args.Titles {
+				n, err := strconv.Atoi(strings.TrimPrefix(number, "#"))
+				if err != nil {
+					return nil, fmt.Errorf("titles: %q is not a number", number)
+				}
+				titles[n] = title
+			}
+			return m.QueueJobs(ctx, args.Target, strings.TrimSpace(args.Repository), strings.TrimSpace(args.Skill), args.Numbers, titles)
+		})
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "project_queue_candidates",
+		Description: "List what a Code Loop project can queue: open pull requests for gh-safe-merge, with CI status, review decision, mergeability, author and the job that already owns each, or open Discussion threads for gh-discuss. Also reports whether no_merge turns safe merge off",
+		Annotations: readOnlyTool,
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectQueueCandidatesArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
+			return m.QueueCandidates(ctx, args.Target, strings.TrimSpace(args.Repository), strings.TrimSpace(args.Skill))
+		})
+	})
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_refresh",

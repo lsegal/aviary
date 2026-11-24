@@ -425,3 +425,40 @@ func TestWatchTUIResizeAndTick(t *testing.T) {
 	// A tick while a fetch is in flight only schedules the next tick.
 	_, _ = next.Update(watchTickMsg(time.Now()))
 }
+
+func TestWatchTUIAllProjectsBoardListsEverySchedule(t *testing.T) {
+	// The all-projects board passes every watched target: each project's
+	// tasks are one scheduled item, and a schedule's finished run is never
+	// counted as Done (#1108).
+	jobs := []watchJob{
+		{Key: "a/one#1", Target: "a/one", Number: 1, Status: "active", State: "running", Kind: "issue"},
+		{Key: "b/two#sched", Target: "b/two", ScheduleID: "bot/release", Status: "merged", State: "scheduled", Kind: "schedule"},
+	}
+	tasks := []watchTask{
+		{ID: "bot/nightly", Name: "nightly", Type: "project", Project: "a/one", Enabled: true},
+		{ID: "bot/release", Name: "release", Type: "project", Project: "b/two", Enabled: true},
+		{ID: "bot/other", Name: "other", Type: "project", Project: "c/unwatched", Enabled: true},
+	}
+	m := watchModel{items: watchBuildItems(jobs, tasks, nil, []string{"a/one", "b/two"})}
+	counts := map[string][]string{}
+	for _, filter := range append([]string{""}, watchFilters...) {
+		m.setFilter(filter)
+		counts[filter] = watchItemKeys(m.visibleItems())
+	}
+	if got := strings.Join(counts[watchScheduled], " "); got != "task:bot/nightly task:bot/release" {
+		t.Errorf("scheduled = %q", got)
+	}
+	if got := strings.Join(counts[""], " "); got != "task:bot/nightly task:bot/release a/one#1" {
+		t.Errorf("all = %q", got)
+	}
+	if len(counts[watchDone]) != 0 {
+		t.Errorf("done = %q", counts[watchDone])
+	}
+	projects := []string{}
+	for _, it := range m.items[:2] {
+		projects = append(projects, it.project)
+	}
+	if got := strings.Join(projects, " "); got != "a/one b/two" {
+		t.Errorf("projects = %q", got)
+	}
+}

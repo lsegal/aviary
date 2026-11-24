@@ -95,14 +95,15 @@ export function useProjectList(interval = 10_000, withSchedules = false) {
  * total then counts only the matches. In kanban mode it reads every job in
  * the filter instead, without their output. A schedule is one entry, never a
  * job per fire, and lists only while it is in a job state, so a finished run
- * is never done. The board reads its projects' schedule entries apart from
- * the jobs, as scheduleEntries, for its scheduled cards.
+ * is never done. With withSchedules, a project's board reads its schedules'
+ * entries apart from the jobs, as scheduleEntries, for its scheduled cards.
  */
 export function useProjectBoard(
 	targets: Ref<string[]>,
 	states: Ref<BoardState[]>,
 	search: Ref<string> = ref(""),
 	kanban: Ref<boolean> = ref(false),
+	withSchedules: Ref<boolean> = ref(false),
 ) {
 	const { callTool } = useMCP();
 	const status = ref<ProjectStatus | null>(null);
@@ -126,7 +127,7 @@ export function useProjectBoard(
 					targets: projects,
 					// Naming every job state leaves out schedules between runs.
 					states: states.value.length ? states.value : BOARD_STATES,
-					kinds: ["issue", "discussion"],
+					kinds: withSchedules.value ? ["issue", "discussion"] : undefined,
 					query: search.value.trim() || undefined,
 					offset: all ? 0 : page.value * JOBS_PAGE_SIZE,
 					limit: all ? ALL_JOBS_LIMIT : JOBS_PAGE_SIZE,
@@ -141,6 +142,7 @@ export function useProjectBoard(
 	}
 
 	async function listScheduleEntries(projects: string[]) {
+		if (!withSchedules.value) return [];
 		return normalizeJobList(
 			parseToolJSON(
 				await callTool("project_job_list", {
@@ -218,7 +220,12 @@ export function useProjectBoard(
 	const { refresh } = usePoll(load, PROJECTS_POLL_MS);
 
 	watch(
-		[() => targets.value.join(" "), () => states.value.join(","), kanban],
+		[
+			() => targets.value.join(" "),
+			() => states.value.join(","),
+			kanban,
+			withSchedules,
+		],
 		() => {
 			page.value = 0;
 			loading.value = true;
@@ -353,8 +360,15 @@ export function useProjectJob(target: Ref<string>, number: Ref<number>) {
 export const UP_NEXT_RUNS = 5;
 export const UP_NEXT_PER_SCHEDULE = 3;
 
-/** The projects' scheduled prompts and, for one project, its next runs, kept live. */
-export function useProjectSchedules(projects: Ref<string[]>, interval = 5_000) {
+/**
+ * The projects' scheduled prompts, kept live, with the next runs of the
+ * board's one project; a board of several has no "Up next" strip.
+ */
+export function useProjectSchedules(
+	project: Ref<string>,
+	targets: Ref<string[]>,
+	interval = 5_000,
+) {
 	const { callTool } = useMCP();
 	const schedules = ref<ProjectSchedule[]>([]);
 	const upcoming = ref<UpcomingRun[]>([]);
@@ -363,27 +377,28 @@ export function useProjectSchedules(projects: Ref<string[]>, interval = 5_000) {
 	const loaded = ref(false);
 
 	const { refresh } = usePoll(async () => {
-		const targets = projects.value;
-		const key = targets.join(" ");
-		if (!targets.length) return;
-		// Up next lists one project's coming runs, so a board of several
-		// reads none.
-		const [only] = targets.length === 1 ? targets : [];
+		const target = project.value;
+		const projects = targets.value;
+		const key = projects.join(" ");
+		if (!projects.length) return;
 		try {
 			const [taskText, upcomingText, agentText] = await Promise.all([
 				callTool("task_list", {}),
-				only
+				target
 					? callTool("task_upcoming", {
-							project: only,
+							project: target,
 							limit: UP_NEXT_RUNS,
 							per_task: UP_NEXT_PER_SCHEDULE,
 						})
-					: Promise.resolve("[]"),
+					: Promise.resolve(""),
 				agents.value.length ? Promise.resolve("") : callTool("agent_list", {}),
 			]);
-			if (key !== projects.value.join(" ")) return;
-			schedules.value = projectSchedules(parseToolJSON(taskText), targets);
-			upcoming.value = normalizeUpcoming(parseToolJSON(upcomingText));
+			if (target !== project.value || key !== targets.value.join(" ")) return;
+			const tasks = parseToolJSON(taskText);
+			schedules.value = projects.flatMap((t) => projectSchedules(tasks, t));
+			upcoming.value = upcomingText
+				? normalizeUpcoming(parseToolJSON(upcomingText))
+				: [];
 			if (agentText) {
 				const list = parseToolJSON(agentText);
 				agents.value = Array.isArray(list)
@@ -404,15 +419,12 @@ export function useProjectSchedules(projects: Ref<string[]>, interval = 5_000) {
 		}
 	}, interval);
 
-	watch(
-		() => projects.value.join(" "),
-		() => {
-			schedules.value = [];
-			upcoming.value = [];
-			loaded.value = false;
-			void refresh();
-		},
-	);
+	watch([project, () => targets.value.join(" ")], () => {
+		schedules.value = [];
+		upcoming.value = [];
+		loaded.value = false;
+		void refresh();
+	});
 
 	// A task paused or resumed elsewhere, such as from the sidebar, shows on
 	// its box at once rather than at the next poll.
