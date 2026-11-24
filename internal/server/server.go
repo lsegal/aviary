@@ -317,6 +317,9 @@ func (s *Server) registerRoutes() {
 	if webUIOff.Load() {
 		s.mux.HandleFunc("/", webUIOffHandler)
 	} else {
+		if problem := WebAssetsProblem(); problem != "" {
+			slog.Warn(problem)
+		}
 		s.mux.Handle("/", webFileServer())
 	}
 }

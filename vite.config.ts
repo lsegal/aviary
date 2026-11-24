@@ -17,7 +17,11 @@ export default defineConfig(({ command }) => ({
 		host: true,
 		https: command === "serve" ? devHttps() : undefined,
 		// Target the backend with the scheme and port it serves, so the proxy
-		// never sends plain HTTP to its TLS listener.
-		proxy: devProxy(command === "serve" ? devServerURL() : undefined),
+		// never sends plain HTTP to its TLS listener. scripts/dev-watch.mjs
+		// points AVIARY_DEV_BACKEND at the port an `aviary watch` session chose.
+		proxy: devProxy(
+			process.env.AVIARY_DEV_BACKEND ||
+				(command === "serve" ? devServerURL() : undefined),
+		),
 	},
 }));
