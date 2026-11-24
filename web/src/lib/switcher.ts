@@ -5,7 +5,7 @@ import {
 	isWorkflow,
 	taskSessionPath,
 } from "../stores/settings";
-import { channelName, channelPath, channelSettingsPath } from "./channels";
+import { channelName, channelPath } from "./channels";
 import { type ProjectSummary, projectPath } from "./projects";
 
 // The breadcrumb leaf's switcher (#1063): on a project, task, channel or
@@ -20,8 +20,6 @@ export interface CrumbSwitcher {
 	/** The owning agent; "" for a runtime watch no agent owns. */
 	agent: string;
 	current: string;
-	/** The sub-view open on the current item, kept when switching. */
-	sub?: string;
 }
 
 /** A row's type icon. */
@@ -81,18 +79,24 @@ export function projectKind(target: string): "repo" | "board" | "discussions" {
 	return "repo";
 }
 
+/** The board query a sibling project keeps: its filters and tab. */
+const PROJECT_VIEW_QUERY = ["state", "tab", "view"];
+
 export function projectItems(
 	sw: CrumbSwitcher,
 	projects: ProjectSummary[],
 	query: Record<string, string>,
 ): SwitcherItem[] {
+	// A scheduled item or dialog open on the board belongs to its project.
+	const view = Object.fromEntries(
+		Object.entries(query).filter(([k]) => PROJECT_VIEW_QUERY.includes(k)),
+	);
 	return projects.map((p) => {
-		// The board's filters carry over; a job belongs to its own project.
 		const path = projectPath(sw.agent, p.name);
 		return {
 			key: p.name,
 			label: p.name,
-			to: sw.sub ? path : { path, query },
+			to: { path, query: view },
 			icon: projectKind(p.name),
 			detail: p.running ? `${p.running} running` : undefined,
 			current: p.name === sw.current,
@@ -122,21 +126,14 @@ const CHANNEL_ICONS = new Set<SwitcherIcon>(["signal", "slack", "discord"]);
 export function channelItems(
 	sw: CrumbSwitcher,
 	channels: AgentChannel[],
-	query: Record<string, string>,
 ): SwitcherItem[] {
 	return channels.map((c) => {
 		const name = channelName(c);
 		const type = c.type.toLowerCase() as SwitcherIcon;
-		// The settings form opens on the same tab; a workflow open there
-		// belongs to its own channel.
-		const { workflow: _, ...tab } = query;
 		return {
 			key: name,
 			label: name,
-			to:
-				sw.sub === "settings"
-					? { path: channelSettingsPath(sw.agent, name), query: tab }
-					: channelPath(sw.agent, name),
+			to: channelPath(sw.agent, name),
 			icon: CHANNEL_ICONS.has(type) ? type : "channel",
 			detail: c.enabled === false ? "Disabled" : undefined,
 			current: name === sw.current,

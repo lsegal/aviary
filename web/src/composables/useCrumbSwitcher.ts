@@ -56,7 +56,7 @@ export function useCrumbSwitcher(
 			case "task":
 				return taskItems(sw, config?.tasks ?? []);
 			case "channel":
-				return channelItems(sw, config?.channels ?? [], query);
+				return channelItems(sw, config?.channels ?? []);
 			case "file":
 				return fileItems(sw, files.files(sw.agent));
 		}

@@ -32,7 +32,9 @@
 					:class="i === active ? 'bg-gray-100 dark:bg-gray-800' : ''" @mousemove="active = i"
 					@click="go(item)">
 					<span class="flex h-4 w-4 shrink-0 items-center justify-center">
-						<CheckIcon v-if="item.current" aria-label="Current" class="h-4 w-4 text-blue-600 dark:text-blue-400" />
+						<span v-if="item.current" role="img" aria-label="Current">
+							<CheckIcon aria-hidden="true" class="h-4 w-4 text-blue-600 dark:text-blue-400" />
+						</span>
 					</span>
 					<span class="flex h-4 w-4 shrink-0 items-center justify-center text-gray-500 dark:text-gray-400"
 						:data-icon="item.icon" data-testid="crumb-switcher-icon">

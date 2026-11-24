@@ -78,7 +78,7 @@ function buildCrumbs(path: string, ctx: CrumbContext, file: string): Crumb[] {
 			crumbs.push({
 				label: channel,
 				to: channelPath(agent, channel),
-				switcher: { kind: "channel", agent, current: channel, sub },
+				switcher: { kind: "channel", agent, current: channel },
 			});
 		} else if (page.key === "tasks") {
 			const task = decode(item);
