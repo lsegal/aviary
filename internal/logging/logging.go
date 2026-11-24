@@ -2,6 +2,7 @@
 package logging
 
 import (
+	"bytes"
 	"context"
 	"io"
 	stdlog "log"
@@ -20,6 +21,7 @@ var (
 	once       sync.Once
 	initErr    error
 	rotLogger  *lumberjack.Logger
+	memory     *memoryLog
 	mu         sync.Mutex
 	stopRotate chan struct{}
 )
@@ -68,6 +70,72 @@ func Init() error {
 	return initErr
 }
 
+// memoryLogBytes is how much of the latest log output InitMemory keeps.
+const memoryLogBytes = 4 << 20
+
+// InitMemory configures global slog + stdlib log output like Init, but keeps
+// the latest output in memory instead of a file, for processes such as
+// `aviary watch` whose data directory is removed when they exit: no log
+// file holds that directory open. Whichever of Init and InitMemory runs
+// first wins.
+func InitMemory() error {
+	once.Do(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		memory = newMemoryLog(memoryLogBytes)
+		configureLocked(false)
+	})
+	return initErr
+}
+
+// MemoryLog returns the output InitMemory has kept and the total number of
+// bytes ever written, so data covers the bytes [end-len(data), end). ok is
+// false when logs go to the log file instead.
+func MemoryLog() (data []byte, end int64, ok bool) {
+	mu.Lock()
+	m := memory
+	mu.Unlock()
+	if m == nil {
+		return nil, 0, false
+	}
+	data, end = m.snapshot()
+	return data, end, true
+}
+
+// memoryLog keeps the latest max bytes written to it, trimmed to whole
+// lines.
+type memoryLog struct {
+	mu    sync.Mutex
+	buf   []byte
+	total int64
+	max   int
+}
+
+func newMemoryLog(maxBytes int) *memoryLog {
+	return &memoryLog{max: maxBytes}
+}
+
+func (m *memoryLog) Write(p []byte) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.buf = append(m.buf, p...)
+	m.total += int64(len(p))
+	if over := len(m.buf) - m.max; over > 0 {
+		cut := over
+		if i := bytes.IndexByte(m.buf[over:], '\n'); i >= 0 {
+			cut = over + i + 1
+		}
+		m.buf = append([]byte(nil), m.buf[cut:]...)
+	}
+	return len(p), nil
+}
+
+func (m *memoryLog) snapshot() ([]byte, int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return bytes.Clone(m.buf), m.total
+}
+
 // dailyRotate forces a log rotation at midnight each day.
 func dailyRotate(l *lumberjack.Logger, stop <-chan struct{}) {
 	for {
@@ -108,6 +176,7 @@ func Shutdown() {
 		_ = rotLogger.Close()
 		rotLogger = nil
 	}
+	memory = nil
 
 	stdlog.SetOutput(os.Stderr)
 	stderrHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
@@ -118,17 +187,23 @@ func Shutdown() {
 }
 
 func configureLocked(console bool) {
-	if rotLogger == nil {
+	var sink io.Writer
+	switch {
+	case rotLogger != nil:
+		sink = rotLogger
+	case memory != nil:
+		sink = memory
+	default:
 		return
 	}
 
-	fileHandler := slog.NewJSONHandler(rotLogger, &slog.HandlerOptions{Level: slog.LevelDebug})
+	fileHandler := slog.NewJSONHandler(sink, &slog.HandlerOptions{Level: slog.LevelDebug})
 	handler := slog.Handler(fileHandler)
-	output := io.Writer(rotLogger)
+	output := sink
 	if console {
 		stderrHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
 		handler = &teeHandler{a: stderrHandler, b: fileHandler}
-		output = io.MultiWriter(os.Stderr, rotLogger)
+		output = io.MultiWriter(os.Stderr, sink)
 	}
 
 	slog.SetDefault(slog.New(handler))

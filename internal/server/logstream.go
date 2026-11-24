@@ -275,7 +275,7 @@ func logsHistoryHandler(w http.ResponseWriter, r *http.Request) {
 		limit = 1000
 	}
 
-	entries, hasMore, err := readHistoricalLogEntries(logging.LogFilePath(), skip, limit)
+	entries, hasMore, err := readHistoricalLogEntries(skip, limit)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"entries":[],"hasMore":false}`)
@@ -322,7 +322,6 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 		return true
 	}
 
-	path := logging.LogFilePath()
 	tail := 200
 	if v := r.URL.Query().Get("tail"); v != "" {
 		if n, err := fmt.Sscanf(v, "%d", &tail); n == 0 || err != nil {
@@ -336,19 +335,16 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 		tail = 1000
 	}
 
-	initialEntries, _, err := readHistoricalLogEntries(path, 0, tail)
+	initialEntries, _, err := readHistoricalLogEntries(0, tail)
 	if err == nil {
 		for _, e := range initialEntries {
 			sendEntry(e)
 		}
 	}
 
-	// Stream live file appends so logs from other processes also appear.
+	// Stream live log appends so logs from other processes also appear.
 	ctx := r.Context()
-	var offset int64
-	if st, err := os.Stat(path); err == nil {
-		offset = st.Size()
-	}
+	_, offset, _ := readLogAppends(-1)
 	var remainder string
 	ticker := time.NewTicker(400 * time.Millisecond)
 	defer ticker.Stop()
@@ -358,33 +354,14 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			f, err := os.Open(path)
-			if err != nil {
-				continue
-			}
-			st, err := f.Stat()
-			if err != nil {
-				_ = f.Close()
-				continue
-			}
-			if st.Size() < offset {
-				offset = 0
+			chunk, next, reset := readLogAppends(offset)
+			if reset {
 				remainder = ""
 			}
-			if st.Size() == offset {
-				_ = f.Close()
+			offset = next
+			if len(chunk) == 0 {
 				continue
 			}
-			if _, err := f.Seek(offset, io.SeekStart); err != nil {
-				_ = f.Close()
-				continue
-			}
-			chunk, err := io.ReadAll(f)
-			_ = f.Close()
-			if err != nil || len(chunk) == 0 {
-				continue
-			}
-			offset += int64(len(chunk))
 
 			text := remainder + string(chunk)
 			parts := strings.Split(text, "\n")
@@ -400,8 +377,64 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func readHistoricalLogEntries(path string, skip, limit int) ([]logEntry, bool, error) {
-	lines, hasMore, err := readLogLinesFromEnd(path, skip, limit)
+// readLogAppends returns what the log gained past offset, the offset to read
+// from next, and whether the log started over (rotated, or trimmed past
+// offset) so a partial line held from before is stale. An offset below zero
+// only finds the current end. Logs kept in memory are read there, others
+// from the log file.
+func readLogAppends(offset int64) (chunk []byte, next int64, reset bool) {
+	if data, end, ok := logging.MemoryLog(); ok {
+		start := end - int64(len(data))
+		switch {
+		case offset < 0:
+			return nil, end, false
+		case offset < start || offset > end:
+			return data, end, true
+		default:
+			return data[offset-start:], end, false
+		}
+	}
+	f, err := os.Open(logging.LogFilePath())
+	if err != nil {
+		return nil, max(offset, 0), false
+	}
+	defer f.Close() //nolint:errcheck
+	st, err := f.Stat()
+	if err != nil {
+		return nil, max(offset, 0), false
+	}
+	if offset < 0 {
+		return nil, st.Size(), false
+	}
+	if st.Size() < offset {
+		offset, reset = 0, true
+	}
+	if st.Size() == offset {
+		return nil, offset, reset
+	}
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return nil, offset, reset
+	}
+	chunk, err = io.ReadAll(f)
+	if err != nil {
+		return nil, offset, reset
+	}
+	return chunk, offset + int64(len(chunk)), reset
+}
+
+// readHistoricalLogEntries reads the latest log entries, from memory when
+// logs are kept there, else from the log file.
+func readHistoricalLogEntries(skip, limit int) ([]logEntry, bool, error) {
+	var (
+		lines   [][]byte
+		hasMore bool
+		err     error
+	)
+	if data, _, ok := logging.MemoryLog(); ok {
+		lines, hasMore, err = readLinesFromEnd(bytes.NewReader(data), int64(len(data)), skip, limit)
+	} else {
+		lines, hasMore, err = readLogLinesFromEnd(logging.LogFilePath(), skip, limit)
+	}
 	if err != nil {
 		return nil, false, err
 	}
@@ -436,14 +469,20 @@ func readLogLinesFromEnd(path string, skip, limit int) ([][]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if st.Size() == 0 {
+	return readLinesFromEnd(f, st.Size(), skip, limit)
+}
+
+// readLinesFromEnd reads the last limit lines of the size bytes in r, after
+// skipping skip lines from the end.
+func readLinesFromEnd(r io.ReaderAt, size int64, skip, limit int) ([][]byte, bool, error) {
+	if limit <= 0 || size == 0 {
 		return nil, false, nil
 	}
 
 	const chunkSize int64 = 64 * 1024
 	targetLines := skip + limit + 1
 	var (
-		pos       = st.Size()
+		pos       = size
 		buf       []byte
 		lineCount int
 	)
@@ -454,7 +493,7 @@ func readLogLinesFromEnd(path string, skip, limit int) ([][]byte, bool, error) {
 			start = 0
 		}
 		chunk := make([]byte, pos-start)
-		if _, err := f.ReadAt(chunk, start); err != nil && err != io.EOF {
+		if _, err := r.ReadAt(chunk, start); err != nil && err != io.EOF {
 			return nil, false, err
 		}
 		buf = append(chunk, buf...)

@@ -73,6 +73,90 @@ func TestSweepStaleWatchDirs(t *testing.T) {
 	}
 }
 
+// newEndableWatchSession makes a session directory holding a file, without
+// pointing Aviary's lookups at it.
+func newEndableWatchSession(t *testing.T) *watchSession {
+	t.Helper()
+	dir, err := newWatchSessionDir(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "logs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "logs", "aviary.log"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return &watchSession{Dir: dir}
+}
+
+// A file still open when the session ends, as a scanner may hold one on
+// Windows, delays the removal rather than failing it.
+func TestEndWatchSessionWaitsForAnOpenFile(t *testing.T) {
+	s := newEndableWatchSession(t)
+	f, err := os.Open(filepath.Join(s.Dir, "logs", "aviary.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	timer := time.AfterFunc(300*time.Millisecond, func() { _ = f.Close() })
+	t.Cleanup(func() { timer.Stop(); _ = f.Close() })
+	var warn bytes.Buffer
+	endWatchSession(s, &warn)
+	if warn.Len() != 0 {
+		t.Errorf("ending the session warned: %s", warn.String())
+	}
+	if _, err := os.Stat(s.Dir); !os.IsNotExist(err) {
+		t.Errorf("session dir still there: %v", err)
+	}
+}
+
+func TestEndWatchSessionRetriesRemoval(t *testing.T) {
+	s := newEndableWatchSession(t)
+	attempts := 0
+	removeWatchDir = func(dir string) error {
+		if attempts++; attempts < 3 {
+			return &fs.PathError{Op: "unlinkat", Path: dir, Err: fs.ErrPermission}
+		}
+		return os.RemoveAll(dir)
+	}
+	t.Cleanup(func() { removeWatchDir = os.RemoveAll })
+	var warn bytes.Buffer
+	endWatchSession(s, &warn)
+	if warn.Len() != 0 {
+		t.Errorf("ending the session warned: %s", warn.String())
+	}
+	if attempts != 3 {
+		t.Errorf("removal ran %d times, want 3", attempts)
+	}
+	if _, err := os.Stat(s.Dir); !os.IsNotExist(err) {
+		t.Errorf("session dir still there: %v", err)
+	}
+}
+
+// A directory that cannot be removed gets one warning line however many
+// ways out end the session, and stays for the next session's sweep.
+func TestEndWatchSessionWarnsOnce(t *testing.T) {
+	s := newEndableWatchSession(t)
+	removeWatchDir = func(dir string) error {
+		return &fs.PathError{Op: "unlinkat", Path: dir, Err: fs.ErrPermission}
+	}
+	watchDirRemoveTimeout = 100 * time.Millisecond
+	t.Cleanup(func() {
+		removeWatchDir = os.RemoveAll
+		watchDirRemoveTimeout = 2 * time.Second
+	})
+	var warn bytes.Buffer
+	endWatchSession(s, &warn)
+	endWatchSession(s, &warn)
+	lines := strings.Split(strings.TrimSpace(warn.String()), "\n")
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], "warning: couldn't remove the watch session directory "+s.Dir) || !strings.Contains(lines[0], "the next aviary watch removes it") {
+		t.Errorf("warnings = %q, want one line naming %s", warn.String(), s.Dir)
+	}
+	if _, err := os.Stat(s.Dir); err != nil {
+		t.Errorf("session dir is gone: %v", err)
+	}
+}
+
 func TestFreeWatchPortSkipsTakenPort(t *testing.T) {
 	for _, network := range []string{"tcp4", "tcp6"} {
 		host := "127.0.0.1"
@@ -233,8 +317,10 @@ func TestStartWatchSessionIsolatesConfig(t *testing.T) {
 			t.Errorf("%s in the session dir holds a secret", path)
 		}
 	}
-	if err := endWatchSession(session); err != nil {
-		t.Fatal(err)
+	var warn bytes.Buffer
+	endWatchSession(session, &warn)
+	if warn.Len() != 0 {
+		t.Errorf("ending the session warned: %s", warn.String())
 	}
 	if _, err := os.Stat(session.Dir); !os.IsNotExist(err) {
 		t.Errorf("session dir still there: %v", err)
@@ -293,9 +379,6 @@ type watchProcess struct {
 // whose user has an Aviary config, and waits for its session to start.
 func startWatchProcess(t *testing.T, args ...string) *watchProcess {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("signals are Unix-only")
-	}
 	root := t.TempDir()
 	configHome := filepath.Join(root, "config")
 	tmp := filepath.Join(root, "tmp")
@@ -321,11 +404,15 @@ func startWatchProcess(t *testing.T, args ...string) *watchProcess {
 		"AVIARY_WATCH_ARGS="+strings.Join(all, " "),
 		"XDG_CONFIG_HOME="+configHome,
 		"TMPDIR="+tmp,
+		"TMP="+tmp,
+		"TEMP="+tmp,
 		"HOME="+home,
+		"USERPROFILE="+home,
 		"GH_TOKEN=",
 	)
 	p.cmd.Stdout = p.out
 	p.cmd.Stderr = p.out
+	prepareWatchProcess(p.cmd)
 	if err := p.cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -355,10 +442,17 @@ func startWatchProcess(t *testing.T, args ...string) *watchProcess {
 	return nil
 }
 
-// stop signals the process and checks it ended its session cleanly.
+// stop signals the process and checks it ended its session cleanly. SIGINT
+// is the user's Ctrl+C, which works on Windows too.
 func (p *watchProcess) stop(t *testing.T, sig syscall.Signal) {
 	t.Helper()
-	if err := p.cmd.Process.Signal(sig); err != nil {
+	var err error
+	if sig == syscall.SIGINT {
+		err = interruptWatchProcess(p.cmd)
+	} else {
+		err = p.cmd.Process.Signal(sig)
+	}
+	if err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
@@ -374,8 +468,27 @@ func (p *watchProcess) stop(t *testing.T, sig syscall.Signal) {
 	if _, err := os.Stat(p.sessionDir); !os.IsNotExist(err) {
 		t.Errorf("session dir %s is still there after %v: %v", p.sessionDir, sig, err)
 	}
+	out := p.out.String()
+	if n := strings.Count(out, "Watch session ended."); n != 1 {
+		t.Errorf("the session reported ending %d times; output:\n%s", n, out)
+	}
+	if strings.Contains(out, "watch session directory") || strings.Contains(out, "Error:") {
+		t.Errorf("ending the session reported a cleanup problem; output:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(p.sessionDir, "logs", "aviary.log")); err == nil {
+		t.Errorf("the session wrote a log file into its directory")
+	}
 	if got := snapshotDir(t, p.globalDir); fmt.Sprint(got) != fmt.Sprint(p.before) {
 		t.Errorf("the global config dir changed during the watch:\nbefore %v\nafter  %v", p.before, got)
+	}
+}
+
+// skipSignalOnWindows skips a test sending a signal Windows processes cannot
+// be sent; closing the console window reaches Go as the same SIGTERM.
+func skipSignalOnWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot send this signal to another process")
 	}
 }
 
@@ -391,11 +504,13 @@ func TestWatchSessionCleansUpOnSIGINT(t *testing.T) {
 }
 
 func TestWatchSessionCleansUpOnSIGTERM(t *testing.T) {
+	skipSignalOnWindows(t)
 	p := startWatchProcess(t, "--no-tui")
 	p.stop(t, syscall.SIGTERM)
 }
 
 func TestWatchSessionCleansUpOnSIGHUP(t *testing.T) {
+	skipSignalOnWindows(t)
 	p := startWatchProcess(t, "--no-tui")
 	p.stop(t, syscall.SIGHUP)
 }

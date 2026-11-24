@@ -103,7 +103,7 @@ func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
 	sessionOf := func(choice watchAgentChoice, settings config.ProjectsConfig) (*config.Config, error) {
 		t.Helper()
 		session, err := startWatchSession(t.TempDir(), global, sources, choice, []string{"someone/existing"}, settings)
-		t.Cleanup(func() { _ = endWatchSession(session) })
+		t.Cleanup(func() { endWatchSession(session, io.Discard) })
 		if err != nil {
 			return nil, err
 		}

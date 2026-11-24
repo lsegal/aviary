@@ -3,12 +3,14 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lsegal/aviary/internal/browser"
@@ -45,6 +47,8 @@ type watchSession struct {
 	// env holds the values the session's environment variables had before
 	// it set them, restored when it ends.
 	env map[string]*string
+	// ended makes ending the session happen once.
+	ended sync.Once
 }
 
 // setEnv sets an environment variable for the session, remembering the
@@ -304,27 +308,64 @@ func startWatchSession(parent string, global *config.Config, sources globalWatch
 	return s, nil
 }
 
+// watchDirRemoveTimeout is how long ending a session keeps retrying to
+// remove its directory. Windows refuses to remove a file something still
+// has open, and an antivirus scanner or the indexer can hold one briefly
+// after the session closed it.
+var watchDirRemoveTimeout = 2 * time.Second
+
+// removeWatchDir removes a session directory. Tests replace it.
+var removeWatchDir = os.RemoveAll
+
 // endWatchSession restores Aviary's own config and data lookups and removes
-// the session's directory.
-func endWatchSession(s *watchSession) error {
+// the session's directory, once however many ways out call it. A directory
+// it cannot remove gets one warning line on warn and is left for the next
+// session's sweep of stale directories; it never fails the command.
+func endWatchSession(s *watchSession, warn io.Writer) {
+	if s == nil {
+		restoreWatchLookups()
+		return
+	}
+	s.ended.Do(func() {
+		restoreWatchLookups()
+		for key, old := range s.env {
+			if old == nil {
+				_ = os.Unsetenv(key)
+			} else {
+				_ = os.Setenv(key, *old)
+			}
+		}
+		if s.Dir == "" {
+			return
+		}
+		if err := removeWatchSessionDir(s.Dir, watchDirRemoveTimeout); err != nil {
+			_, _ = fmt.Fprintf(warn, "warning: couldn't remove the watch session directory %s (%v); the next aviary watch removes it.\n", s.Dir, err)
+		}
+	})
+}
+
+// restoreWatchLookups points Aviary's config and data lookups back at the
+// user's own.
+func restoreWatchLookups() {
 	store.SetDataDir(dataDir)
 	store.SetAuthDir("")
 	config.SetDefaultPath("")
-	if s == nil {
-		return nil
-	}
-	for key, old := range s.env {
-		if old == nil {
-			_ = os.Unsetenv(key)
-		} else {
-			_ = os.Setenv(key, *old)
+}
+
+// removeWatchSessionDir removes dir, retrying with a short backoff for up to
+// timeout while removal fails.
+func removeWatchSessionDir(dir string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	delay := 50 * time.Millisecond
+	for {
+		err := removeWatchDir(dir)
+		if err == nil || errors.Is(err, os.ErrNotExist) {
+			return nil
 		}
+		if time.Now().Add(delay).After(deadline) {
+			return err
+		}
+		time.Sleep(delay)
+		delay = min(delay*2, 400*time.Millisecond)
 	}
-	if s.Dir == "" {
-		return nil
-	}
-	if err := os.RemoveAll(s.Dir); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("removing the watch session directory %s: %w", s.Dir, err)
-	}
-	return nil
 }
