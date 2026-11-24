@@ -125,6 +125,7 @@ async function setup(
 	opts: {
 		check?: unknown;
 		config?: unknown;
+		configDelay?: number;
 		jobs?: { number: number; status: string }[];
 		clonesError?: string;
 		clones?: typeof CLONES;
@@ -156,13 +157,18 @@ async function setup(
 				stopped_jobs: (opts.jobs ?? []).map((j) => j.number),
 			};
 		},
-		config_get: opts.config ?? CONFIG,
+		config_get: async () => {
+			if (opts.configDelay)
+				await new Promise((r) => setTimeout(r, opts.configDelay));
+			return opts.config ?? CONFIG;
+		},
 		config_save: (args?: Args) => {
 			record("config_save", args);
 			return "saved";
 		},
 		project_check: (args?: Args) => {
 			record("project_check", args);
+			if (typeof opts.check === "function") return opts.check(args);
 			if (opts.check) return opts.check;
 			// The checks normalize the target, as project_check does.
 			const target = String(args?.target ?? "").replace(
@@ -263,8 +269,11 @@ test("adding a project from the single field saves it to the board's agent", asy
 	expect(calls.project_add).toEqual([
 		{ target: "lsegal/zvidlib", agent: "coder" },
 	]);
+	// The board's agent and its models pick the CLIs whose skills count.
 	expect(calls.project_check?.at(-1)).toEqual({
 		target: "https://github.com/lsegal/zvidlib",
+		agent: "coder",
+		models: ["cli/claude/opus", "cli/codex/gpt-5.5"],
 	});
 });
 
@@ -284,6 +293,122 @@ test("a project another agent owns cannot be added again", async ({ page }) => {
 		dialog.getByRole("button", { name: "Start watching" }),
 	).toBeDisabled();
 	expect(calls.project_add).toBeUndefined();
+});
+
+// project_check as it answers when gemini lacks gh-fix: a failure when the
+// models it is given run on gemini, a neutral note otherwise.
+function geminiSkillCheck(args?: Args) {
+	const usesGemini = (args?.models as string[] | undefined)?.some((m) =>
+		m.includes("gemini"),
+	);
+	return {
+		target: "lsegal/zvidlib",
+		kind: "repo",
+		ok: !usesGemini,
+		checks: [
+			{ name: "clis", status: "ok", message: "Found claude and gemini" },
+			usesGemini
+				? {
+						name: "skills",
+						status: "fail",
+						message: "gh-fix is not installed for gemini",
+					}
+				: {
+						name: "skills",
+						status: "ok",
+						message: "gh-fix 1.6.0 installed for claude",
+					},
+			...(usesGemini
+				? []
+				: [
+						{
+							name: "skills_unused",
+							status: "info",
+							message: "gh-fix also missing for gemini (not used)",
+						},
+					]),
+		],
+	};
+}
+
+test("skills missing on CLIs the project does not use never need attention", async ({
+	page,
+}) => {
+	await setup(page, { check: geminiSkillCheck });
+	await page.goto("/agents/coder/projects/lsegal%2Faviary?add=1");
+	const dialog = page.getByRole("dialog");
+	await dialog.getByLabel("Repository or project board").fill("lsegal/zvidlib");
+
+	const checks = dialog.getByTestId("add-project-checks");
+	await expect(checks).toContainText("Ready to go");
+	await expect(checks).not.toContainText("Needs attention");
+	await expect(checks.locator('[data-status="fail"]')).toHaveCount(0);
+	const note = checks.locator('[data-check="skills_unused"]');
+	await expect(note).toHaveAttribute("data-status", "info");
+	await expect(note).toHaveText("gh-fix also missing for gemini (not used)");
+	await expect(note.locator("span")).toHaveClass(/text-gray-500/);
+	await expect(
+		dialog.getByRole("button", { name: "Start watching" }),
+	).toBeEnabled();
+});
+
+test("a fallback CLI missing a skill needs attention and is named", async ({
+	page,
+}) => {
+	await setup(page, {
+		check: geminiSkillCheck,
+		config: {
+			...CONFIG,
+			agents: [
+				{
+					name: "coder",
+					model: "cli/claude/opus",
+					fallbacks: ["cli/gemini/gemini-3.5-flash"],
+					projects: CODER_PROJECTS,
+				},
+			],
+		},
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary?add=1");
+	const dialog = page.getByRole("dialog");
+	await dialog.getByLabel("Repository or project board").fill("lsegal/zvidlib");
+
+	const checks = dialog.getByTestId("add-project-checks");
+	await expect(checks).toContainText("Needs attention");
+	await expect(checks.locator('[data-check="skills"]')).toHaveAttribute(
+		"data-status",
+		"fail",
+	);
+	await expect(checks).toContainText("gh-fix is not installed for gemini");
+});
+
+test("the add-project check follows the agent's models as they change", async ({
+	page,
+}) => {
+	// The config arrives after the first check, which runs without the
+	// agent's models; the server then reports gemini, which the agent never
+	// uses, as missing gh-fix.
+	const calls = await setup(page, {
+		configDelay: 2000,
+		check: (args?: Args) =>
+			geminiSkillCheck({
+				...args,
+				models: (args?.models as string[] | undefined) ?? ["gemini/m"],
+			}),
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary?add=1");
+	const dialog = page.getByRole("dialog");
+	await dialog.getByLabel("Repository or project board").fill("lsegal/zvidlib");
+
+	const checks = dialog.getByTestId("add-project-checks");
+	await expect(checks).toContainText("Needs attention");
+	await expect(checks).toContainText("Ready to go");
+	await expect(checks).not.toContainText("not installed for gemini");
+	expect(calls.project_check?.at(0)?.models).toBeUndefined();
+	expect(calls.project_check?.at(-1)?.models).toEqual([
+		"cli/claude/opus",
+		"cli/codex/gpt-5.5",
+	]);
 });
 
 test("add-project checks report each failing prerequisite", async ({
@@ -606,6 +731,11 @@ test("projects are added to an agent in its settings", async ({ page }) => {
 	await expect(page.getByTestId("new-project-check")).toContainText(
 		"pull requests will come from your fork",
 	);
+	// The draft's models for atlas, saved or not, pick the CLIs checked.
+	expect(calls.project_check?.at(-1)).toMatchObject({
+		agent: "atlas",
+		models: ["anthropic/claude-sonnet-4-5"],
+	});
 	await add.click();
 	const projects = page.getByTestId("agent-project");
 	await expect(projects).toHaveCount(1);

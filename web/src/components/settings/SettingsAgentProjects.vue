@@ -212,7 +212,12 @@ watch(
 	},
 	{ immediate: true },
 );
-const check = useProjectCheck(newTarget);
+const check = useProjectCheck(newTarget, () => ({
+	agent: props.agent.name,
+	models: jobModels(props.agent.name, props.config, cliNames.value).map(
+		(m) => m.model,
+	),
+}));
 const checkResult = check.result;
 const checkError = check.error;
 // The checks normalize the target (URLs become owner/repo).
@@ -240,7 +245,9 @@ const checkNote = computed(() => {
 	if (isListed(section.value, normalized.value))
 		return `${agentLabel.value} already owns ${normalized.value}.`;
 	if (!checkResult.value) return "";
-	const problems = checkResult.value.checks.filter((c) => c.status !== "ok");
+	const problems = checkResult.value.checks.filter(
+		(c) => c.status === "warn" || c.status === "fail",
+	);
 	return problems.length
 		? problems.map((c) => c.message).join(" ")
 		: "Ready to go.";

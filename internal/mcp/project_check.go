@@ -10,12 +10,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lsegal/aviary/internal/codingskills"
+	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/projects"
 )
 
@@ -24,6 +26,8 @@ const (
 	projectCheckOK   = "ok"
 	projectCheckWarn = "warn"
 	projectCheckFail = "fail"
+	// projectCheckInfo is a neutral note that never fails the check.
+	projectCheckInfo = "info"
 )
 
 // projectCheckTimeout bounds every gh call so a stalled GitHub read cannot
@@ -39,6 +43,7 @@ var (
 	projectCLIProviders = func() []codingskills.CLI { return codingskills.Default().CLIs() }
 	projectLookPath     = exec.LookPath
 	projectHomeDir      = os.UserHomeDir
+	projectConfig       = func() (*config.Config, error) { return config.Load("") }
 )
 
 // projectSkills are the skills a project job runs.
@@ -46,6 +51,10 @@ var projectSkills = []string{"gh-fix"}
 
 type projectCheckArgs struct {
 	Target string `json:"target" jsonschema:"repository (owner/repo or a GitHub URL), Project board or Discussions board to check"`
+	Agent  string `json:"agent,omitempty" jsonschema:"Aviary agent that owns or will own the project; its model and fallbacks pick the CLI providers whose skills are checked. Empty uses the agent that owns the target"`
+	// Models are the owning agent's model and fallbacks as an unsaved form
+	// holds them, so the check follows edits before they are saved.
+	Models []string `json:"models,omitempty" jsonschema:"the owning agent's model and fallbacks, in order, in place of its saved ones"`
 }
 
 // ProjectCheck is one add-project prerequisite and its outcome.
@@ -56,9 +65,11 @@ type ProjectCheck struct {
 }
 
 // ProjectCheckCLI is a CLI provider found on PATH and its installed skills.
+// Used reports whether the project runs on it, so its skills are required.
 type ProjectCheckCLI struct {
 	Name   string            `json:"name"`
 	Path   string            `json:"path"`
+	Used   bool              `json:"used"`
 	Skills map[string]string `json:"skills"`
 }
 
@@ -124,7 +135,7 @@ func runProjectCheck(ctx context.Context, args projectCheckArgs) (*ProjectCheckR
 	} else if signedIn {
 		add("github", projectCheckOK, "gh is signed in")
 	}
-	checkCLIProviders(res, add)
+	checkCLIProviders(res, projectUsedProviders(target, args), add)
 
 	res.OK = true
 	for _, c := range res.Checks {
@@ -175,44 +186,84 @@ func checkRepoAccess(ctx context.Context, repo string, res *ProjectCheckResult, 
 	}
 }
 
-func checkCLIProviders(res *ProjectCheckResult, add func(string, string, string, ...any)) {
+// projectUsedProviders returns the CLI providers the project runs on, as
+// config.ProjectCLIProviders resolves them from the saved configuration.
+func projectUsedProviders(target string, args projectCheckArgs) []string {
+	cfg, err := projectConfig()
+	if err != nil || cfg == nil {
+		cfg = &config.Config{}
+	}
+	agent := strings.TrimSpace(args.Agent)
+	if agent == "" {
+		agent = cfg.ProjectOwner(target)
+	}
+	return config.ProjectCLIProviders(cfg, agent, target, args.Models)
+}
+
+// checkCLIProviders reports the CLI providers on PATH and whether the ones
+// the project uses have its skills. A provider the project does not use
+// never fails the check: its missing skills are only noted.
+func checkCLIProviders(res *ProjectCheckResult, used []string, add func(string, string, string, ...any)) {
 	home, _ := projectHomeDir()
 	env := codingskills.Env{Home: home}
-	var known, found, missingSkill []string
+	var known, found, usedFound, missingSkill, unusedMissing []string
 	for _, def := range projectCLIProviders() {
 		known = append(known, def.ID)
 		path, err := projectLookPath(def.Binary)
 		if err != nil {
 			continue
 		}
-		cli := ProjectCheckCLI{Name: def.ID, Path: path, Skills: map[string]string{}}
+		cli := ProjectCheckCLI{Name: def.ID, Path: path, Used: slices.Contains(used, def.ID), Skills: map[string]string{}}
+		missing := false
 		for _, skill := range projectSkills {
 			if v, ok := findInstalledSkill(env.SkillsDirs(def.Target), skill); ok {
 				cli.Skills[skill] = v
 			} else {
-				missingSkill = append(missingSkill, def.ID)
+				missing = true
 			}
+		}
+		switch {
+		case missing && cli.Used:
+			missingSkill = append(missingSkill, def.ID)
+		case missing:
+			unusedMissing = append(unusedMissing, def.ID)
+		}
+		if cli.Used {
+			usedFound = append(usedFound, def.ID)
 		}
 		res.CLIs = append(res.CLIs, cli)
 		found = append(found, def.ID)
 	}
+	skills := strings.Join(projectSkills, ", ")
 	if len(found) == 0 {
 		add("clis", projectCheckFail, "No CLI provider found; install one of %s", joinList(known, "or"))
-		add("skills", projectCheckFail, "%s cannot be installed until a CLI provider is found", strings.Join(projectSkills, ", "))
+		add("skills", projectCheckFail, "%s cannot be installed until a CLI provider is found", skills)
 		return
 	}
 	add("clis", projectCheckOK, "Found %s", joinAnd(found))
+	defer func() {
+		if len(unusedMissing) > 0 {
+			add("skills_unused", projectCheckInfo, "%s also missing for %s (not used)", skills, joinAnd(unusedMissing))
+		}
+	}()
 	if len(missingSkill) > 0 {
-		add("skills", projectCheckFail, "%s is not installed for %s", strings.Join(projectSkills, ", "), joinAnd(missingSkill))
+		add("skills", projectCheckFail, "%s is not installed for %s", skills, joinAnd(missingSkill))
+		return
+	}
+	if len(usedFound) == 0 {
+		add("skills", projectCheckOK, "No installed CLI provider runs this project's jobs, so none needs %s", skills)
 		return
 	}
 	versions := map[string]bool{}
 	for _, c := range res.CLIs {
+		if !c.Used {
+			continue
+		}
 		for _, v := range c.Skills {
 			versions[v] = true
 		}
 	}
-	msg := strings.Join(projectSkills, ", ")
+	msg := skills
 	if len(versions) == 1 {
 		for v := range versions {
 			if v != "" {
@@ -220,10 +271,13 @@ func checkCLIProviders(res *ProjectCheckResult, add func(string, string, string,
 			}
 		}
 	}
-	if len(found) == 1 {
-		add("skills", projectCheckOK, "%s installed for %s", msg, found[0])
-	} else {
+	switch {
+	case len(usedFound) == 1:
+		add("skills", projectCheckOK, "%s installed for %s", msg, usedFound[0])
+	case len(usedFound) == len(found):
 		add("skills", projectCheckOK, "%s installed for all %d", msg, len(found))
+	default:
+		add("skills", projectCheckOK, "%s installed for %s", msg, joinAnd(usedFound))
 	}
 }
 
@@ -284,7 +338,7 @@ func registerProjectCheckTool(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name: "project_check",
 		Description: "Check whether a repository, Project board or Discussions board can be watched as a project: " +
-			"GitHub access, installed CLI providers and their gh-fix skill, and whether pull requests must come from a fork. " +
+			"GitHub access, installed CLI providers and the gh-fix skill on the ones the project runs on, and whether pull requests must come from a fork. " +
 			"Read-only; writes nothing.",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectCheckArgs) (*sdkmcp.CallToolResult, struct{}, error) {

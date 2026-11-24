@@ -298,6 +298,8 @@
 		"target"
 	],
 	"project_check": [
+		"agent",
+		"models",
 		"target"
 	],
 	"project_clone_clear": [],

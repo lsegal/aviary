@@ -84,3 +84,26 @@ func TestResumableCLIModelsAnswerPrompts(t *testing.T) {
 	assert.Empty(t, Validate(cfg, nil))
 	assert.ElementsMatch(t, []string{"gemini", "mytool"}, []string{string(CLIBackends(cfg)[0]), string(CLIBackends(cfg)[1])})
 }
+
+func TestProjectCLIProvidersAreOnlyTheOnesTheProjectUses(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "coder", Model: "claude/opus", Fallbacks: []string{"anthropic/claude-sonnet-5-5"},
+				Projects: AgentProjectsConfig{{Target: "o/r"}}},
+			{Name: "other", Model: "opencode/m"},
+		},
+	}
+	assert.Equal(t, []string{"claude"}, ProjectCLIProviders(cfg, "coder", "o/r", nil), "an API fallback runs on the agent, not a CLI")
+	assert.Equal(t, []string{"codex"}, ProjectCLIProviders(cfg, "coder", "o/r", []string{"cli/codex:high", "anthropic/claude-sonnet-5-5"}), "unsaved models replace the agent's")
+	assert.Empty(t, ProjectCLIProviders(cfg, "coder", "o/r", []string{}))
+
+	cfg.Agents[0].Fallbacks = []string{"cli/gemini/gemini-3.5-flash"}
+	cfg.Projects = ProjectsConfig{ChatModel: "codex/gpt-5.6-terra", ChatFallbacks: []string{"cline/m"}, UnblockAgent: "agy/m:high"}
+	cfg.Agents[1].Tasks = []TaskConfig{
+		{Name: "nightly", Project: "o/r", Model: "cli/muse/m"},
+		{Name: "elsewhere", Project: "o/other", Model: "cli/qwen/m"},
+		{Name: "default", Project: "o/r"},
+	}
+	assert.Equal(t, []string{"agy", "claude", "cline", "codex", "gemini", "muse"}, ProjectCLIProviders(cfg, "coder", "o/r", nil),
+		"fallbacks, the chat agent, the unblock agent and tasks targeting the project count")
+}

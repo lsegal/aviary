@@ -517,7 +517,8 @@ export function projectsYAML(section: ProjectsSection): string {
 
 // ── Add-project checks (project_check) ────────────────────────────────────
 
-export type CheckStatus = "ok" | "warn" | "fail";
+/** info is a neutral note, such as skills missing on CLIs the project never uses. */
+export type CheckStatus = "ok" | "warn" | "fail" | "info";
 
 export interface ProjectCheckItem {
 	name: string;
@@ -537,6 +538,7 @@ const CHECK_LABELS: Record<string, string> = {
 	github: "GitHub",
 	clis: "CLI providers",
 	skills: "Skills",
+	skills_unused: "Skills",
 	fork: "Fork",
 };
 
@@ -561,7 +563,7 @@ export function normalizeCheck(raw: unknown): ProjectCheckResult {
 		const status = str(o.status);
 		return {
 			name: str(o.name),
-			status: (status === "ok" || status === "warn"
+			status: (status === "ok" || status === "warn" || status === "info"
 				? status
 				: "fail") as CheckStatus,
 			message: str(o.message),

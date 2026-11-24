@@ -155,13 +155,16 @@ It reports, as separate checks:
 - **github**: `gh` is installed, signed in, and can read the repository (archived repositories fail).
 - **fork**: a warning when you can't push to the repository, so pull requests will come from your fork.
 - **clis**: which CLI providers (`claude`, `codex`, `gemini`, `opencode`, `cline`) are on `PATH`.
-- **skills**: whether `gh-fix` is installed for each of those CLIs, with its version when the skill declares one.
+- **skills**: whether `gh-fix` is installed for each of those CLIs the project uses, with its version when the skill declares one. A project uses the CLIs of its owning agent's model and fallbacks (after `models.defaults`), the Code Loop chat's `chat_model` and `chat_fallbacks`, the `unblock_agent`, and the `model` of every scheduled task that targets it. A used CLI without the skill fails the check and is named.
+- **skills_unused**: an `info` note listing installed CLIs the project does not use that lack `gh-fix`. It never fails the check.
 
 **Arguments:**
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `target` | string | ✓ | `owner/repo`, a GitHub URL, `users/<login>/projects/<n>`, `orgs/<org>/projects/<n>`, or `owner/repo/discussions`. |
+| `agent` | string | | The agent that owns, or will own, the project. Empty uses the agent that owns `target`. |
+| `models` | string[] | | The owning agent's model and fallbacks, in order, in place of its saved ones, so an unsaved settings form is checked as edited. |
 
 **Returns:** JSON object. `ok` is false when any check has `status: "fail"`.
 
@@ -176,11 +179,12 @@ It reports, as separate checks:
     { "name": "github", "status": "ok", "message": "gh is signed in and can read lsegal/zvidlib" },
     { "name": "fork", "status": "warn", "message": "You can't push to lsegal/zvidlib, so pull requests will come from your fork" },
     { "name": "clis", "status": "ok", "message": "Found claude and codex" },
-    { "name": "skills", "status": "ok", "message": "gh-fix 1.6.0 installed for all 2" }
+    { "name": "skills", "status": "ok", "message": "gh-fix 1.6.0 installed for claude" },
+    { "name": "skills_unused", "status": "info", "message": "gh-fix also missing for codex (not used)" }
   ],
   "clis": [
-    { "name": "claude", "path": "/usr/local/bin/claude", "skills": { "gh-fix": "1.6.0" } },
-    { "name": "codex", "path": "/usr/local/bin/codex", "skills": { "gh-fix": "1.6.0" } }
+    { "name": "claude", "path": "/usr/local/bin/claude", "used": true, "skills": { "gh-fix": "1.6.0" } },
+    { "name": "codex", "path": "/usr/local/bin/codex", "used": false, "skills": {} }
   ]
 }
 ```
