@@ -903,9 +903,10 @@ function addProjectLink(agent: string) {
 
 // Rows whose "+" sits over their right edge make room for it only while it
 // shows, so a count badge stays at the right edge until then. The "+" shows
-// on row hover or focus, and always on touch (see SidebarRowAction).
+// on row hover or focus, and always on touch (see SidebarRowAction); like
+// it, only the states that show the "+" set a padding, so none compete.
 const rowActionPad =
-	"pr-9 [@media(hover:hover)]:pr-3 group-hover/row:pr-9 group-focus-within/row:pr-9";
+	"[@media(hover:none)]:pr-9 group-hover/row:pr-9 group-focus-within/row:pr-9";
 
 // Rows whose "+" sits over their right edge keep room for it.
 function hasRowAction(child: NavChild): boolean {

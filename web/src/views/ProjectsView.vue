@@ -34,7 +34,7 @@
 		</template>
 		<template v-if="project || aggregate" #header-actions>
 			<button v-if="aggregate" type="button" data-testid="board-add-project" aria-label="Add project" title="Add project"
-				:class="HEADER_ICON_CLS" @click="openAdd">
+				:class="HEADER_ADD_CLS" @click="openAdd">
 				<PlusIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
 			<!-- A watch session's board is one agent's, so it queues when it has one project. -->
@@ -274,6 +274,7 @@ import { useServerStatus } from "../composables/useServerStatus";
 import { useTaskPause } from "../composables/useTaskPause";
 import {
 	HEADER_ACTION_CLS,
+	HEADER_ADD_CLS,
 	HEADER_ICON_CLS,
 	HEADER_ICON_ON_CLS,
 } from "../lib/headerActions";
