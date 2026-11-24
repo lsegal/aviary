@@ -77,7 +77,7 @@ test("channel settings link back to the agent and the channel's conversation", a
 	]);
 	const current = crumbs.locator('[aria-current="page"]');
 	await expect(current).toHaveText("Settings");
-	await expect(current).toHaveRole("heading");
+	await expect(page.getByTestId("settings-title")).toHaveText("Settings");
 	await expect(crumbs.getByRole("link", { name: "Settings" })).toHaveCount(0);
 	// The separators are hidden from screen readers.
 	await expect(crumbs).toMatchAriaSnapshot(`
@@ -89,8 +89,7 @@ test("channel settings link back to the agent and the channel's conversation", a
 		      - link "Channels"
 		    - listitem:
 		      - link "signal"
-		    - listitem:
-		      - heading "Settings" [level=2]
+		    - listitem "Settings"
 	`);
 	await expect(backLink(page)).toHaveAccessibleName("Back to signal");
 

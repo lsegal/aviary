@@ -997,7 +997,7 @@ test("agent files editor opens the file picked in the sidebar", async ({
 	);
 	// Without a ?file the page opens the first file.
 	await expect(editor).toHaveValue("# Agents");
-	await expect(page.getByTestId("agent-file-name")).toHaveText("AGENTS.md");
+	await expect(page.getByTestId("settings-title")).toHaveText("AGENTS.md");
 	await expect(page.getByTestId("agent-file-builtin")).toBeVisible();
 
 	await files.filter({ hasText: "IDENTITY.md" }).getByRole("link").click();
@@ -1005,7 +1005,7 @@ test("agent files editor opens the file picked in the sidebar", async ({
 		/\/agents\/assistant\/files\?file=IDENTITY\.md$/,
 	);
 	await expect(editor).toHaveValue("# Identity");
-	await expect(page.getByTestId("agent-file-name")).toHaveText("IDENTITY.md");
+	await expect(page.getByTestId("settings-title")).toHaveText("IDENTITY.md");
 	await expect(page.getByTestId("agent-file-builtin")).toHaveCount(0);
 });
 
@@ -1049,8 +1049,10 @@ test("agent files editor auto-syncs templates when an older agent has no root fi
 	});
 
 	await openAgentPage(page, "files");
-	await page.getByTestId("agent-file-menu").click();
-	await page.getByRole("menuitem", { name: "Refresh" }).click();
+	await page
+		.getByTestId("agent-file-bar")
+		.getByRole("button", { name: "Refresh", exact: true })
+		.click();
 
 	await expect(
 		page.getByTestId("sidebar-files").getByTestId("file-row"),

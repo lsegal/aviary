@@ -5,8 +5,8 @@ import { expectSettingsHeader } from "./helpers/settingsHeader";
 // Every nested page shows where it is, from its agent or System down, with a
 // back link to its parent, also with the sidebar collapsed and on narrow
 // screens; the collapsed rail lists each page's items in a flyout (#1036).
-// Every one shows them in the same shared page header (#1064):
-// the Settings page header (#1125).
+// Every one shows them in the same shared page header (#1064): the
+// Scheduled Tasks task page's header from before #1067 (#1147).
 
 const LONG_PROJECT = "lsegal/a-repository-with-a-very-long-name-indeed";
 
@@ -203,10 +203,14 @@ test("an agent page links no crumb back to itself", async ({ page }) => {
 	]);
 	// The agent's crumb would open this same page, so nothing links.
 	await expect(breadcrumb(page).getByRole("link")).toHaveCount(0);
-	await expect(page.getByTestId("settings-back")).toHaveCount(0);
+	await expectSettingsHeader(page, false);
 	// The System overview is a top-level page with nothing above it.
 	await page.goto("/system/overview");
-	await expect(breadcrumb(page)).toHaveCount(0);
+	await expect(breadcrumb(page).getByRole("listitem")).toHaveText([
+		"System",
+		"Overview",
+	]);
+	await expectSettingsHeader(page, false);
 });
 
 test("settings pages show the same breadcrumb as their title, once", async ({
@@ -298,7 +302,7 @@ test("the agent crumb opens the first page the user's sidebar shows", async ({
 	}
 });
 
-test("on a phone the breadcrumb fits, truncating middle crumbs first", async ({
+test("on a phone the breadcrumb collapses to the parent and the page (#1147)", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 375, height: 740 });
@@ -309,11 +313,12 @@ test("on a phone the breadcrumb fits, truncating middle crumbs first", async ({
 	await expect(crumbs).toBeVisible();
 	await expect(page.getByTestId("settings-back")).toBeVisible();
 	await expect(crumbs.getByRole("listitem")).toHaveText([
-		"Aviary",
-		"Code Loop",
 		LONG_PROJECT,
 		"#1013",
 	]);
+	await expect(page.getByTestId("settings-back")).toHaveAccessibleName(
+		`Back to ${LONG_PROJECT}`,
+	);
 	const sizes = await page.evaluate(() => {
 		const nav = document.querySelector('[data-testid="settings-breadcrumb"]');
 		const items = [...(nav?.querySelectorAll("li") ?? [])].map((li) => {
@@ -332,12 +337,22 @@ test("on a phone the breadcrumb fits, truncating middle crumbs first", async ({
 	expect(sizes.pageOverflow).toBeLessThanOrEqual(0);
 	for (const item of sizes.items)
 		expect(item.right).toBeLessThanOrEqual(sizes.innerWidth);
-	// The middle crumbs give way, while the agent and the current job keep
-	// their names whole.
+	// The long parent gives way, while the current job keeps its name whole.
 	const truncated = sizes.items.map((i) => i.truncated);
-	expect(truncated[0]).toBe(false);
 	expect(truncated[2]).toBe(true);
 	expect(truncated[3]).toBe(false);
+	// The title row's actions wrap below the title instead of scrolling.
+	const row = await page.getByTestId("settings-title-row").evaluate((el) => ({
+		overflow: el.scrollWidth - el.clientWidth,
+		title: el
+			.querySelector('[data-testid="settings-title"]')
+			?.getBoundingClientRect().bottom,
+		actions: el
+			.querySelector('[data-testid="settings-actions"]')
+			?.getBoundingClientRect().top,
+	}));
+	expect(row.overflow).toBeLessThanOrEqual(0);
+	expect(row.actions ?? 0).toBeGreaterThanOrEqual(row.title ?? 0);
 });
 
 test("collapsed rail icons list their items in a flyout on hover and focus", async ({

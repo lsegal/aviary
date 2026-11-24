@@ -26,7 +26,7 @@
 		<DropdownMenuRoot>
 			<DropdownMenuTrigger asChild>
 				<button type="button" data-testid="agent-file-menu" aria-label="More file actions" title="More file actions"
-					:class="HEADER_ICON_CLS" :disabled="!state.selectedFile">
+					:class="HEADER_ICON_CLS" :disabled="!agent">
 					<EllipsisHorizontalIcon aria-hidden="true" class="h-5 w-5" />
 				</button>
 			</DropdownMenuTrigger>

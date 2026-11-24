@@ -277,7 +277,7 @@ test("a System page keeps its icon in the rail and header, but not the sidebar l
 
 	await page.getByTestId("sidebar-system-usage").click();
 	await expect(page).toHaveURL("/system/usage");
-	const header = page.locator("main").getByTestId("system-page-icon").first();
+	const header = page.getByTestId("settings-header-icon");
 	expect(await header.locator("svg").innerHTML()).toBe(cardIcon);
 
 	await page.keyboard.press("ControlOrMeta+b");
@@ -344,7 +344,7 @@ for (const { name, width } of [
 	});
 }
 
-test("System cards are compact on mobile only, leaving page headers full size (#925)", async ({
+test("System cards are compact on mobile only, leaving page headers alone (#925)", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 375, height: 900 });
@@ -377,8 +377,9 @@ test("System cards are compact on mobile only, leaving page headers full size (#
 	await page.setViewportSize({ width: 375, height: 900 });
 	await card.click();
 	await expect(page).toHaveURL("/system/usage");
-	const header = page.locator("main").getByTestId("system-page-icon").first();
-	expect((await box(header)).width).toBe(36);
+	// The header keeps the shared header's tile (#1147).
+	const header = page.getByTestId("settings-header-icon");
+	expect((await box(header)).width).toBe(28);
 });
 
 test("loading skeleton matches the compact status cards (#925)", async ({

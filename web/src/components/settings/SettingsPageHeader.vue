@@ -7,7 +7,7 @@
 				:title="`Back to ${parent.label}`" :class="BACK_CLS">
 				<ArrowLeftIcon aria-hidden="true" class="h-4 w-4 shrink-0" />
 			</router-link>
-			<span v-else data-testid="settings-back" aria-disabled="true" :class="[BACK_CLS, 'pointer-events-none opacity-40']">
+			<span v-else data-testid="settings-back-none" aria-hidden="true" :class="[BACK_CLS, 'pointer-events-none opacity-40']">
 				<ArrowLeftIcon aria-hidden="true" class="h-4 w-4 shrink-0" />
 			</span>
 			<nav aria-label="Breadcrumb" data-testid="settings-breadcrumb" class="min-w-0 flex-1">
@@ -19,7 +19,10 @@
 						<ChevronRightIcon v-if="i > 0" aria-hidden="true" class="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500"
 							:class="{ 'hidden sm:block': i === crumbs.length - 2 && i > 0 }" />
 						<span v-if="i === crumbs.length - 1" aria-current="page" data-testid="settings-current"
-							class="min-w-0 truncate font-medium">{{ crumb.label }}</span>
+							class="min-w-0 truncate font-medium">
+							<BreadcrumbSwitcher v-if="switcher" :label="crumb.label" :title="switcher.title" :items="switcher.items" />
+							<template v-else>{{ crumb.label }}</template>
+						</span>
 						<router-link v-else-if="crumb.to" v-slot="{ href, navigate }" :to="crumb.to" custom>
 							<a :href="href"
 								class="min-w-0 truncate rounded text-gray-500 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-white"
@@ -44,15 +47,7 @@
 				<div class="min-w-0 flex-1">
 					<div class="flex min-w-0 items-center gap-2">
 						<h2 data-testid="settings-title" class="min-w-0 truncate text-lg font-bold text-gray-900 dark:text-white">
-							<span v-if="switcher" class="inline-flex min-w-0 max-w-full items-center gap-1">
-								<BreadcrumbSwitcher :label="title" :title="switcher.title" :items="switcher.items" />
-								<a v-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
-									:aria-label="titleLink.title" :title="titleLink.title"
-									class="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200">
-									<ArrowTopRightOnSquareIcon aria-hidden="true" class="h-4 w-4" />
-								</a>
-							</span>
-							<a v-else-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
+							<a v-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
 								class="hover:underline" :title="titleLink.title">{{ title }}</a>
 							<template v-else>{{ title }}</template>
 						</h2>
@@ -88,7 +83,6 @@
 // #page-header-status, #page-header-subtitle and #page-header-actions
 // targets.
 import ArrowLeftIcon from "@heroicons/vue/24/outline/ArrowLeftIcon";
-import ArrowTopRightOnSquareIcon from "@heroicons/vue/24/outline/ArrowTopRightOnSquareIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import { computed } from "vue";
 import type { RouteLocationRaw } from "vue-router";
@@ -119,7 +113,7 @@ const props = defineProps<{
 	back?: SettingsBack | null;
 	/** An outside page the title opens in a new tab, such as a repository. */
 	titleLink?: { href: string; title: string } | null;
-	/** Makes the title a switcher between its siblings (#1063). */
+	/** Makes the current crumb a switcher between its siblings (#1063). */
 	switcher?: { title: string; items: SwitcherItem[] } | null;
 }>();
 

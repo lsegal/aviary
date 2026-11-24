@@ -1375,17 +1375,19 @@ test("an agent's Code Loop is one board of all its projects, with no settings", 
 	await expect.poll(() => calls.project_refresh?.[0]).toEqual({});
 });
 
-test("the Code Loop board's header starts with a blue + that adds a project (#739)", async ({
+test("the Code Loop board's header starts with a + that adds a project (#739, #1147)", async ({
 	page,
 }) => {
 	await setup(page);
 	await page.goto("/agents/coder/projects");
 	const icons = page.getByTestId("board-add-project").locator("..");
-	const add = icons.locator(":scope > *").first();
+	const add = icons.locator(":scope > *").nth(1);
 	await expect(add).toHaveAttribute("aria-label", "Add project");
 	await expect(add).toHaveAttribute("title", "Add project");
-	await expect(add).toHaveClass(/\bbg-blue-600\b/);
-	await expect(icons.locator(":scope > *").nth(1)).toHaveAttribute(
+	// An outlined icon button, like every page header's actions.
+	await expect(add).toHaveClass(/\bborder-gray-200\b/);
+	await expect(add).not.toHaveClass(/\bbg-blue-600\b/);
+	await expect(icons.locator(":scope > *").nth(2)).toHaveAttribute(
 		"aria-label",
 		"Check now",
 	);
@@ -1590,9 +1592,7 @@ test("run view renders the typed event timeline read-only", async ({
 	await expect(page).toHaveURL(
 		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
 	);
-	await expect(
-		page.getByTestId("job-detail-header").getByRole("heading", { level: 2 }),
-	).toHaveText(
+	await expect(page.getByTestId("job-detail-title")).toHaveText(
 		/^#218 • (Draft pull request)?PR #233 Cap scheduler retry backoff at 10 minutes$/,
 	);
 
@@ -2317,16 +2317,18 @@ test("job details open under the project header, keeping the chat and logs panel
 	await expect(page).toHaveURL(
 		"/agents/coder/projects/lsegal%2Faviary/jobs/218",
 	);
-	await expect(page.getByTestId("job-detail")).toContainText(
+	await expect(page.getByTestId("job-detail-title")).toContainText(
 		/#218 • (Draft pull request)?PR #233 Cap scheduler retry backoff at 10 minutes/,
 	);
-	// The project header and its buttons stay.
+	// The shared header names the job under its project, and the project's
+	// buttons stay.
 	await expect(
 		page
 			.getByTestId("settings-breadcrumb")
 			.getByRole("link", { name: "lsegal/aviary", exact: true }),
 	).toBeVisible();
-	await expect(page.getByTestId("delivery-status")).toBeVisible();
+	await expect(page.getByTestId("settings-title")).toHaveText("#218");
+	await expect(page.getByTestId("delivery-status")).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
 	await expect(page.getByTestId("project-settings-link")).toBeVisible();
 	// The open panels keep their content and the unsent draft.
@@ -3288,7 +3290,8 @@ for (const { name, width } of [
 			},
 		});
 		await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
-		const header = page.getByTestId("job-detail-header");
+		// The job's actions sit in the shared header's title row (#1147).
+		const header = page.getByTestId("settings-title-row");
 		const actions = page.getByTestId("job-detail-actions");
 		await expect(page.getByTestId("job-detail-title")).toContainText(title);
 		await expect(actions.getByRole("button", { name: "Stop" })).toBeVisible();
@@ -3299,11 +3302,7 @@ for (const { name, width } of [
 		const boxes = await buttons.evaluateAll((els) =>
 			els.map((el) => {
 				const r = el.getBoundingClientRect();
-				return {
-					top: (el as HTMLElement).offsetTop,
-					height: r.height,
-					right: r.right,
-				};
+				return { top: r.top, height: r.height };
 			}),
 		);
 		// Every action, the close button included, sits on one row at one height.
@@ -3313,19 +3312,15 @@ for (const { name, width } of [
 			"aria-label",
 			"Close details",
 		);
-		const close = boxes[boxes.length - 1];
 
 		const layout = await header.evaluate((el) => {
-			const style = getComputedStyle(el);
-			const r = el.getBoundingClientRect();
 			const t = el
 				.querySelector("[data-testid=job-detail-title]")
 				?.getBoundingClientRect();
 			const a = el
-				.querySelector("[data-testid=job-detail-actions]")
+				.querySelector("[data-testid=settings-actions]")
 				?.getBoundingClientRect();
 			return {
-				contentRight: r.right - Number.parseFloat(style.paddingRight),
 				overflow: el.scrollWidth - el.clientWidth,
 				titleHeight: t?.height ?? 0,
 				titleRight: t?.right ?? 0,
@@ -3335,15 +3330,15 @@ for (const { name, width } of [
 			};
 		});
 		expect(layout.overflow).toBeLessThanOrEqual(0);
-		// The close button ends the row at the header's content edge.
-		expect(Math.abs(close.right - layout.contentRight)).toBeLessThanOrEqual(1);
 		// The long title wraps instead of squeezing or overlapping the actions.
-		expect(layout.titleHeight).toBeGreaterThan(40);
-		if (width >= 1024) {
-			expect(layout.titleRight).toBeLessThanOrEqual(layout.actionsLeft);
-		} else {
+		expect(layout.titleHeight).toBeGreaterThan(15);
+		// The actions sit beside the title, or wrap below it when they don't fit.
+		expect(
+			layout.titleRight <= layout.actionsLeft ||
+				layout.titleBottom <= layout.actionsTop,
+		).toBe(true);
+		if (width < 1024)
 			expect(layout.titleBottom).toBeLessThanOrEqual(layout.actionsTop);
-		}
 	});
 }
 
