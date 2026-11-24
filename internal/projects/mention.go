@@ -711,6 +711,8 @@ func (g GHCLI) ListReviewComments(ctx context.Context, repo string, number int) 
 		return nil, fmt.Errorf("list review comments on #%d: %w: %s", number, err, strings.TrimSpace(string(output)))
 	}
 	var raw []struct {
+		ID        int64     `json:"id"`
+		HTMLURL   string    `json:"html_url"`
 		Body      string    `json:"body"`
 		CreatedAt time.Time `json:"created_at"`
 		User      struct {
@@ -722,14 +724,14 @@ func (g GHCLI) ListReviewComments(ctx context.Context, repo string, number int) 
 	}
 	comments := make([]Comment, 0, len(raw))
 	for _, comment := range raw {
-		comments = append(comments, Comment{Body: comment.Body, Author: comment.User.Login, CreatedAt: comment.CreatedAt})
+		comments = append(comments, Comment{Body: comment.Body, Author: comment.User.Login, CreatedAt: comment.CreatedAt, ID: comment.ID, URL: comment.HTMLURL})
 	}
 	reviews, err := g.pullRequestReviews(ctx, public, repo, number)
 	if err != nil {
 		return nil, err
 	}
 	for _, review := range reviews {
-		comments = append(comments, Comment{Body: review.Body, Author: review.User.Login, CreatedAt: review.SubmittedAt})
+		comments = append(comments, Comment{Body: review.Body, Author: review.User.Login, CreatedAt: review.SubmittedAt, ID: review.ID, URL: review.HTMLURL})
 	}
 	slices.SortStableFunc(comments, func(a, b Comment) int { return a.CreatedAt.Compare(b.CreatedAt) })
 	return comments, nil
@@ -738,6 +740,7 @@ func (g GHCLI) ListReviewComments(ctx context.Context, repo string, number int) 
 type pullRequestReview struct {
 	ID          int64     `json:"id"`
 	NodeID      string    `json:"node_id"`
+	HTMLURL     string    `json:"html_url"`
 	Body        string    `json:"body"`
 	State       string    `json:"state"`
 	SubmittedAt time.Time `json:"submitted_at"`

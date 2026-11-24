@@ -1211,6 +1211,18 @@ type issueWatch struct {
 	// observed, when set, is handed every state read back for the issue, so
 	// the dashboards can show the pull request the run is on.
 	observed func(OriginatingWorkState)
+	// seen lists the comments earlier runs of this job already relayed or
+	// ignored. A run with it set continues an earlier one's watch from since
+	// instead of snapshotting the conversation anew, so a comment posted
+	// between two runs, or while the run could not be resumed, still
+	// reaches the session, and none is delivered twice.
+	seen []string
+	// continued reports that since and seen come from an earlier run of the
+	// same job rather than from this run's start.
+	continued bool
+	// remember, when set, persists the keys of comments this run handled, so
+	// a restarted daemon resuming the session does not relay them again.
+	remember func(keys []string)
 }
 
 // canRelay reports whether this run can be resumed in place right now.
@@ -1238,7 +1250,21 @@ func (w *Engine) watchForIssueUpdates(ctx context.Context, checker WorkClosureCh
 			watch.observed(previous)
 		}
 	}
-	seen := w.commentsSeen(ctx, repo, issue.Number)
+	seen := map[string]bool{}
+	for _, key := range watch.seen {
+		seen[key] = true
+	}
+	if !watch.continued {
+		snapshot := w.commentsSeen(ctx, repo, issue.Number)
+		keys := make([]string, 0, len(snapshot))
+		for key := range snapshot {
+			seen[key] = true
+			keys = append(keys, key)
+		}
+		if len(keys) > 0 && watch.remember != nil {
+			watch.remember(keys)
+		}
+	}
 	// Output a task or workflow sent while the job was paused or queued is
 	// relayed before the resumed turn starts.
 	if watch.canRelay() && w.relayInbox(issue, cancel) {
@@ -1301,48 +1327,108 @@ func (w *Engine) watchForIssueUpdates(ctx context.Context, checker WorkClosureCh
 				previous = current
 			}
 		}
+		// A run that cannot be resumed yet leaves new comments unread rather
+		// than seen, so they are relayed once it can be, or by the job's next
+		// run, which continues this watch.
 		if w.Comments == nil || !watch.canRelay() {
 			continue
 		}
-		comments, listErr := w.Comments.ListComments(ctx, repo, issue.Number)
-		if listErr != nil {
-			if ctx.Err() == nil {
-				w.logf("issue #%d comment check failed: %v", issue.Number, listErr)
-			}
+		relays := w.newComments(ctx, repo, issue, previous.PullRequests, watch, seen)
+		if len(relays) == 0 {
 			continue
 		}
-		// Only allowed commenters may steer a running agent:
-		// anyone else's comment is marked seen and logged once, never relayed.
-		added := 0
-		var relayed []transcript.Event
+		events := make([]transcript.Event, 0, len(relays))
+		for _, relay := range relays {
+			events = append(events, transcript.Event{Kind: transcript.KindCommentRelay, Author: relay.Author, Text: relay.Body, URL: relay.URL})
+			w.logf("issue #%d relayed comment %s from %s to #%d", issue.Number, relay.label(), relay.Author, relay.number)
+		}
+		w.jobEvents(issueKey(issue), events...)
+		w.logf("issue #%d interrupting agent: %d new comment(s); relaying them into the same session", issue.Number, len(relays))
+		cancel(&workUpdate{summary: fmt.Sprintf("issue #%d has %d new comment(s)", issue.Number, len(relays)), instruction: newCommentsPrompt(issue, relays)})
+		return
+	}
+}
+
+// relayedComment is a new comment from an allowed commenter on the issue a
+// run is working or one of its pull requests, on its way to the session.
+type relayedComment struct {
+	Comment
+	// number is the issue or pull request the comment was posted on.
+	number int
+}
+
+// label names the comment in the log: its GitHub ID, or its time when the
+// source reported none.
+func (c relayedComment) label() string {
+	if c.ID != 0 {
+		return strconv.FormatInt(c.ID, 10)
+	}
+	return "posted " + c.CreatedAt.UTC().Format(time.RFC3339)
+}
+
+// newComments reads the issue's conversation and its pull requests'
+// conversations, review comments and review bodies, and returns every comment
+// from an allowed commenter posted since the run began that seen does not
+// list yet. No mention of this instance is needed: a person steering a run
+// by commenting on its issue or pull request is the point. A comment from
+// anyone else is logged once and never relayed, and a comment addressed to a
+// different instance is not an instruction to this one. Every comment read
+// is added to seen and remembered, so each is handled once; a list that
+// fails is logged and the rest are still read, so one failing read does not
+// hide the others.
+func (w *Engine) newComments(ctx context.Context, repo string, issue Issue, pullRequests []PullRequestWorkState, watch issueWatch, seen map[string]bool) []relayedComment {
+	var relays, handled = []relayedComment{}, []string{}
+	consider := func(number int, comments []Comment) {
 		for _, comment := range comments {
 			key := commentKey(comment)
 			if seen[key] || !relayableComment(comment, watch.since) {
 				continue
 			}
-			if !commenterAllowed(comment.Author, w.AllowedCommenters) {
-				seen[key] = true
-				w.logf("issue #%d ignoring new comment: %s is not an allowed commenter", issue.Number, comment.Author)
-				continue
+			seen[key] = true
+			handled = append(handled, key)
+			switch {
+			case anyInstanceMention.MatchString(comment.Body) && !mentionedIdentity(comment.Body, w.Identity):
+				w.logf("issue #%d ignoring new comment on #%d from %s: it is addressed to another instance", issue.Number, number, comment.Author)
+			case !commenterAllowed(comment.Author, w.AllowedCommenters):
+				w.logf("issue #%d ignoring new comment on #%d: %s is not an allowed commenter", issue.Number, number, comment.Author)
+			default:
+				relays = append(relays, relayedComment{Comment: comment, number: number})
 			}
-			added++
-			relayed = append(relayed, transcript.Event{Kind: transcript.KindCommentRelay, Author: comment.Author, Text: comment.Body})
 		}
-		if mentioned := w.pullRequestMentions(ctx, repo, issue, previous.PullRequests, watch.since, seen); len(mentioned) > 0 {
-			w.jobEvents(issueKey(issue), relayed...)
-			w.jobSystem(issueKey(issue), "mentioned on pull request "+formatIssueRefs(mentioned)+"; relayed into the session")
-			w.logf("issue #%d interrupting agent: instance %s was mentioned on pull request %s; relaying it into the same session", issue.Number, w.Identity, formatIssueRefs(mentioned))
-			cancel(&workUpdate{summary: fmt.Sprintf("issue #%d was mentioned on pull request %s", issue.Number, formatIssueRefs(mentioned)), instruction: pullRequestMentionPrompt(issue, mentioned, added)})
-			return
+	}
+	if comments, err := w.Comments.ListComments(ctx, repo, issue.Number); err != nil {
+		if ctx.Err() == nil {
+			w.logf("issue #%d comment check failed: %v", issue.Number, err)
 		}
-		if added == 0 {
+	} else {
+		consider(issue.Number, comments)
+	}
+	for _, pullRequest := range pullRequests {
+		if pullRequest.Number <= 0 || (pullRequest.Number == issue.Number && pullRequest.InRepo(repo)) {
 			continue
 		}
-		w.jobEvents(issueKey(issue), relayed...)
-		w.logf("issue #%d interrupting agent: %d new comment(s); relaying them into the same session", issue.Number, added)
-		cancel(&workUpdate{summary: fmt.Sprintf("issue #%d has %d new comment(s)", issue.Number, added), instruction: newCommentsPrompt(issue, added)})
-		return
+		pullRepo := pullRequest.RepoOr(repo)
+		if comments, err := w.Comments.ListComments(ctx, pullRepo, pullRequest.Number); err != nil {
+			if ctx.Err() == nil {
+				w.logf("issue #%d pull request #%d comment check failed: %v", issue.Number, pullRequest.Number, err)
+			}
+		} else {
+			consider(pullRequest.Number, comments)
+		}
+		if lister, ok := w.Comments.(ReviewCommentLister); ok {
+			if reviews, err := lister.ListReviewComments(ctx, pullRepo, pullRequest.Number); err != nil {
+				if ctx.Err() == nil {
+					w.logf("issue #%d pull request #%d review check failed: %v", issue.Number, pullRequest.Number, err)
+				}
+			} else {
+				consider(pullRequest.Number, reviews)
+			}
+		}
 	}
+	if len(handled) > 0 && watch.remember != nil {
+		watch.remember(handled)
+	}
+	return relays
 }
 
 // commentsSeen snapshots the conversation a run starts from, so only what is
@@ -1365,83 +1451,14 @@ func (w *Engine) commentsSeen(ctx context.Context, repo string, number int) map[
 	return seen
 }
 
-// pullRequestMentions lists the pull requests linked to the issue a run is
-// working that gained a direct mention of this instance since the run began
-// . The run's own watcher only reads the issue's conversation, so
-// without this a mention posted on the pull request the agent opened got its
-// eyes reaction and was never heard by the agent. Only mentions from allowed
-// commenters count: the agent itself posts on its pull request, and relaying
-// that would restart it on its own chatter. Review comments and review
-// bodies on those pull requests are read as well. Every comment
-// read is added to seen, so one mention is relayed, or logged as skipped,
-// once.
-func (w *Engine) pullRequestMentions(ctx context.Context, repo string, issue Issue, pullRequests []PullRequestWorkState, since time.Time, seen map[string]bool) []int {
-	if w.Identity == "" {
-		return nil
-	}
-	var mentioned []int
-	for _, pullRequest := range pullRequests {
-		if pullRequest.Number <= 0 || (pullRequest.Number == issue.Number && pullRequest.InRepo(repo)) {
-			continue
-		}
-		pullRepo := pullRequest.RepoOr(repo)
-		comments, err := w.Comments.ListComments(ctx, pullRepo, pullRequest.Number)
-		if err != nil {
-			if ctx.Err() == nil {
-				w.logf("issue #%d pull request #%d comment check failed: %v", issue.Number, pullRequest.Number, err)
-			}
-			continue
-		}
-		if lister, ok := w.Comments.(ReviewCommentLister); ok {
-			reviews, err := lister.ListReviewComments(ctx, pullRepo, pullRequest.Number)
-			if err != nil {
-				if ctx.Err() == nil {
-					w.logf("issue #%d pull request #%d review check failed: %v", issue.Number, pullRequest.Number, err)
-				}
-			} else {
-				comments = append(comments, reviews...)
-			}
-		}
-		found := false
-		for _, comment := range comments {
-			key := commentKey(comment)
-			if seen[key] || !relayableComment(comment, since) {
-				continue
-			}
-			seen[key] = true
-			if !mentionedIdentity(comment.Body, w.Identity) {
-				found = found || w.commentRequestsRecheck(comment.Body, comment.Author)
-				continue
-			}
-			if !commenterAllowed(comment.Author, w.AllowedCommenters) {
-				w.logf("issue #%d ignoring direct mention of instance %s on pull request #%d: %s is not an allowed commenter", issue.Number, w.Identity, pullRequest.Number, comment.Author)
-				continue
-			}
-			found = true
-		}
-		if found {
-			mentioned = append(mentioned, pullRequest.Number)
-		}
-	}
-	return mentioned
-}
-
-// pullRequestMentionPrompt tells an agent that a human mentioned this instance
-// on the pull request it is working, so the comment is acted on rather than
-// only acknowledged.
-func pullRequestMentionPrompt(issue Issue, pullRequests []int, issueComments int) string {
-	noun := "pull request"
-	if len(pullRequests) > 1 {
-		noun = "pull requests"
-	}
-	prompt := fmt.Sprintf("A comment addressed to you was posted on %s %s for issue #%d while you were working on it.\n\nReread the %s conversation, reviews, and inline review comments from GitHub and treat that comment as an instruction for this work. Act on it: change the implementation and push new commits to the pull request when it asks for a change, reply on the pull request when it asks a question, or both, before continuing the rest of the work.", noun, formatIssueRefs(pullRequests), issue.Number, noun)
-	if issueComments > 0 {
-		prompt += fmt.Sprintf(" Issue #%d also has %d new comment(s); reread its conversation too.", issue.Number, issueComments)
-	}
-	return prompt
-}
-
+// commentKey identifies a comment across reads. The permalink's fragment
+// names both the kind of comment and its ID, so it holds across edits and
+// whichever source read it; a source that reports no permalink falls back to
+// the comment's time, author and body.
 func commentKey(comment Comment) string {
+	if _, fragment, ok := strings.Cut(comment.URL, "#"); ok && fragment != "" {
+		return fragment
+	}
 	return comment.CreatedAt.UTC().Format(time.RFC3339Nano) + "\x00" + comment.Author + "\x00" + comment.Body
 }
 
@@ -1472,12 +1489,44 @@ func changedDescriptionPrompt(issue Issue) string {
 	return fmt.Sprintf("The description of issue #%d changed while you were working on it.\n\nReread the issue from GitHub, then reconcile the work in progress with what it now asks for before continuing. Say what changed and what you adjusted.", issue.Number)
 }
 
-func newCommentsPrompt(issue Issue, added int) string {
-	noun := "comment was"
-	if added > 1 {
-		noun = "comments were"
+// maxRelayedCommentLength caps how much of one comment is quoted into a
+// session; a longer one is cut and its permalink is given for the rest.
+const maxRelayedCommentLength = 4000
+
+// newCommentsPrompt hands the session the new comments themselves, so the
+// agent acts on what was said instead of depending on rereading GitHub.
+func newCommentsPrompt(issue Issue, relays []relayedComment) string {
+	var b strings.Builder
+	if len(relays) == 1 {
+		fmt.Fprintf(&b, "A new comment was posted while you were working on issue #%d.\n", issue.Number)
+	} else {
+		fmt.Fprintf(&b, "%d new comments were posted while you were working on issue #%d.\n", len(relays), issue.Number)
 	}
-	return fmt.Sprintf("%d new %s added to issue #%d while you were working on it.\n\nReread the issue's conversation from GitHub, treat the new comments as part of the request, and take them into account before continuing.", added, noun, issue.Number)
+	pullRequest := false
+	for _, relay := range relays {
+		where := "issue"
+		if relay.number != issue.Number {
+			where, pullRequest = "pull request", true
+		}
+		fmt.Fprintf(&b, "\nNew comment from @%s on %s #%d", relay.Author, where, relay.number)
+		if relay.URL != "" {
+			fmt.Fprintf(&b, " (%s)", relay.URL)
+		}
+		b.WriteString(":\n\n")
+		body := strings.TrimSpace(relay.Body)
+		if len(body) > maxRelayedCommentLength {
+			body = strings.ToValidUTF8(body[:maxRelayedCommentLength], "") + "\n\n[comment truncated; read the rest on GitHub]"
+		}
+		for _, line := range strings.Split(body, "\n") {
+			b.WriteString("> " + line + "\n")
+		}
+	}
+	b.WriteString("\nTreat these comments as part of the request and act on them before continuing the rest of the work.")
+	if pullRequest {
+		b.WriteString(" When a pull request comment asks for a change, change the implementation and push new commits to the pull request; when it asks a question, reply on the pull request.")
+	}
+	b.WriteString(" If one of them is a comment you posted yourself in this session, ignore it.")
+	return b.String()
 }
 
 // unclosedWorkPrompt asks an agent whose run ended with the issue still open to
@@ -1799,6 +1848,20 @@ type workState struct {
 	// A "paused" record without it predates paused kinds and is a stacked
 	// pull request waiting on its blocker.
 	Paused *core.PausedWork `json:"paused,omitempty"`
+	// Comments is how far the running job's watcher has read its issue and
+	// pull requests, kept so a daemon restart resuming the session neither
+	// relays a comment twice nor misses one posted while it was down.
+	Comments *commentCursor `json:"comments,omitempty"`
+}
+
+// commentCursor records the comments a job's watcher has handled.
+type commentCursor struct {
+	// Since is when the job's watch began; only comments posted after it are
+	// news to the session.
+	Since time.Time `json:"since"`
+	// Seen holds the keys (commentKey) of the comments already relayed or
+	// ignored since then.
+	Seen []string `json:"seen,omitempty"`
 }
 
 // UnmarshalJSON reads a work state, including one saved while paused work was
@@ -2986,7 +3049,16 @@ func (w *Engine) Run(ctx context.Context) error {
 			jobMu.Lock()
 			jobs[key] = JobSnapshot{Kind: core.JobKindIssue, Number: issue.Number, Target: issue.Target, Repository: issueRepository(issue.Target, issue), Title: issue.Title, Status: "queued", CheckoutDirectory: session.CheckoutDirectory, SessionID: session.ID, Agent: spec.Name, Model: spec.Model, Effort: spec.Level, Started: time.Now()}
 			jobMu.Unlock()
+			previous := work[key]
 			work[key] = workState{Status: "active", SessionID: session.ID, Agent: session.Agent, CheckoutDirectory: session.CheckoutDirectory, Owner: string(w.Identity)}
+			// A session resumed after a daemon restart continues its watch, so
+			// comments relayed before the restart are not relayed again and
+			// ones posted while it was down are not lost.
+			if session.Resume && previous.Status == "active" && previous.SessionID == session.ID {
+				state := work[key]
+				state.Comments = previous.Comments
+				work[key] = state
+			}
 			if reusedClone != "" {
 				// The earlier job that held the clone must never resume in it.
 				for other, state := range work {
@@ -3189,7 +3261,32 @@ func (w *Engine) Run(ctx context.Context) error {
 					workMu.Lock()
 					cancellations[key] = cancelRun
 					workMu.Unlock()
-					watch := issueWatch{since: time.Now(), closed: alreadyClosed, nudge: nudge, resumable: func() bool {
+					since, seenComments, continued := time.Now(), []string(nil), false
+					workMu.Lock()
+					if state, ok := work[key]; ok {
+						if state.Comments != nil {
+							since, seenComments, continued = state.Comments.Since, slices.Clone(state.Comments.Seen), true
+						} else {
+							state.Comments = &commentCursor{Since: since}
+							work[key] = state
+						}
+					}
+					workMu.Unlock()
+					watch := issueWatch{since: since, seen: seenComments, continued: continued, remember: func(keys []string) {
+						workMu.Lock()
+						defer workMu.Unlock()
+						state, ok := work[key]
+						if !ok || state.Comments == nil {
+							return
+						}
+						cursor := *state.Comments
+						cursor.Seen = append(slices.Clone(cursor.Seen), keys...)
+						state.Comments = &cursor
+						work[key] = state
+						if err := saveScopedWorkState(w.StatePath, work, targets); err != nil {
+							w.logf("issue #%d failed to save work state: %v", i.Number, err)
+						}
+					}, closed: alreadyClosed, nudge: nudge, resumable: func() bool {
 						workMu.Lock()
 						defer workMu.Unlock()
 						state := work[key]
@@ -3513,6 +3610,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					state := work[key]
 					state.Status = "completed"
 					state.Paused = nil
+					state.Comments = nil
 					if paused != nil {
 						state.Status = "paused"
 						state.Paused = paused
