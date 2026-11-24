@@ -27,9 +27,9 @@ import (
 // agent its script runs as), with the clone described in the prompt, and runs
 // the script inside a fresh clone of the project with that clone granted to
 // its tools and AVIARY_CHECKOUT_DIRECTORY set (see scheduler.ProjectRun).
-// Unlike a prompt task, which becomes a script task once compiled, a project
-// task keeps its prompt, so a run whose script fails falls back to it. A
-// prompt workflow precompiles the same way: its script runs on each matching
+// Like a scheduled prompt task, a project task keeps its prompt, so a run
+// whose script fails falls back to it. A prompt workflow precompiles the
+// same way: its script runs on each matching
 // message, with the message in the Lua global trigger, and a run whose script
 // fails falls back to the prompt on the model.
 

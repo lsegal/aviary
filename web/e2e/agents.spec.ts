@@ -867,30 +867,22 @@ test("task header wraps cleanly on mobile", async ({ page }) => {
 	const definedIn = page.getByText("Defined in: aviary.yaml", {
 		exact: true,
 	});
-	const convertButton = page.getByRole("button", { name: "Convert to Script" });
 	const enabledSwitch = page.getByRole("switch", {
 		name: "Toggle task enabled",
 	});
 
 	await expect(definedIn).toBeVisible();
-	await expect(convertButton).toBeVisible();
 	await expect(enabledSwitch).toBeVisible();
 
 	const definedInBox = await definedIn.boundingBox();
-	const convertButtonBox = await convertButton.boundingBox();
 	const enabledSwitchBox = await enabledSwitch.boundingBox();
 
 	expect(definedInBox).not.toBeNull();
-	expect(convertButtonBox).not.toBeNull();
 	expect(enabledSwitchBox).not.toBeNull();
 
-	if (definedInBox && convertButtonBox && enabledSwitchBox) {
+	if (definedInBox && enabledSwitchBox) {
 		expect(definedInBox.x).toBeGreaterThanOrEqual(0);
 		expect(definedInBox.x + definedInBox.width).toBeLessThanOrEqual(390);
-		expect(convertButtonBox.x).toBeGreaterThanOrEqual(0);
-		expect(convertButtonBox.x + convertButtonBox.width).toBeLessThanOrEqual(
-			390,
-		);
 		expect(enabledSwitchBox.x).toBeGreaterThanOrEqual(0);
 		expect(enabledSwitchBox.x + enabledSwitchBox.width).toBeLessThanOrEqual(
 			390,

@@ -241,22 +241,23 @@ const taskType = computed(
 );
 
 /**
- * Precompute compiles a prompt task of an agent into a script once, on
- * create. A project task keeps its prompt and its precompile setting, which
- * every save can change, and runs its compiled script in the clone.
+ * A prompt or project task keeps its prompt and its precompile setting,
+ * which every save can change, and runs its compiled script beside the
+ * prompt, falling back to the model if the script fails.
  */
-const canPrecompute = computed(
-	() => taskType.value === "prompt" || taskType.value === "project",
+const canPrecompute = computed(() =>
+	precompilesBesidePrompt({ type: taskType.value }),
 );
+// Creating shows the choice for every type, disabled for a script.
 const showPrecompute = computed(
-	() => dialog.value?.mode === "create" || taskType.value === "project",
+	() => dialog.value?.mode === "create" || canPrecompute.value,
 );
 /**
- * The precompile choice a task opens with: a saved project task's own, where
- * unset is off as it is when the task runs, else the default.
+ * The precompile choice a task opens with: a saved task's own, where unset
+ * is off as it is when the task runs, else the default.
  */
 function initialPrecompute(task?: AgentTask): boolean {
-	if (task && taskType.value === "project") return task.precompile === true;
+	if (task && canPrecompute.value) return task.precompile === true;
 	return (
 		canPrecompute.value &&
 		settings.config?.scheduler?.precompute_tasks !== false
@@ -408,25 +409,23 @@ function withForm(task: AgentTask, trigger: TriggerFields): AgentTask {
 	};
 	if (taskType.value === "project") {
 		next.project = form.project;
-		// Unset is off, so an unchanged task saves unchanged.
-		if (form.precompute) {
-			// Turning it on, including after Aviary turned it off, compiles anew.
-			if (task.precompile !== true) dropCompiled(next);
-			next.precompile = true;
-		} else {
-			delete next.precompile;
-			dropCompiled(next);
-		}
 	} else {
 		delete next.project;
 		delete next.model;
+	}
+	// Unset is off, so an unchanged task saves unchanged.
+	if (canPrecompute.value && form.precompute) {
+		// Turning it on, including after Aviary turned it off, compiles anew.
+		if (task.precompile !== true) dropCompiled(next);
+		next.precompile = true;
+	} else {
 		delete next.precompile;
 		dropCompiled(next);
 	}
 	return withTrigger(next, trigger);
 }
 
-/** Drops a project task's compiled script and what Aviary tracks about it. */
+/** Drops a task's compiled script and what Aviary tracks about it. */
 function dropCompiled(task: AgentTask) {
 	delete task.compiled;
 	delete task.compiled_key;
@@ -459,8 +458,9 @@ async function submitTask(mode: "create" | "edit", from = "") {
 			trigger,
 		);
 		await settings.saveAgentTasks(agent, (tasks) => [...tasks, task]);
-		// Precompute runs in the background, as Convert to Script does; the
-		// task already exists, so a failure to start it does not fail creation.
+		// Precompile compiles a script beside the prompt in the background;
+		// the task already exists, so a failure to start it does not fail
+		// creation.
 		if (canPrecompute.value && form.precompute && form.prompt.trim()) {
 			await callTool("config_task_convert_to_script", {
 				agent,
@@ -483,9 +483,9 @@ async function submitTask(mode: "create" | "edit", from = "") {
 		await settings.renameTask(agent, from, name);
 		if (wasShowing) await router.replace(agentTaskPath(agent, name));
 	}
-	// A precompiled project task compiles again in the background when its
-	// prompt, project or tools changed; its runs compile first otherwise.
-	if (taskType.value === "project" && form.precompute && form.prompt.trim()) {
+	// A precompiled task compiles again in the background when its prompt,
+	// project or tools changed; its runs compile first otherwise.
+	if (canPrecompute.value && form.precompute && form.prompt.trim()) {
 		await callTool("config_task_convert_to_script", {
 			agent,
 			task: name,

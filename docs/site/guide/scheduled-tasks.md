@@ -66,11 +66,11 @@ The agent's tasks directory is `<data-dir>/agents/<name>/tasks/`, regardless of 
 
 When the `task_schedule` MCP tool creates a recurring task it writes to the agent's `tasks/` directory automatically. Tasks defined in `aviary.yaml` under `agents[].tasks` are still supported and are merged with any file-based tasks (file definitions take precedence on name conflicts).
 
-If you want a prompt task to stay as a prompt even when global precompilation is enabled, call `task_schedule` with `precompile=false`.
+If you want a prompt task to always run on the model even when global precompilation is enabled, call `task_schedule` with `precompile=false`.
 
-## Converting Existing Prompt Tasks to Scripts
+## Precompiling Existing Prompt Tasks
 
-Prompt tasks that were already created can be compiled to Lua scripts at any time. This is useful when a task was created before the precompiler ran, when precompilation was disabled at the time, or when you want to retry compilation after improving the prompt.
+A prompt task that was already created can be precompiled at any time. This is useful when a task was created before the precompiler ran, when precompilation was disabled at the time, or when you want to retry compilation after improving the prompt. The task keeps its prompt and type; the compiled script is stored beside it, and runs fall back to the model if the script fails (see [Precompiled prompt tasks](#precompiled-prompt-tasks)).
 
 **CLI:**
 
@@ -84,11 +84,11 @@ For example:
 aviary config convert-task-to-script assistant weather-check
 ```
 
-The command returns immediately and runs compilation in the background. Use `task_compile_query` to track progress, or check the **Jobs** page in the web UI. If compilation succeeds, the task is updated in place — YAML-defined tasks stay in `aviary.yaml` and file-based tasks stay in their `.md` file.
+The command returns immediately, turns `precompile` on for the task, and compiles it in the background. YAML-defined tasks stay in `aviary.yaml` and file-based tasks stay in their `.md` file.
 
-**MCP tool:** `config_task_convert_to_script` — accepts `agent` and `task` arguments. Returns a compile ID immediately; track with `task_compile_query`.
+**MCP tool:** `config_task_convert_to_script` — accepts `agent` and `task` arguments. It discards any existing compiled script and compiles a fresh one.
 
-**Web UI:** In **Agents → *agent* → Scheduled Tasks**, each prompt-type task shows a **Convert to Script** button. Clicking it starts compilation in the background and opens a notification banner with a link to the Jobs page.
+**Web UI:** Turn on **Try to precompile** in the task's editor, or click **Recompile** on the task page.
 
 ## Migrating Inline Tasks
 
@@ -288,7 +288,7 @@ Any text printed from a script — or returned from a prompt run — is delivere
 
 ## The Precompiler
 
-When a new prompt task is saved, Aviary's precompiler runs a one-time analysis pass. It asks:
+When a new scheduled prompt task is saved with precompile on, Aviary's precompiler runs an analysis pass in the background. It asks:
 
 > Can this task be expressed as a fixed sequence of tool calls that produce the right output without further LLM judgment at runtime?
 
@@ -298,8 +298,9 @@ When the precompiler decides a task can be compiled, it:
 
 1. Generates a Lua script that reproduces the task's behavior exactly.
 2. Validates the Lua syntax without executing it.
-3. Writes the script back into the task definition.
-4. Marks the task as a script type — future executions run Lua with zero token usage.
+3. Stores the script beside the prompt in the task definition (`compiled` and `compiled_key`). The task stays a prompt task — future executions run the Lua script with zero token usage, and fall back to the model if the script fails.
+
+A task whose prompt is not deterministic keeps running on the model.
 
 The compilation itself costs tokens once. For any task running more than a few times per day, that cost is recovered quickly.
 
@@ -309,7 +310,7 @@ The task editor and the workflow editor analyze a prompt as you type and show, u
 
 Analyses are cached on the server, keyed by everything that affects them: the prompt, task type, agent, target, project, trigger type (scheduled task or workflow), and Aviary's compiler version. The cache is kept in `<data-dir>/task-analyses.json`, so it is shared by every browser and survives reloads and restarts. Opening an editor whose prompt was already analyzed shows the last result immediately, labelled **Cached · checked 2h ago**, without calling the model. Editing the prompt analyzes it again once typing pauses, and changing it back shows the cached result. The model and precompile choices only change how a cached analysis is priced, so they never re-run it. Click **Re-check** to analyze again and replace the cached entry. A new Aviary release whose compiler changed re-analyzes every prompt, and a cached analysis expires after 30 days.
 
-Precompilation is on by default. To disable it globally:
+Precompilation is on by default: `task_schedule` and the **Add task** dialog set `precompile: true` on new scheduled prompt tasks. Pass `precompile=false`, or clear **Try to precompile**, to opt a task out. One-time tasks (`task_schedule` with `in`, or neither `in` nor a schedule) always run their prompt on the model. To change the default globally:
 
 ```yaml
 scheduler:
@@ -318,13 +319,13 @@ scheduler:
 
 ### Precompiled prompt tasks
 
-A scheduled prompt task can also keep its prompt and be precompiled beside it, as a project task is. Turn on **Try to precompile** in the task's editor under Settings → Agents, set `precompile: true` in its definition, or pass `precompile=true` to `task_update`. Aviary compiles the prompt into a script stored in `compiled` and `compiled_key`. Each run then executes the script without the model and falls back to a model run if the script fails. Recompiling, setting a failing script aside and **Recompile** work as they do for [project tasks](#precompiled-project-tasks). `precompile`, `compiled` and `compiled_key` apply only to prompt and project tasks. A `type: script` task is already a script, so `aviary doctor` and config validation report those fields on it as an error.
+A scheduled prompt task keeps its prompt and is precompiled beside it, as a project task is. Turn on **Try to precompile** in the **Add task** or **Edit task** dialog or in the task's editor under Settings → Agents, set `precompile: true` in its definition, or pass `precompile=true` to `task_schedule` or `task_update`. Aviary compiles the prompt into a script stored in `compiled` and `compiled_key`. Each run then executes the script without the model and falls back to a model run if the script fails. Recompiling, setting a failing script aside and **Recompile** work as they do for [project tasks](#precompiled-project-tasks). `precompile`, `compiled` and `compiled_key` apply only to prompt and project tasks. A `type: script` task is already a script, so `aviary doctor` and config validation report those fields on it as an error.
 
 ### Precompiled project tasks
 
 [Project tasks](#scheduled-prompts) can be precompiled too. Turn on **Try to precompile** in the **Add task** dialog or in the project board's schedule editor, or pass `precompile=true` to `task_schedule` or `task_update`. New project tasks follow `precompute_tasks`; a project task without `precompile` set stays on the model. Both editors show the same live feedback for project tasks as for agent tasks: ✔ deterministic, ◐ partial, or ✖ not deterministic, with the per-run token estimate and the monthly projection.
 
-A project task is not rewritten into a script task. It keeps its prompt and stores the compiled script beside it (`compiled` and `compiled_key` in its definition, written by Aviary). The prompt is analyzed and compiled against the tools of the agent the task belongs to, with the clone it runs in described. Each run then:
+Like a precompiled prompt task, a project task is not rewritten into a script task. It keeps its prompt and stores the compiled script beside it (`compiled` and `compiled_key` in its definition, written by Aviary). The prompt is analyzed and compiled against the tools of the agent the task belongs to, with the clone it runs in described. Each run then:
 
 1. Recompiles first if the prompt, the project, the agent's tools (including its allowed exec commands), or Aviary's compiler changed since the last compile. A new Aviary release whose compiler or script runtime changed recompiles every existing compiled task this way, including one whose script was set aside. A prompt that is not deterministic is not analyzed again until one of them changes.
 2. Makes a fresh clone of the project under Code Loop's clone directories and runs the script there, as the task's agent. Its tool calls are granted the clone. The script always has `exec`, even when the agent's own permissions don't include it: commands run in the clone with gh's authentication and can't use a `cwd` outside it, and an agent's allowed exec commands, when it has any, still apply. The compiler, `task_analyze`, and the script all see this same tool list. `AVIARY_CHECKOUT_DIRECTORY` and `GH_REPO` name the clone and the repository. `exec` runs commands directly, not through a shell, so the compiler is given the project's `owner/repo` and writes it literally in commands (for example `gh api repos/lsegal/aviary/commits/main`). The clone is removed when the script ends.
@@ -357,17 +358,20 @@ agents:
         target: channel:Weather Alerts
 ```
 
-At task creation, the precompiler analyzes the prompt. It identifies three deterministic steps: fetch the forecast with a fixed tool call, filter by a fixed threshold, and print a message or skip. Because all three steps are deterministic, it compiles the task to a Lua script and rewrites the task definition:
+After the task is created, the precompiler analyzes the prompt in the background. It identifies three deterministic steps: fetch the forecast with a fixed tool call, filter by a fixed threshold, and print a message or skip. Because all three steps are deterministic, it compiles the prompt to a Lua script and stores it beside the prompt:
 
 ```yaml
 agents:
   - name: assistant
     tasks:
       - name: rain-alert
-        type: script
         schedule: "*/5 * * * *"
+        prompt: >
+          Check the weather forecast for the next 7 days. …
         target: channel:Weather Alerts
-        script: |
+        precompile: true
+        compiled_key: …
+        compiled: |
           local result = tool.web_fetch({
             url = "https://api.open-meteo.com/v1/forecast"
               .. "?latitude=40.71&longitude=-74.01"
@@ -398,18 +402,18 @@ agents:
           end
 ```
 
-Every trigger after compilation runs this script directly. No LLM is invoked. The script calls `tool.web_fetch`, decodes the JSON, filters the results, and either prints `SKIP` (suppressing delivery) or emits the alert.
+Every trigger after compilation runs this script directly. No LLM is invoked unless the script fails, in which case that run falls back to the prompt. The script calls `tool.web_fetch`, decodes the JSON, filters the results, and either prints `SKIP` (suppressing delivery) or emits the alert.
 
 ### Token Usage Comparison
 
 | Mode | Tokens per run | Runs per day | Tokens per day |
 |------|---------------|--------------|----------------|
 | Prompt task | ~5,000 avg † | 288 | ~1,440,000 |
-| Script task (compiled) | **0** | 288 | **0** |
+| Prompt task (precompiled) | **0** | 288 | **0** |
 
 † Measured from real Aviary usage data across simple scheduled tasks (URL checks, API polls). Research tasks and multi-step workflows run significantly higher.
 
-The precompiler runs once at task creation. Depending on the complexity of the compilation pass, that costs roughly 2,000–8,000 tokens total — recovered within the first hour of a 5-minute recurring task.
+The precompiler runs once after task creation, and again only when the prompt or the agent's tools change. Depending on the complexity of the compilation pass, that costs roughly 2,000–8,000 tokens total — recovered within the first hour of a 5-minute recurring task.
 
 ## Writing Scripts Directly
 
@@ -479,11 +483,11 @@ The control panel Jobs page also provides a **Stop** button next to any running 
 
 ## Inspecting Compile Attempts
 
-The control panel System area shows compile attempt records for every task. Each record includes the compiler's analysis, whether the task was promoted to a script, and the reason if it was not. You can also query compile records through the MCP:
+The control panel System area shows compile attempt records for every task. Each record includes the compiler's analysis, whether a script was compiled, and the reason if it was not. You can also query compile records through the MCP:
 
 ```
 task_compile_query  — list compile attempts by agent, date, or status
 task_compile_get    — fetch the full record for a specific attempt
 ```
 
-This makes it straightforward to audit which tasks are running as scripts, which fell back to prompt mode, and why.
+This makes it straightforward to audit which tasks run compiled scripts, which run on the model, and why.
