@@ -48,6 +48,8 @@ func TestChatContextNamesBoardTargetsAndLiveJobs(t *testing.T) {
 		"x/y belongs to agent docs; o/r belongs to agent coder.",
 		"opened this chat from the o/r board",
 		"without asking which repository is meant",
+		"focused on these projects' Code Loop",
+		"project_github_read",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("context lacks %q:\n%s", want, text)

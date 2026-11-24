@@ -98,6 +98,10 @@ type Manager struct {
 	loginRetryDelay time.Duration
 	// ghRunCommand replaces the engine's gh calls in tests.
 	ghRunCommand func(context.Context, ...string) ([]byte, error)
+	// sites holds the hosts project_site_fetch may read, and siteClient
+	// replaces its HTTP client in tests.
+	sites      siteHostCache
+	siteClient *http.Client
 	// mentionRouter prompts the built-in Code Loop agent; see
 	// SetMentionRouter.
 	mentionRouter atomic.Pointer[MentionRouter]

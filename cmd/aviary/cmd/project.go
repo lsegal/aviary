@@ -57,6 +57,8 @@ var projectToolCommands = []projectToolCommand{
 	{[]string{"task", "resume"}, "project_task_resume", "name", "Resume a paused project scheduled task"},
 	{[]string{"task", "run"}, "project_task_run", "name", "Run a project scheduled task now"},
 	{[]string{"task", "delete"}, "project_task_delete", "name", "Delete a project scheduled task and its run history (needs --confirm)"},
+	{[]string{"github", "read"}, "project_github_read", "url", "Read a watched repository's commit, file, pull request, comment or Actions run from GitHub"},
+	{[]string{"site", "fetch"}, "project_site_fetch", "url", "Fetch a page of a watched project's own site to check a deploy"},
 	{[]string{"github", "signin"}, "project_github_signin", "", "Open GitHub's sign-in page in Aviary's browser for browser delivery"},
 	{[]string{"github", "use-polling"}, "project_github_use_polling", "", "Read GitHub through gh polling instead of Aviary's browser"},
 	{[]string{"github", "import"}, "project_github_import", "profile", "Import the GitHub sign-in from an Aviary browser profile signed in elsewhere"},

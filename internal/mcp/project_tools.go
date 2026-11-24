@@ -175,6 +175,17 @@ func withSkippedMedia(result map[string]any, err error, skipped []string) (map[s
 	return result, err
 }
 
+type projectGitHubReadArgs struct {
+	Repository string `json:"repository,omitempty" jsonschema:"Watched OWNER/REPO to read; defaults to the url's repository or the only watched repository"`
+	Path       string `json:"path,omitempty" jsonschema:"REST path under repos/OWNER/REPO, such as commits/SHA, compare/BASE...HEAD, contents/FILE?ref=REF, pulls/N, pulls/N/files, pulls/N/reviews, issues/N/comments, issues/comments/ID, commits/SHA/check-runs, actions/runs?branch=main, actions/runs/ID/jobs or actions/jobs/ID/logs; empty reads the repository itself"`
+	URL        string `json:"url,omitempty" jsonschema:"A github.com URL in a watched repository to read instead of path: a commit, comparison, file, pull request, issue, issue or review comment, review, Actions run or job, or release"`
+	Media      string `json:"media,omitempty" jsonschema:"diff or patch for a commit, comparison or pull request's diff; raw for a file's text, the default for contents paths"`
+}
+
+type projectSiteFetchArgs struct {
+	URL string `json:"url" jsonschema:"http or https URL on a watched repository's homepage or GitHub Pages site, or its owner's github.io site"`
+}
+
 type projectGitHubImportArgs struct {
 	Profile string `json:"profile" jsonschema:"Path of an Aviary browser profile directory signed in to GitHub on another machine"`
 }
@@ -502,6 +513,26 @@ func registerProjectTools(s *sdkmcp.Server) {
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectIssueBackfillMediaArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			return m.BackfillIssueMedia(ctx, args.Repository, args.Numbers, args.DryRun)
+		})
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "project_github_read",
+		Description: "Read a watched repository from GitHub through gh with this instance's auth: one GET of the REST API under repos/OWNER/REPO, named by path or by a github.com URL, such as a commit with its files and diff, a comparison, a file at a ref, a pull request with its files, reviews, comments and checks, an issue or review comment by ID or URL, or Actions runs, jobs and job logs. Only watched repositories can be read, and each read is logged in the Code Loop log. A JSON answer is returned as data, anything else as text; a body over 64 KB is cut, keeping a log's tail",
+		Annotations: readOnlyTool,
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectGitHubReadArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
+			return m.GitHubRead(ctx, args.Repository, args.Path, args.URL, args.Media)
+		})
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "project_site_fetch",
+		Description: "Fetch a page of a watched project's own site, its repository's homepage or GitHub Pages site or its owner's github.io site, to check what is deployed: returns the final URL, status, content type, caching headers and the body, cut at 64 KB. Redirects must stay on those sites, and each fetch is logged in the Code Loop log",
+		Annotations: readOnlyTool,
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectSiteFetchArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
+			return m.SiteFetch(ctx, args.URL)
 		})
 	})
 

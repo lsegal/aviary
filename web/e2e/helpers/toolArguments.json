@@ -307,6 +307,12 @@
 	"project_github_import": [
 		"profile"
 	],
+	"project_github_read": [
+		"media",
+		"path",
+		"repository",
+		"url"
+	],
 	"project_github_signin": [],
 	"project_github_use_polling": [],
 	"project_issue_backfill_media": [
@@ -386,6 +392,9 @@
 	"project_remove": [
 		"runtime",
 		"target"
+	],
+	"project_site_fetch": [
+		"url"
 	],
 	"project_status": [
 		"log_offset",
