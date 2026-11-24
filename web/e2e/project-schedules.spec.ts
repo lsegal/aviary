@@ -361,14 +361,12 @@ test("an agent board shows a scheduled run as a job card while it runs", async (
 		.poll(() => calls.project_job_stop?.[0])
 		.toEqual({ target: "lsegal/aviary", number: FIRE });
 	// An agent board lists jobs in their job states, so a schedule between
-	// runs, which is in none, never shows as a job card (#977).
-	expect(calls.project_job_list?.at(-1)?.states).toEqual([
-		"starting",
-		"paused",
-		"running",
-		"done",
-		"failed",
-	]);
+	// runs, which is in none, never shows as a job card (#977). The board
+	// also lists its schedules' entries and the project summary, so the last
+	// call may be one of those; read the latest that names states (#1089).
+	await expect
+		.poll(() => calls.project_job_list?.findLast((c) => c.states)?.states)
+		.toEqual(["starting", "paused", "running", "done", "failed"]);
 });
 
 test("a project board shows the up next strip", async ({ page }) => {
