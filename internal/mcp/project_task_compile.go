@@ -73,12 +73,17 @@ func workflowTaskCompilePrompt(prompt string) string {
 		"so nothing is delivered and the reason is recorded in the run history."
 }
 
-// taskCompilePrompt is what task is analyzed and compiled as.
+// taskCompilePrompt is what task is analyzed and compiled as. A scheduled
+// prompt task is compiled from its prompt alone, as task_schedule compiles
+// one.
 func taskCompilePrompt(task config.TaskConfig) string {
-	if task.IsWorkflow() {
+	switch {
+	case task.IsWorkflow():
 		return workflowTaskCompilePrompt(task.Prompt)
+	case strings.EqualFold(task.Type, "project"):
+		return projectTaskCompilePrompt(task.Prompt, task.Project)
 	}
-	return projectTaskCompilePrompt(task.Prompt, task.Project)
+	return task.Prompt
 }
 
 // shellVariablePattern matches a shell variable reference such as $GH_REPO or
@@ -132,22 +137,11 @@ func projectTaskCompileKey(prompt, project string, tools []agent.ToolInfo, agent
 	return hex.EncodeToString(sum.Sum(nil))[:16]
 }
 
-// precompilesBesidePrompt reports whether task keeps its prompt when it is
-// precompiled, storing its script beside it: a project task or a prompt
-// workflow.
-func precompilesBesidePrompt(task config.TaskConfig) bool {
-	if strings.EqualFold(task.Type, "project") {
-		return true
-	}
-	t := strings.TrimSpace(task.Type)
-	return task.IsWorkflow() && (t == "" || strings.EqualFold(t, "prompt"))
-}
-
-// EffectiveTaskPrecompile reports whether a project task or prompt workflow
+// EffectiveTaskPrecompile reports whether a prompt or project task
 // precompiles. A task that never chose stays off, so existing tasks do not
 // start compiling; editors and task_schedule write the choice explicitly.
 func EffectiveTaskPrecompile(task config.TaskConfig) bool {
-	return precompilesBesidePrompt(task) && config.BoolOr(task.Precompile, false)
+	return task.PrecompilesBesidePrompt() && config.BoolOr(task.Precompile, false)
 }
 
 // backgroundCompiles tracks compiles started by compileTaskInBackground,
@@ -164,8 +158,7 @@ func compileTaskInBackground(agentName, taskName, trigger string) {
 	})
 }
 
-// RecompileTask discards a project task's or prompt workflow's compiled
-// script, whatever state it is in, turns precompile back on, and compiles it
+// RecompileTask discards a prompt or project task's compiled script, whatever state it is in, turns precompile back on, and compiles it
 // again in the background. It is the Recompile action: it starts over a
 // script that is stale, was set aside after failing, or had precompile turned
 // off after repeated failures.
@@ -174,8 +167,8 @@ func RecompileTask(agentName, taskName string) error {
 	if err != nil {
 		return err
 	}
-	if !precompilesBesidePrompt(task) {
-		return fmt.Errorf("task %q is not a project task or prompt workflow", task.Name)
+	if !task.PrecompilesBesidePrompt() {
+		return fmt.Errorf("task %q is a %s task, which has no prompt to compile", task.Name, task.Type)
 	}
 	on := true
 	task.Precompile = &on
@@ -188,8 +181,8 @@ func RecompileTask(agentName, taskName string) error {
 	return nil
 }
 
-// EnsureTaskCompiled returns the compiled script a precompiled project task
-// or workflow runs, compiling it first when its prompt, project or tools
+// EnsureTaskCompiled returns the compiled script a precompiled prompt or
+// project task runs, compiling it first when its prompt, project or tools
 // changed since the last compile. It returns "" when the task does not precompile or
 // its prompt did not pass the determinism gate, so the run uses the model.
 func EnsureTaskCompiled(ctx context.Context, agentName, taskName, trigger string) (string, error) {
@@ -201,7 +194,10 @@ func EnsureTaskCompiled(ctx context.Context, agentName, taskName, trigger string
 		return "", nil
 	}
 	project := strings.EqualFold(task.Type, "project")
-	kind := "workflow"
+	kind := "prompt"
+	if task.IsWorkflow() {
+		kind = "workflow"
+	}
 	if project {
 		// The script is compiled against the tools it runs with.
 		ctx = agent.WithProjectTaskScript(ctx)

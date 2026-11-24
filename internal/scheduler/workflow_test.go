@@ -234,7 +234,7 @@ func TestWorkerPool_RunCompiledWorkflow(t *testing.T) {
 
 	// A compiled script handles the run and replies in the conversation.
 	job := enqueue("triage")
-	logs, handled, err := p.runCompiledWorkflow(context.Background(), job, cfg, p.deliverFor(job))
+	logs, handled, err := p.runCompiledPrompt(context.Background(), job, cfg, p.deliverFor(job))
 	require.NoError(t, err)
 	assert.True(t, handled, "a completed script runs no model")
 	assert.Equal(t, []string{"crash: app crashed on launch after 1"}, replies)
@@ -245,7 +245,7 @@ func TestWorkerPool_RunCompiledWorkflow(t *testing.T) {
 	// A failing script falls back to the model, and the run is marked.
 	script = `error("lookup failed")`
 	job = enqueue("triage")
-	logs, handled, err = p.runCompiledWorkflow(context.Background(), job, cfg, p.deliverFor(job))
+	logs, handled, err = p.runCompiledPrompt(context.Background(), job, cfg, p.deliverFor(job))
 	require.NoError(t, err)
 	assert.False(t, handled, "the model runs a workflow whose script failed")
 	assert.Contains(t, logs, "precompiled script failed (lookup failed); falling back to the model")
@@ -256,7 +256,7 @@ func TestWorkerPool_RunCompiledWorkflow(t *testing.T) {
 	// A failed compile falls back as well, but is not the script's failure.
 	script, compileErr = "", errors.New("provider unavailable")
 	job = enqueue("triage")
-	_, handled, err = p.runCompiledWorkflow(context.Background(), job, cfg, p.deliverFor(job))
+	_, handled, err = p.runCompiledPrompt(context.Background(), job, cfg, p.deliverFor(job))
 	require.NoError(t, err)
 	assert.False(t, handled)
 	assert.Contains(t, persisted(job).ScriptError, "provider unavailable")
@@ -265,7 +265,7 @@ func TestWorkerPool_RunCompiledWorkflow(t *testing.T) {
 	// A prompt that is not deterministic just runs on the model.
 	compileErr = nil
 	job = enqueue("triage")
-	logs, handled, err = p.runCompiledWorkflow(context.Background(), job, cfg, p.deliverFor(job))
+	logs, handled, err = p.runCompiledPrompt(context.Background(), job, cfg, p.deliverFor(job))
 	require.NoError(t, err)
 	assert.False(t, handled)
 	assert.Empty(t, logs)
@@ -274,9 +274,64 @@ func TestWorkerPool_RunCompiledWorkflow(t *testing.T) {
 	// A workflow without precompile never compiles.
 	compiledFor = nil
 	job = enqueue("plain")
-	_, handled, err = p.runCompiledWorkflow(context.Background(), job, cfg, p.deliverFor(job))
+	_, handled, err = p.runCompiledPrompt(context.Background(), job, cfg, p.deliverFor(job))
 	require.NoError(t, err)
 	assert.False(t, handled)
+	assert.Empty(t, compiledFor)
+}
+
+func TestWorkerPool_RunCompiledScheduledPromptTask(t *testing.T) {
+	setupSchedulerDataDir(t)
+	precompile := true
+	cfg := &config.AgentConfig{Name: "alpha", Tasks: []config.TaskConfig{
+		{Name: "digest", Every: "1h", Prompt: "Post the digest", Target: "session:ops", Precompile: &precompile},
+		{Name: "plain", Every: "1h", Prompt: "Post the digest", Target: "session:ops"},
+		{Name: "lua", Type: "script", Every: "1h", Prompt: `print("x")`, Target: "session:ops", Precompile: &precompile},
+	}}
+	q := NewJobQueue()
+	p := NewWorkerPool(q, agent.NewManager(nil), 1)
+	var delivered []string
+	p.deliver = func(_ domain.OutputSource, _, route, text string) (*domain.JobDelivery, error) {
+		delivered = append(delivered, route+":"+text)
+		return &domain.JobDelivery{Target: route, Status: domain.DeliveryDelivered}, nil
+	}
+	script := `print("digest: " .. tostring(trigger))`
+	var compiledFor []string
+	p.taskCompiler = func(_ context.Context, agentName, taskName string) (string, error) {
+		compiledFor = append(compiledFor, agentName+"/"+taskName)
+		return script, nil
+	}
+	enqueue := func(task string) *domain.Job {
+		job, err := q.EnqueueWithType("alpha/"+task, "prompt", "alpha", "Post the digest", "", "session:ops", 1, "", "")
+		require.NoError(t, err)
+		return job
+	}
+
+	// A scheduled prompt task runs its script, with no trigger, and delivers
+	// what it prints to its target without the model.
+	job := enqueue("digest")
+	logs, handled, err := p.runCompiledPrompt(context.Background(), job, cfg, p.deliverFor(job))
+	require.NoError(t, err)
+	assert.True(t, handled, "a completed script runs no model")
+	assert.Contains(t, logs, "running the precompiled script")
+	assert.Equal(t, []string{"session:ops:digest: nil"}, delivered)
+
+	// A failing script falls back to the model.
+	script = `error("feed down")`
+	job = enqueue("digest")
+	_, handled, err = p.runCompiledPrompt(context.Background(), job, cfg, p.deliverFor(job))
+	require.NoError(t, err)
+	assert.False(t, handled)
+	assert.Contains(t, job.ScriptError, "feed down")
+
+	// Neither a task without precompile nor a script task compiles.
+	compiledFor = nil
+	for _, name := range []string{"plain", "lua"} {
+		job = enqueue(name)
+		_, handled, err = p.runCompiledPrompt(context.Background(), job, cfg, p.deliverFor(job))
+		require.NoError(t, err)
+		assert.False(t, handled)
+	}
 	assert.Empty(t, compiledFor)
 }
 

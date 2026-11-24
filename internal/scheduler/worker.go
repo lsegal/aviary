@@ -43,7 +43,7 @@ type WorkerPool struct {
 	onAttemptDone func(job domain.Job, duration time.Duration)
 	// projectRunner runs a "project" task's prompt as a Code Loop board job.
 	projectRunner ProjectRunner
-	// taskCompiler compiles precompiled project tasks.
+	// taskCompiler compiles precompiled prompt and project tasks.
 	taskCompiler TaskCompiler
 	// scriptReporter records how each precompiled script run ended.
 	scriptReporter TaskScriptReporter
@@ -367,9 +367,9 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 		return err
 	}
 
-	// A precompiled workflow runs its script first; the model runs it only
-	// when there is no script or the script failed.
-	scriptLogs, handled, err := p.runCompiledWorkflow(ctx, job, runner.Config(), deliver)
+	// A precompiled prompt task or workflow runs its script first; the model
+	// runs it only when there is no script or the script failed.
+	scriptLogs, handled, err := p.runCompiledPrompt(ctx, job, runner.Config(), deliver)
 	if handled {
 		return err
 	}
@@ -580,21 +580,21 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 	return err
 }
 
-// runCompiledWorkflow runs a precompiled prompt workflow's compiled script
-// for job, with the triggering message in the Lua global trigger. handled is
-// true when the script completed, or the run was stopped, so the model does
-// not run; err is then the run's result. Otherwise the run falls back to the
-// model: logs say what the script did, and job.ScriptError why it failed,
-// which marks the run as a fallback. A workflow whose prompt is not
-// deterministic simply runs on the model.
-func (p *WorkerPool) runCompiledWorkflow(ctx context.Context, job *domain.Job, cfg *config.AgentConfig, deliver func(agentName, route, text string) error) (logs string, handled bool, err error) {
-	if job.TriggerContext == nil || p.taskCompiler == nil || cfg == nil {
+// runCompiledPrompt runs a precompiled prompt task's compiled script for
+// job; a workflow's script reads the triggering message from the Lua global
+// trigger. handled is true when the script completed, or the run was
+// stopped, so the model does not run; err is then the run's result.
+// Otherwise the run falls back to the model: logs say what the script did,
+// and job.ScriptError why it failed, which marks the run as a fallback. A
+// task whose prompt is not deterministic simply runs on the model.
+func (p *WorkerPool) runCompiledPrompt(ctx context.Context, job *domain.Job, cfg *config.AgentConfig, deliver func(agentName, route, text string) error) (logs string, handled bool, err error) {
+	if p.taskCompiler == nil || cfg == nil {
 		return "", false, nil
 	}
 	name := jobSessionName(job)
 	precompile := false
 	for _, task := range cfg.Tasks {
-		if task.Name == name && task.IsWorkflow() {
+		if task.Name == name && task.PrecompilesBesidePrompt() {
 			precompile = config.BoolOr(task.Precompile, false)
 			break
 		}
@@ -640,11 +640,11 @@ func (p *WorkerPool) runCompiledWorkflow(ctx context.Context, job *domain.Job, c
 		}
 		return b.String(), true, recordTaskOutput(job, output, deliver)
 	}
-	// The model reruns the workflow and decides for itself whether to reply.
+	// The model reruns the task and decides for itself whether to reply.
 	agent.TakeSkippedReply(job.ID)
 	p.setScriptError(job, runErr.Error())
 	b.Addf("precompiled script failed (%s); falling back to the model", ProjectScriptFailureCause(runErr))
-	slog.Warn("job: precompiled workflow fell back to the model", "id", job.ID, "task", job.TaskID, "err", runErr)
+	slog.Warn("job: precompiled prompt task fell back to the model", "id", job.ID, "task", job.TaskID, "err", runErr)
 	return b.String(), false, nil
 }
 
