@@ -2,10 +2,12 @@
   <div class="flex h-full flex-col bg-white dark:bg-gray-950 lg:flex-row">
     <header class="border-b border-gray-200 bg-gray-50 px-4 py-2 dark:border-gray-800 dark:bg-gray-900 lg:hidden">
       <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-2">
-          <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 object-contain" />
-          <span class="text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
-          <div class="flex items-center gap-1">
+        <div class="flex min-w-0 items-center gap-2">
+          <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 shrink-0 object-contain" />
+          <span class="shrink-0 text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
+          <!-- Links that don't fit, as at a large text size (#1093), wrap
+               out of sight rather than under the status icons. -->
+          <div class="flex h-8 min-w-0 flex-wrap items-center gap-1 overflow-hidden">
             <a
               v-for="link in brandLinks"
               :key="link.label"

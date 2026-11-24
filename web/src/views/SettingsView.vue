@@ -597,6 +597,25 @@ function connectWs() {
 }
 
 const loading = ref(true);
+// The tab bar scrolls sideways on a phone, so keep the open tab in view.
+watch(
+	() => [activeTab.value, loading.value] as const,
+	async ([tab]) => {
+		await nextTick();
+		const tabEl = document.querySelector<HTMLElement>(
+			`[data-testid="settings-tab-${tab}"]`,
+		);
+		const bar = tabEl?.parentElement;
+		if (!tabEl || !bar) return;
+		// Only sideways, so the page keeps its own scroll position.
+		const tabBox = tabEl.getBoundingClientRect();
+		const barBox = bar.getBoundingClientRect();
+		if (tabBox.left < barBox.left) bar.scrollLeft -= barBox.left - tabBox.left;
+		else if (tabBox.right > barBox.right)
+			bar.scrollLeft += tabBox.right - barBox.right;
+	},
+	{ immediate: true },
+);
 const saving = ref(false);
 const reverting = ref(false);
 const errorMessage = ref("");

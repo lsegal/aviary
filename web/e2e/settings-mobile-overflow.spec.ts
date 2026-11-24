@@ -156,5 +156,21 @@ test("settings pages fit a phone at the largest text size (#1093)", async ({
 		);
 		await expectNoHorizontalOverflow(page, url);
 	}
+	// The tab bar scrolls sideways, keeping the open tab in view.
+	await expect(page.getByTestId("settings-tab-display")).toBeInViewport({
+		ratio: 0.95,
+	});
+	// The header's links give way rather than run under its status icons.
+	const status = await page.getByTestId("mobile-header-status").boundingBox();
+	for (const link of await page.locator("header a[aria-label]").all()) {
+		const box = await link.boundingBox();
+		if (!box || !(await link.isVisible())) continue;
+		const clipped = await link.evaluate((el) => {
+			const r = el.getBoundingClientRect();
+			const p = (el.parentElement as HTMLElement).getBoundingClientRect();
+			return r.top >= p.bottom;
+		});
+		if (!clipped) expect(box.x + box.width).toBeLessThanOrEqual(status?.x ?? 0);
+	}
 	await context.close();
 });

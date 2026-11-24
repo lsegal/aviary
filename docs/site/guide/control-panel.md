@@ -19,9 +19,9 @@ On narrow screens the sidebar becomes a row of buttons along the top: one per ag
 
 ### Edit sidebar
 
-**Edit sidebar** opens a dialog with two lists: **Agent pages** (**Pages** when there is only one agent) and **System pages**. Drag an item by its handle (on touch screens, long-press the row) and the other items slide aside to make room, or move it one place with its up and down buttons or the arrow keys on its handle. Each item's eye button hides or shows it. Changes save as you go and are stored on the server per user, so they follow you to other devices.
+**Edit sidebar** opens [Settings → Display](#settings-display) at its **Sidebar** section, which has two lists: **Agent pages** (**Pages** when there is only one agent) and **System pages**. Drag an item by its handle (on touch screens, long-press the row) and the other items slide aside to make room, or move it one place with its up and down buttons or the arrow keys on its handle. Each item's eye button hides or shows it. Changes save as you go and are stored on the server per user, so they follow you to other devices.
 
-The **Pages** order is shared: every agent's pages in the sidebar, the collapsed rail and the top row on narrow screens all follow it. When pages are hidden, the sidebar offers **Show N hidden pages** to list them for the current visit. **Reset to default** restores the built-in order and shows every page again.
+The **Pages** order is shared: every agent's pages in the sidebar, the collapsed rail and the top row on narrow screens all follow it. When pages are hidden, the sidebar offers **Show N hidden pages** to list them for the current visit. **Reset sidebar** restores the built-in order and shows every page again.
 
 ### Navigation
 
@@ -104,7 +104,7 @@ The home screen. It shows:
 
 ### Settings (`/system/settings`)
 
-Opened from the sidebar's gear menu, with two tabs. **General** covers the `server`, `models`, `browser`, `scheduler`, and `search` config sections. Port and TLS changes require a server restart to take effect.
+Opened from the sidebar's gear menu, with three tabs: **General**, **Providers & Authentication** and **Display**. **General** covers the `server`, `models`, `browser`, `scheduler`, and `search` config sections. Port and TLS changes require a server restart to take effect.
 
 ### Settings → Providers & Authentication (`/system/providers`)
 
@@ -113,6 +113,17 @@ Manages API credentials and OAuth sessions:
 - **Stored keys** — list, add, and delete named credentials.
 - **OAuth login** — one-click flows for Anthropic, Gemini, OpenAI, and GitHub Copilot.
 - Provider connectivity status is shown alongside each entry (cached for 30 seconds).
+
+### Settings → Display (`/system/display`) {#settings-display}
+
+Your own display preferences. Every change applies at once, with no Save button, and is stored on the server per user, so it follows you to other devices; the browser keeps a copy so pages open in your theme and size without a flash.
+
+- **Text size** — Small, Default, Large or Extra large; scales the whole control panel.
+- **Theme** — Light, Dark or System. System follows your device's light or dark setting and switches with it.
+- **Sidebar** — the [Edit sidebar](#edit-sidebar) lists.
+- **Reset to defaults** — restores the default text size, theme and sidebar.
+
+An `aviary watch` session's gear menu has only **Display**, and Settings shows only this tab.
 
 ### Usage (`/system/usage`)
 
