@@ -9,12 +9,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/mattn/go-runewidth"
+	"github.com/rivo/uniseg"
 
 	"github.com/lsegal/aviary/internal/config"
 )
@@ -116,7 +119,7 @@ type watchChat struct {
 func newWatchChat() watchChat {
 	input := textarea.New()
 	input.Prompt = "› "
-	input.Placeholder = "Ask the Code Loop agent… (enter sends, alt+enter adds a line)"
+	input.Placeholder = "Ask the Code Loop agent… (enter sends, shift+enter adds a line)"
 	input.ShowLineNumbers = false
 	input.CharLimit = 0
 	input.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("alt+enter", "shift+enter", "ctrl+j"))
@@ -189,6 +192,7 @@ func (m watchModel) focusChat(focus string) watchModel {
 	m.chat.focus = focus
 	if focus == watchFocusInput {
 		m.chat.input.Focus()
+		m = m.fitChatInput()
 	} else {
 		m.chat.input.Blur()
 	}
@@ -508,8 +512,16 @@ func (m watchModel) chatEntries() []watchChatEntry {
 	return out
 }
 
-// updateChatInput handles a key while the chat's input has focus.
+// updateChatInput handles a key while the chat's input has focus, then fits
+// the input to its soft-wrapped text.
 func (m watchModel) updateChatInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.chat.input.SetWidth(max(4, m.width))
+	next, cmd := m.editChatInput(msg)
+	return next.fitChatInput(), cmd
+}
+
+// editChatInput applies a key to the chat's input.
+func (m watchModel) editChatInput(msg tea.KeyMsg) (watchModel, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		return m.focusChat(watchFocusBoard), nil
@@ -524,7 +536,7 @@ func (m watchModel) updateChatInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.scrollChat(m.chatPage())
 		return m, nil
 	case "up":
-		if len(m.chat.history) > 0 && m.chat.input.Line() == 0 && m.chat.histIdx > 0 {
+		if len(m.chat.history) > 0 && m.chat.input.Line() == 0 && m.chat.input.LineInfo().RowOffset == 0 && m.chat.histIdx > 0 {
 			if m.chat.histIdx == len(m.chat.history) {
 				m.chat.draft = m.chat.input.Value()
 			}
@@ -533,7 +545,8 @@ func (m watchModel) updateChatInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case "down":
-		if m.chat.histIdx < len(m.chat.history) && m.chat.input.Line() == m.chat.input.LineCount()-1 {
+		info := m.chat.input.LineInfo()
+		if m.chat.histIdx < len(m.chat.history) && m.chat.input.Line() == m.chat.input.LineCount()-1 && info.RowOffset == info.Height-1 {
 			m.chat.histIdx++
 			if m.chat.histIdx == len(m.chat.history) {
 				m.chat.input.SetValue(m.chat.draft)
@@ -984,9 +997,68 @@ func (m watchModel) chatPaneHeight() int {
 	return min(avail, max(min(6, avail), avail*m.chat.pct/100))
 }
 
-// chatInputHeight is the input's height in the chat pane.
+// chatInputHeight is the input's height in the chat pane: its soft-wrapped
+// rows, up to watchChatMaxInputLines.
 func (m watchModel) chatInputHeight() int {
-	return max(1, min(watchChatMaxInputLines, m.chat.input.LineCount()))
+	input := m.chat.input
+	input.SetWidth(max(4, m.width))
+	rows := 0
+	for _, line := range strings.Split(input.Value(), "\n") {
+		rows += watchWrapRows([]rune(line), input.Width())
+	}
+	return max(1, min(watchChatMaxInputLines, rows))
+}
+
+// fitChatInput sizes the input to the pane's width and its wrapped rows, and
+// scrolls it to keep the cursor row visible.
+func (m watchModel) fitChatInput() watchModel {
+	m.chat.input.SetWidth(max(4, m.width))
+	// The textarea's view state is shared by its copies, and it only scrolls
+	// the view as far as needed to show the cursor. When the height changes,
+	// reset a copy to scroll back to the top, so that rows that fit again
+	// show, then let the update below scroll down to the cursor.
+	if h := m.chatInputHeight(); h != m.chat.input.Height() {
+		top := m.chat.input
+		top.Reset()
+		m.chat.input.SetHeight(h)
+	}
+	// The textarea scrolls only as far as the text its last View laid out,
+	// so lay out the new text first.
+	_ = m.chat.input.View()
+	m.chat.input, _ = m.chat.input.Update(nil)
+	return m
+}
+
+// watchWrapRows is how many rows the textarea soft-wraps a line into at
+// width. It follows the word wrap of bubbles' textarea, including the extra
+// row it adds when a line fills the width exactly.
+func watchWrapRows(runes []rune, width int) int {
+	rows, row, word, spaces := 1, 0, 0, 0
+	for _, r := range runes {
+		if unicode.IsSpace(r) {
+			spaces++
+		} else {
+			word += uniseg.StringWidth(string(r))
+		}
+		if spaces > 0 {
+			if row+word+spaces > width {
+				rows++
+				row = 0
+			}
+			row += word + spaces
+			word, spaces = 0, 0
+		} else if word+runewidth.RuneWidth(r) > width {
+			// A word as wide as the line takes a row of its own.
+			if row > 0 {
+				rows++
+			}
+			row, word = word, 0
+		}
+	}
+	if row+word+spaces >= width {
+		rows++
+	}
+	return rows
 }
 
 // chatTranscriptHeight is the transcript's height in the chat pane.

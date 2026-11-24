@@ -376,11 +376,11 @@
 				"r": true
 			},
 			{
-				"t": "sk the Code Loop agent… (enter sends, alt+enter adds a line)",
+				"t": "sk the Code Loop agent… (enter sends, shift+enter adds a line)",
 				"fg": "#999999"
 			},
 			{
-				"t": "                                                                                                         "
+				"t": "                                                                                                       "
 			}
 		],
 		[
@@ -437,11 +437,11 @@
 		[],
 		[
 			{
-				"t": "enter send · alt+enter new line · ↑↓ history · tab transcript · esc board",
+				"t": "enter send · shift+enter new line · ↑↓ history · tab transcript · esc board",
 				"fg": "#999999"
 			},
 			{
-				"t": "                                                                                    "
+				"t": "                                                                                  "
 			},
 			{
 				"t": "ctrl+c quit",

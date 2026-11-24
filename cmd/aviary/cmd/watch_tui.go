@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -22,12 +24,36 @@ func runWatchTUI(ctx context.Context, call watchToolCaller, stream watchStreamCa
 	model := newWatchModel(ctx, call, title, webURL)
 	model.stream = stream
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithContext(ctx))
+	// Ask the terminal to tell Shift+Enter from Enter, so the prompt chat
+	// can add a line with it, and restore its default when the TUI ends.
+	_, _ = fmt.Fprint(os.Stdout, watchModifyOtherKeysOn)
+	defer func() { _, _ = fmt.Fprint(os.Stdout, watchModifyOtherKeysOff) }()
 	_, err := p.Run()
 	if err != nil && ctx.Err() != nil && errors.Is(err, tea.ErrProgramKilled) {
 		// A cancelled session ends the TUI the way quitting does.
 		return nil
 	}
 	return err
+}
+
+// xterm's modifyOtherKeys mode 1 reports modified keys with no legacy code
+// of their own, such as Shift+Enter, as CSI 27;2;13~ and keeps Ctrl+C and
+// the other legacy keys as they are.
+const (
+	watchModifyOtherKeysOn  = "\x1b[>4;1m"
+	watchModifyOtherKeysOff = "\x1b[>4m"
+)
+
+// watchShiftEnter reports whether msg is Shift+Enter in modifyOtherKeys or
+// CSI u (kitty keyboard protocol) form. Bubble Tea v1 has no key for either,
+// so it hands them over as an unknown CSI sequence, a byte slice.
+func watchShiftEnter(msg tea.Msg) bool {
+	v := reflect.ValueOf(msg)
+	if v.Kind() != reflect.Slice || v.Type().Elem().Kind() != reflect.Uint8 {
+		return false
+	}
+	seq := string(v.Bytes())
+	return seq == "\x1b[27;2;13~" || seq == "\x1b[13;2u"
 }
 
 // watchPollInterval is how often the TUI re-reads the engine, as the web
@@ -554,7 +580,7 @@ func (m watchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		return m, nil
+		return m.fitChatInput(), nil
 	case watchTickMsg:
 		next := watchTick()
 		if m.fetching {
@@ -596,6 +622,10 @@ func (m watchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applyQueue(msg)
 	case tea.KeyMsg:
 		return m.updateKey(msg)
+	}
+	if watchShiftEnter(msg) {
+		// Ctrl+J is the input's portable new-line key.
+		return m.updateKey(tea.KeyMsg{Type: tea.KeyCtrlJ})
 	}
 	return m, nil
 }
