@@ -13,7 +13,7 @@
 				<div class="min-w-0 flex-1">
 					<p class="truncate text-sm font-semibold text-gray-900 group-hover:underline dark:text-white">{{ workflow.name }}</p>
 					<p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ matchText }}</p>
-					<TaskPrecompileBadge :task="workflow" compact class="mt-1" />
+					<CompiledStatusChip :task="workflow" class="mt-1" />
 				</div>
 				<div class="flex shrink-0 flex-col items-end gap-1">
 					<PausedChip v-if="paused" />
@@ -38,8 +38,8 @@ import BoltIcon from "@heroicons/vue/24/outline/BoltIcon";
 import { computed } from "vue";
 import type { WorkflowStatus } from "../../composables/useWorkflowStatus";
 import { type AgentTask, taskSessionPath } from "../../stores/settings";
+import CompiledStatusChip from "../tasks/CompiledStatusChip.vue";
 import PausedChip from "../tasks/PausedChip.vue";
-import TaskPrecompileBadge from "../tasks/TaskPrecompileBadge.vue";
 
 // A workflow as a card: active or paused, its match, and its last run. While
 // it is triggering or running, a colored segment travels clockwise around the

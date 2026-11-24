@@ -27,7 +27,7 @@
 						</div>
 						<p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ describe(w) }}</p>
 					</div>
-					<TaskPrecompileBadge :task="w" />
+					<CompiledStatusChip :task="w" />
 					<button type="button" data-testid="workflow-edit" :class="SMALL_BTN" @click="startEdit(w)">Edit</button>
 					<button type="button" data-testid="workflow-delete" class="danger-btn" @click="remove(w)">Delete</button>
 				</li>
@@ -130,6 +130,7 @@
 			<TaskPromptSection v-model:prompt="form.content" v-model:precompile="form.precompile" v-model:model="form.model"
 				id-prefix="workflow" prompt-test-id="workflow-content" :agent="agent" :type="form.type" :target="target()"
 				trigger-type="message" :rows="10" prompt-class="min-h-[20vh]" :precompile-help="precompileHelp" show-model
+				:saved-task="saved"
 				prompt-placeholder="Triage this crash report and reply with next steps.">
 				<template v-if="form.type !== 'script'" #hint>
 					The triggering message and the messages just before it are added below the prompt.
@@ -169,9 +170,9 @@ import {
 import CodeLoopJobSelect from "../CodeLoopJobSelect.vue";
 import SessionSelect from "../SessionSelect.vue";
 import TaskPromptSection from "../TaskPromptSection.vue";
+import CompiledStatusChip from "../tasks/CompiledStatusChip.vue";
 import PausedChip from "../tasks/PausedChip.vue";
 import TaskEnabledSwitch from "../tasks/TaskEnabledSwitch.vue";
-import TaskPrecompileBadge from "../tasks/TaskPrecompileBadge.vue";
 import { AppCombobox, AppSelect } from "../ui/select";
 
 // A channel's workflows: tasks run by a matching message on the channel

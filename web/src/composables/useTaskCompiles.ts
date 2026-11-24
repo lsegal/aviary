@@ -19,7 +19,10 @@ export function useCompiledPanelOpen() {
  * script failed, with the compiled script panel's actions: Recompile now,
  * which reloads the config until the new compile lands, and Disable precompile.
  */
-export function useTaskCompiles(agent: Ref<string>, task: Ref<AgentTask | undefined>) {
+export function useTaskCompiles(
+	agent: Ref<string>,
+	task: Ref<AgentTask | undefined>,
+) {
 	const { callTool } = useMCP();
 	const settings = useSettingsStore();
 	const attempts = ref<TaskCompileAttempt[]>([]);
@@ -56,8 +59,7 @@ export function useTaskCompiles(agent: Ref<string>, task: Ref<AgentTask | undefi
 			lastFailedRun.value =
 				jobs
 					.filter((j) => j.script_error)
-					.sort((x, y) => y.created_at.localeCompare(x.created_at))[0] ??
-				null;
+					.sort((x, y) => y.created_at.localeCompare(x.created_at))[0] ?? null;
 		} catch {
 			attempts.value = [];
 			lastFailedRun.value = null;
@@ -65,7 +67,12 @@ export function useTaskCompiles(agent: Ref<string>, task: Ref<AgentTask | undefi
 	}
 
 	watch(
-		() => [agent.value, name.value, task.value?.compiled_key, task.value?.compiled],
+		() => [
+			agent.value,
+			name.value,
+			task.value?.compiled_key,
+			task.value?.compiled,
+		],
 		() => void refresh(),
 		{ immediate: true },
 	);

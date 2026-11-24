@@ -228,26 +228,6 @@ export function precompilesBesidePrompt(
 	return type === "project" || (isWorkflow(task) && type === "prompt");
 }
 
-/**
- * Where a precompiling task's script stands: compiled; compiling, not yet
- * analyzed; not deterministic enough to compile; set aside after it failed,
- * or precompile turned off for it; or "" for a task that does not precompile.
- */
-export type PrecompileState =
-	| "compiled"
-	| "compiling"
-	| "not-deterministic"
-	| "set-aside"
-	| "";
-
-export function precompileState(task: AgentTask): PrecompileState {
-	if (!precompilesBesidePrompt(task)) return "";
-	if (task.precompile !== true) return task.precompile_note ? "set-aside" : "";
-	if (task.compiled?.trim()) return "compiled";
-	if (task.precompile_note) return "set-aside";
-	return task.compiled_key ? "not-deterministic" : "compiling";
-}
-
 /** A task's session, which every run of the task shares. */
 export function taskSessionPath(agent: string, task: string): string {
 	return `/agents/${encodeURIComponent(agent)}/tasks/${encodeURIComponent(task)}`;

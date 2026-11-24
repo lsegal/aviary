@@ -181,7 +181,8 @@ export function highlightLua(script: string): LuaToken[][] {
 	let at = 0;
 	for (const m of script.matchAll(LUA_TOKEN)) {
 		const index = m.index ?? 0;
-		if (index > at) tokens.push({ kind: "text", text: script.slice(at, index) });
+		if (index > at)
+			tokens.push({ kind: "text", text: script.slice(at, index) });
 		const [text] = m;
 		let kind: LuaTokenKind = "text";
 		if (m[1]) kind = "comment";

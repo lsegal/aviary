@@ -3,8 +3,8 @@
 	<DialogRoot :open="formOpen" @update:open="(v) => { if (!v && !busy) close() }">
 		<DialogPortal>
 			<DialogOverlay class="fixed inset-0 z-50 bg-black/50" />
-			<DialogContent :data-testid="`${dialog?.kind}-dialog`"
-				class="fixed left-1/2 top-1/2 z-50 max-h-[90dvh] w-[calc(100%-1.5rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+			<DialogContent :data-testid="`${dialog?.kind}-dialog`" :class="wide ? 'max-w-5xl' : 'max-w-2xl'"
+				class="fixed left-1/2 top-1/2 z-50 max-h-[90dvh] w-[calc(100%-1.5rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
 				<form @submit.prevent="submit">
 					<DialogTitle class="text-base font-bold text-gray-900 dark:text-white">{{ title }}</DialogTitle>
 					<DialogDescription class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ description }}</DialogDescription>
@@ -44,7 +44,8 @@
 						</div>
 						<TaskPromptSection v-model:prompt="form.prompt" v-model:precompile="form.precompute" id-prefix="agent-task"
 							class="mt-3" :agent="feedbackAgent" :type="taskType" :target="form.target" :project="form.project"
-							:trigger="form.trigger" :show-precompile="showPrecompute" />
+							:trigger="form.trigger" :show-precompile="showPrecompute" :saved-task="savedTask"
+							:task-agent="dialog.agent" />
 						<label for="agent-task-send-to" class="field-label mt-3">Send To</label>
 						<AppCombobox id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
 							aria-describedby="agent-task-send-to-help" :options="sendToOptions"
@@ -125,6 +126,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
 import { useMCP } from "../../composables/useMCP";
+import { useCompiledPanelOpen } from "../../composables/useTaskCompiles";
 import { useTriggerPreview } from "../../composables/useTriggerPreview";
 import { channelName, channelTarget } from "../../lib/channels";
 import { projectTargets } from "../../lib/projectSettings";
@@ -139,6 +141,7 @@ import {
 	type AgentTaskType,
 	agentTaskPath,
 	agentTaskType,
+	precompilesBesidePrompt,
 	useSettingsStore,
 } from "../../stores/settings";
 import TaskPromptSection from "../TaskPromptSection.vue";
@@ -491,6 +494,18 @@ async function submitTask(mode: "create" | "edit", from = "") {
 }
 
 /** The saved task the open dialog edits, if any. */
+/** The edited task as saved, live from the config, for its compiled script panel. */
+const savedTask = computed(() => editedTask());
+// The dialog widens while the compiled script shows beside the prompt.
+const compiledPanelOpen = useCompiledPanelOpen();
+const wide = computed(
+	() =>
+		compiledPanelOpen.value &&
+		!!savedTask.value &&
+		precompilesBesidePrompt(savedTask.value) &&
+		(savedTask.value.precompile === true || !!savedTask.value.precompile_note),
+);
+
 function editedTask(): AgentTask | undefined {
 	const d = dialog.value;
 	if (d?.kind !== "task" || d.mode !== "edit" || !d.name) return undefined;

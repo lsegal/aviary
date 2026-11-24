@@ -107,6 +107,7 @@
 					</div>
 					<div class="flex min-w-0 items-center gap-2">
 						<PausedChip v-if="!r.enabled" />
+						<CompiledStatusChip :task="r.task" />
 						<p class="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400" data-testid="task-owner">{{ r.owner }}</p>
 					</div>
 					<p class="truncate text-xs text-gray-700 dark:text-gray-300" data-testid="task-schedule" :title="r.schedule">{{ r.schedule }}</p>
@@ -146,6 +147,7 @@
 									<span v-if="r.running" data-testid="task-running" title="Running now" class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
 									<router-link :to="taskSessionPath(agent, r.task.name)" class="hover:underline" @click.stop>{{ r.task.name }}</router-link>
 									<PausedChip v-if="!r.enabled" />
+									<CompiledStatusChip :task="r.task" />
 								</span>
 							</td>
 							<td class="px-3 py-2"><TaskEnabledSwitch :task="r.task.name" :enabled="r.enabled" :busy="busy === r.id || isPending(agent, r.task.name)" @update="setEnabled(r, $event)" /></td>
@@ -195,6 +197,7 @@ import {
 } from "../../stores/settings";
 import EmptyStateCard from "../ui/EmptyStateCard.vue";
 import StatCard from "../ui/StatCard.vue";
+import CompiledStatusChip from "./CompiledStatusChip.vue";
 import PausedChip from "./PausedChip.vue";
 import TaskActions from "./TaskActions.vue";
 import TaskAnalytics from "./TaskAnalytics.vue";

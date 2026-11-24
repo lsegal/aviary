@@ -9,7 +9,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { RouterLink, type RouteLocationRaw } from "vue-router";
+import { type RouteLocationRaw, RouterLink } from "vue-router";
 import {
 	compiledStatus,
 	compiledVersion,
