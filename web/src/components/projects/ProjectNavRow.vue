@@ -3,7 +3,7 @@
 		tasks stay reachable when the sidebar is collapsed and shows no subnav.
 		The row scrolls sideways instead of wrapping, like the stat chips. -->
 	<nav ref="row" aria-label="Projects" data-testid="project-nav"
-		class="flex min-w-0 max-w-full flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-1.5 text-xs [scrollbar-width:thin]"
+		class="flex min-w-0 max-w-full flex-[1_1_16rem] items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-1.5 text-xs [scrollbar-width:thin]"
 		:style="fadeStyle" @scroll.passive="measure">
 		<span v-for="p in rows" :key="p.name" data-testid="project-nav-item" :data-project="p.name"
 			class="inline-flex shrink-0 items-center rounded-full border border-gray-200 dark:border-gray-700">
