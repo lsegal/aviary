@@ -25,61 +25,97 @@ import (
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-func setupDispatcherWithScheduler(t *testing.T) (*Dispatcher, *scheduler.Scheduler) {
+// setupSchedulerDeps saves cfg as the running config in a fresh data
+// directory and wires an agent manager and scheduler for it into the deps.
+func setupSchedulerDeps(t *testing.T, cfg *config.Config) *scheduler.Scheduler {
 	t.Helper()
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	store.SetDataDir(base + "/aviary")
+	store.SetDataDir(filepath.Join(base, "aviary"))
 	t.Cleanup(func() { store.SetDataDir("") })
-	t.Setenv("AVIARY_CONFIG_BASE_DIR", base+"/aviary")
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
+	require.NoError(t, store.EnsureDirs())
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
-	// Background compiles, such as the one task_update starts for a project
-	// task, read the deps, so they finish before the restore.
+	// Background compiles, such as the one task_schedule starts for a
+	// recurring prompt task, read the deps, so they finish before the restore.
 	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
 
-	cfg := &config.Config{
-		Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}},
-	}
-	err = config.Save("", cfg)
-	assert.NoError(t, err)
-
+	require.NoError(t, config.Save("", cfg))
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(cfg)
 	s, err := scheduler.New(mgr, 1)
-	assert.NoError(t, err)
-
+	require.NoError(t, err)
 	t.Cleanup(s.Stop)
 	s.Reconcile(cfg)
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+	return s
+}
 
+func setupDispatcherWithScheduler(t *testing.T) (*Dispatcher, *scheduler.Scheduler) {
+	t.Helper()
+	s := setupSchedulerDeps(t, &config.Config{
+		Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}},
+	})
 	return NewDispatcher("https://localhost:16677", ""), s
+}
+
+// setupTaskScheduleCompile is setupSchedulerDeps with the task compiler
+// stubbed by compile, restored only after background compiles finish.
+func setupTaskScheduleCompile(t *testing.T, cfg *config.Config, compile func(ctx context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error)) *Dispatcher {
+	t.Helper()
+	prevCompiler := tryCompileTaskPromptFunc
+	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
+	tryCompileTaskPromptFunc = compile
+	setupSchedulerDeps(t, cfg)
+	return NewDispatcher("https://localhost:16677", "")
+}
+
+// botConfig is a config with the single agent "bot".
+func botConfig() *config.Config {
+	return &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}}
 }
 
 // ── Agent tools ───────────────────────────────────────────────────────────────
 
-func TestAgentTools_NilDeps(t *testing.T) {
+func TestTools_NilDeps(t *testing.T) {
 	old := GetDeps()
-	SetDeps(&Deps{Agents: nil})
+	SetDeps(&Deps{})
 	t.Cleanup(func() { SetDeps(old) })
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
 
 	d := NewDispatcher("https://localhost:16677", "")
 
-	// agent_list takes no args
-	toolCallContains(t, d, "agent_list", map[string]any{}, "not initialized")
-	// agent_stop takes name
-	toolCallContains(t, d, "agent_stop", map[string]any{"name": "x"}, "not initialized")
-	// agent_run takes name and message
-	toolCallContains(t, d, "agent_run", map[string]any{"name": "x", "message": "hi"}, "not initialized")
+	tests := []struct {
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"agent_list", map[string]any{}, "agent manager not initialized"},
+		{"agent_stop", map[string]any{"name": "x"}, "agent manager not initialized"},
+		{"agent_run", map[string]any{"name": "x", "message": "hi"}, "agent manager not initialized"},
+		{"job_query", map[string]any{}, "scheduler not initialized"},
+		{"job_list", map[string]any{}, "scheduler not initialized"},
+		{"job_run_now", map[string]any{"id": "x"}, "scheduler not initialized"},
+		{"job_stop", map[string]any{"id": "x"}, "scheduler not initialized"},
+		{"task_schedule", map[string]any{"agent": "bot", "content": "hi"}, "scheduler not initialized"},
+		{"task_list", map[string]any{}, "scheduler not initialized"},
+		{"task_run", map[string]any{"name": "bot/daily"}, "scheduler not initialized"},
+		{"task_stop", map[string]any{}, "scheduler not initialized"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.tool, func(t *testing.T) {
+			toolCallContains(t, d, tt.tool, tt.args, tt.want)
+		})
+	}
 }
 
 func TestAgentStop_FoundAndStopped(t *testing.T) {
@@ -372,18 +408,6 @@ func TestJobQueryWithDateRange(t *testing.T) {
 	assert.NotEqual(t, // Should return an array containing our job
 		"null", strings.TrimSpace(out))
 
-}
-
-func TestJobListQueryRunNow_NilScheduler(t *testing.T) {
-	old := GetDeps()
-	SetDeps(&Deps{Scheduler: nil})
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	d := NewDispatcher("https://localhost:16677", "")
-	toolCallContains(t, d, "job_query", map[string]any{}, "scheduler not initialized")
 }
 
 // ── Auth tools ────────────────────────────────────────────────────────────────
@@ -1059,23 +1083,6 @@ func TestSkillsListTool(t *testing.T) {
 
 // ── task_schedule error paths ─────────────────────────────────────────────────
 
-func TestTaskSchedule_NilScheduler(t *testing.T) {
-	old := GetDeps()
-	SetDeps(&Deps{Scheduler: nil})
-	t.Cleanup(func() { SetDeps(old) })
-	// task_schedule precompiles a recurring prompt task in the background.
-	t.Cleanup(backgroundCompiles.Wait)
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	d := NewDispatcher("https://localhost:16677", "")
-	toolCallContains(t, d, "task_schedule", map[string]any{"agent": "bot", "content": "hi"}, "scheduler not initialized")
-	toolCallContains(t, d, "task_list", map[string]any{}, "scheduler not initialized")
-	toolCallContains(t, d, "task_run", map[string]any{"name": "bot/daily"}, "scheduler not initialized")
-	toolCallContains(t, d, "task_stop", map[string]any{}, "scheduler not initialized")
-}
-
 func TestTaskSchedule_InvalidInDuration(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
 	toolCallContains(t, d, "task_schedule", map[string]any{
@@ -1307,33 +1314,7 @@ func TestAgentRun_AgentNotFound(t *testing.T) {
 	toolCallContains(t, d, "agent_run", map[string]any{"name": "unknown", "message": "hello"}, "not found")
 }
 
-// ── job_run_now with nil scheduler ────────────────────────────────────────────
-
-func TestJobRunNow_NilScheduler(t *testing.T) {
-	old := GetDeps()
-	SetDeps(&Deps{Scheduler: nil})
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	d := NewDispatcher("https://localhost:16677", "")
-	toolCallContains(t, d, "job_run_now", map[string]any{"id": "x"}, "scheduler not initialized")
-}
-
 // ── job_stop ──────────────────────────────────────────────────────────────────
-
-func TestJobStop_NilScheduler(t *testing.T) {
-	old := GetDeps()
-	SetDeps(&Deps{Scheduler: nil})
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	d := NewDispatcher("https://localhost:16677", "")
-	toolCallContains(t, d, "job_stop", map[string]any{"id": "x"}, "scheduler not initialized")
-}
 
 func TestJobStop_StopsPendingJob(t *testing.T) {
 	base := t.TempDir()

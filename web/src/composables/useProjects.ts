@@ -360,8 +360,15 @@ export function useProjectJob(target: Ref<string>, number: Ref<number>) {
 export const UP_NEXT_RUNS = 5;
 export const UP_NEXT_PER_SCHEDULE = 3;
 
-/** A project's scheduled prompts and their next runs, kept live. */
-export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
+/**
+ * The projects' scheduled prompts, kept live, with the next runs of the
+ * board's one project; a board of several has no "Up next" strip.
+ */
+export function useProjectSchedules(
+	project: Ref<string>,
+	targets: Ref<string[]>,
+	interval = 5_000,
+) {
 	const { callTool } = useMCP();
 	const schedules = ref<ProjectSchedule[]>([]);
 	const upcoming = ref<UpcomingRun[]>([]);
@@ -371,20 +378,27 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 
 	const { refresh } = usePoll(async () => {
 		const target = project.value;
-		if (!target) return;
+		const projects = targets.value;
+		const key = projects.join(" ");
+		if (!projects.length) return;
 		try {
 			const [taskText, upcomingText, agentText] = await Promise.all([
 				callTool("task_list", {}),
-				callTool("task_upcoming", {
-					project: target,
-					limit: UP_NEXT_RUNS,
-					per_task: UP_NEXT_PER_SCHEDULE,
-				}),
+				target
+					? callTool("task_upcoming", {
+							project: target,
+							limit: UP_NEXT_RUNS,
+							per_task: UP_NEXT_PER_SCHEDULE,
+						})
+					: Promise.resolve(""),
 				agents.value.length ? Promise.resolve("") : callTool("agent_list", {}),
 			]);
-			if (target !== project.value) return;
-			schedules.value = projectSchedules(parseToolJSON(taskText), target);
-			upcoming.value = normalizeUpcoming(parseToolJSON(upcomingText));
+			if (target !== project.value || key !== targets.value.join(" ")) return;
+			const tasks = parseToolJSON(taskText);
+			schedules.value = projects.flatMap((t) => projectSchedules(tasks, t));
+			upcoming.value = upcomingText
+				? normalizeUpcoming(parseToolJSON(upcomingText))
+				: [];
 			if (agentText) {
 				const list = parseToolJSON(agentText);
 				agents.value = Array.isArray(list)
@@ -405,7 +419,7 @@ export function useProjectSchedules(project: Ref<string>, interval = 5_000) {
 		}
 	}, interval);
 
-	watch(project, () => {
+	watch([project, () => targets.value.join(" ")], () => {
 		schedules.value = [];
 		upcoming.value = [];
 		loaded.value = false;

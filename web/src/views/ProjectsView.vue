@@ -151,7 +151,7 @@
 									</button>
 									<div id="job-filter" role="group" aria-label="Job filter" class="max-w-full flex-wrap items-center gap-1.5 md:flex"
 										:class="filterOpen ? 'max-md:absolute max-md:left-0 max-md:top-full max-md:z-20 max-md:mt-1 max-md:flex max-md:w-64 max-md:rounded-xl max-md:border max-md:border-gray-200 max-md:bg-white max-md:p-2 max-md:shadow-lg dark:max-md:border-gray-700 dark:max-md:bg-gray-900' : 'max-md:hidden'">
-										<button v-for="state in filterChips" :key="state" type="button" :aria-pressed="filters.includes(state)"
+										<button v-for="state in BOARD_FILTERS" :key="state" type="button" :aria-pressed="filters.includes(state)"
 											class="shrink-0 rounded-full border px-3 py-1" :class="filters.includes(state) ? FILTER_ACTIVE[state] : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'"
 											@click="toggleState(state)">
 											{{ stateLabel(state) }}<span v-if="chipCount(state) !== null" class="ml-1.5 tabular-nums opacity-75">{{ chipCount(state) }}</span>
@@ -206,7 +206,7 @@
 						<template v-else>
 						<div v-if="loading && !boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
 						<KanbanBoard v-else-if="kanban" :jobs="boardJobs" :filters="filters" :now="now" :schedules="boardSchedules"
-							:schedule-entries="scheduleEntries" :schedule-to="aggregate ? undefined : scheduleTo" />
+							:schedule-entries="scheduleEntries" :schedule-to="scheduleTo" :show-project="aggregate" />
 						<div v-else-if="!boardJobs.length && !boardSchedules.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
 							<p>No jobs match “<b class="text-gray-800 dark:text-gray-100">{{ search.trim() }}</b>”.</p>
 							<button type="button" class="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -219,6 +219,7 @@
 						<div v-else-if="!boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
 						<section v-else class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Jobs">
 							<ScheduledCard v-for="s in boardSchedules" :key="s.id" :schedule="s" :now="now" :to="scheduleTo(s)"
+								:show-project="aggregate"
 								:job="scheduleJob(scheduleEntries, s.id)" :busy="busySchedule === s.id"
 								@run="onScheduleAction(runScheduleNow, $event)"
 								@toggle="onScheduleAction(toggleSchedule, $event)" @settings="openScheduleSettings"
@@ -375,13 +376,7 @@ const states = computed(() => jobStates(filters.value));
 // Selecting only Scheduled hides every job.
 const showJobs = computed(() => !filters.value.length || !!states.value.length);
 const showSchedules = computed(
-	() =>
-		!aggregate.value &&
-		(!filters.value.length || filters.value.includes("scheduled")),
-);
-// A board of agent projects has no scheduled items, so no Scheduled chip.
-const filterChips = computed(() =>
-	aggregate.value ? BOARD_STATES : BOARD_FILTERS,
+	() => !filters.value.length || filters.value.includes("scheduled"),
 );
 const statesKey = computed(
 	() =>
@@ -399,7 +394,7 @@ const filterOpen = ref(false);
 const filterMenu = ref<HTMLElement | null>(null);
 const filterToggle = ref<HTMLButtonElement | null>(null);
 const filterSummary = computed(() => {
-	const active = filterChips.value.filter((s) => filters.value.includes(s));
+	const active = BOARD_FILTERS.filter((s) => filters.value.includes(s));
 	if (!active.length) return "All";
 	return active
 		.map((s) => {
@@ -482,13 +477,7 @@ const {
 	stop,
 	dismiss,
 	scheduleEntries,
-} = useProjectBoard(
-	targets,
-	states,
-	search,
-	kanban,
-	computed(() => !aggregate.value),
-);
+} = useProjectBoard(targets, states, search, kanban, ref(true));
 const {
 	schedules,
 	upcoming,
@@ -499,8 +488,8 @@ const {
 	runNow: runScheduleNow,
 	preview: previewSchedule,
 	refresh: refreshSchedules,
-} = useProjectSchedules(project);
-// The project's scheduled tasks are their own kind of box on the board, one
+} = useProjectSchedules(project, targets);
+// The projects' scheduled tasks are their own kind of box on the board, one
 // per task whatever its runs: in the list and in the kanban's Scheduled
 // column, while the Scheduled chip or no chip is selected, or a selected
 // job state is the task's own: Running while a run is in flight, Failed
@@ -508,12 +497,7 @@ const {
 function scheduleInFilter(s: ProjectSchedule) {
 	if (showSchedules.value) return true;
 	const state = scheduleJob(scheduleEntries.value, s.id)?.schedule?.state;
-	return (
-		!aggregate.value &&
-		!!state &&
-		state !== "scheduled" &&
-		states.value.includes(state)
-	);
+	return !!state && state !== "scheduled" && states.value.includes(state);
 }
 const boardSchedules = computed(() =>
 	schedules.value.filter(
@@ -522,8 +506,17 @@ const boardSchedules = computed(() =>
 );
 const boardJobs = computed(() => (showJobs.value ? jobs.value : []));
 // A scheduled box opens its editor on the board, at ?scheduled=<id>, so a
-// reload or a shared link opens the same place.
+// reload or a shared link opens the same place. A board of several projects
+// opens it on its own project's board, where the editor lives.
 function scheduleTo(s: ProjectSchedule) {
+	if (aggregate.value)
+		return {
+			path: projectPath(
+				projectOwner(settingsStore.config, s.project),
+				s.project,
+			),
+			query: { scheduled: s.id },
+		};
 	return { query: { ...boardQuery.value.query, scheduled: s.id } };
 }
 const boardQuery = computed(() => {
@@ -633,11 +626,10 @@ const scheduleJobStates = computed(
 			(e) => e.schedule && e.schedule.state !== "scheduled",
 		).length,
 );
-const allItems = computed(() =>
-	aggregate.value
-		? allJobs.value
-		: Math.max(allJobs.value - scheduleJobStates.value, 0) +
-			schedules.value.length,
+const allItems = computed(
+	() =>
+		Math.max(allJobs.value - scheduleJobStates.value, 0) +
+		schedules.value.length,
 );
 const shownTotal = computed(
 	() => (showJobs.value ? total.value : 0) + boardSchedules.value.length,

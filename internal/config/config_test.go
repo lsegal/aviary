@@ -897,38 +897,31 @@ func TestValidate_DisabledChannelSkipsAllowFromWarning(t *testing.T) {
 
 }
 
-func TestValidate_ShowTypingAllowedOnSlack(t *testing.T) {
-	enabled := true
-	cfg := &Config{
-		Agents: []AgentConfig{{
-			Name: "bot",
-			Channels: []ChannelConfig{{
-				Type:       "slack",
-				ID:         "workspace-bot",
-				ShowTyping: &enabled,
-			}},
-		}},
+func TestValidate_ShowTypingAllowed(t *testing.T) {
+	cases := []struct {
+		channelType string
+		id          string
+	}{
+		{channelType: "slack", id: "workspace-bot"},
+		{channelType: "signal", id: "+15551234567"},
 	}
-	issues := Validate(cfg, nil)
-	assert.False(t, hasIssue(issues, "show_typing is only supported"))
-
-}
-
-func TestValidate_ShowTypingAllowedOnSignal(t *testing.T) {
-	enabled := true
-	cfg := &Config{
-		Agents: []AgentConfig{{
-			Name: "bot",
-			Channels: []ChannelConfig{{
-				Type:       "signal",
-				ID:         "+15551234567",
-				ShowTyping: &enabled,
-			}},
-		}},
+	for _, tc := range cases {
+		t.Run(tc.channelType, func(t *testing.T) {
+			enabled := true
+			cfg := &Config{
+				Agents: []AgentConfig{{
+					Name: "bot",
+					Channels: []ChannelConfig{{
+						Type:       tc.channelType,
+						ID:         tc.id,
+						ShowTyping: &enabled,
+					}},
+				}},
+			}
+			issues := Validate(cfg, nil)
+			assert.False(t, hasIssue(issues, "show_typing is only supported"))
+		})
 	}
-	issues := Validate(cfg, nil)
-	assert.False(t, hasIssue(issues, "show_typing is only supported"))
-
 }
 
 func TestValidate_StdioProviderRejected(t *testing.T) {
@@ -1057,62 +1050,44 @@ func TestValidate_MetaModelNeedsItsAPIKey(t *testing.T) {
 	assert.False(t, hasIssue(stored, "meta:default"))
 }
 
-func TestValidate_VLLMAcceptsDefaultBaseURI(t *testing.T) {
-	cfg := &Config{
-		Agents: []AgentConfig{{
-			Name:  "bot",
-			Model: "vllm/qwen2.5-coder",
-		}},
+func TestValidate_LocalOpenAIProvidersAcceptBaseURI(t *testing.T) {
+	providers := []struct {
+		name    string
+		model   string
+		baseURI string
+	}{
+		{name: "vllm", model: "vllm/qwen2.5-coder", baseURI: "http://127.0.0.1:8000"},
+		{name: "ollama", model: "ollama/llama3.2", baseURI: "http://127.0.0.1:11434"},
 	}
-	issues := Validate(cfg, nil)
-	assert.False(t, hasIssue(issues, "vllm models require"))
-	assert.False(t, hasIssue(issues, "unknown provider"))
-}
-
-func TestValidate_VLLMAcceptsConfiguredBaseURI(t *testing.T) {
-	cfg := &Config{
-		Agents: []AgentConfig{{
-			Name:  "bot",
-			Model: "vllm/qwen2.5-coder",
-		}},
-		Models: ModelsConfig{
-			Providers: map[string]ProviderConfig{
-				"vllm": {BaseURI: "http://127.0.0.1:8000"},
-			},
-		},
+	for _, p := range providers {
+		t.Run(p.name+"/default", func(t *testing.T) {
+			cfg := &Config{
+				Agents: []AgentConfig{{
+					Name:  "bot",
+					Model: p.model,
+				}},
+			}
+			issues := Validate(cfg, nil)
+			assert.False(t, hasIssue(issues, p.name+" models require"))
+			assert.False(t, hasIssue(issues, "unknown provider"))
+		})
+		t.Run(p.name+"/configured", func(t *testing.T) {
+			cfg := &Config{
+				Agents: []AgentConfig{{
+					Name:  "bot",
+					Model: p.model,
+				}},
+				Models: ModelsConfig{
+					Providers: map[string]ProviderConfig{
+						p.name: {BaseURI: p.baseURI},
+					},
+				},
+			}
+			issues := Validate(cfg, nil)
+			assert.False(t, hasIssue(issues, p.name+" models require"))
+			assert.False(t, hasIssue(issues, "unknown provider"))
+		})
 	}
-	issues := Validate(cfg, nil)
-	assert.False(t, hasIssue(issues, "vllm models require"))
-	assert.False(t, hasIssue(issues, "unknown provider"))
-}
-
-func TestValidate_OllamaAcceptsDefaultBaseURI(t *testing.T) {
-	cfg := &Config{
-		Agents: []AgentConfig{{
-			Name:  "bot",
-			Model: "ollama/llama3.2",
-		}},
-	}
-	issues := Validate(cfg, nil)
-	assert.False(t, hasIssue(issues, "ollama models require"))
-	assert.False(t, hasIssue(issues, "unknown provider"))
-}
-
-func TestValidate_OllamaAcceptsConfiguredBaseURI(t *testing.T) {
-	cfg := &Config{
-		Agents: []AgentConfig{{
-			Name:  "bot",
-			Model: "ollama/llama3.2",
-		}},
-		Models: ModelsConfig{
-			Providers: map[string]ProviderConfig{
-				"ollama": {BaseURI: "http://127.0.0.1:11434"},
-			},
-		},
-	}
-	issues := Validate(cfg, nil)
-	assert.False(t, hasIssue(issues, "ollama models require"))
-	assert.False(t, hasIssue(issues, "unknown provider"))
 }
 
 func TestValidate_InvalidModel(t *testing.T) {

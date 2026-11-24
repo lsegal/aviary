@@ -58,6 +58,9 @@ jobs:
           cache-dependency-path: docs/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: docs
+      # Checks the docs servers honor __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+      # (#1102); test:scripts covers the web app side.
+      - run: node --test scripts/dev-allowed-hosts.test.mjs
       # The build renders the /skills/ share cards and fails if a skill page
       # lacks og:image or twitter:card (#763).
       - run: pnpm build

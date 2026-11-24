@@ -77,32 +77,62 @@ func TestFactoryForModel(t *testing.T) {
 	}
 }
 
-func TestFactoryForModel_VLLM(t *testing.T) {
-	f := NewFactory(func(_ string) (string, error) { return "test-key", nil }).WithProviderOptionsResolver(func(provider string) (ProviderOptions, bool) {
-		if provider != "vllm" {
-			return ProviderOptions{}, false
-		}
-		return ProviderOptions{BaseURI: "http://127.0.0.1:8000"}, true
-	})
-
-	p, err := f.ForModel("vllm/qwen2.5-coder")
-	assert.NoError(t, err)
-	_, ok := p.(*VLLMProvider)
-	assert.True(t, ok)
+// localOpenAIProvider is the surface shared by OpenAI-compatible local providers.
+type localOpenAIProvider interface {
+	Provider
+	ListModels(ctx context.Context) ([]string, error)
 }
 
-func TestFactoryForModel_Ollama(t *testing.T) {
-	f := NewFactory(func(_ string) (string, error) { return "test-key", nil }).WithProviderOptionsResolver(func(provider string) (ProviderOptions, bool) {
-		if provider != "ollama" {
-			return ProviderOptions{}, false
-		}
-		return ProviderOptions{BaseURI: "http://127.0.0.1:11434"}, true
-	})
+// localOpenAIProviders lists the OpenAI-compatible local providers that share
+// the same factory, normalization, ListModels and Stream behaviour.
+var localOpenAIProviders = []struct {
+	name        string
+	defaultBase string
+	model       string
+	listModels  []string
+	newProvider func(apiKey, model, baseURI string) localOpenAIProvider
+	normalize   func(string) string
+	isProvider  func(Provider) bool
+}{
+	{
+		name:        "vllm",
+		defaultBase: "http://127.0.0.1:8000",
+		model:       "qwen2.5-coder",
+		listModels:  []string{"qwen2.5-coder", "llama-3.1-8b"},
+		newProvider: func(apiKey, model, baseURI string) localOpenAIProvider {
+			return NewVLLMProvider(apiKey, model, baseURI)
+		},
+		normalize:  normalizeVLLMBaseURI,
+		isProvider: func(p Provider) bool { _, ok := p.(*VLLMProvider); return ok },
+	},
+	{
+		name:        "ollama",
+		defaultBase: "http://127.0.0.1:11434",
+		model:       "llama3.2",
+		listModels:  []string{"llama3.2", "qwen2.5"},
+		newProvider: func(apiKey, model, baseURI string) localOpenAIProvider {
+			return NewOllamaProvider(apiKey, model, baseURI)
+		},
+		normalize:  normalizeOllamaBaseURI,
+		isProvider: func(p Provider) bool { _, ok := p.(*OllamaProvider); return ok },
+	},
+}
 
-	p, err := f.ForModel("ollama/llama3.2")
-	assert.NoError(t, err)
-	_, ok := p.(*OllamaProvider)
-	assert.True(t, ok)
+func TestFactoryForModel_LocalOpenAIProviders(t *testing.T) {
+	for _, lp := range localOpenAIProviders {
+		t.Run(lp.name, func(t *testing.T) {
+			f := NewFactory(func(_ string) (string, error) { return "test-key", nil }).WithProviderOptionsResolver(func(provider string) (ProviderOptions, bool) {
+				if provider != lp.name {
+					return ProviderOptions{}, false
+				}
+				return ProviderOptions{BaseURI: lp.defaultBase}, true
+			})
+
+			p, err := f.ForModel(lp.name + "/" + lp.model)
+			assert.NoError(t, err)
+			assert.True(t, lp.isProvider(p))
+		})
+	}
 }
 
 func TestFactoryResolverError(t *testing.T) {
@@ -1165,82 +1195,60 @@ func TestNewOpenAIProvider_EmptyKey(t *testing.T) {
 
 }
 
-func TestNormalizeVLLMBaseURI(t *testing.T) {
-	assert.Equal(t, "http://127.0.0.1:8000/v1", normalizeVLLMBaseURI(""))
-	assert.Equal(t, "http://127.0.0.1:8000/v1", normalizeVLLMBaseURI("http://127.0.0.1:8000"))
-	assert.Equal(t, "http://127.0.0.1:8000/v1", normalizeVLLMBaseURI("http://127.0.0.1:8000/"))
-	assert.Equal(t, "http://127.0.0.1:8000/v1", normalizeVLLMBaseURI("http://127.0.0.1:8000/v1"))
+func TestNormalizeLocalOpenAIBaseURI(t *testing.T) {
+	for _, lp := range localOpenAIProviders {
+		t.Run(lp.name, func(t *testing.T) {
+			want := lp.defaultBase + "/v1"
+			assert.Equal(t, want, lp.normalize(""))
+			assert.Equal(t, want, lp.normalize(lp.defaultBase))
+			assert.Equal(t, want, lp.normalize(lp.defaultBase+"/"))
+			assert.Equal(t, want, lp.normalize(lp.defaultBase+"/v1"))
+		})
+	}
 }
 
-func TestVLLMProvider_ListModels(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/v1/models", r.URL.Path)
-		assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"object":"list","data":[{"id":"qwen2.5-coder"},{"id":"llama-3.1-8b"}]}`)
-	}))
-	defer srv.Close()
+func TestLocalOpenAIProvider_ListModels(t *testing.T) {
+	for _, lp := range localOpenAIProviders {
+		t.Run(lp.name, func(t *testing.T) {
+			data := make([]map[string]string, 0, len(lp.listModels))
+			for _, id := range lp.listModels {
+				data = append(data, map[string]string{"id": id})
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/v1/models", r.URL.Path)
+				assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
+			}))
+			defer srv.Close()
 
-	p := NewVLLMProvider("test-key", "qwen2.5-coder", srv.URL)
-	models, err := p.ListModels(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, []string{"qwen2.5-coder", "llama-3.1-8b"}, models)
+			p := lp.newProvider("test-key", lp.model, srv.URL)
+			models, err := p.ListModels(context.Background())
+			require.NoError(t, err)
+			assert.Equal(t, lp.listModels, models)
+		})
+	}
 }
 
-func TestVLLMProvider_Stream_UsesOpenAICompatibleEndpoint(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/v1/chat/completions", r.URL.Path)
-		openAISSEResponse(w, "Hello from vllm")
-	}))
-	defer srv.Close()
+func TestLocalOpenAIProvider_Stream_UsesOpenAICompatibleEndpoint(t *testing.T) {
+	for _, lp := range localOpenAIProviders {
+		t.Run(lp.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/v1/chat/completions", r.URL.Path)
+				openAISSEResponse(w, "Hello from "+lp.name)
+			}))
+			defer srv.Close()
 
-	p := NewVLLMProvider("test-key", "qwen2.5-coder", srv.URL)
-	ch, err := p.Stream(context.Background(), Request{
-		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
-	})
-	require.NoError(t, err)
+			p := lp.newProvider("test-key", lp.model, srv.URL)
+			ch, err := p.Stream(context.Background(), Request{
+				Messages: []Message{{Role: RoleUser, Content: "Hi"}},
+			})
+			require.NoError(t, err)
 
-	events := collectEvents(t, ch)
-	assert.NotEmpty(t, events)
-}
-
-func TestNormalizeOllamaBaseURI(t *testing.T) {
-	assert.Equal(t, "http://127.0.0.1:11434/v1", normalizeOllamaBaseURI(""))
-	assert.Equal(t, "http://127.0.0.1:11434/v1", normalizeOllamaBaseURI("http://127.0.0.1:11434"))
-	assert.Equal(t, "http://127.0.0.1:11434/v1", normalizeOllamaBaseURI("http://127.0.0.1:11434/"))
-	assert.Equal(t, "http://127.0.0.1:11434/v1", normalizeOllamaBaseURI("http://127.0.0.1:11434/v1"))
-}
-
-func TestOllamaProvider_ListModels(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/v1/models", r.URL.Path)
-		assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"object":"list","data":[{"id":"llama3.2"},{"id":"qwen2.5"}]}`)
-	}))
-	defer srv.Close()
-
-	p := NewOllamaProvider("test-key", "llama3.2", srv.URL)
-	models, err := p.ListModels(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, []string{"llama3.2", "qwen2.5"}, models)
-}
-
-func TestOllamaProvider_Stream_UsesOpenAICompatibleEndpoint(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/v1/chat/completions", r.URL.Path)
-		openAISSEResponse(w, "Hello from ollama")
-	}))
-	defer srv.Close()
-
-	p := NewOllamaProvider("test-key", "llama3.2", srv.URL)
-	ch, err := p.Stream(context.Background(), Request{
-		Messages: []Message{{Role: RoleUser, Content: "Hi"}},
-	})
-	require.NoError(t, err)
-
-	events := collectEvents(t, ch)
-	assert.NotEmpty(t, events)
+			events := collectEvents(t, ch)
+			assert.NotEmpty(t, events)
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------

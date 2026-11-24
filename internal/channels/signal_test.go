@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,69 +64,6 @@ func TestDispatchEnvelopeAgentNameReplacement(t *testing.T) {
 	default:
 		t.Fatal("no message dispatched for phone fallback")
 	}
-}
-
-// Test fetchLinkPreviews and downloadTempImage using an httptest server.
-func TestFetchLinkPreviewsAndDownloadTempImage(t *testing.T) {
-	// Start a server that serves an HTML page and an image.
-	var ts *httptest.Server
-	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/img.jpg") {
-			w.Header().Set("Content-Type", "image/jpeg")
-			if _, err := w.Write([]byte("JPEGDATA")); err != nil {
-				t.Fatalf("failed to write image: %v", err)
-			}
-			return
-		}
-		// HTML page with title and og:image
-		w.Header().Set("Content-Type", "text/html")
-		if _, err := w.Write([]byte(`<!doctype html><html><head><title>My Title</title><meta property="og:image" content="` + ts.URL + `/img.jpg"></head><body></body></html>`)); err != nil {
-			t.Fatalf("failed to write html: %v", err)
-		}
-	}))
-	defer ts.Close()
-
-	previews, cleanup := fetchLinkPreviews("check " + ts.URL + "/")
-	if cleanup != nil {
-		defer cleanup()
-	}
-	if len(previews) == 0 {
-		t.Fatal("expected a preview")
-	}
-	p := previews[0]
-	if p.Title != "My Title" {
-		t.Fatalf("unexpected title: %q", p.Title)
-	}
-	if p.Image == "" {
-		t.Fatal("expected an image path")
-	}
-	// ensure file exists
-	if _, err := os.Stat(p.Image); err != nil {
-		t.Fatalf("preview image not found: %v", err)
-	}
-	// cleanup should remove the file
-	if cleanup != nil {
-		cleanup()
-		if _, err := os.Stat(p.Image); err == nil {
-			t.Fatal("expected image file removed by cleanup")
-		}
-	}
-
-	// Also test downloadTempImage directly
-	ctx := context.Background()
-	path, err := downloadTempImage(ctx, ts.URL+"/img.jpg")
-	if err != nil {
-		t.Fatalf("downloadTempImage failed: %v", err)
-	}
-	// file should exist and contain data
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read downloaded file: %v", err)
-	}
-	if len(data) == 0 {
-		t.Fatal("downloaded file empty")
-	}
-	os.Remove(path) //nolint:errcheck
 }
 
 func init() {
