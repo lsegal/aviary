@@ -77,8 +77,9 @@
 											{{ attachmentName(mediaURL) || "Open attachment" }}
 										</a>
 									</template>
-									<span v-if="item.msg.text && item.msg.role === 'user'" data-testid="chat-message-content"
-										class="max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] [&_a]:underline [&_a]:underline-offset-2" v-html="renderLinkedText(item.msg.text)" />
+									<div v-if="item.msg.text && item.msg.role === 'user'" data-testid="chat-message-content"
+										class="chat-markdown chat-markdown-user prose prose-invert max-w-full"
+										v-html="renderUserMarkdown(item.msg.text)" />
 									<span v-if="item.msg.text && item.msg.role === 'assistant' && item.msg.isError"
 										class="max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-sm [&_a]:underline" v-html="renderLinkedText(item.msg.text)" />
 									<div v-if="item.msg.text && item.msg.role === 'assistant' && !item.msg.isError"
@@ -184,7 +185,11 @@ import MoreBelowPill from "../components/MoreBelowPill.vue";
 import { useAutoFollow } from "../composables/useAutoFollow";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
-import { renderLinkedText, renderMarkdown } from "../lib/markdown";
+import {
+	renderLinkedText,
+	renderMarkdown,
+	renderUserMarkdown,
+} from "../lib/markdown";
 import { useAgentsStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
 import {

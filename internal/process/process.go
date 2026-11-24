@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -174,11 +175,31 @@ func Start(cmd *exec.Cmd) error {
 }
 
 // Wait waits for a tracked child and stops tracking it.
+//
+// A child that exits while something it started still holds its output pipes
+// leaves Wait waiting on them until cmd.WaitDelay expires, which it reports as
+// exec.ErrWaitDelay. Those leftovers, typically a background shell the agent
+// launched, would otherwise keep running unowned, so the rest of the child's
+// process tree is killed then and the reaped PIDs are logged (#1122).
 func Wait(cmd *exec.Cmd) error {
 	err := cmd.Wait()
+	if CleanupTimedOut(err) {
+		if pids := reapLeftovers(cmd); len(pids) > 0 {
+			slog.Warn("process: killed leftover processes that kept the exited child's output open", "pid", cmd.Process.Pid, "reaped", pids)
+		}
+	}
 	childProcesses.forget(cmd)
 	return err
 }
+
+// CleanupTimedOut reports whether err is Wait's report that the child exited
+// successfully but its output pipes stayed open past cmd.WaitDelay. The child
+// itself finished; only the processes it left behind did not.
+func CleanupTimedOut(err error) bool { return errors.Is(err, exec.ErrWaitDelay) }
+
+// CleanupTimedOutNote is what a run that finished, but whose process cleanup
+// timed out, notes instead of failing.
+const CleanupTimedOutNote = "process cleanup timed out: something the agent started kept its output open after it exited, and was killed"
 
 // Run runs a tracked child to completion.
 func Run(cmd *exec.Cmd) error {

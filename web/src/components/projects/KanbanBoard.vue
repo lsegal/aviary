@@ -21,6 +21,9 @@
 							<PencilIcon aria-hidden="true" class="h-3.5 w-3.5" />
 						</router-link>
 					</div>
+					<router-link v-if="showProject" :to="projectBoardPath(s.project)" data-testid="kanban-scheduled-project"
+						class="relative z-10 block w-fit max-w-full truncate rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+						:title="`Open ${s.project}'s board`">{{ s.project }}</router-link>
 					<!-- A run shows here in place; the card never moves columns. -->
 					<p v-if="scheduleRunning(entryOf(s)?.schedule)" data-testid="kanban-scheduled-running"
 						class="flex items-center gap-1.5 text-blue-700 dark:text-blue-300">
@@ -94,6 +97,7 @@ import {
 	jobStates,
 	type ProjectJob,
 	type ProjectSchedule,
+	projectPath,
 	runResultClass,
 	runResultIcon,
 	scheduleJob,
@@ -121,8 +125,15 @@ const props = withDefaults(
 		scheduleTo?: (s: ProjectSchedule) => RouteLocationRaw;
 		/** The schedules' board entries: their last and next runs and any run in flight. */
 		scheduleEntries?: ProjectJob[];
+		/** Names each scheduled card's project, on a board of several. */
+		showProject?: boolean;
 	}>(),
-	{ schedules: () => [], scheduleTo: undefined, scheduleEntries: () => [] },
+	{
+		schedules: () => [],
+		scheduleTo: undefined,
+		scheduleEntries: () => [],
+		showProject: false,
+	},
 );
 
 function entryOf(s: ProjectSchedule) {
@@ -157,6 +168,9 @@ const columns = computed(() =>
 );
 
 const settings = useSettingsStore();
+function projectBoardPath(target: string) {
+	return projectPath(projectOwner(settings.config, target), target);
+}
 function runPath(job: ProjectJob) {
 	return jobPath(
 		projectOwner(settings.config, job.target),

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -34,8 +35,24 @@ func TestMain(m *testing.M) {
 	case "muse":
 		fakeMuse()
 		os.Exit(0)
+	case "lingering":
+		fakeGeneric()
+		fakeLinger()
+		os.Exit(0)
+	case "lingering-unfinished":
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"type": "message", "role": "assistant", "content": "still working"})
+		fakeLinger()
+		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+// fakeLinger leaves a background child holding the fake CLI's stdout, as an
+// agent that started a `&` shell does (#1122).
+func fakeLinger() {
+	child := exec.Command("sleep", "30")
+	child.Stdout = os.Stdout
+	_ = child.Start()
 }
 
 // fakeClaude answers each stream-json user message with the turn number, its

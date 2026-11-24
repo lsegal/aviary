@@ -13,6 +13,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/process"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/scheduler"
@@ -251,8 +252,15 @@ func projectTaskOutcome(runErr, cause error, log string) projectTaskResult {
 		summary := clidoctor.FirstLine(cause.Error())
 		return projectTaskResult{summary: summary, err: fmt.Errorf("%s: %w", summary, context.Canceled)}
 	case runErr != nil && !errors.As(runErr, &wakeup):
-		summary := clidoctor.FirstLine(runErr.Error())
-		return projectTaskResult{summary: summary, err: errors.New(summary)}
+		summary := truncate(clidoctor.FirstLine(runErr.Error()), 300)
+		err := errors.New(summary)
+		// The agent's last output and bug report travel beside the summary,
+		// so the run's page shows them apart from its error.
+		var failure *domain.RunFailure
+		if errors.As(runErr, &failure) {
+			err = &domain.RunFailure{Err: err, Output: failure.Output, BugReportURL: failure.BugReportURL}
+		}
+		return projectTaskResult{summary: summary, err: err}
 	}
 	return projectTaskResult{summary: lastLine(log)}
 }
