@@ -7,6 +7,14 @@ const PIXEL_PNG = Buffer.from(
 	"base64",
 );
 
+const RED_PNG = Buffer.from(
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+	"base64",
+);
+
+const dataURL = (png: Buffer) =>
+	`data:image/png;base64,${png.toString("base64")}`;
+
 interface RunArgs {
 	message?: string;
 	media_urls?: string[];
@@ -163,6 +171,139 @@ test("files attached through + are appended, removable and all sent", async ({
 	await expect(sent.getByRole("link", { name: "notes.md" })).toBeVisible();
 });
 
+test("clicking a pending image opens the preview; × only removes it", async ({
+	page,
+}) => {
+	const { composer } = await mockChat(page);
+	await pickFiles(page, [
+		{ name: "white.png", mimeType: "image/png", buffer: PIXEL_PNG },
+		{
+			name: "notes.md",
+			mimeType: "text/markdown",
+			buffer: Buffer.from("# Notes"),
+		},
+		{ name: "red.png", mimeType: "image/png", buffer: RED_PNG },
+	]);
+	await expect(composer.getByRole("listitem")).toHaveCount(3);
+	const preview = page.getByTestId("image-preview");
+	const shown = preview.getByTestId("image-preview-img");
+
+	// Thumbnails read as clickable; text attachments aren't previewable.
+	const thumb = composer.getByRole("button", { name: "Preview red.png" });
+	await expect(thumb).toHaveCSS("cursor", "pointer");
+	await expect(composer.getByTestId("attachment-preview")).toHaveCount(2);
+	await expect(
+		composer.getByRole("button", { name: "Preview notes.md" }),
+	).toHaveCount(0);
+
+	// The clicked image opens at full size, and the preview steps through
+	// just the images.
+	await thumb.click();
+	await expect(preview).toBeVisible();
+	await expect(preview).toHaveAttribute("role", "dialog");
+	await expect(shown).toHaveAttribute("src", dataURL(RED_PNG));
+	await expect(shown).toHaveAttribute("alt", "red.png");
+	await expect(preview.getByTestId("image-preview-position")).toHaveText(
+		"2 / 2",
+	);
+	await expect(
+		preview.getByRole("button", { name: "Close image" }),
+	).toBeFocused();
+	await page.keyboard.press("ArrowRight");
+	await expect(shown).toHaveAttribute("src", dataURL(PIXEL_PNG));
+	await preview.getByRole("button", { name: "Next image" }).click();
+	await expect(shown).toHaveAttribute("src", dataURL(RED_PNG));
+	await page.keyboard.press("ArrowLeft");
+	await expect(shown).toHaveAttribute("alt", "white.png");
+
+	// Esc closes it and returns focus to the thumbnail; nothing is removed.
+	await page.keyboard.press("Escape");
+	await expect(preview).toHaveCount(0);
+	await expect(thumb).toBeFocused();
+	await expect(composer.getByRole("listitem")).toHaveCount(3);
+
+	// The keyboard opens it too, and a click outside the image closes it.
+	await page.keyboard.press("Enter");
+	await expect(shown).toHaveAttribute("src", dataURL(RED_PNG));
+	await preview.click({ position: { x: 5, y: 5 } });
+	await expect(preview).toHaveCount(0);
+	await expect(composer.getByRole("listitem")).toHaveCount(3);
+
+	// × removes without opening the preview.
+	await composer.getByRole("button", { name: "Remove red.png" }).click();
+	await expect(composer.getByRole("listitem")).toHaveCount(2);
+	await expect(preview).toHaveCount(0);
+	await composer.getByRole("button", { name: "Preview white.png" }).click();
+	await expect(shown).toHaveAttribute("src", dataURL(PIXEL_PNG));
+	await expect(preview.getByTestId("image-preview-position")).toHaveCount(0);
+	await expect(preview.getByRole("button", { name: "Next image" })).toHaveCount(
+		0,
+	);
+});
+
+test("pasted and dropped images open the preview too", async ({ page }) => {
+	const { composer, input } = await mockChat(page);
+	await input.focus();
+	await input.evaluate((el, b64) => {
+		const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+		const data = new DataTransfer();
+		data.items.add(new File([bytes], "pasted.png", { type: "image/png" }));
+		el.dispatchEvent(
+			new ClipboardEvent("paste", {
+				clipboardData: data,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+	}, RED_PNG.toString("base64"));
+	await composer.evaluate((el, b64) => {
+		const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+		const data = new DataTransfer();
+		data.items.add(new File([bytes], "dropped.png", { type: "image/png" }));
+		el.dispatchEvent(
+			new DragEvent("drop", {
+				dataTransfer: data,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+	}, PIXEL_PNG.toString("base64"));
+	await expect(composer.getByRole("listitem")).toHaveCount(2);
+	const shown = page.getByTestId("image-preview-img");
+	await composer.getByRole("button", { name: "Preview pasted.png" }).click();
+	await expect(shown).toHaveAttribute("src", dataURL(RED_PNG));
+	await page.keyboard.press("Escape");
+	await composer.getByRole("button", { name: "Preview dropped.png" }).click();
+	await expect(shown).toHaveAttribute("src", dataURL(PIXEL_PNG));
+});
+
+test("sent images open in the same preview", async ({ page }) => {
+	// The reply never finishes, so no reload replaces the sent bubble.
+	const { input } = await mockChat(page, () => new Promise(() => {}));
+	await pickFiles(page, [
+		{ name: "white.png", mimeType: "image/png", buffer: PIXEL_PNG },
+		{ name: "red.png", mimeType: "image/png", buffer: RED_PNG },
+	]);
+	await input.fill("two images");
+	await input.press("Enter");
+	const sent = page
+		.getByTestId("chat-user-message")
+		.filter({ hasText: "two images" });
+	await expect(sent.locator("img")).toHaveCount(2);
+
+	await sent.locator("img").nth(1).click();
+	const preview = page.getByTestId("image-preview");
+	const shown = preview.getByTestId("image-preview-img");
+	await expect(shown).toHaveAttribute("src", dataURL(RED_PNG));
+	await expect(preview.getByTestId("image-preview-position")).toHaveText(
+		"2 / 2",
+	);
+	await page.keyboard.press("ArrowRight");
+	await expect(shown).toHaveAttribute("src", dataURL(PIXEL_PNG));
+	await preview.getByRole("button", { name: "Close image" }).click();
+	await expect(preview).toHaveCount(0);
+});
+
 test("pasting several images adds every one", async ({ page }) => {
 	const { composer, input } = await mockChat(page);
 	await input.focus();
@@ -247,4 +388,24 @@ test("Enter sends and Shift+Enter inserts a newline", async ({ page }) => {
 	await expect.poll(() => runs.length).toBe(1);
 	expect(runs[0].message).toBe("first line\nsecond line");
 	await expect(input).toHaveValue("");
+});
+
+test.describe("phone width", () => {
+	test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+	test("tapping a pending image opens the preview", async ({ page }) => {
+		const { composer } = await mockChat(page);
+		await pickFiles(page, [
+			{ name: "red.png", mimeType: "image/png", buffer: RED_PNG },
+		]);
+		await composer.getByRole("button", { name: "Preview red.png" }).tap();
+		const preview = page.getByTestId("image-preview");
+		await expect(preview.getByTestId("image-preview-img")).toHaveAttribute(
+			"src",
+			dataURL(RED_PNG),
+		);
+		await preview.getByRole("button", { name: "Close image" }).tap();
+		await expect(preview).toHaveCount(0);
+		await expect(composer.getByRole("listitem")).toHaveCount(1);
+	});
 });

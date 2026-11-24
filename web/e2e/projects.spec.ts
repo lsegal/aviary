@@ -2137,6 +2137,39 @@ test("prompt chat opens beside the board and remembers it is open", async ({
 	await expect(page.getByTestId("project-chat")).toHaveCount(0);
 });
 
+test("prompt chat previews a pending image when it is clicked", async ({
+	page,
+}) => {
+	const calls: Calls = {};
+	Object.assign(calls, await setup(page, undefined, chatFixtures(calls)));
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.getByTestId("prompt-chat-toggle").click();
+	const chat = page.getByTestId("project-chat");
+	const png = Buffer.from(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+		"base64",
+	);
+	const chooser = page.waitForEvent("filechooser");
+	await chat.getByRole("button", { name: "Attach files" }).click();
+	await (await chooser).setFiles({
+		name: "board.png",
+		mimeType: "image/png",
+		buffer: png,
+	});
+
+	await chat.getByRole("button", { name: "Preview board.png" }).click();
+	const preview = page.getByTestId("image-preview");
+	await expect(preview.getByTestId("image-preview-img")).toHaveAttribute(
+		"src",
+		`data:image/png;base64,${png.toString("base64")}`,
+	);
+	// Esc closes only the preview, leaving the chat and its attachment.
+	await page.keyboard.press("Escape");
+	await expect(preview).toHaveCount(0);
+	await expect(chat).toBeVisible();
+	await expect(chat.getByTestId("attachment-image")).toHaveCount(1);
+});
+
 test("logs panel docks below the board, streams lines, and resizes", async ({
 	page,
 }) => {
