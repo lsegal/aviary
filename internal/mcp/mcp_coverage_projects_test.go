@@ -82,6 +82,7 @@ func TestProjectTools_NilDeps(t *testing.T) {
 		"project_issue_comment": {"number": 1, "text": "x"}, "project_issue_create": {"text": "x"},
 		"project_issue_backfill_media": {"numbers": []any{1}},
 		"project_github_import":        {"profile": "/p"},
+		"project_site_fetch":           {"url": "https://aviary.bot"},
 	}
 	for _, tool := range projectToolNames {
 		toolArgs := args[tool]

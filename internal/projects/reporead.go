@@ -340,7 +340,7 @@ func (m *Manager) SiteFetch(ctx context.Context, link string) (map[string]any, e
 	if err != nil {
 		return nil, fmt.Errorf("fetch %s: %w", u.Redacted(), err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, readBodyLimit+1))
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", u.Redacted(), err)
