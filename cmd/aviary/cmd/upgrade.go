@@ -46,6 +46,11 @@ func init() {
 }
 
 func runUpgrade(cmd *cobra.Command, _ []string) error {
+	if cmd != nil {
+		// Flags are already parsed, so failures from here on are runtime
+		// errors and the usage block after them is noise.
+		cmd.SilenceUsage = true
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 

@@ -18,7 +18,8 @@ function Get-BinDir {
 # <host>/<repo>/releases/latest redirects to the latest release's tag page, so
 # the tag is read from that redirect. It is an ordinary web request, not a
 # GitHub API call, so the unauthenticated API rate limit (which answers with
-# HTTP 403) never applies.
+# HTTP 403) never applies. `aviary upgrade` uses the same URL scheme; see
+# internal/update/release.go and keep the two in sync.
 function Get-LatestTag {
 	param(
 		[string]$RepoName,
