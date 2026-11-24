@@ -32,6 +32,10 @@
 						<component :is="enabled ? PauseIcon : PlayCircleIcon" aria-hidden="true" class="h-4 w-4" />
 						{{ enabled ? "Pause" : "Resume" }}
 					</button>
+					<button v-if="precompiles" type="button" data-testid="task-recompile" :disabled="busy" :class="ACTION_CLS"
+						title="Discard the compiled script and compile a fresh one" @click="act(recompile)">
+						<ArrowPathIcon aria-hidden="true" class="h-4 w-4" /> Recompile
+					</button>
 					<button v-if="current?.job" type="button" data-testid="task-stop" :disabled="busy"
 						:class="[ACTION_CLS, 'text-red-600! dark:text-red-400!']" @click="act(() => dash.stop(current!.id))">
 						<StopIcon aria-hidden="true" class="h-4 w-4" /> Stop
@@ -56,6 +60,8 @@
 					<div class="space-y-4 px-4 py-4 sm:px-6">
 						<p v-if="dash.error.value" role="alert" data-testid="task-dashboard-error"
 							class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{{ dash.error.value }}</p>
+						<p v-if="recompileError" role="alert" data-testid="task-recompile-error"
+							class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{{ recompileError }}</p>
 						<p v-if="task.precompile_note" role="status" data-testid="task-precompile-note"
 							class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
 							{{ task.precompile_note }}
@@ -120,6 +126,7 @@
 </template>
 
 <script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import BoltIcon from "@heroicons/vue/24/outline/BoltIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ClockIcon from "@heroicons/vue/24/outline/ClockIcon";
@@ -128,7 +135,7 @@ import PauseIcon from "@heroicons/vue/24/outline/PauseIcon";
 import PlayCircleIcon from "@heroicons/vue/24/outline/PlayCircleIcon";
 import PlayIcon from "@heroicons/vue/24/outline/PlayIcon";
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import CodeLoopTargetLink from "../components/CodeLoopTargetLink.vue";
@@ -158,6 +165,7 @@ import {
 	agentTaskPath,
 	agentTaskType,
 	isWorkflow,
+	precompileState,
 	precompilesBesidePrompt,
 	useSettingsStore,
 } from "../stores/settings";
@@ -395,6 +403,37 @@ async function setEnabled(value: boolean) {
 	if (await setTaskEnabled(agent.value, taskParam.value, value))
 		await dash.refresh();
 }
+
+// Recompile discards the task's script, whatever state it is in, turns
+// precompile back on and compiles a fresh one in the background; the config
+// is reloaded until that compile lands so the badge follows it.
+const recompileError = ref("");
+let recompilePoll: ReturnType<typeof setTimeout> | undefined;
+async function recompile() {
+	recompileError.value = "";
+	clearTimeout(recompilePoll);
+	try {
+		await callTool("config_task_convert_to_script", {
+			agent: agent.value,
+			task: taskParam.value,
+		});
+	} catch (e) {
+		recompileError.value = e instanceof Error ? e.message : String(e);
+		return;
+	}
+	await settings.fetchConfig();
+	let polls = 0;
+	const poll = async () => {
+		if (!task.value || precompileState(task.value) !== "compiling") return;
+		if (++polls > 60) return;
+		recompilePoll = setTimeout(async () => {
+			await settings.fetchConfig();
+			await poll();
+		}, 2000);
+	};
+	await poll();
+}
+onBeforeUnmount(() => clearTimeout(recompilePoll));
 
 // ── Chat ────────────────────────────────────────────────────────────────────
 

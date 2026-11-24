@@ -219,3 +219,48 @@ func TestTaskCompileQueryHonorsFilters(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, full, big)
 }
+
+func TestCompilerVersionBumpRecompilesCompiledAndSetAsideScripts(t *testing.T) {
+	key := setupCompiledReleaseTask(t, `print("old compiler")`)
+	// The old compiler's script failed and was set aside, keeping its key.
+	require.NoError(t, RecordTaskScriptResult("bot", "release", errGh404))
+	require.Equal(t, key, loadedTask(t, "release").CompiledKey)
+
+	prev := taskCompilerVersion
+	t.Cleanup(func() { taskCompilerVersion = prev })
+	taskCompilerVersion++
+
+	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
+	require.NoError(t, err)
+	assert.Equal(t, `print("old compiler")`, got, "the new compiler compiles the task again")
+	task := loadedTask(t, "release")
+	assert.NotEqual(t, key, task.CompiledKey)
+	assert.Empty(t, task.PrecompileNote, "the set-aside note is cleared")
+	assert.False(t, task.ScriptVerified)
+}
+
+func TestRecompileRestartsScriptAfterPrecompileWasTurnedOff(t *testing.T) {
+	setupCompiledReleaseTask(t, `print("checked")`)
+	require.NoError(t, RecordTaskScriptResult("bot", "release", nil))
+	for range projectScriptFailureLimit {
+		require.NoError(t, RecordTaskScriptResult("bot", "release", errGh404))
+	}
+	task := loadedTask(t, "release")
+	require.False(t, EffectiveTaskPrecompile(task))
+	assert.Contains(t, task.PrecompileNote, "Recompile")
+
+	out, err := NewDispatcher("https://localhost:16677", "").CallTool(context.Background(), "config_task_convert_to_script", map[string]any{
+		"agent": "bot", "task": "release",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "recompiling")
+	backgroundCompiles.Wait()
+
+	task = loadedTask(t, "release")
+	assert.True(t, EffectiveTaskPrecompile(task), "Recompile turns precompile back on")
+	assert.Equal(t, `print("checked")`, task.Compiled)
+	assert.NotEmpty(t, task.CompiledKey)
+	assert.Empty(t, task.PrecompileNote)
+	assert.Zero(t, task.ScriptFailures)
+	assert.False(t, task.ScriptVerified)
+}
