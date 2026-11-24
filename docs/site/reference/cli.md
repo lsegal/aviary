@@ -125,13 +125,14 @@ aviary upgrade [flags]
 | `--when <now\|idle>` | `now` | When the running server restarts: `now`, or `idle` (once no jobs are running, holding new jobs until then) |
 | `--release` | `false` | Upgrade from GitHub releases, even on a dev build |
 | `--source` | `false` | Upgrade by pulling the source checkout, even on a release build |
+| `--verbose` | `false` | Explain how the install type was detected |
 
 `--release` and `--source` exclude each other, and `--source` rejects `--version`, which picks a release.
 
-Without either flag, the mode follows the install type `aviary version` shows, never the working directory:
+Without either flag, the mode follows the install type `aviary version` shows, never the working directory. The first line of output names it, such as `Installed release v0.7.3 at /usr/local/bin/aviary.` or `Running a dev build of 588e26e2abcd from the source checkout at ~/src/aviary.`; `--verbose` adds the reasons: the stamped version, the embedded VCS revision, and whether `AVIARY_CHECKOUT` or the executable's location found the checkout.
 
 - **Release mode** (a release build, or `--release`) prints `Aviary v0.7.4 is up to date.` when there is nothing to install, or `Upgrading v0.7.3 → v0.7.5` and then `Aviary upgraded to v0.7.5.` once the release replaces the binary. `--release` on a dev build installs the latest release.
-- **Source mode** (a dev build running from its checkout, or `--source`) runs `git pull --ff-only` in the checkout and prints `Pulled N commit(s) into <dir> (<from> → <to>).`, or `The source checkout at <dir> is already up to date (<sha>).`. It never pulls over local changes or a diverged branch. The checkout is the one holding the binary or named by `AVIARY_CHECKOUT`; with no other checkout known, `--source` uses the checkout containing the working directory. See [Dev checkouts](../guide/operations.md#dev-checkouts).
+- **Source mode** (a dev build running from its checkout, or `--source`) fetches the checkout's upstream and prints what it compared, such as `Fetched origin/main: local 588e26e2 vs origin/main 9f1c0d3a (0 ahead, 2 behind).`, then runs `git pull --ff-only` and prints `Pulled N commit(s) into <dir> (<from> → <to>).`, or `The source checkout at <dir> is already up to date with origin/main (<sha>).`. On a dev build it then says whether the running binary was built from the checkout's HEAD; when it is stale it prints the `go build` command that rebuilds it, and it offers `aviary upgrade --release` to switch to the release binary. It never pulls over local changes or a diverged branch. The checkout is the one holding the binary or named by `AVIARY_CHECKOUT`; with no other checkout known, `--source` uses the checkout containing the working directory. See [Dev checkouts](../guide/operations.md#dev-checkouts).
 
 A dev build with no source checkout cannot check for updates and reports that, unless `--version` or `--release` names a release.
 
