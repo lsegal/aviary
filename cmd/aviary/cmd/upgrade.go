@@ -278,7 +278,7 @@ func applyPulledCode(ctx context.Context, srv runningServer, res update.GitPullR
 		}
 		fmt.Printf("The running Aviary server could not hot-reload the pulled code: %s.\n", result.Reason)
 		if !res.Supervised {
-			return errors.New("the running Aviary server still runs the old code. " + restartHint)
+			return fmt.Errorf("the running Aviary server still runs the old code. %s", restartHint)
 		}
 	} else if !res.Supervised {
 		return nil
@@ -291,7 +291,7 @@ func applyPulledCode(ctx context.Context, srv runningServer, res update.GitPullR
 var waitHotReload = update.WaitHotReload
 
 // restartHint tells the user how to restart a server aviary upgrade could not.
-const restartHint = "Restart it to run the new version: aviary stop, then aviary serve."
+const restartHint = "Restart it to run the new version: aviary stop, then aviary serve"
 
 // unmanagedServerError reports a binary upgraded under a server that could
 // not be restarted for problem, which still runs the old version.
