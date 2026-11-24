@@ -55,11 +55,61 @@ function Get-DisplayPath {
 	return $Path
 }
 
-switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
-	"X64" { $goArch = "amd64" }
-	"Arm64" { $goArch = "arm64" }
-	default { throw "Unsupported architecture: $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)" }
+# Maps a raw architecture name to the Go architecture of a release asset.
+# switch -Regex matches case-insensitively, so "AMD64", "X64", and "x64" all
+# map to amd64.
+function ConvertTo-GoArch {
+	param([string]$Value)
+
+	switch -Regex ("$Value".Trim()) {
+		'^(amd64|x64)$' { return "amd64" }
+		'^arm64$' { return "arm64" }
+	}
+	return $null
 }
+
+# Picks the release architecture from the first source that names a supported
+# one: RuntimeInformation.OSArchitecture, then PROCESSOR_ARCHITEW6432 (set for
+# 32-bit processes on 64-bit Windows), then PROCESSOR_ARCHITECTURE, then
+# Is64BitOperatingSystem. Windows PowerShell 5.1 on .NET Framework often has
+# no RuntimeInformation type, so OSArchitecture alone comes back empty (#1099).
+function Resolve-GoArch {
+	param(
+		[string]$OSArchitecture,
+		[string]$ProcessorArchiteW6432,
+		[string]$ProcessorArchitecture,
+		[bool]$Is64BitOperatingSystem
+	)
+
+	foreach ($candidate in @($OSArchitecture, $ProcessorArchiteW6432, $ProcessorArchitecture)) {
+		$goArch = ConvertTo-GoArch -Value $candidate
+		if ($goArch) {
+			return $goArch
+		}
+	}
+	if ($Is64BitOperatingSystem) {
+		return "amd64"
+	}
+	throw "Unsupported architecture: '$OSArchitecture' (PROCESSOR_ARCHITEW6432=$ProcessorArchiteW6432, PROCESSOR_ARCHITECTURE=$ProcessorArchitecture, Is64BitOperatingSystem=$Is64BitOperatingSystem)"
+}
+
+function Get-OSArchitecture {
+	$runtimeInformation = "System.Runtime.InteropServices.RuntimeInformation" -as [type]
+	if (-not $runtimeInformation) {
+		return ""
+	}
+	try {
+		return "$($runtimeInformation::OSArchitecture)"
+	} catch {
+		return ""
+	}
+}
+
+$goArch = Resolve-GoArch `
+	-OSArchitecture (Get-OSArchitecture) `
+	-ProcessorArchiteW6432 $env:PROCESSOR_ARCHITEW6432 `
+	-ProcessorArchitecture $env:PROCESSOR_ARCHITECTURE `
+	-Is64BitOperatingSystem ([Environment]::Is64BitOperatingSystem)
 
 if (-not $Version) {
 	$Version = Get-LatestTag -RepoName $Repo -Base $DownloadBase
