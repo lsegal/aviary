@@ -468,13 +468,7 @@ const {
 	stop,
 	dismiss,
 	scheduleEntries,
-} = useProjectBoard(
-	targets,
-	states,
-	search,
-	kanban,
-	ref(true),
-);
+} = useProjectBoard(targets, states, search, kanban, ref(true));
 const {
 	schedules,
 	upcoming,
@@ -494,11 +488,7 @@ const {
 function scheduleInFilter(s: ProjectSchedule) {
 	if (showSchedules.value) return true;
 	const state = scheduleJob(scheduleEntries.value, s.id)?.schedule?.state;
-	return (
-		!!state &&
-		state !== "scheduled" &&
-		states.value.includes(state)
-	);
+	return !!state && state !== "scheduled" && states.value.includes(state);
 }
 const boardSchedules = computed(() =>
 	schedules.value.filter(
