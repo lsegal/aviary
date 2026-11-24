@@ -348,6 +348,7 @@ import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
 import type { PageCrumb } from "../components/ui/PageHeader.vue";
 import { Skeleton } from "../components/ui/skeleton";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
+import { useAgentNav } from "../composables/useAgentNav";
 import { useAvailableModels } from "../composables/useAvailableModels";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
 import {
@@ -545,6 +546,7 @@ const chatSessions = useChatSessionsStore();
 const { availableModelOptions, credentials, refreshCredentials } =
 	useAvailableModels();
 const authStore = useAuthStore();
+const { agentHome } = useAgentNav();
 const { open: openItemDialog } = useAgentItemDialogs();
 
 // Rename state for tasks
@@ -1111,7 +1113,7 @@ const pageHeader = computed(
 		const agentCrumb: PageCrumb = agent.name
 			? {
 					label: name,
-					to: `/agents/${encodeURIComponent(selectedAgentRouteId())}/chat`,
+					to: agentHome(selectedAgentRouteId()),
 				}
 			: { label: name };
 		if (tasksRoot.value)

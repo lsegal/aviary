@@ -362,19 +362,17 @@ test("an agent board shows a scheduled run as a job card while it runs", async (
 		.toEqual({ target: "lsegal/aviary", number: FIRE });
 	// An agent board lists jobs in their job states, so a schedule between
 	// runs, which is in none, never shows as a job card (#977).
-	// The board's own read; the sidebar's and the nav row's counts poll too.
-	const boardReads = (calls.project_job_list ?? []).filter(
-		(c) =>
-			Array.isArray(c?.targets) &&
-			!(c?.kinds as string[] | undefined)?.includes("schedule"),
-	);
-	expect(boardReads.at(-1)?.states).toEqual([
-		"starting",
-		"paused",
-		"running",
-		"done",
-		"failed",
-	]);
+	// The board's own read; the sidebar's and the nav row's counts poll too,
+	// so wait for it rather than reading whichever call came last (#1089).
+	const boardReads = () =>
+		(calls.project_job_list ?? []).filter(
+			(c) =>
+				Array.isArray(c?.targets) &&
+				!(c?.kinds as string[] | undefined)?.includes("schedule"),
+		);
+	await expect
+		.poll(() => boardReads().at(-1)?.states)
+		.toEqual(["starting", "paused", "running", "done", "failed"]);
 });
 
 test("a project board shows the up next strip", async ({ page }) => {
