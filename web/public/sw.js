@@ -2,7 +2,7 @@
 // never caches the app or its data: every request goes to the network, so a
 // deploy is picked up on the next load. Only the "server unreachable" page and
 // its icon are cached, as the fallback for navigations that fail.
-const CACHE = "aviary-offline-v1";
+const CACHE = "aviary-offline-v2";
 const OFFLINE_URL = "/offline.html";
 const OFFLINE_ASSETS = [OFFLINE_URL, "/icons/icon-192.png"];
 
