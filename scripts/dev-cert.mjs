@@ -13,14 +13,19 @@ import { findForgo } from "./go-runner.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+let cachedCert;
+
 function aviaryCert(extraArgs) {
+	if (extraArgs.length === 0 && cachedCert) return cachedCert;
 	const bin = findForgo() ?? "go";
 	const out = execFileSync(
 		bin,
 		["run", "./cmd/aviary", "cert", "--json", ...extraArgs],
 		{ cwd: rootDir, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
 	);
-	return JSON.parse(out);
+	const result = JSON.parse(out);
+	if (extraArgs.length === 0) cachedCert = result;
+	return result;
 }
 
 // devHttps returns Vite's server.https options, or undefined to serve plain
@@ -35,6 +40,17 @@ export function devHttps() {
 		console.warn(
 			`warning: could not load the dev TLS cert, serving plain HTTP: ${err.message}`,
 		);
+		return undefined;
+	}
+}
+
+// devServerURL returns the Aviary backend's URL from its config, with the
+// scheme it serves, or undefined when it cannot be resolved.
+export function devServerURL() {
+	try {
+		return aviaryCert([]).server_url;
+	} catch (err) {
+		console.warn(`warning: could not resolve the Aviary server URL: ${err.message}`);
 		return undefined;
 	}
 }

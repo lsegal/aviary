@@ -36,7 +36,7 @@ serve a regenerated cert.`,
 			return fmt.Errorf("loading TLS cert: %w", err)
 		}
 		if certJSONFlag {
-			return json.NewEncoder(rootCmd.OutOrStdout()).Encode(map[string]string{"cert": certFile, "key": keyFile})
+			return json.NewEncoder(rootCmd.OutOrStdout()).Encode(map[string]string{"cert": certFile, "key": keyFile, "server_url": config.ServerURL(cfg.Server)})
 		}
 		_, _ = fmt.Fprintf(rootCmd.OutOrStdout(), "cert: %s\nkey:  %s\n", certFile, keyFile)
 		return nil
