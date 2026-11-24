@@ -3457,7 +3457,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					jobMu.Lock()
 					job := jobs[key]
 					job.Status = "failed"
-					job.Log += runErr.Error()
+					job.Log += domain.FailureDetail(runErr)
 					jobs[key] = job
 					jobMu.Unlock()
 					w.jobEvents(key, transcript.Event{Kind: transcript.KindSystem, Text: "failed: " + clidoctor.FirstLine(runErr.Error()), IsError: true})

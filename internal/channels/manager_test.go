@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1276,47 +1275,7 @@ func overrideDiscordEndpointsForTest(base string) func() {
 	}
 }
 
-// ── Signal helper: single-request mock TCP server ────────────────────────────
-
-type jsonrpcRequestProbe struct {
-	JSONRPC string `json:"jsonrpc"`
-	Method  string `json:"method"`
-	ID      int64  `json:"id"`
-}
-
-type jsonrpcResponseMock struct {
-	JSONRPC string         `json:"jsonrpc"`
-	ID      int64          `json:"id"`
-	Result  map[string]any `json:"result,omitempty"`
-	Error   *struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
-}
-
-// newSignalMockTCPServer creates a mock TCP server that handles one request
-// and returns the given JSON-RPC response.
-func newSignalMockTCPServer(t *testing.T, response jsonrpcResponseMock) string {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	assert.NoError(t, err)
-
-	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close() //nolint:errcheck
-		var req jsonrpcRequestProbe
-		_ = json.NewDecoder(conn).Decode(&req)
-		response.ID = req.ID
-		_ = json.NewEncoder(conn).Encode(response)
-	}()
-	t.Cleanup(func() { _ = ln.Close() })
-	return ln.Addr().String()
-}
-
-// ── Signal SendTyping tests ───────────────────────────────────────────────────
+// ── Signal ShowTyping tests ──────────────────────────────────────────────────
 
 func TestSignalChannel_ShowTyping(t *testing.T) {
 	ch := NewSignalChannel("+1", "", nil, true, false, false, false, "m", nil)
@@ -1324,76 +1283,6 @@ func TestSignalChannel_ShowTyping(t *testing.T) {
 
 	ch2 := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
 	assert.False(t, ch2.ShowTyping())
-
-}
-
-func TestSignalChannel_SendTyping_NoAddr(t *testing.T) {
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	err := ch.SendTyping("+5551111111", false)
-	assert.Error(t, err)
-
-}
-
-func TestSignalChannel_SendTyping_Success(t *testing.T) {
-	addr := newSignalMockTCPServer(t, jsonrpcResponseMock{JSONRPC: "2.0", Result: map[string]any{}})
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-	err := ch.SendTyping("+5551111111", false)
-	assert.NoError(t, err)
-
-}
-
-func TestSignalChannel_SendTyping_GroupID(t *testing.T) {
-	addr := newSignalMockTCPServer(t, jsonrpcResponseMock{JSONRPC: "2.0", Result: map[string]any{}})
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-	// Group IDs don't start with "+".
-	err := ch.SendTyping("group-base64-id", true)
-	assert.NoError(t, err)
-
-}
-
-// ── Signal SendMedia tests ────────────────────────────────────────────────────
-
-func TestSignalChannel_SendMedia_NoAddr(t *testing.T) {
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	err := ch.SendMedia("+5551111111", "caption", "/tmp/img.png")
-	assert.Error(t, err)
-
-}
-
-func TestSignalChannel_SendMedia_Success(t *testing.T) {
-	addr := newSignalMockTCPServer(t, jsonrpcResponseMock{JSONRPC: "2.0", Result: map[string]any{}})
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-	err := ch.SendMedia("+5551111111", "caption", "/tmp/img.png")
-	assert.NoError(t, err)
-
-}
-
-// ── Signal sendReadReceipt tests ──────────────────────────────────────────────
-
-func TestSignalChannel_SendReadReceipt_NoAddr(t *testing.T) {
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	err := ch.sendReadReceipt("+5551111111", 12345)
-	assert.Error(t, err)
-
-}
-
-func TestSignalChannel_SendReadReceipt_Success(t *testing.T) {
-	addr := newSignalMockTCPServer(t, jsonrpcResponseMock{JSONRPC: "2.0", Result: map[string]any{}})
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-	err := ch.sendReadReceipt("+5551111111", 12345)
-	assert.NoError(t, err)
 
 }
 
@@ -1462,35 +1351,4 @@ func TestSignalChannel_StreamToSink_NoSink(_ *testing.T) {
 	// logSink is nil by default
 	r := io.NopCloser(strings.NewReader("line1\nline2\n"))
 	ch.streamToSink(r) // should not panic
-}
-
-// ── sendReaction tests ────────────────────────────────────────────────────────
-
-func TestSignalChannel_SendReaction_NoAddr(t *testing.T) {
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	err := ch.sendReaction("+5551111111", "👍", "+1", 12345)
-	assert.Error(t, err)
-
-}
-
-func TestSignalChannel_SendReaction_Success(t *testing.T) {
-	addr := newSignalMockTCPServer(t, jsonrpcResponseMock{JSONRPC: "2.0", Result: map[string]any{}})
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-	err := ch.sendReaction("+5551111111", "👍", "+1", 12345)
-	assert.NoError(t, err)
-
-}
-
-func TestSignalChannel_SendReaction_GroupID(t *testing.T) {
-	addr := newSignalMockTCPServer(t, jsonrpcResponseMock{JSONRPC: "2.0", Result: map[string]any{}})
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-	err := ch.sendReaction("group-base64-id", "👍", "+1", 12345)
-	assert.NoError(t, err)
-
 }

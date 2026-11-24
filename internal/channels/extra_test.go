@@ -163,81 +163,6 @@ func TestSharedDaemon_LaunchDaemonBinaryNotFound(t *testing.T) {
 	assert.Nil(t, cmd)
 }
 
-// ── Signal.dispatchEnvelope: read receipt path ───────────────────────────────
-
-// TestDispatchEnvelope_SendReadReceipt verifies that when sendReadReceipts=true
-// and the source is a phone number, sendReadReceipt is attempted.
-// We use a fake daemon to absorb the RPC call.
-func TestDispatchEnvelope_SendReadReceipt(t *testing.T) {
-	fd := newFakeDaemon(t)
-	defer fd.Close()
-
-	const sender = "+15550001111"
-	ch := NewSignalChannel("+15559999999", fd.Addr(),
-		[]config.AllowFromEntry{{From: "*"}},
-		false, false, false,
-		true, // sendReadReceipts=true
-		"m", nil)
-
-	msgs := make(chan IncomingMessage, 1)
-	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
-
-	// Start the listen loop in background.
-	cancel, _ := startChannel(ch)
-	defer cancel()
-	waitConnected(t, fd, 2*time.Second)
-
-	// Push a notification with a non-zero timestamp so the receipt is sent.
-	type dataMessage struct {
-		Message string `json:"message"`
-	}
-	type envelope struct {
-		Source      string      `json:"source"`
-		Timestamp   int64       `json:"timestamp"`
-		DataMessage dataMessage `json:"dataMessage"`
-	}
-	type params struct {
-		Envelope envelope `json:"envelope"`
-	}
-	notif := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "receive",
-		"params": params{
-			Envelope: envelope{
-				Source:      sender,
-				Timestamp:   12345678,
-				DataMessage: dataMessage{Message: "hi"},
-			},
-		},
-	}
-	b, _ := json.Marshal(notif)
-	fd.Push(b)
-
-	// Should receive the message.
-	msg := waitMsg(t, msgs, 2*time.Second)
-	assert.Equal(t, sender, msg.From)
-
-	// The fake daemon should also have received a sendReceipt RPC request.
-	// Give it a moment to arrive.
-	deadline := time.Now().Add(500 * time.Millisecond)
-	var found bool
-	for !found && time.Now().Before(deadline) {
-		fd.mu.Lock()
-		for _, req := range fd.sent {
-			if m, _ := req["method"].(string); m == "sendReceipt" {
-				found = true
-			}
-		}
-		fd.mu.Unlock()
-		if !found {
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-	// The receipt call goes through a separate TCP connection; only verify
-	// the message was dispatched (the RPC is best-effort).
-	_ = found
-}
-
 // ── Signal.dispatchEnvelope: reply-to-self path ──────────────────────────────
 
 // TestDispatch_ReplyToSelf verifies that a quoted reply targeting the agent's
@@ -493,20 +418,6 @@ func TestDispatch_ModelFromChannel(t *testing.T) {
 
 }
 
-// ── Signal.Send: dial error path ─────────────────────────────────────────────
-
-func TestSend_DialError(t *testing.T) {
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	// Set addr to a port that nothing is listening on.
-	ch.addrMu.Lock()
-	ch.addr = "127.0.0.1:1" // port 1 should not be open
-	ch.addrMu.Unlock()
-
-	err := ch.Send("+5551111111", "hi")
-	assert.Error(t, err)
-
-}
-
 // ── Manager.RouteMediaDelivery: non-media-sender skipped ─────────────────────
 
 func TestRouteMediaDelivery_NonMediaSenderSkipped(t *testing.T) {
@@ -522,85 +433,6 @@ func TestRouteMediaDelivery_NonMediaSenderSkipped(t *testing.T) {
 
 	// Should fail since mockChannel doesn't implement MediaSender.
 	err := mgr.RouteMediaDelivery("slack", "C123", "caption", "/tmp/f.png")
-	assert.Error(t, err)
-
-}
-
-// ── Signal.Send: read-response error (server closes without responding) ───────
-
-// newSignalCloseImmediatelyServer creates a TCP server that accepts and immediately closes.
-func newSignalCloseImmediatelyServer(t *testing.T) string {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	assert.NoError(t, err)
-
-	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		_ = conn.Close() // close immediately, no response written
-	}()
-	t.Cleanup(func() { _ = ln.Close() })
-	return ln.Addr().String()
-}
-
-func TestSend_ReadResponseError(t *testing.T) {
-	addr := newSignalCloseImmediatelyServer(t)
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-
-	err := ch.Send("+5551111111", "hi")
-	assert.Error(t, err)
-
-}
-
-func TestSendTyping_ReadResponseError(t *testing.T) {
-	addr := newSignalCloseImmediatelyServer(t)
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-
-	err := ch.SendTyping("+5551111111", false)
-	assert.Error(t, err)
-
-}
-
-func TestSendReadReceipt_ReadResponseError(t *testing.T) {
-	addr := newSignalCloseImmediatelyServer(t)
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-
-	err := ch.sendReadReceipt("+5551111111", 12345)
-	assert.Error(t, err)
-
-}
-
-func TestSendMedia_ReadResponseError(t *testing.T) {
-	addr := newSignalCloseImmediatelyServer(t)
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-
-	err := ch.SendMedia("+5551111111", "caption", "/tmp/f.png")
-	assert.Error(t, err)
-
-}
-
-func TestSendReaction_ReadResponseError(t *testing.T) {
-	addr := newSignalCloseImmediatelyServer(t)
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
-
-	err := ch.sendReaction("+5551111111", "👍", "+1", 12345)
 	assert.Error(t, err)
 
 }

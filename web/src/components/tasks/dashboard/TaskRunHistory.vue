@@ -32,10 +32,15 @@
 						Open run
 					</router-link>
 				</div>
-				<p v-if="e.error" data-testid="task-run-error"
-					class="mt-1 line-clamp-2 text-xs whitespace-pre-wrap text-red-600 dark:text-red-400" :title="e.error">
-					{{ e.error }}
-				</p>
+				<div v-if="e.error" class="mt-1 flex items-start gap-2 text-xs">
+					<p data-testid="task-run-error"
+						class="line-clamp-2 min-w-0 flex-1 whitespace-pre-wrap wrap-anywhere text-red-600 dark:text-red-400" :title="e.error">
+						{{ e.error }}
+					</p>
+					<a v-if="e.bugReportUrl" :href="e.bugReportUrl" target="_blank" rel="noopener noreferrer"
+						data-testid="task-run-report-bug"
+						class="shrink-0 font-medium text-blue-600 hover:underline dark:text-blue-400">Report bug</a>
+				</div>
 				<p v-if="e.skippedReply !== undefined" data-testid="task-run-skipped-reply"
 					class="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400" :title="e.skippedReply">
 					Skipped reply: {{ e.skippedReply }}

@@ -99,24 +99,24 @@ func (d *wakeupDetector) scan(line []byte) error {
 		return nil
 	}
 	if d.isEvent(event, d.config.Event) {
-		for _, call := range jsonlLookup(event, d.config.Calls) {
-			if firstJSONLString(jsonlLookup(call, d.config.Name)) != d.config.Tool {
+		for _, call := range clidefs.LookupJSONL(event, d.config.Calls) {
+			if firstJSONLString(clidefs.LookupJSONL(call, d.config.Name)) != d.config.Tool {
 				continue
 			}
 			var input any
-			if values := jsonlLookup(call, d.config.Input); len(values) > 0 {
+			if values := clidefs.LookupJSONL(call, d.config.Input); len(values) > 0 {
 				input = values[0]
 			}
 			d.wakeup = parseScheduledWakeup(d.config, input)
 			d.id = ""
 			if d.config.ID != "" {
-				d.id = firstJSONLString(jsonlLookup(call, d.config.ID))
+				d.id = firstJSONLString(clidefs.LookupJSONL(call, d.config.ID))
 			}
 		}
 	}
 	if rejected := d.config.Rejected; rejected != nil && d.id != "" && d.isEvent(event, rejected.Event) {
-		for _, result := range jsonlLookup(event, rejected.Results) {
-			if firstJSONLString(jsonlLookup(result, rejected.ID)) == d.id && jsonlTrue(jsonlLookup(result, rejected.Error)) {
+		for _, result := range clidefs.LookupJSONL(event, rejected.Results) {
+			if firstJSONLString(clidefs.LookupJSONL(result, rejected.ID)) == d.id && jsonlTrue(clidefs.LookupJSONL(result, rejected.Error)) {
 				d.wakeup, d.id = nil, ""
 			}
 		}
@@ -156,11 +156,11 @@ func parseScheduledWakeup(config clidefs.Wakeup, input any) *scheduledWakeup {
 	if _, ok := input.(map[string]any); !ok {
 		return nil
 	}
-	if config.Stop != "" && jsonlTrue(jsonlLookup(input, config.Stop)) {
+	if config.Stop != "" && jsonlTrue(clidefs.LookupJSONL(input, config.Stop)) {
 		return nil
 	}
 	var seconds float64
-	if values := jsonlLookup(input, config.Delay); len(values) > 0 {
+	if values := clidefs.LookupJSONL(input, config.Delay); len(values) > 0 {
 		switch value := values[0].(type) {
 		case float64:
 			seconds = value
@@ -176,10 +176,10 @@ func parseScheduledWakeup(config clidefs.Wakeup, input any) *scheduledWakeup {
 	}
 	wakeup := &scheduledWakeup{Delay: delay}
 	if config.Prompt != "" {
-		wakeup.Prompt = firstJSONLString(jsonlLookup(input, config.Prompt))
+		wakeup.Prompt = firstJSONLString(clidefs.LookupJSONL(input, config.Prompt))
 	}
 	if config.Reason != "" {
-		wakeup.Reason = firstJSONLString(jsonlLookup(input, config.Reason))
+		wakeup.Reason = firstJSONLString(clidefs.LookupJSONL(input, config.Reason))
 	}
 	return wakeup
 }
