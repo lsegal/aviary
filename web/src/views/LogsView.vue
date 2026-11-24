@@ -35,14 +35,6 @@
             class="ml-auto rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700 placeholder-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-400"
             style="min-width: 120px; max-width: 200px" />
 
-          <!-- Auto-scroll toggle -->
-          <button class="rounded-md border px-2 py-1 text-xs font-medium transition-colors" :class="autoScroll
-            ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-300'
-            : 'border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'"
-            @click="autoScroll = !autoScroll">
-            {{ autoScroll ? '↓ Auto' : '| Paused' }}
-          </button>
-
           <!-- Clear -->
           <button
             class="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:border-red-300 hover:text-red-600 dark:border-gray-700 dark:text-gray-400 dark:hover:border-red-700 dark:hover:text-red-400"
@@ -54,12 +46,13 @@
       </div>
 
       <!-- Log list -->
-      <div ref="scrollEl" class="flex-1 overflow-y-auto bg-gray-950 p-3 font-mono text-xs leading-5" @scroll="onScroll">
+      <div class="relative flex min-h-0 flex-1 flex-col">
+      <div ref="scrollEl" data-testid="logs-scroll" class="min-h-0 flex-1 overflow-y-auto bg-gray-950 p-3 font-mono text-xs leading-5" @scroll="onScroll">
         <!-- Load previous button -->
         <div v-if="logs.hasMore.value" class="flex justify-center py-2">
           <button
             class="rounded-md border border-gray-700 bg-gray-800 px-3 py-1 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-200 disabled:opacity-50"
-            :disabled="logs.loadingMore.value" @click="logs.loadPrevious()">
+            :disabled="logs.loadingMore.value" @click="keepPosition(logs.loadPrevious)">
             {{ logs.loadingMore.value ? 'Loading…' : `↑ Load previous ${logs.historyPageSize} lines` }}
           </button>
         </div>
@@ -103,6 +96,8 @@
         <!-- Spacer so the last row isn't flush with the bottom -->
         <div class="h-4" />
       </div>
+      <MoreBelowPill v-if="showMore" :count="newCount" data-testid="logs-more-below" @click="scrollToBottom()" />
+      </div>
 
       <!-- Error banner -->
       <div v-if="logs.error.value"
@@ -114,11 +109,13 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref, watch } from "vue";
+import { ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
+import MoreBelowPill from "../components/MoreBelowPill.vue";
 import SystemPageIcon from "../components/SystemPageIcon.vue";
 import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { AppSelect, type SelectOption } from "../components/ui/select";
+import { useAutoFollow } from "../composables/useAutoFollow";
 import { type LogLevel, useLogs } from "../composables/useLogs";
 
 const LEVEL_OPTIONS: SelectOption<LogLevel>[] = [
@@ -130,7 +127,8 @@ const LEVEL_OPTIONS: SelectOption<LogLevel>[] = [
 
 const logs = useLogs();
 const scrollEl = ref<HTMLElement | null>(null);
-const autoScroll = ref(true);
+const { showMore, newCount, onScroll, scrollToBottom, keepPosition } =
+	useAutoFollow(scrollEl, { count: () => logs.filtered.value.length });
 const expanded = ref(new Set<number>());
 
 type LogEntry = (typeof logs.filtered.value)[number];
@@ -147,25 +145,6 @@ function entryText(entry: LogEntry): string {
 
 function isLong(entry: LogEntry): boolean {
 	return entryText(entry).length > LONG_THRESHOLD;
-}
-
-// Scroll to bottom when new entries arrive (only when autoScroll is on).
-watch(
-	() => logs.filtered.value.length,
-	async () => {
-		if (!autoScroll.value) return;
-		await nextTick();
-		if (scrollEl.value) {
-			scrollEl.value.scrollTop = scrollEl.value.scrollHeight;
-		}
-	},
-);
-
-// Pause auto-scroll if user scrolls up.
-function onScroll() {
-	if (!scrollEl.value) return;
-	const { scrollTop, scrollHeight, clientHeight } = scrollEl.value;
-	autoScroll.value = scrollTop + clientHeight >= scrollHeight - 32;
 }
 
 // Time formatting: show HH:MM:SS.mmm

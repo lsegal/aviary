@@ -42,11 +42,7 @@
 			<pre ref="logEl" data-testid="task-run-log-output"
 				class="min-h-24 flex-1 overflow-y-auto whitespace-pre-wrap break-all bg-slate-950 px-3 py-2 font-mono text-xs leading-relaxed text-slate-200"
 				@scroll="onScroll">{{ logs || placeholder }}</pre>
-			<button v-if="!following" type="button" data-testid="task-run-log-follow"
-				class="absolute right-3 bottom-2 rounded-full bg-blue-600 px-2.5 py-0.5 text-xs font-medium text-white shadow hover:bg-blue-700"
-				@click="follow">
-				Auto-scroll paused · Jump to latest
-			</button>
+			<MoreBelowPill v-if="showMore" :count="newCount" data-testid="task-run-log-follow" @click="scrollToBottom()" />
 		</div>
 	</section>
 </template>
@@ -56,7 +52,7 @@ import CheckIcon from "@heroicons/vue/24/outline/CheckIcon";
 import ClipboardDocumentIcon from "@heroicons/vue/24/outline/ClipboardDocumentIcon";
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import { computed, onUnmounted, ref, watch } from "vue";
-import { useStickToBottom } from "../../../composables/useJobOutput";
+import { useAutoFollow } from "../../../composables/useAutoFollow";
 import { jobPath } from "../../../lib/projects";
 import {
 	isActive,
@@ -64,6 +60,7 @@ import {
 	type TaskRunEntry,
 	triggerLabel,
 } from "../../../lib/taskRuns";
+import MoreBelowPill from "../../MoreBelowPill.vue";
 import TaskRunResultPill from "./TaskRunResultPill.vue";
 
 // A run's logs: streamed while it runs, kept scrolled to the newest line
@@ -140,12 +137,14 @@ watch(
 onUnmounted(() => clearTimeout(timer));
 
 const logEl = ref<HTMLElement | null>(null);
-const { following, onScroll } = useStickToBottom(logEl, () => logs.value);
-
-function follow() {
-	following.value = true;
-	if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight;
-}
+const { showMore, newCount, onScroll, scrollToBottom } = useAutoFollow(logEl, {
+	count: () => (logs.value ? logs.value.split("\n").length : 0),
+});
+// Another run's log opens at its newest line.
+watch(
+	() => props.entry.id,
+	() => scrollToBottom({ smooth: false }),
+);
 
 const copied = ref(false);
 async function copy() {
