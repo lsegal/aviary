@@ -12,18 +12,22 @@
 				@click="emit('close')">✕</button>
 		</header>
 		<div ref="body" data-testid="project-logs-lines"
-			class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-300">
+			class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-2 font-mono text-xs text-gray-600 dark:text-gray-300"
+			@scroll="onScroll">
 			<div v-for="(entry, i) in entries" :key="i" data-testid="project-logs-entry" class="flex gap-2">
 				<span v-if="entry.time" class="shrink-0 text-gray-400 dark:text-gray-500">{{ entry.time }}</span>
 				<span class="min-w-0 flex-1 whitespace-pre-wrap wrap-anywhere">{{ entry.text }}</span>
 			</div>
 			<p v-if="entries.length === 0">No log lines yet.</p>
 		</div>
+		<MoreBelowPill v-if="showMore" :count="newCount" data-testid="project-logs-more-below" @click="scrollToBottom()" />
 	</section>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, ref } from "vue";
+import { useAutoFollow } from "../../composables/useAutoFollow";
+import MoreBelowPill from "../MoreBelowPill.vue";
 
 const HEIGHT_KEY = "aviary.projects.logsHeight";
 const MIN_HEIGHT = 96;
@@ -80,12 +84,9 @@ function startResize(e: PointerEvent) {
 	window.addEventListener("pointerup", onUp);
 }
 
-// New lines stream in with each status update; keep the newest in view.
-async function pinToBottom() {
-	await nextTick();
-	if (body.value) body.value.scrollTop = body.value.scrollHeight;
-}
-watch(() => props.lines.join("\n"), pinToBottom);
-watch(height, pinToBottom);
-onMounted(pinToBottom);
+// New lines stream in with each status update; the newest stay in view
+// unless the user scrolls up.
+const { showMore, newCount, onScroll, scrollToBottom } = useAutoFollow(body, {
+	count: () => entries.value.length,
+});
 </script>

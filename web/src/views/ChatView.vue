@@ -1,6 +1,8 @@
 <template>
 	<component :is="props.agent ? 'div' : AppLayout" :class="props.agent ? 'relative h-full min-h-0' : undefined">
-		<div class="flex h-full flex-col">
+		<!-- Under a page breadcrumb, the chat fills what's left rather than
+			the whole page, so its newest line and pill stay above the composer. -->
+		<div class="flex h-full min-h-0 flex-1 flex-col">
 			<!-- Chat picker: the sidebar's Chats list covers wide screens. A pinned
 				session is the only chat, so it has none. -->
 			<div v-if="selectedAgent && !props.session" data-testid="chat-picker"
@@ -32,7 +34,7 @@
 
 			<!-- Messages -->
 			<div class="relative flex-1 overflow-hidden">
-				<div ref="messagesEl" class="h-full overflow-y-auto px-6 py-4 space-y-4" @scroll="onMessagesScroll">
+				<div ref="messagesEl" data-testid="chat-messages" class="h-full overflow-y-auto px-6 py-4 space-y-4" @scroll="onMessagesScroll">
 					<div v-if="!selectedAgent" class="flex h-full items-center justify-center text-sm text-gray-400">
 						Pick an agent in the sidebar to start chatting.
 					</div>
@@ -44,7 +46,7 @@
 								<span class="text-xs font-medium text-gray-400 dark:text-gray-500 select-none">{{ item.label }}</span>
 							</div>
 							<!-- Tool-use indicator -->
-							<div v-else-if="item.type === 'message' && item.msg.role === 'tool'" data-testid="chat-tool-call"
+							<div v-else-if="item.type === 'message' && item.msg.role === 'tool'" :id="messageAnchor(item.msg)" data-testid="chat-tool-call"
 								:data-pending="item.msg.toolPending ? 'true' : undefined" class="text-left my-0.5">
 								<ChatToolCall :name="toolName(item.msg)" :args="item.msg.toolData?.args"
 									:result="item.msg.toolData?.result ?? (item.msg.toolData ? undefined : item.msg.text)"
@@ -52,7 +54,7 @@
 									:elapsed="toolElapsed(item.msg)" />
 							</div>
 							<!-- Regular user / assistant messages -->
-							<div v-else-if="item.type === 'message'" :class="item.msg.role === 'user' ? 'flex flex-col items-end' : 'text-left'"
+							<div v-else-if="item.type === 'message'" :id="messageAnchor(item.msg)" :class="item.msg.role === 'user' ? 'flex flex-col items-end' : 'text-left'"
 								:data-testid="item.msg.role === 'user' ? 'chat-user-message' : undefined">
 								<div data-testid="chat-message-bubble"
 									:class="item.msg.role === 'user'
@@ -130,13 +132,8 @@
 					</template>
 				</div>
 
-				<div v-if="showBelowScroller" class="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-					<button type="button"
-						class="pointer-events-auto rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-						@click="scrollBottom(true)">
-						More below ↓
-					</button>
-				</div>
+				<MoreBelowPill v-if="showMore" :count="newCount" data-testid="chat-more-below"
+					@click="scrollToBottom()" />
 			</div>
 
 			<!-- Input -->
@@ -183,6 +180,8 @@ import {
 	getChatDraft,
 	setChatDraft,
 } from "../components/chat/drafts";
+import MoreBelowPill from "../components/MoreBelowPill.vue";
+import { useAutoFollow } from "../composables/useAutoFollow";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
 import { renderLinkedText, renderMarkdown } from "../lib/markdown";
@@ -547,17 +546,11 @@ const isStreaming = computed(() => activeStreams.value > 0);
 const hasInlineError = ref(false);
 const expandedImageURL = ref("");
 const messagesEl = ref<HTMLElement | null>(null);
-const isAtBottom = ref(true);
-const hasScrollOverflow = ref(false);
 let ws: WebSocket | null = null;
 let wsReconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let unmounted = false;
 let nextMessageKey = 0;
 let loadMessagesSeq = 0;
-
-const showBelowScroller = computed(
-	() => hasScrollOverflow.value && !isAtBottom.value,
-);
 
 /** The running turn's entries, minus tool calls already stored. */
 const liveMessages = computed((): Message[] => {
@@ -599,6 +592,32 @@ const shownMessages = computed(() =>
 		? [...messages.value, ...liveMessages.value]
 		: messages.value,
 );
+
+const {
+	showMore,
+	newCount,
+	onScroll: onMessagesScroll,
+	scrollToBottom,
+	reveal,
+} = useAutoFollow(messagesEl, { count: () => shownMessages.value.length });
+
+/** A stored message's element id, the target of a #message-<id> link. */
+function messageAnchor(msg: Message): string | undefined {
+	return msg.id ? `message-${msg.id}` : undefined;
+}
+
+// A link to one message opens the chat at that message, once, instead of
+// at the bottom.
+let revealedHash = "";
+async function revealDeepLink() {
+	const hash = route.hash;
+	if (!hash.startsWith("#message-") || hash === revealedHash) return;
+	await nextTick();
+	const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+	if (!target || !messagesEl.value?.contains(target)) return;
+	revealedHash = hash;
+	reveal(target);
+}
 
 const displayItems = computed((): DisplayItem[] => {
 	const items: DisplayItem[] = [];
@@ -762,8 +781,6 @@ async function mountChat() {
 	document.addEventListener("visibilitychange", onVisible);
 	window.addEventListener("keydown", onWindowKeydown);
 	connectSessionWS();
-	await nextTick();
-	updateScrollState();
 }
 
 async function mountRouteChat() {
@@ -930,7 +947,7 @@ async function selectAgent(name: string, sessionId = "") {
 	selectedAgent.value = name;
 	selectedSessionId.value = "";
 	messages.value = [];
-	updateScrollState();
+	scrollToBottom({ smooth: false });
 	await loadSessions(sessionId);
 	await loadSessionMessages();
 	router.replace(chatPath(name, selectedSessionId.value));
@@ -958,7 +975,7 @@ async function selectSession(id: string, push = true) {
 	loadMessagesSeq += 1;
 	selectedSessionId.value = id;
 	messages.value = [];
-	updateScrollState();
+	scrollToBottom({ smooth: false });
 	if (push) pushChatPath();
 	await loadSessionMessages();
 }
@@ -991,7 +1008,7 @@ async function createSession() {
 		pushChatPath();
 		loadMessagesSeq += 1;
 		messages.value = [];
-		updateScrollState();
+		scrollToBottom({ smooth: false });
 	} catch (e) {
 		console.error("Failed to create session", e);
 	}
@@ -1002,7 +1019,6 @@ async function loadSessionMessages(force = false) {
 	if (!selectedSessionId.value) {
 		loadMessagesSeq += 1;
 		messages.value = [];
-		updateScrollState();
 		return;
 	}
 	loadMessagesSeq += 1;
@@ -1066,13 +1082,10 @@ async function loadSessionMessages(force = false) {
 					};
 				}),
 		);
-		await scrollBottom(true);
+		await revealDeepLink();
 	} catch (e) {
 		console.error("Failed to load session messages", e);
-		// Don't wipe existing messages on transient errors.
-		if (messages.value.length === 0) {
-			updateScrollState();
-		}
+		// Existing messages stay on transient errors.
 	}
 }
 
@@ -1126,34 +1139,6 @@ async function applyTurn(turn: ActiveTurn) {
 		return;
 	}
 	setTurn(sessionId, turn);
-	if (sessionId === selectedSessionId.value && turn.processing) scrollBottom();
-}
-
-function updateScrollState() {
-	const el = messagesEl.value;
-	if (!el) {
-		hasScrollOverflow.value = false;
-		isAtBottom.value = true;
-		return;
-	}
-	hasScrollOverflow.value = el.scrollHeight > el.clientHeight + 1;
-	const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-	isAtBottom.value = distanceFromBottom <= 8;
-}
-
-function onMessagesScroll() {
-	updateScrollState();
-}
-
-async function scrollBottom(force = false) {
-	await nextTick();
-	if (!messagesEl.value) return;
-	if (!force && !isAtBottom.value) {
-		updateScrollState();
-		return;
-	}
-	messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
-	updateScrollState();
 }
 
 // send never waits for a running reply: each message is added and delivered
@@ -1214,7 +1199,7 @@ async function runTurn(
 	activeStreams.value += 1;
 	let streamError = false;
 	hasInlineError.value = false;
-	await scrollBottom(true);
+	scrollToBottom();
 	try {
 		// Other sends can add messages while this reply streams, so the
 		// reply's bubble is found by key rather than by position.
@@ -1316,14 +1301,11 @@ async function runTurn(
 						timestamp: now,
 						model: agentModel,
 					});
-					scrollBottom();
 				} else if (type === "tool" && chunk) {
 					appendToolChunk(chunk);
-					scrollBottom();
 				} else if (chunk) {
 					pendingText += chunk;
 					flushPendingChunks();
-					scrollBottom();
 				}
 			},
 			// A pinned session is opened by name, which creates it on first use.
@@ -1368,7 +1350,6 @@ async function runTurn(
 		await loadSessionMessages(true);
 	}
 	await refreshSessionProcessing();
-	await scrollBottom();
 }
 
 async function stopSession() {
