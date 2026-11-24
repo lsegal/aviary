@@ -13,7 +13,7 @@ const logoPath = `${base}logo.png`;
 const baseUrl = new URL(base, siteUrl).toString();
 const title = "Aviary";
 const description =
-	"Aviary is a full AI assistant platform. Connect your AI models to Slack, Signal, Discord, etc., have conversations, set up scheduled tasks, and let your agents work for you. All managed from a CLI or a web-based control panel.";
+	"Aviary is a full AI assistant platform. Connect your AI models to Slack, Signal, Discord, etc., have conversations by text or voice, set up scheduled tasks, and let your agents work for you. All managed from a CLI or a web-based control panel.";
 
 // pageRoute maps a page source path to its URL path without the base.
 function pageRoute(relativePath: string): string {

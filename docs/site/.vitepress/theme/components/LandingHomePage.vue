@@ -140,6 +140,10 @@ const projectsSteps = [
 	{ title: "Merge", description: "Squash, close the issue, file follow-ups." },
 ];
 
+const voiceWave = [
+	30, 55, 80, 45, 95, 60, 35, 70, 90, 50, 25, 65, 85, 40, 75, 55, 30, 60, 45, 20,
+].map((size, id) => ({ id, size }));
+
 const docsLinks = [
 	{
 		number: "01",
@@ -285,7 +289,7 @@ onBeforeUnmount(() => {
 					</h1>
 					<p class="landing-hero-lede reveal">
 						Aviary is a full AI assistant platform. Connect your AI models to Slack, Signal, Discord, and more. Have
-						conversations, set up scheduled tasks, turn chats into workflows, and let your agents work for you, all managed from a CLI or a
+						conversations by text or voice, set up scheduled tasks, turn chats into workflows, and let your agents work for you, all managed from a CLI or a
 						web-based control panel.
 					</p>
 
@@ -873,6 +877,41 @@ onBeforeUnmount(() => {
 							<div class="muted">-&gt; streams the agent response</div>
 							<div><span class="prompt">$</span> aviary job list --task morning-standup</div>
 							<div><span class="prompt">$</span> aviary logs --follow<span class="blink-cursor"></span></div>
+						</div>
+					</div>
+
+					<div class="card c-wide-6 reveal">
+						<div class="kind">Voice &#183; 07</div>
+						<h3>Talk to your agents. Transcribed on your machine.</h3>
+						<p>
+							Send a voice note over Signal, Slack, or Discord, or record one
+							with the control panel's mic. Local
+							<a href="https://github.com/ggml-org/whisper.cpp" target="_blank" rel="noreferrer">Whisper</a>
+							turns it into text, so no audio leaves the machine, and the Docker
+							image ships with everything it needs.
+							<a :href="withBase('/guide/voice')">Set up voice messages</a>.
+						</p>
+						<div class="voice-vis">
+							<div class="voice-note">
+								<span class="voice-play" aria-hidden="true">
+									<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+										<path d="M7 4v16l13-8z" />
+									</svg>
+								</span>
+								<span class="voice-wave" aria-hidden="true">
+									<span v-for="h in voiceWave" :key="h.id" :style="{ height: `${h.size}%` }"></span>
+								</span>
+								<span class="voice-len">0:12</span>
+							</div>
+							<div class="voice-transcript">
+								<span class="voice-tag">voice message 0:12, transcribed</span>
+								Can you check whether the deploy finished?
+							</div>
+							<div class="voice-chips">
+								<span class="voice-chip">whisper.cpp &#183; base.en</span>
+								<span class="voice-chip">audio stays local</span>
+								<span class="voice-chip">ready in Docker</span>
+							</div>
 						</div>
 					</div>
 				</div>
@@ -1743,6 +1782,10 @@ onBeforeUnmount(() => {
 	grid-column: span 4;
 }
 
+.c-wide-6 {
+	grid-column: span 6;
+}
+
 
 .channels-vis,
 .skills-vis {
@@ -2115,6 +2158,89 @@ onBeforeUnmount(() => {
 	color: var(--ink-3);
 	font-size: 12.5px;
 	line-height: 1.5;
+}
+
+.voice-vis {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+	gap: 10px 16px;
+	align-items: center;
+	margin-top: auto;
+}
+
+.voice-note,
+.voice-transcript {
+	padding: 10px 12px;
+	border: 1px solid var(--rule);
+	border-radius: 12px;
+	background: color-mix(in oklab, var(--bg-soft) 80%, transparent);
+}
+
+.voice-note {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.voice-play {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 26px;
+	height: 26px;
+	border-radius: 50%;
+	background: var(--brand);
+	color: #fff;
+}
+
+.voice-wave {
+	display: flex;
+	flex: 1;
+	align-items: center;
+	gap: 3px;
+	height: 26px;
+}
+
+.voice-wave span {
+	flex: 1;
+	min-width: 2px;
+	border-radius: 2px;
+	background: color-mix(in oklab, var(--brand) 55%, transparent);
+}
+
+.voice-len {
+	color: var(--ink-3);
+	font-family: var(--mono);
+	font-size: 11.5px;
+}
+
+.voice-transcript {
+	color: var(--ink);
+	font-size: 13.5px;
+	line-height: 1.5;
+}
+
+.voice-tag {
+	display: block;
+	color: var(--ink-3);
+	font-family: var(--mono);
+	font-size: 11px;
+}
+
+.voice-chips {
+	display: flex;
+	flex-wrap: wrap;
+	grid-column: 1 / -1;
+	gap: 8px;
+}
+
+.voice-chip {
+	padding: 4px 10px;
+	border: 1px solid var(--rule);
+	border-radius: 999px;
+	color: var(--ink-2);
+	font-family: var(--mono);
+	font-size: 11.5px;
 }
 
 .security-grid {
@@ -2560,7 +2686,8 @@ onBeforeUnmount(() => {
 
 	.c-wide-2,
 	.c-wide-3,
-	.c-wide-4 {
+	.c-wide-4,
+	.c-wide-6 {
 		grid-column: span 2;
 	}
 
@@ -2618,6 +2745,10 @@ onBeforeUnmount(() => {
 
 @media (max-width: 540px) {
 
+	.voice-vis {
+		grid-template-columns: 1fr;
+	}
+
 	.landing-bento,
 	.landing-docs-grid {
 		grid-template-columns: 1fr;
@@ -2629,7 +2760,8 @@ onBeforeUnmount(() => {
 
 	.c-wide-2,
 	.c-wide-3,
-	.c-wide-4 {
+	.c-wide-4,
+	.c-wide-6 {
 		grid-column: span 1;
 	}
 
