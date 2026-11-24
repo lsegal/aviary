@@ -51,11 +51,6 @@
 					class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
 					{{ okMessage }}
 				</div>
-				<div v-if="compileToastVisible" :class="isAgentFilesPage ? 'mx-4 mt-4 sm:mx-6' : 'mb-4'"
-					class="flex items-center justify-between rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-					<span>Compile in progress… <RouterLink :to="agentTaskPath(draft.agents[selectedAgentIdx]?.name ?? '')" class="font-medium underline">View runs</RouterLink></span>
-					<button type="button" class="ml-4 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200" @click="compileToastVisible = false">✕</button>
-				</div>
 
 				<div
 					v-if="loading"
@@ -599,7 +594,6 @@ const saving = ref(false);
 const reverting = ref(false);
 const errorMessage = ref("");
 const okMessage = ref("");
-const compileToastVisible = ref(false);
 const slackWorkspaceBrowsers = ref<
 	Record<
 		string,
@@ -2365,20 +2359,6 @@ async function onTaskNameBlur() {
 	}
 }
 
-async function convertTaskToScript(agentName: string, taskName: string) {
-	errorMessage.value = "";
-	okMessage.value = "";
-	try {
-		await callTool("config_task_convert_to_script", {
-			agent: agentName,
-			task: taskName,
-		});
-		compileToastVisible.value = true;
-	} catch (e) {
-		errorMessage.value = e instanceof Error ? e.message : String(e);
-	}
-}
-
 async function moveTaskToFile(
 	agentIndex: number,
 	taskIndex: number,
@@ -3659,7 +3639,6 @@ const settingsContext = proxyRefs({
 	channelTypeIconClass,
 	channelTypeLabel,
 	channelToolResolution,
-	compileToastVisible,
 	completeAnthropic,
 	copilotUserCode,
 	copilotVerifyUrl,
@@ -3670,7 +3649,6 @@ const settingsContext = proxyRefs({
 	configuredProviders,
 	chatDisplayName,
 	configuredTaskChannelOptions,
-	convertTaskToScript,
 	createSession,
 	previewTrigger,
 	setTaskTrigger,

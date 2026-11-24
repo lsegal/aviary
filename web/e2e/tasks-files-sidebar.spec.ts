@@ -198,6 +198,9 @@ test("the Tasks + opens the add-task modal and the new task joins the sidebar", 
 			schedule: "0 8 * * 1",
 			prompt: "Write the weekly report",
 			from_file: true,
+			// It keeps its prompt and compiles a script beside it.
+			type: "prompt",
+			precompile: true,
 		},
 	]);
 });
@@ -273,6 +276,7 @@ test("the add-task modal's precompute choice follows the setting and applies to 
 	expect(saved.at(-1)?.agents[0].tasks).toMatchObject([
 		{ name: "stays-prompt", type: "prompt" },
 	]);
+	expect(saved.at(-1)?.agents[0].tasks[0]).not.toHaveProperty("precompile");
 	expect(converted).toEqual([]);
 
 	// Checking it precomputes just the task being created.
@@ -288,7 +292,29 @@ test("the add-task modal's precompute choice follows the setting and applies to 
 	await precompute.check();
 	await dialog.getByRole("button", { name: "Create" }).click();
 	await expect(dialog).toBeHidden();
+	expect(saved.at(-1)?.agents[0].tasks).toMatchObject([
+		{ name: "stays-prompt" },
+		{ name: "compiled", type: "prompt", prompt: "Print the time", precompile: true },
+	]);
 	expect(converted).toEqual([{ agent: "assistant", task: "compiled" }]);
+
+	// Editing a scheduled prompt task offers the same choice, from its own
+	// setting, and turning it on precompiles that task beside its prompt.
+	await page.goto("/agents/assistant/tasks");
+	await page
+		.getByRole("group", { name: "stays-prompt actions" })
+		.getByRole("button", { name: "Edit" })
+		.click();
+	const edit = page.getByRole("dialog", { name: "Edit task" });
+	const editPrecompute = edit.getByLabel("Try to precompile");
+	await expect(editPrecompute).not.toBeChecked();
+	await editPrecompute.check();
+	await edit.getByRole("button", { name: "Save" }).click();
+	await expect(edit).toBeHidden();
+	expect(
+		saved.at(-1)?.agents[0].tasks.find((t) => t.name === "stays-prompt"),
+	).toMatchObject({ type: "prompt", prompt: "Summarize the week", precompile: true });
+	expect(converted.at(-1)).toEqual({ agent: "assistant", task: "stays-prompt" });
 });
 
 test("the add-task modal's Send To forwards runs to a channel by name, shown as Send Via in the editor", async ({

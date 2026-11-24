@@ -1288,17 +1288,17 @@ type taskStopArgs struct {
 }
 
 type taskScheduleArgs struct {
-	Agent        string `json:"agent"`
-	Name         string `json:"name,omitempty"`
-	Type         string `json:"type,omitempty" schema:"enum=prompt|script|project"`
-	Project      string `json:"project,omitempty"`
-	Model        string `json:"model,omitempty"`
-	Content      string `json:"content"`
-	In           string `json:"in,omitempty"`
-	Schedule     string `json:"schedule,omitempty"`
-	Target       string `json:"target,omitempty"`
-	TriggerType  string `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
-	Precompile   *bool  `json:"precompile,omitempty"`
+	Agent       string `json:"agent"`
+	Name        string `json:"name,omitempty"`
+	Type        string `json:"type,omitempty" schema:"enum=prompt|script|project"`
+	Project     string `json:"project,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Content     string `json:"content"`
+	In          string `json:"in,omitempty"`
+	Schedule    string `json:"schedule,omitempty"`
+	Target      string `json:"target,omitempty"`
+	TriggerType string `json:"trigger_type,omitempty" schema:"enum=cron|watch"`
+	Precompile  *bool  `json:"precompile,omitempty"`
 	taskTriggerArgs
 }
 

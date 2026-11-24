@@ -734,7 +734,6 @@
 										</div>
 									</div>
 									<div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-										<button v-if="(!selectedTask.type || selectedTask.type === 'prompt') && selectedTask.prompt" type="button" class="rounded-lg border border-blue-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950" :disabled="!selectedTask.name" :title="selectedTask.name ? 'Try to compile this prompt task to a Lua script' : 'Task must have a name to convert'" @click="convertTaskToScript(agent.name, selectedTask.name)">Convert to Script</button>
 										<label class="inline-flex min-w-0 items-center gap-2">
 	<span class="text-sm text-gray-600 dark:text-gray-300">Enabled</span>
 	<SwitchRoot

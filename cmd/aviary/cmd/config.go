@@ -33,9 +33,11 @@ Set a value:
 
 var configConvertTaskToScriptCmd = &cobra.Command{
 	Use:   "convert-task-to-script [agent] <task>",
-	Short: "Compile a prompt task to a Lua script and update it in place",
-	Long: `Asynchronously compile a PROMPT-type task to a Lua script. If compilation
-succeeds the task is updated in place — YAML-defined tasks stay in aviary.yaml
+	Short: "Precompile a prompt task, keeping its prompt to fall back to",
+	Long: `Turn precompile on for a prompt task, project task or prompt workflow and
+compile a fresh Lua script beside its prompt in the background, discarding any
+existing script. The task keeps its type and prompt: runs execute the script
+and fall back to the model if it fails. YAML-defined tasks stay in aviary.yaml
 and file-based tasks stay in their .md file. The agent may be omitted when only
 one agent exists.
 
