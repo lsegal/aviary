@@ -5,6 +5,7 @@
 // hot-reload, such as a go.mod change) is run again, which rebuilds it from the
 // current sources. A managed forgo older than MIN_FORGO_VERSION is updated
 // first, because earlier releases crash the backend after some hot reloads.
+// A stop signal also stops any backend forgo leaves behind when it exits.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -110,14 +111,81 @@ let child;
 // The signal this process was asked to stop with, re-raised once the backend
 // has exited.
 let stopSignal = null;
+// forgo's descendants when the stop signal arrived, including the backend.
+let stopPids = [];
 for (const signal of ["SIGINT", "SIGTERM"]) {
 	process.on(signal, () => {
 		stopSignal ??= signal;
+		if (child.exitCode === null && child.signalCode === null) {
+			stopPids = [...new Set([...stopPids, ...descendantPids(child.pid)])];
+		}
 		// SIGINT whatever the signal: forgo passes SIGINT on to the backend
 		// but exits on SIGTERM, leaving the backend running and holding its
 		// port. Both stop the backend the same way.
 		child.kill("SIGINT");
 	});
+}
+
+// descendantPids returns the PIDs of every process below pid. Windows has no
+// ps and no signals to forward, so it returns none there.
+function descendantPids(pid) {
+	if (isWindows || !pid) return [];
+	let out;
+	try {
+		out = execFileSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" });
+	} catch {
+		return [];
+	}
+	const children = new Map();
+	for (const line of out.trim().split("\n")) {
+		const [child, parent] = line.trim().split(/\s+/).map(Number);
+		if (!children.has(parent)) children.set(parent, []);
+		children.get(parent).push(child);
+	}
+	const found = [];
+	const pending = [pid];
+	while (pending.length > 0) {
+		for (const child of children.get(pending.pop()) ?? []) {
+			found.push(child);
+			pending.push(child);
+		}
+	}
+	return found;
+}
+
+function alive(pid) {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (err) {
+		return err.code === "EPERM";
+	}
+}
+
+// stopLeftovers signals the processes in pids that outlived forgo and waits
+// for them to exit, killing them after STOP_TIMEOUT_MS. forgo only passes
+// SIGINT on to the backend once its watch loop is running, so a signal during
+// its startup handshake makes it exit with the backend still holding its port.
+const STOP_TIMEOUT_MS = 30_000;
+async function stopLeftovers(pids, signal) {
+	let left = pids.filter(alive);
+	if (left.length === 0) return;
+	console.log(`Stopping ${left.length} process(es) left behind by forgo...`);
+	for (const pid of left) {
+		try {
+			process.kill(pid, signal);
+		} catch {}
+	}
+	const deadline = Date.now() + STOP_TIMEOUT_MS;
+	while (left.length > 0 && Date.now() < deadline) {
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		left = left.filter(alive);
+	}
+	for (const pid of left) {
+		try {
+			process.kill(pid, "SIGKILL");
+		} catch {}
+	}
 }
 
 function run() {
@@ -126,7 +194,7 @@ function run() {
 		env,
 		stdio: "inherit",
 	});
-	child.on("exit", (code, signal) => {
+	child.on("exit", async (code, signal) => {
 		if (existsSync(restartFile) && !stopSignal) {
 			rmSync(restartFile, { force: true });
 			console.log("Restarting Aviary from the current sources...");
@@ -134,6 +202,7 @@ function run() {
 			return;
 		}
 		rmSync(restartFile, { force: true });
+		if (stopSignal) await stopLeftovers(stopPids, stopSignal);
 		const exitSignal = stopSignal ?? signal;
 		if (exitSignal) {
 			process.removeAllListeners(exitSignal);
