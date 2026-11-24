@@ -2,6 +2,7 @@
 package scheduler
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -269,6 +270,11 @@ func (q *JobQueue) Fail(id string, cause error) error {
 	job.LockedAt = nil
 	if cause != nil {
 		job.Error = cause.Error()
+		job.ErrorOutput, job.BugReportURL = "", ""
+		var failure *domain.RunFailure
+		if errors.As(cause, &failure) {
+			job.ErrorOutput, job.BugReportURL = failure.Output, failure.BugReportURL
+		}
 	}
 
 	if job.Attempts >= job.MaxRetries {
@@ -523,7 +529,7 @@ func (q *JobQueue) updateStatus(id string, status domain.JobStatus) error {
 	}
 	job.Status = status
 	if status == domain.JobStatusCompleted {
-		job.Error = ""
+		job.Error, job.ErrorOutput, job.BugReportURL = "", "", ""
 	}
 	job.LockedAt = nil
 	job.UpdatedAt = time.Now()

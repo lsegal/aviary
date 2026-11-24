@@ -343,11 +343,11 @@ import { settingsViewContextKey } from "../components/settings/context";
 import SettingsAgentsTab from "../components/settings/SettingsAgentsTab.vue";
 import SettingsDisplayTab from "../components/settings/SettingsDisplayTab.vue";
 import SettingsGeneralTab from "../components/settings/SettingsGeneralTab.vue";
+import type { SettingsCrumb } from "../components/settings/SettingsPageHeader.vue";
 import SettingsProjectsTab from "../components/settings/SettingsProjectsTab.vue";
 import SettingsProvidersTab from "../components/settings/SettingsProvidersTab.vue";
 import SettingsSessionsTab from "../components/settings/SettingsSessionsTab.vue";
 import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
-import type { PageCrumb } from "../components/ui/PageHeader.vue";
 import { Skeleton } from "../components/ui/skeleton";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useAgentNav } from "../composables/useAgentNav";
@@ -1089,13 +1089,13 @@ function selectedAgentRouteId(): string {
  */
 const pageHeader = computed(
 	(): {
-		crumbs: PageCrumb[];
+		crumbs: SettingsCrumb[];
 		back: { label: string; to: string } | null;
 	} => {
 		const header = (
-			crumbs: PageCrumb[],
+			crumbs: SettingsCrumb[],
 		): {
-			crumbs: PageCrumb[];
+			crumbs: SettingsCrumb[];
 			back: { label: string; to: string } | null;
 		} => {
 			const parent = crumbs.at(-2);
@@ -1123,7 +1123,7 @@ const pageHeader = computed(
 				"";
 			const project =
 				typeof route.query.project === "string" ? route.query.project : "";
-			const crumbs: PageCrumb[] = agent
+			const crumbs: SettingsCrumb[] = agent
 				? [
 						{
 							label: "Code Loop",
@@ -1144,7 +1144,7 @@ const pageHeader = computed(
 		if (!agent || route.path === "/agents")
 			return header([{ label: "Agents" }]);
 		const name = agent.name || "New agent";
-		const agentCrumb: PageCrumb = agent.name
+		const agentCrumb: SettingsCrumb = agent.name
 			? {
 					label: name,
 					to: agentHome(selectedAgentRouteId()),

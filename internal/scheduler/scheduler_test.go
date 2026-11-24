@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,6 +116,34 @@ func TestJobQueue_FailWithRetryThenFailTerminal(t *testing.T) {
 	assert.Equal(t, domain.JobStatusFailed, afterSecond.Status)
 	assert.Equal(t, "boom2", afterSecond.Error, "the failure reason is kept for the run details panel")
 
+}
+
+// A failure's agent output and bug report are stored beside its short
+// message, never inside it, and cleared when the job completes (#1122).
+func TestJobQueue_FailKeepsRunFailureDetailsApart(t *testing.T) {
+	setupSchedulerDataDir(t)
+	q := NewJobQueue()
+
+	job, err := q.Enqueue("taskF", "f", "go", "", 0, "", "")
+	assert.NoError(t, err)
+	claimed, err := q.Claim()
+	assert.NoError(t, err)
+	assert.NotNil(t, claimed)
+	failure := &domain.RunFailure{Err: errors.New("agent failed: exit status 1"), Output: "last line", BugReportURL: "https://github.com/o/r/issues/new?body=x"}
+	assert.NoError(t, q.Fail(claimed.ID, fmt.Errorf("wrapped: %w", failure)))
+
+	failed, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
+	assert.NoError(t, err)
+	assert.Equal(t, "wrapped: agent failed: exit status 1", failed.Error)
+	assert.Equal(t, "last line", failed.ErrorOutput)
+	assert.Equal(t, failure.BugReportURL, failed.BugReportURL)
+
+	assert.NoError(t, q.Complete(job.ID))
+	completed, err := store.ReadJSON[domain.Job](store.JobPath(job.AgentID, job.ID))
+	assert.NoError(t, err)
+	assert.Empty(t, completed.Error)
+	assert.Empty(t, completed.ErrorOutput)
+	assert.Empty(t, completed.BugReportURL)
 }
 
 func TestJobQueue_RecoverStuck(t *testing.T) {

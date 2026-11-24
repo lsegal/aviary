@@ -378,7 +378,7 @@ test("the task editor and task page header use the same compiled chip and panel"
 		{ attempts: {} },
 	);
 	await page.goto("/agents/assistant/tasks/report");
-	const header = page.getByTestId("page-header");
+	const header = page.getByTestId("settings-header");
 	const chip = header.getByTestId("compiled-status-chip");
 	await expect(chip).toHaveAttribute("data-state", "compiled");
 	await expect(chip).toContainText("v1234567");

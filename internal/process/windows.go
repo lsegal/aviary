@@ -117,3 +117,24 @@ func processTreeIDs(root uint32) []uint32 {
 	}
 	return ids
 }
+
+// reapLeftovers ends every process an exited child left behind and returns
+// their PIDs. Windows does not reparent orphans, so the snapshot still finds
+// them under the child's PID.
+func reapLeftovers(cmd *exec.Cmd) []int {
+	if cmd == nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
+		return nil
+	}
+	var pids []int
+	for _, id := range processTreeIDs(uint32(cmd.Process.Pid))[1:] {
+		handle, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, id)
+		if err != nil {
+			continue
+		}
+		if windows.TerminateProcess(handle, 1) == nil {
+			pids = append(pids, int(id))
+		}
+		_ = windows.CloseHandle(handle)
+	}
+	return pids
+}

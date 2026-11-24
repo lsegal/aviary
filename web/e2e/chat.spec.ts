@@ -346,9 +346,85 @@ test("Shift+Enter inserts a newline and Enter sends it with its line breaks", as
 	expect(runs[0].message).toBe("line one\nline two");
 	await expect(input).toHaveValue("");
 
-	const sent = page.locator(".whitespace-pre-wrap", { hasText: "line two" });
+	const sent = page
+		.getByTestId("chat-message-content")
+		.filter({ hasText: "line two" });
 	await expect(sent).toBeVisible();
 	expect(await sent.innerText()).toBe("line one\nline two");
+});
+
+test("a sent user message renders its fenced code block as Markdown", async ({
+	page,
+}) => {
+	const runs: Record<string, unknown>[] = [];
+	await mockMCP(page, {
+		agent_list: [
+			{
+				id: "a1",
+				name: "assistant",
+				model: "anthropic/claude-sonnet-4-5",
+				fallbacks: [],
+				state: "idle",
+			},
+		],
+		session_list: [
+			{
+				id: "s1",
+				agent_id: "a1",
+				name: "main",
+				created_at: "2026-03-12T12:00:00Z",
+			},
+		],
+		config_validate: [],
+		session_messages: () =>
+			runs.map((run, i) => ({
+				id: `r${i}`,
+				session_id: "s1",
+				role: "user",
+				content: run.message,
+				timestamp: "2026-03-12T12:00:01Z",
+			})),
+		agent_run: (args?: Record<string, unknown>) => {
+			runs.push(args ?? {});
+			return { stream: ["got it"], result: "" };
+		},
+	});
+	await page.goto("/agents/assistant/chat");
+
+	const longLine = `fmt.Println("${"wide ".repeat(60)}")`;
+	const message = [
+		"Here is the output:",
+		"```go",
+		"func main() {",
+		`    ${longLine}`,
+		"}",
+		"```",
+	].join("\n");
+	const input = page.getByPlaceholder("Describe a task or ask a question");
+	await expect(input).toBeEnabled();
+	await input.fill(message);
+	await input.press("Enter");
+	await expect.poll(() => runs.length).toBe(1);
+
+	const bubble = page
+		.getByTestId("chat-message-bubble")
+		.filter({ hasText: "Here is the output:" });
+	const code = bubble.locator("pre > code.language-go");
+	await expect(code).toBeVisible();
+	await expect(bubble).not.toContainText("```");
+	expect(await code.textContent()).toBe(`func main() {\n    ${longLine}\n}\n`);
+
+	// The long line scrolls inside the block instead of widening the bubble.
+	const pre = await bubble.locator("pre").evaluate((el) => ({
+		client: el.clientWidth,
+		scroll: el.scrollWidth,
+	}));
+	expect(pre.scroll).toBeGreaterThan(pre.client);
+	const widths = await bubble.evaluate((el) => ({
+		bubble: el.getBoundingClientRect().width,
+		column: el.parentElement?.getBoundingClientRect().width ?? 0,
+	}));
+	expect(widths.bubble).toBeLessThanOrEqual(widths.column * 0.85 + 1);
 });
 
 test("streaming response updates without dropping existing messages", async ({
@@ -1142,7 +1218,8 @@ test("user bubbles stay docked right with their text left-aligned", async ({
 
 	const text = page
 		.getByTestId("chat-user-message")
-		.locator(".whitespace-pre-wrap", { hasText: "short" });
+		.getByTestId("chat-message-content")
+		.filter({ hasText: "short" });
 	await expect(text).toBeVisible();
 	expect(["left", "start"]).toContain(
 		await text.evaluate((el) => getComputedStyle(el).textAlign),

@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,8 +9,6 @@ import (
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
-	"github.com/lsegal/aviary/internal/scheduler"
-	"github.com/lsegal/aviary/internal/store"
 )
 
 // setupProjectTaskCompile saves cfg as the running config and stubs the
@@ -19,42 +16,16 @@ import (
 // slice records the prompts compiled, and tools is the catalog compiles see.
 func setupProjectTaskCompile(t *testing.T, cfg *config.Config, compile func(prompt string) *compiledTaskResult) (*[]string, *[]agent.ToolInfo) {
 	t.Helper()
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	store.SetDataDir(filepath.Join(base, "aviary"))
-	t.Cleanup(func() { store.SetDataDir("") })
-	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
-	require.NoError(t, store.EnsureDirs())
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	// Background compiles read the deps, so they finish before the restore.
-	t.Cleanup(backgroundCompiles.Wait)
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
 	var prompts []string
-	prevCompiler := tryCompileTaskPromptFunc
-	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
-	tryCompileTaskPromptFunc = func(_ context.Context, agentName, prompt, _ string, _ bool) (*compiledTaskResult, error) {
-		assert.Equal(t, "bot", agentName)
-		prompts = append(prompts, prompt)
-		return compile(prompt), nil
-	}
 	tools := []agent.ToolInfo{{Name: "exec"}, {Name: "task_run"}}
 	prevTools := compileToolsFunc
 	t.Cleanup(func() { compileToolsFunc = prevTools })
 	compileToolsFunc = func(context.Context, string) ([]agent.ToolInfo, error) { return tools, nil }
-
-	require.NoError(t, config.Save("", cfg))
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(cfg)
-	s, err := scheduler.New(mgr, 1)
-	require.NoError(t, err)
-	t.Cleanup(s.Stop)
-	s.Reconcile(cfg)
-	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+	setupTaskScheduleCompile(t, cfg, func(_ context.Context, agentName, prompt, _ string, _ bool) (*compiledTaskResult, error) {
+		assert.Equal(t, "bot", agentName)
+		prompts = append(prompts, prompt)
+		return compile(prompt), nil
+	})
 	return &prompts, &tools
 }
 

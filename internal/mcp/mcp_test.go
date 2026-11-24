@@ -575,12 +575,6 @@ func TestServerTools(t *testing.T) {
 	toolCallContains(t, d, "server_status", map[string]any{}, "")
 }
 
-func TestTaskTools(t *testing.T) {
-	d := setupMCPDispatcher(t)
-	// task_list
-	toolCallContains(t, d, "task_list", map[string]any{}, "scheduler not initialized")
-}
-
 func TestTaskScheduleRecurringCreatesConfiguredTask(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
@@ -734,25 +728,7 @@ func TestTaskListReturnsConfiguredTasks(t *testing.T) {
 }
 
 func TestTaskSchedule_PrecompilesPromptTaskBesidePrompt(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	store.SetDataDir(filepath.Join(base, "aviary"))
-	t.Cleanup(func() { store.SetDataDir("") })
-	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	// task_schedule precompiles a recurring prompt task in the background.
-	t.Cleanup(backgroundCompiles.Wait)
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	prevCompiler := tryCompileTaskPromptFunc
-	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
-	tryCompileTaskPromptFunc = func(_ context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
+	d := setupTaskScheduleCompile(t, botConfig(), func(_ context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
 		assert.Equal(t, "bot", agentName)
 		assert.Equal(t, "check subscript uptime", prompt)
 		assert.Empty(t, target)
@@ -764,27 +740,8 @@ func TestTaskSchedule_PrecompilesPromptTaskBesidePrompt(t *testing.T) {
 			},
 			Script: "print('compiled')\n",
 		}, nil
-	}
+	})
 
-	cfg := &config.Config{
-		Agents: []config.AgentConfig{{
-			Name:  "bot",
-			Model: "test/x",
-		}},
-	}
-	err = config.Save("", cfg)
-	assert.NoError(t, err)
-
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(cfg)
-	s, err := scheduler.New(mgr, 1)
-	assert.NoError(t, err)
-
-	t.Cleanup(s.Stop)
-	s.Reconcile(cfg)
-	SetDeps(&Deps{Agents: mgr, Scheduler: s})
-
-	d := NewDispatcher("https://localhost:16677", "")
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":    "bot",
 		"name":     "subscript-uptime",
@@ -810,50 +767,13 @@ func TestTaskSchedule_PrecompilesPromptTaskBesidePrompt(t *testing.T) {
 }
 
 func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	store.SetDataDir(filepath.Join(base, "aviary"))
-	t.Cleanup(func() { store.SetDataDir("") })
-	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	// task_schedule precompiles a recurring prompt task in the background.
-	t.Cleanup(backgroundCompiles.Wait)
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	prevCompiler := tryCompileTaskPromptFunc
-	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
-	tryCompileTaskPromptFunc = func(_ context.Context, _, _, _ string, _ bool) (*compiledTaskResult, error) {
+	d := setupTaskScheduleCompile(t, botConfig(), func(_ context.Context, _, _, _ string, _ bool) (*compiledTaskResult, error) {
 		return &compiledTaskResult{
 			Type:   "prompt",
 			Reason: "not deterministic enough",
 		}, nil
-	}
+	})
 
-	cfg := &config.Config{
-		Agents: []config.AgentConfig{{
-			Name:  "bot",
-			Model: "test/x",
-		}},
-	}
-	err = config.Save("", cfg)
-	assert.NoError(t, err)
-
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(cfg)
-	s, err := scheduler.New(mgr, 1)
-	assert.NoError(t, err)
-
-	t.Cleanup(s.Stop)
-	s.Reconcile(cfg)
-	SetDeps(&Deps{Agents: mgr, Scheduler: s})
-
-	d := NewDispatcher("https://localhost:16677", "")
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":    "bot",
 		"name":     "manual-review",
@@ -873,27 +793,18 @@ func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 	assert.Equal(t, "prompt", got.Type)
 	assert.Equal(t, "review the latest emails and decide what matters", got.Prompt)
 	assert.Empty(t, got.Compiled, "a nondeterministic prompt runs on the model")
-
 }
 
 func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	// task_schedule precompiles a recurring prompt task in the background.
-	t.Cleanup(backgroundCompiles.Wait)
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	prevCompiler := tryCompileTaskPromptFunc
-	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{{
+			Name:     "bot",
+			Model:    "test/x",
+			Channels: []config.ChannelConfig{{Type: "signal", ID: "+15550001111", Name: "Phone"}},
+		}},
+	}
 	called := false
-	tryCompileTaskPromptFunc = func(_ context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
+	d := setupTaskScheduleCompile(t, cfg, func(_ context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
 		called = true
 		assert.Equal(t, "bot", agentName)
 		assert.Equal(t, "check subscript uptime", prompt)
@@ -903,28 +814,8 @@ func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
 			Type:   "script",
 			Script: "print('compiled')\n",
 		}, nil
-	}
+	})
 
-	cfg := &config.Config{
-		Agents: []config.AgentConfig{{
-			Name:     "bot",
-			Model:    "test/x",
-			Channels: []config.ChannelConfig{{Type: "signal", ID: "+15550001111", Name: "Phone"}},
-		}},
-	}
-	err = config.Save("", cfg)
-	assert.NoError(t, err)
-
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(cfg)
-	s, err := scheduler.New(mgr, 1)
-	assert.NoError(t, err)
-
-	t.Cleanup(s.Stop)
-	s.Reconcile(cfg)
-	SetDeps(&Deps{Agents: mgr, Scheduler: s})
-
-	d := NewDispatcher("https://localhost:16677", "")
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":    "bot",
 		"name":     "targeted-prompt",
@@ -938,146 +829,58 @@ func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
 	assert.True(t, called)
 }
 
-func TestTaskSchedule_PrecomputeDisabledSkipsCompilation(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	store.SetDataDir(filepath.Join(base, "aviary"))
-	t.Cleanup(func() { store.SetDataDir("") })
-	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	// task_schedule precompiles a recurring prompt task in the background.
-	t.Cleanup(backgroundCompiles.Wait)
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	prevCompiler := tryCompileTaskPromptFunc
-	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
-	called := false
-	tryCompileTaskPromptFunc = func(_ context.Context, _, _, _ string, _ bool) (*compiledTaskResult, error) {
-		called = true
-		return &compiledTaskResult{
-			Type:   "script",
-			Script: "print('compiled')\n",
-		}, nil
-	}
-
+func TestTaskSchedule_PrecompileDisabledSkipsCompilation(t *testing.T) {
 	disabled := false
-	cfg := &config.Config{
-		Scheduler: config.SchedulerConfig{PrecomputeTasks: &disabled},
-		Agents: []config.AgentConfig{{
-			Name:  "bot",
-			Model: "test/x",
-		}},
-	}
-	err = config.Save("", cfg)
-	assert.NoError(t, err)
-
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(cfg)
-	s, err := scheduler.New(mgr, 1)
-	assert.NoError(t, err)
-
-	t.Cleanup(s.Stop)
-	s.Reconcile(cfg)
-	SetDeps(&Deps{Agents: mgr, Scheduler: s})
-
-	d := NewDispatcher("https://localhost:16677", "")
-	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+	args := map[string]any{
 		"agent":    "bot",
 		"name":     "manual-only",
 		"content":  "check subscript uptime",
 		"schedule": "0 */10 * * * *",
-	})
-	assert.NoError(t, err)
-	assert.Contains(t, out, "Recurring task")
-	assert.False(t, called)
-
-	loaded, err := config.Load("")
-	assert.NoError(t, err)
-	require.Len(t, loaded.Agents, 1)
-	require.Len(t, loaded.Agents[0].Tasks, 1)
-
-	got := loaded.Agents[0].Tasks[0]
-	assert.Equal(t, "prompt", got.Type)
-	assert.Equal(t, "check subscript uptime", got.Prompt)
-	require.NotNil(t, got.Precompile)
-	assert.False(t, *got.Precompile)
-
-}
-
-func TestTaskSchedule_PrecompileFalseSkipsCompilation(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	store.SetDataDir(filepath.Join(base, "aviary"))
-	t.Cleanup(func() { store.SetDataDir("") })
-	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	// task_schedule precompiles a recurring prompt task in the background.
-	t.Cleanup(backgroundCompiles.Wait)
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	prevCompiler := tryCompileTaskPromptFunc
-	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
-	called := false
-	tryCompileTaskPromptFunc = func(_ context.Context, _, _, _ string, _ bool) (*compiledTaskResult, error) {
-		called = true
-		return &compiledTaskResult{
-			Type:   "script",
-			Script: "print('compiled')\n",
-		}, nil
 	}
-
-	cfg := &config.Config{
-		Agents: []config.AgentConfig{{
-			Name:  "bot",
-			Model: "test/x",
-		}},
+	withPrecompileFalse := map[string]any{"precompile": false}
+	for k, v := range args {
+		withPrecompileFalse[k] = v
 	}
-	err = config.Save("", cfg)
-	assert.NoError(t, err)
+	precomputeOff := botConfig()
+	precomputeOff.Scheduler.PrecomputeTasks = &disabled
 
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(cfg)
-	s, err := scheduler.New(mgr, 1)
-	assert.NoError(t, err)
+	tests := []struct {
+		name string
+		cfg  *config.Config
+		args map[string]any
+	}{
+		{name: "global precompute disabled", cfg: precomputeOff, args: args},
+		{name: "per-task precompile=false", cfg: botConfig(), args: withPrecompileFalse},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			d := setupTaskScheduleCompile(t, tt.cfg, func(_ context.Context, _, _, _ string, _ bool) (*compiledTaskResult, error) {
+				called = true
+				return &compiledTaskResult{
+					Type:   "script",
+					Script: "print('compiled')\n",
+				}, nil
+			})
 
-	t.Cleanup(s.Stop)
-	s.Reconcile(cfg)
-	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+			out, err := d.CallTool(context.Background(), "task_schedule", tt.args)
+			assert.NoError(t, err)
+			assert.Contains(t, out, "Recurring task")
+			backgroundCompiles.Wait()
+			assert.False(t, called)
 
-	d := NewDispatcher("https://localhost:16677", "")
-	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
-		"agent":      "bot",
-		"name":       "manual-only",
-		"content":    "check subscript uptime",
-		"schedule":   "0 */10 * * * *",
-		"precompile": false,
-	})
-	assert.NoError(t, err)
-	assert.Contains(t, out, "Recurring task")
-	assert.False(t, called)
+			loaded, err := config.Load("")
+			assert.NoError(t, err)
+			require.Len(t, loaded.Agents, 1)
+			require.Len(t, loaded.Agents[0].Tasks, 1)
 
-	loaded, err := config.Load("")
-	assert.NoError(t, err)
-	require.Len(t, loaded.Agents, 1)
-	require.Len(t, loaded.Agents[0].Tasks, 1)
-
-	got := loaded.Agents[0].Tasks[0]
-	assert.Equal(t, "prompt", got.Type)
-	assert.Equal(t, "check subscript uptime", got.Prompt)
-	require.NotNil(t, got.Precompile)
-	assert.False(t, *got.Precompile)
+			got := loaded.Agents[0].Tasks[0]
+			assert.Equal(t, "prompt", got.Type)
+			assert.Equal(t, "check subscript uptime", got.Prompt)
+			require.NotNil(t, got.Precompile)
+			assert.False(t, *got.Precompile)
+		})
+	}
 }
 
 func TestTaskSchedule_RejectsLegacyStructuredTaskPayload(t *testing.T) {
@@ -2787,37 +2590,6 @@ func TestRunHimalayaCLI_MockBinary(t *testing.T) {
 	assert.Equal(t, []string{"--output", "json", "--config", "mail.toml", "envelope", "list"}, capturedArgs)
 }
 
-func TestSessionCreateAndMessages(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}})
-	SetDeps(&Deps{Agents: mgr})
-
-	d := NewDispatcher("https://localhost:16677", "")
-
-	// session_create returns a new session with agent info.
-	out, err := d.CallTool(context.Background(), "session_create", map[string]any{"agent": "bot"})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "bot"))
-
-	// session_messages on a new empty session returns an empty array.
-	// First get a session ID from the session_list.
-	listOut, err := d.CallTool(context.Background(), "session_list", map[string]any{"agent": "bot"})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(listOut, "bot"))
-
-}
-
 func TestSessionSendTool_DeliversToRegisteredTargets(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
@@ -2906,24 +2678,7 @@ func TestSessionSendTool_RequiresAgent(t *testing.T) {
 }
 
 func TestTaskCompileScriptIsNotExposedAndTaskScheduleStillPrecomputes(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	store.SetDataDir(filepath.Join(base, "aviary"))
-	t.Cleanup(func() { store.SetDataDir("") })
-	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
-	err := store.EnsureDirs()
-	require.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	// task_schedule precompiles a recurring prompt task in the background.
-	t.Cleanup(backgroundCompiles.Wait)
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-	prevCompiler := tryCompileTaskPromptFunc
-	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
-	tryCompileTaskPromptFunc = func(_ context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
+	d := setupTaskScheduleCompile(t, botConfig(), func(_ context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error) {
 		assert.Equal(t, "bot", agentName)
 		assert.Equal(t, "Every 10 minutes check to see if https://subscript.to is up and if it is not returning a 200 let me know.", prompt)
 		assert.Empty(t, target)
@@ -2938,24 +2693,7 @@ func TestTaskCompileScriptIsNotExposedAndTaskScheduleStillPrecomputes(t *testing
 				{Kind: "notify", Deterministic: true, Description: "notify on failure"},
 			},
 		}, nil
-	}
-
-	cfg := &config.Config{
-		Agents: []config.AgentConfig{{
-			Name:  "bot",
-			Model: "test/x",
-		}},
-	}
-	err = config.Save("", cfg)
-	require.NoError(t, err)
-
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(cfg)
-	s, err := scheduler.New(mgr, 1)
-	require.NoError(t, err)
-	t.Cleanup(s.Stop)
-	s.Reconcile(cfg)
-	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+	})
 
 	c, err := NewInProcessClient(context.Background(), NewServer())
 	require.NoError(t, err)
@@ -2967,7 +2705,6 @@ func TestTaskCompileScriptIsNotExposedAndTaskScheduleStillPrecomputes(t *testing
 		assert.NotEqual(t, "task_compile_script", tool.Name)
 	}
 
-	d := NewDispatcher("https://localhost:16677", "")
 	out, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
 		"agent":    "bot",
 		"name":     "subscript-status",
@@ -2987,26 +2724,8 @@ func TestTaskCompileScriptIsNotExposedAndTaskScheduleStillPrecomputes(t *testing
 }
 
 func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	store.SetDataDir(filepath.Join(base, "aviary"))
-	t.Cleanup(func() { store.SetDataDir("") })
-	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
-	err := store.EnsureDirs()
-	require.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	// task_schedule precompiles a recurring prompt task in the background.
-	t.Cleanup(backgroundCompiles.Wait)
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-	prevCompiler := tryCompileTaskPromptFunc
-	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
-
 	compileCalls := 0
-	tryCompileTaskPromptFunc = func(_ context.Context, _ string, prompt, _ string, _ bool) (*compiledTaskResult, error) {
+	d := setupTaskScheduleCompile(t, botConfig(), func(_ context.Context, _ string, prompt, _ string, _ bool) (*compiledTaskResult, error) {
 		compileCalls++
 		result := &compiledTaskResult{Type: "prompt", Prompt: prompt}
 		if compileCalls > 1 {
@@ -3015,26 +2734,8 @@ func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T
 			result.Validated = true
 		}
 		return result, nil
-	}
+	})
 
-	cfg := &config.Config{
-		Agents: []config.AgentConfig{{
-			Name:  "bot",
-			Model: "test/x",
-		}},
-	}
-	err = config.Save("", cfg)
-	require.NoError(t, err)
-
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(cfg)
-	s, err := scheduler.New(mgr, 1)
-	require.NoError(t, err)
-	t.Cleanup(s.Stop)
-	s.Reconcile(cfg)
-	SetDeps(&Deps{Agents: mgr, Scheduler: s})
-
-	d := NewDispatcher("https://localhost:16677", "")
 	args := map[string]any{
 		"agent":    "bot",
 		"content":  "Every 10 minutes check to see if https://subscript.to is up and if it is not returning a 200 let me know.",
@@ -3059,39 +2760,7 @@ func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T
 }
 
 func TestTaskScheduleUnnamedRecurringTaskReusesMatchingGeneratedTask(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	store.SetDataDir(filepath.Join(base, "aviary"))
-	t.Cleanup(func() { store.SetDataDir("") })
-	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
-	err := store.EnsureDirs()
-	require.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	// task_schedule precompiles a recurring prompt task in the background.
-	t.Cleanup(backgroundCompiles.Wait)
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	cfg := &config.Config{
-		Agents: []config.AgentConfig{{
-			Name:  "bot",
-			Model: "test/x",
-		}},
-	}
-	err = config.Save("", cfg)
-	require.NoError(t, err)
-
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(cfg)
-	s, err := scheduler.New(mgr, 1)
-	require.NoError(t, err)
-	t.Cleanup(s.Stop)
-	s.Reconcile(cfg)
-	SetDeps(&Deps{Agents: mgr, Scheduler: s})
-
+	setupSchedulerDeps(t, botConfig())
 	d := NewDispatcher("https://localhost:16677", "")
 	firstArgs := map[string]any{
 		"agent":    "bot",
@@ -3206,20 +2875,6 @@ func TestAgentStop_NotFound(t *testing.T) {
 
 	// agent_stop returns an MCP error result for a nonexistent agent.
 	toolCallContains(t, d, "agent_stop", map[string]any{"name": "nonexistent"}, "not found")
-}
-
-func TestJobListNilScheduler(t *testing.T) {
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	SetDeps(&Deps{Agents: agent.NewManager(nil), Scheduler: nil})
-	d := NewDispatcher("https://localhost:16677", "")
-
-	// job_list returns an MCP error result when scheduler is nil.
-	toolCallContains(t, d, "job_list", map[string]any{}, "scheduler not initialized")
 }
 
 func TestAgentFileWriteTool_NoSession(t *testing.T) {

@@ -1346,7 +1346,7 @@ test("Remove Agent sits in the danger zone and asks for confirmation", async ({
 	await expect(dialog).toContainText("Remove agent?");
 	await dialog.getByRole("button", { name: "Cancel" }).click();
 	await expect(dialog).toHaveCount(0);
-	await expect(page.getByTestId("page-title")).toHaveText("Agent Settings");
+	await expect(page.getByTestId("settings-title")).toHaveText("Agent Settings");
 });
 
 test("tasks use the shared trigger editor and save a daily trigger without cron", async ({

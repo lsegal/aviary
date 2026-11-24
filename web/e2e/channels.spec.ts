@@ -252,8 +252,8 @@ test("a channel's view shows its conversation and its gear opens its settings", 
 		.click();
 
 	await expect(page).toHaveURL(/\/agents\/assistant\/channels\/Team%20Slack$/);
-	await expect(page.getByTestId("page-title")).toHaveText("Team Slack");
-	await expect(page.getByTestId("page-header")).toContainText(
+	await expect(page.getByTestId("settings-title")).toHaveText("Team Slack");
+	await expect(page.getByTestId("settings-header")).toContainText(
 		"delivers to C123",
 	);
 	await expect(page.getByText("Daily report: all green")).toBeVisible();
@@ -309,7 +309,7 @@ test("… Rename, Settings and Delete act on a channel", async ({ page }) => {
 		{ agent: "assistant", channel: "Team Slack", new_name: "Ops Slack" },
 	]);
 	await expect(page).toHaveURL(/\/agents\/assistant\/channels\/Ops%20Slack$/);
-	await expect(page.getByTestId("page-title")).toHaveText("Ops Slack");
+	await expect(page.getByTestId("settings-title")).toHaveText("Ops Slack");
 
 	// Delete confirms and asks what to do with the sessions.
 	await menu("Ops Slack", "Delete");
@@ -357,7 +357,9 @@ test("Agent Settings has no Channels section and its old address redirects", asy
 }) => {
 	await mockChannels(page, [TEAM]);
 	await page.goto("/agents/assistant/settings");
-	await expect(page.getByTestId("page-title")).toContainText("Agent Settings");
+	await expect(page.getByTestId("settings-title")).toContainText(
+		"Agent Settings",
+	);
 	await expect(page.getByTestId("channel-settings")).toHaveCount(0);
 	await expect(
 		page.getByRole("heading", { name: "Channels", exact: true }),

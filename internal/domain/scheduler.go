@@ -133,6 +133,11 @@ type Job struct {
 	// Error is why the latest attempt failed, shown with the run; it is
 	// cleared when an attempt completes.
 	Error string `json:"error,omitempty"`
+	// ErrorOutput is the last lines a failed attempt's agent printed, and
+	// BugReportURL a prefilled issue reporting the failure; both are shown
+	// beside Error rather than inside it, and cleared with it.
+	ErrorOutput  string `json:"error_output,omitempty"`
+	BugReportURL string `json:"bug_report_url,omitempty"`
 	// ScriptError is set when a precompiled project task's script failed and
 	// the model ran the task instead: the script's full error, which the
 	// run's logs show and its summary leaves out.

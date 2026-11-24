@@ -475,7 +475,7 @@ test("a project's board names its agent and links to its projects in Code Loop s
 	await expect(owner).toHaveText("agent: coder");
 	// The header's actions are icon buttons, Settings rightmost, and there is
 	// no Add project button (projects are added under their agent).
-	const header = page.locator("header").filter({ has: owner });
+	const header = page.getByTestId("settings-header");
 	const settings = header.getByRole("link", { name: "Settings", exact: true });
 	await expect(settings).toHaveAttribute("title", "Settings");
 	await expect(settings).toHaveText("");
@@ -910,7 +910,7 @@ test("Code Loop settings live under the projects section, not System", async ({
 }) => {
 	await setup(page);
 	await page.goto("/projects/settings");
-	await expect(page.getByTestId("page-title")).toHaveText("Settings");
+	await expect(page.getByTestId("settings-title")).toHaveText("Settings");
 	await expect(page.getByTestId("project-settings")).toBeVisible();
 	await expect(
 		(await systemList(page)).getByRole("link", {

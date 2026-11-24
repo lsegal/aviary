@@ -10,7 +10,8 @@
       "type": "event.type",
       "text": "event.text",
       "toolName": "event.toolName",
-      "ignore": ["content_start", "content_update", "iteration_start", "iteration_end", "usage", "done"]
+      "ignore": ["content_start", "content_update", "iteration_start", "iteration_end", "usage", "done"],
+      "result": { "event": "done", "status": "event.reason", "success": ["completed"] }
     }
   },
   "skills": {"target": "cline"},

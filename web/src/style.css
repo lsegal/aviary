@@ -144,3 +144,34 @@ body {
 .chat-markdown :where(code)::after {
 	content: none;
 }
+
+/* User bubbles are solid blue in both themes, so their Markdown keeps white
+   text and draws code, quotes and tables on translucent dark or light washes. */
+.chat-markdown-user {
+	--tw-prose-invert-body: var(--color-white);
+	--tw-prose-invert-headings: var(--color-white);
+	--tw-prose-invert-bold: var(--color-white);
+	--tw-prose-invert-links: var(--color-white);
+	--tw-prose-invert-code: var(--color-white);
+	--tw-prose-invert-quotes: var(--color-blue-50);
+	--tw-prose-invert-quote-borders: rgb(255 255 255 / 0.4);
+	--tw-prose-invert-bullets: rgb(255 255 255 / 0.7);
+	--tw-prose-invert-counters: rgb(255 255 255 / 0.8);
+	--tw-prose-invert-hr: rgb(255 255 255 / 0.3);
+	--tw-prose-invert-th-borders: rgb(255 255 255 / 0.4);
+	--tw-prose-invert-td-borders: rgb(255 255 255 / 0.25);
+	--tw-prose-invert-pre-code: var(--color-gray-100);
+	--tw-prose-invert-pre-bg: rgb(3 7 18 / 0.45);
+	line-height: 1.5;
+}
+
+.chat-markdown-user :where(a) {
+	text-underline-offset: 2px;
+}
+
+.chat-markdown-user :where(:not(pre) > code) {
+	border-radius: 0.25rem;
+	background-color: rgb(255 255 255 / 0.18);
+	padding: 0.1em 0.3em;
+	font-weight: 500;
+}

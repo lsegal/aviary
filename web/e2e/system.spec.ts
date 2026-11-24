@@ -83,7 +83,7 @@ test("system tools shows grouped MCP tools and active skills", async ({
 }) => {
 	await page.goto("/system/tools");
 
-	await expect(page.getByTestId("page-title")).toHaveText("Tools");
+	await expect(page.getByTestId("settings-title")).toHaveText("Tools");
 	await expect(page.getByText("agent_list")).toBeVisible();
 	await expect(page.getByText("task_update")).toBeVisible();
 	await expect(
@@ -792,12 +792,12 @@ test("the System gear opens Settings, which shows no gear (#932)", async ({
 	await page.goto("/system/overview");
 	await page.getByRole("link", { name: "Settings", exact: true }).click();
 	await expect(page).toHaveURL(/\/system\/settings$/);
-	await expect(page.getByTestId("page-title")).toHaveText("Settings");
+	await expect(page.getByTestId("settings-title")).toHaveText("Settings");
 	await expect(page.getByRole("dialog")).toHaveCount(0);
 	await expect(page.getByTestId("system-settings-link")).toHaveCount(0);
 
 	await page.goto("/system/providers");
-	await expect(page.getByTestId("page-title")).toBeVisible();
+	await expect(page.getByTestId("settings-title")).toBeVisible();
 	await expect(page.getByTestId("system-settings-link")).toHaveCount(0);
 });
 
