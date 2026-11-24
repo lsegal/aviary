@@ -49,7 +49,7 @@ func TestResolvedServerURLReachesServer(t *testing.T) {
 				t.Fatalf("resolvedServerURL() = %q, want %q", url, want)
 			}
 			client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}} //nolint:gosec
-			resp, err := client.Get(url + "/") //nolint:noctx
+			resp, err := client.Get(url + "/")                                                                         //nolint:noctx
 			if err != nil {
 				t.Fatalf("GET %s: %v", url, err)
 			}
