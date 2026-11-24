@@ -137,8 +137,6 @@ const props = defineProps<{
 	target: string;
 	/** The skill to queue for; the dialog is open while it is set. */
 	skill: QueueSkill | null;
-	/** Numbers to start with, such as a job card's linked pull request. */
-	preselect?: number[];
 	noMerge?: boolean;
 }>();
 const emit = defineEmits<{ close: []; queued: [] }>();
@@ -260,11 +258,8 @@ watch(
 		search.value = "";
 		candidates.value = [];
 		listedNoMerge.value = false;
-		picked.value = skill === "gh-fix" ? [] : [...(props.preselect ?? [])];
-		issueText.value =
-			skill === "gh-fix"
-				? (props.preselect ?? []).map((n) => `#${n}`).join(", ")
-				: "";
+		picked.value = [];
+		issueText.value = "";
 		if (!skill || skill === "gh-fix") return;
 		loading.value = true;
 		try {
@@ -278,11 +273,6 @@ watch(
 			);
 			candidates.value = listed.candidates;
 			listedNoMerge.value = listed.noMerge;
-			// A preselected row a job already owns cannot be picked.
-			const owned = new Set(
-				listed.candidates.filter((c) => c.ownedBy).map((c) => c.number),
-			);
-			picked.value = picked.value.filter((n) => !owned.has(n));
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
 		} finally {
