@@ -80,8 +80,11 @@ test(
 		);
 		const resolved = config({ command: "build", mode: "production" });
 		const hosts = devAllowedHosts();
-		assert.ok(hosts.includes("myhost.local"));
-		assert.ok(hosts.includes("dev.example.com"));
+		assert.deepEqual(hosts.slice(-3), [
+			"dev.example.com",
+			"myhost.local",
+			"other.lan",
+		]);
 		assert.deepEqual(resolved.server.allowedHosts, hosts);
 		assert.deepEqual(resolved.preview.allowedHosts, hosts);
 	},
