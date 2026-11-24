@@ -190,7 +190,7 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 			}
 			version = update.NormalizeVersion(check.LatestVersion)
 		}
-		if update.SameVersion(update.CurrentVersion(), version) {
+		if update.SameVersion(update.CurrentVersion(ctx), version) {
 			st := s.RestartStatus()
 			st.Noop = true
 			st.Message = fmt.Sprintf("Aviary is already at %s.", version)
@@ -454,7 +454,7 @@ func (s *Server) performRestart(ctx context.Context, status saferestart.Status) 
 	}
 	marker := saferestart.Marker{
 		Reason:      "restart",
-		FromVersion: update.CurrentVersion(),
+		FromVersion: update.CurrentVersion(ctx),
 		At:          time.Now().UTC(),
 		Jobs:        saferestart.RunningJobs(),
 	}

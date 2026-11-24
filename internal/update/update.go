@@ -28,6 +28,10 @@ const (
 	// CheckInterval is how often the server's self-updater looks for a new release.
 	CheckInterval = 5 * time.Minute
 	checkTTL      = CheckInterval
+	// checkErrorBackoff is how long a failed check is reused before the
+	// next attempt; it doubles with each consecutive failure (see
+	// checkBackoff).
+	checkErrorBackoff = 30 * time.Second
 )
 
 // CheckResult describes the local version and the latest known release.
@@ -74,9 +78,15 @@ var (
 	emulateLocal  string
 	emulateRemote string
 
-	cacheMu     sync.RWMutex
-	cachedCheck CheckResult
-	cacheExpiry time.Time
+	cacheMu       sync.RWMutex
+	cachedCheck   CheckResult
+	cachedErr     error
+	cachedGit     bool
+	cacheExpiry   time.Time
+	checkFailures int
+
+	// checkSem lets one version check run at a time.
+	checkSem = make(chan struct{}, 1)
 
 	renameFile = os.Rename
 )
@@ -127,9 +137,11 @@ func IsDevBuild() bool {
 
 // CurrentVersion returns the effective local version, honoring emulation when
 // enabled. A dev build reports the full commit SHA of the code it runs: the
-// git-mode checkout's HEAD, read on every call so a pulled checkout reports its
-// new commit, else the VCS revision Go embedded in the binary, else "dev".
-func CurrentVersion() string {
+// git-mode checkout's HEAD (see checkoutHead, which caches it for headTTL so
+// request paths do not run git), else the VCS revision Go embedded in the
+// binary, else "dev". ctx names the caller of any git command it runs (see
+// WithCaller).
+func CurrentVersion(ctx context.Context) string {
 	emulateMu.RLock()
 	local := emulateLocal
 	emulateMu.RUnlock()
@@ -140,7 +152,7 @@ func CurrentVersion() string {
 		return buildinfo.Version
 	}
 	if dir := GitCheckout(); dir != "" {
-		if sha, err := runGit(context.Background(), dir, "rev-parse", "HEAD"); err == nil && sha != "" {
+		if sha := checkoutHead(ctx, dir); sha != "" {
 			return sha
 		}
 	}
@@ -174,7 +186,7 @@ func Check(ctx context.Context, client *http.Client) (CheckResult, error) {
 		if dir := checkoutDir(); dir != "" {
 			return cachedGitCheck(ctx, dir)
 		}
-		return CheckResult{CurrentVersion: CurrentVersion(), CheckedAt: time.Now().UTC(), NoCheckout: true, Message: noCheckoutMessage}, nil
+		return CheckResult{CurrentVersion: CurrentVersion(ctx), CheckedAt: time.Now().UTC(), NoCheckout: true, Message: noCheckoutMessage}, nil
 	}
 	if EmulationActive() {
 		emulateMu.RLock()
@@ -184,54 +196,78 @@ func Check(ctx context.Context, client *http.Client) (CheckResult, error) {
 		return compareVersions(local, remote, true)
 	}
 
-	cacheMu.RLock()
-	if time.Now().Before(cacheExpiry) && cachedCheck.Git == nil {
-		out := cachedCheck
-		cacheMu.RUnlock()
-		return out, nil
-	}
-	cacheMu.RUnlock()
-
-	latest, err := resolveLatestVersion(ctx, client, "", DefaultRepo)
-	if err != nil {
-		current := CurrentVersion()
-		out := CheckResult{
-			CurrentVersion:   current,
-			UpgradeSupported: isComparableVersion(current),
-			Message:          err.Error(),
+	return throttledCheck(ctx, false, func() (CheckResult, error) {
+		latest, err := resolveLatestVersion(ctx, client, "", DefaultRepo)
+		if err != nil {
+			current := CurrentVersion(ctx)
+			out := CheckResult{
+				CurrentVersion:   current,
+				UpgradeSupported: isComparableVersion(current),
+				Message:          err.Error(),
+			}
+			return out, err
 		}
-		return out, err
-	}
-	out, cmpErr := compareVersions(CurrentVersion(), latest, false)
-	if cmpErr != nil {
-		return out, cmpErr
-	}
-
-	cacheMu.Lock()
-	cachedCheck = out
-	cacheExpiry = time.Now().Add(checkTTL)
-	cacheMu.Unlock()
-	return out, nil
+		return compareVersions(CurrentVersion(ctx), latest, false)
+	})
 }
 
 func cachedGitCheck(ctx context.Context, dir string) (CheckResult, error) {
-	cacheMu.RLock()
-	if time.Now().Before(cacheExpiry) && cachedCheck.Git != nil {
-		out := cachedCheck
-		cacheMu.RUnlock()
-		out.CurrentVersion = CurrentVersion()
-		return out, nil
+	out, err := throttledCheck(ctx, true, func() (CheckResult, error) {
+		return gitCheckResult(ctx, dir)
+	})
+	out.CurrentVersion = CurrentVersion(ctx)
+	return out, err
+}
+
+// throttledCheck returns the cached result of the last check of the same kind
+// (git or release) while it is fresh, and otherwise runs check. Checks run one
+// at a time, so callers that arrive during a check share its result. A
+// success is reused for checkTTL; a failure is reused for checkBackoff, which
+// grows with each consecutive failure, so a broken network or checkout is not
+// retried on every call. A failure caused by ctx ending is not cached.
+func throttledCheck(ctx context.Context, git bool, check func() (CheckResult, error)) (CheckResult, error) {
+	select {
+	case checkSem <- struct{}{}:
+	case <-ctx.Done():
+		return CheckResult{CurrentVersion: CurrentVersion(ctx)}, fmt.Errorf("waiting for another version check: %w", ctx.Err())
 	}
-	cacheMu.RUnlock()
-	out, err := gitCheckResult(ctx, dir)
-	if err != nil {
+	defer func() { <-checkSem }()
+
+	cacheMu.RLock()
+	if time.Now().Before(cacheExpiry) && cachedGit == git {
+		out, err := cachedCheck, cachedErr
+		cacheMu.RUnlock()
 		return out, err
 	}
+	cacheMu.RUnlock()
+
+	out, err := check()
+	if err != nil && ctx.Err() != nil {
+		return out, err // the caller gave up; that says nothing about the next check
+	}
+
 	cacheMu.Lock()
-	cachedCheck = out
-	cacheExpiry = time.Now().Add(checkTTL)
-	cacheMu.Unlock()
-	return out, nil
+	defer cacheMu.Unlock()
+	cachedCheck, cachedErr, cachedGit = out, err, git
+	if err != nil {
+		checkFailures++
+		cacheExpiry = time.Now().Add(checkBackoff(checkFailures))
+	} else {
+		checkFailures = 0
+		cacheExpiry = time.Now().Add(checkTTL)
+	}
+	return out, err
+}
+
+// checkBackoff is how long the failure of the n-th consecutive check is
+// reused before the next attempt: checkErrorBackoff, doubling per failure, up
+// to checkTTL.
+func checkBackoff(n int) time.Duration {
+	d := checkErrorBackoff
+	for i := 1; i < n && d < checkTTL; i++ {
+		d *= 2
+	}
+	return min(d, checkTTL)
 }
 
 // Install downloads and installs the requested Aviary release into TargetPath.
@@ -517,9 +553,14 @@ func isCrossDeviceRename(err error) bool {
 	return errors.Is(err, syscall.EXDEV)
 }
 
-// ClearCache forgets the cached version check so the next Check asks GitHub.
+// ClearCache forgets the cached version check, and any failure backoff, so
+// the next Check asks GitHub or the checkout's upstream, and forgets the
+// cached checkout HEAD so the next CurrentVersion reads it again. Callers use
+// it after a pull or an install, or before a scheduled check.
 func ClearCache() {
 	cacheMu.Lock()
 	cacheExpiry = time.Time{}
+	checkFailures = 0
 	cacheMu.Unlock()
+	expireHead()
 }

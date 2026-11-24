@@ -113,11 +113,11 @@ var wsUpgrader = websocket.Upgrader{
 // healthHandler handles GET /api/health.
 // Public — no authentication required. Returns current version and status.
 func healthHandler(authDisabled func() bool, minimal bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(healthPayload{
 			OK:           true,
-			Version:      update.CurrentVersion(),
+			Version:      update.CurrentVersion(update.WithCaller(r.Context(), "GET /api/health")),
 			GOOS:         runtime.GOOS,
 			AuthDisabled: tokenAuthDisabled(authDisabled),
 			Minimal:      minimal,
@@ -158,8 +158,9 @@ func wsHandler(token string, authDisabled func() bool) http.HandlerFunc {
 		defer conn.Close() //nolint:errcheck
 		defer wsUnregister(conn)
 
+		versionCtx := update.WithCaller(r.Context(), "/api/ws health heartbeat")
 		healthEvent := func() wsEvent {
-			ev := wsEvent{Type: "health", OK: true, Version: update.CurrentVersion(), GOOS: runtime.GOOS}
+			ev := wsEvent{Type: "health", OK: true, Version: update.CurrentVersion(versionCtx), GOOS: runtime.GOOS}
 			ev.Restart = currentRestartSnapshot()
 			return ev
 		}

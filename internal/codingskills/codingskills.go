@@ -271,7 +271,9 @@ func Default() *Manager {
 	defaultOnce.Do(func() {
 		defaultManager = &Manager{
 			Bundle:  update.DevAssets(aviary.CodingSkills, "."),
-			Version: update.CurrentVersion,
+			Version: func() string {
+				return update.CurrentVersion(update.WithCaller(context.Background(), "coding skills"))
+			},
 			CLIs:    builtinCLIs,
 			Run:     runNpx,
 		}
