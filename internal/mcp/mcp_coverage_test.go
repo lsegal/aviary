@@ -25,41 +25,59 @@ import (
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-func setupDispatcherWithScheduler(t *testing.T) (*Dispatcher, *scheduler.Scheduler) {
+// setupSchedulerDeps saves cfg as the running config in a fresh data
+// directory and wires an agent manager and scheduler for it into the deps.
+func setupSchedulerDeps(t *testing.T, cfg *config.Config) *scheduler.Scheduler {
 	t.Helper()
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	store.SetDataDir(base + "/aviary")
+	store.SetDataDir(filepath.Join(base, "aviary"))
 	t.Cleanup(func() { store.SetDataDir("") })
-	t.Setenv("AVIARY_CONFIG_BASE_DIR", base+"/aviary")
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", filepath.Join(base, "aviary"))
+	require.NoError(t, store.EnsureDirs())
 
 	old := GetDeps()
 	t.Cleanup(func() { SetDeps(old) })
-	// Background compiles, such as the one task_update starts for a project
-	// task, read the deps, so they finish before the restore.
+	// Background compiles, such as the one task_schedule starts for a
+	// recurring prompt task, read the deps, so they finish before the restore.
 	t.Cleanup(backgroundCompiles.Wait)
 	prevChecker := checkServerRunning
 	t.Cleanup(func() { checkServerRunning = prevChecker })
 	SetServerChecker(func() bool { return false })
 
-	cfg := &config.Config{
-		Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}},
-	}
-	err = config.Save("", cfg)
-	assert.NoError(t, err)
-
+	require.NoError(t, config.Save("", cfg))
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(cfg)
 	s, err := scheduler.New(mgr, 1)
-	assert.NoError(t, err)
-
+	require.NoError(t, err)
 	t.Cleanup(s.Stop)
 	s.Reconcile(cfg)
 	SetDeps(&Deps{Agents: mgr, Scheduler: s})
+	return s
+}
 
+func setupDispatcherWithScheduler(t *testing.T) (*Dispatcher, *scheduler.Scheduler) {
+	t.Helper()
+	s := setupSchedulerDeps(t, &config.Config{
+		Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}},
+	})
 	return NewDispatcher("https://localhost:16677", ""), s
+}
+
+// setupTaskScheduleCompile is setupSchedulerDeps with the task compiler
+// stubbed by compile, restored only after background compiles finish.
+func setupTaskScheduleCompile(t *testing.T, cfg *config.Config, compile func(ctx context.Context, agentName, prompt, target string, runDiscovery bool) (*compiledTaskResult, error)) *Dispatcher {
+	t.Helper()
+	prevCompiler := tryCompileTaskPromptFunc
+	t.Cleanup(func() { tryCompileTaskPromptFunc = prevCompiler })
+	tryCompileTaskPromptFunc = compile
+	setupSchedulerDeps(t, cfg)
+	return NewDispatcher("https://localhost:16677", "")
+}
+
+// botConfig is a config with the single agent "bot".
+func botConfig() *config.Config {
+	return &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}}
 }
 
 // ── Agent tools ───────────────────────────────────────────────────────────────
