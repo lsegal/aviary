@@ -152,15 +152,19 @@ const (
 	DeliveryDelivered = "delivered"
 	DeliveryQueued    = "queued"
 	DeliveryFailed    = "failed"
+	// DeliverySkipped marks a run that chose not to reply, so nothing was
+	// sent; Message is the run's reason.
+	DeliverySkipped = "skipped"
 )
 
 // JobDelivery is the outcome of sending a run's output to its target, for the
 // run log.
 type JobDelivery struct {
 	Target string `json:"target"`
-	// Status is DeliveryDelivered, DeliveryQueued, or DeliveryFailed, and
-	// Message says what happened, such as "delivered to Code Loop
-	// owner/repo#123" or why the delivery failed.
+	// Status is DeliveryDelivered, DeliveryQueued, DeliveryFailed, or
+	// DeliverySkipped, and Message says what happened, such as "delivered to
+	// Code Loop owner/repo#123", why the delivery failed, or why the run chose
+	// not to reply.
 	Status  string `json:"status"`
 	Message string `json:"message"`
 	// Project and Number name the Code Loop job a codeloop target reached,

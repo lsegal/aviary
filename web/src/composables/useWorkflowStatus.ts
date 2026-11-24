@@ -1,5 +1,6 @@
 import { computed, onMounted, onUnmounted, type Ref, ref, watch } from "vue";
 import { parseToolJSON } from "../lib/projects";
+import { skippedReplyReason } from "../lib/taskRuns";
 import type { Job } from "../stores/jobs";
 import { useMCP } from "./useMCP";
 
@@ -14,10 +15,13 @@ export interface WorkflowStatus {
 	activity: WorkflowActivity;
 	/**
 	 * How the latest finished run ended, if any run finished; fallback means
-	 * its precompiled script failed and the model ran it.
+	 * its precompiled script failed and the model ran it, and no_reply that it
+	 * chose not to reply.
 	 */
-	last?: "succeeded" | "fallback" | "failed";
+	last?: "succeeded" | "fallback" | "no_reply" | "failed";
 	lastAt?: string;
+	/** Why the latest finished run chose not to reply. */
+	lastSkipReason?: string;
 }
 
 const ACTIVE_POLL_MS = 2_000;
@@ -41,13 +45,18 @@ export function workflowStatuses(jobs: Job[]): Map<string, WorkflowStatus> {
 		else if (job.status === "pending" && s.activity !== "running")
 			s.activity = "triggering";
 		else if (job.status === "completed" || job.status === "failed") {
+			const skipReason =
+				job.status === "completed" ? skippedReplyReason(job) : undefined;
 			s.last =
 				job.status === "failed"
 					? "failed"
 					: job.script_error
 						? "fallback"
-						: "succeeded";
+						: skipReason !== undefined
+							? "no_reply"
+							: "succeeded";
 			s.lastAt = job.updated_at;
+			s.lastSkipReason = skipReason;
 		}
 		out.set(job.task_id, s);
 	}

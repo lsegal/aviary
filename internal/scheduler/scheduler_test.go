@@ -667,7 +667,7 @@ func TestExecuteScriptJob(t *testing.T) {
 		Script:   testScriptBody(),
 	}
 
-	result, err := executeScriptJob(context.Background(), job, &config.AgentConfig{}, nil)
+	result, err := executeScriptJob(context.Background(), job, &config.AgentConfig{}, nil, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "script-ok", result.Output)
 	assert.Contains(t, result.Logs, "print: script-ok")
@@ -692,7 +692,7 @@ func TestExecuteScriptJob_ShowsOutputInTaskSessionAndForwards(t *testing.T) {
 	_, err = executeScriptJob(context.Background(), job, &config.AgentConfig{}, func(agentName, route, text string) error {
 		delivered = append(delivered, agentName+"|"+route+"|"+text)
 		return nil
-	})
+	}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"alpha|session:sess_channel|script-ok"}, delivered)
 	assertSessionContains(t, "alpha", sess.ID, "script-ok")

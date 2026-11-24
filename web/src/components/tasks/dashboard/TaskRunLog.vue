@@ -34,7 +34,7 @@
 		<p v-if="delivery" data-testid="task-run-log-delivery" :data-status="delivery.status"
 			:role="delivery.status === 'failed' ? 'alert' : undefined" class="border-b px-3 py-2 text-xs"
 			:class="delivery.status === 'failed' ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300' : 'border-gray-200 text-gray-600 dark:border-gray-800 dark:text-gray-300'">
-			<span class="font-medium">Delivery {{ delivery.status }}:</span> {{ delivery.message }}
+			<span class="font-medium">{{ delivery.status === "skipped" ? "Skipped reply" : `Delivery ${delivery.status}` }}:</span> {{ delivery.message }}
 			<router-link v-if="deliveryJobPath" :to="deliveryJobPath" data-testid="task-run-log-delivery-link"
 				class="ml-1 text-blue-600 hover:underline dark:text-blue-400">Open job</router-link>
 		</p>

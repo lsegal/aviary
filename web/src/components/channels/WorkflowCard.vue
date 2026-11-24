@@ -23,7 +23,7 @@
 					</span>
 					<span v-if="status.last" data-testid="workflow-card-last" :data-last="status.last" class="text-[11px]"
 						:class="status.last === 'failed' ? 'text-red-600 dark:text-red-400' : status.last === 'fallback' ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'"
-						:title="status.last === 'fallback' ? 'Its precompiled script failed, so the model ran it' : undefined">
+						:title="lastTitle">
 						{{ LAST_TEXT[status.last] }}
 					</span>
 				</div>
@@ -57,6 +57,7 @@ const props = defineProps<{
 const LAST_TEXT = {
 	succeeded: "last run ok",
 	fallback: "last run fell back",
+	no_reply: "last run: no reply",
 	failed: "last run failed",
 } as const;
 
@@ -64,6 +65,13 @@ const TRIGGERING = "#f59e0b";
 const RUNNING = "#3b82f6";
 
 const paused = computed(() => props.workflow.enabled === false);
+const lastTitle = computed(() => {
+	if (props.status.last === "fallback")
+		return "Its precompiled script failed, so the model ran it";
+	if (props.status.last === "no_reply")
+		return `Skipped reply: ${props.status.lastSkipReason || "the run chose not to reply"}`;
+	return undefined;
+});
 const matchText = computed(() => {
 	const m = props.workflow.match?.trim();
 	const what = m && m !== "*" ? `matches ${m}` : "every message";

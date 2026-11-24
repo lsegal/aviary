@@ -349,13 +349,16 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 		defer p.recordWorkflowAfter(job)
 	}
 	deliver := p.deliverFor(job)
+	// A choice not to reply that the run did not get to act on, such as one
+	// made by a precompiled script that then failed, ends with the run.
+	defer agent.TakeSkippedReply(job.ID)
 
 	taskType, prompt, _ := resolveTaskExecution(job, runner.Config())
 	if taskType == "project" {
 		return p.executeProjectJob(ctx, job, runner.Config())
 	}
 	if taskType == "script" {
-		result, err := executeScriptJob(ctx, job, runner.Config(), deliver)
+		result, err := executeScriptJob(ctx, job, runner.Config(), deliver, func() bool { return p.skipReply(job) })
 		if result.Logs != "" {
 			if persistErr := p.queue.UpdateOutput(job.ID, result.Logs); persistErr != nil {
 				slog.Warn("job: failed to persist output", "id", job.ID, "err", persistErr)
@@ -380,6 +383,7 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 			slog.Warn("job: failed to clear resume note", "id", job.ID, "err", err)
 		}
 	}
+	prompt += replyNote(job)
 
 	var lastErr error
 	var reply strings.Builder
@@ -443,6 +447,9 @@ func (p *WorkerPool) executeJob(ctx context.Context, job *domain.Job) error {
 		if err := p.queue.UpdateOutput(job.ID, output); err != nil {
 			slog.Warn("job: failed to persist output", "id", job.ID, "err", err)
 		}
+	}
+	if p.skipReply(job) {
+		return lastErr
 	}
 	replyOutput := reply.String()
 	if replyOutput != "" {
@@ -558,11 +565,15 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 		summary = fallbackSummary(summary, compiledErr)
 		slog.Warn("job: precompiled project task fell back to the model", "id", job.ID, "task", job.TaskID, "err", compiledErr)
 	}
+	deliver := p.deliverFor(job)
+	if p.skipReply(job) {
+		deliver = nil
+	}
 	if summary != "" {
 		if persistErr := p.queue.UpdateOutput(job.ID, summary); persistErr != nil {
 			slog.Warn("job: failed to persist output", "id", job.ID, "err", persistErr)
 		}
-		if deliverErr := recordTaskOutput(job, summary, p.deliverFor(job)); deliverErr != nil {
+		if deliverErr := recordTaskOutput(job, summary, deliver); deliverErr != nil {
 			slog.Warn("job: failed to deliver project task output", "id", job.ID, "route", job.OutputChannel, "err", deliverErr)
 		}
 	}
@@ -621,11 +632,16 @@ func (p *WorkerPool) runCompiledWorkflow(ctx context.Context, job *domain.Job, c
 		if persistErr := p.queue.UpdateOutput(job.ID, b.String()); persistErr != nil {
 			slog.Warn("job: failed to persist output", "id", job.ID, "err", persistErr)
 		}
+		if p.skipReply(job) {
+			deliver = nil
+		}
 		if output == "" {
 			return b.String(), true, nil
 		}
 		return b.String(), true, recordTaskOutput(job, output, deliver)
 	}
+	// The model reruns the workflow and decides for itself whether to reply.
+	agent.TakeSkippedReply(job.ID)
 	p.setScriptError(job, runErr.Error())
 	b.Addf("precompiled script failed (%s); falling back to the model", ProjectScriptFailureCause(runErr))
 	slog.Warn("job: precompiled workflow fell back to the model", "id", job.ID, "task", job.TaskID, "err", runErr)
@@ -679,6 +695,49 @@ func (p *WorkerPool) runCompiledProjectTask(ctx context.Context, job *domain.Job
 	output, err = executeScriptJobOutput(ctx, &scriptJob, logf)
 	return output, true, err
 }
+
+// skipReply reports whether job chose not to reply, through the
+// task_no_reply tool, and if so records the skip and its reason as the run's
+// delivery, so the run log shows it in place of a delivery.
+func (p *WorkerPool) skipReply(job *domain.Job) bool {
+	reason, skipped := agent.TakeSkippedReply(job.ID)
+	if !skipped {
+		return false
+	}
+	if reason == "" {
+		reason = "the run chose not to reply"
+	}
+	delivery := &domain.JobDelivery{Target: job.OutputChannel, Status: domain.DeliverySkipped, Message: reason, At: time.Now().UTC()}
+	slog.Info("job: skipped reply", "id", job.ID, "task", job.TaskID, "target", delivery.Target, "reason", reason)
+	if err := p.queue.SetDelivery(job.ID, delivery); err != nil {
+		slog.Warn("job: failed to record skipped reply", "id", job.ID, "err", err)
+	}
+	job.Delivery = delivery
+	return true
+}
+
+// replyNote tells a run whose final message is delivered somewhere that it
+// is sent verbatim, and how to end the run without replying instead.
+func replyNote(job *domain.Job) string {
+	route := strings.TrimSpace(job.OutputChannel)
+	where := ""
+	switch {
+	case config.IsReplyTarget(route) && job.TriggerContext != nil:
+		where = "as a reply to the conversation that triggered this workflow"
+	case route != "" && !strings.EqualFold(route, config.TargetSilent):
+		where = "to this task's output target (" + route + ")"
+	case job.ReplySessionID != "":
+		where = "as a reply to the conversation that started this run"
+	default:
+		return ""
+	}
+	return "\n\n---\nYour final message is sent verbatim " + where + ". " +
+		"If you decide not to reply, or there is nothing to report, call the " + taskNoReplyTool + " tool with a short reason instead of writing a message that says so; " +
+		"any such message would itself be sent as the reply."
+}
+
+// taskNoReplyTool is the MCP tool a run calls to end without replying.
+const taskNoReplyTool = "task_no_reply"
 
 // TaskOutputDelivery sends a task or workflow run's output to its target and
 // reports the outcome for the run log; a silent target reports nil.

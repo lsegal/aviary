@@ -54,6 +54,8 @@ export interface TaskRunEntry {
 	error?: string;
 	/** Whether the precompiled script failed and the model ran the task. */
 	scriptFailed?: boolean;
+	/** Why the run chose not to reply, when it sent nothing to its target. */
+	skippedReply?: string;
 }
 
 const JOB_RESULTS: Record<Job["status"], TaskRunResult> = {
@@ -91,6 +93,11 @@ export function isActive(entry: TaskRunEntry): boolean {
 	return entry.result === "queued" || entry.result === "running";
 }
 
+/** Why job chose not to reply, or undefined when it did not skip its reply. */
+export function skippedReplyReason(job: Job): string | undefined {
+	return job.delivery?.status === "skipped" ? job.delivery.message : undefined;
+}
+
 /** A task's runs, newest first. */
 export function taskRunEntries(
 	jobs: Job[],
@@ -113,6 +120,7 @@ export function taskRunEntries(
 			durationMs: active ? undefined : jobDurationMs(job),
 			error: result === "failed" ? job.error || undefined : undefined,
 			scriptFailed,
+			skippedReply: skippedReplyReason(job),
 		};
 	});
 	for (const fire of history) {

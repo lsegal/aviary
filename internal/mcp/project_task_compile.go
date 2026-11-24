@@ -68,7 +68,9 @@ func workflowTaskCompilePrompt(prompt string) string {
 		"trigger.message is the triggering message, trigger.before lists the messages just before it, oldest first, " +
 		"and each message has text, sender (a display name, possibly empty), from_agent (true for the agent's own messages), " +
 		"timestamp and attachments. trigger.channel, trigger.channel_type and trigger.entry name the channel and conversation. " +
-		"What the script prints is the workflow's reply, delivered to its target."
+		"What the script prints is the workflow's reply, delivered verbatim to its target. " +
+		"When the workflow decides not to reply, the script calls tool.task_no_reply({reason = \"<short reason>\"}) and prints nothing, " +
+		"so nothing is delivered and the reason is recorded in the run history."
 }
 
 // taskCompilePrompt is what task is analyzed and compiled as.

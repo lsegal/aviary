@@ -36,6 +36,10 @@
 					class="mt-1 line-clamp-2 text-xs whitespace-pre-wrap text-red-600 dark:text-red-400" :title="e.error">
 					{{ e.error }}
 				</p>
+				<p v-if="e.skippedReply !== undefined" data-testid="task-run-skipped-reply"
+					class="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400" :title="e.skippedReply">
+					Skipped reply: {{ e.skippedReply }}
+				</p>
 			</li>
 		</ul>
 		<button v-if="filtered.length > shown" type="button" data-testid="task-run-history-more"

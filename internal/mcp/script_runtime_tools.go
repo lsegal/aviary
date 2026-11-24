@@ -20,6 +20,11 @@ func agentToolPermitted(ctx context.Context, name string) error {
 	if isProjectScriptExec(ctx, name) {
 		return nil
 	}
+	if name == TaskNoReplyTool {
+		// Choosing not to reply grants nothing, so a tool allowlist never
+		// leaves a run unable to stay silent.
+		return nil
+	}
 	runner := runnerForAgentContext(ctx)
 	if runner == nil {
 		return nil

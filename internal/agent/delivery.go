@@ -109,3 +109,27 @@ func ClearSessionDelivery(agentID, sessionID string) {
 	delete(deliveryRegistry.fns, sessionKey)
 	delete(deliveryRegistry.mfns, sessionKey)
 }
+
+// skippedReplies maps a running job's ID to the reason it chose not to reply.
+var skippedReplies = struct {
+	mu      sync.Mutex
+	reasons map[string]string
+}{reasons: make(map[string]string)}
+
+// SkipReply records that the task or workflow run jobID chose not to reply,
+// so its output is not delivered anywhere; reason is shown in its run log.
+func SkipReply(jobID, reason string) {
+	skippedReplies.mu.Lock()
+	defer skippedReplies.mu.Unlock()
+	skippedReplies.reasons[jobID] = strings.TrimSpace(reason)
+}
+
+// TakeSkippedReply reports whether jobID chose not to reply, with its reason,
+// and forgets the choice.
+func TakeSkippedReply(jobID string) (reason string, skipped bool) {
+	skippedReplies.mu.Lock()
+	defer skippedReplies.mu.Unlock()
+	reason, skipped = skippedReplies.reasons[jobID]
+	delete(skippedReplies.reasons, jobID)
+	return reason, skipped
+}
