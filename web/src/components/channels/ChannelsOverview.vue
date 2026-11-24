@@ -1,23 +1,6 @@
 <template>
 	<div class="min-h-0 flex-1 overflow-y-auto" data-testid="channels-overview">
 		<div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-			<SettingsPageHeader :crumbs="[{ label: 'Channels' }]">
-				<template #icon>
-					<span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300" aria-hidden="true">
-						<ChatBubbleLeftRightIcon class="h-5 w-5" />
-					</span>
-				</template>
-				<template #actions>
-					<AddWorkflowMenu :agent="agent" :channels="channels" />
-					<button type="button" data-testid="channels-add"
-						class="inline-flex items-center gap-1 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
-						@click="openCreate">
-						<PlusIcon aria-hidden="true" class="h-4 w-4" />
-						Add channel
-					</button>
-				</template>
-			</SettingsPageHeader>
-
 			<div class="space-y-8">
 				<section aria-label="Channel summary" class="space-y-3">
 					<p class="text-sm text-gray-600 dark:text-gray-400">
@@ -108,15 +91,14 @@ import { useMCP } from "../../composables/useMCP";
 import type { WorkflowStatus } from "../../composables/useWorkflowStatus";
 import { channelName, channelWorkflows } from "../../lib/channels";
 import type { AgentChannel, AgentTask } from "../../stores/settings";
-import SettingsPageHeader from "../settings/SettingsPageHeader.vue";
 import EmptyStateCard from "../ui/EmptyStateCard.vue";
 import SectionHeading from "../ui/SectionHeading.vue";
 import StatCard from "../ui/StatCard.vue";
-import AddWorkflowMenu from "./AddWorkflowMenu.vue";
 import ChannelCard from "./ChannelCard.vue";
 import ChannelMessagesCard from "./ChannelMessagesCard.vue";
 import { ago, type ChannelActivity } from "./channelActivity";
 import WorkflowCard from "./WorkflowCard.vue";
+import AddWorkflowMenu from "./AddWorkflowMenu.vue";
 
 // The Channels page before a channel is picked: a summary of the agent's
 // channels, a card per channel, every workflow, and each channel's latest
@@ -135,7 +117,6 @@ const { open } = useChannelDialogs();
 function openCreate() {
 	open({ mode: "create", agent: props.agent });
 }
-
 // Relative times stay current while the page is open.
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | undefined;

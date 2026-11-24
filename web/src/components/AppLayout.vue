@@ -342,9 +342,11 @@
     </nav>
 
     <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <PageBreadcrumb v-if="breadcrumb && pageCrumbs.length > 1" testid="page" :crumbs="pageCrumbs"
-        :back="crumbParent(pageCrumbs)"
-        class="shrink-0 border-b border-gray-200 px-2 py-1.5 sm:px-4 dark:border-gray-800" />
+      <PageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back">
+        <template v-if="$slots['header-icon']" #icon><slot name="header-icon" /></template>
+        <template v-if="$slots['header-actions']" #actions><slot name="header-actions" /></template>
+        <slot name="header" />
+      </PageHeader>
       <slot />
     </main>
 
@@ -410,7 +412,7 @@ import { useRouteExpandedGroup } from "../composables/useRouteExpandedGroup";
 import { useNavPrefs } from "../composables/useNavPrefs";
 import { arrangeNav, type NavList } from "../lib/navPrefs";
 import { AGENT_PAGES, agentPagePath } from "../lib/agentPages";
-import { crumbParent, routeCrumbs } from "../lib/breadcrumb";
+import { routeCrumbs } from "../lib/breadcrumb";
 import { MINIMAL_AGENT_PAGES } from "../lib/minimalMode";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
@@ -438,7 +440,7 @@ import ConnectionIndicator from "./ConnectionIndicator.vue";
 import AgentTaskList from "./sidebar/AgentTaskList.vue";
 import SidebarGearMenu from "./sidebar/SidebarGearMenu.vue";
 import SidebarRailItem, { type RailFlyoutItem } from "./sidebar/SidebarRailItem.vue";
-import PageBreadcrumb from "./ui/PageBreadcrumb.vue";
+import PageHeader, { type PageBack, type PageCrumb } from "./ui/PageHeader.vue";
 import SystemPageIcon from "./SystemPageIcon.vue";
 import ToastStack from "./ui/ToastStack.vue";
 import NavEditDialog, { type NavEditGroup } from "./nav/NavEditDialog.vue";
@@ -480,16 +482,15 @@ interface BrandLink {
 	iconPath?: string;
 }
 
-withDefaults(
-	defineProps<{
-		/**
-		 * Shows the page's breadcrumb above it (#1036). Settings pages turn it
-		 * off and show the same breadcrumb as their title instead.
-		 */
-		breadcrumb?: boolean;
-	}>(),
-	{ breadcrumb: true },
-);
+const props = defineProps<{
+	/**
+	 * The page header's crumbs (#1064), for a page the route alone cannot
+	 * name, such as a settings form; by default the route's (#1036).
+	 */
+	crumbs?: PageCrumb[];
+	/** The header's back link, when not the nearest linking crumb. */
+	back?: PageBack | null;
+}>();
 const auth = useAuthStore();
 // An `aviary watch` session shows only Code Loop and Scheduled Tasks.
 const minimal = computed(() => auth.minimal);
@@ -1096,17 +1097,20 @@ const navEditGroups = computed<NavEditGroup[]>(() => {
 
 // The current page's place, from its agent or System down (#1036), so it
 // shows with the sidebar collapsed and on narrow screens too. An agent's
-// crumb opens its first page in the user's order.
-const pageCrumbs = computed(() =>
-	routeCrumbs(route.path, {
+// crumb opens its first page in the user's order. Every nested page shows
+// it in the one shared header (#1064); a top-level page has none.
+const headerCrumbs = computed((): PageCrumb[] => {
+	if (props.crumbs) return props.crumbs;
+	const crumbs = routeCrumbs(route.path, {
 		agentHome: (agent) =>
 			agentPages(agent, 0)[0]?.to ?? agentPagePath(agent, "chat"),
 		chatLabel: (agent, id) => {
 			const s = chatSessions.sessions(agent).find((x) => x.id === id);
 			return s && chatDisplayName(s);
 		},
-	}),
-);
+	});
+	return crumbs.length > 1 ? crumbs : [];
+});
 
 function flyoutItems(children: NavChild[]): RailFlyoutItem[] {
 	return children.map((c) => ({
