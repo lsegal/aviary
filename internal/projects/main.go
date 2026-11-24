@@ -2295,6 +2295,10 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 		checkoutMarkers = &checkoutMarkerCaptureWriter{output: agentOutput, capture: checkout}
 		agentOutput = checkoutMarkers
 	}
+	// The final result event is read from the raw stream too, so a run that
+	// finished is told apart from one that died once its process exits.
+	turnResult := newTurnResultDetector(definition.Output.TranscriptFormat())
+	agentOutput = io.MultiWriter(turnResult, agentOutput)
 	var detector *missingSessionDetector
 	if session.Resume {
 		detector = &missingSessionDetector{output: agentOutput, patterns: definition.MissingSessionPatterns()}
@@ -2325,6 +2329,14 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	if metadataOutput != nil {
 		metadataOutput.Flush()
 	}
+	if process.CleanupTimedOut(runErr) && turnResult.succeeded() {
+		// The agent finished its turn and exited successfully; only something
+		// it started was still holding its output. process.Wait has killed
+		// that by now, so the run is done rather than failed.
+		_, _ = fmt.Fprintln(agentOutput, "Note: "+process.CleanupTimedOutNote)
+		slog.Warn("projects: agent finished but its process cleanup timed out", "issue", issue.Number, "target", issue.Target)
+		runErr = nil
+	}
 	if runErr == nil {
 		// In print mode the process exits when the turn ends, so a wakeup the
 		// agent scheduled would never fire. It is handed to the run loop
@@ -2345,22 +2357,31 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 	return false, nil
 }
 
-// agentFailure reports a failed agent run with the output it left and a bug
-// report URL quoting it.
+// agentFailure reports a failed agent run as a short message, with the last
+// lines of its output and a bug report URL quoting it kept beside it rather
+// than inside the message.
 func (r CommandRunner) agentFailure(issue Issue, args []string, tail string, runErr error) error {
 	repo := r.Repo
 	if issue.Target != "" {
 		repo = issueRepository(issue.Target, issue)
 	}
+	err := fmt.Errorf("agent failed: %w", runErr)
+	if process.CleanupTimedOut(runErr) {
+		err = fmt.Errorf("agent process didn't exit cleanly: WaitDelay expired: %w", runErr)
+	}
+	failure := &domain.RunFailure{Err: err, Output: lastLines(tail, agentFailureOutputLines)}
 	report, reportErr := bugReportURL(repo, issue, args, tail)
 	if reportErr != nil {
-		return fmt.Errorf("agent failed: %w (could not create bug report URL: %v)", runErr, reportErr)
+		slog.Warn("projects: could not create bug report URL", "issue", issue.Number, "err", reportErr)
+	} else {
+		failure.BugReportURL = report
 	}
-	if tail == "" {
-		return fmt.Errorf("agent failed: %w; bug report: %s", runErr, report)
-	}
-	return fmt.Errorf("agent failed: %w; bug report: %s\n\nAgent output:\n%s", runErr, report, tail)
+	return failure
 }
+
+// agentFailureOutputLines is how many of a failed agent's last output lines
+// its run shows beside the error.
+const agentFailureOutputLines = 20
 
 // agentOutputTailLimit bounds how much of a failing agent's output is
 // retained for logging and its bug report. GitHub rejects overly long
