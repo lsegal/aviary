@@ -52,6 +52,9 @@ type watchChatEntry struct {
 	role string
 	text string
 	tool *watchChatTool
+	// status marks a user message this TUI sent that the session read has
+	// not returned yet: "sending" while its turn runs, then "sent".
+	status string
 }
 
 // watchChatTool is a tool call of a reply, as agent_run's tool progress, the
@@ -91,10 +94,12 @@ type watchChat struct {
 	// replying is set while the server reports a turn running.
 	replying bool
 
-	// streaming is set while this TUI's own turn runs; pending is its
-	// message and the reply streamed so far.
-	streaming bool
-	pending   []watchChatEntry
+	// turns are this TUI's sends since the session was last read, oldest
+	// first. Each one streams on its own, so a send never waits for an
+	// earlier reply; the session is read back once none is running.
+	turns []watchChatTurn
+	// failed are the sends that failed, kept across reads.
+	failed []watchChatFailure
 
 	// follow keeps the transcript at its bottom; top is its first line
 	// shown while it does not.
@@ -121,6 +126,23 @@ func newWatchChat() watchChat {
 	input.BlurredStyle.Placeholder = tuiDimStyle
 	input.SetHeight(1)
 	return watchChat{pct: watchChatDefaultPct, input: input, follow: true, ref: -1}
+}
+
+// watchChatTurn is one send of this TUI: its message and the reply streamed
+// so far, and how its delivery ended.
+type watchChatTurn struct {
+	ch      chan tea.Msg
+	entries []watchChatEntry
+	done    bool
+	err     string
+}
+
+// watchChatFailure is a send that failed. at is where it shows among the
+// session's entries; entries is its error, after its message when the
+// session does not have that.
+type watchChatFailure struct {
+	at      int
+	entries []watchChatEntry
 }
 
 // watchChatDataMsg is one read of the prompt chat session.
@@ -172,10 +194,15 @@ func (m watchModel) focusChat(focus string) watchModel {
 	return m
 }
 
-// fetchChat reads the prompt chat session, unless a read or this TUI's own
-// turn is in flight.
+// streaming reports whether any of this TUI's turns is running.
+func (c watchChat) streaming() bool {
+	return slices.ContainsFunc(c.turns, func(t watchChatTurn) bool { return !t.done })
+}
+
+// fetchChat reads the prompt chat session, unless a read or one of this
+// TUI's own turns is in flight.
 func (m watchModel) fetchChat() (watchModel, tea.Cmd) {
-	if m.chat.fetching || m.chat.streaming {
+	if m.chat.fetching || m.chat.streaming() {
 		return m, nil
 	}
 	m.chat.fetching = true
@@ -248,22 +275,56 @@ func (m watchModel) chatFetchCmd() tea.Cmd {
 	}
 }
 
-// applyChatData takes in a read of the session. A read started before this
-// TUI's latest send, or landing while its turn streams, is stale.
+// applyChatData takes in a read of the session, which replaces this TUI's
+// finished turns. A read started before this TUI's latest send, or landing
+// while one of its turns streams, is stale.
 func (m watchModel) applyChatData(msg watchChatDataMsg) watchModel {
 	m.chat.fetching = false
-	if msg.gen != m.chat.gen || m.chat.streaming {
+	if msg.gen != m.chat.gen || m.chat.streaming() {
 		return m
 	}
 	if msg.err != nil {
 		m.chat.errText = msg.err.Error()
 		return m
 	}
+	m.chat.failed = append(m.chat.failed, watchChatFailures(msg.entries, m.chat.turns)...)
+	slices.SortStableFunc(m.chat.failed, func(a, b watchChatFailure) int { return a.at - b.at })
 	m.chat.entries = msg.entries
-	m.chat.pending = nil
+	m.chat.turns = nil
 	m.chat.replying = msg.replying
 	m.chat.loaded = true
 	return m
+}
+
+// watchChatFailures places the failed turns among a read of the session:
+// after their message's reply when the session saved the message, else at
+// its end with the message.
+func watchChatFailures(entries []watchChatEntry, turns []watchChatTurn) []watchChatFailure {
+	var out []watchChatFailure
+	from := len(entries)
+	for _, t := range slices.Backward(turns) {
+		if t.err == "" {
+			continue
+		}
+		failure := watchChatFailure{at: len(entries), entries: []watchChatEntry{
+			{role: "user", text: t.entries[0].text},
+			{role: "error", text: t.err},
+		}}
+		for i := from - 1; i >= 0; i-- {
+			if entries[i].role == "user" && entries[i].text == t.entries[0].text {
+				at := i + 1
+				for at < len(entries) && entries[at].role != "user" {
+					at++
+				}
+				failure = watchChatFailure{at: at, entries: failure.entries[1:]}
+				from = i
+				break
+			}
+		}
+		out = append(out, failure)
+	}
+	slices.Reverse(out)
+	return out
 }
 
 // watchParseTool reads a tool call's JSON; a persisted one has finished.
@@ -316,14 +377,12 @@ func (m watchModel) chatProject() string {
 }
 
 // sendChat sends the input to the Code Loop agent in the shared prompt chat
-// session and streams its reply.
+// session and streams its reply. A send while a reply is still running goes
+// through agent_run all the same, as the web chat's does, and the server
+// queues or steers it into the running turn.
 func (m watchModel) sendChat() (watchModel, tea.Cmd) {
 	text := strings.TrimSpace(m.chat.input.Value())
 	if text == "" {
-		return m, nil
-	}
-	if m.chat.streaming {
-		m.chat.errText = "wait for the reply to finish"
 		return m, nil
 	}
 	if n := len(m.chat.history); n == 0 || m.chat.history[n-1] != text {
@@ -333,9 +392,7 @@ func (m watchModel) sendChat() (watchModel, tea.Cmd) {
 	m.chat.input.Reset()
 	m.chat.errText = ""
 	m.chat.gen++
-	m.chat.streaming = true
 	m.chat.follow = true
-	m.chat.pending = []watchChatEntry{{role: "user", text: text}}
 	args := map[string]any{
 		"name":                  config.ProjectsAgentName,
 		"message":               text,
@@ -346,6 +403,10 @@ func (m watchModel) sendChat() (watchModel, tea.Cmd) {
 		args["project"] = project
 	}
 	ch := make(chan tea.Msg, 256)
+	m.chat.turns = append(slices.Clone(m.chat.turns), watchChatTurn{
+		ch:      ch,
+		entries: []watchChatEntry{{role: "user", text: text, status: "sending"}},
+	})
 	ctx, call, stream := m.ctx, m.call, m.stream
 	send := func(msg tea.Msg) {
 		select {
@@ -371,40 +432,79 @@ func watchChatWait(ch chan tea.Msg) tea.Cmd {
 	return func() tea.Msg { return <-ch }
 }
 
-// applyChatChunk adds one progress message to this TUI's streaming reply:
-// text, a "[tool]" call, or a "[media]" URL.
-func (m watchModel) applyChatChunk(chunk string) watchModel {
-	switch {
+// chatTurn is the index of the turn streaming on ch, -1 for none.
+func (m watchModel) chatTurn(ch chan tea.Msg) int {
+	return slices.IndexFunc(m.chat.turns, func(t watchChatTurn) bool { return t.ch == ch })
+}
+
+// applyChatChunk adds one progress message to the reply of the turn
+// streaming on ch: text, a "[tool]" call, or a "[media]" URL.
+func (m watchModel) applyChatChunk(msg watchChatChunkMsg) watchModel {
+	i := m.chatTurn(msg.ch)
+	if i < 0 {
+		return m
+	}
+	m.chat.turns = slices.Clone(m.chat.turns)
+	t := &m.chat.turns[i]
+	switch chunk := msg.chunk; {
 	case strings.HasPrefix(chunk, "[tool]"):
-		m.chat.pending = watchAddTool(m.chat.pending, watchParseTool(strings.TrimPrefix(chunk, "[tool]"), false))
+		t.entries = watchAddTool(t.entries, watchParseTool(strings.TrimPrefix(chunk, "[tool]"), false))
 	case strings.HasPrefix(chunk, "[media]"):
-		m.chat.pending = append(m.chat.pending, watchChatEntry{role: "assistant", text: strings.TrimPrefix(chunk, "[media]")})
+		t.entries = append(t.entries, watchChatEntry{role: "assistant", text: strings.TrimPrefix(chunk, "[media]")})
 	case chunk != "":
-		m.chat.pending = watchAddText(m.chat.pending, chunk)
+		t.entries = watchAddText(t.entries, chunk)
 	}
 	return m
 }
 
-// finishChat ends this TUI's turn and reads the session back, which then
-// holds the reply as the server saved it.
+// finishChat ends the turn streaming on msg's channel. Once none is running
+// it reads the session back, which then holds the replies as the server
+// saved them.
 func (m watchModel) finishChat(msg watchChatDoneMsg) (watchModel, tea.Cmd) {
-	m.chat.streaming = false
-	streamed := slices.ContainsFunc(m.chat.pending, func(e watchChatEntry) bool { return e.role != "user" })
+	i := m.chatTurn(msg.ch)
+	if i < 0 {
+		return m.fetchChat()
+	}
+	m.chat.turns = slices.Clone(m.chat.turns)
+	t := &m.chat.turns[i]
+	t.done = true
+	t.entries = slices.Clone(t.entries)
+	t.entries[0].status = "sent"
+	streamed := len(t.entries) > 1
 	if msg.err != nil {
-		m.chat.errText = msg.err.Error()
+		t.err = msg.err.Error()
+		t.entries[0].status = ""
 	} else if !streamed && strings.TrimSpace(msg.reply) != "" {
-		m.chat.pending = watchAddText(m.chat.pending, msg.reply)
+		t.entries = watchAddText(t.entries, msg.reply)
 	}
 	return m.fetchChat()
 }
 
-// chatEntries are the transcript's blocks: the session, then this TUI's
-// turn while it streams.
+// chatEntries are the transcript's blocks: the session with the failed sends
+// in place, then this TUI's turns not read back yet, each with its error if
+// it failed.
 func (m watchModel) chatEntries() []watchChatEntry {
-	if len(m.chat.pending) == 0 {
+	if len(m.chat.failed) == 0 && len(m.chat.turns) == 0 {
 		return m.chat.entries
 	}
-	return append(slices.Clone(m.chat.entries), m.chat.pending...)
+	out := make([]watchChatEntry, 0, len(m.chat.entries))
+	next := 0
+	for _, f := range m.chat.failed {
+		at := min(f.at, len(m.chat.entries))
+		if at > next {
+			out = append(out, m.chat.entries[next:at]...)
+			next = at
+		}
+		out = append(out, f.entries...)
+	}
+	out = append(out, m.chat.entries[next:]...)
+	for _, t := range m.chat.turns {
+		out = append(out, t.entries...)
+		if t.err != "" {
+			out = append(out, watchChatEntry{role: "error", text: t.err})
+		}
+	}
+	return out
 }
 
 // updateChatInput handles a key while the chat's input has focus.
@@ -621,8 +721,17 @@ func (m watchModel) chatLines(width int) watchChatView {
 		}
 		switch entry.role {
 		case "user":
-			r.lines = append(r.lines, watchChatUserStyle.Render("you"))
+			header := watchChatUserStyle.Render("you")
+			switch entry.status {
+			case "sending":
+				header += tuiDimStyle.Render(" · sending…")
+			case "sent":
+				header += tuiDimStyle.Render(" · sent")
+			}
+			r.lines = append(r.lines, header)
 			r.markdown(entry.text, "  ")
+		case "error":
+			r.wrapped("  "+tuiErrorStyle.Render("! "), "    ", tuiErrorStyle.Render(watchANSI.ReplaceAllString(entry.text, "")), false)
 		case "assistant":
 			if i == 0 || entries[i-1].role != "tool" {
 				r.lines = append(r.lines, watchChatAgentStyle.Render(config.ProjectsAgentName))
@@ -887,7 +996,7 @@ func (m watchModel) chatTranscriptHeight() int {
 func (m watchModel) chatPane(height int) []string {
 	title := "Prompt chat · " + config.ProjectsAgentName
 	switch {
-	case m.chat.streaming || m.chat.replying:
+	case m.chat.streaming() || m.chat.replying:
 		title += " · replying…"
 	case !m.chat.loaded && m.chat.fetching:
 		title += " · loading…"
