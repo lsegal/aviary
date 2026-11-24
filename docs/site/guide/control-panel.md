@@ -168,6 +168,7 @@ The app always loads the current control panel from the server, so after an upgr
 | --- | --- |
 | `Ctrl+Enter` | Send message (Chat) |
 | `Esc` | Stop active agent run |
+| `Alt+S` (`⌥S` on a Mac) | Switch to another project, task, channel or file from its page's breadcrumb |
 
 ---
 

@@ -2,7 +2,7 @@
 	<button ref="trigger" type="button" data-testid="crumb-switcher-trigger" aria-haspopup="listbox"
 		:aria-expanded="open" :aria-controls="open ? listId : undefined" aria-keyshortcuts="Alt+S"
 		:title="`${title} (${shortcutLabel})`"
-		class="inline-flex min-w-0 max-w-full items-center gap-0.5 rounded px-0.5 -mx-0.5 hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-blue-500 dark:hover:bg-gray-800"
+		class="inline-flex min-w-0 max-w-full items-center gap-0.5 rounded hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-blue-500 dark:hover:bg-gray-800"
 		@click="open ? close() : show()">
 		<span class="min-w-0 truncate">{{ label }}</span>
 		<ChevronDownIcon aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-gray-500 dark:text-gray-400" />
