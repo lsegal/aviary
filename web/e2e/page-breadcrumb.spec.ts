@@ -54,6 +54,8 @@ test.beforeEach(async ({ page }) => {
 test("each nested page shows the shared header with its crumbs and parent link", async ({
 	page,
 }) => {
+	// It walks every nested page.
+	test.slow();
 	const cases: Array<{
 		url: string;
 		crumbs: string[];
