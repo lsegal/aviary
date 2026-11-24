@@ -1,8 +1,10 @@
 import { ref } from "vue";
 import {
 	emptyNavPrefs,
+	hasStaleNavLists,
 	type NavList,
 	type NavPrefs,
+	normalizeNavPrefs,
 	withOrder,
 } from "../lib/navPrefs";
 import { useAuthStore } from "../stores/auth";
@@ -15,15 +17,14 @@ import { useAuthStore } from "../stores/auth";
 const STORAGE_KEY = "aviary.nav.prefs";
 const ENDPOINT = "/api/preferences/navigation";
 
-function normalize(value: unknown): NavPrefs {
-	const v = (value ?? {}) as Partial<NavPrefs>;
-	return { order: { ...v.order }, hidden: { ...v.hidden } };
-}
-
 function storedPrefs(): NavPrefs {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
-		return raw ? normalize(JSON.parse(raw)) : emptyNavPrefs();
+		if (!raw) return emptyNavPrefs();
+		const parsed = JSON.parse(raw);
+		const prefs = normalizeNavPrefs(parsed);
+		if (hasStaleNavLists(parsed)) storeLocally(prefs);
+		return prefs;
 	} catch {
 		return emptyNavPrefs();
 	}
@@ -44,10 +45,11 @@ function storeLocally(value: NavPrefs) {
 	}
 }
 
+/** The server's reply to a navigation preferences request, as sent. */
 async function request(
 	method: "GET" | "PUT" | "DELETE",
 	body?: NavPrefs,
-): Promise<NavPrefs | undefined> {
+): Promise<unknown> {
 	const token = useAuthStore().getToken();
 	try {
 		const res = await fetch(ENDPOINT, {
@@ -59,7 +61,7 @@ async function request(
 			body: body ? JSON.stringify(body) : undefined,
 		});
 		if (!res.ok) return undefined;
-		return normalize(await res.json());
+		return await res.json();
 	} catch {
 		return undefined;
 	}
@@ -76,8 +78,13 @@ export function useNavPrefs() {
 		loaded = true;
 		void request("GET").then((remote) => {
 			if (!remote) return;
-			prefs.value = remote;
-			storeLocally(remote);
+			const next = normalizeNavPrefs(remote);
+			// Drop a saved top-row order (#1015) from the server's copy too.
+			if (hasStaleNavLists(remote)) save(next);
+			else {
+				prefs.value = next;
+				storeLocally(next);
+			}
 		});
 	}
 	return {
