@@ -10,6 +10,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lsegal/aviary/internal/saferestart"
+	"github.com/lsegal/aviary/internal/startup"
 )
 
 func addTool[Args any](
@@ -23,7 +24,38 @@ func addTool[Args any](
 	if tool == nil || !restartUngatedTools[tool.Name] {
 		handler = restartGated(handler)
 	}
+	if tool != nil {
+		if subsystem := toolSubsystem(tool.Name); subsystem != "" {
+			handler = startupGated(subsystem, handler)
+		}
+	}
 	sdkmcp.AddTool(s, tool, handler)
+}
+
+// toolSubsystem names the background-initialized subsystem a tool needs, or
+// "" when it needs none. Channel tools wait on channel connections, which
+// hold the channel manager while they connect. Code Loop tools are not
+// listed: they serve the Code Loop's saved state while discovery runs.
+func toolSubsystem(name string) string {
+	if strings.HasPrefix(name, "channel_") {
+		return "channels"
+	}
+	return ""
+}
+
+// startupGated answers a call with an "initializing, retry in Ns" error
+// while subsystem is still initializing after a start, instead of letting
+// the call hang until it finishes.
+func startupGated[Args any](
+	subsystem string,
+	handler func(context.Context, *sdkmcp.CallToolRequest, Args) (*sdkmcp.CallToolResult, struct{}, error),
+) func(context.Context, *sdkmcp.CallToolRequest, Args) (*sdkmcp.CallToolResult, struct{}, error) {
+	return func(ctx context.Context, req *sdkmcp.CallToolRequest, args Args) (*sdkmcp.CallToolResult, struct{}, error) {
+		if err := startup.CheckReady(subsystem); err != nil {
+			return nil, struct{}{}, err
+		}
+		return handler(ctx, req, args)
+	}
 }
 
 // AddTool registers a tool on s the way Aviary's own tools are registered:

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/sessiontarget"
+	"github.com/lsegal/aviary/internal/startup"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
 	"github.com/lsegal/aviary/skills"
@@ -75,7 +77,8 @@ func New(cfg *config.Config, token string) *Server {
 		reexecCh:          make(chan struct{}, 1),
 	}
 	s.authDisabled.Store(cfg.Server.DisableTokenAuth)
-	configureCLIProviders(cfg)
+	trace := startup.Current()
+	trace.Time("CLI provider setup", func() { configureCLIProviders(cfg) })
 	configureRestartGate(cfg)
 	// Create auth store first — needed for both MCP deps and LLM token refresh.
 	authPath := filepath.Join(store.SubDir(store.DirAuth), "credentials.json")
@@ -101,15 +104,18 @@ func New(cfg *config.Config, token string) *Server {
 	s.agents = agent.NewManager(factory)
 
 	// Initial reconcile from loaded config.
-	s.agents.Reconcile(cfg)
+	trace.Time("agents load", func() { s.agents.Reconcile(cfg) })
 
-	// Create scheduler (non-fatal if it fails).
+	// Create scheduler (non-fatal if it fails). Loading never compiles or
+	// analyzes tasks: that happens when a task is saved or run.
+	endPhase := trace.Phase("scheduler load")
 	if sched, err := scheduler.New(s.agents, 0); err == nil {
 		s.sched = sched
 		s.sched.Reconcile(cfg)
 	} else {
 		slog.Warn("server: scheduler initialization failed; scheduled tasks disabled", "err", err)
 	}
+	endPhase()
 
 	s.channels = channels.NewManager()
 	if s.sched != nil {
@@ -129,7 +135,10 @@ func New(cfg *config.Config, token string) *Server {
 		config.EffectiveBrowserReuseTabs(cfg.Browser),
 	)
 
-	if manager, err := projects.NewManager(store.SubDir(store.DirProjects)); err == nil {
+	endPhase = trace.Phase("Code Loop state open")
+	manager, err := projects.NewManager(store.SubDir(store.DirProjects))
+	endPhase()
+	if err == nil {
 		s.projects = manager
 		manager.SetLogSource(globalHub.since)
 		manager.SetReportDelivery(s.deliverTaskOutput)
@@ -195,7 +204,7 @@ func New(cfg *config.Config, token string) *Server {
 		mcp.SyncLiveServer(s.cfg)
 	})
 
-	s.registerRoutes()
+	s.registerRoutes(trace)
 	return s
 }
 
@@ -266,8 +275,10 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 	}
 }
 
-func (s *Server) registerRoutes() {
+func (s *Server) registerRoutes(trace *startup.Trace) {
+	endPhase := trace.Phase("MCP tool registration")
 	mcpSrv := mcp.NewServer()
+	endPhase()
 	mcp.SetLiveServer(mcpSrv)
 	mcpHandler := mcp.HTTPHandler(mcpSrv)
 	minimal := MinimalMode()
@@ -289,6 +300,8 @@ func (s *Server) registerRoutes() {
 
 	// Health check (public) and WebSocket keepalive (auth via session cookie / ?token=).
 	s.mux.HandleFunc("/api/health", healthHandler(s.authDisabled.Load, minimal))
+	s.mux.HandleFunc("/healthz", healthzHandler)
+	s.mux.HandleFunc("/readyz", readyzHandler)
 	s.mux.HandleFunc("/api/ws", wsHandler(s.token, s.authDisabled.Load))
 
 	// MCP endpoint: wrapped in bearer middleware.
@@ -314,6 +327,7 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("/api/preferences/navigation", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(navPreferencesHandler)))
 
 	// Web UI: SPA served from embedded web/dist.
+	defer trace.Phase("web/static handler")()
 	if webUIOff.Load() {
 		s.mux.HandleFunc("/", webUIOffHandler)
 	} else {
@@ -343,6 +357,7 @@ func updateCodingSkills(ctx context.Context, version string) error {
 // explicit process restart is requested.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	s.runCtx = ctx
+	trace := startup.Current()
 
 	// Start config watcher in background.
 	go func() {
@@ -357,16 +372,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}()
 
 	exe, _ := executablePath()
-	update.CleanupStaging(exe)
+	trace.Time("update staging cleanup", func() { update.CleanupStaging(exe) })
 	go s.runSelfUpdater(ctx)
-
-	// Install the skills Aviary ships globally on first launch, keep them
-	// installed and matching this release, and move them to the new release
-	// when Aviary upgrades.
-	go func() {
-		codingskills.Default().InstallOnFirstLaunch(ctx, config.BaseDir())
-		codingskills.Default().RunSync(ctx, codingSkillsSyncInterval)
-	}()
 	saferestart.RegisterSkillsUpdater("shipped", updateCodingSkills)
 	defer saferestart.UnregisterSkillsUpdater("shipped")
 
@@ -378,7 +385,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// engine, so a restart checkpoints the project tasks it runs there, which
 	// then resume, before stopping the engine would cancel them.
 	if s.sched != nil {
-		s.sched.Start(ctx)
+		trace.Time("scheduler start", func() { s.sched.Start(ctx) })
 		saferestart.Register("tasks", s.sched)
 		defer saferestart.Unregister("tasks")
 	}
@@ -388,11 +395,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		// Jobs a safe restart stopped resume in their own sessions and are
 		// told that Aviary restarted.
 		if restarted {
-			s.projects.ResumeAfterRestart(marker)
+			trace.Time("Code Loop job resume", func() { s.projects.ResumeAfterRestart(marker) })
 		}
 		saferestart.Register("projects", s.projects)
 		defer saferestart.Unregister("projects")
-		go s.startProjects()
 	}
 
 	// Start process sampler — periodically collects CPU/RSS for all daemon PIDs.
@@ -415,15 +421,20 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		}
 	}()
 
-	// Start channel integrations and route messages to agents.
+	// Route channel messages to agents.
 	s.msgFn = func(agentName, channelType, configuredID string, ch channels.Channel, msg channels.IncomingMessage) {
 		s.handleIncomingChannelMessage(ctx, agentName, channelType, configuredID, ch, msg)
 	}
-	s.channels.Reconcile(ctx, s.cfg, s.msgFn)
-	s.loadSessionDeliveries()
-	if err := sessiontarget.EnsureChannels(s.cfg, s.channels); err != nil {
-		slog.Warn("server: failed to set up channel sessions", "err", err)
+
+	// Everything slow starts once /mcp is serving; until then its subsystems
+	// report as pending.
+	bootCtx, cancelBoot := context.WithCancel(ctx)
+	defer cancelBoot()
+	var boot sync.WaitGroup
+	for _, name := range backgroundSubsystems(s) {
+		trace.Pending(name)
 	}
+	booted := false
 
 	for {
 		ln, err := s.listen()
@@ -436,6 +447,11 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		go func(httpSrv *http.Server, ln net.Listener) {
 			errCh <- httpSrv.Serve(ln)
 		}(s.httpSrv, ln)
+		if !booted {
+			booted = true
+			trace.MarkMCPReady()
+			s.startBackground(bootCtx, trace, &boot)
+		}
 
 		var (
 			listenerRestart bool
@@ -477,6 +493,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 		s.watcher.Stop()
 		s.skillsWatcher.Stop()
+		cancelBoot()
+		waitBackground(&boot, backgroundStopWait)
 		if s.projects != nil {
 			// Checkpoint running jobs while their agents are still alive.
 			s.projects.Shutdown()
@@ -494,6 +512,62 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			return ErrRestartRequired
 		}
 		return nil
+	}
+}
+
+// backgroundStopWait bounds how long shutdown waits for background
+// initialization that is still running, such as a channel connecting.
+const backgroundStopWait = 5 * time.Second
+
+// backgroundSubsystems names the subsystems startBackground initializes.
+func backgroundSubsystems(s *Server) []string {
+	names := []string{"channels", "skills"}
+	if s.projects != nil {
+		names = append(names, "projects")
+	}
+	return names
+}
+
+// startBackground starts the initialization that does not have to finish
+// before /mcp serves, each part concurrently: channel connections, the skills
+// Aviary ships, and Code Loop discovery. boot tracks the parts shutdown waits
+// for.
+func (s *Server) startBackground(ctx context.Context, trace *startup.Trace, boot *sync.WaitGroup) {
+	boot.Add(1)
+	trace.Go("channels", "channels connect", func() error {
+		s.channels.Reconcile(ctx, s.cfg, s.msgFn)
+		s.loadSessionDeliveries()
+		return sessiontarget.EnsureChannels(s.cfg, s.channels)
+	}, boot.Done)
+
+	// Install the skills Aviary ships globally on first launch, keep them
+	// installed and matching this release, and move them to the new release
+	// when Aviary upgrades.
+	trace.Go("skills", "skill sync", func() error {
+		codingskills.Default().InstallOnFirstLaunch(ctx, config.BaseDir())
+		return nil
+	}, func() { codingskills.Default().RunSync(ctx, codingSkillsSyncInterval) })
+
+	if s.projects != nil {
+		boot.Add(1)
+		trace.Go("projects", "Code Loop discovery", func() error {
+			s.startProjects()
+			return nil
+		}, boot.Done)
+	}
+}
+
+// waitBackground waits up to limit for background initialization to end.
+func waitBackground(boot *sync.WaitGroup, limit time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		boot.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(limit):
+		slog.Warn("server: background initialization still running at shutdown", "waited", limit)
 	}
 }
 
@@ -970,7 +1044,9 @@ func (s *Server) listen() (net.Listener, error) {
 		return ln, nil
 	}
 
+	endPhase := startup.Current().Phase("TLS cert load")
 	cert, err := LoadOrGenerateTLS(config.EffectiveServerTLS(s.cfg.Server))
+	endPhase()
 	if err != nil {
 		return nil, fmt.Errorf("loading TLS: %w", err)
 	}
