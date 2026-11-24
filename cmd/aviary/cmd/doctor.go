@@ -19,6 +19,7 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/server"
+	"github.com/lsegal/aviary/internal/startup"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/version"
 )
@@ -65,6 +66,20 @@ func doctorServerStatus(cfgPath string, port int) string {
 	return fmt.Sprintf("running (answering on port %d; no live PID in %s)", port, server.PIDPath())
 }
 
+// doctorBootSummary is the running server's boot summary from the report it
+// saves, or "" when no server for cfgPath is running or it saved none.
+func doctorBootSummary(cfgPath string) string {
+	running, pid, _ := configServerRunning(cfgPath)
+	if !running {
+		return ""
+	}
+	r, err := startup.Load()
+	if err != nil || r.PID != pid {
+		return ""
+	}
+	return r.Summary()
+}
+
 func runDoctor(_ *cobra.Command, _ []string) error {
 	cfgPath := cfgFile
 	if cfgPath == "" {
@@ -88,6 +103,9 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("parsing config: %w", err)
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "  Server         : %s\n", doctorServerStatus(cfgPath, cfg.Server.Port))
+	if boot := doctorBootSummary(cfgPath); boot != "" {
+		_, _ = fmt.Fprintf(os.Stdout, "  Startup        : %s\n", boot)
+	}
 
 	// ── Config file ───────────────────────────────────────────────────────────
 	_, _ = fmt.Fprintln(os.Stdout)
