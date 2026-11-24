@@ -293,7 +293,8 @@
       <div class="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto" data-testid="sidebar-rail-nav">
         <template v-if="soleAgent">
           <SidebarRailItem v-for="child in soleAgent.children" :key="child.key" :label="child.label" :to="child.to"
-            :active="isChildActive(child)" :badge="child.running" :data-testid="`sidebar-rail-${child.key}`">
+            :active="isChildActive(child)" :badge="child.running" :items="pageItems(soleAgent.name, child.key)"
+            :data-testid="`sidebar-rail-${child.key}`">
             <component :is="pageIcons[child.key]" aria-hidden="true" class="h-5 w-5" />
           </SidebarRailItem>
         </template>
@@ -303,20 +304,22 @@
           </SidebarRailItem>
           <template v-for="a in agentNav" :key="a.name">
             <SidebarRailItem :label="a.label" :to="a.to" :active="a.active && !a.children.length" :badge="a.running"
-              :data-agent="a.name" data-testid="sidebar-rail-agent">
+              :items="a.active ? undefined : flyoutItems(agentPages(a.name, a.running))" :data-agent="a.name"
+              data-testid="sidebar-rail-agent">
               <span aria-hidden="true" class="text-sm font-semibold uppercase"
                 :class="a.active ? 'text-gray-950 dark:text-white' : ''">{{ a.label.slice(0, 1) }}</span>
             </SidebarRailItem>
             <template v-if="a.active">
               <SidebarRailItem v-for="child in a.children" :key="child.key" :label="child.label" :to="child.to"
-                :active="isChildActive(child)" :badge="child.running" :data-testid="`sidebar-rail-${child.key}`">
+                :active="isChildActive(child)" :badge="child.running" :items="pageItems(a.name, child.key)"
+                :data-testid="`sidebar-rail-${child.key}`">
                 <component :is="pageIcons[child.key]" aria-hidden="true" class="h-5 w-5" />
               </SidebarRailItem>
             </template>
           </template>
         </template>
         <SidebarRailItem v-if="!minimal" label="System" to="/system/overview" :active="route.path === '/system/overview'"
-          data-testid="sidebar-rail-system">
+          :items="flyoutItems(systemChildren)" data-testid="sidebar-rail-system">
           <ServerStackIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
         <SidebarRailItem v-if="currentSystemChild && !minimal" :label="currentSystemChild.label" :to="currentSystemChild.to"
@@ -339,6 +342,9 @@
     </nav>
 
     <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <PageBreadcrumb v-if="breadcrumb && pageCrumbs.length > 1" testid="page" :crumbs="pageCrumbs"
+        :back="crumbParent(pageCrumbs)"
+        class="shrink-0 border-b border-gray-200 px-2 py-1.5 sm:px-4 dark:border-gray-800" />
       <slot />
     </main>
 
@@ -403,12 +409,14 @@ import { projectOwner } from "../lib/projectSettings";
 import { useRouteExpandedGroup } from "../composables/useRouteExpandedGroup";
 import { useNavPrefs } from "../composables/useNavPrefs";
 import { arrangeNav, type NavList } from "../lib/navPrefs";
+import { AGENT_PAGES, agentPagePath } from "../lib/agentPages";
+import { crumbParent, routeCrumbs } from "../lib/breadcrumb";
 import { MINIMAL_AGENT_PAGES } from "../lib/minimalMode";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
 import { type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
-import { useChatSessionsStore } from "../stores/chatSessions";
+import { chatDisplayName, useChatSessionsStore } from "../stores/chatSessions";
 import {
 	activeTaskName,
 	isWorkflow,
@@ -429,7 +437,8 @@ import ChannelDialogs from "./sidebar/ChannelDialogs.vue";
 import ConnectionIndicator from "./ConnectionIndicator.vue";
 import AgentTaskList from "./sidebar/AgentTaskList.vue";
 import SidebarGearMenu from "./sidebar/SidebarGearMenu.vue";
-import SidebarRailItem from "./sidebar/SidebarRailItem.vue";
+import SidebarRailItem, { type RailFlyoutItem } from "./sidebar/SidebarRailItem.vue";
+import PageBreadcrumb from "./ui/PageBreadcrumb.vue";
 import SystemPageIcon from "./SystemPageIcon.vue";
 import ToastStack from "./ui/ToastStack.vue";
 import NavEditDialog, { type NavEditGroup } from "./nav/NavEditDialog.vue";
@@ -471,6 +480,16 @@ interface BrandLink {
 	iconPath?: string;
 }
 
+withDefaults(
+	defineProps<{
+		/**
+		 * Shows the page's breadcrumb above it (#1036). Settings pages turn it
+		 * off and show the same breadcrumb as their title instead.
+		 */
+		breadcrumb?: boolean;
+	}>(),
+	{ breadcrumb: true },
+);
 const auth = useAuthStore();
 // An `aviary watch` session shows only Code Loop and Scheduled Tasks.
 const minimal = computed(() => auth.minimal);
@@ -529,17 +548,6 @@ const brandLinks: BrandLink[] = [
 			"M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 17.97 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.84 1.236 1.84 1.236 1.07 1.834 2.807 1.304 3.492.997.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23a11.49 11.49 0 0 1 3.003-.404c1.02.005 2.045.138 3.003.404 2.295-1.552 3.3-1.23 3.3-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12",
 	},
 ];
-
-// An agent's pages, in sidebar order. Settings holds its General and
-// Permissions sections; each channel's settings open from its own entry.
-const AGENT_PAGES = [
-	{ key: "chat", label: "Chats" },
-	{ key: "projects", label: "Code Loop" },
-	{ key: "channels", label: "Channels" },
-	{ key: "tasks", label: "Scheduled Tasks" },
-	{ key: "files", label: "Files" },
-	{ key: "settings", label: "Agent Settings" },
-] as const;
 
 // An agent page's icon on the collapsed sidebar rail.
 const pageIcons: Record<string, Component> = {
@@ -639,7 +647,8 @@ function openSidebarPeekSoon(e: MouseEvent) {
 	// under a pointer resting on one of its icons; ask what is under the
 	// pointer instead.
 	const under = document.elementFromPoint(e.clientX, e.clientY) ?? e.target;
-	if ((under as Element | null)?.closest?.("a, button")) return;
+	if ((under as Element | null)?.closest?.("a, button, [data-rail-flyout]"))
+		return;
 	sidebarPeekOpenTimer = setTimeout(() => {
 		sidebarPeek.value = true;
 	}, SIDEBAR_PEEK_DELAY);
@@ -742,10 +751,6 @@ function ownedProjects(agent: string): ProjectSummary[] {
 	);
 }
 
-function agentPagePath(agent: string, page: string): string {
-	return `/agents/${encodeURIComponent(agent)}/${page}`;
-}
-
 // On one agent's page, another agent's link opens the same page for it;
 // elsewhere it opens the agent's chat.
 const agentPageTail = computed(() => {
@@ -756,6 +761,19 @@ const agentPageTail = computed(() => {
 	if (tail.startsWith("channels")) return "channels";
 	return tail;
 });
+
+/** An agent's pages in the user's order, without those they hid. */
+function agentPages(agent: string, running: number): NavChild[] {
+	return arranged(
+		AGENT_PAGES.map((page) => ({
+			key: page.key,
+			label: page.label,
+			to: agentPagePath(agent, page.key),
+			running: page.key === "projects" ? running : undefined,
+		})),
+		"agentPages",
+	);
+}
 
 const agentNav = computed<AgentNav[]>(() => {
 	const names = [...agentNames.value];
@@ -776,17 +794,7 @@ const agentNav = computed<AgentNav[]>(() => {
 			active,
 			running,
 			children:
-				active || names.length === 1
-				? arranged(
-						AGENT_PAGES.map((page) => ({
-							key: page.key,
-							label: page.label,
-							to: agentPagePath(name, page.key),
-							running: page.key === "projects" ? running : undefined,
-						})),
-						"agentPages",
-					)
-				: [],
+				active || names.length === 1 ? agentPages(name, running) : [],
 			projects: owned.map((p) => projectChild(name, p)),
 		};
 	});
@@ -1085,6 +1093,67 @@ const navEditGroups = computed<NavEditGroup[]>(() => {
 	];
 	return groups.filter((g) => g.items.length);
 });
+
+// The current page's place, from its agent or System down (#1036), so it
+// shows with the sidebar collapsed and on narrow screens too. An agent's
+// crumb opens its first page in the user's order.
+const pageCrumbs = computed(() =>
+	routeCrumbs(route.path, {
+		agentHome: (agent) =>
+			agentPages(agent, 0)[0]?.to ?? agentPagePath(agent, "chat"),
+		chatLabel: (agent, id) => {
+			const s = chatSessions.sessions(agent).find((x) => x.id === id);
+			return s && chatDisplayName(s);
+		},
+	}),
+);
+
+function flyoutItems(children: NavChild[]): RailFlyoutItem[] {
+	return children.map((c) => ({
+		key: c.key,
+		label: c.label,
+		to: c.to,
+		active: c.active ?? isChildActive(c),
+	}));
+}
+
+// A collapsed rail icon's sub-items, listed in its flyout: an agent page's
+// projects, channels, tasks or loaded chats.
+function pageItems(agent: string, page: string): RailFlyoutItem[] | undefined {
+	const config = settingsStore.config?.agents.find((a) => a.name === agent);
+	if (page === "projects")
+		return flyoutItems(ownedProjects(agent).map((p) => projectChild(agent, p)));
+	if (page === "channels")
+		return flyoutItems(
+			(config?.channels ?? []).map((c) => ({
+				key: channelName(c),
+				label: channelName(c),
+				to: channelPath(agent, channelName(c)),
+			})),
+		);
+	if (page === "tasks") {
+		const active = activeTaskName(route, agent);
+		return (config?.tasks ?? [])
+			.filter((t) => t.name && !isWorkflow(t))
+			.map((t) => ({
+				key: t.name,
+				label: t.name,
+				to: taskSessionPath(agent, t.name),
+				active: active === t.name,
+			}));
+	}
+	if (page === "chat") {
+		const current =
+			typeof route.params.sessionId === "string" ? route.params.sessionId : "";
+		return chatSessions.sessions(agent).map((s) => ({
+			key: s.id,
+			label: chatDisplayName(s),
+			to: `${agentPagePath(agent, "chat")}/${encodeURIComponent(s.id)}`,
+			active: routeAgent.value === agent && current === s.id,
+		}));
+	}
+	return undefined;
+}
 
 function mobileSubnavClass(child: NavChild): string {
 	return (child.active ?? isChildActive(child))
