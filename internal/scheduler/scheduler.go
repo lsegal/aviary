@@ -132,6 +132,7 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 	}
 
 	desired := make(map[string]struct{})
+	wasDisabled := s.disabled
 	s.disabled = make(map[string]config.TaskConfig)
 	for _, ac := range cfg.Agents {
 		for _, tc := range ac.Tasks {
@@ -147,6 +148,12 @@ func (s *Scheduler) Reconcile(cfg *config.Config) {
 			}
 			s.removeTriggersLocked(key)
 			s.tasks[key] = tc
+			if _, resumed := wasDisabled[key]; resumed {
+				// Fires due while the task was paused were not missed: resuming
+				// arms its next fire without settling them by the missed policy.
+				now := s.now()
+				s.state.update(key, func(t *taskState) { t.Baseline = now })
+			}
 
 			if tc.IsWorkflow() {
 				// Workflows fire from channel messages; see FireWorkflows.
