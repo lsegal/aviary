@@ -264,15 +264,29 @@ func TestCheckoutDir_EnvIsAuthoritativeOutsideTheCheckout(t *testing.T) {
 	}
 }
 
-func TestCheckoutDir_FallsBackToWorkingDirectory(t *testing.T) {
+// stubExecutable points executablePath at a binary in dir for one test.
+func stubExecutable(t *testing.T, dir string) {
+	t.Helper()
+	orig := executablePath
+	executablePath = func() (string, error) { return filepath.Join(dir, "aviary"), nil }
+	t.Cleanup(func() { executablePath = orig })
+}
+
+func TestCheckoutDir_UsesTheExecutablesCheckoutNotTheWorkingDirectory(t *testing.T) {
 	checkout := initCheckout(t, "module github.com/lsegal/aviary\r\n")
 	t.Setenv(CheckoutEnv, "")
-	t.Chdir(filepath.Join(checkout, "internal"))
+	stubExecutable(t, checkout)
+	t.Chdir(t.TempDir())
 	if got := findCheckout(); got != checkout {
-		t.Fatalf("findCheckout() = %q, want %q", got, checkout)
+		t.Fatalf("findCheckout() = %q, want the executable's checkout %q", got, checkout)
+	}
+	stubExecutable(t, t.TempDir())
+	t.Chdir(filepath.Join(checkout, "internal"))
+	if got := findCheckout(); got != "" {
+		t.Fatalf("findCheckout() = %q from the working directory, want none", got)
 	}
 	other := initCheckout(t, "module example.com/other\n")
-	t.Chdir(other)
+	stubExecutable(t, other)
 	if got := findCheckout(); got != "" {
 		t.Fatalf("findCheckout() = %q in another module, want none", got)
 	}
