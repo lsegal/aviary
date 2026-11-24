@@ -1802,3 +1802,12 @@ func TestProjectTaskPrecompileRoundTripsAndIsProjectOnly(t *testing.T) {
 	cfg.Agents[0].Tasks = cfg.Agents[0].Tasks[:1]
 	assert.False(t, hasIssue(Validate(cfg, nil), "precompile"))
 }
+
+func TestServerURL(t *testing.T) {
+	t.Setenv("AVIARY_CONFIG_SERVER_NO_TLS", "")
+	assert.Equal(t, "https://localhost:16677", ServerURL(ServerConfig{}))
+	assert.Equal(t, "https://localhost:9443", ServerURL(ServerConfig{Port: 9443}))
+	assert.Equal(t, "http://localhost:8080", ServerURL(ServerConfig{Port: 8080, NoTLS: true}))
+	t.Setenv("AVIARY_CONFIG_SERVER_NO_TLS", "true")
+	assert.Equal(t, "http://localhost:16677", ServerURL(ServerConfig{}))
+}
