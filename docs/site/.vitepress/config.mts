@@ -1,4 +1,5 @@
 import { defineConfig, type HeadConfig } from "vitepress";
+import { devAllowedHosts } from "../../../scripts/dev-allowed-hosts.mjs";
 import {
 	checkSharePages,
 	defaultSharePage,
@@ -26,6 +27,13 @@ export default defineConfig({
 	base,
 	title,
 	description,
+	// VitePress bundles a Vite that ignores
+	// __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS, so pass the hosts explicitly
+	// (#1102).
+	vite: {
+		server: { allowedHosts: devAllowedHosts() },
+		preview: { allowedHosts: devAllowedHosts() },
+	},
 	transformPageData(pageData) {
 		const page = findSharePage(pageData.relativePath);
 		if (!page) return;
