@@ -4,8 +4,6 @@ package cliagent
 
 import (
 	"context"
-	"os"
-	"os/exec"
 	"testing"
 	"time"
 
@@ -14,14 +12,6 @@ import (
 
 	"github.com/lsegal/aviary/internal/clidefs"
 )
-
-// fakeLinger leaves a background child holding the fake CLI's stdout, as an
-// agent that started a `&` shell does (#1122).
-func fakeLinger() {
-	child := exec.Command("sleep", "30")
-	child.Stdout = os.Stdout
-	_ = child.Start()
-}
 
 func useLingeringDefinition(t *testing.T, fake string) Options {
 	t.Helper()
