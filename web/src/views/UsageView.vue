@@ -1,10 +1,11 @@
 <template>
   <AppLayout>
-    <div class="flex flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6">
-      <!-- Header + Filters -->
+    <template #header-icon>
+      <SystemPageIcon page-key="usage" tile />
+    </template>
+    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6">
+      <!-- Filters -->
       <div class="mb-6 flex flex-wrap items-center gap-3">
-        <SystemPageIcon page-key="usage" tile />
-        <h2 class="mr-2 text-xl font-bold text-gray-900 dark:text-white">Usage</h2>
         <div class="flex overflow-hidden rounded-lg border border-gray-200 text-sm dark:border-gray-700">
           <button
             v-for="p in presets"

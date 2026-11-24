@@ -127,14 +127,3 @@ function linkAncestors(crumbs: Crumb[], path: string): Crumb[] {
 			: { label: c.label, to: c.to };
 	});
 }
-
-/** The back link's target: the nearest ancestor crumb that links. */
-export function crumbParent(
-	crumbs: Crumb[],
-): { label: string; to: string } | null {
-	for (let i = crumbs.length - 2; i >= 0; i--) {
-		const to = crumbs[i].to;
-		if (to) return { label: crumbs[i].label, to };
-	}
-	return null;
-}

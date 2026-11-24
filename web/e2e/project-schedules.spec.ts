@@ -362,7 +362,13 @@ test("an agent board shows a scheduled run as a job card while it runs", async (
 		.toEqual({ target: "lsegal/aviary", number: FIRE });
 	// An agent board lists jobs in their job states, so a schedule between
 	// runs, which is in none, never shows as a job card (#977).
-	expect(calls.project_job_list?.at(-1)?.states).toEqual([
+	// The board's own read; the sidebar's and the nav row's counts poll too.
+	const boardReads = (calls.project_job_list ?? []).filter(
+		(c) =>
+			Array.isArray(c?.targets) &&
+			!(c?.kinds as string[] | undefined)?.includes("schedule"),
+	);
+	expect(boardReads.at(-1)?.states).toEqual([
 		"starting",
 		"paused",
 		"running",
@@ -800,8 +806,8 @@ test("a scheduled card's pencil opens its editor within the project page", async
 
 	// The project header and its actions stay put around the editor.
 	await expect(
-		page.getByRole("link", { name: "lsegal/aviary", exact: true }),
-	).toBeVisible();
+		page.getByTestId("page-breadcrumb").getByRole("listitem"),
+	).toHaveText(["System", "Watch: lsegal/aviary", "nightly-triage"]);
 	await expect(page.getByTestId("schedule-new")).toBeVisible();
 	const detail = page.getByTestId("schedule-detail");
 	const editor = detail.getByTestId("schedule-editor");
@@ -847,7 +853,7 @@ test("a scheduled card's pencil opens its editor within the project page", async
 		.toEqual({ name: "assistant/nightly-triage" });
 
 	// The other card's pencil opens its own editor.
-	await detail.getByRole("link", { name: "Back to board" }).click();
+	await page.getByTestId("page-back").click();
 	await expect(page).not.toHaveURL(/scheduled=/);
 	await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
 	await page
@@ -1149,7 +1155,7 @@ test("new schedule sets every trigger type, timezone and policy, and they round-
 		const editor = page.getByTestId("schedule-editor");
 		await expect(editor.getByLabel("Name")).toHaveValue(name);
 		await expectTrigger(editor, c);
-		await page.getByRole("link", { name: "Back to board" }).click();
+		await page.getByTestId("page-back").click();
 	}
 });
 
@@ -1191,7 +1197,12 @@ test("leaving a schedule with unsaved edits asks first", async ({ page }) => {
 	await expect(prompt).toHaveValue(
 		"Triage issues opened since the last run and label them.",
 	);
-	const back = page.getByRole("link", { name: "Back to board" });
+	// The schedule sits under its board in the page header (#1064).
+	await expect(
+		page.getByTestId("page-breadcrumb").getByRole("listitem"),
+	).toHaveText(["System", "Watch: lsegal/aviary", "nightly-triage"]);
+	const back = page.getByTestId("page-back");
+	await expect(back).toHaveAccessibleName("Back to Watch: lsegal/aviary");
 	const dialog = page.getByTestId("unsaved-changes-dialog");
 
 	// Unchanged: going back to the board does not ask.

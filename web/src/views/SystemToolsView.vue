@@ -1,30 +1,26 @@
 <template>
   <AppLayout>
-    <div class="h-full overflow-y-auto bg-gray-50/60 dark:bg-gray-950">
+    <template #header-icon>
+      <SystemPageIcon page-key="tools" tile />
+    </template>
+    <template #header>
+      <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
+        Read-only catalog of MCP tool groups, individual tools, and currently activated skills.
+      </p>
+    </template>
+    <template #header-actions>
+      <button
+        type="button"
+        class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+        :disabled="loading"
+        @click="loadCatalog"
+      >
+        {{ loading ? "Refreshing…" : "Refresh" }}
+      </button>
+      <SystemSettingsLink />
+    </template>
+    <div class="min-h-0 flex-1 overflow-y-auto bg-gray-50/60 dark:bg-gray-950">
       <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div class="flex items-start gap-3">
-            <SystemPageIcon page-key="tools" tile />
-            <div>
-              <h2 class="text-xl font-bold text-gray-900 dark:text-white">System Tools</h2>
-              <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-                Read-only catalog of MCP tool groups, individual tools, and currently activated skills.
-              </p>
-            </div>
-          </div>
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
-              :disabled="loading"
-              @click="loadCatalog"
-            >
-              {{ loading ? "Refreshing…" : "Refresh" }}
-            </button>
-            <SystemSettingsLink />
-          </div>
-        </div>
-
         <div v-if="errorMessage" class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
           {{ errorMessage }}
         </div>

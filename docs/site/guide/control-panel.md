@@ -10,10 +10,30 @@ Log in with the bearer token from `~/.config/aviary/token`.
 
 The sidebar has two top-level sections:
 
-- **Agents** — always expanded, listing every configured agent, with **+ Add Agent** at the end. Each agent's pages open under it: **Chat**, **Code Loop**, **Scheduled Tasks**, **Files** and **Agent Settings**. Moving from one agent to another keeps you on the same page.
+- **Agents** — always expanded, listing every configured agent, with **+ Add Agent** at the end. Each agent's pages open under it: **Chats**, **Code Loop**, **Channels**, **Scheduled Tasks**, **Files** and **Agent Settings**. Moving from one agent to another keeps you on the same page.
 - **System** — the instance's overview, and under it the instance's own pages: **Usage**, **Tools**, **Skills**, **Sessions**, **Models**, **Logs** and **Daemons**. The section starts collapsed; the overview lists every System page as a card.
 
-The **gear** at the bottom left opens a menu of **Settings**, **Restart** (a safe restart that waits for running jobs) and **Logout**.
+The **gear** at the bottom left opens a menu of **Settings**, **Edit sidebar**, **Restart** (a safe restart that waits for running jobs) and **Logout**.
+
+On narrow screens the sidebar becomes a row of buttons along the top: one per agent plus **System**, or, with a single agent, that agent's pages plus **System**. The current section's pages, projects, tasks or channels show in a second row below it. Both rows stay on one line and scroll sideways instead of wrapping.
+
+### Edit sidebar
+
+**Edit sidebar** opens a dialog with two lists: **Agent pages** (**Pages** when there is only one agent) and **System pages**. Drag an item by its handle (on touch screens, long-press the row) and the other items slide aside to make room, or move it one place with its up and down buttons or the arrow keys on its handle. Each item's eye button hides or shows it. Changes save as you go and are stored on the server per user, so they follow you to other devices.
+
+The **Pages** order is shared: every agent's pages in the sidebar, the collapsed rail and the top row on narrow screens all follow it. When pages are hidden, the sidebar offers **Show N hidden pages** to list them for the current visit. **Reset to default** restores the built-in order and shows every page again.
+
+### Navigation
+
+Nested pages, such as a project board, a task's dashboard, a channel, a file or a settings page, show a breadcrumb from their agent or System down to the current page. Every crumb but the last links to its page, and a back link beside it returns to the parent page. Settings pages show the breadcrumb as their title; other pages show it above their content, including with the sidebar collapsed and on narrow screens.
+
+With the sidebar collapsed to its icon rail, hovering or focusing an icon that has subpages opens a flyout listing them: another agent's icon lists its pages, **System** lists the System pages, and an agent page's icon lists its projects, tasks, channels or files.
+
+On a project, task, channel or file page, the breadcrumb's last crumb has a caret that opens a switcher, like GitHub's repository switcher: a search box over that page's siblings, so you can jump straight to another project, task, channel or file. `Alt+S` (`⌥S` on a Mac) opens it from anywhere on the page.
+
+### Reconnecting
+
+When the control panel can't reach the server, for example during a restart, it shows **Server unavailable, reconnecting…** and keeps retrying instead of sending you to the login page. It continues where you were once the server answers. While you are signed in, the connection indicator shows **Disconnected**; click it to retry at once.
 
 ---
 
@@ -57,7 +77,7 @@ Browse and edit root-level markdown files in the agent's data directory (RULES.m
 
 ### Channels (`/agents/<agent>/channels`)
 
-The agent's Slack, Discord and Signal channels, listed in the sidebar below **Code Loop**. **+** adds a channel and creates its session. Clicking a channel opens its conversation (`/agents/<agent>/channels/<name>`) in the chat UI; the header's gear opens its settings (`/agents/<agent>/channels/<name>/settings`): connection, deliver-to conversation, model, tools and `allow_from` rules. Slack channels can also validate the bot token and browse visible workspace channels. A channel's **…** menu offers **Edit**, **Rename** (keeping its session) and **Remove**, which archives or deletes its sessions. The old `/agents/<agent>/settings/channels` address redirects here.
+The agent's Slack, Discord and Signal channels, listed in the sidebar below **Code Loop**. **+** adds a channel and creates its session. Clicking a channel opens its conversation (`/agents/<agent>/channels/<name>`) in the chat UI; the header's gear opens its settings (`/agents/<agent>/channels/<name>/settings`): connection, deliver-to conversation, model, tools and `allow_from` rules. Slack channels can also validate the bot token and browse visible workspace channels. A channel's **…** menu offers **Enable** or **Disable**, **Rename** (keeping its session), **Settings** and **Delete**, which archives or deletes its sessions. A new channel starts disabled until its connection settings are filled in. Disabled channels are greyed out with a disabled marker in the sidebar and the narrow-screen row, and listed after the enabled ones. The old `/agents/<agent>/settings/channels` address redirects here.
 
 ### Agent Settings (`/agents/<agent>/settings`)
 
@@ -168,7 +188,7 @@ The app always loads the current control panel from the server, so after an upgr
 | --- | --- |
 | `Ctrl+Enter` | Send message (Chat) |
 | `Esc` | Stop active agent run |
-| `Alt+S` (`⌥S` on a Mac) | Switch to another project, task, channel or file from its page's breadcrumb |
+| `Alt+S` (`⌥S` on a Mac) | Switch to another project, task, channel or file from its page's breadcrumb (see [Navigation](#navigation)) |
 
 ---
 
