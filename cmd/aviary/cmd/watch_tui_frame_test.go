@@ -96,6 +96,9 @@ func watchLandingView(t *testing.T, cols, rows int) string {
 	running2.Progress = progress(2, 6)
 	running2.PullRequest = 233
 	running2.PullRequestState = "draft"
+	running3 := job(217, "Paginate the admin orders table", "active")
+	running3.Started = "2026-11-23T11:01:00Z"
+	running3.Progress = progress(1, 5)
 	paused := job(208, "Upgrade the payments SDK", "waiting")
 	paused.WaitReason = "waiting on #207"
 	done := job(205, "Search ignores accents", "complete")
@@ -106,6 +109,8 @@ func watchLandingView(t *testing.T, cols, rows int) string {
 	done2.Progress = progress(5, 5)
 	done2.PullRequest = 226
 	done2.PullRequestState = "merged"
+	paused2 := job(212, "Rename the checkout feature flag", "waiting")
+	paused2.WaitReason = "answer needed"
 	failed := job(211, "Flaky login e2e test", "failed")
 	failed.Progress = progress(3, 5)
 	failed.PullRequest = 230
@@ -119,16 +124,16 @@ func watchLandingView(t *testing.T, cols, rows int) string {
 	status := watchStatus{
 		Running:      true,
 		Targets:      []string{target},
-		States:       map[string]int{watchScheduled: 2, watchStarting: 1, watchPaused: 1, watchRunning: 2, watchDone: 2, watchFailed: 1},
+		States:       map[string]int{watchScheduled: 2, watchStarting: 1, watchPaused: 2, watchRunning: 3, watchDone: 2, watchFailed: 1},
 		Concurrency:  3,
 		Delivery:     "poll",
 		PollInterval: "1m",
 	}
-	status.Jobs.Running = 2
+	status.Jobs.Running = 3
 	status.Jobs.Merged24h = 2
 	m = watchUpdate(t, m, watchDataMsg{
 		status:  &status,
-		jobs:    []watchJob{queued, running, running2, paused, done, done2, failed},
+		jobs:    []watchJob{queued, running, running2, running3, paused, paused2, done, done2, failed},
 		jobsOK:  true,
 		tasks:   []watchTask{{ID: "t1", Name: "nightly-triage", Type: "project", Project: target, Enabled: true, NextRun: &nightly}, {ID: "t2", Name: "weekly-deps", Type: "project", Project: target, Enabled: true, NextRun: &weekly}},
 		tasksOK: true,
@@ -140,6 +145,9 @@ func watchLandingView(t *testing.T, cols, rows int) string {
 	}
 	m = watchUpdate(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = watchUpdate(t, m, watchDataMsg{outputKey: m.outputKey, outputOK: true, output: []string{
+		"▸ Read the issue and its comments",
+		"▸ Bash gh pr create --draft --title \"Fix cart total rounding\"",
+		"▸ Grep \"func Total\" internal/cart",
 		"▸ Read internal/cart/total.go",
 		"▸ Edit internal/cart/total.go: round each line item to cents before summing",
 		"▸ Bash go test ./internal/cart/...",
