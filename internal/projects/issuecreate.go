@@ -25,7 +25,11 @@ const maxIssueDescription = 4000
 // A request identical to one still filing joins it, and one identical to an
 // issue filed within filedIssueMemory gets that issue back, so a caller that
 // gave up waiting and asks again never files a duplicate (issue #710). The
-// filing outlives a caller that stops waiting.
+// filing outlives a caller that stops waiting. A different request from the
+// same session on the same repository, made while one is filing or within
+// sessionFilingMemory of one filing, is refused with that filing's issue
+// unless it is marked distinct, since it is most likely the same request
+// reworded (issue #1174).
 func (w *Engine) CreateIssue(ctx context.Context, request core.IssueCreate) (core.IssueCreateResult, error) {
 	text := strings.TrimSpace(request.Text)
 	switch {
@@ -53,7 +57,11 @@ func (w *Engine) CreateIssue(ctx context.Context, request core.IssueCreate) (cor
 		return core.IssueCreateResult{}, fmt.Errorf("the coding agent cannot run: %w", err)
 	}
 	key := issueFilingKey{repository: strings.ToLower(request.Repository), text: text, model: config.Model, attachments: strings.Join(attachments, "\n")}
-	filing, started := w.filings.start(key, time.Now())
+	asker := issueAsker{session: request.Session, distinct: request.Distinct, text: text}
+	filing, started, err := w.filings.start(key, asker, time.Now())
+	if err != nil {
+		return core.IssueCreateResult{}, err
+	}
 	if started {
 		prompt := createIssuePrompt(request.Repository, text, attachments, w.Identity)
 		w.logf("prompt agent (%s) filing an issue on %s with %d attachments: %s", spec, request.Repository, len(attachments), truncate(text, 120))
@@ -94,6 +102,15 @@ func createdIssueResult(output string, runErr error, repository string, spec age
 // filedIssueMemory is how long a filed issue answers an identical request.
 const filedIssueMemory = time.Hour
 
+// sessionFilingMemory is how long an issue a session filed refuses a
+// different request from that session on the same repository.
+const sessionFilingMemory = 10 * time.Minute
+
+// sessionFilingKey identifies the filings one session makes on a repository.
+type sessionFilingKey struct {
+	session, repository string
+}
+
 // issueFilingKey identifies one create-issue request. The same text with
 // different media is a different issue.
 type issueFilingKey struct {
@@ -103,6 +120,8 @@ type issueFilingKey struct {
 // issueFiling is one gh-create run; done closes once result or err is set.
 type issueFiling struct {
 	done     chan struct{}
+	text     string
+	started  time.Time
 	result   core.IssueCreateResult
 	err      error
 	finished time.Time
@@ -113,12 +132,43 @@ type issueFiling struct {
 type issueFilings struct {
 	mu      sync.Mutex
 	filings map[issueFilingKey]*issueFiling
+	// bySession is the latest filing each session started on a repository.
+	bySession map[sessionFilingKey]*issueFiling
+}
+
+// issueAsker is who asks for a filing: the session, when there is one,
+// whether it marked the request distinct, and the request's text.
+type issueAsker struct {
+	session  string
+	distinct bool
+	text     string
+}
+
+// sessionDuplicate refuses a request from key's session, naming the filing it
+// most likely repeats, when that session is still filing a different issue on
+// the repository or filed one within sessionFilingMemory. Called with f.mu
+// held.
+func (f *issueFilings) sessionDuplicate(key sessionFilingKey, now time.Time) error {
+	old := f.bySession[key]
+	if old == nil {
+		return nil
+	}
+	summary := truncate(strings.Join(strings.Fields(old.text), " "), 120)
+	const distinct = "Do not file it again or any other way. Only if the user asked for a separate issue, call project_issue_create again with distinct: true"
+	switch {
+	case old.finished.IsZero():
+		return fmt.Errorf("an issue from this session is already being filed on %s (started %s ago): %q. Call project_issue_create again with exactly that text to wait for its URL. %s", key.repository, now.Sub(old.started).Round(time.Second), summary, distinct)
+	case old.err == nil && now.Sub(old.finished) <= sessionFilingMemory:
+		return fmt.Errorf("issue %s was filed from this session %s ago: %q. %s", old.result.URL, now.Sub(old.finished).Round(time.Second), summary, distinct)
+	}
+	return nil
 }
 
 // start returns the filing for key, starting one unless an identical request
 // is still filing or filed an issue recently. started reports whether the
-// caller has to run it.
-func (f *issueFilings) start(key issueFilingKey, now time.Time) (filing *issueFiling, started bool) {
+// caller has to run it. A different request from a session that is filing or
+// just filed an issue on the repository is refused, unless marked distinct.
+func (f *issueFilings) start(key issueFilingKey, asker issueAsker, now time.Time) (filing *issueFiling, started bool, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for k, old := range f.filings {
@@ -126,15 +176,32 @@ func (f *issueFilings) start(key issueFilingKey, now time.Time) (filing *issueFi
 			delete(f.filings, k)
 		}
 	}
+	for k, old := range f.bySession {
+		if !old.finished.IsZero() && (old.err != nil || now.Sub(old.finished) > sessionFilingMemory) {
+			delete(f.bySession, k)
+		}
+	}
 	if old := f.filings[key]; old != nil {
-		return old, false
+		return old, false, nil
+	}
+	sessionKey := sessionFilingKey{session: asker.session, repository: key.repository}
+	if asker.session != "" && !asker.distinct {
+		if err := f.sessionDuplicate(sessionKey, now); err != nil {
+			return nil, false, err
+		}
 	}
 	if f.filings == nil {
 		f.filings = map[issueFilingKey]*issueFiling{}
 	}
-	filing = &issueFiling{done: make(chan struct{})}
+	filing = &issueFiling{done: make(chan struct{}), text: asker.text, started: now}
 	f.filings[key] = filing
-	return filing, true
+	if asker.session != "" {
+		if f.bySession == nil {
+			f.bySession = map[sessionFilingKey]*issueFiling{}
+		}
+		f.bySession[sessionKey] = filing
+	}
+	return filing, true, nil
 }
 
 // finish records filing's outcome. A failed filing is forgotten, so asking

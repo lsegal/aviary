@@ -14,6 +14,7 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/projects"
+	projectscore "github.com/lsegal/aviary/internal/projects/core"
 )
 
 var (
@@ -117,6 +118,8 @@ type projectIssueCreateArgs struct {
 	Attachments []string `json:"attachments,omitempty" jsonschema:"Local image or video files (paths or file:// URLs) for gh-create to upload and embed in the issue, in addition to the current turn's media"`
 	// SkipTurnMedia leaves the current turn's media out.
 	SkipTurnMedia bool `json:"skip_turn_media,omitempty" jsonschema:"Do not attach the images and videos from the user message that started this turn, which are attached by default"`
+	// Distinct files the issue even though this session just filed another.
+	Distinct bool `json:"distinct,omitempty" jsonschema:"Set only when the user asked for a separate issue: files it even though this session is filing, or just filed, a different issue on the repository"`
 }
 
 type projectIssueBackfillMediaArgs struct {
@@ -482,7 +485,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_issue_create",
-		Description: "File an issue through the gh-create skill with this instance's identity, wait for it, and return the new issue's URL. Calling it again with the same repository, text and attachments while that issue is still filing, or after it filed, waits for or returns the same issue instead of filing a duplicate. " + issueAttachmentsDescription,
+		Description: "File an issue through the gh-create skill with this instance's identity, wait for it, and return the new issue's URL. Calling it again with the same repository, text and attachments while that issue is still filing, or after it filed, waits for or returns the same issue instead of filing a duplicate. Before filing, check what this session already filed or is still filing (earlier project_issue_create calls in this conversation, including ones still running for another message); project_job_list cannot show a new issue. A different request from this session on the same repository while one is filing, or within 10 minutes of one filing, is refused with that issue's URL, age and summary, unless distinct is set because the user asked for a separate issue. " + issueAttachmentsDescription,
 		Annotations: mutatingTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectIssueCreateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
@@ -490,7 +493,11 @@ func registerProjectTools(s *sdkmcp.Server) {
 			if err != nil {
 				return nil, err
 			}
-			result, err := m.IssueCreate(ctx, args.Repository, args.Text, args.Model, attachments)
+			session, _ := agent.SessionIDFromContext(ctx)
+			result, err := m.IssueCreate(ctx, projectscore.IssueCreate{
+				Repository: args.Repository, Text: args.Text, Model: args.Model, Attachments: attachments,
+				Session: session, Distinct: args.Distinct,
+			})
 			return withSkippedMedia(result, err, skipped)
 		})
 	})

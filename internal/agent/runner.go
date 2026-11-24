@@ -448,6 +448,12 @@ func (r *AgentRunner) promptCore(
 					systemPrompt += "\n\n" + block
 				}
 			}
+			if !isCLI {
+				// A CLI turn lists these once it knows which turn it takes over.
+				if block := inFlightToolCallsBlock(runningSessionToolCalls(r.agent.ID, sessionID, nil), time.Now()); block != "" {
+					systemPrompt += "\n\n" + block
+				}
+			}
 			if chType, _, _, ok := ChannelSessionFromContext(promptCtx); ok {
 				if guidance := channelFormattingGuidance(chType); guidance != "" {
 					systemPrompt += "\n\n" + guidance
@@ -1371,7 +1377,9 @@ func (r *AgentRunner) executeToolCall(
 	if usageRec != nil {
 		usageRec.ToolCalls++
 	}
+	untrack := trackSessionToolCall(r.agent.ID, sessionID, sessionToolCall{id: streamRec.ID, name: name, args: args, started: time.Now()})
 	resultText, shared, callErr := callToolOnce(promptCtx, toolClient, r.agent.ID, sessionID, name, args)
+	untrack()
 	if shared && callErr == nil {
 		resultText = sharedToolCallNote + resultText
 	}
