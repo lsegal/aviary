@@ -23,6 +23,11 @@ import (
 // exit. It is the scheduler.ProjectRunner core's scheduler hands project
 // tasks to: the schedule itself lives in core, and Code Loop only runs the job.
 func (m *Manager) RunProjectTask(ctx context.Context, run scheduler.ProjectRun) (string, error) {
+	// A settings change restarting the engine holds refreshMu until the
+	// new engine is running, so a run its restart interrupted and requeued
+	// waits for that engine instead of finding none (issue #1028).
+	m.refreshMu.Lock()
+	m.refreshMu.Unlock() //nolint:staticcheck // waits out a refresh in progress
 	run.Project = strings.TrimSpace(run.Project)
 	m.mu.Lock()
 	settings, err := m.settingsLocked()
@@ -234,6 +239,8 @@ func projectTaskStatus(result projectTaskResult) string {
 		return "complete"
 	case errors.Is(result.err, context.Canceled):
 		return "stopped"
+	case errors.Is(result.err, scheduler.ErrProjectRunInterrupted):
+		return "interrupted"
 	}
 	return "failed"
 }

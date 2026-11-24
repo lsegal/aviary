@@ -82,6 +82,16 @@ type ProjectRun struct {
 // not pass the determinism gate, so each run uses the model.
 var ErrProjectTaskNotCompiled = errors.New("the task's prompt is not deterministic enough to compile")
 
+// ErrProjectRunInterrupted is a ProjectRunner's error for a run the Code Loop
+// engine stopped because it was restarting or shutting down, not because the
+// run was stopped. The job is requeued to run again once the engine is back,
+// instead of being canceled (issue #1028).
+var ErrProjectRunInterrupted = errors.New("the Code Loop engine stopped while the run was going")
+
+// projectRunInterruptedNote is the resume note of a project task job requeued
+// after ErrProjectRunInterrupted.
+const projectRunInterruptedNote = "This scheduled run was interrupted when the Code Loop engine restarted before it finished, and is running again. Check for work the interrupted run already did before repeating it."
+
 // TaskCompiler returns a precompiled project task's current script,
 // compiling it first when its prompt, project or tools changed; "" means its
 // prompt is not deterministic.
@@ -215,6 +225,10 @@ func (p *WorkerPool) processJob(ctx context.Context, job *domain.Job) {
 	started := time.Now()
 	defer p.attemptDone(job.ID, started)
 	if err := p.executeJob(jobCtx, job); err != nil {
+		if errors.Is(err, ErrProjectRunInterrupted) && jobCtx.Err() == nil {
+			p.requeueInterrupted(job.ID)
+			return
+		}
 		if errors.Is(err, context.Canceled) {
 			p.finishCanceled(job.ID)
 			return
@@ -241,6 +255,20 @@ func (p *WorkerPool) finishCanceled(jobID string) {
 	}
 	if err := p.queue.Cancel(jobID); err != nil {
 		slog.Warn("marking job canceled", "id", jobID, "err", err)
+	}
+}
+
+// requeueInterrupted requeues a project task job whose Code Loop engine
+// stopped under it, so it runs again once the engine is back. A safe
+// restart's note wins, since that restart is what stopped the engine.
+func (p *WorkerPool) requeueInterrupted(jobID string) {
+	note := projectRunInterruptedNote
+	if checkpoint := p.checkpointNote.Load(); checkpoint != nil {
+		note = *checkpoint
+	}
+	slog.Info("requeueing project task job its engine interrupted", "id", jobID)
+	if err := p.queue.Requeue(jobID, note); err != nil {
+		slog.Warn("requeueing interrupted project task job", "id", jobID, "err", err)
 	}
 }
 
@@ -486,6 +514,12 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 	}
 	if run.Project == "" {
 		return fmt.Errorf("project task %q names no project", job.TaskID)
+	}
+	if job.ResumeNote != "" {
+		run.Prompt = job.ResumeNote + "\n\n" + run.Prompt
+		if err := p.queue.ClearResumeNote(job.ID); err != nil {
+			slog.Warn("job: failed to clear resume note", "id", job.ID, "err", err)
+		}
 	}
 	var compiledErr error
 	scriptExecuted := false
