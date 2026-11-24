@@ -7,18 +7,20 @@
 				Queue
 			</button>
 		</DropdownMenuTrigger>
-		<DropdownMenuContent align="end" :side-offset="6" data-testid="queue-menu-items"
-			class="z-50 min-w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-			<DropdownMenuItem v-for="option in options" :key="option.skill" :disabled="option.disabled"
-				:data-testid="`queue-${option.skill}`" :title="option.title" :class="itemClass"
-				@select="emit('pick', option.skill)">
-				<component :is="option.icon" aria-hidden="true" class="mt-0.5 h-4 w-4 shrink-0" />
-				<span class="flex flex-col">
-					<span>{{ option.label }}</span>
-					<span class="font-mono text-xs text-gray-500 dark:text-gray-400">{{ option.disabled ? "off: no_merge is set" : option.skill }}</span>
-				</span>
-			</DropdownMenuItem>
-		</DropdownMenuContent>
+		<DropdownMenuPortal>
+			<DropdownMenuContent align="end" :side-offset="6" data-testid="queue-menu-items"
+				class="z-50 min-w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+				<DropdownMenuItem v-for="option in options" :key="option.skill" :disabled="option.disabled"
+					:data-testid="`queue-${option.skill}`" :title="option.title" :class="itemClass"
+					@select="emit('pick', option.skill)">
+					<component :is="option.icon" aria-hidden="true" class="mt-0.5 h-4 w-4 shrink-0" />
+					<span class="flex flex-col">
+						<span>{{ option.label }}</span>
+						<span class="font-mono text-xs text-gray-500 dark:text-gray-400">{{ option.disabled ? "off: no_merge is set" : option.skill }}</span>
+					</span>
+				</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenuPortal>
 	</DropdownMenuRoot>
 </template>
 
@@ -33,6 +35,7 @@ import WrenchScrewdriverIcon from "@heroicons/vue/24/outline/WrenchScrewdriverIc
 import {
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuPortal,
 	DropdownMenuRoot,
 	DropdownMenuTrigger,
 } from "radix-vue";
