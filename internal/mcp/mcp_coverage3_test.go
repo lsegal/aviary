@@ -18,6 +18,7 @@ import (
 	"github.com/lsegal/aviary/internal/store"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ── localFileToDataURL large file ─────────────────────────────────────────────
@@ -333,6 +334,38 @@ func TestJobListWithScheduler(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "bot/task"))
 
+}
+
+// A project task's runs are found by task name, full task ID and job ID,
+// like any other task's.
+func TestJobToolsFindProjectTaskRuns(t *testing.T) {
+	d, s := setupDispatcherWithScheduler(t)
+	ctx := context.Background()
+
+	run, err := s.Queue().EnqueueWithType("Aviary/release-aviary", "project", "Aviary", "Release when main moved", "", "", 1, "", "")
+	require.NoError(t, err)
+	require.NoError(t, s.Queue().UpdateOutput(run.ID, "Triggered release.yml"))
+	other, err := s.Queue().EnqueueWithType("Aviary/release-aviary-docs", "project", "Aviary", "Publish docs", "", "", 1, "", "")
+	require.NoError(t, err)
+
+	for _, task := range []string{"release-aviary", "Aviary/release-aviary"} {
+		out, err := d.CallTool(ctx, "job_list", map[string]any{"task": task})
+		require.NoError(t, err)
+		assert.Contains(t, out, run.ID, task)
+		assert.NotContains(t, out, other.ID, task)
+	}
+	out, err := d.CallTool(ctx, "job_list", map[string]any{"task": "other/release-aviary"})
+	require.NoError(t, err)
+	assert.NotContains(t, out, run.ID)
+
+	out, err = d.CallTool(ctx, "job_query", map[string]any{"id": run.ID})
+	require.NoError(t, err)
+	assert.Contains(t, out, `"task_type": "project"`)
+	assert.NotContains(t, out, other.ID)
+
+	out, err = d.CallTool(ctx, "job_logs", map[string]any{"id": run.ID})
+	require.NoError(t, err)
+	assert.Contains(t, out, "Triggered release.yml")
 }
 
 // ── agent_update with fallbacks ───────────────────────────────────────────────

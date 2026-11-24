@@ -9,6 +9,7 @@ interface MockJob {
 	status: "pending" | "in_progress" | "completed" | "failed" | "canceled";
 	attempts: number;
 	max_retries: number;
+	task_type?: string;
 	trigger?: string;
 	error?: string;
 	output?: string;
@@ -367,6 +368,7 @@ test("a run opens at its own URL that survives a reload", async ({ page }) => {
 
 	await page.reload();
 	await expect(runPage.getByTestId("task-run-log-title")).toHaveText("Run bad");
+	await expect(runPage.getByTestId("task-run-missing")).toHaveCount(0);
 	await expect(runPage.getByTestId("task-run-log-error")).toHaveText(
 		"connection refused",
 	);
@@ -377,6 +379,31 @@ test("a run opens at its own URL that survives a reload", async ({ page }) => {
 
 	await page.goto("/agents/assistant/tasks/report/runs/nope");
 	await expect(page.getByTestId("task-run-missing")).toBeVisible();
+});
+
+test("a project task's run opens at its URL without a missing-run note", async ({
+	page,
+}) => {
+	await mockTask(
+		page,
+		[
+			job("job_20261124_004934_825653000", "completed", 10, {
+				task_type: "project",
+				trigger: "manual",
+				output: "Triggered release.yml",
+			}),
+		],
+		{ task: { type: "project", project: "o/r", precompile: true } },
+	);
+	await page.goto(
+		"/agents/assistant/tasks/report/runs/job_20261124_004934_825653000",
+	);
+
+	const runPage = page.getByTestId("task-run-page");
+	await expect(runPage.getByTestId("task-run-log-title")).toHaveText(
+		"Run job_20261124_004934_825653000",
+	);
+	await expect(runPage.getByTestId("task-run-missing")).toHaveCount(0);
 });
 
 test("the chat panel toggles and resizes, and both persist", async ({

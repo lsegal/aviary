@@ -4,9 +4,11 @@
 			class="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
 			<ArrowLeftIcon aria-hidden="true" class="h-4 w-4" /> Back to {{ task }}
 		</router-link>
-		<TaskRunLog v-if="entry" :entry="entry" :title="`Run ${entry.id}`" :now="dashboard.now.value"
-			:fetch-logs="dashboard.fetchLogs" class="h-[calc(100dvh-16rem)] min-h-80" @stop="dashboard.stop($event)" />
-		<TriggerContextPanel v-if="entry?.job?.trigger_context" :context="entry.job.trigger_context" />
+		<template v-if="entry">
+			<TaskRunLog :entry="entry" :title="`Run ${entry.id}`" :now="dashboard.now.value"
+				:fetch-logs="dashboard.fetchLogs" class="h-[calc(100dvh-16rem)] min-h-80" @stop="dashboard.stop($event)" />
+			<TriggerContextPanel v-if="entry.job?.trigger_context" :context="entry.job.trigger_context" />
+		</template>
 		<p v-else-if="dashboard.loaded.value" data-testid="task-run-missing"
 			class="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
 			No run <span class="font-mono">{{ runID }}</span> for this task.

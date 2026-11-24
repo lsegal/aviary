@@ -1845,7 +1845,7 @@ func normalizeTaskTarget(target string) string {
 }
 
 type jobListArgs struct {
-	Task string `json:"task,omitempty"`
+	Task string `json:"task,omitempty" jsonschema:"task to list runs of: its agent/task ID, or a bare task name to match it on every agent"`
 }
 
 type jobIDArgs struct {
@@ -1968,7 +1968,7 @@ func registerJobTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "job_list",
-		Description: "Show job history across all tasks",
+		Description: "Show job history across all tasks, or one task's runs",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "scheduler", "tool", "job_list", "task", args.Task)
 		d := GetDeps()

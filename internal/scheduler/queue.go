@@ -308,7 +308,8 @@ func (q *JobQueue) EnqueueAtWithType(taskID, taskType, agentID, prompt, script, 
 	return job, nil
 }
 
-// List returns all jobs, optionally filtered by task ID.
+// List returns all jobs, optionally filtered by task: its "agent/task" ID,
+// or a bare task name, which matches that task on every agent.
 func (q *JobQueue) List(taskID string) ([]domain.Job, error) {
 	var jobs []domain.Job
 	for _, dir := range store.AllJobDirs() {
@@ -323,11 +324,24 @@ func (q *JobQueue) List(taskID string) ([]domain.Job, error) {
 	}
 	out := jobs[:0]
 	for _, j := range jobs {
-		if j.TaskID == taskID {
+		if jobMatchesTask(j.TaskID, taskID) {
 			out = append(out, j)
 		}
 	}
 	return out, nil
+}
+
+// jobMatchesTask reports whether a job's "agent/task" ID names task, given
+// as a full ID or a bare task name.
+func jobMatchesTask(jobTaskID, task string) bool {
+	if jobTaskID == task {
+		return true
+	}
+	if strings.Contains(task, "/") {
+		return false
+	}
+	_, name, ok := strings.Cut(jobTaskID, "/")
+	return ok && name == task
 }
 
 // RecoverStuck resets any jobs left in progress when the server last exited.
