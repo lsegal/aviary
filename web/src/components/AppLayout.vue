@@ -55,7 +55,8 @@
           </div>
           <div v-if="versionMessage" class="mt-1 text-xs opacity-80" data-testid="version-message">{{ versionMessage }}</div>
           <div v-if="autoUpdateWaiting" class="mt-1 text-xs" data-testid="auto-update-status">{{ autoUpdateWaiting }}</div>
-          <div v-if="autoUpdateError" class="mt-1 text-xs font-medium text-red-700 [overflow-wrap:anywhere] dark:text-red-300" data-testid="auto-update-error">{{ autoUpdateError }}</div>
+          <AutoUpdateError :auto="restart?.autoUpdate" :disabled="upgradeDisabled"
+            @retry="triggerUpgrade('now')" @remove-lock="triggerUpgrade('now', { removeStaleLock: true })" />
         </div>
         <div v-else-if="updateNotice" data-testid="update-notice"
           class="mb-3 rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900 dark:border-green-700 dark:bg-green-950/40 dark:text-green-100">
@@ -251,7 +252,8 @@
           </div>
           <div v-if="versionMessage" class="mt-1 text-xs opacity-80" data-testid="version-message">{{ versionMessage }}</div>
           <div v-if="autoUpdateWaiting" class="mt-1 text-xs" data-testid="auto-update-status">{{ autoUpdateWaiting }}</div>
-          <div v-if="autoUpdateError" class="mt-1 text-xs font-medium text-red-700 [overflow-wrap:anywhere] dark:text-red-300" data-testid="auto-update-error">{{ autoUpdateError }}</div>
+          <AutoUpdateError :auto="restart?.autoUpdate" :disabled="upgradeDisabled"
+            @retry="triggerUpgrade('now')" @remove-lock="triggerUpgrade('now', { removeStaleLock: true })" />
         </div>
         <div v-else-if="updateNotice" data-testid="update-notice"
           class="rounded-xl border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-900 dark:border-green-700 dark:bg-green-950/40 dark:text-green-100">
@@ -415,6 +417,7 @@ import {
 } from "../stores/settings";
 import CodeLoopIcon from "./CodeLoopIcon.vue";
 import SidebarRowAction from "./SidebarRowAction.vue";
+import AutoUpdateError from "./AutoUpdateError.vue";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
 import MobileMainNav, { type MobileNavItem } from "./MobileMainNav.vue";
 import ProjectRunningBadge from "./projects/ProjectRunningBadge.vue";
@@ -511,10 +514,6 @@ const autoUpdateWaiting = computed(() => {
 		default:
 			return "";
 	}
-});
-const autoUpdateError = computed(() => {
-	const err = restart.value?.autoUpdate?.error;
-	return err ? `Auto update failed: ${err}` : "";
 });
 const logoUrl = "/logo.png";
 const brandLinks: BrandLink[] = [

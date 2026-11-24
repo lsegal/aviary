@@ -411,6 +411,99 @@ test("auto update shows why its last attempt failed", async ({ page }) => {
 	await expect(page.getByTestId("auto-update-status")).toHaveCount(0);
 });
 
+function autoUpdateFailure(error: string, code?: string) {
+	return {
+		...gitCheck(false),
+		restart: {
+			phase: "idle",
+			jobs: [],
+			held: false,
+			autoUpdate: {
+				version: "abc1234bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				error,
+				code,
+			},
+		},
+	};
+}
+
+function pulled(upgrades: Record<string, unknown>[]) {
+	return (args?: Record<string, unknown>) => {
+		upgrades.push(args ?? {});
+		return {
+			phase: "idle",
+			jobs: [],
+			held: false,
+			noop: true,
+			message:
+				"Pulled 1 commit(s) (1111111 → abc1234). No backend code changed.",
+		};
+	};
+}
+
+test("auto update deferred by a busy checkout says so and retries", async ({
+	page,
+}) => {
+	const upgrades: Record<string, unknown>[] = [];
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		server_version_check: autoUpdateFailure(
+			"another git operation is running in the checkout (/src/aviary/.git/index.lock)",
+			"git-busy",
+		),
+		server_upgrade: pulled(upgrades),
+	});
+	await page.goto("/system/overview");
+
+	const notice = page.locator('[data-testid="auto-update-error"]:visible');
+	await expect(notice).toContainText(
+		"Update deferred: another git operation is running, retrying.",
+	);
+	await expect(notice).not.toContainText("Auto update failed");
+	await notice.getByRole("button", { name: "Retry" }).click();
+	await expect
+		.poll(() => upgrades)
+		.toEqual([
+			{ version: "abc1234bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", when: "now" },
+		]);
+});
+
+test("auto update blocked by a stale index.lock offers to remove it", async ({
+	page,
+}) => {
+	const upgrades: Record<string, unknown>[] = [];
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		server_version_check: autoUpdateFailure(
+			"a stale git lock (/src/aviary/.git/index.lock, 42m0s old) is blocking updates",
+			"git-stale-lock",
+		),
+		server_upgrade: pulled(upgrades),
+	});
+	await page.goto("/system/overview");
+
+	const notice = page.locator('[data-testid="auto-update-error"]:visible');
+	await expect(notice).toContainText(
+		"Update blocked: a stale git lock (/src/aviary/.git/index.lock, 42m0s old) is blocking updates.",
+	);
+	await notice
+		.getByRole("button", { name: "Remove stale lock and update" })
+		.click();
+	await expect
+		.poll(() => upgrades)
+		.toEqual([
+			{
+				version: "abc1234bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				when: "now",
+				remove_stale_lock: true,
+			},
+		]);
+});
+
 test("the gear menu's Restart safely restarts and reports progress", async ({
 	page,
 }) => {
