@@ -112,8 +112,8 @@ func profileKey(profile string) string {
 	if abs, err := filepath.Abs(profile); err == nil {
 		profile = abs
 	}
-	if real, err := filepath.EvalSymlinks(profile); err == nil {
-		profile = real
+	if resolved, err := filepath.EvalSymlinks(profile); err == nil {
+		profile = resolved
 	}
 	return filepath.Clean(profile)
 }
