@@ -66,12 +66,12 @@ const props = defineProps<{
 	testid: string;
 }>();
 
-// Long names truncate with an ellipsis, middle crumbs first (#997): they
-// shrink a thousand times faster and keep only a sliver, while the first
-// and current crumbs keep room for a few characters.
+// Long names truncate with an ellipsis, middle crumbs first (#997): only
+// they shrink, down to a sliver, while the first and current crumbs keep
+// their width up to a share of the row and truncate past it.
 function crumbClass(i: number): string {
-	if (i === props.crumbs.length - 1) return "min-w-[3rem] shrink";
-	if (i === 0) return "min-w-[2rem] max-w-max shrink";
-	return "min-w-[2.75rem] max-w-max shrink-[1000]";
+	if (i === props.crumbs.length - 1) return "max-w-[40%] shrink-0";
+	if (i === 0) return "max-w-[30%] shrink-0";
+	return "min-w-[2.75rem] shrink";
 }
 </script>
