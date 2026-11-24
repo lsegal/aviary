@@ -360,6 +360,27 @@ func TestHTTPHandler_GetRequest(t *testing.T) {
 	// Any response is fine; just checking no panic
 }
 
+func TestHTTPHandler_InitializeUnderHostname(t *testing.T) {
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	SetDeps(&Deps{Agents: agent.NewManager(nil)})
+
+	// httptest listens on loopback, so this is the web UI opened by hostname.
+	ts := httptest.NewServer(HTTPHandler(NewServer()))
+	defer ts.Close()
+
+	payload := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"aviary-web","version":"0.1.0"}}}`
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/mcp", strings.NewReader(payload))
+	require.NoError(t, err)
+	req.Host = "mymac.local:16677"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
 // ── session_stop without session or agent ────────────────────────────────────
 
 func TestSessionStop_NeitherSessionNorAgent(t *testing.T) {
