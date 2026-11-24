@@ -867,8 +867,8 @@ func (m watchModel) chatPaneHeight() int {
 	if m.chat.full {
 		return avail
 	}
-	// Leave the header, stats, filters, one board line and the footer.
-	avail = max(0, m.height-5)
+	// Leave the header, filters, one board line and the footer.
+	avail = max(0, m.height-4)
 	return min(avail, max(min(6, avail), avail*m.chat.pct/100))
 }
 

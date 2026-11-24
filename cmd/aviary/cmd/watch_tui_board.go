@@ -20,9 +20,6 @@ var watchStateColors = map[string]lipgloss.AdaptiveColor{
 	watchFailed:    tuiBad,
 }
 
-// watchMergedColor is the merged count's color, purple as on the web board.
-var watchMergedColor = lipgloss.AdaptiveColor{Light: "#7e22ce", Dark: "#c084fc"}
-
 var watchStateLabels = map[string]string{
 	watchScheduled: "Scheduled",
 	watchStarting:  "Starting",
@@ -101,7 +98,7 @@ func (m watchModel) View() string {
 		lines := append([]string{m.headerLine()}, m.chatPane(m.chatPaneHeight())...)
 		return strings.Join(watchFitLines(append(lines, m.footerLine()), m.height), "\n")
 	}
-	top := []string{m.headerLine(), m.statsLine(), m.filterLine()}
+	top := []string{m.headerLine(), m.filterLine()}
 	bottom := []string{}
 	if h := m.chatPaneHeight(); h > 0 {
 		bottom = append(bottom, m.chatPane(h)...)
@@ -127,41 +124,30 @@ func (m watchModel) View() string {
 	return strings.Join(watchFitLines(append(append(top, body...), bottom...), m.height), "\n")
 }
 
-// headerLine names the watch and its targets, with the web UI's URL on the
-// right when it is on.
+// headerLine names the watch and its targets, then how issues arrive, with
+// the web UI's URL on the right when it is on. The delivery text and then
+// the URL drop when the line runs out of room.
 func (m watchModel) headerLine() string {
 	left := tuiTitleStyle.Render("aviary watch")
 	if m.title != "" {
 		left += " " + tuiDimStyle.Render("·") + " " + m.title
 	}
-	if m.webURL == "" {
-		return watchTruncate(left, m.width)
+	withDelivery := left
+	if delivery := m.deliveryText(); m.hasStatus && delivery != "" {
+		withDelivery += tuiDimStyle.Render(" · " + delivery)
 	}
-	right := tuiSectionStyle.Render(m.webURL)
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 2 {
-		return watchTruncate(left+"  "+right, m.width)
+	if m.webURL != "" {
+		right := tuiSectionStyle.Render(m.webURL)
+		for _, l := range []string{withDelivery, left} {
+			if gap := m.width - lipgloss.Width(l) - lipgloss.Width(right); gap >= 2 {
+				return l + strings.Repeat(" ", gap) + right
+			}
+		}
 	}
-	return left + strings.Repeat(" ", gap) + right
-}
-
-// statsLine is the web board's compact stat row: busy slots, each board
-// state's count, and pull requests merged in the last day, then delivery and
-// the last check.
-func (m watchModel) statsLine() string {
-	if !m.hasStatus {
-		return tuiDimStyle.Render("waiting for status...")
+	if lipgloss.Width(withDelivery) <= m.width {
+		return withDelivery
 	}
-	s := m.status
-	parts := []string{tuiLabelStyle.Render(fmt.Sprintf("%d/%d", s.Jobs.Running, s.Concurrency)) + " slots"}
-	for _, state := range watchBoardStates {
-		parts = append(parts, watchStateStyle(state).Render(fmt.Sprintf("%d %s", s.States[state], strings.ToLower(watchStateLabels[state]))))
-	}
-	parts = append(parts, lipgloss.NewStyle().Foreground(watchMergedColor).Render(fmt.Sprintf("%d merged 24h", s.Jobs.Merged24h)))
-	if delivery := m.deliveryText(); delivery != "" {
-		parts = append(parts, tuiDimStyle.Render(delivery))
-	}
-	return watchTruncate(strings.Join(parts, tuiDimStyle.Render(" · ")), m.width)
+	return watchTruncate(left, m.width)
 }
 
 // deliveryText says how issues arrive and when they were last checked.
@@ -183,28 +169,94 @@ func (m watchModel) deliveryText() string {
 	return text
 }
 
-// filterLine lists the filters with their keys and counts, the selected one
-// highlighted, and the view mode.
+// watchShortLabels are the filter labels on narrower terminals.
+var watchShortLabels = map[string]string{
+	"":             "All",
+	watchScheduled: "Sched",
+	watchStarting:  "Start",
+	watchPaused:    "Pause",
+	watchRunning:   "Run",
+	watchDone:      "Done",
+	watchFailed:    "Fail",
+}
+
+// filterLine is the header's one row of board state: each filter's key,
+// label and count, colored by state with the selected one highlighted, the
+// view mode, and the busy slots and pull requests merged in the last day on
+// the right. It never wraps: as the terminal narrows, the gaps close, the
+// right side shrinks and then drops, and the labels shorten and then drop to
+// key:count.
 func (m watchModel) filterLine() string {
-	parts := []string{m.filterChip("0", "", "All", len(m.items))}
-	for i, state := range watchFilters {
+	counts := []int{len(m.items)}
+	for _, state := range watchFilters {
 		n := 0
 		for _, it := range m.items {
 			if it.inFilter(state) {
 				n++
 			}
 		}
-		parts = append(parts, m.filterChip(fmt.Sprint(i+1), state, watchStateLabels[state], n))
+		counts = append(counts, n)
 	}
 	mode := "list"
 	if m.board {
 		mode = "board"
 	}
-	return watchTruncate(strings.Join(parts, " ")+"  "+tuiDimStyle.Render("["+mode+"]"), m.width)
+	var rights []string
+	if !m.hasStatus {
+		rights = []string{"waiting for status...", ""}
+	} else {
+		s := m.status
+		slots := fmt.Sprintf("%d/%d", s.Jobs.Running, s.Concurrency)
+		rights = []string{
+			fmt.Sprintf("%s slots · %d merged 24h", slots, s.Jobs.Merged24h),
+			fmt.Sprintf("%s · %d merged", slots, s.Jobs.Merged24h),
+			slots,
+			"",
+		}
+	}
+	var line string
+	for tier := range 3 {
+		chips := make([]string, 0, len(counts)+1)
+		for i, n := range counts {
+			state := ""
+			if i > 0 {
+				state = watchFilters[i-1]
+			}
+			chips = append(chips, m.filterChip(i, state, n, tier))
+		}
+		chips = append(chips, tuiDimStyle.Render("["+mode+"]"))
+		for _, right := range rights {
+			for _, gap := range []string{"  ", " "} {
+				line = strings.Join(chips, gap)
+				pad := m.width - lipgloss.Width(line) - lipgloss.Width(right)
+				if right == "" && pad >= 0 {
+					return line
+				}
+				if right != "" && pad >= 2 {
+					return line + strings.Repeat(" ", pad) + tuiDimStyle.Render(right)
+				}
+			}
+		}
+	}
+	return watchTruncate(line, m.width)
 }
 
-func (m watchModel) filterChip(key, state, label string, n int) string {
-	text := fmt.Sprintf("%s %s %d", key, label, n)
+// filterChip is a filter's key, label and count: the full label at tier 0,
+// the short one at tier 1, and key:count alone at tier 2.
+func (m watchModel) filterChip(key int, state string, n, tier int) string {
+	var text string
+	switch tier {
+	case 0:
+		label := "All"
+		if state != "" {
+			label = watchStateLabels[state]
+		}
+		text = fmt.Sprintf("%d %s %d", key, label, n)
+	case 1:
+		text = fmt.Sprintf("%d %s %d", key, watchShortLabels[state], n)
+	default:
+		text = fmt.Sprintf("%d:%d", key, n)
+	}
 	if m.filter == state {
 		style := lipgloss.NewStyle().Bold(true).Reverse(true)
 		if state != "" {
@@ -213,9 +265,9 @@ func (m watchModel) filterChip(key, state, label string, n int) string {
 		return style.Render(" " + text + " ")
 	}
 	if state == "" {
-		return " " + text + " "
+		return text
 	}
-	return " " + watchStateStyle(state).Render(text) + " "
+	return watchStateStyle(state).Render(text)
 }
 
 // listView is one row per item under the filter, scrolled to the cursor.
@@ -347,7 +399,8 @@ func (m watchModel) itemDetail(it watchItem) string {
 }
 
 // boardView lays the columns side by side, each a header and two-line cards,
-// scrolled to its cursor in the selected column.
+// scrolled to its cursor in the selected column. The headers name the
+// states without counts, which the filter row already shows.
 func (m watchModel) boardView(height int) []string {
 	cols := m.columns()
 	gap := 1
@@ -360,7 +413,7 @@ func (m watchModel) boardView(height int) []string {
 		if c == m.col {
 			style = style.Underline(true)
 		}
-		lines := []string{style.Render(fmt.Sprintf("%s %d", watchStateLabels[col.state], len(col.items)))}
+		lines := []string{style.Render(watchStateLabels[col.state])}
 		cursor := -1
 		if c == m.col {
 			cursor = m.cursor
@@ -423,10 +476,10 @@ func (m watchModel) boardCard(it watchItem, selected bool, width int) []string {
 const watchMinPane = 3
 
 // paneRoom is the height left for the output and log panes: the screen
-// below the header, stats and filters, less the footer, the chat pane and
-// one board line.
+// below the header and filters, less the footer, the chat pane and one
+// board line.
 func (m watchModel) paneRoom() int {
-	return max(0, m.height-5-m.chatPaneHeight())
+	return max(0, m.height-4-m.chatPaneHeight())
 }
 
 // outputPaneHeight is the output pane's height while it is open: a third of
