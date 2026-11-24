@@ -156,10 +156,7 @@ function stop(signal) {
 	clearInterval(poll);
 	void stopVite(signal);
 	if (backend.exitCode === null && backend.signalCode === null) {
-		// SIGINT whatever the signal: forgo passes SIGINT on to the watch
-		// session but exits on SIGTERM, leaving the session running with
-		// its temporary directory. Both end a watch session the same way.
-		backend.kill("SIGINT");
+		backend.kill(signal);
 	}
 }
 

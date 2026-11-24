@@ -218,11 +218,7 @@ func runStart(_ *cobra.Command, _ []string) error {
 	defer server.RemovePID() //nolint:errcheck
 
 	// Print startup banner.
-	port := cfg.Server.Port
-	if port == 0 {
-		port = 16677
-	}
-	_, _ = fmt.Fprintf(os.Stdout, "Aviary %s started on https://localhost:%d\n", buildinfo.Version, port)
+	_, _ = fmt.Fprintf(os.Stdout, "Aviary %s started on %s\n", buildinfo.Version, config.ServerURL(cfg.Server))
 	if isNew {
 		_, _ = fmt.Fprintf(os.Stdout, "Your access token: %s\n", tok)
 		_, _ = fmt.Fprintf(os.Stdout, "Save this token — you'll need it to access the web panel.\n")

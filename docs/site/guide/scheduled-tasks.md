@@ -239,7 +239,7 @@ Clicking the task in the sidebar opens its page, a dashboard for that one task:
 
 ### Workflows
 
-A task with `trigger: message` is a workflow: it runs when a matching message arrives on one of the agent's channels instead of on a schedule, and replaces the agent's own reply to that message. Workflows are managed from their channel's settings and stay out of the Scheduled Tasks list. See [Workflows](./channels.md#workflows).
+A task with `trigger: message` is a workflow: it runs when a matching message arrives on one of the agent's channels instead of on a schedule, and replaces the agent's own reply to that message. Workflows are managed from their channel's settings and stay out of the Scheduled Tasks list. See [Workflows](./workflows.md).
 
 ## Output Delivery
 
@@ -253,7 +253,7 @@ tasks:
     target: channel:Weather Alerts
 ```
 
-A run's final message is delivered verbatim, so a run that has nothing to report calls the `task_no_reply` tool with a short reason instead of saying so; it then delivers nothing, and its run log and run history show **Skipped reply** with the reason. See [Not replying](./channels.md#not-replying).
+A run's final message is delivered verbatim, so a run that has nothing to report calls the `task_no_reply` tool with a short reason instead of saying so; it then delivers nothing, and its run log and run history show **Skipped reply** with the reason. See [Not replying](./workflows.md#not-replying).
 
 A channel target picks one of the agent's channels by name: `channel:<name>`. The output lands in that channel's own session, under the agent's **Channels** sidebar section, and is sent on to the channel's `deliver_to` conversation. See [Delivery Targets](/guide/channels#delivery-targets).
 
@@ -429,7 +429,7 @@ The Lua runtime exposes:
 - `print(...)` — emit output; joined lines are delivered to `target` when the run completes
 - `tool.task_no_reply({reason = "..."})` — end the run without delivering anything, recording the reason in the run log
 - `environment.agent_id`, `.session_id`, `.task_id`, `.job_id` — runtime context
-- `trigger` — in a [workflow](./channels.md#workflows) run, the message that triggered it: `trigger.message` (`text`, `sender`, `from_agent`, `timestamp`, `attachments`), `trigger.before` (the messages just before it), and `trigger.channel`, `.channel_type` and `.entry`; `nil` in other runs
+- `trigger` — in a [workflow](./workflows.md) run, the message that triggered it: `trigger.message` (`text`, `sender`, `from_agent`, `timestamp`, `attachments`), `trigger.before` (the messages just before it), and `trigger.channel`, `.channel_type` and `.entry`; `nil` in other runs
 
 File I/O, `os.execute`, `loadfile`, and `dofile` are disabled. Scripts run fully sandboxed with access only to the tools explicitly granted to their agent.
 

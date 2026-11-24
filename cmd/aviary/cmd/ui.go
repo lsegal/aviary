@@ -25,7 +25,7 @@ With a project argument (for example owner/repo), open that project's board.`,
 		if len(args) == 1 {
 			project = args[0]
 		}
-		target := projectsURL(serverURL, project)
+		target := projectsURL(resolvedServerURL(), project)
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), target)
 		if err := openURL(target); err != nil {
 			return fmt.Errorf("opening browser: %w", err)

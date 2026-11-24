@@ -8,6 +8,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/buildinfo"
+	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/logging"
 	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/server"
@@ -65,7 +66,7 @@ Version: {{.Version}}
 {{if or .Runnable .HasSubCommands}}{{.UsageString}}{{end}}`)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/aviary/aviary.yaml)")
 	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "", "data directory (default: ~/.config/aviary)")
-	rootCmd.PersistentFlags().StringVar(&serverURL, "server", "https://localhost:16677", "Aviary server URL")
+	rootCmd.PersistentFlags().StringVar(&serverURL, "server", "", "Aviary server URL (default: the local server's URL from config, https://localhost:16677)")
 	rootCmd.PersistentFlags().StringVar(&token, "token", "", "authentication token (overrides stored token)")
 	rootCmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
 		return update.ConfigureEmulation(os.Getenv("AVIARY_EMULATE_VERSIONS"))
@@ -76,6 +77,19 @@ Version: {{.Version}}
 		if dataDir != "" {
 			store.SetDataDir(dataDir)
 		}
-		dispatcher = mcp.NewDispatcher(serverURL, token)
+		dispatcher = mcp.NewDispatcher(resolvedServerURL(), token)
 	})
+}
+
+// resolvedServerURL returns the --server URL, or else the local server's URL
+// from config, so the CLI uses the scheme and port the server serves.
+func resolvedServerURL() string {
+	if serverURL != "" {
+		return serverURL
+	}
+	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		return config.ServerURL(config.ServerConfig{})
+	}
+	return config.ServerURL(cfg.Server)
 }
