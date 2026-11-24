@@ -15,6 +15,8 @@ A job is named by its issue `number`. `target` is needed only when several proje
 | `project_job_resume` | `aviary project job resume` | |
 | `project_job_stop` | `aviary project job stop` | destructive |
 | `project_job_dismiss` | `aviary project job dismiss` | |
+| `project_job_queue` | `aviary project job queue` | |
+| `project_queue_candidates` | `aviary project queue candidates` | read-only |
 | `project_refresh` | `aviary project refresh` | |
 | `project_add` | `aviary project add` | |
 | `project_remove` | `aviary project remove` | destructive |
@@ -71,6 +73,20 @@ Why a job is paused, blocked, waiting, queued, or looks stuck, what will wake it
 Retry requeues a job so `gh-fix` reruns it with its saved session. On a paused job it clears the pause first. Pause holds an active, waiting or queued job: a running agent is stopped and its work pushed. Resume clears a pause and requeues the job. Stop stops a job's agent and waits for it to exit, or clears a paused job and releases its claim. Dismiss takes a schedule's failed runs off the `failed` state; its entry still reports the failure as its `last_run` until the next run. Each refuses what the job's status does not allow.
 
 **Arguments:** `number`, `target`.
+
+Merge and discuss jobs, which `project_job_queue` creates, accept the same actions: Pause holds the job in its place in the queue, stopping a running agent; Resume puts it back in its place; Stop takes a waiting job off the queue or stops a running one; Retry queues a finished job again at the end.
+
+## project_job_queue
+
+Queue jobs on demand. `skill: gh-safe-merge` queues pull requests for a safe merge as `merge` jobs, and `skill: gh-discuss` queues Discussion threads for an answer as `discuss` jobs. Each job is a board card with logs, a transcript, and pause, resume, stop and retry. Queued merges run one at a time per repository, in the order given, so each one rebases and rechecks on the latest default branch. Every job still waits for a free agent slot. Queued jobs are saved and survive a restart. A number that a job already owns isn't queued again: its result names the owning job in `owned_by`. While `no_merge` is set, safe merge is refused. `skill: gh-fix` retries an issue's finished job, or checks GitHub now so that a matching issue is dispatched.
+
+**Arguments:** `skill`, `numbers`, `target`, `repository`, `titles`.
+
+## project_queue_candidates
+
+List what a project can queue: open pull requests for `gh-safe-merge`, with CI status, review decision, mergeability, author and the job that owns each, or open Discussion threads for `gh-discuss`. The result's `no_merge` says whether safe merge is turned off.
+
+**Arguments:** `skill`, `target`, `repository`.
 
 ## project_refresh
 

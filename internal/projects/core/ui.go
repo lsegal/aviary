@@ -197,6 +197,12 @@ func (j JobSnapshot) IssueURL() string {
 	if repository == "" || j.Number <= 0 || j.Kind == JobKindSchedule {
 		return ""
 	}
+	switch j.Kind {
+	case JobKindMerge:
+		return fmt.Sprintf("https://github.com/%s/pull/%d", repository, j.Number)
+	case JobKindDiscuss:
+		return fmt.Sprintf("https://github.com/%s/discussions/%d", repository, j.Number)
+	}
 	return fmt.Sprintf("https://github.com/%s/issues/%d", repository, j.Number)
 }
 
