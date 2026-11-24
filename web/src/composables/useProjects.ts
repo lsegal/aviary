@@ -57,21 +57,26 @@ function usePoll(fn: () => Promise<void>, interval: number) {
 	return { refresh: fn };
 }
 
-/** The watched projects and their live counts, for the sidebar. */
-export function useProjectList(interval = 10_000) {
+/**
+ * The watched projects and their live counts, for the sidebar. With
+ * withSchedules it also counts each project's scheduled tasks.
+ */
+export function useProjectList(interval = 10_000, withSchedules = false) {
 	const { callTool } = useMCP();
 	const projects = ref<ProjectSummary[]>([]);
 	const available = ref(false);
 
 	const { refresh } = usePoll(async () => {
 		try {
-			const [statusText, listText] = await Promise.all([
+			const [statusText, listText, taskText] = await Promise.all([
 				callTool("project_status", {}),
 				callTool("project_job_list", { limit: ALL_JOBS_LIMIT }),
+				withSchedules ? callTool("task_list", {}) : Promise.resolve(""),
 			]);
 			projects.value = summarizeProjects(
 				normalizeStatus(parseToolJSON(statusText)),
 				normalizeJobList(parseToolJSON(listText)).jobs,
+				withSchedules ? parseToolJSON(taskText) : undefined,
 			);
 			available.value = true;
 		} catch {
