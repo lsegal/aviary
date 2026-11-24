@@ -192,6 +192,10 @@ async function setup(
 	opts: {
 		upcoming?: unknown[];
 		owner?: string;
+		/** The owner's projects; lsegal/aviary alone by default. */
+		projects?: string[];
+		/** Each project's board state counts, which project_status sums. */
+		states?: Record<string, Record<string, number>>;
 		tasks?: unknown[];
 		/** The board's jobs; its schedules' entries are entries. */
 		jobs?: unknown[];
@@ -224,7 +228,9 @@ async function setup(
 							{
 								name: opts.owner,
 								model: "cli/codex/gpt-5.5",
-								projects: [{ target: "lsegal/aviary" }],
+								projects: (opts.projects ?? ["lsegal/aviary"]).map(
+									(target) => ({ target }),
+								),
 							},
 						]
 					: []),
@@ -250,19 +256,35 @@ async function setup(
 						);
 			return "ok";
 		},
-		project_status: STATUS,
-		// A project's board reads its jobs and its schedules' entries apart.
+		// The counts are the named projects' sums, as boardStateCounts does.
+		project_status: (args?: Args) => {
+			if (!opts.states) return STATUS;
+			const states: Record<string, number> = {};
+			for (const [target, counts] of Object.entries(opts.states)) {
+				const targets = args?.targets as string[] | undefined;
+				if (targets?.length && !targets.includes(target)) continue;
+				for (const [state, n] of Object.entries(counts))
+					states[state] = (states[state] ?? 0) + n;
+			}
+			return { ...STATUS, targets: opts.projects ?? STATUS.targets, states };
+		},
+		// A project's board reads its jobs and its schedules' entries apart,
+		// each limited to its projects and the kinds it names.
 		project_job_list: (args?: Args) => {
 			record("project_job_list")(args);
 			const kinds = args?.kinds as string[] | undefined;
 			const states = args?.states as string[] | undefined;
-			const list = kinds?.includes("schedule")
-				? (opts.entries ?? [SCHEDULED_ENTRY])
-				: (opts.jobs ?? []).filter(
-						(j) =>
-							!states ||
-							states.includes(String((j as Args).state ?? "running")),
-					);
+			const targets = args?.targets as string[] | undefined;
+			const list = (
+				kinds?.includes("schedule")
+					? (opts.entries ?? [SCHEDULED_ENTRY])
+					: (opts.jobs ?? []).filter(
+							(j) =>
+								(!states ||
+									states.includes(String((j as Args).state ?? "running"))) &&
+								(!kinds || kinds.includes(String((j as Args).kind))),
+						)
+			).filter((j) => !targets || targets.includes(String((j as Args).target)));
 			return { jobs: list, total: list.length };
 		},
 		project_job_dismiss: record("project_job_dismiss"),
@@ -320,60 +342,6 @@ async function setup(
 	});
 	return calls;
 }
-
-test("an agent board shows a scheduled run as a job card while it runs", async ({
-	page,
-}) => {
-	const calls = await setup(page, {
-		owner: "coder",
-		jobs: [{ ...SCHEDULED_JOB, state: "running" }],
-	});
-	await page.goto("/agents/coder/projects");
-
-	const card = page.getByTestId("job-card");
-	await expect(card).toHaveCount(1);
-	await expect(card.getByTestId("job-scheduled")).toHaveText("Scheduled");
-	await expect(card.getByRole("heading")).toHaveText("nightly-triage");
-	// The label names the task as its title does, unbroken (#958).
-	const scheduleTask = card.getByTestId("job-schedule-task");
-	await expect(scheduleTask).toHaveText("nightly-triage");
-	await expect(scheduleTask).toHaveAttribute(
-		"title",
-		"assistant/nightly-triage",
-	);
-	await expect(scheduleTask).toHaveCSS("white-space", "nowrap");
-	// The time sits in the header and the agent label in the footer (#756).
-	const cardBox = await card.boundingBox();
-	const headingBox = await card.getByRole("heading").boundingBox();
-	const timeBox = await card.getByTestId("job-time").boundingBox();
-	const agentBox = await card.getByTestId("job-agent").boundingBox();
-	expect(timeBox!.y + timeBox!.height).toBeLessThanOrEqual(headingBox!.y);
-	expect(agentBox!.y).toBeGreaterThan(headingBox!.y + headingBox!.height);
-	for (const box of [timeBox!, agentBox!]) {
-		expect(cardBox!.x + cardBox!.width - (box.x + box.width)).toBeLessThan(20);
-	}
-	// A scheduled run has no issue: no issue link and no "no PR yet".
-	await expect(card.getByRole("link", { name: `#${FIRE}` })).toHaveCount(0);
-	await expect(card).not.toContainText("no PR yet");
-	await expect(card.getByRole("button", { name: "Retry" })).toBeDisabled();
-	await card.getByRole("button", { name: "Stop" }).click();
-	await expect
-		.poll(() => calls.project_job_stop?.[0])
-		.toEqual({ target: "lsegal/aviary", number: FIRE });
-	// An agent board lists jobs in their job states, so a schedule between
-	// runs, which is in none, never shows as a job card (#977).
-	// The board's own read; the sidebar's and the nav row's counts poll too,
-	// so wait for it rather than reading whichever call came last (#1089).
-	const boardReads = () =>
-		(calls.project_job_list ?? []).filter(
-			(c) =>
-				Array.isArray(c?.targets) &&
-				!(c?.kinds as string[] | undefined)?.includes("schedule"),
-		);
-	await expect
-		.poll(() => boardReads().at(-1)?.states)
-		.toEqual(["starting", "paused", "running", "done", "failed"]);
-});
 
 test("a project board shows the up next strip", async ({ page }) => {
 	const calls = await setup(page);
@@ -1234,6 +1202,278 @@ const chip = (page: Page, label: string) =>
 		.getByRole("group", { name: "Job filter" })
 		.getByRole("button", { name: new RegExp(`^${label}`) });
 
+// A second project's schedule, between runs, and its failed issue's job,
+// for the agent board of both projects (#1107).
+const ZVID_TASK = schedule({
+	id: "assistant/zvid-bench",
+	name: "zvid-bench",
+	project: "lsegal/zvidlib",
+	prompt: "Run the decoder benchmarks and report regressions.",
+	enabled: true,
+	trigger_type: "interval",
+	every: "1h",
+	description: "every 1h (Local)",
+	next_run: minutesFromNow(30),
+});
+const ZVID_RUN = {
+	key: "lsegal/zvidlib#1795456000",
+	number: 1795456000,
+	status: "complete",
+	state: "done",
+	result: "succeeded",
+	summary: "Benchmarks within noise",
+	started: minutesFromNow(-31),
+	finished: minutesFromNow(-30),
+	duration_ms: 60_000,
+};
+const ZVID_ENTRY = {
+	key: ZVID_RUN.key,
+	target: "lsegal/zvidlib",
+	number: ZVID_RUN.number,
+	title: "zvid-bench",
+	status: "complete",
+	state: "scheduled",
+	kind: "schedule",
+	schedule_id: "assistant/zvid-bench",
+	agent: "claude",
+	repository: "lsegal/zvidlib",
+	actions: { retry: true, pause: false, resume: false, stop: false },
+	started: ZVID_RUN.started,
+	last_run: ZVID_RUN,
+	next_run: { at: minutesFromNow(30), paused: false, queued: false },
+	recent_runs: [ZVID_RUN],
+};
+const ZVID_ISSUE_JOB = {
+	...ISSUE_JOB,
+	key: "lsegal/zvidlib#12",
+	target: "lsegal/zvidlib",
+	repository: "lsegal/zvidlib",
+	number: 12,
+	title: "Decode B-frames",
+	status: "failed",
+	state: "failed",
+};
+// The board counts as boardStateCounts reports them: the running nightly
+// schedule counts once as Running, and its finished runs never as Done.
+const AGENT_BOARD = {
+	owner: "coder",
+	projects: ["lsegal/aviary", "lsegal/zvidlib"],
+	tasks: [TASKS[0], TASKS[1], ZVID_TASK, TASKS[3]],
+	entries: [SCHEDULED_ENTRY, ZVID_ENTRY],
+	jobs: [ISSUE_JOB, ZVID_ISSUE_JOB],
+	states: {
+		"lsegal/aviary": { starting: 0, paused: 0, running: 2, done: 3, failed: 0 },
+		"lsegal/zvidlib": {
+			starting: 1,
+			paused: 0,
+			running: 0,
+			done: 1,
+			failed: 1,
+		},
+	},
+};
+
+test.describe("the agent board's scheduled items (#1107)", () => {
+	test("shows every project's schedules as one card each, with its project", async ({
+		page,
+	}) => {
+		const calls = await setup(page, AGENT_BOARD);
+		await page.goto("/agents/coder/projects");
+
+		const cards = page.getByTestId("scheduled-card");
+		await expect(cards).toHaveCount(3);
+		await expect(cards.getByRole("heading")).toHaveText([
+			"nightly-triage",
+			"weekly-deps",
+			"zvid-bench",
+		]);
+		await expect(cards.getByTestId("scheduled-project")).toHaveText([
+			"lsegal/aviary",
+			"lsegal/aviary",
+			"lsegal/zvidlib",
+		]);
+		const nightly = cards.nth(0);
+		const weekly = cards.nth(1);
+		const zvid = cards.nth(2);
+		await expect(zvid.getByTestId("scheduled-project")).toHaveAttribute(
+			"href",
+			"/agents/coder/projects/lsegal%2Fzvidlib",
+		);
+		// A run shows in place on its card; no job card copies it.
+		await expect(nightly.getByTestId("scheduled-state")).toHaveText("Running");
+		await expect(nightly.getByTestId("scheduled-running")).toBeVisible();
+		await expect(nightly.getByTestId("scheduled-next")).toContainText(
+			/in 4[12]m/,
+		);
+		await expect(weekly.getByTestId("scheduled-next")).toHaveText(
+			"Next run: paused",
+		);
+		await expect(weekly.getByTestId("paused-chip")).toBeVisible();
+		await expect(zvid.getByTestId("scheduled-state")).toHaveText("Scheduled");
+		await expect(zvid.getByTestId("scheduled-next")).toContainText(
+			/in (29|30)m/,
+		);
+		await expect(zvid.getByTestId("scheduled-last-result")).toHaveText("✓");
+		await expect(zvid.getByTestId("scheduled-last-summary")).toHaveText(
+			"Benchmarks within noise",
+		);
+		const jobs = page.getByTestId("job-card");
+		await expect(jobs).toHaveCount(2);
+		await expect(jobs.getByRole("heading")).toHaveText([
+			/Fix the parser/,
+			/Decode B-frames/,
+		]);
+		// The board reads its projects' jobs apart from their schedules'
+		// entries, as a project board does.
+		expect(calls.project_job_list).toContainEqual(
+			expect.objectContaining({
+				targets: ["lsegal/aviary", "lsegal/zvidlib"],
+				kinds: ["issue", "discussion"],
+			}),
+		);
+		expect(calls.project_job_list).toContainEqual(
+			expect.objectContaining({
+				targets: ["lsegal/aviary", "lsegal/zvidlib"],
+				kinds: ["schedule"],
+			}),
+		);
+		// No Schedule button: a new schedule needs a project, so it is made
+		// from a project's board.
+		await expect(page.getByTestId("schedule-new")).toHaveCount(0);
+
+		// The kanban's Scheduled column names each card's project too.
+		await page.getByTestId("kanban-toggle").click();
+		const boxes = page.getByTestId("kanban-scheduled-card");
+		await expect(boxes).toHaveCount(3);
+		await expect(boxes.getByTestId("kanban-scheduled-project")).toHaveText([
+			"lsegal/aviary",
+			"lsegal/aviary",
+			"lsegal/zvidlib",
+		]);
+		await page.getByTestId("kanban-toggle").click();
+
+		// A card's pencil opens its editor on its own project's board.
+		const edit = zvid.getByRole("link", { name: "Edit schedule" });
+		await expect(edit).toHaveAttribute(
+			"href",
+			/^\/agents\/coder\/projects\/lsegal%2Fzvidlib\?scheduled=assistant(%2F|\/)zvid-bench$/,
+		);
+		await edit.click();
+		await expect(page).toHaveURL(
+			/\/agents\/coder\/projects\/lsegal%2Fzvidlib\?scheduled=assistant(%2F|\/)zvid-bench/,
+		);
+		await expect(page.getByTestId("schedule-editor")).toBeVisible();
+	});
+
+	test("the Scheduled chip filters schedules with the other chips and persists", async ({
+		page,
+	}) => {
+		await setup(page, AGENT_BOARD);
+		await page.goto("/agents/coder/projects");
+		const scheduled = page.getByTestId("scheduled-card");
+		const jobs = page.getByTestId("job-card");
+		const total = page.getByTestId("job-total");
+
+		// No chip shows everything.
+		await expect(chip(page, "Scheduled")).toHaveText(/^Scheduled\s*3$/);
+		await expect(scheduled).toHaveCount(3);
+		await expect(jobs).toHaveCount(2);
+		await expect(total).toHaveText("5 items");
+
+		// Scheduled alone shows only the schedules.
+		await chip(page, "Scheduled").click();
+		await expect(page).toHaveURL(/[?&]state=scheduled$/);
+		await expect(scheduled).toHaveCount(3);
+		await expect(jobs).toHaveCount(0);
+
+		// With Failed it shows the union.
+		await chip(page, "Failed").click();
+		await expect(page).toHaveURL(/[?&]state=scheduled(,|%2C)failed$/);
+		await expect(scheduled).toHaveCount(3);
+		await expect(jobs).toHaveCount(1);
+		await expect(jobs.getByRole("heading")).toContainText("Decode B-frames");
+		expect(
+			await page.evaluate(() =>
+				localStorage.getItem("aviary.projects.states.agent:coder"),
+			),
+		).toBe("scheduled,failed");
+
+		// A reload, and leaving the board and coming back, keep it.
+		await page.reload();
+		await expect(chip(page, "Scheduled")).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		await expect(chip(page, "Failed")).toHaveAttribute("aria-pressed", "true");
+		await expect(scheduled).toHaveCount(3);
+		await page.goto("/agents/coder/projects/lsegal%2Fzvidlib");
+		await expect(page.getByTestId("scheduled-card")).toHaveCount(1);
+		await page.goto("/agents/coder/projects");
+		await expect(page).toHaveURL(/[?&]state=scheduled(,|%2C)failed$/);
+		await expect(chip(page, "Scheduled")).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		await expect(scheduled).toHaveCount(3);
+		await expect(jobs).toHaveCount(1);
+
+		// Deselecting Scheduled while Failed stays selected hides them: no
+		// schedule's last run failed.
+		await chip(page, "Scheduled").click();
+		await expect(page).toHaveURL(/[?&]state=failed$/);
+		await expect(scheduled).toHaveCount(0);
+		await expect(jobs).toHaveCount(1);
+	});
+
+	test("its counts are the sums of the project boards' counts", async ({
+		page,
+	}) => {
+		await setup(page, AGENT_BOARD);
+		const labels = [
+			"Scheduled",
+			"Starting",
+			"Paused",
+			"Running",
+			"Done",
+			"Failed",
+		];
+		async function counts(path: string) {
+			await page.goto(path);
+			await expect(page.getByTestId("stat-card").first()).toBeVisible();
+			await expect(page.getByTestId("scheduled-card").first()).toBeVisible();
+			const out: Record<string, number> = {};
+			for (const label of labels) {
+				const text = (await chip(page, label).innerText()).trim();
+				out[`chip ${label}`] = Number(text.replace(/^\D+/, ""));
+			}
+			for (const card of await page.getByTestId("stat-card").all()) {
+				const label = await card.getByTestId("stat-label").innerText();
+				if (!labels.some((l) => l.toUpperCase() === label.toUpperCase()))
+					continue;
+				out[`stat ${label.toLowerCase()}`] = Number(
+					await card.getByTestId("stat-value").innerText(),
+				);
+			}
+			out.total = Number(
+				(await page.getByTestId("job-total").innerText()).replace(/\D+$/, ""),
+			);
+			return out;
+		}
+		const aviary = await counts("/agents/coder/projects/lsegal%2Faviary");
+		const zvid = await counts("/agents/coder/projects/lsegal%2Fzvidlib");
+		const root = await counts("/agents/coder/projects");
+		const sums = Object.fromEntries(
+			Object.keys(aviary).map((k) => [k, aviary[k] + zvid[k]]),
+		);
+		expect(root).toEqual(sums);
+		// Each schedule counts once under Scheduled, the running one counts
+		// as Running, and finished runs leave Done alone.
+		expect(root["chip Scheduled"]).toBe(3);
+		expect(root["chip Running"]).toBe(2);
+		expect(root["chip Done"]).toBe(4);
+	});
+});
+
 test("the Scheduled chip counts, filters and persists with the job state chips", async ({
 	page,
 }) => {
@@ -1368,7 +1608,7 @@ test("a mobile board folds the filter chips into a Filter button", async ({
 	await expect(chip(page, "Running")).toHaveAttribute("aria-pressed", "true");
 });
 
-test("a mobile agent board's Filter panel has no Scheduled option", async ({
+test("a mobile agent board's Filter panel has a Scheduled option (#1107)", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 375, height: 812 });
@@ -1377,8 +1617,8 @@ test("a mobile agent board's Filter panel has no Scheduled option", async ({
 	await page.getByTestId("filter-toggle").click();
 	const group = page.getByRole("group", { name: "Job filter" });
 	await expect(group.getByRole("button", { name: /^Running/ })).toBeVisible();
-	await expect(group.getByRole("button", { name: /^Scheduled/ })).toHaveCount(
-		0,
+	await expect(group.getByRole("button", { name: /^Scheduled/ })).toHaveText(
+		/^Scheduled\s*2$/,
 	);
 });
 
