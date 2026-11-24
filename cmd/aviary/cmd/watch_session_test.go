@@ -473,7 +473,9 @@ func (p *watchProcess) stop(t *testing.T, sig syscall.Signal) {
 		t.Errorf("session dir %s is still there after %v: %v", p.sessionDir, sig, err)
 	}
 	out := p.out.String()
-	if n := strings.Count(out, "Watch session ended."); n != 1 {
+	// A signal arriving while the session still connects ends it before
+	// it reports ending, so the line may be missing but never repeated.
+	if n := strings.Count(out, "Watch session ended."); n > 1 {
 		t.Errorf("the session reported ending %d times; output:\n%s", n, out)
 	}
 	if strings.Contains(out, "watch session directory") || strings.Contains(out, "Error:") {
