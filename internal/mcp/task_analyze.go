@@ -7,6 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -67,6 +71,10 @@ type taskAnalyzeArgs struct {
 	// scheduled task, or "message" for a workflow, whose runs also carry
 	// the triggering message and the messages before it.
 	Trigger string `json:"trigger,omitempty" schema:"enum=schedule|message"`
+	// CachedOnly returns the cached analysis, or a miss, without analyzing.
+	CachedOnly bool `json:"cached_only,omitempty"`
+	// Force re-analyzes even when a cached analysis exists, and replaces it.
+	Force bool `json:"force,omitempty"`
 }
 
 // taskRunEstimate is the estimated token use, and cost when the model's
@@ -102,6 +110,11 @@ type taskAnalysisResult struct {
 	// beside Estimate when the task will be precompiled.
 	WithoutPrecompile *taskRunEstimate `json:"without_precompile,omitempty"`
 	Cached            bool             `json:"cached,omitempty"`
+	// AnalyzedAt is when the analysis shown was run on the model.
+	AnalyzedAt *time.Time `json:"analyzed_at,omitempty"`
+	// Miss reports that a cached_only call found no cached analysis; the
+	// rest of the result is empty.
+	Miss bool `json:"miss,omitempty"`
 }
 
 // taskAnalyzerResult is the outcome of running the precompile gate's
@@ -167,61 +180,138 @@ func llmUsageFromContext(ctx context.Context) *llm.Usage {
 	return usage
 }
 
-// taskAnalysisCache keeps analyses by a hash of their input, so re-entering
-// text that was already analyzed is not sent to the model again, and cancels
-// an editor's in-flight analysis when it asks for another.
+// taskAnalysisCache keeps analyses by a hash of their input, persisted under
+// the data directory so reopening an unchanged editor, after a reload, a
+// server restart, or in another browser, shows its last analysis without
+// sending it to the model again. It also cancels an editor's in-flight
+// analysis when it asks for another.
 type taskAnalysisCache struct {
-	mu       sync.Mutex
-	entries  map[string]taskAnalysisCacheEntry
+	mu sync.Mutex
+	// path resolves where entries are persisted, empty to keep them in
+	// memory only. It is resolved on each use, so a data directory change
+	// switches to that directory's entries.
+	path     func() string
+	loaded   *string
+	entries  map[string]*taskAnalysisEntry
 	inflight map[string]*taskAnalysisRun
 }
 
 // taskAnalysisRun is an editor's in-flight analysis.
 type taskAnalysisRun struct{ cancel context.CancelFunc }
 
-type taskAnalysisCacheEntry struct {
-	result  *taskAnalyzerResult
-	expires time.Time
+// taskAnalysisEntry is a cached analysis: what the determinism gate found,
+// and what buildTaskAnalysisResult needs to turn it into a verdict and an
+// estimate. The estimate is rebuilt from it on every lookup, so the model
+// override, the precompile flag, and pricing changes apply to cached entries.
+type taskAnalysisEntry struct {
+	Analysis   *compileTaskAnalysis `json:"analysis"`
+	Model      string               `json:"model,omitempty"`
+	ToolTokens int                  `json:"tool_tokens"`
+	AnalyzedAt time.Time            `json:"analyzed_at"`
 }
 
 const (
-	taskAnalysisCacheTTL = 30 * time.Minute
-	taskAnalysisCacheMax = 256
+	// taskAnalysisCacheTTL bounds how long an analysis is trusted while the
+	// agent's tools or model can change underneath it.
+	taskAnalysisCacheTTL = 30 * 24 * time.Hour
+	taskAnalysisCacheMax = 512
 )
 
-var taskAnalyses = &taskAnalysisCache{
-	entries:  map[string]taskAnalysisCacheEntry{},
-	inflight: map[string]*taskAnalysisRun{},
-}
-
-func taskAnalysisKey(agentName, prompt, target string) string {
-	sum := sha256.Sum256([]byte(agentName + "\x00" + target + "\x00" + prompt))
-	return hex.EncodeToString(sum[:])
-}
-
-func (c *taskAnalysisCache) get(key string) (*taskAnalyzerResult, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	entry, ok := c.entries[key]
-	if !ok || time.Now().After(entry.expires) {
-		delete(c.entries, key)
-		return nil, false
+// newTaskAnalysisCache returns a cache persisted where path says.
+func newTaskAnalysisCache(path func() string) *taskAnalysisCache {
+	return &taskAnalysisCache{
+		path:     path,
+		entries:  map[string]*taskAnalysisEntry{},
+		inflight: map[string]*taskAnalysisRun{},
 	}
-	return entry.result, true
 }
 
-func (c *taskAnalysisCache) put(key string, result *taskAnalyzerResult) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.entries) >= taskAnalysisCacheMax {
-		now := time.Now()
-		for k, e := range c.entries {
-			if now.After(e.expires) || len(c.entries) >= taskAnalysisCacheMax {
-				delete(c.entries, k)
-			}
+var taskAnalyses = newTaskAnalysisCache(taskAnalysisCachePath)
+
+// taskAnalysisCachePath is where analyses are persisted.
+func taskAnalysisCachePath() string {
+	return filepath.Join(store.DataDir(), "task-analyses.json")
+}
+
+// taskAnalysisKey hashes every input the analysis depends on: the compiler
+// version, so a compiler change re-analyzes every task, and the agent,
+// target, task type, project, and trigger, which the analyzed prompt is
+// built from. The model override and the precompile flag only change how the
+// cached analysis is presented, which buildTaskAnalysisResult redoes on
+// every lookup.
+func taskAnalysisKey(agentName, prompt, target, taskType, project, trigger string) string {
+	sum := sha256.New()
+	for _, part := range []string{strconv.Itoa(taskCompilerVersion), agentName, target, taskType, project, trigger, prompt} {
+		sum.Write([]byte(part))
+		sum.Write([]byte{0})
+	}
+	return hex.EncodeToString(sum.Sum(nil))
+}
+
+// load reads the persisted entries, once per path, and returns the path.
+// The caller holds c.mu.
+func (c *taskAnalysisCache) load() string {
+	path := c.path()
+	if c.loaded != nil && *c.loaded == path {
+		return path
+	}
+	c.loaded = &path
+	c.entries = map[string]*taskAnalysisEntry{}
+	if path == "" {
+		return path
+	}
+	entries, err := store.ReadJSON[map[string]*taskAnalysisEntry](path)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("task_analyze: failed to read analysis cache", "component", "task_compile", "path", path, "err", err)
+		}
+		return path
+	}
+	for k, e := range entries {
+		if e != nil && e.Analysis != nil {
+			c.entries[k] = e
 		}
 	}
-	c.entries[key] = taskAnalysisCacheEntry{result: result, expires: time.Now().Add(taskAnalysisCacheTTL)}
+	return path
+}
+
+func (c *taskAnalysisCache) get(key string) (*taskAnalysisEntry, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.load()
+	entry, ok := c.entries[key]
+	if !ok || time.Since(entry.AnalyzedAt) > taskAnalysisCacheTTL {
+		return nil, false
+	}
+	return entry, true
+}
+
+func (c *taskAnalysisCache) put(key string, entry *taskAnalysisEntry) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	path := c.load()
+	c.entries[key] = entry
+	for k, e := range c.entries {
+		if time.Since(e.AnalyzedAt) > taskAnalysisCacheTTL {
+			delete(c.entries, k)
+		}
+	}
+	if over := len(c.entries) - taskAnalysisCacheMax; over > 0 {
+		keys := make([]string, 0, len(c.entries))
+		for k := range c.entries {
+			keys = append(keys, k)
+		}
+		slices.SortFunc(keys, func(a, b string) int { return c.entries[a].AnalyzedAt.Compare(c.entries[b].AnalyzedAt) })
+		for _, k := range keys[:over] {
+			delete(c.entries, k)
+		}
+	}
+	if path == "" {
+		return
+	}
+	if err := store.WriteJSON(path, c.entries); err != nil {
+		slog.Warn("task_analyze: failed to write analysis cache", "component", "task_compile", "path", path, "err", err)
+	}
 }
 
 // start cancels editor's previous analysis, if one is still running, and
@@ -252,7 +342,7 @@ func (c *taskAnalysisCache) start(ctx context.Context, editor string) (context.C
 func registerTaskAnalyzeTool(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_analyze",
-		Description: "Preview, without compiling, saving, or scheduling anything, whether a task's prompt passes the same determinism gate precompilation uses, and estimate the tokens and cost of each run. type=script tasks report 0 tokens without analysis; type=project tasks need project=<watched project> and are analyzed as their script would run, in a clone of it. trigger=message analyzes a workflow, as its script would run with the triggering message, and adds the message context each run's prompt carries to the estimate. precompile=true reports the cost when the task is precompiled on save. editor identifies the calling editor: its analysis token use is recorded under it, and a new call cancels its previous one.",
+		Description: "Preview, without compiling, saving, or scheduling anything, whether a task's prompt passes the same determinism gate precompilation uses, and estimate the tokens and cost of each run. type=script tasks report 0 tokens without analysis; type=project tasks need project=<watched project> and are analyzed as their script would run, in a clone of it. trigger=message analyzes a workflow, as its script would run with the triggering message, and adds the message context each run's prompt carries to the estimate. precompile=true reports the cost when the task is precompiled on save. editor identifies the calling editor: its analysis token use is recorded under it, and a new call cancels its previous one. Analyses are cached by a hash of every input that affects them, including the compiler version, and persist across restarts: a cached result has cached=true and analyzed_at, and makes no model call. cached_only=true returns the cached analysis, or miss=true, without analyzing; force=true re-analyzes and replaces the cached entry.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskAnalyzeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		result, err := analyzeTaskForEditor(ctx, args)
 		if err != nil {
@@ -317,13 +407,23 @@ func analyzeTaskForEditor(ctx context.Context, args taskAnalyzeArgs) (*taskAnaly
 		ctx = agent.WithProjectTaskScript(ctx)
 	}
 
-	key := taskAnalysisKey(agentName, analyzedPrompt, target)
-	analyzed, cached := taskAnalyses.get(key)
+	trigger := "schedule"
+	if workflow {
+		trigger = config.TriggerMessage
+	}
+	key := taskAnalysisKey(agentName, analyzedPrompt, target, strings.TrimSpace(args.Type), strings.TrimSpace(args.Project), trigger)
+	var entry *taskAnalysisEntry
+	cached := false
+	if !args.Force {
+		entry, cached = taskAnalyses.get(key)
+	}
 	if !cached {
+		if args.CachedOnly {
+			return &taskAnalysisResult{Miss: true}, nil
+		}
 		runCtx, release := taskAnalyses.start(ctx, strings.TrimSpace(args.Editor))
 		defer release()
-		var err error
-		analyzed, err = resolveTaskAnalyzer()(runCtx, agentName, analyzedPrompt, target)
+		analyzed, err := resolveTaskAnalyzer()(runCtx, agentName, analyzedPrompt, target)
 		recordTaskEditorUsage(agentName, analyzed, err)
 		if err != nil {
 			if runCtx.Err() != nil && ctx.Err() == nil {
@@ -331,10 +431,18 @@ func analyzeTaskForEditor(ctx context.Context, args taskAnalyzeArgs) (*taskAnaly
 			}
 			return nil, err
 		}
-		taskAnalyses.put(key, analyzed)
+		entry = &taskAnalysisEntry{
+			Analysis:   analyzed.Analysis,
+			Model:      analyzed.Model,
+			ToolTokens: llm.EstimateTokens(renderCompileToolCatalog(analyzed.Tools)),
+			AnalyzedAt: time.Now().UTC(),
+		}
+		taskAnalyses.put(key, entry)
 	}
-	result := buildTaskAnalysisResult(analyzed, prompt, strings.TrimSpace(args.Model), args.Precompile, workflow)
+	result := buildTaskAnalysisResult(entry, prompt, strings.TrimSpace(args.Model), args.Precompile, workflow)
 	result.Cached = cached
+	analyzedAt := entry.AnalyzedAt
+	result.AnalyzedAt = &analyzedAt
 	return result, nil
 }
 
@@ -370,7 +478,7 @@ func recordTaskEditorUsage(agentName string, analyzed *taskAnalyzerResult, err e
 // buildTaskAnalysisResult turns the gate's analysis into a verdict and a
 // per-run estimate. model overrides the analyzer's model for pricing, and
 // workflow adds a workflow run's trigger context to the estimate.
-func buildTaskAnalysisResult(analyzed *taskAnalyzerResult, prompt, model string, precompile, workflow bool) *taskAnalysisResult {
+func buildTaskAnalysisResult(analyzed *taskAnalysisEntry, prompt, model string, precompile, workflow bool) *taskAnalysisResult {
 	analysis := analyzed.Analysis
 	model = firstNonEmpty(model, analyzed.Model)
 	result := &taskAnalysisResult{
@@ -403,7 +511,7 @@ func buildTaskAnalysisResult(analyzed *taskAnalyzerResult, prompt, model string,
 	result.WillPrecompile = precompile && result.Verdict == taskVerdictDeterministic
 	modelEstimate := taskRunEstimate{Reason: "depends on the size of fetched data"}
 	if !analysis.UnboundedInput {
-		modelEstimate = estimateTaskRun(prompt, analyzed.Tools, analysis.Steps, model, workflow)
+		modelEstimate = estimateTaskRun(prompt, analyzed.ToolTokens, analysis.Steps, model, workflow)
 	}
 	if result.WillPrecompile {
 		result.Estimate = taskRunEstimate{Available: true}
@@ -423,10 +531,11 @@ func workflowContextTokens() (minTokens, maxTokens int) {
 }
 
 // estimateTaskRun estimates the token use of running prompt through model,
-// one model round per tool-using step plus a final answer. A workflow's
+// whose tool catalog is toolTokens long, one model round per tool-using step
+// plus a final answer. A workflow's
 // rounds also carry its trigger context.
-func estimateTaskRun(prompt string, tools []agent.ToolInfo, steps []compiledTaskStep, model string, workflow bool) taskRunEstimate {
-	base := taskRunBaseTokens + llm.EstimateTokens(prompt) + llm.EstimateTokens(renderCompileToolCatalog(tools))
+func estimateTaskRun(prompt string, toolTokens int, steps []compiledTaskStep, model string, workflow bool) taskRunEstimate {
+	base := taskRunBaseTokens + llm.EstimateTokens(prompt) + toolTokens
 	minContext, maxContext := 0, 0
 	if workflow {
 		minContext, maxContext = workflowContextTokens()

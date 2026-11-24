@@ -453,8 +453,10 @@
 	],
 	"task_analyze": [
 		"agent",
+		"cached_only",
 		"content",
 		"editor",
+		"force",
 		"model",
 		"precompile",
 		"project",

@@ -1,4 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
+import {
+	analysisCache,
+	sawChecking,
+	watchForChecking,
+} from "./helpers/analysisCache";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { chooseOption } from "./helpers/select";
 
@@ -64,11 +69,44 @@ const TRIGGER_CONTEXT = {
 	after: [{ from_agent: true, text: "Looking into it", timestamp: NOW }],
 };
 
-/** Mocks one agent with the Slack channel "Team Slack" and `tasks`. */
+/**
+ * task_analyze's answer for args. A workflow run also carries its triggering
+ * message, so it costs more than the same scheduled task.
+ */
+function workflowAnalysis(args?: Record<string, unknown>) {
+	const workflow = args?.trigger === "message";
+	const model = {
+		available: true,
+		min_tokens: workflow ? 5_000 : 4_000,
+		max_tokens: workflow ? 9_000 : 7_000,
+		min_cost_usd: 0.01,
+		max_cost_usd: 0.03,
+		...(workflow ? { min_context_tokens: 55, max_context_tokens: 1240 } : {}),
+	};
+	const deterministic = String(args?.content).startsWith("Reply");
+	return {
+		verdict: deterministic ? "deterministic" : "nondeterministic",
+		reason: deterministic ? "" : "needs judgment",
+		will_precompile: deterministic && args?.precompile === true,
+		estimate:
+			deterministic && args?.precompile === true
+				? { available: true, min_tokens: 0, max_tokens: 0 }
+				: model,
+		...(deterministic && args?.precompile === true
+			? { without_precompile: model }
+			: {}),
+	};
+}
+
+/**
+ * Mocks one agent with the Slack channel "Team Slack" and `tasks`, answering
+ * task_analyze with `analyze`.
+ */
 async function mockWorkflows(
 	page: Page,
 	tasks: Task[],
 	jobs: Record<string, unknown>[] = [],
+	analyze: (args: Record<string, unknown>) => unknown = workflowAnalysis,
 ) {
 	const config = {
 		agents: [
@@ -154,32 +192,7 @@ async function mockWorkflows(
 		},
 		task_analyze: (args?: Record<string, unknown>) => {
 			record("task_analyze", args);
-			// A workflow run also carries its triggering message, so it costs
-			// more than the same scheduled task.
-			const workflow = args?.trigger === "message";
-			const model = {
-				available: true,
-				min_tokens: workflow ? 5_000 : 4_000,
-				max_tokens: workflow ? 9_000 : 7_000,
-				min_cost_usd: 0.01,
-				max_cost_usd: 0.03,
-				...(workflow
-					? { min_context_tokens: 55, max_context_tokens: 1240 }
-					: {}),
-			};
-			const deterministic = String(args?.content).startsWith("Reply");
-			return {
-				verdict: deterministic ? "deterministic" : "nondeterministic",
-				reason: deterministic ? "" : "needs judgment",
-				will_precompile: deterministic && args?.precompile === true,
-				estimate:
-					deterministic && args?.precompile === true
-						? { available: true, min_tokens: 0, max_tokens: 0 }
-						: model,
-				...(deterministic && args?.precompile === true
-					? { without_precompile: model }
-					: {}),
-			};
+			return analyze(args ?? {});
 		},
 		task_compile_query: (args?: Record<string, unknown>) =>
 			args?.task === "triage"
@@ -723,4 +736,91 @@ test("workflow cards and the run history show a run that chose not to reply", as
 	await expect(page.getByTestId("task-run-skipped-reply")).toHaveText(
 		"Skipped reply: message was negative",
 	);
+});
+
+test("the workflow editor shows a cached analysis on open and re-analyzes only on change or Re-check", async ({
+	page,
+	browser,
+}) => {
+	const cache = analysisCache(workflowAnalysis);
+	const openTriage = async (p: Page) => {
+		await p.goto(
+			"/agents/assistant/channels/Team%20Slack/settings?tab=workflows",
+		);
+		await p
+			.locator("[data-testid=workflow-row][data-workflow=triage]")
+			.getByTestId("workflow-edit")
+			.click();
+		return p.getByTestId("workflow-form").getByTestId("task-cost-feedback");
+	};
+	// Only the workflow's own analyses count; the agent settings page
+	// behind the tab analyzes its own selected task.
+	const triageAnalyses = () =>
+		cache.analyses.filter((a) => a.trigger === "message").length;
+
+	// The first open has nothing cached and analyzes once.
+	await mockWorkflows(page, [TRIAGE], [], (a) => cache.handler(a));
+	let feedback = await openTriage(page);
+	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
+		"Not deterministic",
+	);
+	expect(triageAnalyses()).toBe(1);
+
+	// Reopening after a reload, or in another browser, uses the cache.
+	await watchForChecking(
+		page,
+		"[data-testid=workflow-form] [data-testid=task-cost-feedback]",
+	);
+	await page.reload();
+	feedback = await openTriage(page);
+	await expect(feedback.getByTestId("task-cost-cached")).toHaveText(
+		/^Cached · checked (just now|\d+s ago)$/,
+	);
+	await expect(feedback.getByTestId("task-cost-estimate")).toHaveText(
+		"≈ 5k–9k tokens/run ($0.010–$0.030)",
+	);
+	expect(triageAnalyses()).toBe(1);
+	expect(await sawChecking(page)).toBe(false);
+
+	const other = await browser.newContext();
+	try {
+		const otherPage = await other.newPage();
+		await mockWorkflows(otherPage, [TRIAGE], [], (a) => cache.handler(a));
+		await expect(
+			(await openTriage(otherPage)).getByTestId("task-cost-cached"),
+		).toBeVisible();
+		expect(triageAnalyses()).toBe(1);
+	} finally {
+		await other.close();
+	}
+
+	// Editing analyzes once; reverting shows the cached result again.
+	const content = page.getByTestId("workflow-content");
+	await content.fill("Reply with the crash ID");
+	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
+		"This task can run deterministically",
+	);
+	expect(triageAnalyses()).toBe(2);
+	await content.fill("Triage the crash.");
+	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
+		"Not deterministic",
+	);
+	await expect(feedback.getByTestId("task-cost-cached")).toBeVisible();
+	await page.waitForTimeout(1500);
+	expect(triageAnalyses()).toBe(2);
+
+	// Re-check bypasses the cache.
+	await feedback.getByTestId("task-cost-recheck").click();
+	await expect.poll(triageAnalyses).toBe(3);
+	expect(cache.analyses.at(-1)).toMatchObject({ force: true });
+	await expect(feedback.getByTestId("task-cost-cached")).toHaveCount(0);
+
+	// A compiler version bump invalidates the cache, so reopening analyzes.
+	cache.invalidate();
+	await page.reload();
+	feedback = await openTriage(page);
+	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
+		"Not deterministic",
+	);
+	expect(triageAnalyses()).toBe(4);
 });
