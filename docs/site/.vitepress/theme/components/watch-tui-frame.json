@@ -200,7 +200,7 @@
 		],
 		[
 			{
-				"t": "  acme/storefront/nightly-t   #219 Show stock on produc   #212 Rename the checkout  "
+				"t": "acme/storefront/nightly-tri #219 Show stock on product  #212 Rename the checkout fe "
 			},
 			{
 				"t": "\u003e",
@@ -208,19 +208,26 @@
 				"b": true
 			},
 			{
-				"t": " #214 Fix cart total round   #205 Search ignores accen   #211 Flaky login e2e test"
+				"t": " #214 Fix cart total round #205 Search ignores accents #211 Flaky login e2e test"
 			}
 		],
 		[
 			{
-				"t": "  next in 14h",
+				"t": "next in 14h",
 				"fg": "#999999"
 			},
 			{
-				"t": "               "
+				"t": "                 "
 			},
 			{
-				"t": "  acme/storefront · claude/",
+				"t": "acme/storefront · claude/op",
+				"fg": "#999999"
+			},
+			{
+				"t": " "
+			},
+			{
+				"t": "acme/storefront · claude/op",
 				"fg": "#999999"
 			},
 			{
@@ -234,59 +241,52 @@
 				"t": " "
 			},
 			{
-				"t": "  acme/storefront · claude/",
+				"t": "acme/storefront · claude/op",
 				"fg": "#999999"
 			},
 			{
 				"t": " "
 			},
 			{
-				"t": "  acme/storefront · claude/",
-				"fg": "#999999"
-			},
-			{
-				"t": " "
-			},
-			{
-				"t": "  acme/storefront · claude/",
-				"fg": "#999999"
-			}
-		],
-		[
-			{
-				"t": "  acme/storefront/weekly-de                               #208 Upgrade the payments   #216 Add order export to    #203 Dark mode for checko"
-			}
-		],
-		[
-			{
-				"t": "  next in 45h",
-				"fg": "#999999"
-			},
-			{
-				"t": "                                           "
-			},
-			{
-				"t": "  acme/storefront · claude/",
-				"fg": "#999999"
-			},
-			{
-				"t": " "
-			},
-			{
-				"t": "  acme/storefront · codex/g",
-				"fg": "#999999"
-			},
-			{
-				"t": " "
-			},
-			{
-				"t": "  acme/storefront · claude/",
+				"t": "acme/storefront · claude/op",
 				"fg": "#999999"
 			}
 		],
 		[
 			{
-				"t": "                                                                                      #217 Paginate the admin o"
+				"t": "acme/storefront/weekly-deps                             #208 Upgrade the payments S #216 Add order export to CS #203 Dark mode for checkout"
+			}
+		],
+		[
+			{
+				"t": "next in 45h",
+				"fg": "#999999"
+			},
+			{
+				"t": "                                             "
+			},
+			{
+				"t": "acme/storefront · claude/op",
+				"fg": "#999999"
+			},
+			{
+				"t": " "
+			},
+			{
+				"t": "acme/storefront · codex/gpt",
+				"fg": "#999999"
+			},
+			{
+				"t": " "
+			},
+			{
+				"t": "acme/storefront · claude/op",
+				"fg": "#999999"
+			}
+		],
+		[
+			{
+				"t": "                                                                                    #217 Paginate the admin ord"
 			}
 		],
 		[
@@ -294,7 +294,7 @@
 				"t": "                                                                                    "
 			},
 			{
-				"t": "  acme/storefront · claude/",
+				"t": "acme/storefront · claude/op",
 				"fg": "#999999"
 			}
 		],

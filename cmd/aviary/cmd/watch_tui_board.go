@@ -397,7 +397,7 @@ func (m watchModel) boardView(height int) []string {
 }
 
 // boardCard is an item's two board lines: its name and title, then its
-// details.
+// details. The selected card is shifted right by the "> " caret.
 func (m watchModel) boardCard(it watchItem, selected bool, width int) []string {
 	name := m.itemName(it)
 	if !it.scheduled() {
@@ -410,10 +410,12 @@ func (m watchModel) boardCard(it watchItem, selected bool, width int) []string {
 	} else if it.scheduleState != watchScheduled {
 		second = strings.TrimSuffix(watchStateLabels[it.scheduleState]+" · "+second, " · ")
 	}
-	first = watchTruncate(tuiCursor(selected)+" "+first, width)
-	if selected {
-		first = tuiSelectedStyle.Render(first)
+	// Only the selected card carries the caret, so the rest sit flush with
+	// their column header and truncate at the full column width.
+	if !selected {
+		return []string{watchTruncate(first, width), tuiDimStyle.Render(watchTruncate(second, width))}
 	}
+	first = tuiSelectedStyle.Render(watchTruncate(tuiCursor(true)+" "+first, width))
 	return []string{first, tuiDimStyle.Render(watchTruncate("  "+second, width))}
 }
 
