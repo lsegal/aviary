@@ -2288,7 +2288,9 @@ test("prompt chat inserts a newline on Shift+Enter and sends on Enter", async ({
 	await expect.poll(() => calls.agent_run?.length ?? 0).toBe(1);
 	expect(calls.agent_run[0].message).toBe("line one\nline two");
 	await expect(input).toHaveValue("");
-	const sent = chat.locator(".whitespace-pre-wrap", { hasText: "line two" });
+	const sent = chat
+		.getByTestId("chat-message-content")
+		.filter({ hasText: "line two" });
 	await expect(sent).toBeVisible();
 	expect(await sent.innerText()).toBe("line one\nline two");
 });
