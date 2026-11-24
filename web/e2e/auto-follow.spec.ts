@@ -143,6 +143,22 @@ async function expectAtBottom(scroller: Locator) {
 	await expect.poll(() => distanceFromBottom(scroller)).toBeLessThanOrEqual(8);
 }
 
+/** Asserts nothing covers the pill, so a user can see and click it. */
+async function expectPillUncovered(pill: Locator) {
+	await expect
+		.poll(() =>
+			pill.evaluate((el) => {
+				const r = el.getBoundingClientRect();
+				const hit = document.elementFromPoint(
+					r.left + r.width / 2,
+					r.top + r.height / 2,
+				);
+				return !!hit && el.contains(hit);
+			}),
+		)
+		.toBe(true);
+}
+
 /** Scrolls the view to its top, as a user scrolling up would. */
 async function scrollToTop(scroller: Locator) {
 	await scroller.evaluate((el) => {
@@ -190,6 +206,11 @@ for (const host of HOSTS) {
 			.toBe(true);
 		await expectAtBottom(scroller);
 		await expect.poll(() => server.sockets.length).toBeGreaterThan(0);
+		// The newest line ends above the composer, not hidden under it.
+		const list = await scroller.boundingBox();
+		const composer = await chat.getByTestId("chat-composer").boundingBox();
+		if (!list || !composer) throw new Error("no chat layout");
+		expect(list.y + list.height).toBeLessThanOrEqual(composer.y + 1);
 
 		// Streaming text keeps a following view pinned.
 		for (let i = 0; i < 5; i++) server.stream("\nmore streamed output line");
@@ -201,6 +222,7 @@ for (const host of HOSTS) {
 		await scrollToTop(scroller);
 		await expect(pill).toBeVisible();
 		await expect(pill).toHaveText("More below ↓");
+		await expectPillUncovered(pill);
 		server.addTool("call_1");
 		server.stream("\nafter the tool");
 		await expect(chat.getByTestId("chat-tool-call")).toHaveCount(1);
@@ -395,6 +417,7 @@ test("the system log pane follows, pauses with the pill, and keeps its place loa
 
 	await scrollToTop(scroller);
 	await expect(page.getByTestId("logs-more-below")).toBeVisible();
+	await expectPillUncovered(page.getByTestId("logs-more-below"));
 
 	// Older lines load above without moving what's on screen.
 	const first = scroller.getByText("log line 200", { exact: true });

@@ -1,6 +1,8 @@
 <template>
 	<component :is="props.agent ? 'div' : AppLayout" :class="props.agent ? 'relative h-full min-h-0' : undefined">
-		<div class="flex h-full flex-col">
+		<!-- Under a page breadcrumb, the chat fills what's left rather than
+			the whole page, so its newest line and pill stay above the composer. -->
+		<div class="flex h-full min-h-0 flex-1 flex-col">
 			<!-- Chat picker: the sidebar's Chats list covers wide screens. A pinned
 				session is the only chat, so it has none. -->
 			<div v-if="selectedAgent && !props.session" data-testid="chat-picker"
