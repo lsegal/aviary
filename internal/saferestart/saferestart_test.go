@@ -52,3 +52,34 @@ func TestMarkerIsTakenOnce(t *testing.T) {
 	_, ok = TakeMarker()
 	assert.False(t, ok)
 }
+
+type orderedParticipant struct {
+	stubParticipant
+	name string
+	log  *[]string
+}
+
+func (o *orderedParticipant) Checkpoint(context.Context, Marker) error {
+	*o.log = append(*o.log, o.name)
+	return nil
+}
+
+func TestCheckpointRunsInRegistrationOrder(t *testing.T) {
+	// The task scheduler registers before the Code Loop engine that runs its
+	// project tasks; it must checkpoint them first, although "projects" sorts
+	// before "tasks" (issue #1021).
+	var log []string
+	Register("tasks", &orderedParticipant{name: "tasks", log: &log})
+	Register("projects", &orderedParticipant{name: "projects", log: &log})
+	Register("tasks", &orderedParticipant{name: "tasks", log: &log})
+	t.Cleanup(func() { Unregister("tasks"); Unregister("projects") })
+
+	assert.NoError(t, Checkpoint(context.Background(), Marker{Reason: "restart"}))
+	assert.Equal(t, []string{"tasks", "projects"}, log, "re-registering keeps a participant's place")
+
+	Unregister("tasks")
+	Register("tasks", &orderedParticipant{name: "tasks", log: &log})
+	log = nil
+	assert.NoError(t, Checkpoint(context.Background(), Marker{Reason: "restart"}))
+	assert.Equal(t, []string{"projects", "tasks"}, log)
+}
