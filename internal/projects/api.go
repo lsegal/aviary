@@ -119,6 +119,12 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 		"quotas":             snapshot.Quotas,
 		"recent_logs":        logs,
 		"log_offset":         nextOffset,
+		// The boards hide safe merge while no_merge leaves pull requests
+		// for a human.
+		"no_merge": settings.NoMerge,
+	}
+	if engine := m.engine(); engine != nil {
+		status["no_merge"] = engine.noMerge.Load()
 	}
 	if snapshot.UseWebhooks {
 		status["webhook_online"] = snapshot.WebhookOnline

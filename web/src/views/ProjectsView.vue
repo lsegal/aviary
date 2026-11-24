@@ -38,6 +38,7 @@
 				@click="openAdd">
 				<PlusIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
+			<QueueMenu v-if="!aggregate" :no-merge="status?.noMerge" @pick="openQueue($event, project)" />
 			<button v-if="!aggregate" type="button" data-testid="schedule-new" title="Schedule a task for this project"
 				class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 				:disabled="!scheduleAgent" @click="onNewSchedule">
@@ -221,8 +222,8 @@
 								@toggle="onScheduleAction(toggleSchedule, $event)" @settings="openScheduleSettings"
 								@dismiss="onAction(dismiss, $event)" />
 							<JobCard v-for="job in boardJobs" :key="job.id" :job="job" :now="now" :show-project="aggregate"
-								:busy="busyJob === job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
-								@summarize="onSummarize" />
+								:busy="busyJob === job.id" :no-merge="status?.noMerge" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
+								@summarize="onSummarize" @safe-merge="openQueue('gh-safe-merge', $event.target, [$event.pr])" />
 						</section>
 						</template>
 
@@ -240,6 +241,8 @@
 			</div>
 			<ProjectChatPanel v-if="(project || aggregate) && chatOpen && !auth.minimal" ref="chatPanel" :project="project" @close="chatOpen = false" />
 		</div>
+		<QueueDialog :target="queueTarget" :skill="queueSkill" :preselect="queuePreselect" :no-merge="status?.noMerge"
+			@close="queueSkill = null" @queued="refresh" />
 		<AddProjectDialog v-if="adding" :agent="routeAgent" @close="closeAdd" @added="onAdded" />
 	</AppLayout>
 </template>
@@ -268,6 +271,8 @@ import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
 import ProjectLogsPanel from "../components/projects/ProjectLogsPanel.vue";
 import ProjectNavRow from "../components/projects/ProjectNavRow.vue";
+import QueueDialog from "../components/projects/QueueDialog.vue";
+import QueueMenu from "../components/projects/QueueMenu.vue";
 import ScheduledCard from "../components/projects/ScheduledCard.vue";
 import ScheduleEditor from "../components/projects/ScheduleEditor.vue";
 import ScheduleRunHistory from "../components/projects/ScheduleRunHistory.vue";
@@ -301,6 +306,7 @@ import {
 	type ProjectSchedule,
 	parseBoardStates,
 	projectPath,
+	type QueueSkill,
 	scheduleJob,
 	scheduleMatches,
 	stateLabel,
@@ -465,6 +471,7 @@ const {
 	page,
 	error,
 	loading,
+	refresh,
 	checkNow,
 	signInToGitHub,
 	switchToPolling,
@@ -719,6 +726,17 @@ async function onAction(
 	} finally {
 		busyJob.value = "";
 	}
+}
+
+// The Queue menu's picker, or a job card's Safe merge on its linked pull
+// request, which opens it with that pull request picked (#1095).
+const queueSkill = ref<QueueSkill | null>(null);
+const queueTarget = ref("");
+const queuePreselect = ref<number[]>([]);
+function openQueue(skill: QueueSkill, target: string, numbers: number[] = []) {
+	queueTarget.value = target;
+	queuePreselect.value = numbers;
+	queueSkill.value = skill;
 }
 
 const checking = ref(false);

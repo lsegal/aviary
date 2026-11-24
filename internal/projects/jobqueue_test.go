@@ -202,7 +202,9 @@ func TestQueuedJobOwnerFindsFixJobsPullRequest(t *testing.T) {
 		"o/r#60": {Kind: core.JobKindIssue, Target: "o/r", Number: 60, Status: "complete", PullRequest: 61},
 		"o/r#70": {Kind: core.JobKindDiscussion, Target: "o/r", Number: 70, Status: "active"},
 	}
-	merge := func(n int) queuedJob { return queuedJob{Skill: SkillSafeMerge, Target: "o/r", Repository: "o/r", Number: n} }
+	merge := func(n int) queuedJob {
+		return queuedJob{Skill: SkillSafeMerge, Target: "o/r", Repository: "o/r", Number: n}
+	}
 	if owner := queuedJobOwner(jobs, merge(51)); owner != "o/r#50" {
 		t.Fatalf("an active fix job's pull request is owned by %q", owner)
 	}
