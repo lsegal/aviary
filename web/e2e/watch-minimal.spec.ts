@@ -71,7 +71,58 @@ test("a watch session's nav shows only Code Loop and Scheduled Tasks", async ({
 		).toHaveCount(0);
 	}
 	await expect(page.getByTestId("sidebar-add-project")).toHaveCount(0);
-	await expect(page.getByTestId("prompt-chat-toggle")).toHaveCount(0);
+});
+
+test("a watch session's Code Loop has the prompt chat (#1195)", async ({
+	page,
+}) => {
+	const runs: Record<string, unknown>[] = [];
+	await mockWatchSession(page, {
+		session_messages: () =>
+			runs.flatMap((run, i) => [
+				{
+					id: `u${i}`,
+					session_id: "projects-chat",
+					role: "user",
+					content: run.message,
+					timestamp: new Date().toISOString(),
+				},
+				{
+					id: `a${i}`,
+					session_id: "projects-chat",
+					role: "assistant",
+					content: "Nothing is running yet.",
+					timestamp: new Date().toISOString(),
+				},
+			]),
+		agent_run: (args?: Record<string, unknown>) => {
+			runs.push(args ?? {});
+			return { stream: ["Nothing is running yet."], result: "" };
+		},
+	});
+	await page.goto("/agents/watch/projects/owner%2Frepo");
+	await expect(page.getByTestId("project-chat")).toHaveCount(0);
+	await page.getByTestId("prompt-chat-toggle").click();
+	const chat = page.getByTestId("project-chat");
+	await expect(chat).toContainText("Ask the projects agent about owner/repo");
+	// A watch session serves no speech-to-text.
+	await expect(chat.getByTestId("voice-button")).toHaveCount(0);
+
+	const input = chat.getByPlaceholder("Describe a task or ask a question");
+	await expect(input).toBeEnabled();
+	await input.fill("What is running?");
+	await input.press("Enter");
+	await expect.poll(() => runs.length).toBe(1);
+	// The same Code Loop agent session as the watch TUI's chat.
+	expect(runs[0]).toMatchObject({
+		name: "projects",
+		session: "projects-chat",
+		message: "What is running?",
+	});
+	await expect(chat).toContainText("Nothing is running yet.");
+
+	await chat.getByRole("button", { name: "Close prompt chat" }).click();
+	await expect(page.getByTestId("project-chat")).toHaveCount(0);
 });
 
 test("a watch session redirects pages outside Code Loop and tasks", async ({

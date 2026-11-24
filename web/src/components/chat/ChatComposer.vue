@@ -73,7 +73,7 @@
 				class="max-h-48 min-h-9 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-2 text-sm leading-5 text-gray-900 placeholder-gray-400 focus:outline-none dark:text-white dark:placeholder-gray-500"
 				@update:model-value="emit('update:modelValue', $event)" @send="submit"
 				@paste="onPaste" />
-			<button type="button" data-testid="voice-button" :aria-label="micLabel" :title="micTitle"
+			<button v-if="!auth.minimal" type="button" data-testid="voice-button" :aria-label="micLabel" :title="micTitle"
 				:aria-disabled="micUnavailable ? 'true' : undefined" :aria-pressed="voice.state.value === 'recording'"
 				:disabled="disabled || voice.state.value === 'transcribing'"
 				class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:pointer-events-none disabled:opacity-40"
@@ -170,6 +170,7 @@ const hasContent = computed(
 // Typing during a reply turns Stop back into Send, so a follow-up can go out
 // while the agent is still replying.
 const showStop = computed(() => props.running && !hasContent.value);
+// A watch session serves no speech-to-text, so its composer has no mic.
 const auth = useAuthStore();
 // Voice input inserts the transcript at the caret for review; it never sends.
 const voice = useVoiceInput({
