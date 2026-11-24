@@ -97,6 +97,8 @@ aviary ui [project]
 
 Validate `aviary.yaml` and verify that required credentials exist in the auth store. Exits with status 1 if any errors are found.
 
+The `System information` block starts with the Aviary version and an `Install type` line, the same install type `aviary version` prints.
+
 When the server is running, a `Startup` line summarizes its latest boot: total boot time, when `/mcp` became ready, any subsystems still initializing, and the slowest phases.
 
 ```
@@ -106,6 +108,57 @@ aviary doctor [flags]
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--disable-version-check` | `false` | Skip the GitHub release version check and upgrade prompt |
+
+---
+
+## aviary upgrade
+
+Upgrade Aviary to the latest release, or to `--version`. Does nothing when Aviary is already at that version. See [Upgrades](../guide/operations.md#upgrades) for how upgrades restart the server and resume jobs.
+
+```
+aviary upgrade [flags]
+```
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--version <version>` | _(latest release)_ | Upgrade to a specific release instead of the latest release, with or without a leading `v` |
+| `--when <now\|idle>` | `now` | When the running server restarts: `now`, or `idle` (once no jobs are running, holding new jobs until then) |
+| `--release` | `false` | Upgrade from GitHub releases, even on a dev build |
+| `--source` | `false` | Upgrade by pulling the source checkout, even on a release build |
+
+`--release` and `--source` exclude each other, and `--source` rejects `--version`, which picks a release.
+
+Without either flag, the mode follows the install type `aviary version` shows, never the working directory:
+
+- **Release mode** (a release build, or `--release`) prints `Aviary v0.7.4 is up to date.` when there is nothing to install, or `Upgrading v0.7.3 → v0.7.5` and then `Aviary upgraded to v0.7.5.` once the release replaces the binary. `--release` on a dev build installs the latest release.
+- **Source mode** (a dev build running from its checkout, or `--source`) runs `git pull --ff-only` in the checkout and prints `Pulled N commit(s) into <dir> (<from> → <to>).`, or `The source checkout at <dir> is already up to date (<sha>).`. It never pulls over local changes or a diverged branch. The checkout is the one holding the binary or named by `AVIARY_CHECKOUT`; with no other checkout known, `--source` uses the checkout containing the working directory. See [Dev checkouts](../guide/operations.md#dev-checkouts).
+
+A dev build with no source checkout cannot check for updates and reports that, unless `--version` or `--release` names a release.
+
+When the server is running and is the same kind of install, the upgrade goes through it as a safe restart (`server_upgrade`): running jobs stop at a checkpoint and resume after the restart, and `--when idle` waits until no jobs are running. In source mode the server must also run from the same checkout. Otherwise the command upgrades on its own and leaves a server of the other kind alone, printing which command upgrades it (`aviary upgrade --release` or `aviary upgrade --source`).
+
+---
+
+## aviary version
+
+Show the Aviary version and the detected install type.
+
+```
+aviary version
+```
+
+No flags. The output has two lines:
+
+```
+aviary version v0.7.5
+install type: release build v0.7.5
+```
+
+The install type is one of:
+
+- `release build <version>`: a release binary, which upgrades from GitHub releases.
+- `dev build from the source checkout at <dir>`: a dev build that found its checkout, which upgrades with `git pull`.
+- `dev build without a source checkout`: a dev build with no checkout to pull, such as `go run` without `AVIARY_CHECKOUT`, or a dev build inside Docker.
 
 ---
 
