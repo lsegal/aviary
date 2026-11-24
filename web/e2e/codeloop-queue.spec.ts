@@ -198,9 +198,7 @@ async function setup(page: Page, { noMerge = false } = {}) {
 		// The board reads its schedules' entries apart from its jobs.
 		project_job_list: (args?: Record<string, unknown>) => {
 			const kinds = args?.kinds as string[] | undefined;
-			const jobs = kinds?.includes("schedule")
-				? []
-				: JOBS.filter((j) => !kinds || kinds.includes(j.kind));
+			const jobs = kinds?.includes("schedule") ? [] : JOBS;
 			return { jobs, total: jobs.length, offset: 0, limit: 500 };
 		},
 		task_list: [SCHEDULE],
