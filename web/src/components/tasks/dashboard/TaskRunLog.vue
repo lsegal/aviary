@@ -27,10 +27,22 @@
 				</button>
 			</div>
 		</header>
-		<p v-if="entry.error" role="alert" data-testid="task-run-log-error"
-			class="border-b border-red-200 bg-red-50 px-3 py-2 text-xs whitespace-pre-wrap text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-			{{ entry.error }}
-		</p>
+		<div v-if="entry.error" role="alert" data-testid="task-run-log-error"
+			class="space-y-1 border-b border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+			<div class="flex items-start gap-2">
+				<p data-testid="task-run-log-error-message" class="line-clamp-3 min-w-0 flex-1 whitespace-pre-wrap wrap-anywhere"
+					:title="entry.error">{{ entry.error }}</p>
+				<a v-if="entry.bugReportUrl" :href="entry.bugReportUrl" target="_blank" rel="noopener noreferrer"
+					data-testid="task-run-log-report-bug"
+					class="inline-flex shrink-0 items-center gap-1 rounded-md border border-red-300 px-2 py-0.5 font-medium hover:bg-red-100 dark:border-red-800 dark:hover:bg-red-900/40">
+					<BugAntIcon aria-hidden="true" class="h-3.5 w-3.5" /> Report bug
+				</a>
+			</div>
+			<details v-if="entry.errorOutput" data-testid="task-run-log-error-output">
+				<summary class="cursor-pointer select-none">Last agent output</summary>
+				<pre class="mt-1 max-h-40 overflow-y-auto rounded bg-red-100/60 px-2 py-1 font-mono whitespace-pre-wrap wrap-anywhere dark:bg-red-950/60">{{ entry.errorOutput }}</pre>
+			</details>
+		</div>
 		<p v-if="delivery" data-testid="task-run-log-delivery" :data-status="delivery.status"
 			:role="delivery.status === 'failed' ? 'alert' : undefined" class="border-b px-3 py-2 text-xs"
 			:class="delivery.status === 'failed' ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300' : 'border-gray-200 text-gray-600 dark:border-gray-800 dark:text-gray-300'">
@@ -48,6 +60,7 @@
 </template>
 
 <script setup lang="ts">
+import BugAntIcon from "@heroicons/vue/24/outline/BugAntIcon";
 import CheckIcon from "@heroicons/vue/24/outline/CheckIcon";
 import ClipboardDocumentIcon from "@heroicons/vue/24/outline/ClipboardDocumentIcon";
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";

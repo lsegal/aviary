@@ -181,11 +181,8 @@ func (s *codexSession) Send(ctx context.Context, turn Turn, onEvent func(Event))
 	cmd.Stdin = strings.NewReader(text)
 	stderr := &tailBuffer{max: 4096}
 	cmd.Stderr = stderr
-	stdout, err := cmd.StdoutPipe()
+	stdout, wait, err := startTurn(cmd)
 	if err != nil {
-		return Result{}, err
-	}
-	if err := cmd.Start(); err != nil {
 		return Result{}, fmt.Errorf("starting codex: %w", err)
 	}
 
@@ -207,7 +204,9 @@ func (s *codexSession) Send(ctx context.Context, turn Turn, onEvent func(Event))
 		}
 	}
 	_, _ = io.Copy(io.Discard, stdout)
-	waitErr := cmd.Wait()
+	// A finished turn succeeds whatever the wait reports, including the
+	// process cleanup timing out after it.
+	waitErr := wait()
 	if ctx.Err() != nil {
 		return Result{}, ctx.Err()
 	}

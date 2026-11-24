@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -137,15 +138,14 @@ func (s *definitionSession) Send(ctx context.Context, turn Turn, onEvent func(Ev
 	capture := &sessionCapture{pattern: s.definition.SessionPattern()}
 	stderr := &tailBuffer{max: 4096}
 	cmd.Stderr = io.MultiWriter(stderr, capture)
-	stdout, err := cmd.StdoutPipe()
+	stdout, wait, err := startTurn(cmd)
 	if err != nil {
-		return Result{}, err
-	}
-	if err := cmd.Start(); err != nil {
 		return Result{}, fmt.Errorf("starting %s: %w", name, err)
 	}
 
 	m := newDefinitionMapper(s.definition, s.aviaryToolPrefix(), onEvent)
+	format := s.definition.Output.TranscriptFormat()
+	finished := false
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 0, 64*1024), 64*1024*1024)
 	var output tailBuffer
@@ -156,12 +156,21 @@ func (s *definitionSession) Send(ctx context.Context, turn Turn, onEvent func(Ev
 		output.Write(line)         //nolint:errcheck
 		output.Write([]byte{'\n'}) //nolint:errcheck
 		m.handle(line)
+		if outcome := transcript.TurnResult(format, line); outcome != transcript.TurnUnfinished {
+			finished = outcome == transcript.TurnSucceeded
+		}
 	}
 	_, _ = io.Copy(io.Discard, stdout)
 	m.flush()
-	waitErr := cmd.Wait()
+	waitErr := wait()
 	if ctx.Err() != nil {
 		return Result{}, ctx.Err()
+	}
+	if process.CleanupTimedOut(waitErr) && finished {
+		// The turn ended with its final result and the CLI exited
+		// successfully; only something it started kept the output open.
+		slog.Warn("cliagent: turn finished but its process cleanup timed out", "cli", name)
+		waitErr = nil
 	}
 	if waitErr != nil || (mode == clidefs.ModeResume && m.messages == 0 && s.missingSession(stderr.String()+output.String())) {
 		msg := strings.TrimSpace(stderr.String())

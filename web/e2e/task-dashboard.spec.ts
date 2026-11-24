@@ -12,6 +12,8 @@ interface MockJob {
 	task_type?: string;
 	trigger?: string;
 	error?: string;
+	error_output?: string;
+	bug_report_url?: string;
 	output?: string;
 	script_error?: string;
 	created_at: string;
@@ -271,6 +273,53 @@ test("an idle task shows its last run, and Run now starts one", async ({
 	await expect(
 		page.getByTestId("task-run-row").first().getByTestId("task-run-trigger"),
 	).toHaveText("manual");
+});
+
+test("a failed last run shows a short error, its output, and a Report bug link", async ({
+	page,
+}) => {
+	const report = "https://github.com/o/r/issues/new?body=%23%23+Context";
+	const long = `agent failed: ${"x".repeat(600)}`;
+	await mockTask(page, [
+		job("newest", "failed", 20, {
+			error: "agent process didn't exit cleanly: WaitDelay expired",
+			error_output: "Scanning tests\nFiled issues",
+			bug_report_url: report,
+		}),
+		job("older", "failed", 60, { error: long }),
+	]);
+	await page.goto("/agents/assistant/tasks/report");
+
+	const log = page.getByTestId("task-run-log");
+	await expect(log.getByTestId("task-run-log-title")).toHaveText("Last run");
+	await expect(page.getByTestId("task-run-log-empty")).toHaveCount(0);
+	await expect(log.getByTestId("task-run-log-error-message")).toHaveText(
+		"agent process didn't exit cleanly: WaitDelay expired",
+	);
+	await expect(log.getByTestId("task-run-log-error")).not.toContainText(
+		"https://",
+	);
+	await expect(log.getByTestId("task-run-log-report-bug")).toHaveAttribute(
+		"href",
+		report,
+	);
+	const output = log.getByTestId("task-run-log-error-output");
+	await output.locator("summary").click();
+	await expect(output.locator("pre")).toHaveText(
+		"Scanning tests\nFiled issues",
+	);
+
+	const rows = page.getByTestId("task-run-row");
+	await expect(rows.first().getByTestId("task-run-report-bug")).toHaveAttribute(
+		"href",
+		report,
+	);
+	await expect(rows.nth(1).getByTestId("task-run-report-bug")).toHaveCount(0);
+	// A long error wraps and clamps inside its row instead of widening it.
+	const row = await rows.nth(1).boundingBox();
+	const error = await rows.nth(1).getByTestId("task-run-error").boundingBox();
+	expect(error && row && error.width <= row.width).toBe(true);
+	expect(error && error.height < 60).toBe(true);
 });
 
 test("many runs paginate, and results filter from the chips and pills", async ({
