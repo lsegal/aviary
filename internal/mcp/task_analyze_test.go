@@ -7,7 +7,9 @@ import (
 	"errors"
 	"log/slog"
 	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,7 +34,7 @@ func stubTaskAnalyzer(t *testing.T, analyses map[string]*compileTaskAnalysis) *i
 		taskAnalyzerFunc = prev
 		taskAnalyses = prevCache
 	})
-	taskAnalyses = &taskAnalysisCache{entries: map[string]taskAnalysisCacheEntry{}, inflight: map[string]*taskAnalysisRun{}}
+	taskAnalyses = newTaskAnalysisCache(taskAnalysisCachePath)
 	calls := 0
 	taskAnalyzerFunc = func(_ context.Context, agentName, prompt, _ string) (*taskAnalyzerResult, error) {
 		calls++
@@ -153,6 +155,141 @@ func TestTaskAnalyzeCachesByInputAndRecordsEditorUsage(t *testing.T) {
 	assert.Equal(t, domain.UsageSourceTaskEditor, records[0].Source)
 	assert.Equal(t, 120, records[0].InputTokens)
 	assert.Equal(t, 30, records[0].OutputTokens)
+}
+
+func TestTaskAnalyzeCachePersistsAcrossRestarts(t *testing.T) {
+	calls := stubTaskAnalyzer(t, sampleTaskAnalyses)
+	args := taskAnalyzeArgs{Agent: "bot", Content: "fetch the release notes and summarize them", Editor: "ed-1"}
+	first, err := analyzeTaskForEditor(context.Background(), args)
+	require.NoError(t, err)
+	require.NotNil(t, first.AnalyzedAt)
+	assert.FileExists(t, taskAnalysisCachePath())
+
+	// A restarted server loads the persisted entry instead of re-analyzing.
+	taskAnalyses = newTaskAnalysisCache(taskAnalysisCachePath)
+	again, err := analyzeTaskForEditor(context.Background(), args)
+	require.NoError(t, err)
+	assert.True(t, again.Cached)
+	assert.Equal(t, 1, *calls)
+	require.NotNil(t, again.AnalyzedAt)
+	assert.True(t, first.AnalyzedAt.Equal(*again.AnalyzedAt), "the cached result reports when it was analyzed")
+	assert.Equal(t, first.Verdict, again.Verdict)
+	assert.Equal(t, first.Estimate, again.Estimate)
+
+	records, err := store.ReadJSONL[domain.UsageRecord](store.UsagePath())
+	require.NoError(t, err)
+	assert.Len(t, records, 1, "a cache hit records no editor usage")
+}
+
+func TestTaskAnalyzeCacheKeysEveryInput(t *testing.T) {
+	calls := stubTaskAnalyzer(t, nil)
+	taskAnalyzerFunc = func(context.Context, string, string, string) (*taskAnalyzerResult, error) {
+		*calls++
+		return &taskAnalyzerResult{Analysis: sampleTaskAnalyses["Say hello"], Model: "test/model"}, nil
+	}
+	base := taskAnalyzeArgs{Agent: "bot", Content: "Say hello"}
+	_, err := analyzeTaskForEditor(context.Background(), base)
+	require.NoError(t, err)
+	require.Equal(t, 1, *calls)
+
+	// Inputs the analysis depends on are each analyzed again.
+	for name, args := range map[string]taskAnalyzeArgs{
+		"prompt":  {Agent: "bot", Content: "Say hello!"},
+		"agent":   {Agent: "other", Content: "Say hello"},
+		"target":  {Agent: "bot", Content: "Say hello", Target: "slack:C1"},
+		"trigger": {Agent: "bot", Content: "Say hello", Trigger: "message"},
+		"project": {Agent: "bot", Content: "Say hello", Type: "project", Project: "acme/app"},
+	} {
+		before := *calls
+		res, err := analyzeTaskForEditor(context.Background(), args)
+		require.NoError(t, err, name)
+		assert.False(t, res.Cached, name)
+		assert.Equal(t, before+1, *calls, name)
+	}
+
+	// The model override and the precompile flag reuse the analysis, but
+	// the result shown follows them.
+	before := *calls
+	res, err := analyzeTaskForEditor(context.Background(), taskAnalyzeArgs{Agent: "bot", Content: "Say hello", Model: "other/model", Precompile: true})
+	require.NoError(t, err)
+	assert.True(t, res.Cached)
+	assert.Equal(t, before, *calls)
+	assert.Equal(t, "other/model", res.Model)
+	assert.True(t, res.WillPrecompile)
+
+	// Reverting to the original input is still cached.
+	res, err = analyzeTaskForEditor(context.Background(), base)
+	require.NoError(t, err)
+	assert.True(t, res.Cached)
+	assert.Equal(t, before, *calls)
+}
+
+func TestTaskAnalyzeCompilerVersionBumpInvalidatesCache(t *testing.T) {
+	calls := stubTaskAnalyzer(t, sampleTaskAnalyses)
+	args := taskAnalyzeArgs{Agent: "bot", Content: "Say hello"}
+	_, err := analyzeTaskForEditor(context.Background(), args)
+	require.NoError(t, err)
+
+	prev := taskCompilerVersion
+	t.Cleanup(func() { taskCompilerVersion = prev })
+	taskCompilerVersion++
+	res, err := analyzeTaskForEditor(context.Background(), args)
+	require.NoError(t, err)
+	assert.False(t, res.Cached)
+	assert.Equal(t, 2, *calls)
+}
+
+func TestTaskAnalyzeCachedOnlyAndForce(t *testing.T) {
+	calls := stubTaskAnalyzer(t, sampleTaskAnalyses)
+	args := taskAnalyzeArgs{Agent: "bot", Content: "Say hello", CachedOnly: true}
+	miss, err := analyzeTaskForEditor(context.Background(), args)
+	require.NoError(t, err)
+	assert.True(t, miss.Miss)
+	assert.Zero(t, *calls, "a cached_only lookup never analyzes")
+
+	args.CachedOnly = false
+	first, err := analyzeTaskForEditor(context.Background(), args)
+	require.NoError(t, err)
+
+	args.CachedOnly = true
+	hit, err := analyzeTaskForEditor(context.Background(), args)
+	require.NoError(t, err)
+	assert.False(t, hit.Miss)
+	assert.True(t, hit.Cached)
+	assert.Equal(t, taskVerdictDeterministic, hit.Verdict)
+
+	time.Sleep(time.Millisecond)
+	forced, err := analyzeTaskForEditor(context.Background(), taskAnalyzeArgs{Agent: "bot", Content: "Say hello", Force: true})
+	require.NoError(t, err)
+	assert.False(t, forced.Cached)
+	assert.Equal(t, 2, *calls)
+	assert.True(t, forced.AnalyzedAt.After(*first.AnalyzedAt))
+
+	// The forced analysis replaced the cached entry.
+	args.CachedOnly = true
+	hit, err = analyzeTaskForEditor(context.Background(), args)
+	require.NoError(t, err)
+	assert.True(t, hit.AnalyzedAt.Equal(*forced.AnalyzedAt))
+}
+
+func TestTaskAnalyzeCacheExpiresAndEvicts(t *testing.T) {
+	stubTaskAnalyzer(t, nil)
+	cache := newTaskAnalysisCache(taskAnalysisCachePath)
+	cache.put("old", &taskAnalysisEntry{Analysis: &compileTaskAnalysis{}, AnalyzedAt: time.Now().Add(-taskAnalysisCacheTTL - time.Hour)})
+	_, ok := cache.get("old")
+	assert.False(t, ok, "an expired analysis is not used")
+
+	for i := range taskAnalysisCacheMax + 5 {
+		cache.put(strconv.Itoa(i), &taskAnalysisEntry{Analysis: &compileTaskAnalysis{}, AnalyzedAt: time.Now().Add(time.Duration(i) * time.Second)})
+	}
+	reloaded := newTaskAnalysisCache(taskAnalysisCachePath)
+	_, ok = reloaded.get("0")
+	assert.False(t, ok, "the oldest analyses are evicted past the limit")
+	_, ok = reloaded.get(strconv.Itoa(taskAnalysisCacheMax + 4))
+	assert.True(t, ok)
+	reloaded.mu.Lock()
+	defer reloaded.mu.Unlock()
+	assert.Len(t, reloaded.entries, taskAnalysisCacheMax)
 }
 
 func TestTaskAnalyzeScriptSkipsAnalyzer(t *testing.T) {
@@ -288,7 +425,7 @@ func TestEstimateTaskRunPricesCatalogModels(t *testing.T) {
 		{Kind: "deterministic", Deterministic: true, Tool: "web_get"},
 		{Kind: "agent_run"},
 	}
-	est := estimateTaskRun("fetch the release notes and summarize them", nil, steps, "anthropic/claude-opus-5-5", false)
+	est := estimateTaskRun("fetch the release notes and summarize them", 0, steps, "anthropic/claude-opus-5-5", false)
 	require.NotNil(t, est.MinCostUSD)
 	require.NotNil(t, est.MaxCostUSD)
 	// Claude Opus 5.5 costs $4 per million input tokens and $20 per million output tokens.
@@ -296,7 +433,7 @@ func TestEstimateTaskRunPricesCatalogModels(t *testing.T) {
 	assert.InDelta(t, (float64(est.MaxInputTokens)*4+float64(est.MaxOutputTokens)*20)/1e6, *est.MaxCostUSD, 1e-12)
 	assert.Greater(t, *est.MaxCostUSD, *est.MinCostUSD)
 
-	unpriced := estimateTaskRun("fetch the release notes and summarize them", nil, steps, "openai-codex/gpt-6-sol", false)
+	unpriced := estimateTaskRun("fetch the release notes and summarize them", 0, steps, "openai-codex/gpt-6-sol", false)
 	assert.Nil(t, unpriced.MinCostUSD, "subscription-billed models show tokens only")
 }
 

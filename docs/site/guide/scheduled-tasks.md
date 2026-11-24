@@ -304,6 +304,12 @@ A task whose prompt is not deterministic keeps running on the model.
 
 The compilation itself costs tokens once. For any task running more than a few times per day, that cost is recovered quickly.
 
+### Live feedback in the editor
+
+The task editor and the workflow editor analyze a prompt as you type and show, under it, whether the precompiler would compile it (✔ deterministic, ◐ partial, or ✖ not deterministic), the estimated tokens and cost of each run, and a monthly projection for a recurring trigger. The analysis uses the agent's model, and its own tokens are recorded under the task editor in usage.
+
+Analyses are cached on the server, keyed by everything that affects them: the prompt, task type, agent, target, project, trigger type (scheduled task or workflow), and Aviary's compiler version. The cache is kept in `<data-dir>/task-analyses.json`, so it is shared by every browser and survives reloads and restarts. Opening an editor whose prompt was already analyzed shows the last result immediately, labelled **Cached · checked 2h ago**, without calling the model. Editing the prompt analyzes it again once typing pauses, and changing it back shows the cached result. The model and precompile choices only change how a cached analysis is priced, so they never re-run it. Click **Re-check** to analyze again and replace the cached entry. A new Aviary release whose compiler changed re-analyzes every prompt, and a cached analysis expires after 30 days.
+
 Precompilation is on by default: `task_schedule` and the **Add task** dialog set `precompile: true` on new scheduled prompt tasks. Pass `precompile=false`, or clear **Try to precompile**, to opt a task out. One-time tasks (`task_schedule` with `in`, or neither `in` nor a schedule) always run their prompt on the model. To change the default globally:
 
 ```yaml

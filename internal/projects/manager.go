@@ -229,7 +229,8 @@ func (m *Manager) generalApprovalLocked() clidefs.ApprovalMode {
 
 // Reconcile applies a newly loaded configuration: the agents, the projects
 // each one owns, the models: section, and the approval: section. A
-// project's jobs run on its owning agent's model and fallbacks.
+// project's jobs run on projects.model and projects.fallbacks when model is
+// set, else on its owning agent's model and fallbacks.
 func (m *Manager) Reconcile(cfg *config.Config) {
 	list := cfg.ProjectList()
 	m.reports.configure(list)
@@ -336,11 +337,10 @@ func (s engineSettings) restartKey() string {
 
 // settingsLocked resolves the engine settings from the config and watches.
 func (m *Manager) settingsLocked() (engineSettings, error) {
-	cfg := m.cfg
+	cfg := m.effectiveSettingsLocked()
 	targets := config.AgentProjectsConfig(m.list).Targets()
 	watchAgents := map[string]string{}
 	for _, watch := range m.watches {
-		cfg = cfg.Override(watch.Settings)
 		for _, target := range watch.Targets {
 			if !slices.Contains(targets, target) {
 				targets = append(targets, target)
@@ -350,7 +350,7 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 			}
 		}
 	}
-	targetAgents, defaultSpecs, err := m.jobSpecsLocked(targets, watchAgents)
+	targetAgents, defaultSpecs, err := m.jobSpecsLocked(cfg, targets, watchAgents)
 	if err != nil {
 		return engineSettings{}, err
 	}
@@ -403,14 +403,11 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 	return s, nil
 }
 
-// jobSpecsLocked resolves each target's job specs from the Aviary agent that
-// owns it, in fallback order, and the spec of jobs no target owns: the first
-// target's first.
-func (m *Manager) jobSpecsLocked(targets []string, watchAgents map[string]string) (map[string][]string, []string, error) {
-	agents := m.agents
-	if agents == nil {
-		agents = &config.Config{}
-	}
+// jobSpecsLocked resolves each target's job specs, in fallback order, from
+// the settings' model override or else the Aviary agent that owns it, and
+// the spec of jobs no target owns: the first target's first.
+func (m *Manager) jobSpecsLocked(settings config.ProjectsConfig, targets []string, watchAgents map[string]string) (map[string][]string, []string, error) {
+	agents := m.modelConfigLocked(settings)
 	targetAgents := map[string][]string{}
 	for _, target := range targets {
 		name := watchAgents[target]
@@ -438,6 +435,85 @@ func (m *Manager) jobSpecsLocked(targets []string, watchAgents map[string]string
 		defaultSpecs = targetAgents[targets[0]][:1]
 	}
 	return targetAgents, defaultSpecs, nil
+}
+
+// modelConfigLocked is the config job models resolve against: the agents,
+// models: and approval: sections with settings, the projects settings the
+// watches leave in force, so projects.model and projects.fallbacks apply.
+func (m *Manager) modelConfigLocked(settings config.ProjectsConfig) *config.Config {
+	agents := config.Config{}
+	if m.agents != nil {
+		agents = *m.agents
+	}
+	agents.Projects = settings
+	return &agents
+}
+
+// effectiveSettingsLocked is the projects settings with every runtime
+// watch's settings laid over them, as settingsLocked resolves them.
+func (m *Manager) effectiveSettingsLocked() config.ProjectsConfig {
+	cfg := m.cfg
+	for _, watch := range m.watches {
+		cfg = cfg.Override(watch.Settings)
+	}
+	return cfg
+}
+
+// ProjectModel is the model a project's jobs run on: the specs in fallback
+// order and where they come from, "project override", "from agent <name>",
+// or "from models.defaults".
+type ProjectModel struct {
+	Model     string   `json:"model"`
+	Fallbacks []string `json:"fallbacks"`
+	Source    string   `json:"source"`
+}
+
+// String renders the model as project status shows it, such as
+// "claude/opus (project override)".
+func (p ProjectModel) String() string {
+	if p.Model == "" {
+		return ""
+	}
+	return p.Model + " (" + p.Source + ")"
+}
+
+// ProjectModels returns the effective job model of every watched target.
+func (m *Manager) ProjectModels() map[string]ProjectModel {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	settings, err := m.settingsLocked()
+	if err != nil {
+		return map[string]ProjectModel{}
+	}
+	return m.projectModelsLocked(settings)
+}
+
+// projectModelsLocked returns the effective job model of every target of
+// settings.
+func (m *Manager) projectModelsLocked(settings engineSettings) map[string]ProjectModel {
+	cfg := m.modelConfigLocked(m.effectiveSettingsLocked())
+	models := make(map[string]ProjectModel, len(settings.Targets))
+	for _, target := range settings.Targets {
+		specs := settings.TargetAgents[target]
+		model := ProjectModel{Fallbacks: []string{}, Source: config.ProjectModelSource(cfg, m.projectAgentLocked(target))}
+		if len(specs) > 0 {
+			model.Model, model.Fallbacks = specs[0], append(model.Fallbacks, specs[1:]...)
+		}
+		models[target] = model
+	}
+	return models
+}
+
+// runsOn reports whether a job running agent with model runs on one of the
+// project model's specs.
+func (p ProjectModel) runsOn(agent, model string) bool {
+	for _, value := range append([]string{p.Model}, p.Fallbacks...) {
+		spec, err := parseAgentSpec(value)
+		if err == nil && spec.Name == agent && (model == "" || spec.Model == model) {
+			return true
+		}
+	}
+	return false
 }
 
 // refresh brings the running engine in line with the settings: nothing when

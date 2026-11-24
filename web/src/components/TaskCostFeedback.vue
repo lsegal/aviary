@@ -18,6 +18,13 @@
 					<span data-testid="task-cost-monthly">{{ monthly }}</span>
 				</template>
 			</p>
+			<p v-if="state === 'ready'" class="text-gray-500 dark:text-gray-400">
+				<span v-if="provenance" data-testid="task-cost-cached" :title="analyzedAtTitle">{{ provenance }}</span>
+				<template v-if="provenance"> · </template>
+				<button type="button" data-testid="task-cost-recheck"
+					class="text-blue-600 hover:underline dark:text-blue-400" title="Analyze again, bypassing the cache"
+					@click="recheck">Re-check</button>
+			</p>
 			<p v-if="note" data-testid="task-cost-note" class="text-gray-500 dark:text-gray-400">{{ note }}</p>
 			<p v-if="contextNote" data-testid="task-cost-context" class="text-gray-500 dark:text-gray-400">{{ contextNote }}</p>
 			<template v-if="state === 'error'">
@@ -33,7 +40,10 @@
 <script lang="ts">
 import type { TaskAnalysis, TaskRunEstimate } from "../lib/taskAnalysis";
 
-/** Analyses by input, shared by every editor, so unchanged input is not re-analyzed. */
+/**
+ * Analyses by input, shared by every editor, so unchanged input is not looked
+ * up again. The server keeps the persistent cache across reloads and browsers.
+ */
 const cache = new Map<string, TaskAnalysis>();
 </script>
 
@@ -41,6 +51,7 @@ const cache = new Map<string, TaskAnalysis>();
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useMCP } from "../composables/useMCP";
 import { useTriggerRuns } from "../composables/useTriggerPreview";
+import { age } from "../lib/projects";
 import {
 	formatEstimate,
 	formatMonthlyEstimate,
@@ -105,6 +116,10 @@ watch([state, result], () =>
 let timer: ReturnType<typeof setTimeout> | undefined;
 // Only the latest request may set the result; older ones are discarded.
 let seq = 0;
+// The first input that can be analyzed, normally what the editor opens with,
+// is looked up in the server's cache without analyzing, so an unchanged
+// editor shows its last result with no model call.
+let opened = false;
 
 const input = computed(() => ({
 	agent: props.agent,
@@ -123,24 +138,59 @@ function clearTimer() {
 	timer = undefined;
 }
 
-async function analyze() {
-	clearTimer();
+function toolArgs(extra: Record<string, unknown>) {
 	const args = input.value;
+	return {
+		agent: args.agent,
+		content: args.content,
+		type: args.type,
+		...(args.target ? { target: args.target } : {}),
+		...(args.project ? { project: args.project } : {}),
+		...(args.model ? { model: args.model } : {}),
+		precompile: args.precompile,
+		...(args.trigger === "message" ? { trigger: args.trigger } : {}),
+		editor,
+		...extra,
+	};
+}
+
+/**
+ * Shows the server's cached analysis of the input, or analyzes it once typing
+ * pauses on a miss.
+ */
+async function lookup() {
+	clearTimer();
+	const key = inputKey.value;
+	const id = ++seq;
+	let parsed: TaskAnalysis | null = null;
+	try {
+		parsed = parseTaskAnalysis(
+			await callTool("task_analyze", toolArgs({ cached_only: true })),
+		);
+	} catch (e) {
+		console.warn("task_analyze lookup failed:", e);
+	}
+	if (id !== seq) return;
+	if (!parsed) {
+		state.value = "checking";
+		timer = setTimeout(() => void analyze(), props.debounceMs);
+		return;
+	}
+	cache.set(key, parsed);
+	result.value = parsed;
+	state.value = "ready";
+}
+
+async function analyze(force = false) {
+	clearTimer();
 	const key = inputKey.value;
 	const id = ++seq;
 	state.value = "checking";
 	try {
-		const text = await callTool("task_analyze", {
-			agent: args.agent,
-			content: args.content,
-			type: args.type,
-			...(args.target ? { target: args.target } : {}),
-			...(args.project ? { project: args.project } : {}),
-			...(args.model ? { model: args.model } : {}),
-			precompile: args.precompile,
-			...(args.trigger === "message" ? { trigger: args.trigger } : {}),
-			editor,
-		});
+		const text = await callTool(
+			"task_analyze",
+			toolArgs(force ? { force: true } : {}),
+		);
 		const parsed = parseTaskAnalysis(text);
 		if (!parsed) throw new Error("unexpected task_analyze result");
 		cache.set(key, parsed);
@@ -176,8 +226,13 @@ watch(
 		}
 		const hit = cache.get(inputKey.value);
 		if (hit) {
-			result.value = hit;
+			result.value = { ...hit, cached: true };
 			state.value = "ready";
+			return;
+		}
+		if (!opened) {
+			opened = true;
+			void lookup();
 			return;
 		}
 		// The old verdict no longer describes the input; the request itself
@@ -224,6 +279,23 @@ onBeforeUnmount(() => {
 function retry() {
 	void analyze();
 }
+
+function recheck() {
+	void analyze(true);
+}
+
+/** That a result came from the cache, and when it was analyzed. */
+const provenance = computed(() => {
+	const r = result.value;
+	if (state.value !== "ready" || !r?.cached || !r.analyzed_at) return "";
+	const a = age(r.analyzed_at);
+	return `Cached · checked ${a && a !== "0s" ? `${a} ago` : "just now"}`;
+});
+
+const analyzedAtTitle = computed(() => {
+	const t = result.value?.analyzed_at;
+	return t ? `Analyzed ${new Date(t).toLocaleString()}` : "";
+});
 
 const icon = computed(() => {
 	if (state.value === "checking")

@@ -392,6 +392,7 @@
 	"server_status": [],
 	"server_upgrade": [
 		"force",
+		"remove_stale_lock",
 		"version",
 		"when"
 	],
@@ -453,8 +454,10 @@
 	],
 	"task_analyze": [
 		"agent",
+		"cached_only",
 		"content",
 		"editor",
+		"force",
 		"model",
 		"precompile",
 		"project",

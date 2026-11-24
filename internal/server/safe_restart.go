@@ -49,15 +49,16 @@ func exitStalledRestart() {
 }
 
 var (
-	versionCheck   = update.Check
-	installRelease = update.Install
-	gitCheckout    = update.GitCheckout
-	gitPull        = update.GitPull
-	planDevReload  = update.PlanDevReload
-	hotReloadDir   = update.HotReloadDir
-	hotReloadGen   = update.HotReloadGeneration
-	waitHotReload  = update.WaitHotReload
-	hotReloadWait  = update.DefaultHotReloadWait
+	versionCheck    = update.Check
+	installRelease  = update.Install
+	gitCheckout     = update.GitCheckout
+	gitPull         = update.GitPull
+	removeStaleLock = update.RemoveStaleIndexLock
+	planDevReload   = update.PlanDevReload
+	hotReloadDir    = update.HotReloadDir
+	hotReloadGen    = update.HotReloadGeneration
+	waitHotReload   = update.WaitHotReload
+	hotReloadWait   = update.DefaultHotReloadWait
 	// refreshAfterHotReload reruns the startup registrations a hot reload
 	// does not repeat, so reloaded code's MCP tools go live too.
 	refreshAfterHotReload = mcp.RefreshLiveServer
@@ -66,6 +67,9 @@ var (
 	// autoUpdateWait is how long one self-updater round waits for a restart
 	// already in progress before checking for a newer update.
 	autoUpdateWait = update.CheckInterval
+	// gitBusyRetry is how soon the self-updater tries again after another
+	// git command kept the checkout locked.
+	gitBusyRetry = 30 * time.Second
 )
 
 type restartState struct {
@@ -158,6 +162,11 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 
 	if req.Upgrade {
 		if dir := gitCheckout(); dir != "" {
+			if req.RemoveStaleLock {
+				if err := removeStaleLock(ctx, dir); err != nil {
+					return saferestart.Status{}, err
+				}
+			}
 			return s.gitUpgrade(ctx, dir, when)
 		}
 	}
@@ -501,6 +510,7 @@ func (s *Server) runSelfUpdater(ctx context.Context) {
 	if update.IsDevBuild() && !update.EmulationActive() && gitCheckout() == "" {
 		return // dev builds outside a checkout have nothing to compare against
 	}
+	ctx = update.WithCaller(ctx, "self-updater")
 	var lastNotified string
 	notify := func(check update.CheckResult) {
 		latest := ""
@@ -512,16 +522,20 @@ func (s *Server) runSelfUpdater(ctx context.Context) {
 			wsBroadcast(wsEvent{Type: "version", Check: &check})
 		}
 	}
-	tick := func() {
+	// tick runs one round and returns how long to wait for the next.
+	tick := func() time.Duration {
 		update.ClearCache()
 		check, err := versionCheck(ctx, &http.Client{Timeout: 30 * time.Second})
 		if err != nil {
-			return
+			if update.ErrorCode(err) == update.ErrCodeGitBusy {
+				return gitBusyRetry
+			}
+			return update.CheckInterval
 		}
 		notify(check)
 		if !check.UpgradeAvailable || !s.autoUpdateOn() || !check.UpgradeSupported {
 			s.setAutoUpdate(nil)
-			return
+			return update.CheckInterval
 		}
 		if s.autoApply(ctx, check) {
 			// Tell dashboards the update is gone, e.g. after a git pull
@@ -530,17 +544,20 @@ func (s *Server) runSelfUpdater(ctx context.Context) {
 			if check, err := versionCheck(ctx, &http.Client{Timeout: 30 * time.Second}); err == nil {
 				notify(check)
 			}
+		} else if auto := s.RestartStatus().AutoUpdate; auto != nil && auto.Code == update.ErrCodeGitBusy {
+			return gitBusyRetry
 		}
+		return update.CheckInterval
 	}
-	ticker := time.NewTicker(update.CheckInterval)
-	defer ticker.Stop()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 	for {
-		tick()
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-timer.C:
 		}
+		timer.Reset(tick())
 	}
 }
 
@@ -581,10 +598,17 @@ func (s *Server) autoApply(ctx context.Context, check update.CheckResult) bool {
 
 	slog.Info("server: applying automatic update", "component", "update", "version", version)
 	s.setAutoUpdateState(version, saferestart.AutoApplying)
-	st, err := s.requestRestart(ctx, saferestart.Request{When: saferestart.WhenNow, Upgrade: true, Version: version})
+	st, err := s.requestRestart(update.WithCaller(ctx, "auto-update"), saferestart.Request{When: saferestart.WhenNow, Upgrade: true, Version: version})
 	if err != nil {
-		slog.Warn("server: automatic update", "component", "update", "error", err)
-		s.setAutoUpdate(&saferestart.AutoUpdate{Version: version, Error: err.Error()})
+		code := update.ErrorCode(err)
+		// A busy checkout is retried shortly and a stale lock waits for the
+		// user, so neither is worth a warning on every round.
+		if prev := s.RestartStatus().AutoUpdate; code != "" && prev != nil && prev.Code == code {
+			slog.Info("server: automatic update deferred", "component", "update", "code", code, "error", err)
+		} else {
+			slog.Warn("server: automatic update", "component", "update", "code", code, "error", err)
+		}
+		s.setAutoUpdate(&saferestart.AutoUpdate{Version: version, Error: err.Error(), Code: code})
 		return false
 	}
 	if st.Message != "" {
@@ -600,7 +624,7 @@ func (s *Server) setAutoUpdateState(version, state string) {
 	s.restart.mu.Lock()
 	next := saferestart.AutoUpdate{Version: version, State: state}
 	if prev := s.restart.auto; prev != nil && prev.Version == version {
-		next.Error = prev.Error
+		next.Error, next.Code = prev.Error, prev.Code
 	}
 	s.restart.mu.Unlock()
 	s.setAutoUpdate(&next)

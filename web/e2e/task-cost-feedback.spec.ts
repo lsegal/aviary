@@ -1,4 +1,9 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import {
+	analysisCache,
+	sawChecking,
+	watchForChecking,
+} from "./helpers/analysisCache";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 // Fixtures follow task_analyze's result (internal/mcp/task_analyze.go).
@@ -54,12 +59,16 @@ interface Task {
 
 /**
  * Mocks one agent with `tasks` and an analyzer answering through `analyze`,
- * recording every task_analyze call.
+ * recording every task_analyze call that analyzes. Cache lookups
+ * (cached_only) are answered by `lookup`, a miss by default.
  */
 async function mockAnalyzer(
 	page: Page,
 	analyze: (args: Record<string, unknown>) => Analysis | Promise<Analysis>,
 	tasks: Task[] = [],
+	lookup: (args: Record<string, unknown>) => Analysis = () => ({
+		miss: true,
+	}),
 ) {
 	const config = {
 		agents: [{ name: "assistant", model: "x/y", tasks }],
@@ -76,6 +85,7 @@ async function mockAnalyzer(
 		config_task_convert_to_script: () => "task_compile_1",
 		task_preview: (args?: Record<string, unknown>) => taskPreview(args ?? {}),
 		task_analyze: (args?: Record<string, unknown>) => {
+			if (args?.cached_only) return lookup(args);
 			calls.push(args ?? {});
 			return analyze(args ?? {});
 		},
@@ -482,4 +492,95 @@ test("the settings task editor projects a saved task's trigger", async ({
 		"≈ 4.6k–12k tokens/run ($0.014–$0.050)",
 	);
 	await expect(feedback.getByTestId("task-cost-monthly")).toHaveCount(0);
+});
+
+test("the task editor shows a cached analysis on open and re-analyzes only on change or Re-check", async ({
+	page,
+	browser,
+}) => {
+	const cache = analysisCache((args) =>
+		args.content === "summarize the news" ? PARTIAL : NONDETERMINISTIC,
+	);
+	const tasks = [{ name: "manual", prompt: "summarize the news" }];
+	// An earlier session analyzed the saved prompt two hours ago.
+	cache.seed(
+		{ agent: "assistant", content: "summarize the news", type: "prompt" },
+		new Date(Date.now() - 2 * 3600_000).toISOString(),
+	);
+	const open = async (p: Page) => {
+		await watchForChecking(p);
+		await mockAnalyzer(
+			p,
+			(a) => cache.handler(a),
+			tasks,
+			(a) => cache.handler(a),
+		);
+		await p.goto("/agents/assistant/tasks?task=manual");
+		const feedback = p.getByTestId("task-cost-feedback");
+		await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
+			"Partially deterministic",
+		);
+		await expect(feedback.getByTestId("task-cost-cached")).toHaveText(
+			"Cached · checked 2h ago",
+		);
+		await expect(feedback.getByTestId("task-cost-estimate")).toHaveText(
+			"≈ 4.6k–12k tokens/run ($0.014–$0.050)",
+		);
+		expect(await sawChecking(p)).toBe(false);
+		return feedback;
+	};
+
+	// Opening, reloading, and another browser all use the cache.
+	const feedback = await open(page);
+	expect(cache.analyses).toHaveLength(0);
+	await page.reload();
+	await expect(feedback.getByTestId("task-cost-cached")).toHaveText(
+		"Cached · checked 2h ago",
+	);
+	expect(await sawChecking(page)).toBe(false);
+	const other = await browser.newContext();
+	try {
+		await open(await other.newPage());
+	} finally {
+		await other.close();
+	}
+	expect(cache.analyses).toHaveLength(0);
+
+	// Editing analyzes once; reverting shows the cached result again.
+	const prompt = page.getByLabel("Prompt");
+	await prompt.fill("summarize the news today");
+	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
+		"Not deterministic",
+	);
+	expect(cache.analyses).toHaveLength(1);
+	await expect(feedback.getByTestId("task-cost-cached")).toHaveCount(0);
+	await prompt.fill("summarize the news");
+	await expect(feedback.getByTestId("task-cost-cached")).toHaveText(
+		"Cached · checked 2h ago",
+	);
+	await page.waitForTimeout(1500);
+	expect(cache.analyses).toHaveLength(1);
+
+	// Re-check bypasses the cache and refreshes it.
+	await feedback.getByTestId("task-cost-recheck").click();
+	await expect.poll(() => cache.analyses.length).toBe(2);
+	expect(cache.analyses[1]).toMatchObject({
+		content: "summarize the news",
+		force: true,
+	});
+	await expect(feedback.getByTestId("task-cost-cached")).toHaveCount(0);
+	await page.reload();
+	await expect(feedback.getByTestId("task-cost-cached")).toHaveText(
+		/^Cached · checked (just now|\d+s ago)$/,
+	);
+	expect(cache.analyses).toHaveLength(2);
+
+	// A compiler version bump invalidates the cache, so reopening analyzes.
+	cache.invalidate();
+	await page.reload();
+	await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
+		"Partially deterministic",
+	);
+	expect(cache.analyses).toHaveLength(3);
+	await expect(feedback.getByTestId("task-cost-cached")).toHaveCount(0);
 });

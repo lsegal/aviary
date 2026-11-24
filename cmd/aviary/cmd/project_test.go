@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -107,6 +108,24 @@ func TestWatchSettingsFromFlags(t *testing.T) {
 	watchOpts.delivery = "poll"
 	if _, err := watchSettings(); err == nil {
 		t.Fatal("browser-only switches were accepted for gh polling")
+	}
+}
+
+func TestWatchModelEnvFillsWhatFlagsLeaveUnset(t *testing.T) {
+	env := map[string]string{watchModelEnv: "gemini/pro", watchFallbacksEnv: " codex/gpt-5.6 , ,claude/sonnet"}
+	getenv := func(k string) string { return env[k] }
+	got := withWatchModelEnv(watchAgentChoice{Name: "bot"}, getenv)
+	if got.Name != "bot" || got.Model != "gemini/pro" || !slices.Equal(got.Fallbacks, []string{"codex/gpt-5.6", "claude/sonnet"}) {
+		t.Fatalf("env choice = %+v", got)
+	}
+	got = withWatchModelEnv(watchAgentChoice{Model: "claude:opus", Fallbacks: []string{"codex:gpt-5.6"}}, getenv)
+	if got.Model != "claude:opus" || !slices.Equal(got.Fallbacks, []string{"codex:gpt-5.6"}) {
+		t.Fatalf("flags should win over env: %+v", got)
+	}
+	for _, text := range []string{"--model", "--fallback", watchModelEnv, watchFallbacksEnv, "projects.model"} {
+		if !strings.Contains(watchCmd.Long, text) {
+			t.Errorf("aviary watch --help does not document %s", text)
+		}
 	}
 }
 

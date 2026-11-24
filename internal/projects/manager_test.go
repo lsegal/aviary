@@ -166,6 +166,54 @@ func TestManagerAgentModelsDefaultFromModelsSection(t *testing.T) {
 	}
 }
 
+func TestManagerProjectModelOverride(t *testing.T) {
+	m := newTestManager(t)
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{
+			{Name: "Aviary", Model: "cli/claude/sonnet", Fallbacks: []string{"cli/gemini/pro"}, Projects: config.AgentProjectsConfig{{Target: "o/a"}}},
+		},
+	}
+	m.Reconcile(cfg)
+	if got := m.ProjectModels()["o/a"]; got.String() != "claude/sonnet (from agent Aviary)" || !reflect.DeepEqual(got.Fallbacks, []string{"gemini/pro"}) {
+		t.Fatalf("with no override the agent's models apply: %+v", got)
+	}
+
+	cfg.Projects = config.ProjectsConfig{Model: "claude/opus", Fallbacks: []string{"codex/gpt-5.6"}}
+	m.Reconcile(cfg)
+	m.mu.Lock()
+	s, err := m.settingsLocked()
+	m.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.TargetAgents["o/a"]; !reflect.DeepEqual(got, []string{"claude/opus", "codex/gpt-5.6"}) {
+		t.Fatalf("the override should replace the agent's models: %v", got)
+	}
+	if got := quotaAgentNames(s); !reflect.DeepEqual(got, []string{"claude", "codex"}) {
+		t.Fatalf("quota should follow the override: %v", got)
+	}
+	status := m.Status(context.Background(), 0, nil)
+	if got := status["model_labels"].(map[string]string)["o/a"]; got != "claude/opus (project override)" {
+		t.Fatalf("status model = %q", got)
+	}
+	clis := status["clis"].([]StatusCLI)
+	if len(clis) != 2 || clis[0].Name != "claude" || clis[1].Name != "codex" {
+		t.Fatalf("status clis = %+v", clis)
+	}
+
+	// A runtime watch's settings override the saved ones.
+	if err := m.AddWatch(Watch{Targets: []string{"o/b"}, Settings: config.ProjectsConfig{Model: "codex:gpt-5.6"}}); err != nil {
+		t.Fatal(err)
+	}
+	models := m.ProjectModels()
+	if got := models["o/b"]; got.Model != "codex/gpt-5.6" || got.Source != config.ProjectModelSourceOverride {
+		t.Fatalf("watch model = %+v", got)
+	}
+	if !models["o/b"].runsOn("codex", "gpt-5.6") || models["o/b"].runsOn("claude", "opus") {
+		t.Fatal("runsOn should match only the project's specs")
+	}
+}
+
 func TestManagerRestartKeyIgnoresLiveSettings(t *testing.T) {
 	base := engineSettings{Targets: []string{"o/r"}, Agents: []string{"codex"}, Interval: time.Minute}
 	live := base

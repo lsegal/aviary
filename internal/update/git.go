@@ -3,6 +3,7 @@ package update
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -132,11 +133,28 @@ func RequestRebuild() bool {
 	return os.WriteFile(path, nil, 0o600) == nil
 }
 
+// gitWaitDelay is how long a cancelled git command has to exit after its
+// interrupt before it is killed.
+const gitWaitDelay = time.Minute
+
+// gitWriteTimeout bounds a fetch or pull, which runs to completion even when
+// its caller gives up so it never leaves a lock behind.
+const gitWriteTimeout = 10 * time.Minute
+
+// runGit runs a git command for the updater. GIT_OPTIONAL_LOCKS=0 keeps
+// read-only commands such as git status from refreshing the index, so
+// polling never takes .git/index.lock. A cancelled context interrupts git,
+// which removes its lock files as it exits, instead of killing it.
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
+	cmd.WaitDelay = gitWaitDelay
+	start := time.Now()
 	out, err := cmd.CombinedOutput()
+	slog.Debug("update: git", "component", "update", "caller", callerOf(ctx), "dir", dir,
+		"args", strings.Join(args, " "), "duration", time.Since(start), "error", err)
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
@@ -151,9 +169,29 @@ func gitCount(ctx context.Context, dir, rng string) (int, error) {
 	return strconv.Atoi(out)
 }
 
+// runGitWrite runs a fetch or pull: it holds repository locks, so it runs to
+// completion, within gitWriteTimeout, even when ctx is cancelled, and it
+// retries while another git command holds a lock.
+func runGitWrite(ctx context.Context, dir string, args ...string) (string, error) {
+	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gitWriteTimeout)
+	defer cancel()
+	slog.Info("update: running git", "component", "update", "caller", callerOf(ctx), "dir", dir, "args", strings.Join(args, " "))
+	return runGitRetrying(wctx, dir, args...)
+}
+
 // ReadGitState fetches the checkout's upstream and reports how far behind it
-// is and whether the working tree has local changes.
+// is and whether the working tree has local changes. It waits for any other
+// updater's git work on the checkout, in this or another process, to finish.
 func ReadGitState(ctx context.Context, dir string) (GitState, error) {
+	var st GitState
+	err := withUpdaterLock(ctx, dir, func() (err error) {
+		st, err = readGitState(ctx, dir)
+		return err
+	})
+	return st, err
+}
+
+func readGitState(ctx context.Context, dir string) (GitState, error) {
 	st := GitState{Dir: dir, Supervised: Supervised(), HotReload: HotReloadDir() != ""}
 	var err error
 	if st.Branch, err = runGit(ctx, dir, "rev-parse", "--abbrev-ref", "HEAD"); err != nil {
@@ -169,7 +207,7 @@ func ReadGitState(ctx context.Context, dir string) (GitState, error) {
 		st.Upstream = ""
 		return st, nil
 	}
-	if _, err := runGit(ctx, dir, "fetch", "--quiet"); err != nil {
+	if _, err := runGitWrite(ctx, dir, "fetch", "--quiet"); err != nil {
 		return st, err
 	}
 	if st.Behind, err = gitCount(ctx, dir, "HEAD..@{upstream}"); err != nil {
@@ -195,8 +233,20 @@ func gitBlocker(st GitState) string {
 	return ""
 }
 
-func gitCheckResult(ctx context.Context, dir string) (CheckResult, error) {
-	st, err := ReadGitState(ctx, dir)
+func gitCheckResult(ctx context.Context, dir string) (out CheckResult, err error) {
+	lockErr := withUpdaterLock(ctx, dir, func() error {
+		out, err = readGitCheckResult(ctx, dir)
+		return nil
+	})
+	if lockErr != nil {
+		out = CheckResult{CurrentVersion: CurrentVersion(), CheckedAt: time.Now().UTC(), Message: lockErr.Error()}
+		return out, lockErr
+	}
+	return out, err
+}
+
+func readGitCheckResult(ctx context.Context, dir string) (CheckResult, error) {
+	st, err := readGitState(ctx, dir)
 	out := CheckResult{CurrentVersion: CurrentVersion(), CheckedAt: time.Now().UTC(), Git: &st}
 	if err != nil {
 		out.Message = err.Error()
@@ -218,9 +268,19 @@ func gitCheckResult(ctx context.Context, dir string) (CheckResult, error) {
 }
 
 // GitPull fast-forwards the checkout to its upstream. It refuses to run when
-// the tree has local changes or the pull would not fast-forward.
-func GitPull(ctx context.Context, dir string) (GitPullResult, error) {
-	st, err := ReadGitState(ctx, dir)
+// the tree has local changes or the pull would not fast-forward. Concurrent
+// pulls on one checkout, from this or other processes, run one at a time, so
+// a pull that waited finds the checkout already current.
+func GitPull(ctx context.Context, dir string) (res GitPullResult, err error) {
+	err = withUpdaterLock(ctx, dir, func() error {
+		res, err = gitPull(ctx, dir)
+		return err
+	})
+	return res, err
+}
+
+func gitPull(ctx context.Context, dir string) (GitPullResult, error) {
+	st, err := readGitState(ctx, dir)
 	if err != nil {
 		return GitPullResult{}, err
 	}
@@ -230,7 +290,7 @@ func GitPull(ctx context.Context, dir string) (GitPullResult, error) {
 	res := GitPullResult{Commits: st.Behind, Supervised: st.Supervised, HotReload: st.HotReload}
 	res.From, _ = runGit(ctx, dir, "rev-parse", "--short", "HEAD")
 	if st.Behind > 0 {
-		if _, err := runGit(ctx, dir, "pull", "--ff-only", "--quiet"); err != nil {
+		if _, err := runGitWrite(ctx, dir, "pull", "--ff-only", "--quiet"); err != nil {
 			return GitPullResult{}, err
 		}
 	}

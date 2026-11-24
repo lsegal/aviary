@@ -51,7 +51,7 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		// errors and the usage block after them is noise.
 		cmd.SilenceUsage = true
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(update.WithCaller(context.Background(), "aviary upgrade"), 15*time.Second)
 	defer cancel()
 
 	check, err := update.Check(ctx, &http.Client{Timeout: 15 * time.Second})
@@ -92,7 +92,7 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	}
 
 	if dir := update.GitCheckout(); dir != "" {
-		pullCtx, pullCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		pullCtx, pullCancel := context.WithTimeout(update.WithCaller(context.Background(), "aviary upgrade"), 2*time.Minute)
 		defer pullCancel()
 		res, err := update.GitPull(pullCtx, dir)
 		if err != nil {

@@ -3,7 +3,9 @@ package cmd
 import (
 	"bytes"
 	"io"
+	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -55,6 +57,7 @@ func TestWatchAgentModelFlags(t *testing.T) {
 			wantError: "--provider is the deprecated name of --model; pass only --model",
 		},
 		{name: "empty model", args: []string{"--model", ""}, wantError: `--model "" is not a model`},
+		{name: "colon shorthand", args: []string{"--model", "claude:opus"}, want: watchAgentChoice{Model: "claude:opus"}},
 		{name: "bare provider", args: []string{"--provider", "claude"}, wantError: `--provider "claude" is not a model`, warnings: 1},
 		{name: "bad fallback", args: []string{"--fallback", "codex/"}, wantError: `--fallback "codex/" is not a model`},
 	}
@@ -79,6 +82,13 @@ func TestWatchAgentModelFlags(t *testing.T) {
 }
 
 func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
+	bin := t.TempDir()
+	for _, name := range []string{"claude", "codex"} {
+		if err := os.WriteFile(filepath.Join(bin, exeName(name)), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin)
 	configHome := t.TempDir()
 	globalDir := writeGlobalAviary(t, configHome)
 	t.Setenv("XDG_CONFIG_HOME", configHome)
@@ -90,12 +100,12 @@ func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
 	}
 	global.Agents[0].Fallbacks = []string{"gemini/flash"}
 
-	agentOf := func(choice watchAgentChoice) config.AgentConfig {
+	sessionOf := func(choice watchAgentChoice, settings config.ProjectsConfig) (*config.Config, error) {
 		t.Helper()
-		session, err := startWatchSession(t.TempDir(), global, sources, choice, []string{"someone/existing"}, config.ProjectsConfig{})
+		session, err := startWatchSession(t.TempDir(), global, sources, choice, []string{"someone/existing"}, settings)
 		t.Cleanup(func() { _ = endWatchSession(session) })
 		if err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 		cfg, err := config.Load(session.ConfigPath)
 		if err != nil {
@@ -104,20 +114,35 @@ func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
 		if len(cfg.Agents) != 1 {
 			t.Fatalf("session agents = %+v", cfg.Agents)
 		}
-		return cfg.Agents[0]
+		return cfg, nil
 	}
 
-	agent := agentOf(watchAgentChoice{Model: "codex/gpt-6", Fallbacks: []string{"claude/sonnet", "claude/haiku"}})
-	if agent.Name != "coder" || agent.Model != "codex/gpt-6" || !slices.Equal(agent.Fallbacks, []string{"claude/sonnet", "claude/haiku"}) {
-		t.Errorf("--model and --fallback ran under %+v", agent)
+	cfg, err := sessionOf(watchAgentChoice{Model: "codex:gpt-6", Fallbacks: []string{"claude/sonnet", "claude/haiku"}}, config.ProjectsConfig{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	agent = agentOf(watchAgentChoice{Model: "codex/gpt-6"})
-	if agent.Model != "codex/gpt-6" || !slices.Equal(agent.Fallbacks, []string{"gemini/flash"}) {
-		t.Errorf("--model alone ran under %+v, want the agent's fallbacks kept", agent)
+	agent := cfg.Agents[0]
+	if agent.Name != "coder" || agent.Model != "claude/opus" || !slices.Equal(agent.Fallbacks, []string{"gemini/flash"}) {
+		t.Errorf("--model and --fallback changed the agent: %+v", agent)
 	}
-	agent = agentOf(watchAgentChoice{})
-	if agent.Model != "claude/opus" || !slices.Equal(agent.Fallbacks, []string{"gemini/flash"}) {
-		t.Errorf("no model flags ran under %+v, want the agent's own", agent)
+	if got := config.ProjectJobSpecs(cfg, "coder"); !slices.Equal(got, []string{"codex/gpt-6", "claude/sonnet", "claude/haiku"}) {
+		t.Errorf("--model and --fallback ran jobs on %v", got)
+	}
+	if got := config.ProjectModelSource(cfg, "coder"); got != config.ProjectModelSourceOverride {
+		t.Errorf("model source = %q", got)
+	}
+	cfg, err = sessionOf(watchAgentChoice{}, config.ProjectsConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := config.ProjectJobSpecs(cfg, "coder"); !slices.Equal(got, []string{"claude/opus", "gemini/flash"}) {
+		t.Errorf("no model flags ran jobs on %v, want the agent's own", got)
+	}
+	if _, err := sessionOf(watchAgentChoice{Model: "nosuch/m"}, config.ProjectsConfig{}); err == nil || !strings.Contains(err.Error(), `unknown provider "nosuch"`) {
+		t.Errorf("an unknown provider was accepted: %v", err)
+	}
+	if _, err := sessionOf(watchAgentChoice{Model: "claude/opus", Fallbacks: []string{"gemini/pro"}}, config.ProjectsConfig{}); err == nil || !strings.Contains(err.Error(), "the gemini CLI is not installed") {
+		t.Errorf("an uninstalled CLI was accepted: %v", err)
 	}
 }
 
@@ -147,4 +172,12 @@ func TestWatchHelpAndCompletionsHideProvider(t *testing.T) {
 			t.Errorf("%v lists the deprecated --provider:\n%s", args, out.String())
 		}
 	}
+}
+
+// exeName is name as an executable on PATH: Windows needs the .exe extension.
+func exeName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }

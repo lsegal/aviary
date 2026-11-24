@@ -32,11 +32,13 @@ Only two things are shared with your own Aviary, and both are read in place rath
 - the **browser profile**, so the GitHub sign-in browser delivery uses is reused;
 - **provider credentials**: CLI provider sign-ins, `auth:` references and stored tokens. No secret is copied into the session.
 
-The session starts from your providers, browser, approval and Code Loop settings, and the command's flags override the Code Loop settings. Its targets run under `--agent`, else the agent of yours that owns them, else a `watch` agent that takes `models.defaults`. Only the agent's model, fallbacks and permissions come along, never its channels, tasks or other projects. `--model` and the repeatable `--fallback` replace that agent's model and fallbacks for the session, without touching the agent in your config:
+The session starts from your providers, browser, approval and Code Loop settings, and the command's flags override the Code Loop settings. Its targets run under `--agent`, else the agent of yours that owns them, else a `watch` agent that takes `models.defaults`. Only the agent's model, fallbacks and permissions come along, never its channels, tasks or other projects. `--model` and the repeatable `--fallback` set the session's [job model override](#job-model-override), which replaces that agent's model and fallbacks for the session's jobs without touching the agent in your config. `claude:opus` is shorthand for `claude/opus`:
 
 ```bash
-aviary watch owner/repo --model claude/opus --fallback codex/gpt-5.6-terra:high
+aviary watch owner/repo --model claude:opus --fallback codex/gpt-5.6-terra:high
 ```
+
+Without the flags, the `AVIARY_WATCH_MODEL` and `AVIARY_WATCH_FALLBACKS` (comma-separated) environment variables set the override, and without those, `projects.model` and `projects.fallbacks` in your `aviary.yaml`. Each model must be a model of a provider reached through a CLI whose CLI is installed; anything else stops the watch with an error naming the model. The session's minimal web UI has the same picker under Code Loop settings.
 
 `--provider` is the old, deprecated name of `--model`. It still works with a warning, will be removed in a later release, and is an error together with `--model`.
 
@@ -85,6 +87,18 @@ A repository issue is picked up when it is open and matches the issue filter (`a
 ## CLI providers
 
 A project's jobs run on the agent that owns it. The agent's model and fallbacks are the provider and model defaults of the project's jobs, in fallback order: a job runs on the first one whose quota is not used up. A `<cli>/<model>` model such as `claude/opus` or `codex/gpt-5.6-terra:high` (or the same with a `cli/` prefix, `cli/claude/opus`) runs the job on that CLI. A model that is not a CLI, such as `anthropic/claude-sonnet-5-5`, runs the job on the agent itself, as `aviary/<agent>` below. An agent without a model takes `models.defaults`, and so does an `aviary watch` session whose targets no agent of yours owns, which then needs a CLI model there.
+
+### Job model override
+
+`model` and `fallbacks` in the shared `projects:` settings replace the owning agent's model and fallbacks for every project's jobs. They are models of providers reached through a CLI, such as `claude/opus` (or the shorthand `claude:opus`), tried in order; the CLI of each must be installed, and an unknown provider or a CLI that is not installed is rejected when the settings are saved, by `project_add`, and by `aviary watch`. With `model` empty, jobs run on the owning agent's models as described above, and `fallbacks` alone overrides nothing:
+
+```yaml
+projects:
+  model: claude/opus
+  fallbacks: [codex/gpt-5.6-terra]
+```
+
+Code Loop settings has a picker for both, offering the installed CLI providers' models. `project_status` reports each project's effective job model and its source, such as `claude/opus (project override)` or `claude/sonnet (from agent coder)`, and a job's detail shows the same source for a job running on its project's models. The `gh-fix` skills check and the quota display follow the override. The override changes only jobs' models: `chat_model`, `chat_fallbacks` and `unblock_model` keep their own meaning, and a scheduled task's own `model` still wins for its runs.
 
 Built-in definitions ship for `codex`, `claude`, `gemini`, `muse`, `opencode`, `cline` and `agy`. `aviary/<agent>` runs a job on one of your Aviary agents instead, inside the Aviary server rather than as a child process; for the job's duration its file tools and `exec` may use the job's clone directory without a `permissions.filesystem.allowedPaths` entry (the agent still needs a permissions preset that enables file tools). Override a built-in field by field, or add a new CLI, under `models.cli_definitions`; [CLI provider definitions](/reference/cli-definitions) documents the schema: the CLI providers are core Aviary providers, shared with the rest of Aviary rather than owned by Code Loop. A `null` field drops the built-in's value. To run a CLI installed off `PATH`, set its `binary`, such as `models.cli_definitions.claude.binary: /opt/claude/bin/claude`; Settings → Providers & Authentication then reports it installed at that path, and jobs run the same executable.
 
