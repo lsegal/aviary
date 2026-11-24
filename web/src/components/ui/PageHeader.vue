@@ -7,7 +7,8 @@
 			<span class="truncate">Back to {{ parent.label }}</span>
 		</router-link>
 		<div class="flex flex-wrap items-center justify-between gap-3">
-			<div class="flex min-w-0 flex-1 items-center gap-3">
+			<!-- The title keeps a share of the row; past it the actions wrap below. -->
+			<div class="flex min-w-0 flex-[1_1_14rem] items-center gap-3">
 				<slot name="icon" />
 				<div class="min-w-0 flex-1">
 					<nav v-if="crumbs.length > 1" aria-label="Breadcrumb" data-testid="page-breadcrumb" class="min-w-0">
@@ -19,9 +20,11 @@
 									class="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
 								<h2 v-if="i === crumbs.length - 1" aria-current="page" data-testid="page-title"
 									class="min-w-0 truncate">{{ crumb.label }}</h2>
-								<router-link v-else-if="crumb.to" :to="crumb.to"
-									class="min-w-0 truncate rounded text-gray-500 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-white">
-									{{ crumb.label }}</router-link>
+								<router-link v-else-if="crumb.to" v-slot="{ href, navigate }" :to="crumb.to" custom>
+									<a :href="href"
+										class="min-w-0 truncate rounded text-gray-500 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-white"
+										@click="navigate">{{ crumb.label }}</a>
+								</router-link>
 								<span v-else class="min-w-0 truncate text-gray-500 dark:text-gray-400">{{ crumb.label }}</span>
 							</li>
 						</ol>
@@ -44,7 +47,9 @@
 // crumb is the page's title (#986, #1036). Below the title sits the page's
 // own detail line; its icon and actions sit beside it. Every link is a route
 // link, so it works when the page is opened directly from its URL, and
-// leaving with unsaved edits asks first through the router's guard.
+// leaving with unsaved edits asks first through the router's guard. Only
+// the title is marked the current page, even where a crumb's route matches
+// it but for its query, so crumbs render their own anchors.
 import ArrowLeftIcon from "@heroicons/vue/24/outline/ArrowLeftIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import { computed } from "vue";

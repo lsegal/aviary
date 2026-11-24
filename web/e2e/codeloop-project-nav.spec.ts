@@ -140,7 +140,10 @@ test("with the sidebar collapsed, the board's pills open every project and its s
 	await expect(
 		page.getByRole("heading", { name: "lsegal/aviary" }),
 	).toBeVisible();
-	await page.getByRole("link", { name: "coder · Code Loop" }).click();
+	await page
+		.getByTestId("page-breadcrumb")
+		.getByRole("link", { name: "Code Loop" })
+		.click();
 	await expect(page).toHaveURL(/\/agents\/coder\/projects(\?.*)?$/);
 
 	// Scheduled opens the project's scheduled tasks.
