@@ -1148,12 +1148,11 @@ test("the prompt chat creates a weekly scheduled task that shows on the board an
 	await expect(chat).toContainText("weekly on Mon at 09:00 (UTC)");
 	await expect(chat).toContainText("tokens per run");
 
-	// The task shows on the board with the others, as a UI-made one does,
-	// once the board's 5 s schedule poll picks it up.
+	// The task shows on the board with the others, as a UI-made one does.
 	const card = page
 		.getByTestId("scheduled-card")
 		.filter({ hasText: "weekly-seo" });
-	await expect(card).toHaveCount(1, { timeout: 10_000 });
+	await expect(card).toHaveCount(1);
 	await expect(card.getByTestId("scheduled-trigger")).toHaveText(
 		"weekly on Mon at 09:00 (UTC)",
 	);
