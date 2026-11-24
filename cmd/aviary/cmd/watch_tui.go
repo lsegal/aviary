@@ -26,8 +26,8 @@ func runWatchTUI(ctx context.Context, call watchToolCaller, stream watchStreamCa
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithContext(ctx))
 	// Ask the terminal to tell Shift+Enter from Enter, so the prompt chat
 	// can add a line with it, and restore its default when the TUI ends.
-	fmt.Fprint(os.Stdout, watchModifyOtherKeysOn)
-	defer fmt.Fprint(os.Stdout, watchModifyOtherKeysOff)
+	_, _ = fmt.Fprint(os.Stdout, watchModifyOtherKeysOn)
+	defer func() { _, _ = fmt.Fprint(os.Stdout, watchModifyOtherKeysOff) }()
 	_, err := p.Run()
 	if err != nil && ctx.Err() != nil && errors.Is(err, tea.ErrProgramKilled) {
 		// A cancelled session ends the TUI the way quitting does.
