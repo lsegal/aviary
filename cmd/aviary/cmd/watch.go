@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mattn/go-isatty"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -86,7 +87,11 @@ your server port (default 16677) up, and serves a minimal web UI with no token
 prompt: Code Loop and Scheduled Tasks only. Chat, agent and channel settings,
 System pages and their API are unavailable. A full-screen TUI shows the same
 board in the terminal: status filters, scheduled tasks, board mode, job
-actions, live logs and stats. --no-webui serves no web UI, and --no-tui prints
+actions, live logs and stats. Its prompt chat (c to open or close, / to
+type) talks to the Code Loop agent in the same session as the web board's
+prompt chat: enter sends, alt+enter adds a line, up/down recall inputs, tab
+switches to the transcript, where n/N and enter jump from a #123 reference
+to its job, and esc returns to the board. ? lists every key. --no-webui serves no web UI, and --no-tui prints
 the Code Loop log instead of the TUI (the default when output is not a
 terminal).
 
@@ -358,7 +363,7 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 			_, _ = fmt.Fprintf(out, "Code Loop: %s\n", webURL)
 		}
 	}
-	call, closeCalls, err := watchToolCalls(ctx)
+	call, stream, closeCalls, err := watchToolCalls(ctx)
 	if err != nil {
 		cancel()
 		serveErr := <-served
@@ -372,7 +377,7 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 
 	if tui {
 		tuiDone := make(chan error, 1)
-		go func() { tuiDone <- runWatchTUI(ctx, call, title, webURL) }()
+		go func() { tuiDone <- runWatchTUI(ctx, call, stream, title, webURL) }()
 		select {
 		case err = <-tuiDone:
 			cancel()
@@ -450,16 +455,41 @@ func serveWatch(ctx context.Context, srv *server.Server, tok, configPath string)
 }
 
 // watchToolCalls connects an in-process MCP client to the session's server,
-// for the TUI and the log printer.
-func watchToolCalls(ctx context.Context) (watchToolCaller, func(), error) {
+// for the TUI and the log printer: a plain tool call, and one streaming the
+// tool's progress, as the prompt chat's turns need.
+func watchToolCalls(ctx context.Context) (watchToolCaller, watchStreamCaller, func(), error) {
 	client, err := internalmcp.NewInProcessClient(ctx, internalmcp.NewServer())
 	if err != nil {
-		return nil, nil, fmt.Errorf("connecting to the watch session: %w", err)
+		return nil, nil, nil, fmt.Errorf("connecting to the watch session: %w", err)
 	}
 	call := func(ctx context.Context, name string, args map[string]any) (string, error) {
 		return client.CallToolText(ctx, name, args)
 	}
-	return call, func() { _ = client.Close() }, nil
+	return call, watchStreamCalls(client), func() { _ = client.Close() }, nil
+}
+
+// watchStreamCalls calls tools on client with their progress handed to
+// onProgress; a tool's error result is an error.
+func watchStreamCalls(client *internalmcp.InProcessClient) watchStreamCaller {
+	return func(ctx context.Context, name string, args map[string]any, onProgress func(string)) (string, error) {
+		result, err := client.CallToolWithProgress(ctx, name, args, func(message string) bool {
+			onProgress(message)
+			return false
+		})
+		if err != nil {
+			return "", err
+		}
+		var text strings.Builder
+		for _, content := range result.Content {
+			if t, ok := content.(*sdkmcp.TextContent); ok {
+				text.WriteString(t.Text)
+			}
+		}
+		if result.IsError {
+			return "", errors.New(strings.TrimSpace(text.String()))
+		}
+		return text.String(), nil
+	}
 }
 
 // printWatchLogs prints the Code Loop log until ctx ends.
