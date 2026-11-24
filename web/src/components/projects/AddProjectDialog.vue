@@ -24,9 +24,10 @@
 					<p v-if="error" class="mt-2 text-sm text-red-700 dark:text-red-300">{{ error }}</p>
 					<ul v-else-if="result" class="mt-2 space-y-1.5 text-sm">
 						<li v-for="c in result.checks" :key="c.name" :data-check="c.name" :data-status="c.status"
-							class="flex items-start gap-2">
+							class="flex items-start gap-2" :class="c.status === 'info' ? 'text-xs' : ''">
 							<CheckIcon :status="c.status" />
-							<span class="text-gray-700 dark:text-gray-200">
+							<span v-if="c.status === 'info'" class="text-gray-500 dark:text-gray-400">{{ c.message }}</span>
+							<span v-else class="text-gray-700 dark:text-gray-200">
 								<b v-if="c.name !== 'fork'" class="font-medium text-gray-900 dark:text-white">{{ checkLabel(c.name) }}:</b>
 								{{ c.message }}
 								<router-link v-if="c.name === 'skills'" to="/system/skills"
@@ -107,7 +108,14 @@ const cliNames = computed(() =>
 if (cliStatus.clis.value === null) void cliStatus.refresh();
 const target = ref(props.initial ?? "");
 const input = ref<HTMLInputElement | null>(null);
-const { result, checking, error } = useProjectCheck(target);
+// The owning agent's job models, once the config has loaded, pick which CLI
+// providers need skills; a reloaded config re-runs the check.
+const { result, checking, error } = useProjectCheck(target, () => ({
+	agent: props.agent,
+	models: store.config
+		? jobModels(props.agent, store.config, cliNames.value).map((m) => m.model)
+		: undefined,
+}));
 const addProject = useAddProject();
 const starting = ref(false);
 const startError = ref("");
@@ -170,6 +178,7 @@ const ICONS: Record<CheckStatus, { cls: string; d: string }> = {
 	ok: { cls: "text-green-600", d: "M5 10.5l3.5 3.5L15 7" },
 	warn: { cls: "text-amber-600", d: "M10 6v5m0 3h.01" },
 	fail: { cls: "text-red-600", d: "M6.5 6.5l7 7m0-7l-7 7" },
+	info: { cls: "text-gray-400", d: "M10 9v5m0-8h.01" },
 };
 
 function CheckIcon(p: { status: CheckStatus }) {

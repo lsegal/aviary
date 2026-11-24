@@ -14,18 +14,26 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lsegal/aviary/internal/codingskills"
+	"github.com/lsegal/aviary/internal/config"
 )
 
-// stubProjectCheck replaces gh, PATH lookups and the home directory for one
-// test. gh answers from responses keyed by the joined arguments; a missing key
-// fails the call.
+// stubProjectCheck replaces gh, PATH lookups, the home directory and the
+// configuration for one test. gh answers from responses keyed by the joined
+// arguments; a missing key fails the call. The configuration runs jobs on
+// claude, codex and opencode until a test sets its own with
+// stubProjectConfig.
 func stubProjectCheck(t *testing.T, onPath []string, responses map[string]string) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	oldGH, oldLook, oldHome := projectGH, projectLookPath, projectHomeDir
-	t.Cleanup(func() { projectGH, projectLookPath, projectHomeDir = oldGH, oldLook, oldHome })
+	oldGH, oldLook, oldHome, oldConfig := projectGH, projectLookPath, projectHomeDir, projectConfig
+	t.Cleanup(func() {
+		projectGH, projectLookPath, projectHomeDir, projectConfig = oldGH, oldLook, oldHome, oldConfig
+	})
+	stubProjectConfig(&config.Config{Models: config.ModelsConfig{Defaults: &config.ModelDefaults{
+		Model: "cli/claude", Fallbacks: []string{"cli/codex", "cli/opencode"},
+	}}})
 	projectGH = func(_ context.Context, args ...string) ([]byte, error) {
 		if out, ok := responses[strings.Join(args, " ")]; ok {
 			return []byte(out), nil
@@ -42,6 +50,10 @@ func stubProjectCheck(t *testing.T, onPath []string, responses map[string]string
 	}
 	projectHomeDir = func() (string, error) { return home, nil }
 	return home
+}
+
+func stubProjectConfig(cfg *config.Config) {
+	projectConfig = func() (*config.Config, error) { return cfg, nil }
 }
 
 func installSkill(t *testing.T, home, dir, version string) {
@@ -124,6 +136,64 @@ func TestProjectCheckReportsEachFailure(t *testing.T) {
 	assert.Equal(t, "gh-fix is not installed for codex", checks["skills"].Message)
 	_, hasFork := checks["fork"]
 	assert.False(t, hasFork)
+}
+
+// The screenshot in #1018: a project running on claude/opus must not need
+// attention because agy, gemini and opencode, which it never uses, lack gh-fix.
+func TestProjectCheckIgnoresSkillsOfUnusedCLIs(t *testing.T) {
+	home := stubProjectCheck(t, []string{"gh", "agy", "claude", "gemini", "opencode"}, map[string]string{
+		"auth status":             "",
+		"api repos/lsegal/aviary": `{"permissions":{"push":true}}`,
+	})
+	stubProjectConfig(&config.Config{Agents: []config.AgentConfig{
+		{Name: "Aviary", Model: "claude/opus", Projects: config.AgentProjectsConfig{{Target: "lsegal/aviary"}}},
+	}})
+	installSkill(t, home, ".claude/skills", "1.6.0")
+
+	res, err := runProjectCheck(context.Background(), projectCheckArgs{Target: "lsegal/aviary"})
+	require.NoError(t, err)
+	assert.True(t, res.OK, "unused CLIs never need attention")
+	checks := checkByName(res)
+	assert.Equal(t, projectCheckOK, checks["skills"].Status)
+	assert.Equal(t, "gh-fix 1.6.0 installed for claude", checks["skills"].Message)
+	assert.Equal(t, projectCheckInfo, checks["skills_unused"].Status)
+	assert.Equal(t, "gh-fix also missing for agy, gemini and opencode (not used)", checks["skills_unused"].Message)
+	for _, cli := range res.CLIs {
+		assert.Equal(t, cli.Name == "claude", cli.Used, cli.Name)
+	}
+}
+
+func TestProjectCheckFailsForUsedCLIsMissingSkills(t *testing.T) {
+	home := stubProjectCheck(t, []string{"gh", "claude", "codex", "gemini", "cline"}, map[string]string{"auth status": ""})
+	installSkill(t, home, ".claude/skills", "")
+	cfg := &config.Config{
+		Agents:   []config.AgentConfig{{Name: "coder", Model: "claude/opus", Projects: config.AgentProjectsConfig{{Target: "users/lsegal/projects/4"}}}},
+		Projects: config.ProjectsConfig{ChatModel: "claude/opus"},
+	}
+	stubProjectConfig(cfg)
+	check := func(args projectCheckArgs) ProjectCheck {
+		t.Helper()
+		args.Target = "users/lsegal/projects/4"
+		res, err := runProjectCheck(context.Background(), args)
+		require.NoError(t, err)
+		assert.Equal(t, checkByName(res)["skills"].Status != projectCheckFail, res.OK)
+		return checkByName(res)["skills"]
+	}
+
+	assert.Equal(t, projectCheckOK, check(projectCheckArgs{}).Status)
+	assert.Equal(t, "gh-fix is not installed for codex", check(projectCheckArgs{Models: []string{"codex/gpt-5.6-terra"}}).Message,
+		"an unsaved primary model is checked")
+	assert.Equal(t, "gh-fix is not installed for gemini", check(projectCheckArgs{Agent: "coder", Models: []string{"claude/opus", "cli/gemini"}}).Message,
+		"an agent fallback is checked")
+
+	cfg.Projects.ChatFallbacks = []string{"cline/m"}
+	assert.Equal(t, "gh-fix is not installed for cline", check(projectCheckArgs{}).Message, "a chat fallback is checked")
+	cfg.Projects.ChatFallbacks = nil
+	cfg.Projects.UnblockAgent = "codex"
+	assert.Equal(t, "gh-fix is not installed for codex", check(projectCheckArgs{}).Message, "the unblock agent is checked")
+	cfg.Projects.UnblockAgent = ""
+	cfg.Agents[0].Tasks = []config.TaskConfig{{Name: "nightly", Project: "users/lsegal/projects/4", Model: "gemini/m"}}
+	assert.Equal(t, "gh-fix is not installed for gemini", check(projectCheckArgs{}).Message, "a scheduled project task is checked")
 }
 
 func TestProjectCheckSignedOutAndNoCLIs(t *testing.T) {

@@ -92,8 +92,23 @@ export function useProjectInstanceID() {
 	return instanceID;
 }
 
-/** project_check for a target, re-run (debounced) as the target changes. */
-export function useProjectCheck(target: Ref<string>, delay = 400) {
+/** What project_check needs besides the target to know the project's CLIs. */
+export interface ProjectCheckOptions {
+	/** The agent that owns, or will own, the project. */
+	agent?: string;
+	/** The agent's model and fallbacks as the form holds them, unsaved. */
+	models?: string[];
+}
+
+/**
+ * project_check for a target, re-run (debounced) as the target or options
+ * change, so editing the agent's models re-checks which CLIs need skills.
+ */
+export function useProjectCheck(
+	target: Ref<string>,
+	options: () => ProjectCheckOptions = () => ({}),
+	delay = 400,
+) {
 	const { callTool } = useMCP();
 	const result = ref<ProjectCheckResult | null>(null);
 	const checking = ref(false);
@@ -113,7 +128,9 @@ export function useProjectCheck(target: Ref<string>, delay = 400) {
 		checking.value = true;
 		try {
 			const res = normalizeCheck(
-				parseToolJSON(await callTool("project_check", { target: t })),
+				parseToolJSON(
+					await callTool("project_check", { target: t, ...options() }),
+				),
 			);
 			if (mine !== seq) return;
 			result.value = res;
@@ -127,7 +144,7 @@ export function useProjectCheck(target: Ref<string>, delay = 400) {
 		}
 	}
 
-	watch(target, () => {
+	watch([target, () => JSON.stringify(options())], () => {
 		clearTimeout(timer);
 		result.value = null;
 		checking.value = target.value.trim() !== "";
