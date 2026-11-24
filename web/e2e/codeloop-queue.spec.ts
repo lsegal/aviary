@@ -303,6 +303,20 @@ test("the header's Queue menu offers Fix issue, Safe merge PR and Discuss", asyn
 	]);
 });
 
+test("the header's Queue button shows the sidebar's blue + (#1197)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto(BOARD);
+	const plus = page.getByTestId("queue-menu").getByTestId("queue-menu-plus");
+	const blue = (el: Element) => getComputedStyle(el).backgroundColor;
+	await expect
+		.poll(() => plus.evaluate(blue))
+		.toBe(await page.getByTestId("sidebar-add-project").evaluate(blue));
+	await expect(plus).toHaveCSS("color", "rgb(255, 255, 255)");
+	await expect(page.getByTestId("queue-menu")).toHaveText("Queue");
+});
+
 test("the safe-merge picker lists open PRs and queues the picked ones in order", async ({
 	page,
 }) => {

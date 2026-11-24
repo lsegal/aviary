@@ -146,7 +146,7 @@
                 <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
                 <ProjectRunningBadge :running="child.running ?? 0" />
               </router-link>
-              <SidebarRowAction v-if="child.key === 'projects' && !minimal" label="Add project" data-testid="sidebar-add-project"
+              <SidebarRowAction v-if="child.key === 'projects'" label="Add project" data-testid="sidebar-add-project"
                 :to="addProjectLink(soleAgent.name)" />
               <SidebarRowAction v-else-if="child.key === 'chat'" label="New chat" data-testid="sidebar-new-chat"
                 :disabled="creatingChat" @click="newChat(soleAgent.name)" />
@@ -186,7 +186,7 @@
                     <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
                     <ProjectRunningBadge :running="child.running ?? 0" />
                   </router-link>
-                  <SidebarRowAction v-if="child.key === 'projects' && !minimal" label="Add project" data-testid="sidebar-add-project"
+                  <SidebarRowAction v-if="child.key === 'projects'" label="Add project" data-testid="sidebar-add-project"
                     :to="addProjectLink(a.name)" />
                   <SidebarRowAction v-else-if="child.key === 'chat'" label="New chat" data-testid="sidebar-new-chat"
                     :disabled="creatingChat" @click="newChat(a.name)" />
@@ -903,10 +903,9 @@ function addProjectLink(agent: string) {
 
 // Rows whose "+" sits over their right edge make room for it only while it
 // shows, so a count badge stays at the right edge until then. The "+" shows
-// on row hover or focus, and always on touch (see SidebarRowAction); like
-// it, only the states that show the "+" set a padding, so none compete.
+// on row hover or focus, and always on touch (see SidebarRowAction).
 const rowActionPad =
-	"[@media(hover:none)]:pr-9 group-hover/row:pr-9 group-focus-within/row:pr-9";
+	"pr-9 [@media(hover:hover)]:pr-3 group-hover/row:pr-9 group-focus-within/row:pr-9";
 
 // Rows whose "+" sits over their right edge keep room for it.
 function hasRowAction(child: NavChild): boolean {

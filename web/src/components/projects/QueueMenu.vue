@@ -32,9 +32,10 @@
 // safely merge pull requests with gh-safe-merge, or answer a Discussion with
 // gh-discuss. Each choice opens that skill's picker. Its "+" is the
 // sidebar's blue "+" (#1197).
+
+import PlusIcon from "@heroicons/vue/16/solid/PlusIcon";
 import ArrowsRightLeftIcon from "@heroicons/vue/24/outline/ArrowsRightLeftIcon";
 import ChatBubbleLeftEllipsisIcon from "@heroicons/vue/24/outline/ChatBubbleLeftEllipsisIcon";
-import PlusIcon from "@heroicons/vue/16/solid/PlusIcon";
 import WrenchScrewdriverIcon from "@heroicons/vue/24/outline/WrenchScrewdriverIcon";
 import {
 	DropdownMenuContent,
