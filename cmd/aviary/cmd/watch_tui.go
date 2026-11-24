@@ -597,7 +597,7 @@ func (m watchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case watchChatDataMsg:
 		return m.applyChatData(msg), nil
 	case watchChatChunkMsg:
-		m = m.applyChatChunk(msg.chunk)
+		m = m.applyChatChunk(msg)
 		return m, watchChatWait(msg.ch)
 	case watchChatDoneMsg:
 		return m.finishChat(msg)

@@ -1622,6 +1622,11 @@ func TestServerVersionTools_Emulated(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(checkText, "\"upgradeAvailable\": true"))
 	assert.Contains(t, checkText, "\"id\": \"o/r#1\"")
+	exe, err := os.Executable()
+	require.NoError(t, err)
+	exeJSON, err := json.Marshal(exe)
+	require.NoError(t, err)
+	assert.Contains(t, checkText, "\"executable\": "+string(exeJSON), "aviary upgrade swaps the binary the server runs")
 
 	upgradeText, err := c.CallToolText(context.Background(), "server_upgrade", map[string]any{"version": "1.3.0", "when": "idle"})
 	assert.NoError(t, err)

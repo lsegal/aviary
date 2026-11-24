@@ -400,6 +400,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	if selfUpdaterApplies() {
 		go s.runSelfUpdater(ctx)
 	}
+	if dir := hotReloadDir(); dir != "" {
+		go s.refreshOnHotReload(ctx, dir)
+	}
 	saferestart.RegisterSkillsUpdater("shipped", updateCodingSkills)
 	defer saferestart.UnregisterSkillsUpdater("shipped")
 

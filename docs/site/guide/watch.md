@@ -70,7 +70,7 @@ The TUI shows the watch's header (its targets and the web UI's URL), a stats lin
 
 ## Prompt chat
 
-`c` opens the [prompt chat](./projects#prompt-chat) as a pane under the board, and `/` opens it with the input focused. Ask the Code Loop agent about a job, retry or stop jobs, or file a new issue. It can also read the watched repositories' commits, pull requests, comments and Actions runs, and fetch their deployed sites, so you can ask what a commit changed or whether a fix deployed. It is the same conversation as the web board's prompt chat, so a conversation started in either shows up in the other.
+`c` opens the [prompt chat](./projects#prompt-chat) as a pane under the board, and `/` opens it with the input focused. Ask the Code Loop agent about a job, retry or stop jobs, or file a new issue. It can also read the watched repositories' commits, pull requests, comments and Actions runs, and fetch their deployed sites, so you can ask what a commit changed or whether a fix deployed. It is the same conversation as the web board's prompt chat, which the session's web UI shows too, so a conversation started in either shows up in the other.
 
 | Key | Action |
 | --- | --- |
@@ -84,7 +84,7 @@ The TUI shows the watch's header (its targets and the web UI's URL), a stats lin
 | `z` | full screen chat |
 | `+` / `-` | taller / shorter chat pane |
 
-Replies stream in live, with each tool call on one collapsed line. The chat works with `--no-webui` too.
+Replies stream in live, with each tool call on one collapsed line. You can keep sending while a reply streams, as in the web chat: the server queues or steers each message into the running turn, the transcript marks it **sending…** until the session saves it, and a message that could not be delivered shows its error under it. The chat works with `--no-webui` too.
 
 ## How it differs from the full server
 
@@ -94,7 +94,7 @@ Replies stream in live, with each tool call on one collapsed line. The chat work
 | --- | --- | --- |
 | Configuration | none; flags set the Code Loop settings for the session | `aviary.yaml` |
 | State | a temporary directory, removed when the session ends | your Aviary config directory |
-| Web UI | Code Loop and Scheduled Tasks only, on `localhost`, no token | the full control panel |
+| Web UI | Code Loop, with its prompt chat, and Scheduled Tasks only, on `localhost`, no token | the full control panel |
 | Terminal | a TUI board with prompt chat | no TUI; use the web UI |
 | Agents, channels, workflows | none; jobs run under `--agent`, the agent that owns the target, or a `watch` agent | everything you configure |
 | Lifetime | until Ctrl+C or `q`; running jobs are stopped and checkpointed | always on |

@@ -34,9 +34,9 @@ func MinimalMode() bool { return minimalMode.Load() }
 func SetWebUIEnabled(on bool) { webUIOff.Store(!on) }
 
 // minimalTools are the MCP tools a minimal-mode server answers over HTTP:
-// what the Code Loop boards, their settings, and Scheduled Tasks call. Chat,
-// agents, channels, providers, files, browser control and the instance's own
-// pages are refused. Agents' own tool calls go through their in-process MCP
+// what the Code Loop boards, their settings, their prompt chat, and Scheduled
+// Tasks call. Other chats, agents, channels, providers, files, browser
+// control and the instance's own pages are refused. Agents' own tool calls go through their in-process MCP
 // server, which this does not restrict.
 var minimalTools = map[string]bool{
 	"ping":          true,
@@ -56,6 +56,9 @@ var minimalTools = map[string]bool{
 	"config_task_rename":            true,
 	"config_task_convert_to_script": true,
 	"config_task_move_to_file":      true,
+	// agent_run is limited to the Code Loop prompt chat; see
+	// checkMinimalAgentRun.
+	"agent_run": true,
 
 	"project_status":               true,
 	"project_check":                true,
@@ -149,7 +152,8 @@ func minimalToolCalls(body []byte) ([]toolCall, error) {
 }
 
 // checkMinimalToolCalls refuses a body calling a tool minimal mode does not
-// answer, or saving config beyond what Code Loop and tasks own.
+// answer, saving config beyond what Code Loop and tasks own, or running an
+// agent outside the Code Loop prompt chat.
 func checkMinimalToolCalls(body []byte) error {
 	calls, err := minimalToolCalls(body)
 	if err != nil {
@@ -163,11 +167,35 @@ func checkMinimalToolCalls(body []byte) error {
 		if !minimalToolAllowed(call.Params.Name) {
 			return fmt.Errorf("tool %q is %w", call.Params.Name, errMinimalBlocked)
 		}
-		if call.Params.Name == "config_save" {
+		switch call.Params.Name {
+		case "config_save":
 			if err := checkMinimalConfigSave(call.Params.Arguments); err != nil {
 				return err
 			}
+		case "agent_run":
+			if err := checkMinimalAgentRun(call.Params.Arguments); err != nil {
+				return err
+			}
 		}
+	}
+	return nil
+}
+
+// checkMinimalAgentRun allows an agent_run only in the Code Loop prompt
+// chat: the Code Loop agent's one chat session, which the watch TUI's chat
+// and the board's prompt chat share (#1195).
+func checkMinimalAgentRun(raw json.RawMessage) error {
+	var args struct {
+		Name      string `json:"name"`
+		Session   string `json:"session"`
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(raw, &args); err != nil {
+		return fmt.Errorf("agent_run arguments: %w", err)
+	}
+	if args.Name != config.ProjectsAgentName || args.Session != config.ProjectsChatSession ||
+		(args.SessionID != "" && args.SessionID != config.ProjectsChatSession) {
+		return fmt.Errorf("agent_run outside the Code Loop prompt chat is %w", errMinimalBlocked)
 	}
 	return nil
 }
