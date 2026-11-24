@@ -342,10 +342,16 @@
     </nav>
 
     <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <PageBreadcrumb v-if="breadcrumb && pageCrumbs.length > 1" testid="page" :crumbs="pageCrumbs"
-        :back="crumbParent(pageCrumbs)" :switcher="leafSwitcher"
-        class="shrink-0 border-b border-gray-200 px-2 py-1.5 sm:px-4 dark:border-gray-800" />
-      <slot />
+      <PageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back" :title-link="titleLink"
+        :switcher="leafSwitcher">
+        <template v-if="$slots['header-icon']" #icon><slot name="header-icon" /></template>
+        <template v-if="$slots['header-actions']" #actions><slot name="header-actions" /></template>
+        <slot name="header" />
+      </PageHeader>
+      <!-- The page fills what the header leaves. -->
+      <div class="flex min-h-0 flex-1 flex-col">
+        <slot />
+      </div>
     </main>
 
     <NavEditDialog :groups="navEditGroups" />
@@ -391,7 +397,7 @@ import {
 	ref,
 	watch,
 } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { type RouteLocationRaw, useRoute, useRouter } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useChannelDialogs } from "../composables/useChannelDialogs";
@@ -410,7 +416,7 @@ import { useRouteExpandedGroup } from "../composables/useRouteExpandedGroup";
 import { useNavPrefs } from "../composables/useNavPrefs";
 import { arrangeNav, type NavList } from "../lib/navPrefs";
 import { AGENT_PAGES, agentPagePath } from "../lib/agentPages";
-import { crumbParent, routeCrumbs } from "../lib/breadcrumb";
+import { type Crumb, routeCrumbs } from "../lib/breadcrumb";
 import { useCrumbSwitcher } from "../composables/useCrumbSwitcher";
 import { MINIMAL_AGENT_PAGES } from "../lib/minimalMode";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
@@ -439,7 +445,7 @@ import ConnectionIndicator from "./ConnectionIndicator.vue";
 import AgentTaskList from "./sidebar/AgentTaskList.vue";
 import SidebarGearMenu from "./sidebar/SidebarGearMenu.vue";
 import SidebarRailItem, { type RailFlyoutItem } from "./sidebar/SidebarRailItem.vue";
-import PageBreadcrumb from "./ui/PageBreadcrumb.vue";
+import PageHeader, { type PageBack, type PageCrumb } from "./ui/PageHeader.vue";
 import SystemPageIcon from "./SystemPageIcon.vue";
 import ToastStack from "./ui/ToastStack.vue";
 import NavEditDialog, { type NavEditGroup } from "./nav/NavEditDialog.vue";
@@ -481,16 +487,22 @@ interface BrandLink {
 	iconPath?: string;
 }
 
-withDefaults(
-	defineProps<{
-		/**
-		 * Shows the page's breadcrumb above it (#1036). Settings pages turn it
-		 * off and show the same breadcrumb as their title instead.
-		 */
-		breadcrumb?: boolean;
-	}>(),
-	{ breadcrumb: true },
-);
+const props = defineProps<{
+	/**
+	 * The page header's crumbs (#1064), for a page the route alone cannot
+	 * name, such as a settings form; by default the route's (#1036).
+	 */
+	crumbs?: PageCrumb[];
+	/** The header's back link, when not the nearest linking crumb. */
+	back?: PageBack | null;
+	/**
+	 * Crumbs below the route's, for a panel its query opens; the route's
+	 * last crumb then links to from, the page without the panel.
+	 */
+	trail?: { from: RouteLocationRaw; crumbs: PageCrumb[] } | null;
+	/** An outside page the header's title opens in a new tab. */
+	titleLink?: { href: string; title: string } | null;
+}>();
 const auth = useAuthStore();
 // An `aviary watch` session shows only Code Loop and Scheduled Tasks.
 const minimal = computed(() => auth.minimal);
@@ -1097,21 +1109,31 @@ const navEditGroups = computed<NavEditGroup[]>(() => {
 
 // The current page's place, from its agent or System down (#1036), so it
 // shows with the sidebar collapsed and on narrow screens too. An agent's
-// crumb opens its first page in the user's order.
-const pageCrumbs = computed(() =>
-	routeCrumbs(route.path, {
+// crumb opens its first page in the user's order. Every nested page shows
+// it in the one shared header (#1064); a top-level page has none.
+const headerCrumbs = computed((): PageCrumb[] => {
+	if (props.crumbs) return props.crumbs;
+	const crumbs = routeCrumbs(route.path, {
 		agentHome: (agent) =>
 			agentPages(agent, 0)[0]?.to ?? agentPagePath(agent, "chat"),
 		chatLabel: (agent, id) => {
 			const s = chatSessions.sessions(agent).find((x) => x.id === id);
 			return s && chatDisplayName(s);
 		},
-	}, typeof route.query.file === "string" ? route.query.file : ""),
-);
+	}, typeof route.query.file === "string" ? route.query.file : "");
+	if (crumbs.length < 2) return [];
+	if (!props.trail?.crumbs.length) return crumbs;
+	const here = crumbs.at(-1) as Crumb;
+	return [
+		...crumbs.slice(0, -1),
+		{ label: here.label, to: props.trail.from },
+		...props.trail.crumbs,
+	];
+});
 // The leaf's switcher between its sibling projects, tasks, channels or
 // files (#1063).
 const leafSwitcher = useCrumbSwitcher(
-	computed(() => pageCrumbs.value.at(-1)?.switcher),
+	computed(() => (headerCrumbs.value.at(-1) as Crumb | undefined)?.switcher),
 	projects,
 );
 

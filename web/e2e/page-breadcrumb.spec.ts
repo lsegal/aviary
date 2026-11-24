@@ -4,6 +4,7 @@ import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 // Every nested page shows where it is, from its agent or System down, with a
 // back link to its parent, also with the sidebar collapsed and on narrow
 // screens; the collapsed rail lists each page's items in a flyout (#1036).
+// Every one shows them in the same shared page header (#1064).
 
 const LONG_PROJECT = "lsegal/a-repository-with-a-very-long-name-indeed";
 
@@ -48,7 +49,7 @@ test.beforeEach(async ({ page }) => {
 	await mockAviary(page);
 });
 
-test("each nested page type shows its crumbs, linking all but the current page", async ({
+test("each nested page shows the shared header with its crumbs and parent link", async ({
 	page,
 }) => {
 	const cases: Array<{
@@ -94,17 +95,67 @@ test("each nested page type shows its crumbs, linking all but the current page",
 			parent: "/agents/Aviary/tasks/release-aviary",
 		},
 		{
+			url: "/agents/Aviary/tasks?task=release-aviary",
+			crumbs: ["Aviary", "Scheduled Tasks", "release-aviary", "Settings"],
+			back: "release-aviary",
+			parent: "/agents/Aviary/tasks/release-aviary",
+		},
+		{
+			url: "/agents/Aviary/tasks",
+			crumbs: ["Aviary", "Scheduled Tasks"],
+			back: "Aviary",
+			parent: "/agents/Aviary/chat",
+		},
+		{
+			url: "/agents/Aviary/channels/signal/settings",
+			crumbs: ["Aviary", "Channels", "signal", "Settings"],
+			back: "signal",
+			parent: "/agents/Aviary/channels/signal",
+		},
+		{
+			url: "/agents/Aviary/settings",
+			crumbs: ["Aviary", "Agent Settings"],
+			back: "Aviary",
+			parent: "/agents/Aviary/chat",
+		},
+		{
+			url: "/agents/Aviary/settings/permissions",
+			crumbs: ["Aviary", "Agent Settings", "Permissions"],
+			back: "Agent Settings",
+			parent: "/agents/Aviary/settings",
+		},
+		{
 			url: "/agents/Aviary/files",
 			crumbs: ["Aviary", "Files"],
 			back: "Aviary",
 			parent: "/agents/Aviary/chat",
 		},
 		{
-			url: "/system/usage",
-			crumbs: ["System", "Usage"],
+			url: "/projects/settings?agent=Aviary&project=o%2Fr",
+			crumbs: ["Code Loop", "o/r", "Settings"],
+			back: "o/r",
+			parent: "/agents/Aviary/projects/o%2Fr",
+		},
+		{
+			url: "/system/settings",
+			crumbs: ["System", "Settings"],
 			back: "System",
 			parent: "/system/overview",
 		},
+		...[
+			"Usage",
+			"Tools",
+			"Skills",
+			"Sessions",
+			"Models",
+			"Logs",
+			"Daemons",
+		].map((label) => ({
+			url: `/system/${label.toLowerCase()}`,
+			crumbs: ["System", label],
+			back: "System",
+			parent: "/system/overview",
+		})),
 		{
 			url: "/system/watches/w%2Fx/jobs/5",
 			crumbs: ["System", "Watch: w/x", "#5"],
@@ -114,11 +165,24 @@ test("each nested page type shows its crumbs, linking all but the current page",
 	];
 	for (const c of cases) {
 		await page.goto(c.url);
-		const crumbs = breadcrumb(page);
+		// One header, and no back link or breadcrumb of the page's own.
+		const header = page.getByTestId("page-header");
+		await expect(header).toHaveCount(1);
+		await expect(
+			page.getByRole("navigation", { name: "Breadcrumb" }),
+		).toHaveCount(1);
+		await expect(page.getByRole("link", { name: /^Back to/ })).toHaveCount(1);
+		const crumbs = header.getByTestId("page-breadcrumb");
 		await expect(crumbs).toHaveRole("navigation");
 		await expect(crumbs).toHaveAccessibleName("Breadcrumb");
 		await expect(crumbs.getByRole("listitem")).toHaveText(c.crumbs);
-		await expect(crumbs.getByRole("link")).toHaveText(c.crumbs.slice(0, -1));
+		// Every ancestor links; the title may hold its own outside link.
+		await expect(
+			crumbs
+				.getByRole("listitem")
+				.filter({ hasNot: page.locator('[aria-current="page"]') })
+				.getByRole("link"),
+		).toHaveText(c.crumbs.slice(0, -1));
 		const current = crumbs.locator('[aria-current="page"]');
 		await expect(current).toHaveText(c.crumbs.at(-1) as string);
 		await expect(current).not.toHaveRole("link");
@@ -148,12 +212,12 @@ test("settings pages show the same breadcrumb as their title, once", async ({
 	await page.goto("/agents/Aviary/tasks");
 	const navs = page.getByRole("navigation", { name: "Breadcrumb" });
 	await expect(navs).toHaveCount(1);
-	await expect(navs).toHaveAttribute("data-testid", "settings-breadcrumb");
+	await expect(navs).toHaveAttribute("data-testid", "page-breadcrumb");
 	await expect(navs.getByRole("listitem")).toHaveText([
 		"Aviary",
 		"Scheduled Tasks",
 	]);
-	await expect(page.getByTestId("settings-back")).toHaveAccessibleName(
+	await expect(page.getByTestId("page-back")).toHaveAccessibleName(
 		"Back to Aviary",
 	);
 });

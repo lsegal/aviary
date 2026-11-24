@@ -1,85 +1,77 @@
 <template>
-	<AppLayout>
-		<div class="flex h-full min-h-0">
+	<AppLayout :trail="detailSchedule ? { from: boardQuery, crumbs: [{ label: detailSchedule.name }] } : null"
+		:title-link="project && !jobOpen && !detailSchedule ? { href: targetURL(project), title: `Open ${project} on GitHub` } : null">
+		<template v-if="project || aggregate" #header>
+			<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+				<span v-if="aggregate" data-testid="board-projects"
+					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+					:title="targets.join(', ')">{{ targets.length }} {{ targets.length === 1 ? "project" : "projects" }}</span>
+				<router-link v-if="owner" :to="settingsPath" data-testid="project-owner"
+					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+					:title="`${project} belongs to agent ${owner}`">agent: {{ owner }}</router-link>
+				<span data-testid="delivery-status" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+					:class="online ? 'bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300'">
+					<span class="h-1.5 w-1.5 rounded-full" :class="online ? 'bg-green-500' : 'bg-red-500'" />
+					{{ online ? "live" : "offline" }}
+				</span>
+				<span v-if="status?.instanceID" data-testid="instance-id"
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-200"
+					:title="`This instance signs its GitHub claims as /aviary:${status.instanceID}`">
+					Instance <code class="font-mono text-sm font-bold tracking-wider">{{ status.instanceID }}</code>
+				</span>
+			</div>
+			<p v-if="status" class="text-xs text-gray-500 dark:text-gray-400">
+				<template v-if="status.issueFilter">Issues matching <code data-testid="issue-filter" class="font-mono">{{ status.issueFilter }}</code></template>
+				<template v-else>All open issues</template>
+				<template v-if="status.delivery"> · {{ status.delivery }}</template>
+				<template v-if="status.lastChecked"> · checked {{ age(status.lastChecked, now) }} ago</template>
+				<span v-if="status.stale" data-testid="stale-indicator" class="text-gray-400 dark:text-gray-500"
+					title="Showing the state saved before the last restart until the first live poll confirms it">
+					· refreshing…<template v-if="status.cachedAt"> last updated {{ age(status.cachedAt, now) }} ago</template>
+				</span>
+				<template v-if="status.interval"> · every {{ status.interval }}</template>
+			</p>
+		</template>
+		<template v-if="project || aggregate" #header-actions>
+			<button v-if="aggregate" type="button" data-testid="board-add-project" aria-label="Add project" title="Add project"
+				class="rounded-lg border border-blue-600 bg-blue-600 p-1.5 text-white hover:bg-blue-700"
+				@click="openAdd">
+				<PlusIcon aria-hidden="true" class="h-5 w-5" />
+			</button>
+			<button v-if="!aggregate" type="button" data-testid="schedule-new" title="Schedule a task for this project"
+				class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+				:disabled="!scheduleAgent" @click="onNewSchedule">
+				<CalendarDaysIcon aria-hidden="true" class="h-5 w-5" />
+				Schedule
+			</button>
+			<button type="button" aria-label="Check now" title="Check now"
+				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+				:disabled="checking" @click="onCheckNow">
+				<ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="{ 'animate-spin': checking }" />
+			</button>
+			<button type="button" data-testid="logs-toggle" :aria-pressed="logsOpen"
+				aria-label="Logs" title="Logs"
+				class="rounded-lg border p-1.5"
+				:class="logsOpen ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
+				@click="logsOpen = !logsOpen">
+				<DocumentTextIcon aria-hidden="true" class="h-5 w-5" />
+			</button>
+			<button v-if="!auth.minimal" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
+				aria-label="Prompt chat" title="Prompt chat"
+				class="rounded-lg border p-1.5"
+				:class="chatOpen ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
+				@click="chatOpen = !chatOpen">
+				<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
+			</button>
+			<router-link :to="settingsPath" data-testid="project-settings-link" aria-label="Settings" title="Settings"
+				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+				<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
+			</router-link>
+		</template>
+		<div class="flex min-h-0 flex-1">
 			<div class="flex h-full min-w-0 flex-1 flex-col">
 			<div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
 				<template v-if="project || aggregate">
-					<header
-						class="flex shrink-0 flex-col gap-3 border-b border-gray-200 px-4 py-4 dark:border-gray-800 sm:px-6 xl:flex-row xl:items-center">
-						<div class="min-w-0">
-							<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-								<h1 v-if="aggregate" class="truncate text-xl font-bold text-gray-900 dark:text-white">Code Loop</h1>
-								<span v-if="aggregate" data-testid="board-projects"
-									class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-									:title="targets.join(', ')">{{ targets.length }} {{ targets.length === 1 ? "project" : "projects" }}</span>
-								<h1 v-else class="truncate text-xl font-bold text-gray-900 dark:text-white">
-									<a :href="targetURL(project)" target="_blank" rel="noopener noreferrer" class="hover:underline"
-										:title="`Open ${project} on GitHub`">{{ project }}</a>
-								</h1>
-								<router-link v-if="owner" :to="settingsPath" data-testid="project-owner"
-									class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-									:title="`${project} belongs to agent ${owner}`">agent: {{ owner }}</router-link>
-								<span data-testid="delivery-status" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
-									:class="online ? 'bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300'">
-									<span class="h-1.5 w-1.5 rounded-full" :class="online ? 'bg-green-500' : 'bg-red-500'" />
-									{{ online ? "live" : "offline" }}
-								</span>
-								<span v-if="status?.instanceID" data-testid="instance-id"
-									class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-200"
-									:title="`This instance signs its GitHub claims as /aviary:${status.instanceID}`">
-									Instance <code class="font-mono text-sm font-bold tracking-wider">{{ status.instanceID }}</code>
-								</span>
-							</div>
-							<p v-if="status" class="text-xs text-gray-500 dark:text-gray-400">
-								<template v-if="status.issueFilter">Issues matching <code data-testid="issue-filter" class="font-mono">{{ status.issueFilter }}</code></template>
-								<template v-else>All open issues</template>
-								<template v-if="status.delivery"> · {{ status.delivery }}</template>
-								<template v-if="status.lastChecked"> · checked {{ age(status.lastChecked, now) }} ago</template>
-								<span v-if="status.stale" data-testid="stale-indicator" class="text-gray-400 dark:text-gray-500"
-									title="Showing the state saved before the last restart until the first live poll confirms it">
-									· refreshing…<template v-if="status.cachedAt"> last updated {{ age(status.cachedAt, now) }} ago</template>
-								</span>
-								<template v-if="status.interval"> · every {{ status.interval }}</template>
-							</p>
-						</div>
-						<div class="flex flex-wrap items-center gap-2 xl:ml-auto">
-							<button v-if="aggregate" type="button" data-testid="board-add-project" aria-label="Add project" title="Add project"
-								class="rounded-lg border border-blue-600 bg-blue-600 p-1.5 text-white hover:bg-blue-700"
-								@click="openAdd">
-								<PlusIcon aria-hidden="true" class="h-5 w-5" />
-							</button>
-							<button v-if="!aggregate" type="button" data-testid="schedule-new" title="Schedule a task for this project"
-								class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-								:disabled="!scheduleAgent" @click="onNewSchedule">
-								<CalendarDaysIcon aria-hidden="true" class="h-5 w-5" />
-								Schedule
-							</button>
-							<button type="button" aria-label="Check now" title="Check now"
-								class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-								:disabled="checking" @click="onCheckNow">
-								<ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="{ 'animate-spin': checking }" />
-							</button>
-							<button type="button" data-testid="logs-toggle" :aria-pressed="logsOpen"
-								aria-label="Logs" title="Logs"
-								class="rounded-lg border p-1.5"
-								:class="logsOpen ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
-								@click="logsOpen = !logsOpen">
-								<DocumentTextIcon aria-hidden="true" class="h-5 w-5" />
-							</button>
-							<button v-if="!auth.minimal" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
-								aria-label="Prompt chat" title="Prompt chat"
-								class="rounded-lg border p-1.5"
-								:class="chatOpen ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
-								@click="chatOpen = !chatOpen">
-								<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
-							</button>
-							<router-link :to="settingsPath" data-testid="project-settings-link" aria-label="Settings" title="Settings"
-								class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-								<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
-							</router-link>
-						</div>
-					</header>
-
 					<router-view v-if="jobOpen" />
 					<div v-else class="space-y-4 px-4 py-4 sm:px-6">
 						<GitHubSignInBanner v-if="status?.github" :session="status.github" :busy="signingIn"
@@ -196,10 +188,6 @@
 						<section v-if="detailSchedule" data-testid="schedule-detail" :aria-label="`Schedule ${detailSchedule.name}`"
 							class="space-y-4 rounded-xl border border-violet-200 bg-white p-4 dark:border-violet-900 dark:bg-gray-900">
 							<header class="flex flex-wrap items-center gap-2">
-								<router-link :to="boardQuery" aria-label="Back to board" title="Back to board"
-									class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-									<ArrowLeftIcon aria-hidden="true" class="h-4 w-4" />
-								</router-link>
 								<span class="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">Scheduled</span>
 								<h2 class="truncate text-lg font-semibold text-gray-900 dark:text-white">{{ detailSchedule.name }}</h2>
 							</header>
@@ -257,7 +245,6 @@
 </template>
 
 <script setup lang="ts">
-import ArrowLeftIcon from "@heroicons/vue/24/outline/ArrowLeftIcon";
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import CalendarDaysIcon from "@heroicons/vue/24/outline/CalendarDaysIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
