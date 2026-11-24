@@ -24,7 +24,7 @@
 				<PlusIcon aria-hidden="true" class="h-4 w-4" />
 				New task
 			</button>
-			<template v-if="!tasksRoot">
+			<template v-if="!tasksRoot && activeTab !== 'display'">
 			<button v-if="revertAvailable" type="button"
 				class="rounded-lg border border-amber-200 px-3 py-2 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
 				:disabled="loading || saving || reverting"
@@ -101,7 +101,7 @@
 				<template v-else>
 					<nav v-if="settingsTabActive" role="tablist" aria-label="Settings" data-testid="settings-tabs"
 						class="mb-6 flex gap-1 border-b border-gray-200 dark:border-gray-800">
-						<RouterLink v-for="tab in SETTINGS_TABS" :key="tab.key" :to="tab.to" role="tab"
+						<RouterLink v-for="tab in settingsTabs" :key="tab.key" :to="tab.to" role="tab"
 							:aria-selected="activeTab === tab.key" :data-testid="`settings-tab-${tab.key}`"
 							class="-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors"
 							:class="activeTab === tab.key
@@ -116,6 +116,7 @@
 					<SettingsSessionsTab />
 					<SettingsProvidersTab />
 					<SettingsProjectsTab />
+					<SettingsDisplayTab v-if="activeTab === 'display'" />
 				</template>
 
 
@@ -340,6 +341,7 @@ import SystemPageIcon from "../components/SystemPageIcon.vue";
 import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { settingsViewContextKey } from "../components/settings/context";
 import SettingsAgentsTab from "../components/settings/SettingsAgentsTab.vue";
+import SettingsDisplayTab from "../components/settings/SettingsDisplayTab.vue";
 import SettingsGeneralTab from "../components/settings/SettingsGeneralTab.vue";
 import SettingsProjectsTab from "../components/settings/SettingsProjectsTab.vue";
 import SettingsProvidersTab from "../components/settings/SettingsProvidersTab.vue";
@@ -415,7 +417,8 @@ type Tab =
 	| "projects"
 	| "skills"
 	| "sessions"
-	| "providers";
+	| "providers"
+	| "display";
 
 interface SessionRow {
 	id: string;
@@ -504,10 +507,11 @@ const route = useRoute();
 const router = useRouter();
 
 // System pages map to their tab. Settings, opened from the sidebar's gear,
-// has General and Providers & Authentication tabs.
+// has General, Providers & Authentication and Display tabs.
 const systemTabs: Record<string, Tab> = {
 	settings: "general",
 	providers: "providers",
+	display: "display",
 	sessions: "sessions",
 	skills: "skills",
 };
@@ -522,6 +526,12 @@ function routeToActiveTab(): Tab {
 const activeTab = ref<Tab>(routeToActiveTab());
 const settingsTabActive = computed(() =>
 	SETTINGS_TABS.some((t) => t.key === activeTab.value),
+);
+// A watch session's Settings is Display alone (#991, #1093).
+const settingsTabs = computed(() =>
+	authStore.minimal
+		? SETTINGS_TABS.filter((t) => t.key === "display")
+		: SETTINGS_TABS,
 );
 
 watch(
@@ -1039,6 +1049,7 @@ const systemTabLabels: Record<Exclude<Tab, "agents">, string> = {
 	general: "Settings",
 	projects: "Code Loop Settings",
 	providers: "Settings",
+	display: "Settings",
 	sessions: "Sessions",
 	skills: "Skills",
 };
@@ -1075,7 +1086,11 @@ const pageHeader = computed(
 						: null,
 			};
 		};
-		if (activeTab.value === "general" || activeTab.value === "providers")
+		if (
+			activeTab.value === "general" ||
+			activeTab.value === "providers" ||
+			activeTab.value === "display"
+		)
 			return header([
 				{ label: "System", to: "/system/overview" },
 				{ label: "Settings" },

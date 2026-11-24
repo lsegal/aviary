@@ -30,7 +30,7 @@
 </template>
 
 <script setup lang="ts">
-// One arrangeable navigation list in the Edit sidebar dialog (#1003): drag
+// One arrangeable navigation list in the sidebar editor (#1003): drag
 // a row's handle, or use its move up/down buttons or arrow keys, to
 // reorder, and its eye to hide or show it. Hidden rows stay listed so they
 // can be shown again.
@@ -41,13 +41,9 @@ import EyeIcon from "@heroicons/vue/24/outline/EyeIcon";
 import EyeSlashIcon from "@heroicons/vue/24/outline/EyeSlashIcon";
 import { computed, nextTick, ref } from "vue";
 import { useNavPrefs } from "../../composables/useNavPrefs";
+import type { NavEditItem } from "../../lib/navEditGroups";
 import { arrangeNav, moveIndex, type NavList } from "../../lib/navPrefs";
 import SortableList from "../SortableList.vue";
-
-export interface NavEditItem {
-	key: string;
-	label: string;
-}
 
 const props = defineProps<{
 	list: NavList;

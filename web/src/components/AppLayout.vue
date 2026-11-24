@@ -31,7 +31,7 @@
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-1" data-testid="mobile-header-status">
-          <SidebarGearMenu v-if="!minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+          <SidebarGearMenu :minimal="minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
             @restart="triggerRestart()" />
           <VersionIndicator v-if="!minimal" :version="version" :latest-version="latestVersion" :status="status"
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
@@ -269,7 +269,7 @@
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <div class="ml-auto flex shrink-0 items-center gap-1" data-testid="sidebar-footer-actions">
             <ConnectionIndicator :status="status" @retry="reconnect()" />
-            <SidebarGearMenu v-if="!minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+            <SidebarGearMenu :minimal="minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
               @restart="triggerRestart()" />
           </div>
         </div>
@@ -336,7 +336,7 @@
           <TagIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
         <ConnectionIndicator :status="status" @retry="reconnect()" />
-        <SidebarGearMenu v-if="!minimal" rail :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+        <SidebarGearMenu :minimal="minimal" rail :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
           @restart="triggerRestart()" />
       </div>
     </nav>
@@ -354,7 +354,6 @@
       </div>
     </main>
 
-    <NavEditDialog :groups="navEditGroups" />
     <AgentItemDialogs />
     <ChannelDialogs />
     <ToastStack />
@@ -394,6 +393,7 @@ import {
 	markRaw,
 	onBeforeUnmount,
 	onMounted,
+	provide,
 	ref,
 	watch,
 } from "vue";
@@ -414,6 +414,8 @@ import { agentFilePath, useAgentFilesStore } from "../stores/agentFiles";
 import { projectOwner } from "../lib/projectSettings";
 import { useRouteExpandedGroup } from "../composables/useRouteExpandedGroup";
 import { useNavPrefs } from "../composables/useNavPrefs";
+import { useDisplayPrefs } from "../composables/useDisplayPrefs";
+import { type NavEditGroup, navEditGroupsKey } from "../lib/navEditGroups";
 import { arrangeNav, type NavList } from "../lib/navPrefs";
 import { AGENT_PAGES, agentPagePath } from "../lib/agentPages";
 import { type Crumb, routeCrumbs } from "../lib/breadcrumb";
@@ -448,7 +450,6 @@ import SidebarRailItem, { type RailFlyoutItem } from "./sidebar/SidebarRailItem.
 import PageHeader, { type PageBack, type PageCrumb } from "./ui/PageHeader.vue";
 import SystemPageIcon from "./SystemPageIcon.vue";
 import ToastStack from "./ui/ToastStack.vue";
-import NavEditDialog, { type NavEditGroup } from "./nav/NavEditDialog.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 import VersionIndicator from "./VersionIndicator.vue";
 
@@ -718,6 +719,8 @@ onBeforeUnmount(() => {
 // The user's navigation order and visibility (#1003), shared by the
 // sidebar, the collapsed rail and the narrow-screen rows.
 const nav = useNavPrefs();
+// Loads the server's display preferences on any page (#1093).
+useDisplayPrefs();
 // Pages that never show whatever the preferences say: those a minimal
 // `aviary watch` session leaves out (#991).
 const navForcedHidden = computed<ReadonlySet<string>>(() =>
@@ -1085,8 +1088,8 @@ const hiddenNavCount = computed(() => {
 	);
 });
 
-// The Edit sidebar dialog's lists: the agent pages, whose order the top
-// row follows too, and System pages.
+// The sidebar editor's lists, shown in Settings → Display (#1093): the
+// agent pages, whose order the top row follows too, and System pages.
 const navEditGroups = computed<NavEditGroup[]>(() => {
 	const shown = (items: { key: string; label: string }[]) =>
 		items
@@ -1106,6 +1109,7 @@ const navEditGroups = computed<NavEditGroup[]>(() => {
 	];
 	return groups.filter((g) => g.items.length);
 });
+provide(navEditGroupsKey, navEditGroups);
 
 // The current page's place, from its agent or System down (#1036), so it
 // shows with the sidebar collapsed and on narrow screens too. An agent's
