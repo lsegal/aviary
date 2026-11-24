@@ -284,6 +284,9 @@ func githubURLPath(link string) (string, string, error) {
 		}
 		return repository, "actions/runs", nil
 	case "releases":
+		if len(rest) == 2 && rest[1] == "latest" {
+			return repository, "releases/latest", nil
+		}
 		if len(rest) >= 3 && rest[1] == "tag" {
 			return repository, "releases/tags/" + strings.Join(rest[2:], "/"), nil
 		}

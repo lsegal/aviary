@@ -73,6 +73,8 @@ var minimalTools = map[string]bool{
 	"project_unblock_run":          true,
 	"project_clone_list":           true,
 	"project_clone_clear":          true,
+	"project_github_read":          true,
+	"project_site_fetch":           true,
 	"project_github_signin":        true,
 	"project_github_use_polling":   true,
 	"project_github_import":        true,

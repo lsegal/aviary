@@ -27,6 +27,7 @@ var projectToolNames = []string{
 	"project_clone_list", "project_clone_clear", "project_unblock_run",
 	"project_issue_comment", "project_issue_create", "project_issue_backfill_media",
 	"project_github_signin", "project_github_use_polling", "project_github_import",
+	"project_github_read", "project_site_fetch",
 }
 
 // setupProjects gives each test its own config and a projects manager that
@@ -120,7 +121,7 @@ func TestProjectTools_SchemasAndHints(t *testing.T) {
 			assert.NotNil(t, tool.Annotations.DestructiveHint, "%s needs an explicit destructive hint", name)
 		}
 	}
-	for _, name := range []string{"project_status", "project_job_list", "project_job_get", "project_job_explain", "project_clone_list"} {
+	for _, name := range []string{"project_status", "project_job_list", "project_job_get", "project_job_explain", "project_clone_list", "project_github_read", "project_site_fetch"} {
 		assert.True(t, tools[name].Annotations.ReadOnlyHint, name)
 	}
 	for _, name := range []string{"project_job_stop", "project_remove", "project_clone_clear"} {
