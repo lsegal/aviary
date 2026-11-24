@@ -576,28 +576,43 @@
           "x-order": 15,
           "description": "Skip changelog entries in gh-fix pull requests."
         },
+        "model": {
+          "type": "string",
+          "x-label": "Job model",
+          "x-order": 16,
+          "description": "CLI provider model, such as claude/opus, that every project's jobs run on in place of the owning agent's model. Empty keeps the agent's model and fallbacks."
+        },
+        "fallbacks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-label": "Job fallbacks",
+          "x-order": 17,
+          "description": "CLI provider models jobs fall back to, in order, when model's quota is used up. Applies only with model set."
+        },
         "unblock_interval": {
           "type": "string",
           "x-label": "Unblock interval",
-          "x-order": 16,
+          "x-order": 18,
           "description": "How often the stuck-job watchdog runs, such as 15m; 0 turns it off. Defaults to 15m."
         },
         "unblock_agent": {
           "type": "string",
           "x-label": "Unblock agent",
-          "x-order": 17,
+          "x-order": 19,
           "description": "Agent spec for the watchdog's unblock call. Defaults to the coding agent."
         },
         "unblock_model": {
           "type": "string",
           "x-label": "Unblock model",
-          "x-order": 18,
+          "x-order": 20,
           "description": "Model for the watchdog's unblock call."
         },
         "chat_model": {
           "type": "string",
           "x-label": "Prompt chat model",
-          "x-order": 19,
+          "x-order": 21,
           "description": "Model of the built-in Code Loop agent behind the board's prompt chat. Defaults to models.defaults."
         },
         "chat_fallbacks": {
@@ -606,7 +621,7 @@
             "type": "string"
           },
           "x-label": "Prompt chat fallbacks",
-          "x-order": 20,
+          "x-order": 22,
           "description": "Fallback models of the built-in Code Loop agent, tried in order."
         },
         "temp_dirs": {
@@ -615,7 +630,7 @@
             "type": "string"
           },
           "x-label": "Clone directories",
-          "x-order": 21,
+          "x-order": 23,
           "description": "Absolute directories new clones go in, tried in order. Defaults to the system temp directory."
         },
         "webhook": {
@@ -640,7 +655,7 @@
             }
           },
           "x-label": "Webhook",
-          "x-order": 22,
+          "x-order": 24,
           "description": "Webhook delivery settings."
         }
       }

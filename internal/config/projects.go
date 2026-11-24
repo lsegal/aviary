@@ -52,6 +52,11 @@ type ProjectsConfig struct {
 	NoMerge bool `yaml:"no_merge,omitempty" json:"no_merge,omitempty"`
 	// NoChangelog asks gh-fix to skip changelog entries.
 	NoChangelog bool `yaml:"no_changelog,omitempty" json:"no_changelog,omitempty"`
+	// Model and Fallbacks override the owning agent's model and fallbacks
+	// for every project's jobs: CLI provider models such as claude/opus,
+	// tried in order. Empty Model keeps the agent's.
+	Model     string   `yaml:"model,omitempty" json:"model,omitempty"`
+	Fallbacks []string `yaml:"fallbacks,omitempty" json:"fallbacks,omitempty"`
 	// UnblockInterval is how often the stuck-job watchdog runs, as a Go
 	// duration; "0" turns it off.
 	UnblockInterval string `yaml:"unblock_interval,omitempty" json:"unblock_interval,omitempty"`
@@ -261,6 +266,7 @@ func (p ProjectsConfig) IsZero() bool {
 		p.ReadyState == "" && len(p.Filter) == 0 && !p.AllIssues &&
 		len(p.AllowedCommenters) == 0 &&
 		p.ApprovalMode == "" && !p.Yolo && !p.NoMerge && !p.NoChangelog &&
+		p.Model == "" && len(p.Fallbacks) == 0 &&
 		p.UnblockInterval == "" && p.UnblockAgent == "" && p.UnblockModel == "" &&
 		p.ChatModel == "" && len(p.ChatFallbacks) == 0 && len(p.TempDirs) == 0 && p.Webhook == nil
 }
@@ -295,6 +301,12 @@ func (p ProjectsConfig) Override(overlay ProjectsConfig) ProjectsConfig {
 	merged.BrowserVisible = merged.BrowserVisible || overlay.BrowserVisible
 	merged.NoMerge = merged.NoMerge || overlay.NoMerge
 	merged.NoChangelog = merged.NoChangelog || overlay.NoChangelog
+	if overlay.Model != "" {
+		merged.Model = overlay.Model
+	}
+	if len(overlay.Fallbacks) > 0 {
+		merged.Fallbacks = overlay.Fallbacks
+	}
 	if overlay.UnblockInterval != "" {
 		merged.UnblockInterval = overlay.UnblockInterval
 	}

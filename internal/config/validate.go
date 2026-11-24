@@ -45,6 +45,7 @@ func Validate(cfg *Config, authGet func(key string) (string, error)) []Issue {
 	v.checkScheduler(cfg.Scheduler)
 	v.checkTranscription(cfg.Transcription)
 	v.checkProjects(cfg.Agents)
+	v.checkProjectModels(cfg.Projects)
 	v.checkApproval(cfg.Approval, cfg.Projects.ApprovalMode)
 	return v.issues
 }
@@ -681,6 +682,22 @@ func UniqueProviderModels(cfg *Config) map[string]string {
 		}
 	}
 	return seen
+}
+
+// checkProjectModels validates the job model override, projects.model and
+// projects.fallbacks.
+func (v *validator) checkProjectModels(p ProjectsConfig) {
+	if strings.TrimSpace(p.Model) == "" && len(p.Fallbacks) > 0 {
+		v.errorf("projects.fallbacks", "fallbacks apply only with projects.model set")
+	}
+	if err := ValidateProjectModel(v.models, p.Model); err != nil {
+		v.errorf("projects.model", "%v", err)
+	}
+	for i, fallback := range p.Fallbacks {
+		if err := ValidateProjectModel(v.models, fallback); err != nil {
+			v.errorf(fmt.Sprintf("projects.fallbacks[%d]", i), "%v", err)
+		}
+	}
 }
 
 // checkProjects rejects a project owned by more than one agent: a project has
