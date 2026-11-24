@@ -1,8 +1,8 @@
 import tailwindcss from "@tailwindcss/vite";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
+import { devAllowedHosts } from "./scripts/dev-allowed-hosts.mjs";
 import { devHttps, devServerURL } from "./scripts/dev-cert.mjs";
-import { devHosts } from "./scripts/dev-hosts.mjs";
 import { devProxy } from "./scripts/dev-proxy.mjs";
 
 export default defineConfig(({ command }) => ({
@@ -16,9 +16,9 @@ export default defineConfig(({ command }) => ({
 		// Expose the dev server on the LAN over HTTPS: browsers only allow the
 		// composer mic (getUserMedia) on secure origins or localhost.
 		host: true,
-		https: command === "serve" ? devHttps() : undefined,
 		// Accept the same LAN host names as the docs dev server (#1105).
-		allowedHosts: command === "serve" ? devHosts() : undefined,
+		allowedHosts: devAllowedHosts(),
+		https: command === "serve" ? devHttps() : undefined,
 		// Target the backend with the scheme and port it serves, so the proxy
 		// never sends plain HTTP to its TLS listener. scripts/dev-watch.mjs
 		// points AVIARY_DEV_BACKEND at the port an `aviary watch` session chose.
@@ -26,5 +26,8 @@ export default defineConfig(({ command }) => ({
 			process.env.AVIARY_DEV_BACKEND ||
 				(command === "serve" ? devServerURL() : undefined),
 		),
+	},
+	preview: {
+		allowedHosts: devAllowedHosts(),
 	},
 }));

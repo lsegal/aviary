@@ -336,6 +336,7 @@ func (s *Server) registerRoutes() {
 
 	// The web UI's navigation order and visibility, kept per user.
 	s.mux.Handle("/api/preferences/navigation", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(navPreferencesHandler)))
+	s.mux.Handle("/api/preferences/display", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(displayPreferencesHandler)))
 
 	// Web UI: SPA served from embedded web/dist.
 	defer trace.Phase("web/static handler")()
@@ -396,7 +397,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	exe, _ := executablePath()
 	trace.Time("update staging cleanup", func() { update.CleanupStaging(exe) })
-	go s.runSelfUpdater(ctx)
+	if selfUpdaterApplies() {
+		go s.runSelfUpdater(ctx)
+	}
 	saferestart.RegisterSkillsUpdater("shipped", updateCodingSkills)
 	defer saferestart.UnregisterSkillsUpdater("shipped")
 
@@ -589,8 +592,8 @@ func backgroundSubsystems(s *Server) []string {
 
 // startBackground starts the initialization that does not have to finish
 // before /mcp serves, each part concurrently: channel connections, the skills
-// Aviary ships, and Code Loop discovery. boot tracks the parts shutdown waits
-// for.
+// Aviary ships, and Code Loop discovery. boot tracks every part, so shutdown
+// waits for each, including its boot report write.
 func (s *Server) startBackground(ctx context.Context, trace *startup.Trace, boot *sync.WaitGroup) {
 	boot.Add(1)
 	trace.Go("channels", "channels connect", func() error {
@@ -605,10 +608,14 @@ func (s *Server) startBackground(ctx context.Context, trace *startup.Trace, boot
 	// installed and matching this release, and move them to the new release
 	// when Aviary upgrades.
 	install, syncSkills := installShippedSkills, syncShippedSkills
+	boot.Add(1)
 	trace.Go("skills", "skill sync", func() error {
 		install(ctx)
 		return nil
-	}, func() { syncSkills(ctx) })
+	}, func() {
+		defer boot.Done()
+		syncSkills(ctx)
+	})
 
 	if s.projects != nil {
 		boot.Add(1)

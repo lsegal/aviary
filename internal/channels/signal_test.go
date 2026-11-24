@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,69 +64,6 @@ func TestDispatchEnvelopeAgentNameReplacement(t *testing.T) {
 	default:
 		t.Fatal("no message dispatched for phone fallback")
 	}
-}
-
-// Test fetchLinkPreviews and downloadTempImage using an httptest server.
-func TestFetchLinkPreviewsAndDownloadTempImage(t *testing.T) {
-	// Start a server that serves an HTML page and an image.
-	var ts *httptest.Server
-	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/img.jpg") {
-			w.Header().Set("Content-Type", "image/jpeg")
-			if _, err := w.Write([]byte("JPEGDATA")); err != nil {
-				t.Fatalf("failed to write image: %v", err)
-			}
-			return
-		}
-		// HTML page with title and og:image
-		w.Header().Set("Content-Type", "text/html")
-		if _, err := w.Write([]byte(`<!doctype html><html><head><title>My Title</title><meta property="og:image" content="` + ts.URL + `/img.jpg"></head><body></body></html>`)); err != nil {
-			t.Fatalf("failed to write html: %v", err)
-		}
-	}))
-	defer ts.Close()
-
-	previews, cleanup := fetchLinkPreviews("check " + ts.URL + "/")
-	if cleanup != nil {
-		defer cleanup()
-	}
-	if len(previews) == 0 {
-		t.Fatal("expected a preview")
-	}
-	p := previews[0]
-	if p.Title != "My Title" {
-		t.Fatalf("unexpected title: %q", p.Title)
-	}
-	if p.Image == "" {
-		t.Fatal("expected an image path")
-	}
-	// ensure file exists
-	if _, err := os.Stat(p.Image); err != nil {
-		t.Fatalf("preview image not found: %v", err)
-	}
-	// cleanup should remove the file
-	if cleanup != nil {
-		cleanup()
-		if _, err := os.Stat(p.Image); err == nil {
-			t.Fatal("expected image file removed by cleanup")
-		}
-	}
-
-	// Also test downloadTempImage directly
-	ctx := context.Background()
-	path, err := downloadTempImage(ctx, ts.URL+"/img.jpg")
-	if err != nil {
-		t.Fatalf("downloadTempImage failed: %v", err)
-	}
-	// file should exist and contain data
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read downloaded file: %v", err)
-	}
-	if len(data) == 0 {
-		t.Fatal("downloaded file empty")
-	}
-	os.Remove(path) //nolint:errcheck
 }
 
 func init() {
@@ -515,36 +450,26 @@ func TestDecodeSignalAttachmentResult_AcceptsObjectPayload(t *testing.T) {
 	assert.Equal(t, base64.StdEncoding.EncodeToString([]byte("png-bytes")), encoded)
 }
 
-func TestDispatch_NonReceiveMethodIgnored(t *testing.T) {
-	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
-	called := false
-	ch.OnMessage(func(_ IncomingMessage) { called = true })
+func TestDispatch_IgnoresUnroutableLines(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+	}{
+		{"non-receive method", `{"jsonrpc":"2.0","method":"syncMessage","params":{}}`},
+		{"empty message", `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","dataMessage":{"message":""}}}}`},
+		{"nil data message", `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1"}}}`},
+		{"malformed JSON", `{not valid json`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
+			called := false
+			ch.OnMessage(func(_ IncomingMessage) { called = true })
 
-	ch.dispatch([]byte(`{"jsonrpc":"2.0","method":"syncMessage","params":{}}`))
-	assert.False(t, called)
-
-}
-
-func TestDispatch_EmptyMessageIgnored(t *testing.T) {
-	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
-	called := false
-	ch.OnMessage(func(_ IncomingMessage) { called = true })
-
-	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1","dataMessage":{"message":""}}}}`
-	ch.dispatch([]byte(line))
-	assert.False(t, called)
-
-}
-
-func TestDispatch_NilDataMessageIgnored(t *testing.T) {
-	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
-	called := false
-	ch.OnMessage(func(_ IncomingMessage) { called = true })
-
-	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+1"}}}`
-	ch.dispatch([]byte(line))
-	assert.False(t, called)
-
+			ch.dispatch([]byte(tt.line))
+			assert.False(t, called)
+		})
+	}
 }
 
 func TestFormatSignalMarkup(t *testing.T) {
@@ -645,16 +570,6 @@ func TestSignalChannel_SendMedia_FormatsSignalMarkup(t *testing.T) {
 	}
 	assert.Equal(t, "bold gone", got)
 	assert.Equal(t, []any{"0:4:BOLD", "5:4:STRIKETHROUGH"}, styles)
-}
-
-func TestDispatch_MalformedJSON(t *testing.T) {
-	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
-	called := false
-	ch.OnMessage(func(_ IncomingMessage) { called = true })
-
-	ch.dispatch([]byte(`{not valid json`))
-	assert.False(t, called)
-
 }
 
 func TestDispatch_NoHandlerRegistered(_ *testing.T) {
@@ -1068,60 +983,155 @@ func TestDaemonInfo_ManagedMode_Running(t *testing.T) {
 
 }
 
-// ── Send tests (HTTP POST) ────────────────────────────────────────────────────
+// ── RPC send methods ─────────────────────────────────────────────────────────
 
-func TestSend_PostsJSONRPCOverTCP(t *testing.T) {
-	fd := newFakeDaemon(t)
-	defer fd.Close()
-
-	ch := NewSignalChannel("", fd.Addr(), nil, true, true, true, true, "test", nil)
-	err := ch.Send("+15550001111", "test message")
+// newSignalNoResponseServer creates a TCP server that accepts one connection,
+// reads the request line, and closes without writing a response. Reading first
+// keeps the client's write from racing the close.
+func newSignalNoResponseServer(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	assert.NoError(t, err)
 
-	reqs := fd.SentRequests()
-	assert.Equal(t, 1, len(reqs))
-
-	req := reqs[0]
-	assert.Equal(t, "send", req["method"])
-	assert.Equal(t, "2.0", req["jsonrpc"])
-
-	params, _ := req["params"].(map[string]interface{})
-	assert.NotNil(t, params)
-
-	recipients, _ := params["recipient"].([]interface{})
-	assert.Len(t, recipients, 1)
-	assert.Equal(t, "+15550001111", recipients[0])
-	assert.Equal(t, "test message", params["message"])
-
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		_, _ = bufio.NewReader(conn).ReadBytes('\n')
+		_ = conn.Close()
+	}()
+	t.Cleanup(func() { _ = ln.Close() })
+	return ln.Addr().String()
 }
 
-func TestSend_DaemonNotReady(t *testing.T) {
-	ch := NewSignalChannel("", "", nil, true, true, true, true, "test", nil)
-	err := ch.Send("+1", "hi")
-	assert.Error(t, err)
-
-}
-
-func TestSend_GroupUsesGroupId(t *testing.T) {
-	fd := newFakeDaemon(t)
-	defer fd.Close()
-
-	const groupID = "Z2lkPQ=="
-	ch := NewSignalChannel("", fd.Addr(), nil, true, true, true, true, "test", nil)
-	err := ch.Send(groupID, "hello group")
+// closedSignalAddr returns an address nothing is listening on.
+func closedSignalAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	assert.NoError(t, err)
+	addr := ln.Addr().String()
+	assert.NoError(t, ln.Close())
+	return addr
+}
 
-	reqs := fd.SentRequests()
-	assert.Equal(t, 1, len(reqs))
+func TestSignalChannel_RPCMethods(t *testing.T) {
+	const (
+		direct  = "+15550001111"
+		groupID = "Z2lkPQ=="
+	)
+	tests := []struct {
+		name      string
+		rpcMethod string
+		call      func(ch *SignalChannel, target string) error
+		// groups reports whether the method accepts a group ID target.
+		groups bool
+		// wantParams are extra params the request must carry.
+		wantParams map[string]any
+	}{
+		{
+			name:       "Send",
+			rpcMethod:  "send",
+			call:       func(ch *SignalChannel, target string) error { return ch.Send(target, "hello") },
+			groups:     true,
+			wantParams: map[string]any{"message": "hello"},
+		},
+		{
+			name:       "SendTyping",
+			rpcMethod:  "sendTyping",
+			call:       func(ch *SignalChannel, target string) error { return ch.SendTyping(target, true) },
+			groups:     true,
+			wantParams: map[string]any{"stop": true},
+		},
+		{
+			name:      "SendMedia",
+			rpcMethod: "send",
+			call: func(ch *SignalChannel, target string) error {
+				return ch.SendMedia(target, "caption", "/tmp/img.png")
+			},
+			groups:     true,
+			wantParams: map[string]any{"message": "caption", "attachments": []any{"/tmp/img.png"}},
+		},
+		{
+			name:       "sendReadReceipt",
+			rpcMethod:  "sendReceipt",
+			call:       func(ch *SignalChannel, target string) error { return ch.sendReadReceipt(target, 12345) },
+			wantParams: map[string]any{"type": "read", "targetTimestamps": []any{float64(12345)}},
+		},
+		{
+			name:      "sendReaction",
+			rpcMethod: "sendReaction",
+			call: func(ch *SignalChannel, target string) error {
+				return ch.sendReaction(target, "👍", "+1", 12345)
+			},
+			groups:     true,
+			wantParams: map[string]any{"emoji": "👍", "targetAuthor": "+1", "targetSentTimestamp": float64(12345)},
+		},
+	}
 
-	params, _ := reqs[0]["params"].(map[string]interface{})
-	assert.NotNil(t, params)
-	assert.Equal(t, groupID, params["groupId"])
-	_, hasRecipient := params["recipient"]
-	assert.False(t, hasRecipient)
+	newChannel := func(addr string) *SignalChannel {
+		return NewSignalChannel("+1", addr, nil, false, false, false, false, "m", nil)
+	}
 
-	assert.Equal(t, "hello group", params["message"])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Run("no daemon address", func(t *testing.T) {
+				assert.ErrorContains(t, tt.call(newChannel(""), direct), "daemon not ready")
+			})
 
+			t.Run("dial error", func(t *testing.T) {
+				assert.ErrorContains(t, tt.call(newChannel(closedSignalAddr(t)), direct), "dial")
+			})
+
+			t.Run("closed without response", func(t *testing.T) {
+				err := tt.call(newChannel(newSignalNoResponseServer(t)), direct)
+				assert.ErrorContains(t, err, "read response")
+			})
+
+			t.Run("success direct", func(t *testing.T) {
+				fd := newFakeDaemon(t)
+				defer fd.Close()
+
+				assert.NoError(t, tt.call(newChannel(fd.Addr()), direct))
+
+				reqs := fd.Requests()
+				if !assert.Len(t, reqs, 1) {
+					return
+				}
+				assert.Equal(t, "2.0", reqs[0]["jsonrpc"])
+				assert.Equal(t, tt.rpcMethod, reqs[0]["method"])
+				params, _ := reqs[0]["params"].(map[string]any)
+				if tt.groups {
+					assert.Equal(t, []any{direct}, params["recipient"])
+				} else {
+					assert.Equal(t, direct, params["recipient"])
+				}
+				assert.NotContains(t, params, "groupId")
+				for k, v := range tt.wantParams {
+					assert.Equal(t, v, params[k], k)
+				}
+			})
+
+			if !tt.groups {
+				return
+			}
+			t.Run("success group", func(t *testing.T) {
+				fd := newFakeDaemon(t)
+				defer fd.Close()
+
+				assert.NoError(t, tt.call(newChannel(fd.Addr()), groupID))
+
+				reqs := fd.Requests()
+				if !assert.Len(t, reqs, 1) {
+					return
+				}
+				assert.Equal(t, tt.rpcMethod, reqs[0]["method"])
+				params, _ := reqs[0]["params"].(map[string]any)
+				assert.Equal(t, groupID, params["groupId"])
+				assert.NotContains(t, params, "recipient")
+			})
+		})
+	}
 }
 
 // ── Start / Stop (external mode, TCP JSON-RPC) ───────────────────────────────

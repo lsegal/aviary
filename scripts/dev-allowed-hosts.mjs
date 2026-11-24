@@ -1,16 +1,23 @@
-// Provides the host names the Vite dev servers (the web UI and the VitePress
-// docs) accept requests for, so both are reachable from other devices on the
-// LAN by the same names. The defaults match the self-signed dev cert's SANs
-// (SelfSignedSANs in internal/server/tls.go): localhost, the loopback
-// addresses, the hostname, its .local mDNS name, and the LAN IPv4 addresses.
+// Provides the host names the Vite servers (the web UI dev and preview servers
+// and the VitePress docs dev server) accept requests for, so they are
+// reachable from other devices on the LAN by the same names (#1102, #1105).
+// The defaults match the self-signed dev cert's SANs (SelfSignedSANs in
+// internal/server/tls.go): localhost, the loopback addresses, the hostname,
+// its .local mDNS name, and the LAN IPv4 addresses.
 //
 // AVIARY_DEV_HOSTS adds comma-separated names, such as a DNS name pointing at
 // the machine; a leading dot allows every subdomain, as in Vite's
 // server.allowedHosts. Vite's own __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS is
-// honored too, since the docs server's older bundled Vite ignores it.
+// honored too: Vite 8 reads it itself, but VitePress bundles an older Vite
+// that ignores it, so both configs set allowedHosts explicitly from here.
 import os from "node:os";
 
-function splitHosts(value) {
+export const DEV_HOSTS_ENV = "AVIARY_DEV_HOSTS";
+export const ALLOWED_HOSTS_ENV = "__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS";
+
+// splitHosts returns the comma-separated names in value, trimmed and
+// lowercased, with empty entries dropped.
+export function splitHosts(value) {
 	return (value ?? "")
 		.split(",")
 		.map((name) => name.trim().toLowerCase())
@@ -32,8 +39,8 @@ function lanIPv4s(interfaces) {
 	return ips;
 }
 
-// devHosts returns the dev servers' server.allowedHosts list.
-export function devHosts({
+// devAllowedHosts returns the servers' allowedHosts list.
+export function devAllowedHosts({
 	env = process.env,
 	hostname = os.hostname(),
 	interfaces = os.networkInterfaces(),
@@ -46,7 +53,7 @@ export function devHosts({
 		if (!host.includes(".")) hosts.push(`${host}.local`);
 	}
 	hosts.push(...lanIPv4s(interfaces));
-	hosts.push(...splitHosts(env.AVIARY_DEV_HOSTS));
-	hosts.push(...splitHosts(env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS));
+	hosts.push(...splitHosts(env[DEV_HOSTS_ENV]));
+	hosts.push(...splitHosts(env[ALLOWED_HOSTS_ENV]));
 	return [...new Set(hosts)];
 }

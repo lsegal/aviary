@@ -68,6 +68,8 @@ var minimalTools = map[string]bool{
 	"project_job_pause":            true,
 	"project_job_resume":           true,
 	"project_job_dismiss":          true,
+	"project_job_queue":            true,
+	"project_queue_candidates":     true,
 	"project_unblock_run":          true,
 	"project_clone_list":           true,
 	"project_clone_clear":          true,

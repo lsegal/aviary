@@ -14,6 +14,24 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Aviary" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <script>
+      // Apply the cached display preferences (#1093) before the first paint,
+      // so a load never flashes the wrong theme or text size. Mirrors
+      // applyDisplayPrefs in src/lib/displayPrefs.ts.
+      (() => {
+        var prefs = {};
+        try {
+          prefs = JSON.parse(localStorage.getItem("aviary.display.prefs") || "{}") || {};
+        } catch (e) {}
+        var theme = prefs.theme;
+        if (theme !== "light" && theme !== "dark")
+          theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        var root = document.documentElement;
+        root.dataset.theme = theme;
+        root.dataset.textSize =
+          ["small", "large", "xlarge"].indexOf(prefs.textSize) >= 0 ? prefs.textSize : "default";
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

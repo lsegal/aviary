@@ -112,7 +112,7 @@ The docs dev server serves HTTPS with the same certificate, so a device that tru
 
 #### LAN access
 
-Both dev servers, the web UI on port 5173 and the docs on port 5174, listen on every interface and accept the same host names (`scripts/dev-hosts.mjs`). By default those are the names the certificate covers: `localhost`, the loopback addresses, your hostname, its `.local` name (for example `https://my-mac.local:5174`), and your current LAN IPv4 addresses. Over HTTPS, Vite skips its host check, so this list matters when they serve plain HTTP (`AVIARY_DEV_NO_TLS=1`, or when the certificate cannot be loaded). Then Vite rejects other names with "Blocked request. This host is not allowed".
+Both dev servers, the web UI on port 5173 and the docs on port 5174, listen on every interface and accept the same host names (`scripts/dev-allowed-hosts.mjs`). By default those are the names the certificate covers: `localhost`, the loopback addresses, your hostname, its `.local` name (for example `https://my-mac.local:5174`), and your current LAN IPv4 addresses. Over HTTPS, Vite skips its host check, so this list matters when they serve plain HTTP (`AVIARY_DEV_NO_TLS=1`, or when the certificate cannot be loaded). Then Vite rejects other names with "Blocked request. This host is not allowed".
 
 To reach them over plain HTTP by another name, such as a DNS name or a Tailscale name pointing at your machine, list it in `AVIARY_DEV_HOSTS` before `pnpm dev`:
 
@@ -120,7 +120,7 @@ To reach them over plain HTTP by another name, such as a DNS name or a Tailscale
 AVIARY_DEV_HOSTS=dev.example.com,.tailnet.ts.net pnpm dev
 ```
 
-Names are comma-separated; a leading dot allows every subdomain. Vite's `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` is honored the same way by both servers. Add the extra names to `server.tls.sans` too, so the certificate covers them.
+Names are comma-separated; a leading dot allows every subdomain. Vite's `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` is honored the same way by both servers, even though the Vite version VitePress bundles ignores it on its own. The app preview server (`pnpm preview`) accepts the same names; the docs preview server (`pnpm docs:preview`) doesn't check the host. Add the extra names to `server.tls.sans` too, so the certificate covers them.
 
 In the dev container or Docker Compose setup, the certificate is generated inside the container. Add the names you reach it by, such as your host's LAN address, under `server.tls.sans` in `.devcontainer/aviary/aviary.yaml`.
 

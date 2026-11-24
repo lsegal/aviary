@@ -267,7 +267,7 @@ test("unsaved settings ask before leaving the Settings pages only", async ({
 	await expect(nav).toBeVisible();
 	const base = await beforeUnloadCount(page);
 	await openGearMenuItem(page, "Settings");
-	await expect(page.getByTestId("page-title")).toBeVisible();
+	await expect(page.getByTestId("settings-title")).toBeVisible();
 	// A freshly loaded config is no unsaved change.
 	const certPath = page.getByPlaceholder("/path/to/cert.pem");
 	await expect(certPath).toBeVisible();

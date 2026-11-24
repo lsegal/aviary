@@ -158,7 +158,7 @@
           </div>
           <div class="mt-2 flex items-center gap-1.5 text-[10px] text-gray-400">
             <span>Low</span>
-            <div class="h-2 w-16 rounded-full" style="background:linear-gradient(to right,#e5e7eb,#3b82f6)" />
+            <div class="h-2 w-16 rounded-full bg-linear-to-r from-gray-200 to-blue-500 dark:from-gray-800" />
             <span>High token density</span>
           </div>
         </div>

@@ -2288,7 +2288,9 @@ test("prompt chat inserts a newline on Shift+Enter and sends on Enter", async ({
 	await expect.poll(() => calls.agent_run?.length ?? 0).toBe(1);
 	expect(calls.agent_run[0].message).toBe("line one\nline two");
 	await expect(input).toHaveValue("");
-	const sent = chat.locator(".whitespace-pre-wrap", { hasText: "line two" });
+	const sent = chat
+		.getByTestId("chat-message-content")
+		.filter({ hasText: "line two" });
 	await expect(sent).toBeVisible();
 	expect(await sent.innerText()).toBe("line one\nline two");
 });
@@ -2321,7 +2323,7 @@ test("job details open under the project header, keeping the chat and logs panel
 	// The project header and its buttons stay.
 	await expect(
 		page
-			.getByTestId("page-breadcrumb")
+			.getByTestId("settings-breadcrumb")
 			.getByRole("link", { name: "lsegal/aviary", exact: true }),
 	).toBeVisible();
 	await expect(page.getByTestId("delivery-status")).toBeVisible();
@@ -2392,7 +2394,7 @@ test("loading a job details URL shows the project header with that job open", as
 	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
 	await expect(
 		page
-			.getByTestId("page-breadcrumb")
+			.getByTestId("settings-breadcrumb")
 			.getByRole("link", { name: "lsegal/aviary", exact: true }),
 	).toBeVisible();
 	await expect(page.getByTestId("prompt-chat-toggle")).toBeVisible();
@@ -2558,7 +2560,7 @@ test.describe("phone width", () => {
 		test(`${path} has no horizontal overflow`, async ({ page }) => {
 			await setup(page);
 			await page.goto(path);
-			await expect(page.getByTestId("page-title")).toBeVisible();
+			await expect(page.getByTestId("settings-title")).toBeVisible();
 			await page.waitForTimeout(500);
 			const overflow = await page.evaluate(() =>
 				[...document.querySelectorAll("main *")].some(

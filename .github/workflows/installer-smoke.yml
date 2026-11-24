@@ -79,3 +79,34 @@ jobs:
           # aviary.bot forwards to the same release asset.
           curl -fsSL https://aviary.bot/install.sh | sh -s -- --skip-skills
           "$HOME/.local/bin/aviary" version
+
+  smoke-windows:
+    name: "Test: Public installer (Windows, ${{ matrix.powershell }})"
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows PowerShell 5.1 and PowerShell 7 (#1100).
+        powershell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install with irm | iex
+        shell: pwsh
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          # This commit's installer always runs. The published installer only
+          # runs when a release passes the tag it just published, since until
+          # then it may predate this commit's installer.
+          $urls = @("https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/installer/install.ps1")
+          if ($env:TAG) {
+            $urls += "https://github.com/lsegal/aviary/releases/latest/download/install.ps1", "https://aviary.bot/install.ps1"
+          }
+          foreach ($url in $urls) {
+            & ${{ matrix.powershell }} -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-install-ps1.ps1 -InstallerUrl $url -HomeDir (Join-Path $env:RUNNER_TEMP 'home') -Tag "$env:TAG"
+            if ($LASTEXITCODE -ne 0) {
+              throw "$url failed under ${{ matrix.powershell }}"
+            }
+          }

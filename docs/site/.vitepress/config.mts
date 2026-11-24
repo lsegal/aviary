@@ -1,6 +1,6 @@
 import { defineConfig, type HeadConfig } from "vitepress";
+import { devAllowedHosts } from "../../../scripts/dev-allowed-hosts.mjs";
 import { devHttps } from "../../../scripts/dev-cert.mjs";
-import { devHosts } from "../../../scripts/dev-hosts.mjs";
 import {
 	checkSharePages,
 	defaultSharePage,
@@ -28,16 +28,21 @@ export default defineConfig({
 	base,
 	title,
 	description,
+	// VitePress bundles a Vite that ignores
+	// __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS, so pass the shared LAN host names
+	// explicitly (#1102, #1105).
 	vite: {
+		server: { allowedHosts: devAllowedHosts() },
+		preview: { allowedHosts: devAllowedHosts() },
 		plugins: [
 			{
 				// Serve the docs like the web UI dev server: HTTPS with the shared dev
-				// cert and the same LAN host names (#1105). HMR follows the page, so
-				// its websocket uses wss on whichever allowed host served it.
-				name: "aviary-dev-server",
+				// cert (#1105). HMR follows the page, so its websocket uses wss on
+				// whichever allowed host served it.
+				name: "aviary-dev-https",
 				config(_, { command }) {
 					if (command !== "serve") return;
-					return { server: { https: devHttps(), allowedHosts: devHosts() } };
+					return { server: { https: devHttps() } };
 				},
 			},
 		],

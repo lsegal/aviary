@@ -17,10 +17,21 @@ type NavPreferences struct {
 	Hidden map[string][]string `json:"hidden"`
 }
 
+// DisplayPreferences is the web UI's look (#1093): its color theme and text
+// size. An empty field means the default, so options added later need no
+// migration.
+type DisplayPreferences struct {
+	// Theme is "light", "dark" or "system" (following the OS).
+	Theme string `json:"theme,omitempty"`
+	// TextSize is "small", "default", "large" or "xlarge".
+	TextSize string `json:"textSize,omitempty"`
+}
+
 // Preferences holds the user's web UI preferences, kept on the server so
 // they follow the user across browsers and devices.
 type Preferences struct {
-	Navigation NavPreferences `json:"navigation"`
+	Navigation NavPreferences     `json:"navigation"`
+	Display    DisplayPreferences `json:"display"`
 }
 
 var preferencesMu sync.Mutex

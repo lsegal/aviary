@@ -356,6 +356,13 @@
 		"number",
 		"target"
 	],
+	"project_job_queue": [
+		"numbers",
+		"repository",
+		"skill",
+		"target",
+		"titles"
+	],
 	"project_job_resume": [
 		"number",
 		"target"
@@ -368,6 +375,11 @@
 		"number",
 		"target"
 	],
+	"project_queue_candidates": [
+		"repository",
+		"skill",
+		"target"
+	],
 	"project_refresh": [
 		"target"
 	],
@@ -378,6 +390,70 @@
 	"project_status": [
 		"log_offset",
 		"targets"
+	],
+	"project_task_create": [
+		"at",
+		"content",
+		"days",
+		"dry_run",
+		"every",
+		"missed",
+		"model",
+		"name",
+		"overlap",
+		"precompile",
+		"project",
+		"run_once",
+		"schedule",
+		"send_to",
+		"start_at",
+		"timezone",
+		"trigger"
+	],
+	"project_task_delete": [
+		"confirm",
+		"name",
+		"project"
+	],
+	"project_task_get": [
+		"name",
+		"project"
+	],
+	"project_task_list": [
+		"project"
+	],
+	"project_task_pause": [
+		"name",
+		"project"
+	],
+	"project_task_resume": [
+		"name",
+		"project"
+	],
+	"project_task_run": [
+		"name",
+		"project"
+	],
+	"project_task_update": [
+		"at",
+		"content",
+		"days",
+		"enabled",
+		"every",
+		"missed",
+		"model",
+		"name",
+		"new_name",
+		"new_project",
+		"overlap",
+		"precompile",
+		"project",
+		"run_once",
+		"schedule",
+		"send_to",
+		"start_at",
+		"timezone",
+		"trigger"
 	],
 	"project_unblock_run": [
 		"number",
