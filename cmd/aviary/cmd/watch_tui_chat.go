@@ -676,10 +676,10 @@ func (r *watchChatRenderer) markdown(text, indent string) {
 			r.lines = append(r.lines, "")
 		case watchMDHeading.MatchString(trimmed):
 			body := watchMDHeading.FindStringSubmatch(trimmed)[1]
-			r.wrapped(indent, indent, tuiTitleStyle.Render(r.inline(body)), false)
+			r.wrapped(indent, indent, r.inlineStyled(body, tuiTitleStyle), false)
 		case strings.HasPrefix(trimmed, ">"):
 			bar := indent + tuiDimStyle.Render("▏ ")
-			r.wrapped(bar, bar, tuiDimStyle.Render(r.inline(strings.TrimSpace(strings.TrimPrefix(trimmed, ">")))), false)
+			r.wrapped(bar, bar, r.inlineStyled(strings.TrimSpace(strings.TrimPrefix(trimmed, ">")), tuiDimStyle), false)
 		case watchMDList.MatchString(line):
 			parts := watchMDList.FindStringSubmatch(line)
 			bullet := parts[2]
@@ -732,32 +732,43 @@ func (r *watchChatRenderer) placeRefs(start int) {
 
 // inline styles bold, code, links and references in one line of Markdown.
 func (r *watchChatRenderer) inline(text string) string {
+	return r.inlineStyled(text, lipgloss.NewStyle())
+}
+
+// inlineStyled is inline with base under every part, so a heading's or
+// bold run's references keep its style around them.
+func (r *watchChatRenderer) inlineStyled(text string, base lipgloss.Style) string {
 	var b strings.Builder
+	plain := func(s string) {
+		if s != "" {
+			b.WriteString(base.Render(s))
+		}
+	}
 	last := 0
 	for _, loc := range watchMDInline.FindAllStringIndex(text, -1) {
 		token := text[loc[0]:loc[1]]
-		b.WriteString(text[last:loc[0]])
+		plain(text[last:loc[0]])
 		last = loc[1]
 		switch {
 		case strings.HasPrefix(token, "`"):
-			b.WriteString(watchChatCodeStyle.Render(strings.Trim(token, "`")))
+			b.WriteString(watchChatCodeStyle.Inherit(base).Render(strings.Trim(token, "`")))
 		case strings.HasPrefix(token, "**"), strings.HasPrefix(token, "__"):
-			b.WriteString(tuiLabelStyle.Render(token[2 : len(token)-2]))
+			b.WriteString(r.inlineStyled(token[2:len(token)-2], base.Bold(true)))
 		case strings.HasPrefix(token, "["):
 			label, href, _ := strings.Cut(token[1:len(token)-1], "](")
-			b.WriteString(watchChatLinkStyle.Render(label))
+			b.WriteString(watchChatLinkStyle.Inherit(base).Render(label))
 			if href != label {
 				b.WriteString(tuiDimStyle.Render(" (" + href + ")"))
 			}
 		default:
 			if loc[0] > 0 && watchRefBlocked(text[loc[0]-1]) {
-				b.WriteString(token)
+				plain(token)
 				continue
 			}
-			b.WriteString(r.ref(token))
+			b.WriteString(r.ref(token, base))
 		}
 	}
-	b.WriteString(text[last:])
+	plain(text[last:])
 	return b.String()
 }
 
@@ -768,10 +779,10 @@ func watchRefBlocked(c byte) bool {
 }
 
 // ref records and styles an issue reference, reversed while selected.
-func (r *watchChatRenderer) ref(token string) string {
+func (r *watchChatRenderer) ref(token string, base lipgloss.Style) string {
 	target, digits, _ := strings.Cut(token, "#")
 	number, _ := strconv.Atoi(digits)
-	style := watchChatRefStyle
+	style := watchChatRefStyle.Inherit(base)
 	if len(r.refs) == r.selected {
 		style = style.Reverse(true)
 	}

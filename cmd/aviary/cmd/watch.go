@@ -87,7 +87,11 @@ your server port (default 16677) up, and serves a minimal web UI with no token
 prompt: Code Loop and Scheduled Tasks only. Chat, agent and channel settings,
 System pages and their API are unavailable. A full-screen TUI shows the same
 board in the terminal: status filters, scheduled tasks, board mode, job
-actions, live logs and stats. --no-webui serves no web UI, and --no-tui prints
+actions, live logs and stats. Its prompt chat (c to open or close, / to
+type) talks to the Code Loop agent in the same session as the web board's
+prompt chat: enter sends, alt+enter adds a line, up/down recall inputs, tab
+switches to the transcript, where n/N and enter jump from a #123 reference
+to its job, and esc returns to the board. ? lists every key. --no-webui serves no web UI, and --no-tui prints
 the Code Loop log instead of the TUI (the default when output is not a
 terminal).
 

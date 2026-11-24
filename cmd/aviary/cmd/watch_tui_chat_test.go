@@ -287,7 +287,7 @@ func TestWatchTUIChatReferencesJumpToTheBoard(t *testing.T) {
 	tools := newFakeWatchTools()
 	tools.responses["session_messages"] = chatHistoryResponse(
 		map[string]any{"role": "user", "content": "status?"},
-		map[string]any{"role": "assistant", "content": "- #3 is running\n- PR #9 merged\n- `#77` is code, x/y#5 is elsewhere\n\nSee [the board](https://example.com/board) and &#39;."},
+		map[string]any{"role": "assistant", "content": "- **#3** is running\n- PR #9 merged\n- `#77` is code, x/y#5 is elsewhere\n\nSee [the board](https://example.com/board) and &#39;."},
 	)
 	m := loadedWatchModel(t, tools)
 	m, cmd := watchSpecialKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
