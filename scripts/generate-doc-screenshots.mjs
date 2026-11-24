@@ -1241,6 +1241,279 @@ const projectsFixtures = {
 	},
 };
 
+// Channel workflows: a Team Slack channel whose messages run workflows in
+// place of the agent's reply. Senders show by display name only.
+const workflowChannel = "Team Slack";
+const beNicePrompt =
+	"If the message is positive, reply with a short friendly note; otherwise call task_no_reply.";
+
+const workflowTasks = [
+	{
+		name: "be-nice",
+		trigger: "message",
+		channel: workflowChannel,
+		match: "*",
+		target: "reply",
+		prompt: beNicePrompt,
+	},
+	{
+		name: "deploy-trigger",
+		trigger: "message",
+		channel: workflowChannel,
+		entry: "C05DEPLOYS",
+		match: "deploy *",
+		target: "reply",
+		precompile: true,
+		compiled:
+			'target = message.text.split(" ", 1)[1]\nrun = exec("pnpm deploy " + target)\nreply("Deploying " + target + ": " + run.summary)',
+		compiled_key: "deploy-trigger-v1",
+		prompt:
+			"Deploy the app named after the word deploy to staging with pnpm deploy, and reply with the result.",
+	},
+	{
+		name: "signal-router",
+		trigger: "message",
+		channel: workflowChannel,
+		match: "*alert*",
+		target: "channel:design-ops-bot",
+		enabled: false,
+		prompt:
+			"Summarize the alert in one line and forward it to the on-call channel.",
+	},
+];
+
+const workflowsConfig = {
+	...docsConfig,
+	agents: docsConfig.agents.map((agent) =>
+		agent.name === "assistant"
+			? {
+					...agent,
+					channels: [
+						...agent.channels,
+						{
+							enabled: true,
+							type: "slack",
+							id: "team-slack",
+							name: workflowChannel,
+							url: "xapp-1-live-example",
+							token: "xoxb-1-live-example",
+						},
+					],
+					tasks: [...agent.tasks, ...workflowTasks],
+				}
+			: agent,
+	),
+};
+
+function workflowRun(n, task, status, minutes, seconds, extra = {}) {
+	const created = new Date(Date.now() - minutes * 60_000);
+	return {
+		id: `job_${String(n).padStart(8, "0")}`,
+		task_id: `assistant/${task}`,
+		agent_id: "assistant",
+		prompt: "",
+		trigger: "message",
+		status,
+		attempts: 1,
+		max_retries: 3,
+		created_at: created.toISOString(),
+		updated_at: new Date(created.getTime() + seconds * 1000).toISOString(),
+		...extra,
+	};
+}
+
+// The messages around one be-nice run, as its trigger context records them.
+function slackMessage(minutes, sender, text) {
+	return { sender, text, timestamp: minutesAgo(minutes) };
+}
+
+const beNiceContext = {
+	channel_type: "slack",
+	configured_id: "team-slack",
+	channel: workflowChannel,
+	entry: "C04GENERAL",
+	recorded_at: minutesAgo(12),
+	before: [
+		slackMessage(19, "Priya Shah", "Docs preview for the release notes is up."),
+		slackMessage(16, "Marcus Lee", "Reading it now."),
+		{
+			from_agent: true,
+			text: "The preview build passed all link checks.",
+			timestamp: minutesAgo(15),
+		},
+	],
+	message: slackMessage(
+		12,
+		"Marcus Lee",
+		"Thanks for the quick turnaround on the docs fixes, they look great!",
+	),
+	after: [
+		slackMessage(10, "Priya Shah", "Agreed, shipping it this afternoon."),
+	],
+};
+
+const beNiceRuns = [
+	workflowRun(41, "be-nice", "completed", 12, 6, {
+		output:
+			"You're welcome, Marcus! Glad the fixes landed well. Enjoy the release this afternoon.",
+		trigger_context: beNiceContext,
+	}),
+	workflowRun(38, "be-nice", "completed", 74, 4, {
+		output: "",
+		delivery: {
+			target: "reply",
+			status: "skipped",
+			message: "the message reported a bug, not something positive",
+		},
+	}),
+	workflowRun(35, "be-nice", "completed", 180, 5, {
+		output:
+			"Congrats on the launch, Priya! The new onboarding flow looks great.",
+	}),
+	workflowRun(31, "be-nice", "completed", 26 * 60, 5, {
+		output: "Thanks, Jordan! Happy to help anytime.",
+	}),
+	workflowRun(27, "be-nice", "failed", 27 * 60, 31, {
+		attempts: 2,
+		error: "slack: chat.postMessage returned ratelimited",
+	}),
+	workflowRun(22, "be-nice", "completed", 2 * 24 * 60, 6, {
+		output: "Nice work on the migration, Marcus!",
+	}),
+];
+
+const workflowJobs = [
+	workflowRun(42, "deploy-trigger", "in_progress", 1, 40),
+	workflowRun(36, "deploy-trigger", "completed", 150, 48),
+	...beNiceRuns,
+];
+
+// The Team Slack conversation: a reply the agent wrote, then messages
+// workflows handled instead.
+const teamSlackMessages = [
+	{
+		id: "msg-1",
+		role: "user",
+		content: "aviary what's on the release calendar this week?",
+		timestamp: minutesAgo(95),
+	},
+	{
+		id: "msg-2",
+		role: "assistant",
+		content:
+			"This week's releases:\n\n- **Wednesday:** docs site refresh\n- **Thursday:** web 2.4 with the new onboarding flow\n- **Friday:** API rate-limit changes (staging only)",
+		model: "anthropic/claude-sonnet-4-5",
+		timestamp: minutesAgo(94),
+	},
+	{
+		id: "msg-3",
+		role: "user",
+		content: "The checkout page is throwing a 500 for me again.",
+		workflows: [
+			{ task_id: "assistant/be-nice", name: "be-nice", job_id: "job_00000038" },
+		],
+		timestamp: minutesAgo(74),
+	},
+	{
+		id: "msg-4",
+		role: "user",
+		content:
+			"Thanks for the quick turnaround on the docs fixes, they look great!",
+		workflows: [
+			{ task_id: "assistant/be-nice", name: "be-nice", job_id: "job_00000041" },
+		],
+		timestamp: minutesAgo(12),
+	},
+	{
+		id: "msg-5",
+		role: "user",
+		content: "deploy web",
+		workflows: [
+			{ task_id: "assistant/be-nice", name: "be-nice", job_id: "job_00000043" },
+			{
+				task_id: "assistant/deploy-trigger",
+				name: "deploy-trigger",
+				job_id: "job_00000042",
+			},
+		],
+		timestamp: minutesAgo(1),
+	},
+];
+
+const workflowPreviewMessages = [
+	["Priya Shah", "Docs preview for the release notes is up."],
+	["Marcus Lee", "Reading it now."],
+	[
+		"Marcus Lee",
+		"Thanks for the quick turnaround on the docs fixes, they look great!",
+	],
+	["Priya Shah", "Agreed, shipping it this afternoon."],
+	["Jordan Kim", "The checkout page is throwing a 500 for me again."],
+	["Priya Shah", "deploy web"],
+];
+
+const workflowsFixtures = {
+	...settingsFixtures,
+	config_get: workflowsConfig,
+	job_query: workflowJobs,
+	job_list: (args) => workflowJobs.filter((j) => j.task_id === args.task),
+	job_logs: (args) =>
+		workflowJobs.find((j) => j.id === args.id)?.output ||
+		"Skipped reply: the message reported a bug, not something positive",
+	task_list: workflowTasks.map((t) => ({
+		id: `assistant/${t.name}`,
+		agent_name: "assistant",
+		name: t.name,
+		enabled: t.enabled !== false,
+		description: `${t.match && t.match !== "*" ? `messages matching ${t.match}` : "every message"} on ${t.channel}${t.entry ? ` (${t.entry})` : ""}`,
+		trigger_type: "message",
+		channel: t.channel,
+		entry: t.entry,
+		match: t.match,
+	})),
+	task_session: { id: "sess-be-nice" },
+	channel_sessions: [
+		{
+			id: "sess-team-slack",
+			agent_id: "agent_assistant",
+			name: workflowChannel,
+			created_at: iso(7, 9),
+			last_message_at: minutesAgo(1),
+			own: true,
+		},
+	],
+	session_messages: (args) =>
+		args.session_id === "sess-team-slack" ? teamSlackMessages : [],
+	session_turn: null,
+	workflow_entries: [
+		{ entry: "C04GENERAL", title: "#general" },
+		{ entry: "C05DEPLOYS", title: "#deploys" },
+	],
+	workflow_preview: (args) =>
+		workflowPreviewMessages.map(([sender, text], i) => ({
+			entry: i === 5 ? "C05DEPLOYS" : "C04GENERAL",
+			sender,
+			text,
+			timestamp: minutesAgo(30 - i * 5),
+			matches: !args.match || args.match === "*",
+		})),
+	task_analyze: {
+		verdict: "partial",
+		will_precompile: false,
+		model_steps: ["judging whether the message is positive"],
+		model: "anthropic/claude-sonnet-4-5",
+		estimate: {
+			available: true,
+			min_tokens: 1800,
+			max_tokens: 4200,
+			min_cost_usd: 0.006,
+			max_cost_usd: 0.014,
+			min_context_tokens: 300,
+			max_context_tokens: 1200,
+		},
+	},
+};
+
 // waitForServer loads url in the browser until it answers 2xx. The browser
 // accepts the dev server's self-signed cert.
 async function waitForServer(browser, url, timeoutMs = 30_000) {
@@ -1440,9 +1713,14 @@ async function captureSimple({
 	viewport,
 	theme,
 	storage = {},
+	reducedMotion = "no-preference",
 }) {
 	if (!wanted(outputName)) return;
-	const page = await browser.newPage({ viewport, colorScheme: theme });
+	const page = await browser.newPage({
+		viewport,
+		colorScheme: theme,
+		reducedMotion,
+	});
 	try {
 		await configurePage(page, fixtures);
 		// UI preferences the page reads from localStorage on load.
@@ -1634,6 +1912,41 @@ async function main() {
 				outputName: "projects-run.png",
 				viewport: { width: 1440, height: 980 },
 				theme,
+			});
+
+			await captureSimple({
+				browser,
+				fixtures: workflowsFixtures,
+				pathname:
+					"/agents/assistant/channels/Team%20Slack/settings?tab=workflows&workflow=be-nice",
+				readySelector:
+					'[data-testid="workflow-prompt-section"] [data-testid="task-cost-estimate"]',
+				outputName: "workflows-tab.png",
+				viewport: { width: 1040, height: 1400 },
+				theme,
+			});
+
+			await captureSimple({
+				browser,
+				fixtures: workflowsFixtures,
+				pathname: "/agents/assistant/channels/Team%20Slack",
+				readySelector: "text=Thanks for the quick turnaround",
+				outputName: "workflow-strip.png",
+				viewport: { width: 1040, height: 900 },
+				theme,
+				// A running card's border as a still: solid, not mid-animation.
+				reducedMotion: "reduce",
+			});
+
+			await captureSimple({
+				browser,
+				fixtures: workflowsFixtures,
+				pathname: "/agents/assistant/tasks/be-nice",
+				readySelector: '[data-testid="trigger-context"]',
+				outputName: "workflow-detail.png",
+				viewport: { width: 1040, height: 980 },
+				theme,
+				storage: { "aviary.taskChat.open": "false" },
 			});
 
 			await captureTools(browser, theme);
