@@ -125,6 +125,10 @@ func TestCommentsReadFromThePage(t *testing.T) {
 	if want := "Starting work on this issue /aviary:BBBB"; comments[1].Body != want {
 		t.Fatalf("second body = %q, want %q", comments[1].Body, want)
 	}
+	// The permalink ID is what a running job's watcher dedups and logs by.
+	if comments[1].ID != 2 || comments[1].URL != "https://github.com/owner/repo/issues/7#issuecomment-2" {
+		t.Fatalf("second comment ID = %d, URL = %q", comments[1].ID, comments[1].URL)
+	}
 	if api.lists != 0 {
 		t.Fatalf("the API was called %d time(s) for a page aviary could read", api.lists)
 	}
