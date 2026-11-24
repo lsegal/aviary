@@ -1370,218 +1370,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_schedule",
 		Description: "Register a new scheduled task definition. This does not run a task. The scheduler is responsible for running tasks automatically based on their schedule. Only call this to define a new task that doesn't yet exist. Set exactly one of in=<delay> (one-time task) or schedule=<cron expression> (recurring task) — never both in the same call; if the user wants a recurring task to also fire once immediately for testing, make a separate task_schedule call with only \"in\" set, or use task_run after creating the recurring task. Use the argument name schedule, not cron. Do not add timezone arguments, timezone conversions, or timestamp-formatting logic unless the task explicitly requires them. Use content for the task body. For type=script tasks, content must be Aviary embedded Lua source, not shell/bash/sh or a shebang script. If type is omitted, it defaults to prompt. Aviary accepts standard 5-field cron and 6-field cron with leading seconds. Optional name=<task-name> for recurring tasks. target controls output delivery and must be omitted (default routing), \"silent\" (no delivery), session:<name-or-id>, channel:<channel name> (e.g. channel:Team Slack), which lands in that channel's own session, or codeloop:<project>#<number> (e.g. codeloop:owner/repo#123), which hands the output to that Code Loop job like an allowed commenter's comment: a running or waiting job is woken with it, a paused or queued job sees it when it next runs, and a completed job rejects it — an agent name like \"assistant\" is not a valid target. A recurring prompt or project task keeps its prompt and, with precompile (default scheduler.precompute_tasks), compiles a script beside it in the background; when its prompt is deterministic, runs execute that script (a project task in its clone) and fall back to the model if the script fails. Set precompile=false to opt out when the user's intent implies the task should always run on the model; make that decision from the overall request, not direct keyword extraction. One-time tasks (in, or neither in nor a schedule) always run their prompt on the model. Instead of schedule, a recurring task may use trigger=interval with every=<duration> (e.g. 30m, 2h, 1d), trigger=daily with at=HH:MM (comma-separate several times), trigger=weekly with days=mon,wed and at=HH:MM, or trigger=once with start_at. timezone=<IANA zone> sets the zone triggers are evaluated in; set it only when the user names a zone. overlap=skip drops a fire while the previous run is still active (default queue); missed=run_once runs one catch-up fire for runs missed while Aviary was stopped or the machine slept (default skip). Use task_preview to check the next fires. trigger=message defines a workflow instead: it runs when a message arrives on the agent's channel=<channel name> (optionally only on entry=<conversation ID>, such as a Slack channel ID or Signal number or group; see workflow_entries) whose text matches match=<case-insensitive wildcard; * and ?; empty matches every message>, and it replaces the agent's own chat reply to that message. Workflows take no schedule; target may also be \"reply\" to answer in the triggering conversation, model overrides the agent's model, and overlap applies as for scheduled tasks. A prompt workflow keeps its prompt; with precompile (default scheduler.precompute_tasks) a deterministic one runs a compiled script on each matching message, reading it from the Lua global trigger, and falls back to the model if the script fails. Use workflow_preview to test a match against recent messages. type=project runs content as a Code Loop job on the board of project=<watched project> (owner/repo) in an isolated clone, with cli=<model spec such as claude:opus> or the project's agent; it needs a schedule trigger.",
-	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
-		d := GetDeps()
-		if d.Scheduler == nil {
-			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
-		}
-		if args.Agent == "" {
-			return nil, struct{}{}, fmt.Errorf("agent is required")
-		}
-		if d.Agents != nil {
-			if _, ok := d.Agents.Get(args.Agent); !ok {
-				return nil, struct{}{}, fmt.Errorf("agent %q not found; use agent_list to see available agents", args.Agent)
-			}
-		}
-		if strings.EqualFold(strings.TrimSpace(args.Trigger), config.TriggerMessage) {
-			return createWorkflow(args)
-		}
-		if args.Channel != "" || args.Entry != "" || args.Match != "" {
-			return nil, struct{}{}, fmt.Errorf("channel, entry and match are only supported for workflows (trigger=message)")
-		}
-		taskType := strings.ToLower(strings.TrimSpace(args.Type))
-		if taskType == "" {
-			taskType = "prompt"
-		}
-		requestedTaskType := taskType
-		if taskType != "prompt" && taskType != "script" && taskType != "project" {
-			return nil, struct{}{}, fmt.Errorf("invalid task type %q", args.Type)
-		}
-		if taskType == "project" && strings.TrimSpace(args.Project) == "" {
-			return nil, struct{}{}, fmt.Errorf("project tasks require project=<watched project>")
-		}
-		if taskType != "project" && (args.Project != "" || args.Model != "") {
-			return nil, struct{}{}, fmt.Errorf("project and model are only supported for type=project tasks")
-		}
-		contentText := strings.TrimSpace(args.Content)
-		if contentText == "" {
-			return nil, struct{}{}, fmt.Errorf("content is required")
-		}
-		promptText := ""
-		scriptText := ""
-		switch taskType {
-		case "prompt", "project":
-			promptText = contentText
-		case "script":
-			scriptText = contentText
-			if err := scriptruntime.ValidateLua(scriptText); err != nil {
-				return nil, struct{}{}, fmt.Errorf("script tasks require valid Aviary Lua source: %w", err)
-			}
-			promptText = generatedTaskName(scriptText)
-		}
-		triggerFields := args.fields(normalizeTaskSchedule(args.Schedule))
-		recurring := triggerFields.HasTrigger()
-		if strings.TrimSpace(args.In) != "" && recurring {
-			return nil, struct{}{}, fmt.Errorf("only one of \"in\" or a schedule trigger may be set")
-		}
-		if taskType == "project" && !recurring {
-			return nil, struct{}{}, fmt.Errorf("project tasks need a schedule trigger; use trigger=once with start_at for a single run")
-		}
-		loadedCfg, loadErr := config.Load("")
-		if loadErr != nil {
-			return nil, struct{}{}, loadErr
-		}
-		target := normalizeTaskTarget(args.Target)
-		if config.IsReplyTarget(target) {
-			return nil, struct{}{}, fmt.Errorf("only workflows can reply to the conversation that triggered them; use trigger=message")
-		}
-		if _, err := config.ParseTaskTarget(target); err != nil {
-			return nil, struct{}{}, err
-		}
-		// A recurring prompt or project task keeps its prompt and, when
-		// precompiled, runs a compiled script beside it, falling back to the
-		// model if the script fails. The choice defaults to
-		// scheduler.precompute_tasks.
-		shouldPrecompute := config.EffectivePrecomputeTasks(loadedCfg.Scheduler)
-		if args.Precompile != nil {
-			shouldPrecompute = *args.Precompile
-		}
-		triggerType := strings.ToLower(strings.TrimSpace(args.TriggerType))
-		if triggerType != "" && triggerType != "cron" && triggerType != "watch" {
-			return nil, struct{}{}, fmt.Errorf("invalid trigger_type %q", args.TriggerType)
-		}
-		normalizedSchedule := strings.TrimSpace(triggerFields.Schedule)
-		if recurring {
-			spec, err := schedule.Parse(triggerFields)
-			if err != nil {
-				return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
-			}
-			scheduleKey := normalizedSchedule
-			if scheduleKey == "" {
-				scheduleKey = spec.Describe()
-			}
-			if triggerType == "watch" {
-				return nil, struct{}{}, fmt.Errorf("trigger_type %q conflicts with schedule; use cron or omit trigger_type", args.TriggerType)
-			}
-			agentIdx := -1
-			for i := range loadedCfg.Agents {
-				if loadedCfg.Agents[i].Name == args.Agent {
-					agentIdx = i
-					break
-				}
-			}
-			if agentIdx < 0 {
-				return nil, struct{}{}, fmt.Errorf("agent %q not found in config", args.Agent)
-			}
-			taskTarget := nextTaskTarget(ctx, target, loadedCfg, args.Agent)
-			taskName := strings.TrimSpace(args.Name)
-			if taskName == "" {
-				taskName = generatedRecurringTaskName(requestedTaskType, contentText, scheduleKey, taskTarget)
-				if existingName, ok := findUnnamedRecurringTaskMatch(loadedCfg.Agents[agentIdx].Tasks, requestedTaskType, contentText, normalizedSchedule, taskTarget); ok && normalizedSchedule != "" {
-					taskName = existingName
-				}
-			}
-			// For script tasks, store the Lua source in Prompt so that
-			// task markdown files contain the script body as the file body.
-			body := promptText
-			if taskType == "script" {
-				body = scriptText
-			}
-			nextTask := config.TaskConfig{
-				Type:     taskType,
-				Name:     taskName,
-				Prompt:   body,
-				Schedule: normalizedSchedule,
-				Target:   taskTarget,
-				Trigger:  strings.ToLower(strings.TrimSpace(args.Trigger)),
-				Every:    strings.TrimSpace(args.Every),
-				At:       strings.TrimSpace(args.At),
-				Days:     strings.TrimSpace(args.Days),
-				Timezone: strings.TrimSpace(args.Timezone),
-				StartAt:  strings.TrimSpace(args.StartAt),
-				RunOnce:  args.RunOnce,
-				Overlap:  strings.ToLower(strings.TrimSpace(args.Overlap)),
-				Missed:   strings.ToLower(strings.TrimSpace(args.Missed)),
-				Project:  strings.TrimSpace(args.Project),
-				Model:    strings.TrimSpace(args.Model),
-			}
-			if nextTask.PrecompilesBesidePrompt() {
-				nextTask.Precompile = &shouldPrecompute
-			}
-			// Check whether a task with this name already exists (for action message).
-			updated := false
-			for _, t := range loadedCfg.Agents[agentIdx].Tasks {
-				if t.Name == taskName {
-					updated = true
-					break
-				}
-			}
-			// Write the task definition to the agent's tasks/ directory as a
-			// markdown file.  This keeps task definitions out of aviary.yaml.
-			tasksDir := config.AgentTasksDir(loadedCfg.Agents[agentIdx])
-			if _, saveErr := config.SaveMarkdownTask(tasksDir, nextTask); saveErr != nil {
-				return nil, struct{}{}, saveErr
-			}
-			// Reload config (including newly written task file) then reconcile.
-			reloadedCfg, reloadErr := config.Load("")
-			if reloadErr != nil {
-				return nil, struct{}{}, reloadErr
-			}
-			deps := GetDeps()
-			if deps != nil && deps.Agents != nil {
-				deps.Agents.Reconcile(reloadedCfg)
-			}
-			if deps != nil && deps.Scheduler != nil {
-				deps.Scheduler.Reconcile(reloadedCfg)
-			}
-			action := "created"
-			if updated {
-				action = "updated"
-			}
-			compileNote := ""
-			if taskType == "project" && shouldPrecompute {
-				compileNote = projectTaskCompileNote(ctx, args.Agent, taskName)
-			} else if EffectiveTaskPrecompile(nextTask) {
-				// Compiling calls the model several times, so it runs in the
-				// background; a run that comes first compiles before it starts.
-				compileTaskInBackground(args.Agent, taskName, "schedule")
-				compileNote = " Precompiling: when its prompt is deterministic, runs execute the compiled script and fall back to the model if it fails."
-			}
-			if nextTask.Schedule != "" {
-				return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.%s", taskName, action, args.Agent, nextTask.Schedule, compileNote))
-			}
-			return text(fmt.Sprintf("Scheduled task %q %s for agent %q: %s.%s", taskName, action, args.Agent, spec.Describe(), compileNote))
-		}
-		agentID := args.Agent
-		taskID := strings.TrimSpace(args.Name)
-		if taskID == "" {
-			taskID = generatedTaskName(firstNonEmpty(promptText, scriptText))
-		}
-
-		replySessionID, _ := agent.SessionIDFromContext(ctx)
-		replyAgentID, _ := agent.SessionAgentIDFromContext(ctx)
-
-		var job *domain.Job
-		var err error
-		if args.In != "" {
-			delay, parseErr := parseDuration(args.In)
-			if parseErr != nil {
-				return nil, struct{}{}, fmt.Errorf("invalid duration %q: %w", args.In, parseErr)
-			}
-			job, err = d.Scheduler.Queue().EnqueueAtWithType(taskID, taskType, agentID, promptText, scriptText, "", 1, time.Now().Add(delay), replyAgentID, replySessionID)
-		} else {
-			job, err = d.Scheduler.Queue().EnqueueWithType(taskID, taskType, agentID, promptText, scriptText, "", 1, replyAgentID, replySessionID)
-		}
-		if err != nil {
-			return nil, struct{}{}, err
-		}
-		when := "immediately"
-		if job.ScheduledFor != nil {
-			when = "at " + job.ScheduledFor.Format("15:04:05")
-		}
-		return text(fmt.Sprintf("Task scheduled %s (job ID: %s). Done — no further action needed.", when, job.ID))
-	})
+	}, scheduleTask)
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_stop",
@@ -3464,4 +3253,219 @@ func registerSkillTools(s *sdkmcp.Server) {
 		}
 		return jsonResult(list)
 	})
+}
+
+// scheduleTask is task_schedule: it defines a task, or queues a one-time
+// run. project_task_create saves project tasks through it too.
+func scheduleTask(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+	slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_schedule", "agent", args.Agent, "in", args.In, "schedule", args.Schedule)
+	d := GetDeps()
+	if d.Scheduler == nil {
+		return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
+	}
+	if args.Agent == "" {
+		return nil, struct{}{}, fmt.Errorf("agent is required")
+	}
+	if d.Agents != nil {
+		if _, ok := d.Agents.Get(args.Agent); !ok {
+			return nil, struct{}{}, fmt.Errorf("agent %q not found; use agent_list to see available agents", args.Agent)
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(args.Trigger), config.TriggerMessage) {
+		return createWorkflow(args)
+	}
+	if args.Channel != "" || args.Entry != "" || args.Match != "" {
+		return nil, struct{}{}, fmt.Errorf("channel, entry and match are only supported for workflows (trigger=message)")
+	}
+	taskType := strings.ToLower(strings.TrimSpace(args.Type))
+	if taskType == "" {
+		taskType = "prompt"
+	}
+	requestedTaskType := taskType
+	if taskType != "prompt" && taskType != "script" && taskType != "project" {
+		return nil, struct{}{}, fmt.Errorf("invalid task type %q", args.Type)
+	}
+	if taskType == "project" && strings.TrimSpace(args.Project) == "" {
+		return nil, struct{}{}, fmt.Errorf("project tasks require project=<watched project>")
+	}
+	if taskType != "project" && (args.Project != "" || args.Model != "") {
+		return nil, struct{}{}, fmt.Errorf("project and model are only supported for type=project tasks")
+	}
+	contentText := strings.TrimSpace(args.Content)
+	if contentText == "" {
+		return nil, struct{}{}, fmt.Errorf("content is required")
+	}
+	promptText := ""
+	scriptText := ""
+	switch taskType {
+	case "prompt", "project":
+		promptText = contentText
+	case "script":
+		scriptText = contentText
+		if err := scriptruntime.ValidateLua(scriptText); err != nil {
+			return nil, struct{}{}, fmt.Errorf("script tasks require valid Aviary Lua source: %w", err)
+		}
+		promptText = generatedTaskName(scriptText)
+	}
+	triggerFields := args.fields(normalizeTaskSchedule(args.Schedule))
+	recurring := triggerFields.HasTrigger()
+	if strings.TrimSpace(args.In) != "" && recurring {
+		return nil, struct{}{}, fmt.Errorf("only one of \"in\" or a schedule trigger may be set")
+	}
+	if taskType == "project" && !recurring {
+		return nil, struct{}{}, fmt.Errorf("project tasks need a schedule trigger; use trigger=once with start_at for a single run")
+	}
+	loadedCfg, loadErr := config.Load("")
+	if loadErr != nil {
+		return nil, struct{}{}, loadErr
+	}
+	target := normalizeTaskTarget(args.Target)
+	if config.IsReplyTarget(target) {
+		return nil, struct{}{}, fmt.Errorf("only workflows can reply to the conversation that triggered them; use trigger=message")
+	}
+	if _, err := config.ParseTaskTarget(target); err != nil {
+		return nil, struct{}{}, err
+	}
+	// A recurring prompt or project task keeps its prompt and, when
+	// precompiled, runs a compiled script beside it, falling back to the
+	// model if the script fails. The choice defaults to
+	// scheduler.precompute_tasks.
+	shouldPrecompute := config.EffectivePrecomputeTasks(loadedCfg.Scheduler)
+	if args.Precompile != nil {
+		shouldPrecompute = *args.Precompile
+	}
+	triggerType := strings.ToLower(strings.TrimSpace(args.TriggerType))
+	if triggerType != "" && triggerType != "cron" && triggerType != "watch" {
+		return nil, struct{}{}, fmt.Errorf("invalid trigger_type %q", args.TriggerType)
+	}
+	normalizedSchedule := strings.TrimSpace(triggerFields.Schedule)
+	if recurring {
+		spec, err := schedule.Parse(triggerFields)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
+		}
+		scheduleKey := normalizedSchedule
+		if scheduleKey == "" {
+			scheduleKey = spec.Describe()
+		}
+		if triggerType == "watch" {
+			return nil, struct{}{}, fmt.Errorf("trigger_type %q conflicts with schedule; use cron or omit trigger_type", args.TriggerType)
+		}
+		agentIdx := -1
+		for i := range loadedCfg.Agents {
+			if loadedCfg.Agents[i].Name == args.Agent {
+				agentIdx = i
+				break
+			}
+		}
+		if agentIdx < 0 {
+			return nil, struct{}{}, fmt.Errorf("agent %q not found in config", args.Agent)
+		}
+		taskTarget := nextTaskTarget(ctx, target, loadedCfg, args.Agent)
+		taskName := strings.TrimSpace(args.Name)
+		if taskName == "" {
+			taskName = generatedRecurringTaskName(requestedTaskType, contentText, scheduleKey, taskTarget)
+			if existingName, ok := findUnnamedRecurringTaskMatch(loadedCfg.Agents[agentIdx].Tasks, requestedTaskType, contentText, normalizedSchedule, taskTarget); ok && normalizedSchedule != "" {
+				taskName = existingName
+			}
+		}
+		// For script tasks, store the Lua source in Prompt so that
+		// task markdown files contain the script body as the file body.
+		body := promptText
+		if taskType == "script" {
+			body = scriptText
+		}
+		nextTask := config.TaskConfig{
+			Type:     taskType,
+			Name:     taskName,
+			Prompt:   body,
+			Schedule: normalizedSchedule,
+			Target:   taskTarget,
+			Trigger:  strings.ToLower(strings.TrimSpace(args.Trigger)),
+			Every:    strings.TrimSpace(args.Every),
+			At:       strings.TrimSpace(args.At),
+			Days:     strings.TrimSpace(args.Days),
+			Timezone: strings.TrimSpace(args.Timezone),
+			StartAt:  strings.TrimSpace(args.StartAt),
+			RunOnce:  args.RunOnce,
+			Overlap:  strings.ToLower(strings.TrimSpace(args.Overlap)),
+			Missed:   strings.ToLower(strings.TrimSpace(args.Missed)),
+			Project:  strings.TrimSpace(args.Project),
+			Model:    strings.TrimSpace(args.Model),
+		}
+		if nextTask.PrecompilesBesidePrompt() {
+			nextTask.Precompile = &shouldPrecompute
+		}
+		// Check whether a task with this name already exists (for action message).
+		updated := false
+		for _, t := range loadedCfg.Agents[agentIdx].Tasks {
+			if t.Name == taskName {
+				updated = true
+				break
+			}
+		}
+		// Write the task definition to the agent's tasks/ directory as a
+		// markdown file.  This keeps task definitions out of aviary.yaml.
+		tasksDir := config.AgentTasksDir(loadedCfg.Agents[agentIdx])
+		if _, saveErr := config.SaveMarkdownTask(tasksDir, nextTask); saveErr != nil {
+			return nil, struct{}{}, saveErr
+		}
+		// Reload config (including newly written task file) then reconcile.
+		reloadedCfg, reloadErr := config.Load("")
+		if reloadErr != nil {
+			return nil, struct{}{}, reloadErr
+		}
+		deps := GetDeps()
+		if deps != nil && deps.Agents != nil {
+			deps.Agents.Reconcile(reloadedCfg)
+		}
+		if deps != nil && deps.Scheduler != nil {
+			deps.Scheduler.Reconcile(reloadedCfg)
+		}
+		action := "created"
+		if updated {
+			action = "updated"
+		}
+		compileNote := ""
+		if taskType == "project" && shouldPrecompute {
+			compileNote = projectTaskCompileNote(ctx, args.Agent, taskName)
+		} else if EffectiveTaskPrecompile(nextTask) {
+			// Compiling calls the model several times, so it runs in the
+			// background; a run that comes first compiles before it starts.
+			compileTaskInBackground(args.Agent, taskName, "schedule")
+			compileNote = " Precompiling: when its prompt is deterministic, runs execute the compiled script and fall back to the model if it fails."
+		}
+		if nextTask.Schedule != "" {
+			return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.%s", taskName, action, args.Agent, nextTask.Schedule, compileNote))
+		}
+		return text(fmt.Sprintf("Scheduled task %q %s for agent %q: %s.%s", taskName, action, args.Agent, spec.Describe(), compileNote))
+	}
+	agentID := args.Agent
+	taskID := strings.TrimSpace(args.Name)
+	if taskID == "" {
+		taskID = generatedTaskName(firstNonEmpty(promptText, scriptText))
+	}
+
+	replySessionID, _ := agent.SessionIDFromContext(ctx)
+	replyAgentID, _ := agent.SessionAgentIDFromContext(ctx)
+
+	var job *domain.Job
+	var err error
+	if args.In != "" {
+		delay, parseErr := parseDuration(args.In)
+		if parseErr != nil {
+			return nil, struct{}{}, fmt.Errorf("invalid duration %q: %w", args.In, parseErr)
+		}
+		job, err = d.Scheduler.Queue().EnqueueAtWithType(taskID, taskType, agentID, promptText, scriptText, "", 1, time.Now().Add(delay), replyAgentID, replySessionID)
+	} else {
+		job, err = d.Scheduler.Queue().EnqueueWithType(taskID, taskType, agentID, promptText, scriptText, "", 1, replyAgentID, replySessionID)
+	}
+	if err != nil {
+		return nil, struct{}{}, err
+	}
+	when := "immediately"
+	if job.ScheduledFor != nil {
+		when = "at " + job.ScheduledFor.Format("15:04:05")
+	}
+	return text(fmt.Sprintf("Task scheduled %s (job ID: %s). Done — no further action needed.", when, job.ID))
 }
