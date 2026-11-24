@@ -9,9 +9,8 @@
 					Drag or move items to reorder them, and hide the ones you don't use. Changes save as you go and follow you to your other devices.
 				</p>
 			</div>
-			<div class="min-h-0 flex-1 space-y-5 overflow-y-auto bg-gray-50 px-5 py-4 dark:bg-gray-950">
-				<NavOrderList v-for="g in groups" :key="g.list" :list="g.list" :title="g.title" :items="g.items"
-					:hideable="g.hideable" />
+			<div data-testid="nav-edit-scroll" class="min-h-0 flex-1 space-y-5 overflow-y-auto bg-gray-50 px-5 py-4 dark:bg-gray-950">
+				<NavOrderList v-for="g in groups" :key="g.list" :list="g.list" :title="g.title" :items="g.items" />
 			</div>
 			<div class="flex items-center gap-2 border-t border-gray-200 px-5 py-3 dark:border-gray-800">
 				<button type="button" data-testid="nav-edit-reset"
@@ -31,7 +30,8 @@
 
 <script setup lang="ts">
 // The Edit sidebar dialog (#1003), opened from the gear menu: one shared
-// editor for the sidebar's agent and System pages and the top row.
+// editor for the sidebar's agent and System pages; the top row follows the
+// agent pages' order (#1015).
 import { computed, nextTick, ref, watch } from "vue";
 import { useNavPrefs } from "../../composables/useNavPrefs";
 import { isCustomized, type NavList } from "../../lib/navPrefs";
@@ -41,7 +41,6 @@ export interface NavEditGroup {
 	list: NavList;
 	title: string;
 	items: NavEditItem[];
-	hideable?: boolean;
 }
 
 defineProps<{ groups: NavEditGroup[] }>();

@@ -230,57 +230,324 @@ test("a page missing from a saved order takes its default place", async ({
 		.toEqual(["settings", "tasks", "files", "chat", "projects", "channels"]);
 });
 
-test.describe("top buttons", () => {
-	test("reorder on the phone row and the sidebar's agent list", async ({
+/** The narrow-screen main row's keys, in order. */
+function mobileRowKeys(page: Page) {
+	return page
+		.getByTestId("mobile-main-nav")
+		.locator("a")
+		.evaluateAll((els) => els.map((el) => el.getAttribute("data-key")));
+}
+
+test.describe("the top row", () => {
+	test.use({ viewport: { width: 390, height: 844 } });
+
+	test("follows the Pages order and visibility, with no order of its own", async ({
 		page,
 	}) => {
-		await mockAgents(page, ["assistant", "coder"]);
-		await page.setViewportSize({ width: 390, height: 844 });
+		await mockAgents(page, ["assistant"]);
 		await page.goto("/agents/assistant/chat");
-		const row = page.getByTestId("mobile-main-nav");
-		const keys = () =>
-			row
-				.locator("a")
-				.evaluateAll((els) => els.map((el) => el.getAttribute("data-key")));
 		await expect
-			.poll(keys)
-			.toEqual(["agent:assistant", "agent:coder", "system"]);
+			.poll(() => mobileRowKeys(page))
+			.toEqual([...DEFAULT_PAGES, "system"]);
 
 		await page.locator("header").getByTestId("gear-menu-button").click();
 		await page.getByTestId("gear-menu-edit-nav").click();
-		const system = editRow(page, "top", "system");
-		await system.getByTestId("nav-edit-up").click();
-		await system.getByTestId("nav-edit-up").click();
-		// The top row keeps every item: there is nothing to hide.
-		await expect(system.getByTestId("nav-edit-visibility")).toHaveCount(0);
+		await expect(page.getByTestId("nav-edit-agentPages")).toBeVisible();
+		await expect(page.getByTestId("nav-edit-top")).toHaveCount(0);
+		await expect(page.getByTestId("nav-edit-dialog")).not.toContainText(
+			/top buttons/i,
+		);
+		await editRow(page, "agentPages", "files")
+			.getByTestId("nav-edit-up")
+			.click();
+		await editRow(page, "agentPages", "channels")
+			.getByTestId("nav-edit-visibility")
+			.click();
 		await page.getByTestId("nav-edit-done").click();
-		await expect
-			.poll(keys)
-			.toEqual(["system", "agent:assistant", "agent:coder"]);
 
-		await editRowAgain(page);
 		await expect
-			.poll(keys)
-			.toEqual(["system", "agent:coder", "agent:assistant"]);
-
+			.poll(() => mobileRowKeys(page))
+			.toEqual(["chat", "projects", "files", "tasks", "settings", "system"]);
 		await page.setViewportSize({ width: 1280, height: 900 });
-		const agents = page
-			.getByTestId("sidebar-agent-list")
-			.locator("a[data-agent]");
+		expect(await sidebarPages(page)).toEqual([
+			"chat",
+			"projects",
+			"files",
+			"tasks",
+			"settings",
+		]);
+	});
+
+	test("drops a saved top-button order in favor of the Pages order", async ({
+		page,
+	}) => {
+		await mockAgents(page, ["assistant", "coder"]);
+		// Saved before the top row followed the Pages order (#1015).
+		let saved: unknown = {
+			order: {
+				agentPages: ["tasks", "chat"],
+				top: ["system", "agent:coder", "agent:assistant"],
+			},
+			hidden: { agentPages: ["files"], top: ["agent:coder"] },
+		};
+		const puts: unknown[] = [];
+		await page.route("/api/preferences/navigation", async (route) => {
+			if (route.request().method() === "PUT") {
+				saved = route.request().postDataJSON();
+				puts.push(saved);
+			}
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify(saved),
+			});
+		});
+		await page.addInitScript((prefs) => {
+			localStorage.setItem("aviary.nav.prefs", JSON.stringify(prefs));
+		}, saved);
+		const errors: string[] = [];
+		page.on("pageerror", (err) => errors.push(err.message));
+
+		await page.goto("/agents/assistant/chat");
+		// Agents keep their configured order, and System stays last.
+		await expect
+			.poll(() => mobileRowKeys(page))
+			.toEqual(["agent:assistant", "agent:coder", "system"]);
+		// The agent's own pages still follow its saved Pages order.
 		await expect
 			.poll(() =>
-				agents.evaluateAll((els) =>
-					els.map((el) => el.getAttribute("data-agent")),
-				),
+				page
+					.getByTestId("mobile-sub-nav")
+					.locator("a")
+					.evaluateAll((els) =>
+						els.map((el) => el.getAttribute("href")?.split("/").pop()),
+					),
 			)
-			.toEqual(["coder", "assistant"]);
+			// Settings and the hidden Files, missing from the saved order, follow
+			// Scheduled Tasks as they do by default.
+			.toEqual(["tasks", "settings", "chat", "projects", "channels"]);
+		await expect.poll(() => puts.length).toBe(1);
+		expect(puts[0]).toEqual({
+			order: { agentPages: ["tasks", "chat"] },
+			hidden: { agentPages: ["files"] },
+		});
+		expect(
+			JSON.parse(
+				(await page.evaluate(() => localStorage.getItem("aviary.nav.prefs"))) ??
+					"{}",
+			),
+		).toEqual(puts[0]);
+		expect(errors).toEqual([]);
 	});
 });
 
-async function editRowAgain(page: Page) {
-	await page.locator("header").getByTestId("gear-menu-button").click();
-	await page.getByTestId("gear-menu-edit-nav").click();
-	await editRow(page, "top", "agent:coder").getByTestId("nav-edit-up").click();
-	await page.keyboard.press("Escape");
-	await expect(page.getByTestId("nav-edit-dialog")).toHaveCount(0);
+test.describe("dragging", () => {
+	test("lifts the row, opens a placeholder and settles it on drop", async ({
+		page,
+	}) => {
+		await mockAgents(page, ["assistant"]);
+		await page.goto("/system/overview");
+		await openEditor(page);
+		const files = editRow(page, "agentPages", "files");
+		const projects = editRow(page, "agentPages", "projects");
+		const before = await projects.boundingBox();
+		const target = await editRow(page, "agentPages", "chat").boundingBox();
+		await files.getByTestId("nav-edit-handle").hover();
+		await page.mouse.down();
+		await page.mouse.move((target?.x ?? 0) + 20, (target?.y ?? 0) + 30, {
+			steps: 10,
+		});
+
+		const list = page.getByTestId("nav-edit-agentPages");
+		const placeholder = list.getByTestId("sortable-placeholder");
+		await expect(placeholder).toBeVisible();
+		// Files lifts under the pointer while the rows it passed slide down.
+		await expect(files).toHaveClass(/shadow-xl/);
+		await expect
+			.poll(async () => (await projects.boundingBox())?.y ?? 0)
+			.toBeGreaterThan((before?.y ?? 0) + 10);
+		// The placeholder opens where Code Loop was.
+		await expect
+			.poll(async () =>
+				Math.abs(
+					((await placeholder.boundingBox())?.y ?? 0) - (before?.y ?? 0),
+				),
+			)
+			.toBeLessThan(2);
+		// Nothing saves until the drop.
+		expect(await rowKeys(page, "agentPages")).toEqual(DEFAULT_PAGES);
+
+		await page.mouse.up();
+		await expect(placeholder).toHaveCount(0);
+		await expect
+			.poll(() => rowKeys(page, "agentPages"))
+			.toEqual(["chat", "files", "projects", "channels", "tasks", "settings"]);
+		await expect(files).not.toHaveClass(/shadow-xl/);
+	});
+
+	test("Escape cancels a drag", async ({ page }) => {
+		await mockAgents(page, ["assistant"]);
+		await page.goto("/system/overview");
+		await openEditor(page);
+		const target = await editRow(page, "agentPages", "chat").boundingBox();
+		await editRow(page, "agentPages", "settings")
+			.getByTestId("nav-edit-handle")
+			.hover();
+		await page.mouse.down();
+		await page.mouse.move((target?.x ?? 0) + 20, target?.y ?? 0, { steps: 8 });
+		await page.keyboard.press("Escape");
+		await page.mouse.up();
+		// The dialog stays open, and the order is unchanged.
+		await expect(page.getByTestId("nav-edit-dialog")).toBeVisible();
+		await expect.poll(() => rowKeys(page, "agentPages")).toEqual(DEFAULT_PAGES);
+	});
+
+	test("the handle's arrow keys move its row", async ({ page }) => {
+		await mockAgents(page, ["assistant"]);
+		await page.goto("/system/overview");
+		await openEditor(page);
+		const handle = editRow(page, "agentPages", "chat").getByTestId(
+			"nav-edit-handle",
+		);
+		await handle.focus();
+		await page.keyboard.press("ArrowDown");
+		await page.keyboard.press("ArrowDown");
+		await expect(handle).toBeFocused();
+		await page.keyboard.press("ArrowUp");
+		await expect
+			.poll(() => rowKeys(page, "agentPages"))
+			.toEqual(["projects", "chat", "channels", "tasks", "files", "settings"]);
+	});
+
+	test("reorders without motion under prefers-reduced-motion", async ({
+		page,
+	}) => {
+		await page.emulateMedia({ reducedMotion: "reduce" });
+		await mockAgents(page, ["assistant"]);
+		await page.goto("/system/overview");
+		await openEditor(page);
+		const files = editRow(page, "agentPages", "files");
+		const target = await editRow(page, "agentPages", "chat").boundingBox();
+		await files.getByTestId("nav-edit-handle").hover();
+		await page.mouse.down();
+		await page.mouse.move((target?.x ?? 0) + 20, (target?.y ?? 0) + 4, {
+			steps: 8,
+		});
+		const motion = await files.evaluate((el) => {
+			const s = getComputedStyle(el);
+			return { scale: s.scale, rotate: s.rotate };
+		});
+		expect(motion).toEqual({ scale: "none", rotate: "none" });
+		expect(
+			await editRow(page, "agentPages", "chat").evaluate(
+				(el) => getComputedStyle(el).transitionDuration,
+			),
+		).toBe("0s");
+		await page.mouse.up();
+		// The drop saves at once, with no settle.
+		expect(await rowKeys(page, "agentPages")).toEqual([
+			"files",
+			"chat",
+			"projects",
+			"channels",
+			"tasks",
+			"settings",
+		]);
+	});
+
+	test("autoscrolls the panel near its edges", async ({ page }) => {
+		await page.setViewportSize({ width: 1280, height: 520 });
+		await mockAgents(page, ["assistant"]);
+		await page.goto("/system/overview");
+		await openEditor(page);
+		const scroller = page.getByTestId("nav-edit-scroll");
+		const box = await scroller.boundingBox();
+		expect(
+			await scroller.evaluate((el) => el.scrollHeight > el.clientHeight),
+		).toBe(true);
+		await editRow(page, "agentPages", "chat")
+			.getByTestId("nav-edit-handle")
+			.hover();
+		await page.mouse.down();
+		await page.mouse.move(
+			(box?.x ?? 0) + 40,
+			(box?.y ?? 0) + (box?.height ?? 0) - 6,
+			{ steps: 10 },
+		);
+		await expect
+			.poll(() => scroller.evaluate((el) => el.scrollTop))
+			.toBeGreaterThan(20);
+		await page.mouse.up();
+		// Chat drops at the end of its own section.
+		await expect
+			.poll(async () => (await rowKeys(page, "agentPages")).at(-1))
+			.toBe("chat");
+	});
+});
+
+test.describe("dragging on touch", () => {
+	test.use({
+		hasTouch: true,
+		isMobile: true,
+		viewport: { width: 390, height: 844 },
+	});
+
+	test("a long press picks the row up; a swipe does not", async ({ page }) => {
+		await mockAgents(page, ["assistant"]);
+		await page.goto("/agents/assistant/chat");
+		await page.locator("header").getByTestId("gear-menu-button").click();
+		await page.getByTestId("gear-menu-edit-nav").click();
+		await expect(page.getByTestId("nav-edit-dialog")).toBeVisible();
+		const cdp = await page.context().newCDPSession(page);
+		const touch = (
+			type: "touchStart" | "touchMove" | "touchEnd",
+			x?: number,
+			y?: number,
+		) =>
+			cdp.send("Input.dispatchTouchEvent", {
+				type,
+				touchPoints: x === undefined ? [] : [{ x, y: y ?? 0 }],
+			});
+		const label = async (key: string) => {
+			const b = await editRow(page, "agentPages", key)
+				.locator("span")
+				.first()
+				.boundingBox();
+			return { x: (b?.x ?? 0) + 10, y: (b?.y ?? 0) + (b?.height ?? 0) / 2 };
+		};
+
+		// A quick swipe over a row moves nothing.
+		let from = await label("tasks");
+		let to = await label("chat");
+		await touch("touchStart", from.x, from.y);
+		for (let i = 1; i <= 6; i++)
+			await touch("touchMove", from.x, from.y + ((to.y - from.y) * i) / 6);
+		await touch("touchEnd");
+		expect(await rowKeys(page, "agentPages")).toEqual(DEFAULT_PAGES);
+
+		// A long press anywhere on the row picks it up.
+		from = await label("tasks");
+		to = await label("chat");
+		await touch("touchStart", from.x, from.y);
+		await page.waitForTimeout(500);
+		const placeholder = page
+			.getByTestId("nav-edit-agentPages")
+			.getByTestId("sortable-placeholder");
+		await expect(placeholder).toBeVisible();
+		for (let i = 1; i <= 8; i++)
+			await touch("touchMove", from.x, from.y + ((to.y - from.y - 4) * i) / 8);
+		await touch("touchEnd");
+		await expect(placeholder).toHaveCount(0);
+		await expect
+			.poll(() => rowKeys(page, "agentPages"))
+			.toEqual(["tasks", "chat", "projects", "channels", "files", "settings"]);
+	});
+});
+
+/** A section's rows in the Edit sidebar dialog, by key, in order. */
+function rowKeys(page: Page, list: string): Promise<string[]> {
+	return page
+		.getByTestId(`nav-edit-${list}`)
+		.getByTestId("nav-edit-row")
+		.evaluateAll((els) => els.map((el) => el.getAttribute("data-key") ?? ""));
 }

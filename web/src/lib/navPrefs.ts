@@ -1,10 +1,12 @@
 // Customized navigation (#1003): the user's order and hidden items for each
 // list of navigation items. The sidebar's agent and System pages, the
 // collapsed rail and the top row all arrange their items through
-// arrangeNav, so they share one reorder and visibility rule.
+// arrangeNav, so they share one reorder and visibility rule. The top row
+// has no order of its own: it follows the Pages order (#1015).
 
 /** The navigation lists the user can arrange. */
-export type NavList = "agentPages" | "systemPages" | "top";
+export const NAV_LISTS = ["agentPages", "systemPages"] as const;
+export type NavList = (typeof NAV_LISTS)[number];
 
 export interface NavPrefs {
 	/** Per list, the item keys in the user's order. */
@@ -15,6 +17,35 @@ export interface NavPrefs {
 
 export function emptyNavPrefs(): NavPrefs {
 	return { order: {}, hidden: {} };
+}
+
+/**
+ * value as preferences, keeping only the lists this version arranges. A
+ * top-row order saved before the top row followed the Pages order (#1015)
+ * is dropped.
+ */
+export function normalizeNavPrefs(value: unknown): NavPrefs {
+	const v = (value ?? {}) as Partial<Record<keyof NavPrefs, unknown>>;
+	const lists = (field: unknown) => {
+		const out: Partial<Record<NavList, string[]>> = {};
+		const record = (field ?? {}) as Record<string, unknown>;
+		for (const list of NAV_LISTS) {
+			const keys = record[list];
+			if (Array.isArray(keys))
+				out[list] = keys.filter((k): k is string => typeof k === "string");
+		}
+		return out;
+	};
+	return { order: lists(v.order), hidden: lists(v.hidden) };
+}
+
+/** Whether value holds lists normalizeNavPrefs drops. */
+export function hasStaleNavLists(value: unknown): boolean {
+	const v = (value ?? {}) as Partial<Record<keyof NavPrefs, unknown>>;
+	const known = new Set<string>(NAV_LISTS);
+	return [v.order, v.hidden].some((field) =>
+		Object.keys((field ?? {}) as object).some((list) => !known.has(list)),
+	);
 }
 
 /** Whether prefs differ from the built-in order and visibility. */

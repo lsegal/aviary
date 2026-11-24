@@ -72,7 +72,7 @@
 
     <div v-if="mobileChildren.length"
       class="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-800 dark:bg-gray-950 lg:hidden">
-      <nav class="group/row relative flex gap-2 overflow-x-auto pb-1" :class="mobileAdd ? 'pr-9' : ''">
+      <nav data-testid="mobile-sub-nav" class="group/row relative flex gap-2 overflow-x-auto pb-1" :class="mobileAdd ? 'pr-9' : ''">
         <router-link v-for="child in mobileChildren" :key="child.key" :to="child.to"
           :title="child.paused ? 'Paused' : child.disabled ? 'Disabled' : undefined" :data-paused="child.paused || undefined"
           :data-disabled="child.disabled || undefined"
@@ -791,11 +791,7 @@ const agentNav = computed<AgentNav[]>(() => {
 			projects: owned.map((p) => projectChild(name, p)),
 		};
 	});
-	// Agents follow the user's top-row order, here as on the narrow screen.
-	return arranged(
-		agents.map((a) => ({ ...a, key: `agent:${a.name}` })),
-		"top",
-	);
+	return agents.map((a) => ({ ...a, key: `agent:${a.name}` }));
 });
 
 // With exactly one agent its pages are the top level, with no Agents → name
@@ -1016,14 +1012,11 @@ const mobileChildren = computed<NavChild[]>(() => {
 	return [];
 });
 
-// The narrow-screen main row: a sole agent's pages, or one pill per agent,
-// plus System, in the user's top-row order. Agents are added from Settings.
-// The row scrolls sideways when the items do not fit.
-const mobileMainItems = computed<MobileNavItem[]>(() =>
-	arranged(mobileMainDefaults.value, "top"),
-);
-
-const mobileMainDefaults = computed<MobileNavItem[]>(() => {
+// The narrow-screen main row: a sole agent's pages, in the user's Pages
+// order and without the pages they hid (#1015), or one pill per agent,
+// plus System. Agents are added from Settings. The row scrolls sideways
+// when the items do not fit.
+const mobileMainItems = computed<MobileNavItem[]>(() => {
 	const system: MobileNavItem = {
 		key: "system",
 		label: "System",
@@ -1072,8 +1065,8 @@ const hiddenNavCount = computed(() => {
 	);
 });
 
-// The Edit sidebar dialog's lists: the agent pages and System pages,
-// which can be hidden, and the top row, which keeps every item.
+// The Edit sidebar dialog's lists: the agent pages, whose order the top
+// row follows too, and System pages.
 const navEditGroups = computed<NavEditGroup[]>(() => {
 	const shown = (items: { key: string; label: string }[]) =>
 		items
@@ -1084,18 +1077,11 @@ const navEditGroups = computed<NavEditGroup[]>(() => {
 			list: "agentPages",
 			title: soleAgent.value ? "Pages" : "Agent pages",
 			items: shown([...AGENT_PAGES]),
-			hideable: true,
 		},
 		{
 			list: "systemPages",
 			title: "System pages",
 			items: shown(SYSTEM_PAGES),
-			hideable: true,
-		},
-		{
-			list: "top",
-			title: soleAgent.value ? "Top buttons" : "Agents and top buttons",
-			items: shown(mobileMainDefaults.value),
 		},
 	];
 	return groups.filter((g) => g.items.length);
