@@ -5,7 +5,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -26,8 +25,6 @@ import (
 const (
 	// DefaultRepo is the canonical GitHub repository for Aviary releases.
 	DefaultRepo = "lsegal/aviary"
-	// DefaultAPIBase is the GitHub API base used for release lookups.
-	DefaultAPIBase = "https://api.github.com"
 	// CheckInterval is how often the server's self-updater looks for a new release.
 	CheckInterval = 5 * time.Minute
 	checkTTL      = CheckInterval
@@ -60,8 +57,9 @@ type InstallOptions struct {
 	Version    string
 	TargetPath string
 	Repo       string
-	APIBase    string
-	Client     *http.Client
+	// DownloadBase is the release host; see downloadBase.
+	DownloadBase string
+	Client       *http.Client
 }
 
 // InstallResult describes the outcome of an attempted upgrade install.
@@ -69,14 +67,6 @@ type InstallResult struct {
 	Version  string `json:"version"`
 	Emulated bool   `json:"emulated"`
 	Noop     bool   `json:"noop"`
-}
-
-type releasePayload struct {
-	TagName string `json:"tag_name"`
-	Assets  []struct {
-		Name               string `json:"name"`
-		BrowserDownloadURL string `json:"browser_download_url"`
-	} `json:"assets"`
 }
 
 var (
@@ -202,7 +192,7 @@ func Check(ctx context.Context, client *http.Client) (CheckResult, error) {
 	}
 	cacheMu.RUnlock()
 
-	release, err := fetchLatestRelease(ctx, client, DefaultRepo, DefaultAPIBase)
+	latest, err := resolveLatestVersion(ctx, client, "", DefaultRepo)
 	if err != nil {
 		current := CurrentVersion()
 		out := CheckResult{
@@ -212,7 +202,7 @@ func Check(ctx context.Context, client *http.Client) (CheckResult, error) {
 		}
 		return out, err
 	}
-	out, cmpErr := compareVersions(CurrentVersion(), release.TagName, false)
+	out, cmpErr := compareVersions(CurrentVersion(), latest, false)
 	if cmpErr != nil {
 		return out, cmpErr
 	}
@@ -252,9 +242,6 @@ func Install(ctx context.Context, opts InstallOptions) (InstallResult, error) {
 	if opts.Repo == "" {
 		opts.Repo = DefaultRepo
 	}
-	if opts.APIBase == "" {
-		opts.APIBase = DefaultAPIBase
-	}
 	if strings.TrimSpace(opts.TargetPath) == "" {
 		return InstallResult{}, fmt.Errorf("target path is required")
 	}
@@ -275,21 +262,12 @@ func Install(ctx context.Context, opts InstallOptions) (InstallResult, error) {
 		return InstallResult{Version: version, Emulated: true, Noop: true}, nil
 	}
 
-	release, err := fetchRelease(ctx, opts.Client, opts.Repo, opts.APIBase, version)
+	assetName := assetBaseName(version, runtime.GOOS, runtime.GOARCH) + ".tar.gz"
+	wantSum, err := fetchChecksum(ctx, opts.Client, opts.DownloadBase, opts.Repo, version, assetName)
 	if err != nil {
 		return InstallResult{}, err
 	}
-	assetName := assetBaseName(version, runtime.GOOS, runtime.GOARCH) + ".tar.gz"
-	assetURL := ""
-	for _, asset := range release.Assets {
-		if asset.Name == assetName {
-			assetURL = asset.BrowserDownloadURL
-			break
-		}
-	}
-	if assetURL == "" {
-		assetURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", opts.Repo, version, assetName)
-	}
+	assetURL := releaseDownloadURL(opts.DownloadBase, opts.Repo, version, assetName)
 
 	tmpDir, err := os.MkdirTemp("", "aviary-upgrade-*")
 	if err != nil {
@@ -299,6 +277,9 @@ func Install(ctx context.Context, opts InstallOptions) (InstallResult, error) {
 
 	archivePath := filepath.Join(tmpDir, assetName)
 	if err := downloadAsset(ctx, opts.Client, opts.Repo, version, assetName, assetURL, archivePath); err != nil {
+		return InstallResult{}, err
+	}
+	if err := verifyChecksum(archivePath, wantSum); err != nil {
 		return InstallResult{}, err
 	}
 	binaryName := "aviary"
@@ -393,36 +374,6 @@ func isComparableVersion(v string) bool {
 	return err == nil
 }
 
-func fetchLatestRelease(ctx context.Context, client *http.Client, repo, apiBase string) (releasePayload, error) {
-	return fetchRelease(ctx, client, repo, apiBase, "")
-}
-
-func fetchRelease(ctx context.Context, client *http.Client, repo, apiBase, version string) (releasePayload, error) {
-	url := fmt.Sprintf("%s/repos/%s/releases/latest", strings.TrimRight(apiBase, "/"), repo)
-	if strings.TrimSpace(version) != "" {
-		url = fmt.Sprintf("%s/repos/%s/releases/tags/%s", strings.TrimRight(apiBase, "/"), repo, NormalizeVersion(version))
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return releasePayload{}, fmt.Errorf("creating release request: %w", err)
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	res, err := client.Do(req)
-	if err != nil {
-		return releasePayload{}, fmt.Errorf("checking %s releases: %w", repo, err)
-	}
-	defer res.Body.Close() //nolint:errcheck
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
-		return releasePayload{}, fmt.Errorf("release lookup failed: %s %s", res.Status, strings.TrimSpace(string(body)))
-	}
-	var release releasePayload
-	if err := json.NewDecoder(res.Body).Decode(&release); err != nil {
-		return releasePayload{}, fmt.Errorf("decoding release metadata: %w", err)
-	}
-	return release, nil
-}
-
 func assetBaseName(version, goos, goarch string) string {
 	return fmt.Sprintf("aviary_%s_%s_%s", version, goos, goarch)
 }
@@ -438,7 +389,7 @@ func downloadFile(ctx context.Context, client *http.Client, url, dest string) er
 	}
 	defer res.Body.Close() //nolint:errcheck
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return fmt.Errorf("downloading release asset: %s", res.Status)
+		return httpStatusError("downloading release asset", res)
 	}
 	f, err := os.Create(dest)
 	if err != nil {
