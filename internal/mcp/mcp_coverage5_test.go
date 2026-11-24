@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -17,173 +18,87 @@ import (
 	"github.com/lsegal/aviary/internal/store"
 )
 
-// ── reconcileAgents config load error via corrupted config ───────────────────
+// ── tools with a corrupted config ────────────────────────────────────────────
+
+// corruptConfigDispatcher points the config at an unparseable aviary.yaml,
+// installs deps (restored on cleanup), and returns a local dispatcher.
+func corruptConfigDispatcher(t *testing.T, deps *Deps) *Dispatcher {
+	t.Helper()
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	configDir := filepath.Join(base, "aviary")
+	assert.NoError(t, os.MkdirAll(configDir, 0o700))
+	assert.NoError(t, os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml: ["), 0o600))
+
+	old := GetDeps()
+	t.Cleanup(func() { SetDeps(old) })
+	prevChecker := checkServerRunning
+	t.Cleanup(func() { checkServerRunning = prevChecker })
+	SetServerChecker(func() bool { return false })
+	SetDeps(deps)
+
+	return NewDispatcher("https://localhost:16677", "")
+}
 
 func TestReconcileAgents_ConfigLoadError(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-
-	// Create the config dir
-	configDir := filepath.Join(base, "aviary")
-	err := os.MkdirAll(configDir, 0o700)
-	assert.NoError(t, err)
-
-	// Write a CORRUPTED config file (invalid YAML/JSON that can't be parsed)
-	configPath := filepath.Join(configDir, "aviary.yaml")
-	err = os.WriteFile(configPath, []byte("{ invalid yaml: [unclosed"), 0o600)
-	assert.NoError(t, err)
-
-	old := GetDeps()
 	mgr := agent.NewManager(nil)
-	SetDeps(&Deps{Agents: mgr})
-	t.Cleanup(func() { SetDeps(old) })
+	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "x"}}})
+	corruptConfigDispatcher(t, &Deps{Agents: mgr})
+	before := agentNames(mgr)
+	assert.Contains(t, before, "bot")
 
-	// reconcileAgents should log a warning but not panic
+	// A config that fails to load must leave the running agents untouched
+	// rather than reconciling them against an empty config.
 	reconcileAgents()
+
+	assert.Equal(t, before, agentNames(mgr))
 }
 
-// ── registerSkillTools config load error ─────────────────────────────────────
-
-func TestSkillsList_ConfigLoadError(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-
-	// Create corrupted config file
-	configDir := filepath.Join(base, "aviary")
-	err := os.MkdirAll(configDir, 0o700)
-	assert.NoError(t, err)
-
-	configPath := filepath.Join(configDir, "aviary.yaml")
-	err = os.WriteFile(configPath, []byte("{ bad: yaml: ["), 0o600)
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-	SetDeps(&Deps{})
-
-	d := NewDispatcher("https://localhost:16677", "")
-	// Should fail with config load error
-	toolCallContains(t, d, "skills_list", map[string]any{}, "")
+func agentNames(mgr *agent.Manager) []string {
+	var names []string
+	for _, a := range mgr.List() {
+		names = append(names, a.Name)
+	}
+	sort.Strings(names)
+	return names
 }
 
-// ── agent_get config load error ───────────────────────────────────────────────
-
-func TestAgentGet_ConfigLoadError(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-
-	// Create corrupted config
-	configDir := filepath.Join(base, "aviary")
-	err := os.MkdirAll(configDir, 0o700)
-	assert.NoError(t, err)
-
-	err = os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml"), 0o600)
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-	SetDeps(&Deps{Agents: agent.NewManager(nil)})
-
-	d := NewDispatcher("https://localhost:16677", "")
-	toolCallContains(t, d, "agent_get", map[string]any{"name": "bot"}, "")
-}
-
-// ── agent_add config load error ───────────────────────────────────────────────
-
-func TestAgentAdd_ConfigLoadError(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-
-	// Create corrupted config
-	configDir := filepath.Join(base, "aviary")
-	err := os.MkdirAll(configDir, 0o700)
-	assert.NoError(t, err)
-
-	err = os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml"), 0o600)
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-	SetDeps(&Deps{Agents: agent.NewManager(nil)})
-
-	d := NewDispatcher("https://localhost:16677", "")
-	toolCallContains(t, d, "agent_add", map[string]any{"name": "bot", "model": "x"}, "")
-	toolCallContains(t, d, "agent_update", map[string]any{"name": "bot", "model": "x"}, "")
-	toolCallContains(t, d, "agent_delete", map[string]any{"name": "bot"}, "")
-}
-
-// ── config_get / config_validate with corrupted config ───────────────────────
-
-func TestConfigGet_ConfigLoadError(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-
-	configDir := filepath.Join(base, "aviary")
-	err := os.MkdirAll(configDir, 0o700)
-	assert.NoError(t, err)
-
-	err = os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml"), 0o600)
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-	SetDeps(&Deps{Agents: agent.NewManager(nil)})
-
-	d := NewDispatcher("https://localhost:16677", "")
-	toolCallContains(t, d, "config_get", map[string]any{}, "")
-	toolCallContains(t, d, "config_validate", map[string]any{}, "")
-}
-
-// ── task_schedule: config load error for recurring schedule ──────────────────
-
-func TestTaskSchedule_ConfigLoadError(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-
-	// Create a corrupted config
-	configDir := filepath.Join(base, "aviary")
-	err := os.MkdirAll(configDir, 0o700)
-	assert.NoError(t, err)
-
-	err = os.WriteFile(filepath.Join(configDir, "aviary.yaml"), []byte("{ bad: yaml"), 0o600)
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	// task_schedule precompiles a recurring prompt task in the background.
-	t.Cleanup(backgroundCompiles.Wait)
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
+func TestTools_ConfigLoadError(t *testing.T) {
 	mgr := agent.NewManager(nil)
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "x"}}})
 	sched, err := scheduler.New(mgr, 1)
 	assert.NoError(t, err)
-
 	t.Cleanup(sched.Stop)
-	SetDeps(&Deps{Agents: mgr, Scheduler: sched})
+	// task_schedule precompiles a recurring prompt task in the background.
+	t.Cleanup(backgroundCompiles.Wait)
+	d := corruptConfigDispatcher(t, &Deps{Agents: mgr, Scheduler: sched})
 
-	d := NewDispatcher("https://localhost:16677", "")
+	tests := []struct {
+		tool string
+		args map[string]any
+	}{
+		{"skills_list", map[string]any{}},
+		{"agent_get", map[string]any{"name": "bot"}},
+		{"agent_add", map[string]any{"name": "bot2", "model": "x"}},
+		{"agent_update", map[string]any{"name": "bot", "model": "x"}},
+		{"agent_delete", map[string]any{"name": "bot"}},
+		{"config_get", map[string]any{}},
+		{"config_validate", map[string]any{}},
+		{"task_schedule", map[string]any{"agent": "bot", "content": "run", "schedule": "0 0 10 * * *"}},
+	}
+	c, err := d.Resolve(context.Background())
+	assert.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
 
-	// With a schedule param, should try to load config
-	toolCallContains(t, d, "task_schedule", map[string]any{
-		"agent":    "bot",
-		"content":  "run",
-		"schedule": "0 0 10 * * *",
-	}, "")
+	for _, tt := range tests {
+		t.Run(tt.tool, func(t *testing.T) {
+			res, err := c.CallTool(context.Background(), tt.tool, tt.args)
+			assert.NoError(t, err)
+			out := extractText(res)
+			assert.True(t, res.IsError, "expected %s to fail, got %q", tt.tool, out)
+			assert.Contains(t, out, "parsing config")
+		})
+	}
 }
 
 // ── CallToolText error path in InProcessClient ────────────────────────────────
