@@ -371,7 +371,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// its own safe restart.
 	marker, restarted := saferestart.TakeMarker()
 
-	// Start scheduler.
+	// Start scheduler. It registers for safe restarts before the Code Loop
+	// engine, so a restart checkpoints the project tasks it runs there, which
+	// then resume, before stopping the engine would cancel them.
 	if s.sched != nil {
 		s.sched.Start(ctx)
 		saferestart.Register("tasks", s.sched)

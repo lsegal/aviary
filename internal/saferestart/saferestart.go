@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -63,16 +64,27 @@ func (m Marker) Message() string {
 }
 
 var (
-	mu            sync.Mutex
-	participants  = map[string]Participant{}
+	mu           sync.Mutex
+	participants = map[string]Participant{}
+	// order is the participants' names in registration order, the order
+	// Checkpoint stops them in.
+	order         []string
 	skillUpdaters = map[string]SkillsUpdater{}
 	held          bool
 )
 
 // Register adds a participant under name, replacing any earlier one. A
 // participant registered while new jobs are held starts out held.
+// Participants are checkpointed in the order they were first registered, so a
+// participant whose jobs run on another's engine registers before it: the
+// task scheduler checkpoints the project tasks it hands to the Code Loop
+// engine before that engine stops, so they resume after the restart instead
+// of being canceled (issue #1021).
 func Register(name string, p Participant) {
 	mu.Lock()
+	if _, ok := participants[name]; !ok {
+		order = append(order, name)
+	}
 	participants[name] = p
 	hold := held
 	mu.Unlock()
@@ -85,6 +97,7 @@ func Register(name string, p Participant) {
 func Unregister(name string) {
 	mu.Lock()
 	delete(participants, name)
+	order = slices.DeleteFunc(order, func(n string) bool { return n == name })
 	mu.Unlock()
 }
 
@@ -105,13 +118,8 @@ func UnregisterSkillsUpdater(name string) {
 func snapshot() []Participant {
 	mu.Lock()
 	defer mu.Unlock()
-	names := make([]string, 0, len(participants))
-	for name := range participants {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	out := make([]Participant, 0, len(names))
-	for _, name := range names {
+	out := make([]Participant, 0, len(order))
+	for _, name := range order {
 		out = append(out, participants[name])
 	}
 	return out
@@ -166,7 +174,8 @@ func UpdateSkills(ctx context.Context, version string) error {
 	return errors.Join(errs...)
 }
 
-// Checkpoint runs every participant's shutdown checkpoint and joins errors.
+// Checkpoint runs every participant's shutdown checkpoint, in registration
+// order, and joins errors.
 func Checkpoint(ctx context.Context, marker Marker) error {
 	var errs []error
 	for _, p := range snapshot() {
