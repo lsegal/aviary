@@ -155,11 +155,11 @@ On a finished or paused job, a mention goes to the Code Loop agent instead, as `
 
 The **Queue** menu in a project's header starts work that no poll picks up on its own:
 
-- **Safe merge PR** opens a picker of the repository's open pull requests, with each one's CI status, review decision, mergeability, author, and the job that already owns it. Picked pull requests become `merge` jobs that run `gh-safe-merge`. They merge one at a time per repository, in the order you picked them, so each one rebases and rechecks on the latest default branch. A merge that's skipped or fails shows its reason on its card. A fix job's card also offers **Safe merge** for its open pull request.
+- **Safe merge PR** opens a picker of the repository's open pull requests, with each one's CI status, review decision, mergeability, author, and the job that already owns it. Picked pull requests become `merge` jobs that run `gh-safe-merge`. They merge one at a time per repository, in the order you picked them, so each one rebases and rechecks on the latest default branch. A merge that's skipped or fails shows its reason on its card.
 - **Discuss** opens a picker of open Discussion threads. Picked threads become `discuss` jobs that run `gh-discuss`.
 - **Fix issue** takes issue numbers. It retries an issue's finished job, or checks GitHub now so that an issue matching the project's filter is dispatched.
 
-Queued jobs show as board cards with logs, a transcript, and pause, resume, stop and retry. They wait for a free agent slot like any other job, and they're saved, so they survive a restart. A number that a job already owns isn't queued again: the picker names the owning job. While `no_merge` is set, **Safe merge PR** is disabled with an explanation, and cards don't offer it. In `aviary watch`'s TUI, `m` queues the selected job's pull request for a safe merge, and `Q` opens a prompt such as `merge 1201 1207`, `discuss 4` or `fix 12`. Agents and scripts use the `project_job_queue` and `project_queue_candidates` tools.
+Queued jobs show as board cards with logs, a transcript, and pause, resume, stop and retry. They wait for a free agent slot like any other job, and they're saved, so they survive a restart. A number that a job already owns isn't queued again: the picker names the owning job. Safe merge is queued only from this menu, `aviary watch` and the queue tools, not from board cards. While `no_merge` is set, **Safe merge PR** is disabled with an explanation. In `aviary watch`'s TUI, `m` queues the selected job's pull request for a safe merge, and `Q` opens a prompt such as `merge 1201 1207`, `discuss 4` or `fix 12`. Agents and scripts use the `project_job_queue` and `project_queue_candidates` tools.
 
 ## Prompt chat
 
