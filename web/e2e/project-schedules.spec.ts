@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { clickCardAt } from "./helpers/cards";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { chooseOption, optionLabels, searchOption } from "./helpers/select";
@@ -403,7 +403,7 @@ test("board lists scheduled tasks as their own boxes with run details", async ({
 	// state and the control that opens the run, beside its next fire time
 	// and its last finished result; no job card copies it (#977).
 	const running = nightly.getByTestId("scheduled-running");
-	await expect(running).toHaveText(/^\s*Running now · [12]m\s*$/);
+	await expect(running).toHaveText(/^\s*Running · [12]m\s*$/);
 	await expect(nightly.getByTestId("scheduled-state")).toHaveText("Running");
 	await expect(page.getByTestId("job-card")).toHaveCount(0);
 	// The pencil to its editor stays beside it.
@@ -695,7 +695,7 @@ for (const tc of [
 		};
 		if (tc.state === "during") {
 			await expect(card.getByTestId("scheduled-running")).toHaveText(
-				/^\s*Running now · \d+[sm]\s*$/,
+				/^\s*Running · \d+[sm]\s*$/,
 			);
 			await expect(card.getByTestId("scheduled-last")).toHaveCount(0);
 			// The run's output shows in rich and raw mode, like an issue card.
@@ -2196,5 +2196,193 @@ test.describe("one card per scheduled task (#977)", () => {
 		await expect(
 			cards.filter({ hasText: "sync" }).getByTestId("scheduled-next"),
 		).toHaveText("Queued");
+	});
+});
+
+// A run changes a scheduled card's contents, never its size: the running
+// state sits in the status chip, the output toggle in the output's corner,
+// and the footer stays one row (#1157).
+test.describe("a running scheduled card keeps its size (#1157)", () => {
+	const neighbor = (name: string) =>
+		schedule({
+			id: `assistant/${name}`,
+			name,
+			prompt: `Run ${name}.`,
+			enabled: true,
+			trigger_type: "interval",
+			every: "1h",
+			description: "every 1h (Local)",
+			next_run: minutesFromNow(30),
+		});
+	const TASKS_1157 = [
+		neighbor("aviary-find-dupe-tests"),
+		{ ...RELEASE_TASK, name: "aviary-release", model: "cli/claude/opus" },
+		neighbor("aviary-update-docs"),
+	];
+	const RUN = 1795457053;
+	const runningEntry = releaseEntry({
+		number: RUN,
+		key: `lsegal/aviary#${RUN}`,
+		status: "active",
+		state: "running",
+		started: minutesFromNow(-1),
+		actions: { retry: false, pause: false, resume: false, stop: true },
+		recent_runs: [
+			{
+				key: `lsegal/aviary#${RUN}`,
+				number: RUN,
+				status: "active",
+				state: "running",
+				started: minutesFromNow(-1),
+			},
+			...RELEASE_RUNS,
+		],
+	});
+	const doneEntry = releaseEntry({
+		number: RUN,
+		key: `lsegal/aviary#${RUN}`,
+		last_run: finishedRun(RUN, 0, "succeeded", "Released v0.7.9"),
+		recent_runs: [
+			finishedRun(RUN, 0, "succeeded", "Released v0.7.9"),
+			...RELEASE_RUNS,
+		],
+	});
+
+	// The top edge of each visible button in a card's footer.
+	const footerButtonTops = (footer: Locator) =>
+		footer.evaluate((el) =>
+			[...el.querySelectorAll<HTMLElement>(":scope > a, :scope > button")]
+				.filter((b) => b.offsetParent)
+				.map((b) => b.offsetTop),
+		);
+	type Layout = {
+		cards: { x: number; y: number; width: number; height: number }[];
+		footerTops: number[];
+		gridHeight: number;
+	};
+	async function layout(page: Page): Promise<Layout> {
+		const cards = page.getByTestId("scheduled-card");
+		const boxes = [];
+		for (let i = 0; i < (await cards.count()); i++)
+			boxes.push((await cards.nth(i).boundingBox())!);
+		const footerTops = await footerButtonTops(
+			cards.nth(1).getByTestId("scheduled-footer"),
+		);
+		const grid = (await page
+			.getByRole("region", { name: "Jobs" })
+			.boundingBox())!;
+		return { cards: boxes, footerTops, gridHeight: grid.height };
+	}
+	function expectSameLayout(actual: Layout, expected: Layout) {
+		expect(actual.cards).toHaveLength(expected.cards.length);
+		actual.cards.forEach((box, i) => {
+			for (const key of ["x", "y", "width", "height"] as const)
+				expect(Math.abs(box[key] - expected.cards[i][key])).toBeLessThan(1);
+		});
+		expect(Math.abs(actual.gridHeight - expected.gridHeight)).toBeLessThan(1);
+		// One footer row: every button shares the same offsetTop.
+		expect(actual.footerTops.length).toBeGreaterThan(2);
+		expect(new Set(actual.footerTops).size).toBe(1);
+		expect(actual.footerTops).toEqual(expected.footerTops);
+	}
+
+	for (const viewport of [
+		{ name: "desktop", width: 1280, height: 900 },
+		{ name: "narrow", width: 390, height: 844 },
+	]) {
+		test(`idle, running and finished cards share one layout on ${viewport.name}`, async ({
+			page,
+		}) => {
+			await page.setViewportSize(viewport);
+			const entries: unknown[] = [releaseEntry()];
+			await setup(page, {
+				tasks: TASKS_1157,
+				entries,
+				job: {
+					...runningEntry,
+					scrollback: "scheduled run started on claude/opus",
+					events: [
+						{ kind: "message", text: "scheduled run started on claude/opus" },
+					],
+				},
+			});
+			await page.goto("/system/watches/lsegal%2Faviary");
+			const cards = page.getByTestId("scheduled-card");
+			await expect(cards).toHaveCount(3);
+			const release = cards.nth(1);
+			await expect(release.getByRole("heading")).toHaveText("aviary-release");
+			await expect(release.getByTestId("scheduled-state")).toHaveText(
+				"Scheduled",
+			);
+			const idle = await layout(page);
+			expectSameLayout(idle, idle);
+
+			// The run starts: the chip says so, the output shows with its
+			// toggle, and nothing moves.
+			entries.splice(0, 1, runningEntry);
+			await expect(release.getByTestId("scheduled-running")).toHaveText(
+				/^\s*Running · [12]m\s*$/,
+			);
+			await expect(release.getByTestId("scheduled-output-rich")).toContainText(
+				"scheduled run started on claude/opus",
+			);
+			await expect(release.getByTestId("output-mode")).toBeVisible();
+			expectSameLayout(await layout(page), idle);
+
+			// It finishes: the card is back to Scheduled, the same size.
+			entries.splice(0, 1, doneEntry);
+			await expect(release.getByTestId("scheduled-state")).toHaveText(
+				"Scheduled",
+			);
+			await expect(release.getByTestId("scheduled-last-summary")).toHaveText(
+				"Released v0.7.9",
+			);
+			expectSameLayout(await layout(page), idle);
+		});
+	}
+
+	test("a narrow card folds Settings and Pause into a menu instead of wrapping", async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width: 390, height: 844 });
+		const calls = await setup(page, {
+			tasks: TASKS_1157,
+			entries: [runningEntry],
+		});
+		await page.goto("/system/watches/lsegal%2Faviary");
+		const release = page.getByTestId("scheduled-card").nth(1);
+		await expect(release.getByTestId("scheduled-running")).toBeVisible();
+		const footer = release.getByTestId("scheduled-footer");
+		await expect(
+			footer.getByRole("button", { name: "Settings" }),
+		).toBeVisible();
+		await expect(release.getByTestId("scheduled-more")).toBeHidden();
+
+		// Squeeze the card below the footer's width.
+		await release.evaluate((el) => {
+			(el as HTMLElement).style.width = "240px";
+		});
+		await expect(release.getByTestId("scheduled-more")).toBeVisible();
+		await expect(footer.getByRole("button", { name: "Settings" })).toBeHidden();
+		await expect(footer.getByRole("button", { name: "Pause" })).toBeHidden();
+		const tops = await footerButtonTops(footer);
+		expect(tops.length).toBe(3);
+		expect(new Set(tops).size).toBe(1);
+		const footerBox = (await footer.boundingBox())!;
+		const cardBox = (await release.boundingBox())!;
+		expect(footerBox.x + footerBox.width).toBeLessThanOrEqual(
+			cardBox.x + cardBox.width + 1,
+		);
+
+		await release.getByTestId("scheduled-more").click();
+		await page
+			.getByTestId("scheduled-more-items")
+			.getByRole("menuitem", { name: "Pause" })
+			.click();
+		await expect.poll(() => calls.task_update?.length ?? 0).toBe(1);
+		expect(calls.task_update[0]).toMatchObject({
+			name: "assistant/aviary-release",
+			enabled: false,
+		});
 	});
 });
