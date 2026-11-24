@@ -64,7 +64,7 @@ var watchChatHelpLines = []string{
 	"prompt chat keys (shared with the web prompt chat)",
 	"",
 	"enter          send",
-	"alt+enter      new line (shift+enter or ctrl+j where the terminal sends it)",
+	"shift+enter    new line (alt+enter or ctrl+j where the terminal can't send it)",
 	"↑ / ↓          earlier / later inputs",
 	"tab            switch between the input and the transcript",
 	"esc            back to the board",
@@ -573,7 +573,7 @@ func (m watchModel) footerLine() string {
 	switch {
 	case m.chat.open && m.chat.focus == watchFocusInput && m.confirm == nil:
 		hint = tuiHelpStyle.Render("ctrl+c quit")
-		text = tuiHelpStyle.Render("enter send · alt+enter new line · ↑↓ history · tab transcript · esc board")
+		text = tuiHelpStyle.Render("enter send · shift+enter new line · ↑↓ history · tab transcript · esc board")
 	case m.chat.open && m.chat.focus == watchFocusTranscript && m.confirm == nil:
 		text = tuiHelpStyle.Render("↑↓ scroll · G follow · n/N reference · enter jump · e tools · z full · tab input · esc board")
 	case m.queueInput != nil:

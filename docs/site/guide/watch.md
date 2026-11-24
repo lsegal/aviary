@@ -75,7 +75,7 @@ The TUI shows the watch's header (its targets and the web UI's URL), a stats lin
 | Key | Action |
 | --- | --- |
 | `Enter` | send |
-| `Alt+Enter` | new line (`Shift+Enter` or `Ctrl+J` where the terminal sends them) |
+| `Shift+Enter` | new line (`Alt+Enter` or `Ctrl+J` where the terminal can't report `Shift+Enter`) |
 | `↑` / `↓` | earlier / later inputs |
 | `Tab` | switch between the input and the transcript |
 | `Esc` | back to the board, which stays usable while the pane is open |
