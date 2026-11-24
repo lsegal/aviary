@@ -375,12 +375,16 @@ export function useProjectSchedules(
 	const agents = ref<string[]>([]);
 	const error = ref("");
 	const loaded = ref(false);
+	// A refresh can overlap a poll; only the latest call's lists are shown,
+	// so an older poll can't hide a task a later refresh found.
+	let loadSeq = 0;
 
 	const { refresh } = usePoll(async () => {
 		const target = project.value;
 		const projects = targets.value;
 		const key = projects.join(" ");
 		if (!projects.length) return;
+		const seq = ++loadSeq;
 		try {
 			const [taskText, upcomingText, agentText] = await Promise.all([
 				callTool("task_list", {}),
@@ -393,7 +397,12 @@ export function useProjectSchedules(
 					: Promise.resolve(""),
 				agents.value.length ? Promise.resolve("") : callTool("agent_list", {}),
 			]);
-			if (target !== project.value || key !== targets.value.join(" ")) return;
+			if (
+				seq !== loadSeq ||
+				target !== project.value ||
+				key !== targets.value.join(" ")
+			)
+				return;
 			const tasks = parseToolJSON(taskText);
 			schedules.value = projects.flatMap((t) => projectSchedules(tasks, t));
 			upcoming.value = upcomingText

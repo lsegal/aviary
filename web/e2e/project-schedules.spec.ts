@@ -1129,8 +1129,12 @@ test("the prompt chat creates a weekly scheduled task that shows on the board an
 			},
 		}),
 	});
+	await page.clock.install();
 	await page.goto("/agents/assistant/projects/lsegal%2Faviary");
 	await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
+	// With the board's poll stopped, the new task can only show because the
+	// finished chat turn refreshed the schedules (#1151).
+	await page.clock.pauseAt(Date.now() + 1_000);
 
 	await page.getByTestId("prompt-chat-toggle").click();
 	const chat = page.getByTestId("project-chat");

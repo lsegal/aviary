@@ -1137,6 +1137,8 @@ func (g GHCLI) ListComments(ctx context.Context, repo string, number int) ([]Com
 		return nil, fmt.Errorf("list comments on #%d: %w: %s", number, err, strings.TrimSpace(string(output)))
 	}
 	var raw []struct {
+		ID        int64     `json:"id"`
+		HTMLURL   string    `json:"html_url"`
 		Body      string    `json:"body"`
 		CreatedAt time.Time `json:"created_at"`
 		User      struct {
@@ -1148,7 +1150,7 @@ func (g GHCLI) ListComments(ctx context.Context, repo string, number int) ([]Com
 	}
 	comments := make([]Comment, len(raw))
 	for i, comment := range raw {
-		comments[i] = Comment{Body: comment.Body, Author: comment.User.Login, CreatedAt: comment.CreatedAt}
+		comments[i] = Comment{Body: comment.Body, Author: comment.User.Login, CreatedAt: comment.CreatedAt, ID: comment.ID, URL: comment.HTMLURL}
 	}
 	return comments, nil
 }

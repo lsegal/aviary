@@ -11,6 +11,12 @@ type Comment struct {
 	Body      string
 	Author    string
 	CreatedAt time.Time
+	// ID is GitHub's ID for the comment, review comment or review, when the
+	// source reports one. The three kinds are numbered separately, so URL,
+	// whose fragment names the kind, is what tells two comments apart.
+	ID int64
+	// URL is the comment's permalink, when the source reports one.
+	URL string
 }
 
 // CommentPoster posts a comment to an issue or pull request.

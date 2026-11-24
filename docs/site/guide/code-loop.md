@@ -95,11 +95,11 @@ When every required check passes on the head that was tested, `gh-fix` merges wi
 
 ### Steering a running job
 
-Comments by allowed commenters (`allowed_commenters`, the signed-in `gh` user by default) on the issue or its pull request are instructions. New comments, edits to the issue description, and closures are relayed into the running session, so you steer a job by commenting on GitHub. Comments by anyone else are treated as information, not instructions.
+Comments by allowed commenters (`allowed_commenters`, the signed-in `gh` user by default) on the issue or its pull request are instructions. New comments, including pull request review comments and review bodies, edits to the issue description, and closures are relayed into the running session with the comment's text, so you steer a job by commenting on GitHub without mentioning anyone. Each comment is relayed once, even across a restart, and shows on the job card. Comments by anyone else are treated as information, not instructions.
 
 A scheduled task or workflow can steer a job too: its `codeloop:<project>#<number>` output target relays its output into an issue job, a Discussion job, or a scheduled project run the same way. See [Sending output to a Code Loop job](./scheduled-tasks#sending-output-to-a-code-loop-job).
 
-A comment that mentions `@/aviary:<ID>` starts a fresh `gh-fix` pass on that instance. On a finished or paused job, the mention goes to the Code Loop agent, which decides whether to retry or resume it. See [Steering jobs](./projects#steering-jobs).
+A comment that mentions `@/aviary:<ID>`, or the `@login` of the `gh` user Aviary runs as, starts a fresh `gh-fix` pass on that instance. On a finished or paused job, the mention goes to the Code Loop agent, which decides whether to retry or resume it. See [Steering jobs](./projects#steering-jobs).
 
 ### Queueing pull requests and threads
 

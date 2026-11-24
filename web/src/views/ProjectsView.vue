@@ -237,7 +237,8 @@
 			</div>
 			<ProjectLogsPanel v-if="(project || aggregate) && logsOpen" :lines="status?.log ?? []" @close="logsOpen = false" />
 			</div>
-			<ProjectChatPanel v-if="(project || aggregate) && chatOpen && !auth.minimal" ref="chatPanel" :project="project" @close="chatOpen = false" />
+			<ProjectChatPanel v-if="(project || aggregate) && chatOpen && !auth.minimal" ref="chatPanel" :project="project" @close="chatOpen = false"
+				@turn-end="void refreshSchedules()" />
 		</div>
 		<QueueDialog :target="queueTarget" :skill="queueSkill" :preselect="queuePreselect" :no-merge="status?.noMerge"
 			@close="queueSkill = null" @queued="refresh" />

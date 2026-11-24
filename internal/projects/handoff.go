@@ -117,10 +117,10 @@ func commenterAllowed(login string, allowed []string) bool {
 // authorizedDirectMention reports whether the most recent comment on
 // repo#number is a safe, actionable direct mention of this aviary instance
 // : it must be the very last comment, so a stale mention buried
-// under newer conversation cannot silently retrigger a run; it must contain
-// the @/aviary:ID mention syntax addressed to id; and it must be posted by an
-// allowed commenter.
-func authorizedDirectMention(ctx context.Context, comments CommentLister, repo string, number int, id Identity, allowed []string) (bool, error) {
+// under newer conversation cannot silently retrigger a run; addressed must
+// accept its body (Engine.addressedTo); and it must be posted by an allowed
+// commenter.
+func authorizedDirectMention(ctx context.Context, comments CommentLister, repo string, number int, addressed func(string) bool, allowed []string) (bool, error) {
 	list, err := comments.ListComments(ctx, repo, number)
 	if err != nil {
 		return false, err
@@ -129,7 +129,7 @@ func authorizedDirectMention(ctx context.Context, comments CommentLister, repo s
 		return false, nil
 	}
 	last := list[len(list)-1]
-	return mentionedIdentity(last.Body, id) && commenterAllowed(last.Author, allowed), nil
+	return addressed(last.Body) && commenterAllowed(last.Author, allowed), nil
 }
 
 // parseClaim classifies a comment body as one of the handoff protocol

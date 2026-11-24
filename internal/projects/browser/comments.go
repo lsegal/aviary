@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -261,7 +262,12 @@ func commentsFromRows(pageURL string, rows []commentRow) ([]core.Comment, error)
 		if err != nil {
 			return nil, fmt.Errorf("read conversation at %s: comment %s carried no readable timestamp (%q)", pageURL, row.ID, row.CreatedAt)
 		}
-		comments = append(comments, core.Comment{Body: row.Body, Author: row.Author, CreatedAt: createdAt})
+		comment := core.Comment{Body: row.Body, Author: row.Author, CreatedAt: createdAt}
+		if id, err := strconv.ParseInt(row.ID, 10, 64); err == nil {
+			comment.ID = id
+			comment.URL = strings.SplitN(pageURL, "#", 2)[0] + "#issuecomment-" + row.ID
+		}
+		comments = append(comments, comment)
 	}
 	// The page renders comments oldest first, as the API returns them, but the
 	// order is what tells the newest claim from an older one, so it is sorted

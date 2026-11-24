@@ -20,7 +20,8 @@
 				@click="emit('close')">✕</button>
 		</header>
 		<div class="min-h-0 flex-1">
-			<ChatView ref="chat" :agent="PROJECTS_AGENT" :session="PROJECTS_CHAT_SESSION" :project="props.project" />
+			<ChatView ref="chat" :agent="PROJECTS_AGENT" :session="PROJECTS_CHAT_SESSION" :project="props.project"
+				@turn-end="emit('turnEnd')" />
 		</div>
 	</aside>
 </template>
@@ -42,7 +43,11 @@ const props = defineProps<{
 	/** The board's project, which the agent answers about; empty for a board of several. */
 	project: string;
 }>();
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{
+	close: [];
+	/** A prompt's reply finished; its tool calls may have changed the board. */
+	turnEnd: [];
+}>();
 
 const chat = ref<{ sendText: (text: string) => Promise<void> } | null>(null);
 const width = ref(
