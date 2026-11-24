@@ -725,6 +725,7 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		ReadyState:        s.ReadyState,
 		Issues:            gh,
 		Discussions:       gh,
+		Candidates:        gh,
 		Status:            gh,
 		Comments:          gh,
 		Mentions:          gh,

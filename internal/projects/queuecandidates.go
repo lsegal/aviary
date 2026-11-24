@@ -3,9 +3,12 @@ package projects
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -176,10 +179,52 @@ func (g GHCLI) ListOpenDiscussions(ctx context.Context, repo string) ([]OpenDisc
 	return discussions, nil
 }
 
+// queueCandidatesTTL is how long a listing is reused. The dialog asks each
+// time it opens, so this only saves GitHub calls when it is reopened quickly.
+var queueCandidatesTTL = 30 * time.Second
+
+// candidateCache keeps recent pull request and Discussion listings by skill
+// and repository.
+type candidateCache struct {
+	mu      sync.Mutex
+	entries map[string]candidateListing
+}
+
+type candidateListing struct {
+	at          time.Time
+	pulls       []OpenPullRequest
+	discussions []OpenDiscussion
+}
+
+// list returns key's listing, calling fetch when there is none from the last
+// queueCandidatesTTL. A failed fetch is not kept.
+func (c *candidateCache) list(key string, fetch func() (candidateListing, error)) (candidateListing, error) {
+	c.mu.Lock()
+	cached, ok := c.entries[key]
+	c.mu.Unlock()
+	if ok && time.Since(cached.at) < queueCandidatesTTL {
+		return cached, nil
+	}
+	listing, err := fetch()
+	if err != nil {
+		return candidateListing{}, err
+	}
+	listing.at = time.Now()
+	c.mu.Lock()
+	if c.entries == nil {
+		c.entries = map[string]candidateListing{}
+	}
+	c.entries[key] = listing
+	c.mu.Unlock()
+	return listing, nil
+}
+
 // QueueCandidates lists what target's board can queue for skill: open pull
 // requests for gh-safe-merge, open Discussion threads for gh-discuss, each
 // naming the job that already owns it. Repository is needed only when target
-// is not a repository.
+// is not a repository. The listing goes through Candidates (gh) whatever the
+// issue delivery mode; when it fails, the result carries an unavailable
+// notice instead of a list, and numbers can still be queued.
 func (w *Engine) QueueCandidates(ctx context.Context, target, repository, skill string) (map[string]any, error) {
 	if repository == "" {
 		repository = issueRepository(target, Issue{})
@@ -187,9 +232,31 @@ func (w *Engine) QueueCandidates(ctx context.Context, target, repository, skill 
 	if repository == "" {
 		return nil, fmt.Errorf("name the repository to list for %s", target)
 	}
-	source, ok := w.Issues.(QueueCandidateSource)
-	if !ok {
-		return nil, fmt.Errorf("this instance's GitHub client (%T) cannot list pull requests or discussions; it needs gh polling", w.Issues)
+	var noun string
+	switch skill {
+	case SkillSafeMerge:
+		noun = "pull requests"
+	case SkillDiscuss:
+		noun = "discussions"
+	default:
+		return nil, fmt.Errorf("skill %q has nothing to list; use %s or %s", skill, SkillSafeMerge, SkillDiscuss)
+	}
+	result := map[string]any{"target": target, "repository": repository, "skill": skill, "no_merge": w.noMerge.Load()}
+	listing, err := w.candidates.list(skill+" "+repository, func() (candidateListing, error) {
+		if w.Candidates == nil {
+			return candidateListing{}, errors.New("no GitHub client to list with")
+		}
+		if skill == SkillSafeMerge {
+			pulls, err := w.Candidates.ListOpenPullRequests(ctx, repository)
+			return candidateListing{pulls: pulls}, err
+		}
+		discussions, err := w.Candidates.ListOpenDiscussions(ctx, repository)
+		return candidateListing{discussions: discussions}, err
+	})
+	if err != nil {
+		w.logf("list %s for %s: %v", noun, repository, err)
+		result["unavailable"] = fmt.Sprintf("Can't list %s: sign in to GitHub (gh auth login) to enable this. You can still queue by number.", noun)
+		return result, nil
 	}
 	jobs := map[string]JobSnapshot{}
 	if snapshot := w.published.Load(); snapshot != nil {
@@ -197,28 +264,21 @@ func (w *Engine) QueueCandidates(ctx context.Context, target, repository, skill 
 			jobs[job.Target+"#"+strconv.Itoa(job.Number)] = job
 		}
 	}
-	result := map[string]any{"target": target, "repository": repository, "skill": skill, "no_merge": w.noMerge.Load()}
-	switch skill {
-	case SkillSafeMerge:
-		pulls, err := source.ListOpenPullRequests(ctx, repository)
-		if err != nil {
-			return nil, err
-		}
+	owner := func(number int) string {
+		return queuedJobOwner(jobs, queuedJob{Skill: skill, Target: target, Repository: repository, Number: number})
+	}
+	if skill == SkillSafeMerge {
+		pulls := slices.Clone(listing.pulls)
 		for i := range pulls {
-			pulls[i].OwnedBy = queuedJobOwner(jobs, queuedJob{Skill: skill, Target: target, Repository: repository, Number: pulls[i].Number})
+			pulls[i].OwnedBy = owner(pulls[i].Number)
 		}
 		result["pull_requests"] = pulls
-	case SkillDiscuss:
-		discussions, err := source.ListOpenDiscussions(ctx, repository)
-		if err != nil {
-			return nil, err
-		}
+	} else {
+		discussions := slices.Clone(listing.discussions)
 		for i := range discussions {
-			discussions[i].OwnedBy = queuedJobOwner(jobs, queuedJob{Skill: skill, Target: target, Repository: repository, Number: discussions[i].Number})
+			discussions[i].OwnedBy = owner(discussions[i].Number)
 		}
 		result["discussions"] = discussions
-	default:
-		return nil, fmt.Errorf("skill %q has nothing to list; use %s or %s", skill, SkillSafeMerge, SkillDiscuss)
 	}
 	return result, nil
 }
