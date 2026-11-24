@@ -72,6 +72,7 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 	snapshot := display.Snapshot
 	m.mu.Lock()
 	settings, settingsErr := m.settingsLocked()
+	models := m.projectModelsLocked(settings)
 	lastError := m.lastError
 	running := m.running != nil
 	m.mu.Unlock()
@@ -144,8 +145,22 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 		status["error"] = lastError
 	}
 	status["agents"] = allAgentSpecs(settings)
+	// Each project's effective job model and where it comes from, such as
+	// "claude/opus (project override)" or "claude/sonnet (from agent bot)".
+	status["models"] = models
+	status["model_labels"] = projectModelLabels(models)
 	status["clis"] = statusCLIs(allAgentSpecs(settings), snapshot.Quotas)
 	return status
+}
+
+// projectModelLabels renders each project's effective job model for
+// project_status.
+func projectModelLabels(models map[string]ProjectModel) map[string]string {
+	labels := make(map[string]string, len(models))
+	for target, model := range models {
+		labels[target] = model.String()
+	}
+	return labels
 }
 
 // boardStateCounts counts the board entries of targets, or of every project
@@ -287,6 +302,11 @@ func (m *Manager) GetJob(target string, number, lines, events int) (map[string]a
 	}
 	detail["session_id"] = job.SessionID
 	detail["effort"] = job.Effort
+	if model, ok := m.ProjectModels()[job.Target]; ok && model.runsOn(job.Agent, job.Model) {
+		// A job on its project's models says where they come from; one on a
+		// scheduled task's own model does not.
+		detail["model_source"] = model.Source
+	}
 	scrollback := job.Log
 	if lines > 0 {
 		scrollback = lastLogLines(scrollback, lines)

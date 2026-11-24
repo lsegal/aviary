@@ -68,10 +68,18 @@ shared with your own Aviary, both read in place and never copied:
 
 The session copies your providers, browser, approval and Code Loop settings;
 flags override the Code Loop settings. The targets run under --agent, else the
-agent of yours that owns them, else models.defaults. --model replaces that
-agent's model for the session's jobs, and each --fallback, in order, replaces
-its fallbacks; models are <provider>/<model>, such as claude/opus. Use
-'aviary project add' to watch a project permanently.
+agent of yours that owns them, else models.defaults. Use 'aviary project add'
+to watch a project permanently.
+
+Jobs run on that agent's model and fallbacks unless a job model override is
+set, the Code Loop settings' model and fallbacks: --model and repeatable
+--fallback (in the order given), else the AVIARY_WATCH_MODEL and
+AVIARY_WATCH_FALLBACKS (comma-separated) environment variables, else
+projects.model and projects.fallbacks in your aviary.yaml. Each is a model of
+a provider reached through a CLI, as claude/opus or claude:opus, whose CLI
+must be installed:
+
+  aviary watch --model claude:opus --fallback codex:gpt-5.6
 
 The session's server listens on localhost only, on the first free port from
 your server port (default 16677) up, and serves a minimal web UI with no token
@@ -92,8 +100,8 @@ watch once its PID is gone.`,
 func init() {
 	f := watchCmd.Flags()
 	f.StringVar(&watchOpts.agent, "agent", "", "Aviary agent the targets run under; its model and fallbacks pick the jobs' CLI providers (default: the agent that owns the target, else models.defaults)")
-	f.String("model", "", "model the jobs run with, <provider>/<model> such as claude/opus (default: the agent's model)")
-	f.StringArray("fallback", nil, "fallback model, repeatable, tried in the order given (default: the agent's fallbacks)")
+	f.String("model", "", "CLI provider model the jobs run with in place of the agent's, such as claude/opus or claude:opus (env AVIARY_WATCH_MODEL; config projects.model)")
+	f.StringArray("fallback", nil, "CLI provider model jobs fall back to, repeatable, tried in the order given (env AVIARY_WATCH_FALLBACKS, comma-separated; config projects.fallbacks)")
 	// --provider is the deprecated name of --model, kept out of help and
 	// completions until it is removed.
 	f.String("provider", "", "deprecated: use --model")
@@ -170,10 +178,16 @@ func watchAgent(flags *pflag.FlagSet, warn io.Writer) (watchAgentChoice, error) 
 	return choice, nil
 }
 
-// watchModelSpec checks that a model flag's value is <provider>/<model>.
+// watchModelSpec checks that a model flag's value is <provider>/<model>
+// or the <provider>:<model> shorthand; config.ValidateProjectModel checks
+// the provider and its CLI once the session's config is known.
 func watchModelSpec(flag, value string) (string, error) {
 	spec := strings.TrimSpace(value)
-	provider, name, ok := strings.Cut(spec, "/")
+	sep := "/"
+	if !strings.Contains(spec, "/") {
+		sep = ":"
+	}
+	provider, name, ok := strings.Cut(spec, sep)
 	if !ok || provider == "" || strings.TrimSpace(name) == "" {
 		return "", fmt.Errorf("%s %q is not a model: expected <provider>/<model>, such as claude/opus", flag, value)
 	}
@@ -217,6 +231,29 @@ func watchSettings() (config.ProjectsConfig, error) {
 	return settings, nil
 }
 
+// Environment variables that set the watch's job model when the flags don't.
+const (
+	watchModelEnv     = "AVIARY_WATCH_MODEL"
+	watchFallbacksEnv = "AVIARY_WATCH_FALLBACKS"
+)
+
+// withWatchModelEnv fills the choice's model from AVIARY_WATCH_MODEL and its
+// fallbacks from the comma-separated AVIARY_WATCH_FALLBACKS when --model and
+// --fallback leave them unset.
+func withWatchModelEnv(choice watchAgentChoice, getenv func(string) string) watchAgentChoice {
+	if choice.Model == "" {
+		choice.Model = strings.TrimSpace(getenv(watchModelEnv))
+	}
+	if len(choice.Fallbacks) == 0 {
+		for _, fallback := range strings.Split(getenv(watchFallbacksEnv), ",") {
+			if fallback = strings.TrimSpace(fallback); fallback != "" {
+				choice.Fallbacks = append(choice.Fallbacks, fallback)
+			}
+		}
+	}
+	return choice
+}
+
 func runWatch(cmd *cobra.Command, args []string) (err error) {
 	targets, err := watchTargets(args)
 	if err != nil {
@@ -230,6 +267,7 @@ func runWatch(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
+	agent = withWatchModelEnv(agent, os.Getenv)
 	// Past the flags, an error is the session's, not a usage mistake.
 	cmd.SilenceUsage = true
 	out := cmd.OutOrStdout()

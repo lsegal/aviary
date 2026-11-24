@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"os/exec"
 	"slices"
 	"strings"
 
@@ -13,7 +15,8 @@ import (
 const aviarySpecPrefix = "aviary/"
 
 // ProjectJobSpecs returns the model specs, in fallback order, that jobs
-// of a project owned by the named agent run on: the agent's model and
+// of a project owned by the named agent run on: projects.model and
+// projects.fallbacks when model is set, else the agent's model and
 // fallbacks, after models.defaults, each CLI provider model as its spec:
 // cli/claude/opus and claude/opus are both the spec claude/opus. A model
 // that is not a CLI runs the job on the agent itself, as aviary/<agent>. An
@@ -37,6 +40,16 @@ func ProjectJobSpecs(cfg *Config, agentName string) []string {
 			specs = append(specs, spec)
 		}
 	}
+	if models, ok := projectModelOverride(cfg); ok {
+		// The override holds only CLI provider models; see
+		// ValidateProjectModel.
+		for _, model := range models {
+			if spec, isCLI := cliModelSpec(registry, model); isCLI {
+				add(spec)
+			}
+		}
+		return specs
+	}
 	for _, model := range append([]string{EffectiveAgentModel(agent, cfg.Models)}, EffectiveAgentFallbacks(agent, cfg.Models)...) {
 		if spec, isCLI := cliModelSpec(registry, model); isCLI {
 			add(spec)
@@ -45,6 +58,112 @@ func ProjectJobSpecs(cfg *Config, agentName string) []string {
 		}
 	}
 	return specs
+}
+
+// projectModelOverride returns projects.model and projects.fallbacks, in
+// order and normalized, and reports whether they override the owning
+// agent's: they do whenever model is set.
+func projectModelOverride(cfg *Config) ([]string, bool) {
+	model := NormalizeProjectModel(cfg.Models, cfg.Projects.Model)
+	if model == "" {
+		return nil, false
+	}
+	models := []string{model}
+	for _, fallback := range cfg.Projects.Fallbacks {
+		if fallback = NormalizeProjectModel(cfg.Models, fallback); fallback != "" {
+			models = append(models, fallback)
+		}
+	}
+	return models, true
+}
+
+// Sources of a project's job model, as ProjectModelSource reports them.
+const (
+	ProjectModelSourceOverride = "project override"
+	ProjectModelSourceDefaults = "from models.defaults"
+)
+
+// ProjectModelSource says where the models of ProjectJobSpecs come from:
+// "project override", "from agent <name>", or "from models.defaults" for a
+// runtime watch no agent owns.
+func ProjectModelSource(cfg *Config, agentName string) string {
+	if _, ok := projectModelOverride(cfg); ok {
+		return ProjectModelSourceOverride
+	}
+	if agentName = strings.TrimSpace(agentName); agentName != "" {
+		return "from agent " + agentName
+	}
+	return ProjectModelSourceDefaults
+}
+
+// NormalizeProjectModel trims a projects.model or projects.fallbacks entry
+// and turns the provider:model shorthand, such as claude:opus, into the
+// claude/opus form models use everywhere else. A model that already names
+// a provider with a slash, such as codex/gpt-5.6:high, is left alone.
+func NormalizeProjectModel(models ModelsConfig, model string) string {
+	model = strings.TrimSpace(model)
+	if strings.Contains(model, "/") {
+		return model
+	}
+	if provider, name, ok := strings.Cut(model, ":"); ok && strings.TrimSpace(name) != "" {
+		if _, known := cliRegistry(models).Lookup(strings.TrimSpace(provider)); known {
+			return strings.TrimSpace(provider) + "/" + strings.TrimSpace(name)
+		}
+	}
+	return model
+}
+
+// ValidateProjectModel checks one projects.model or projects.fallbacks
+// entry: it must be a model of a provider reached through a CLI, which is
+// what Code Loop jobs run on, and that CLI must be installed.
+func ValidateProjectModel(models ModelsConfig, model string) error {
+	model = NormalizeProjectModel(models, model)
+	if model == "" {
+		return nil
+	}
+	registry := cliRegistry(models)
+	unknown := func(provider string) error {
+		return fmt.Errorf("model %q names unknown provider %q; CLI providers are %s", model, provider, strings.Join(registry.Names(), ", "))
+	}
+	spec, isCLI := cliModelSpec(registry, model)
+	if !isCLI {
+		provider, _, _ := strings.Cut(model, "/")
+		if !llm.IsAPIProvider(provider) {
+			return unknown(provider)
+		}
+		return fmt.Errorf("model %q is not a model of a provider reached through a CLI; project jobs run on CLI providers, such as claude/opus", model)
+	}
+	provider, _, _ := strings.Cut(spec, "/")
+	provider, _, _ = strings.Cut(provider, ":")
+	definition, ok := registry.Lookup(provider)
+	if !ok {
+		return unknown(provider)
+	}
+	binary := definition.Binary
+	if binary == "" {
+		binary = provider
+	}
+	if _, err := exec.LookPath(binary); err != nil {
+		return fmt.Errorf("model %q: the %s CLI is not installed (%s not found in PATH)", model, provider, binary)
+	}
+	return nil
+}
+
+// ValidateProjectModels checks projects.model and projects.fallbacks as
+// ValidateProjectModel does, and that fallbacks come with a model.
+func ValidateProjectModels(models ModelsConfig, p ProjectsConfig) error {
+	if strings.TrimSpace(p.Model) == "" && slices.ContainsFunc(p.Fallbacks, func(f string) bool { return strings.TrimSpace(f) != "" }) {
+		return fmt.Errorf("projects.fallbacks apply only with projects.model set")
+	}
+	if err := ValidateProjectModel(models, p.Model); err != nil {
+		return fmt.Errorf("projects.model: %w", err)
+	}
+	for i, fallback := range p.Fallbacks {
+		if err := ValidateProjectModel(models, fallback); err != nil {
+			return fmt.Errorf("projects.fallbacks[%d]: %w", i, err)
+		}
+	}
+	return nil
 }
 
 // cliModelSpec returns the job spec of a CLI provider model: cli/claude/opus
@@ -82,8 +201,9 @@ func ProjectModelSpec(cfg *Config, agentName, model string) (spec, override stri
 
 // ProjectCLIProviders returns the CLI providers, sorted, that a project
 // owned by the named agent uses, so its skills only need installing for
-// those: the CLIs of the jobs' models (models, when non-nil, in place of the
-// agent's saved model and fallbacks, as ProjectJobSpecs maps them), the Code
+// those: the CLIs of the jobs' models (projects.model and projects.fallbacks
+// when model is set, else models, when non-nil, in place of the agent's
+// saved model and fallbacks, as ProjectJobSpecs maps them), the Code
 // Loop chat agent's model and fallbacks, the unblock agent, and the model of
 // every scheduled task targeting the project.
 func ProjectCLIProviders(cfg *Config, agentName, target string, models []string) []string {
@@ -104,7 +224,9 @@ func ProjectCLIProviders(cfg *Config, agentName, target string, models []string)
 			}
 		}
 	}
-	if models != nil {
+	if override, ok := projectModelOverride(cfg); ok {
+		addModels(override)
+	} else if models != nil {
 		addModels(models)
 	} else {
 		for _, spec := range ProjectJobSpecs(cfg, agentName) {

@@ -489,6 +489,7 @@ projects:
 | `yolo` | bool | `false` | The `full` approval mode, used when `approval_mode` is unset |
 | `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |
 | `no_changelog` | bool | `false` | Skip changelog entries in `gh-fix` pull requests |
+| `model`, `fallbacks` | string, string[] | the owning agent's | [Job model override](/guide/projects#job-model-override): CLI provider models, such as `claude/opus` or `claude:opus`, that every project's jobs run on in place of the owning agent's model and fallbacks. Each CLI must be installed; `fallbacks` applies only with `model` set |
 | `unblock_interval` | duration | `15m` | How often the stuck-job watchdog runs; `0` turns it off |
 | `unblock_agent`, `unblock_model` | string | the coding agent | Agent spec and model for the watchdog's unblock call |
 | `chat_model`, `chat_fallbacks` | string, string[] | `models.defaults` | Model and fallbacks of the built-in `projects` agent behind the board's prompt chat |

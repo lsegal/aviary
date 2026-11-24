@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -214,6 +215,22 @@ func TestProjectAddRuntimeWritesNoConfig(t *testing.T) {
 	assert.Equal(t, before, readFile(t, path))
 }
 
+// TestProjectAddRuntimeModelOverride checks that a runtime watch's model
+// settings are validated and replace the agent's models for its jobs.
+func TestProjectAddRuntimeModelOverride(t *testing.T) {
+	d, m := setupProjects(t)
+	bin := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(bin, exeName("claude")), []byte("#!/bin/sh\n"), 0o755))
+	t.Setenv("PATH", bin)
+	m.Reconcile(&config.Config{Models: config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex/gpt-5.6-terra"}}})
+	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "runtime": true, "settings": map[string]any{"model": "nosuch/m"}}, `unknown provider "nosuch"`)
+	toolCallContains(t, d, "project_add", map[string]any{"target": "o/r", "runtime": true, "settings": map[string]any{"model": "claude/opus", "fallbacks": []string{"codex/gpt-5.6"}}}, "the codex CLI is not installed")
+	callJSON(t, d, "project_add", map[string]any{"target": "o/r", "runtime": true, "settings": map[string]any{"model": "claude:opus"}})
+	status := callJSON(t, d, "project_status", map[string]any{})
+	assert.Equal(t, map[string]any{"o/r": "claude/opus (project override)"}, status["model_labels"])
+	assert.Equal(t, map[string]any{"model": "claude/opus", "fallbacks": []any{}, "source": "project override"}, status["models"].(map[string]any)["o/r"])
+}
+
 func TestProjectStatusLogOffset(t *testing.T) {
 	d, m := setupProjects(t)
 	var logged []string
@@ -302,4 +319,12 @@ func TestProjectsAgentContextOnlyForProjectsAgent(t *testing.T) {
 
 	SetDeps(&Deps{})
 	assert.Empty(t, projectsAgentContext(context.Background(), config.ProjectsAgentName, "o/r"))
+}
+
+// exeName is name as an executable on PATH: Windows needs the .exe extension.
+func exeName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }

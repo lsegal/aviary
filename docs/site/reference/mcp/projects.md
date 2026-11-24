@@ -32,7 +32,7 @@ Settings have no tool of their own. A project lives in the `projects:` list of t
 
 ## project_status
 
-Instance identity, watched projects with issue counts, job counts, the jobs in each board state (`states`: `starting`, `paused`, `running`, `done`, `failed`; a schedule counts once, under `starting` or `running` while a run is in flight and under `failed` while its last run failed and was not dismissed, and never under `done`), delivery mode, poll interval, the issue filter that selects work (`issue_filter`, empty when every open issue is picked up), last check, quota per CLI provider, the configured agent specs, and recent log lines.
+Instance identity, watched projects with issue counts, job counts, the jobs in each board state (`states`: `starting`, `paused`, `running`, `done`, `failed`; a schedule counts once, under `starting` or `running` while a run is in flight and under `failed` while its last run failed and was not dismissed, and never under `done`), delivery mode, poll interval, the issue filter that selects work (`issue_filter`, empty when every open issue is picked up), last check, quota per CLI provider, the configured agent specs, each project's effective job model, and recent log lines. `models` maps each project to its job `model`, `fallbacks` and `source` (`project override`, `from agent <name>`, or `from models.defaults`), and `model_labels` renders them, such as `claude/opus (project override)`.
 
 **Arguments:** `log_offset` (optional): return only the lines logged after this offset. Each response's `log_offset` is the offset to pass next time. `aviary watch --no-tui` tails the log this way. `targets` (optional): count `states` over only these projects' jobs, as `project_job_list` filters them; the board's stat cards pass the projects they show.
 
@@ -54,7 +54,7 @@ Each run is still kept as its own job, for run history and usage.
 
 ## project_job_get
 
-One job's state, agent session, checkout directory, structured transcript, raw CLI output, and scrollback.
+One job's state, agent session, checkout directory, structured transcript, raw CLI output, and scrollback. A job running on its project's models has `model_source`, `project override` or `from agent <name>`; a job on a scheduled task's own model has none.
 
 **Arguments:** `number`, `target`, `lines` (scrollback lines, default 200, negative for all), `events` (transcript events, default 200, negative for all).
 
@@ -88,7 +88,7 @@ Watch a project. A saved project is added to its agent's `projects:` list.
 - `agent` (required unless `runtime` is set): the Aviary agent that owns the project; its model and fallbacks are the jobs' provider and model defaults. A target another agent already owns is refused. For a runtime watch it names the agent the watch runs under; left out, a runtime watch uses the target's owning agent, or `models.defaults`.
 - `reports` (optional, saved projects only): send this project's job events through an Aviary agent's channels, as `{agent, targets, events}`. See [Reports](/guide/projects#reports).
 - `runtime` (optional): watch until the server stops without writing `aviary.yaml`.
-- `settings` (optional, runtime only): projects settings that override the shared `projects:` settings while the watch runs.
+- `settings` (optional, runtime only): projects settings that override the shared `projects:` settings while the watch runs. `model` and `fallbacks` set the [job model override](/guide/projects#job-model-override); an unknown provider or a CLI that is not installed fails the call.
 
 ## project_remove
 
@@ -155,7 +155,7 @@ It reports, as separate checks:
 - **github**: `gh` is installed, signed in, and can read the repository (archived repositories fail).
 - **fork**: a warning when you can't push to the repository, so pull requests will come from your fork.
 - **clis**: which CLI providers (`claude`, `codex`, `gemini`, `opencode`, `cline`) are on `PATH`.
-- **skills**: whether `gh-fix` is installed for each of those CLIs the project uses, with its version when the skill declares one. A project uses the CLIs of its owning agent's model and fallbacks (after `models.defaults`), the Code Loop chat's `chat_model` and `chat_fallbacks`, the `unblock_agent`, and the `model` of every scheduled task that targets it. A used CLI without the skill fails the check and is named.
+- **skills**: whether `gh-fix` is installed for each of those CLIs the project uses, with its version when the skill declares one. A project uses the CLIs of its job models: `projects.model` and `projects.fallbacks` when `model` is set, else its owning agent's model and fallbacks (after `models.defaults`), the Code Loop chat's `chat_model` and `chat_fallbacks`, the `unblock_agent`, and the `model` of every scheduled task that targets it. A used CLI without the skill fails the check and is named.
 - **skills_unused**: an `info` note listing installed CLIs the project does not use that lack `gh-fix`. It never fails the check.
 
 **Arguments:**
@@ -164,7 +164,7 @@ It reports, as separate checks:
 | --- | --- | --- | --- |
 | `target` | string | ✓ | `owner/repo`, a GitHub URL, `users/<login>/projects/<n>`, `orgs/<org>/projects/<n>`, or `owner/repo/discussions`. |
 | `agent` | string | | The agent that owns, or will own, the project. Empty uses the agent that owns `target`. |
-| `models` | string[] | | The owning agent's model and fallbacks, in order, in place of its saved ones, so an unsaved settings form is checked as edited. |
+| `models` | string[] | | The owning agent's model and fallbacks, in order, in place of its saved ones, so an unsaved settings form is checked as edited. A `projects.model` override takes their place. |
 
 **Returns:** JSON object. `ok` is false when any check has `status: "fail"`.
 

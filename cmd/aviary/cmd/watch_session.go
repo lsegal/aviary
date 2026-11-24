@@ -176,7 +176,8 @@ func watchPortFree(port int) bool {
 }
 
 // watchAgentChoice is the agent a watch session's targets run under, from
-// --agent, and the --model and --fallback models that replace its own.
+// --agent, and the --model and --fallback models that override the jobs'
+// models.
 type watchAgentChoice struct {
 	Name      string
 	Model     string
@@ -259,11 +260,16 @@ func startWatchSession(parent string, global *config.Config, sources globalWatch
 	if err != nil {
 		return nil, err
 	}
+	// --model and --fallback are the session's job model override, laid
+	// over projects.model and projects.fallbacks, never the agent's own.
 	if choice.Model != "" {
-		agent.Model = choice.Model
+		settings.Model = choice.Model
 	}
 	if len(choice.Fallbacks) > 0 {
-		agent.Fallbacks = slices.Clone(choice.Fallbacks)
+		settings.Fallbacks = slices.Clone(choice.Fallbacks)
+	}
+	if err := config.ValidateProjectModels(global.Models, global.Projects.Override(settings)); err != nil {
+		return nil, err
 	}
 	start := global.Server.Port
 	if start == 0 {

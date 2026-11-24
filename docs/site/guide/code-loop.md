@@ -10,7 +10,7 @@ watch ─► pick up ─► claim ─► clone, branch, draft PR ─► implemen
 
 ## 1. A target is watched
 
-A project is a watched target that belongs to one Aviary agent: a repository (`owner/repo`), a GitHub Project board, or a Discussions board. The agent's model and fallbacks decide which provider the project's jobs run on.
+A project is a watched target that belongs to one Aviary agent: a repository (`owner/repo`), a GitHub Project board, or a Discussions board. The agent's model and fallbacks decide which provider the project's jobs run on, unless the Code Loop settings set a [job model override](/guide/projects#job-model-override).
 
 - **Configure:** the agent's tab in **Code Loop Settings** (`/projects/settings?agent=<agent>`), `aviary project add owner/repo --agent coder`, or the agent's `projects:` section in `aviary.yaml` ([`agents[].projects`](/reference/config#agents-projects)). `aviary watch owner/repo` watches a target for the life of the command in an isolated session that never touches your config ([Watch sessions](./projects#watch-sessions)).
 - **Delivery:** `poll` (the default) reads GitHub through `gh` every `interval`; `webhook` adds repository webhooks through an ngrok tunnel and still polls as a fallback.

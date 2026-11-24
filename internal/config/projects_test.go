@@ -86,6 +86,33 @@ func TestProjectsSectionOnlyHoldsChangedValues(t *testing.T) {
 	}
 }
 
+func TestProjectsModelOverrideRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "aviary.yaml")
+	cfg := Default()
+	cfg.Projects.Model, cfg.Projects.Fallbacks = "claude/opus", []string{"codex/gpt-5.6"}
+	if cfg.Projects.IsZero() {
+		t.Fatal("a model override counts as unset")
+	}
+	if err := Save(path, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "\nprojects:\n  model: claude/opus\n  fallbacks:\n    - codex/gpt-5.6\n") {
+		t.Fatalf("config = \n%s", data)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Projects.Model != "claude/opus" || len(loaded.Projects.Fallbacks) != 1 || loaded.Projects.Fallbacks[0] != "codex/gpt-5.6" {
+		t.Fatalf("loaded projects = %+v", loaded.Projects)
+	}
+	merged := ProjectsConfig{Model: "claude/sonnet", Fallbacks: []string{"gemini/x"}}.Override(ProjectsConfig{Model: "claude/opus"})
+	if merged.Model != "claude/opus" || len(merged.Fallbacks) != 1 || merged.Fallbacks[0] != "gemini/x" {
+		t.Fatalf("override = %+v", merged)
+	}
+}
+
 func TestProjectReportsEnabledAndEvents(t *testing.T) {
 	var unset *ProjectReportsConfig
 	if unset.Enabled() || unset.Reports(ProjectReportFailed) {

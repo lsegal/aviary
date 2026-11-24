@@ -56,6 +56,10 @@ export interface ProjectsSection {
 	approval_mode?: ApprovalMode;
 	/** The full approval mode, read when approval_mode is unset; saving folds it into approval_mode. */
 	yolo?: boolean;
+	/** CLI provider model every project's jobs run on in place of the owning agent's. */
+	model?: string;
+	/** Fallbacks of model, in order; ignored without model. */
+	fallbacks?: string[];
 	unblock_interval?: string;
 	temp_dirs?: string[];
 	// Fields this page doesn't edit (webhook, unblock_agent, ...) pass through untouched.
@@ -79,6 +83,9 @@ export interface ProjectSettings {
 	changelog: boolean;
 	/** Projects' approval-mode override; empty follows the general approval mode. */
 	approvalMode: ApprovalMode | "";
+	/** Jobs' model override; empty keeps each owning agent's model and fallbacks. */
+	model: string;
+	fallbacks: string[];
 	unblockInterval: string;
 	tempDirs: string[];
 }
@@ -144,6 +151,28 @@ export interface JobModelsConfig {
 		projects?: AgentProjectsSection;
 	}[];
 	models?: { defaults?: { model?: string; fallbacks?: string[] } };
+	projects?: { model?: string; fallbacks?: string[] };
+}
+
+/**
+ * The job model override, projects.model then projects.fallbacks, with
+ * provider:model shorthands such as claude:opus written as claude/opus, as
+ * config.NormalizeProjectModel does. Empty when projects.model is unset.
+ */
+export function jobModelOverride(
+	cfg: JobModelsConfig | null | undefined,
+	cliProviders: readonly string[] = [],
+): string[] {
+	const normalize = (m: string) => {
+		const v = m.trim();
+		const [provider, ...rest] = v.split(":");
+		return !v.includes("/") && rest.length && cliProviders.includes(provider)
+			? `${provider}/${rest.join(":")}`
+			: v;
+	};
+	const model = normalize(cfg?.projects?.model ?? "");
+	if (!model) return [];
+	return [model, ...strings(cfg?.projects?.fallbacks).map(normalize)];
 }
 
 /**
@@ -208,7 +237,8 @@ export interface JobModel {
 
 /**
  * The models a project owned by agentName runs its jobs on, mirroring
- * config.ProjectJobSpecs: the agent's model and fallbacks, after
+ * config.ProjectJobSpecs: the job model override when projects.model is set,
+ * of CLI provider models only, else the agent's model and fallbacks, after
  * models.defaults, each CLI provider model (claude/opus or cli/claude/opus)
  * as its spec. cliProviders names the CLI providers. A model that is not a CLI
  * runs the job on the agent itself. An empty name takes the CLI models of
@@ -224,6 +254,19 @@ export function jobModels(
 		? (cfg?.agents ?? []).find((a) => a.name === name)
 		: { name: "" };
 	if (!agent) return [];
+	const override = jobModelOverride(cfg, cliProviders);
+	if (override.length) {
+		const out: JobModel[] = [];
+		for (const m of override) {
+			const spec = m.startsWith("cli/") ? m.slice("cli/".length) : m;
+			if (
+				cliProviders.includes(spec.split("/")[0]) &&
+				!out.some((j) => j.spec === spec)
+			)
+				out.push({ spec, model: m });
+		}
+		return out;
+	}
 	const defaults = cfg?.models?.defaults;
 	const model = (agent.model ?? "").trim() || (defaults?.model ?? "").trim();
 	const fallbacks = agent.fallbacks?.length
@@ -270,6 +313,8 @@ export function settingsFromSection(
 		merge: s.no_merge !== true,
 		changelog: s.no_changelog !== true,
 		approvalMode: s.approval_mode ?? (s.yolo === true ? "full" : ""),
+		model: (s.model ?? "").trim(),
+		fallbacks: strings(s.fallbacks),
 		unblockInterval: (s.unblock_interval ?? "").trim(),
 		tempDirs: strings(s.temp_dirs),
 	};
@@ -413,6 +458,11 @@ export function withSettings(
 	set("no_changelog", true, s.changelog);
 	set("approval_mode", s.approvalMode, !s.approvalMode);
 	set("yolo", true, true);
+	// Fallbacks apply only with a model, as projects.fallbacks does.
+	const model = s.model.trim();
+	const fallbacks = clean(s.fallbacks);
+	set("model", model, !model);
+	set("fallbacks", fallbacks, !model || !fallbacks.length);
 	set("unblock_interval", s.unblockInterval.trim(), !s.unblockInterval.trim());
 	const dirs = clean(s.tempDirs);
 	set("temp_dirs", dirs, !dirs.length);
