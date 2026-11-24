@@ -8,10 +8,10 @@ Each agent's pages, in sidebar order:
 
 | Page | Route | Exposed Functionality |
 | --- | --- | --- |
-| Chat | `/agents/<agent>/chat/:sessionId?` | Real-time conversation and session management with that agent. |
+| Chats | `/agents/<agent>/chat/:sessionId?` | Real-time conversation and session management with that agent. |
 | Code Loop | `/agents/<agent>/projects` | One board of the jobs of every project the agent owns, with no settings; each project's board at `/agents/<agent>/projects/<owner%2Frepo>` and its job runs under `/jobs/<number>`. |
 | Code Loop Settings | `/projects/settings` | Opened from the boards' Settings gear: each agent's projects (add, remove, reports), the Code Loop settings every agent's GitHub projects share (concurrency, delivery, issue selection, merging), and the job clones on disk. |
-| Channels | `/agents/<agent>/channels/:channel?` | The agent's Slack, Discord and Signal channels; a channel's conversation in the chat UI, and its settings at `/agents/<agent>/channels/<name>/settings`. `/agents/<agent>/settings/channels` redirects here. |
+| Channels | `/agents/<agent>/channels/:channel?` | The agent's Slack, Discord and Signal channels; a channel's conversation in the chat UI, and its settings at `/agents/<agent>/channels/<name>/settings`. A channel's **…** menu has **Enable**/**Disable**, **Rename**, **Settings** and **Delete**; disabled channels are marked and listed last. `/agents/<agent>/settings/channels` redirects here. |
 | Scheduled Tasks | `/agents/<agent>/tasks` | Run stats and analytics (job queue, compile attempts), and the agent's tasks as cards or a list with quick actions; `?task=<name>` opens a task's settings. A task's page, at `/agents/<agent>/tasks/<name>`, is a dashboard for that task: run stats, the current or last run's live logs, the run history (each run at `…/runs/<job id>`), Run now, Pause/Resume and Stop, a gear to its settings, and the session all its runs share in a resizable bottom chat panel the chat icon hides. The sidebar always lists the tasks; a row opens the task's page, and its **…** menu has **Settings** and **Delete**. |
 | Files | `/agents/<agent>/files` | The agent's root markdown files. |
 | Settings | `/agents/<agent>/settings` | General (name, model, fallbacks, working directory), and Permissions (`/settings/permissions`) sections. |
@@ -36,7 +36,7 @@ The System sidebar item is the Overview; the section lists the other pages and s
 
 ## Settings
 
-Settings opens from the sidebar's gear menu, which also holds **Restart** and **Logout**.
+Settings opens from the sidebar's gear menu, which also holds **Edit sidebar** (reorder and hide agent and System pages; the agent pages' order also sets the narrow-screen top row; **Reset to default** restores it), **Restart** and **Logout**. Nested pages show a breadcrumb with a back link, the collapsed rail shows subpages in flyouts, and the breadcrumb leaf on project, task, channel and file pages opens a sibling switcher (`Alt+S`); see [Navigation](/guide/control-panel#navigation).
 
 | Tab | Route | Exposed Functionality |
 | --- | --- | --- |
