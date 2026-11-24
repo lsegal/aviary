@@ -123,6 +123,9 @@ type PullRequestWorkState struct {
 	// counts as progress.
 	HeadSHA  string
 	Comments int
+	// MergeCommitSHA is the commit a merged pull request left on its base
+	// branch, empty while it has not merged.
+	MergeCommitSHA string
 }
 
 // RepoOr returns the repository hosting the pull request, or fallback (the
