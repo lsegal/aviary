@@ -59,12 +59,16 @@ interface Task {
 
 /**
  * Mocks one agent with `tasks` and an analyzer answering through `analyze`,
- * recording every task_analyze call.
+ * recording every task_analyze call that analyzes. Cache lookups
+ * (cached_only) are answered by `lookup`, a miss by default.
  */
 async function mockAnalyzer(
 	page: Page,
 	analyze: (args: Record<string, unknown>) => Analysis | Promise<Analysis>,
 	tasks: Task[] = [],
+	lookup: (args: Record<string, unknown>) => Analysis = () => ({
+		miss: true,
+	}),
 ) {
 	const config = {
 		agents: [{ name: "assistant", model: "x/y", tasks }],
@@ -81,6 +85,7 @@ async function mockAnalyzer(
 		config_task_convert_to_script: () => "task_compile_1",
 		task_preview: (args?: Record<string, unknown>) => taskPreview(args ?? {}),
 		task_analyze: (args?: Record<string, unknown>) => {
+			if (args?.cached_only) return lookup(args);
 			calls.push(args ?? {});
 			return analyze(args ?? {});
 		},
@@ -504,7 +509,12 @@ test("the task editor shows a cached analysis on open and re-analyzes only on ch
 	);
 	const open = async (p: Page) => {
 		await watchForChecking(p);
-		await mockAnalyzer(p, (a) => cache.handler(a), tasks);
+		await mockAnalyzer(
+			p,
+			(a) => cache.handler(a),
+			tasks,
+			(a) => cache.handler(a),
+		);
 		await p.goto("/agents/assistant/tasks?task=manual");
 		const feedback = p.getByTestId("task-cost-feedback");
 		await expect(feedback.getByTestId("task-cost-verdict")).toHaveText(
