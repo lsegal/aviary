@@ -1,18 +1,14 @@
 <template>
   <AppLayout>
-    <template #header-icon>
-      <SystemPageIcon page-key="daemons" tile />
-    </template>
     <template #header>
-      <p class="text-sm text-gray-500 dark:text-gray-400">{{ daemons.length }} process{{ daemons.length === 1 ? '' : 'es' }}</p>
+      <p>{{ daemons.length }} process{{ daemons.length === 1 ? '' : 'es' }}</p>
     </template>
     <template #header-actions>
       <span v-if="lastRefresh" class="text-xs text-gray-400 dark:text-gray-500">
         Updated {{ timeSince(lastRefresh) }}
       </span>
-      <button
-        class="rounded-lg bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-        :disabled="loading" @click="fetchDaemons">
+      <button type="button" :class="HEADER_ACTION_CLS" :disabled="loading" @click="fetchDaemons">
+        <ArrowPathIcon aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': loading }" />
         {{ loading ? "Loading…" : "Refresh" }}
       </button>
       <SystemSettingsLink />
@@ -175,11 +171,12 @@
 </template>
 
 <script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
-import SystemPageIcon from "../components/SystemPageIcon.vue";
 import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { Skeleton } from "../components/ui/skeleton";
+import { HEADER_ACTION_CLS } from "../lib/headerActions";
 import { useAuthStore } from "../stores/auth";
 
 interface Daemon {

@@ -1,54 +1,46 @@
 <template>
 	<div class="flex min-h-0 flex-1 flex-col" data-testid="job-detail">
-		<header data-testid="job-detail-header" class="@container border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-6">
-			<!-- The title column flexes and wraps; the actions keep one row, beside the title on wide panes and under it on narrow ones. -->
-			<div class="flex flex-col gap-3 @2xl:flex-row @2xl:items-start">
-				<div class="min-w-0 @2xl:flex-1">
-					<p class="text-xs text-gray-500">
-						<router-link :to="boardPath" data-testid="job-detail-board-link" class="text-blue-600 hover:underline">Board</router-link> /
-					</p>
-					<div class="flex flex-wrap items-center gap-2">
-						<h2 data-testid="job-detail-title" class="min-w-0 break-words text-lg font-bold text-gray-900 dark:text-white">
-							<template v-if="!job?.scheduled">
-								<a v-if="issueURL" :href="issueURL" target="_blank" rel="noreferrer" data-testid="job-detail-issue-link"
-									:title="`Open issue #${number} on GitHub`" class="text-blue-600 hover:underline dark:text-blue-400">#{{ number }}</a>
-								<template v-else>#{{ number }}</template>
-								<template v-if="job?.pr"> •
-									<PullRequestLink :job="job" data-testid="job-detail-pr-link" :title="`Open PR ${prLabel} on GitHub`"
-										class="align-baseline text-blue-600 dark:text-blue-400" /></template>{{ " " }}
-							</template>{{ job?.title ?? "" }}
-						</h2>
-						<JobStatusPill v-if="job" :state="job.state" />
-						<span v-if="job?.scheduled"
-							class="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
-							Scheduled
-						</span>
-					</div>
-				</div>
-				<div data-testid="job-detail-actions" class="flex min-w-0 shrink-0 items-center gap-2 @2xl:justify-end">
-					<template v-if="job">
-						<button type="button" data-testid="raw-output-toggle" :aria-pressed="showRaw" aria-label="Raw output"
-							:title="showRaw ? 'Hide the raw CLI output' : 'Show the raw CLI output'"
-							class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border"
-							:class="showRaw ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
-							@click="showRaw = !showRaw">
-							<CodeBracketIcon aria-hidden="true" class="h-4 w-4" />
-						</button>
-						<button type="button" :disabled="busy || !job.actions.retry"
-							aria-label="Retry" :title="job.actions.retryUnavailable || 'Retry this job'"
-							class="inline-flex h-8 shrink-0 items-center justify-center rounded-lg border w-8 border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-							@click="run(retry)"><ArrowPathIcon aria-hidden="true" class="h-4 w-4" /></button>
-						<button v-if="stoppable" type="button" :disabled="busy" aria-label="Stop" title="Stop this job"
-							class="inline-flex h-8 shrink-0 items-center justify-center rounded-lg border w-8 border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:hover:bg-red-950/40"
-							@click="run(stop)"><StopIcon aria-hidden="true" class="h-4 w-4" /></button>
-					</template>
-					<!-- Closing the pane is navigation, not a job action, so a divider sets it apart. -->
-					<span aria-hidden="true" class="ml-auto h-5 w-px shrink-0 bg-gray-200 dark:bg-gray-700 @2xl:ml-1" />
-					<router-link :to="boardPath" data-testid="job-detail-close" aria-label="Close details" title="Close details"
-						class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"><XMarkIcon aria-hidden="true" class="h-4 w-4" /></router-link>
-				</div>
+		<!-- The job's status, links and actions sit in the shared page header
+			(#1147), whose title is the job's crumb. -->
+		<Teleport defer to="#page-header-status">
+			<JobStatusPill v-if="job" :state="job.state" />
+			<span v-if="job?.scheduled"
+				class="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+				Scheduled
+			</span>
+		</Teleport>
+		<Teleport defer to="#page-header-subtitle">
+			<p data-testid="job-detail-title" class="min-w-0 break-words">
+				<template v-if="!job?.scheduled">
+					<a v-if="issueURL" :href="issueURL" target="_blank" rel="noreferrer" data-testid="job-detail-issue-link"
+						:title="`Open issue #${number} on GitHub`" class="text-blue-600 hover:underline dark:text-blue-400">#{{ number }}</a>
+					<template v-else>#{{ number }}</template>
+					<template v-if="job?.pr"> •
+						<PullRequestLink :job="job" data-testid="job-detail-pr-link" :title="`Open PR ${prLabel} on GitHub`"
+							class="align-baseline text-blue-600 dark:text-blue-400" /></template>{{ " " }}
+				</template>{{ job?.title ?? "" }}
+			</p>
+		</Teleport>
+		<Teleport defer to="#page-header-actions">
+			<div data-testid="job-detail-actions" class="flex shrink-0 items-center gap-2">
+				<template v-if="job">
+					<button type="button" data-testid="raw-output-toggle" :aria-pressed="showRaw" aria-label="Raw output"
+						:title="showRaw ? 'Hide the raw CLI output' : 'Show the raw CLI output'"
+						:class="showRaw ? HEADER_ICON_ON_CLS : HEADER_ICON_CLS" @click="showRaw = !showRaw">
+						<CodeBracketIcon aria-hidden="true" class="h-5 w-5" />
+					</button>
+					<button type="button" :disabled="busy || !job.actions.retry"
+						aria-label="Retry" :title="job.actions.retryUnavailable || 'Retry this job'" :class="HEADER_ICON_CLS"
+						@click="run(retry)"><ArrowPathIcon aria-hidden="true" class="h-5 w-5" /></button>
+					<button v-if="stoppable" type="button" :disabled="busy" aria-label="Stop" title="Stop this job"
+						:class="[HEADER_ICON_CLS, 'text-red-600! dark:text-red-400!']"
+						@click="run(stop)"><StopIcon aria-hidden="true" class="h-5 w-5" /></button>
+				</template>
+				<router-link :to="boardPath" data-testid="job-detail-close" aria-label="Close details" title="Close details"
+					class="inline-flex shrink-0 items-center justify-center rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"><XMarkIcon aria-hidden="true" class="h-5 w-5" /></router-link>
+				<span aria-hidden="true" class="h-5 w-px shrink-0 bg-gray-200 dark:bg-gray-700" />
 			</div>
-		</header>
+		</Teleport>
 
 		<dl v-if="job" data-testid="job-meta"
 			class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 border-b border-gray-200 px-4 py-2 text-xs dark:border-gray-800 sm:px-6">
@@ -181,6 +173,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAutoFollow } from "../../composables/useAutoFollow";
 import { useProjectJob } from "../../composables/useProjects";
+import { HEADER_ICON_CLS, HEADER_ICON_ON_CLS } from "../../lib/headerActions";
 import {
 	githubURL,
 	isHeartbeatLine,

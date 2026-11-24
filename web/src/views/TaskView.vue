@@ -1,26 +1,23 @@
 <template>
 	<AppLayout>
 		<!-- One task: its runs and logs, with the session they share below. -->
-		<template v-if="task" #header-icon>
-			<span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-				<BoltIcon v-if="workflow" aria-hidden="true" class="h-5 w-5" />
-				<ClockIcon v-else aria-hidden="true" class="h-5 w-5" />
+		<template v-if="task && workflow" #header-icon>
+			<BoltIcon class="h-4 w-4 text-gray-500 dark:text-gray-400" />
+		</template>
+		<template v-if="task" #header-status>
+			<span v-if="enabled" data-testid="task-state" data-enabled="true"
+				class="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700 dark:bg-green-950/50 dark:text-green-300">
+				Enabled
 			</span>
+			<PausedChip v-else data-testid="task-state" data-enabled="false" />
+			<CompiledStatusChip :task="task" :attempts="compileAttempts" detail :to="settingsLink"
+				@click="compiledPanelOpen = true" />
 		</template>
 		<template v-if="task" #header>
-			<div class="mt-1 flex min-w-0 flex-wrap items-center gap-2" data-testid="task-detail">
-				<span v-if="enabled" data-testid="task-state" data-enabled="true"
-					class="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700 dark:bg-green-950/50 dark:text-green-300">
-					Enabled
-				</span>
-				<PausedChip v-else data-testid="task-state" data-enabled="false" />
-				<CompiledStatusChip :task="task" :attempts="compileAttempts" detail :to="settingsLink"
-					@click="compiledPanelOpen = true" />
-				<p class="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400" data-testid="task-schedule">
-					{{ typeLabel }} · {{ scheduleText }}<template v-if="codeLoopTarget"> · sends to
-						<CodeLoopTargetLink :target="codeLoopTarget" /></template>
-				</p>
-			</div>
+			<p class="min-w-0 truncate" data-testid="task-schedule">
+				{{ typeLabel }} · {{ scheduleText }}<template v-if="codeLoopTarget"> · sends to
+					<CodeLoopTargetLink :target="codeLoopTarget" /></template>
+			</p>
 		</template>
 		<template v-if="task" #header-actions>
 			<div class="flex flex-wrap items-center gap-2" role="group" aria-label="Task actions">
@@ -42,14 +39,13 @@
 				</button>
 				<button type="button" data-testid="task-chat-toggle" :aria-pressed="chat.open.value"
 					:aria-label="chat.open.value ? 'Hide chat' : 'Show chat'" :title="chat.open.value ? 'Hide chat' : 'Show chat'"
-					class="rounded-lg border p-1.5"
-					:class="chat.open.value ? 'border-blue-600 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-950/50 dark:text-blue-300' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
+					:class="chat.open.value ? HEADER_ICON_ON_CLS : HEADER_ICON_CLS"
 					@click="chat.open.value = !chat.open.value">
 					<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
 				</button>
 				<router-link :to="settingsLink" data-testid="task-settings-link"
 					:aria-label="workflow ? 'Workflow settings' : 'Task settings'" :title="workflow ? 'Workflow settings' : 'Task settings'"
-					class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+					:class="HEADER_ICON_CLS">
 					<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
 				</router-link>
 			</div>
@@ -129,7 +125,6 @@
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import BoltIcon from "@heroicons/vue/24/outline/BoltIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
-import ClockIcon from "@heroicons/vue/24/outline/ClockIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import PauseIcon from "@heroicons/vue/24/outline/PauseIcon";
 import PlayCircleIcon from "@heroicons/vue/24/outline/PlayCircleIcon";
@@ -159,6 +154,11 @@ import { useTaskDashboard } from "../composables/useTaskDashboard";
 import { useTaskPause } from "../composables/useTaskPause";
 import { workflowSettingsPath } from "../lib/channels";
 import { compiledStatus, type TaskCompileAttempt } from "../lib/compiledStatus";
+import {
+	HEADER_ACTION_CLS,
+	HEADER_ICON_CLS,
+	HEADER_ICON_ON_CLS,
+} from "../lib/headerActions";
 import { age, until } from "../lib/projects";
 import { RESULT_LABELS } from "../lib/taskRuns";
 import { isCodeLoopTarget } from "../lib/taskTargets";
@@ -387,8 +387,7 @@ const statChips = computed((): StatChip[] => {
 
 // ── Actions ─────────────────────────────────────────────────────────────────
 
-const ACTION_CLS =
-	"inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800";
+const ACTION_CLS = HEADER_ACTION_CLS;
 
 const busy = ref(false);
 async function act(fn: () => Promise<unknown>) {

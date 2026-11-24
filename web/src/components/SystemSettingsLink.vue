@@ -1,6 +1,6 @@
 <template>
   <router-link to="/system/settings" data-testid="system-settings-link" aria-label="Settings" title="Settings"
-    class="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+    :class="HEADER_ICON_CLS">
     <Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
   </router-link>
 </template>
@@ -10,4 +10,5 @@
 // global Settings page the sidebar gear menu also opens (#932). Styled like
 // the channel view's settings link.
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
+import { HEADER_ICON_CLS } from "../lib/headerActions";
 </script>

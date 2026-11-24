@@ -107,6 +107,8 @@ function buildCrumbs(path: string, ctx: CrumbContext, file: string): Crumb[] {
 		if (watch[2]) crumbs.push({ label: `#${watch[2]}` });
 		return crumbs;
 	}
+	if (/^\/system\/overview\/?$/.test(path))
+		return [system, { label: "Overview" }];
 	const page = SYSTEM_PAGES.find(
 		(p) => path === p.to || path.startsWith(`${p.to}/`),
 	);

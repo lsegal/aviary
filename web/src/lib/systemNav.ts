@@ -34,7 +34,7 @@ export interface SystemPage extends SystemPageIdentity {
 // Muted accents: a soft tile with a darker stroke in each theme. Class names
 // stay literal so Tailwind finds them. Amber's 600 is too light on its 50
 // tile, so it uses 700.
-const ACCENTS = {
+export const ACCENTS = {
 	sky: {
 		iconClass: "text-sky-600 dark:text-sky-400",
 		tileClass: "bg-sky-50 dark:bg-sky-500/15",

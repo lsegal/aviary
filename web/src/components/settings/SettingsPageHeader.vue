@@ -1,77 +1,99 @@
 <template>
-	<!-- The page's padding sits above the bar, as it did on Settings pages. -->
-	<div class="shrink-0 px-4 pt-6 sm:px-6">
-		<div data-testid="settings-header"
-			class="sticky top-0 z-20 -mx-4 border-b border-gray-200/80 bg-white/90 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6 dark:border-gray-800/80 dark:bg-gray-950/88">
+	<div data-testid="settings-header" class="shrink-0 bg-white dark:bg-gray-950">
+		<!-- The breadcrumb bar: back to the parent page, then the trail. -->
+		<div data-testid="settings-crumb-bar"
+			class="flex min-w-0 items-center gap-1 border-b border-gray-200 px-2 py-1.5 sm:px-4 dark:border-gray-800">
 			<router-link v-if="parent" :to="parent.to" data-testid="settings-back" :aria-label="`Back to ${parent.label}`"
-				class="mb-2 inline-flex max-w-full items-center gap-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
+				:title="`Back to ${parent.label}`" :class="BACK_CLS">
 				<ArrowLeftIcon aria-hidden="true" class="h-4 w-4 shrink-0" />
-				<span class="truncate">Back to {{ parent.label }}</span>
 			</router-link>
-			<div class="flex flex-wrap items-center justify-between gap-3">
-				<!-- The title keeps a share of the row; past it the actions wrap below. -->
-				<div class="flex min-w-0 flex-[1_1_14rem] items-center gap-3">
-					<slot name="icon" />
-					<div class="min-w-0 flex-1">
-						<nav v-if="crumbs.length > 1" aria-label="Breadcrumb" data-testid="settings-breadcrumb" class="min-w-0">
-							<!-- Middle crumbs give up their width first, then the outer ones. -->
-							<ol class="flex min-w-0 items-center gap-1.5 overflow-hidden text-xl font-bold text-gray-900 dark:text-white">
-								<li v-for="(crumb, i) in crumbs" :key="i" class="flex items-center gap-1.5" :class="crumbClass(i)"
-									:title="crumb.label">
-									<ChevronRightIcon v-if="i > 0" aria-hidden="true"
-										class="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
-									<h2 v-if="i === crumbs.length - 1" aria-current="page" data-testid="settings-title"
-										class="min-w-0 truncate">
-										<span v-if="switcher" class="inline-flex min-w-0 max-w-full items-center gap-1">
-											<BreadcrumbSwitcher :label="crumb.label" :title="switcher.title" :items="switcher.items" />
-											<a v-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
-												:aria-label="titleLink.title" :title="titleLink.title"
-												class="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200">
-												<ArrowTopRightOnSquareIcon aria-hidden="true" class="h-4 w-4" />
-											</a>
-										</span>
-										<a v-else-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
-											class="hover:underline" :title="titleLink.title">{{ crumb.label }}</a>
-										<template v-else>{{ crumb.label }}</template>
-									</h2>
-									<router-link v-else-if="crumb.to" v-slot="{ href, navigate }" :to="crumb.to" custom>
-										<a :href="href"
-											class="min-w-0 truncate rounded text-gray-500 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-white"
-											@click="navigate">{{ crumb.label }}</a>
-									</router-link>
-									<span v-else class="min-w-0 truncate text-gray-500 dark:text-gray-400">{{ crumb.label }}</span>
-								</li>
-							</ol>
-						</nav>
-						<h2 v-else data-testid="settings-title" class="truncate text-xl font-bold text-gray-900 dark:text-white">
-							{{ crumbs[0]?.label }}</h2>
+			<span v-else data-testid="settings-back" aria-disabled="true" :class="[BACK_CLS, 'pointer-events-none opacity-40']">
+				<ArrowLeftIcon aria-hidden="true" class="h-4 w-4 shrink-0" />
+			</span>
+			<nav aria-label="Breadcrumb" data-testid="settings-breadcrumb" class="min-w-0 flex-1">
+				<!-- Middle crumbs give up their width first, then the outer ones.
+					On narrow screens only the parent and the current page show. -->
+				<ol class="flex min-w-0 items-center gap-1.5 overflow-hidden text-sm text-gray-900 dark:text-white">
+					<li v-for="(crumb, i) in crumbs" :key="i" class="items-center gap-1.5" :class="crumbClass(i)"
+						:title="crumb.label">
+						<ChevronRightIcon v-if="i > 0" aria-hidden="true" class="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500"
+							:class="{ 'hidden sm:block': i === crumbs.length - 2 && i > 0 }" />
+						<span v-if="i === crumbs.length - 1" aria-current="page" data-testid="settings-current"
+							class="min-w-0 truncate font-medium">{{ crumb.label }}</span>
+						<router-link v-else-if="crumb.to" v-slot="{ href, navigate }" :to="crumb.to" custom>
+							<a :href="href"
+								class="min-w-0 truncate rounded text-gray-500 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-white"
+								@click="navigate">{{ crumb.label }}</a>
+						</router-link>
+						<span v-else class="min-w-0 truncate text-gray-500 dark:text-gray-400">{{ crumb.label }}</span>
+					</li>
+				</ol>
+			</nav>
+		</div>
+		<!-- The title row: the section's icon tile, the title with its status
+			and subtitle, and the page's actions on the right. -->
+		<div data-testid="settings-title-row"
+			class="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 sm:px-6 dark:border-gray-800">
+			<div class="flex min-w-0 flex-[1_1_14rem] items-center gap-3">
+				<span data-testid="settings-header-icon" aria-hidden="true"
+					class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" :class="identity.tileClass">
+					<slot name="icon">
+						<component :is="identity.icon" class="h-4 w-4" :class="identity.iconClass" />
+					</slot>
+				</span>
+				<div class="min-w-0 flex-1">
+					<div class="flex min-w-0 items-center gap-2">
+						<h2 data-testid="settings-title" class="min-w-0 truncate text-lg font-bold text-gray-900 dark:text-white">
+							<span v-if="switcher" class="inline-flex min-w-0 max-w-full items-center gap-1">
+								<BreadcrumbSwitcher :label="title" :title="switcher.title" :items="switcher.items" />
+								<a v-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
+									:aria-label="titleLink.title" :title="titleLink.title"
+									class="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200">
+									<ArrowTopRightOnSquareIcon aria-hidden="true" class="h-4 w-4" />
+								</a>
+							</span>
+							<a v-else-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
+								class="hover:underline" :title="titleLink.title">{{ title }}</a>
+							<template v-else>{{ title }}</template>
+						</h2>
+						<div id="page-header-status" data-testid="settings-status" class="flex shrink-0 items-center gap-2">
+							<slot name="status" />
+						</div>
+					</div>
+					<div id="page-header-subtitle" data-testid="settings-subtitle" class="min-w-0 text-xs text-gray-500 dark:text-gray-400">
 						<slot />
 					</div>
 				</div>
-				<div v-if="$slots.actions" class="flex flex-wrap items-center gap-2">
-					<slot name="actions" />
-				</div>
+			</div>
+			<div data-testid="settings-actions" class="ml-auto flex max-w-full flex-wrap items-center gap-2">
+				<div id="page-header-actions" class="contents" />
+				<slot name="actions" />
 			</div>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
-// The header every page with one shares: the Settings page header from
-// #986, now on every nested page (#1125). A back link to the page's parent,
-// then its breadcrumb from the agent or System down, whose last crumb is
-// the page's title (#1036). Below the title sits the page's own detail
-// line; its icon and actions sit beside it. Every link is a route link, so
-// it works when the page is opened directly from its URL, and leaving with
-// unsaved edits asks first through the router's guard. Only the title is
-// marked the current page, even where a crumb's route matches it but for
-// its query, so crumbs render their own anchors.
+// The header every routed page shares (#1147): the Scheduled Tasks task
+// page's header from before #1067. A thin breadcrumb bar, with an arrow
+// back to the page's parent and the trail from the agent or System down to
+// the page (#1036), then a title row: the section's icon tile, the page's
+// title with an optional status chip and subtitle, and its actions on the
+// right. Every link is a route link, so it works when the page is opened
+// directly from its URL, and leaving with unsaved edits asks first through
+// the router's guard. Only the current crumb is marked the current page,
+// even where a crumb's route matches it but for its query, so crumbs
+// render their own anchors. A nested route's page, such as a Code Loop
+// job, teleports its status, subtitle and actions into the
+// #page-header-status, #page-header-subtitle and #page-header-actions
+// targets.
 import ArrowLeftIcon from "@heroicons/vue/24/outline/ArrowLeftIcon";
 import ArrowTopRightOnSquareIcon from "@heroicons/vue/24/outline/ArrowTopRightOnSquareIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import { computed } from "vue";
 import type { RouteLocationRaw } from "vue-router";
 import type { SwitcherItem } from "../../lib/switcher";
+import type { SystemPageIdentity } from "../../lib/systemNav";
 import BreadcrumbSwitcher from "../ui/BreadcrumbSwitcher.vue";
 
 export interface SettingsCrumb {
@@ -86,10 +108,12 @@ export interface SettingsBack {
 }
 
 const props = defineProps<{
-	/** The crumbs, ending with the current page; one crumb is a plain title. */
+	/** The crumbs, ending with the current page, whose label is the title. */
 	crumbs: SettingsCrumb[];
+	/** The section's icon and its muted tile (#896). */
+	identity: SystemPageIdentity;
 	/**
-	 * The parent page the back link returns to; by default the nearest
+	 * The parent page the back arrow returns to; by default the nearest
 	 * crumb above the current page that links, and none when null.
 	 */
 	back?: SettingsBack | null;
@@ -98,6 +122,11 @@ const props = defineProps<{
 	/** Makes the title a switcher between its siblings (#1063). */
 	switcher?: { title: string; items: SwitcherItem[] } | null;
 }>();
+
+const BACK_CLS =
+	"inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white";
+
+const title = computed(() => props.crumbs.at(-1)?.label ?? "");
 
 const parent = computed((): SettingsBack | null => {
 	if (props.back !== undefined) return props.back;
@@ -110,10 +139,13 @@ const parent = computed((): SettingsBack | null => {
 
 // Long names truncate with an ellipsis, middle crumbs first (#997): only
 // they shrink, down to a sliver, while the first and current crumbs keep
-// their width up to a share of the row and truncate past it.
+// their width up to a share of the row and truncate past it. Below sm only
+// the parent and current crumbs show, as "← Parent › Page".
 function crumbClass(i: number): string {
-	if (i === props.crumbs.length - 1) return "max-w-[40%] shrink-0";
-	if (i === 0) return "max-w-[30%] shrink-0";
-	return "min-w-[2.75rem] shrink";
+	const last = props.crumbs.length - 1;
+	if (i === last) return "flex max-w-[60%] shrink-0 sm:max-w-[40%]";
+	const shown = i === last - 1 ? "flex" : "hidden sm:flex";
+	if (i === 0) return `${shown} max-w-[40%] shrink-0 sm:max-w-[30%]`;
+	return `${shown} min-w-[2.75rem] shrink`;
 }
 </script>

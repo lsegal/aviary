@@ -1,10 +1,7 @@
 <template>
   <AppLayout>
-    <template #header-icon>
-      <SystemPageIcon page-key="models" tile />
-    </template>
     <template #header>
-      <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
+      <p class="truncate">
         Browse the provider/model pairs Aviary accepts for agent and default model selection: the built-in catalog plus the models of every installed CLI provider.
       </p>
     </template>
@@ -117,7 +114,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
-import SystemPageIcon from "../components/SystemPageIcon.vue";
 import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { useProviderStatus } from "../composables/useProviderAuth";
 import {

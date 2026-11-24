@@ -50,6 +50,7 @@ import {
 	isKnownChannelType,
 	workflowSettingsPath,
 } from "../../lib/channels";
+import { HEADER_ACTION_CLS } from "../../lib/headerActions";
 import type { AgentChannel } from "../../stores/settings";
 import MessagingLogo from "../MessagingLogo.vue";
 
@@ -64,10 +65,9 @@ const props = defineProps<{
 
 const router = useRouter();
 
-const buttonClass = computed(() => [
-	"inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50",
+const buttonClass = computed(() =>
 	props.primary
-		? "bg-blue-600 text-white hover:bg-blue-500"
-		: "border border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800",
-]);
+		? "inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+		: `${HEADER_ACTION_CLS} disabled:cursor-not-allowed`,
+);
 </script>
