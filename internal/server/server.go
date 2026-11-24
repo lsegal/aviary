@@ -317,6 +317,9 @@ func (s *Server) registerRoutes() {
 	if webUIOff.Load() {
 		s.mux.HandleFunc("/", webUIOffHandler)
 	} else {
+		if problem := WebAssetsProblem(); problem != "" {
+			slog.Warn(problem)
+		}
 		s.mux.Handle("/", webFileServer())
 	}
 }
@@ -427,7 +430,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		s.httpSrv = &http.Server{Handler: s.mux}
+		s.httpSrv = &http.Server{Handler: s.mux, ErrorLog: newServerErrorLog()}
 
 		errCh := make(chan error, 1)
 		go func(httpSrv *http.Server, ln net.Listener) {
@@ -951,10 +954,7 @@ func sameToolArgs(a, b map[string]any) bool {
 }
 
 func (s *Server) listen() (net.Listener, error) {
-	port := s.cfg.Server.Port
-	if port == 0 {
-		port = 16677
-	}
+	port := config.EffectiveServerPort(s.cfg.Server)
 
 	host := "127.0.0.1"
 	if config.EffectiveServerExternalAccess(s.cfg.Server) {
@@ -1001,15 +1001,7 @@ func serverSettingsChanged(oldCfg, newCfg *config.Config) bool {
 
 // Addr returns the server address string.
 func (s *Server) Addr() string {
-	port := s.cfg.Server.Port
-	if port == 0 {
-		port = 16677
-	}
-	scheme := "https"
-	if config.EffectiveServerNoTLS(s.cfg.Server) {
-		scheme = "http"
-	}
-	return fmt.Sprintf("%s://localhost:%d", scheme, port)
+	return config.ServerURL(s.cfg.Server)
 }
 
 // Agents returns the agent manager.

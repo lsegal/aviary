@@ -223,3 +223,10 @@ body:not(.landing-home-active) .vp-doc table {
 .vp-doc h3 {
 	letter-spacing: -0.025em;
 }
+
+/* Themed screenshots: `![..](x-light.png){.light-only}` beside its
+   `{.dark-only}` twin shows the one matching the color scheme. */
+html:not(.dark) .vp-doc .dark-only,
+html.dark .vp-doc .light-only {
+	display: none;
+}

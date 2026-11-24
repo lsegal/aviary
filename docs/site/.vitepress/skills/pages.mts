@@ -52,7 +52,7 @@ function sharePage(
 export const defaultSharePage = sharePage("", "", "Aviary", "og/default.png", {
 	eyebrow: "Aviary docs",
 	headline: "Guides and reference for the AI agent *nest.*",
-	lede: "Set up Aviary, connect your channels, schedule work, and look up every command, setting and MCP tool.",
+	lede: "Set up Aviary, connect your channels, schedule work, automate chats with workflows, and look up every command, setting and MCP tool.",
 });
 
 export function sharePages(): SharePage[] {
@@ -61,7 +61,7 @@ export function sharePages(): SharePage[] {
 		sharePage("index.md", "", "Aviary", "og/home.png", {
 			eyebrow: "Open source · MIT licensed",
 			headline: "Aviary, the AI agent *nest.*",
-			lede: "Connect your AI models to Slack, Signal, Discord, and more. Hold conversations, schedule tasks, and let your agents work for you.",
+			lede: "Connect your AI models to Slack, Signal, Discord, and more. Hold conversations, schedule tasks, turn chats into workflows, and let your agents work for you.",
 			footnote: "Single binary · CLI and web control panel",
 		}),
 		sharePage("projects.md", "projects.html", "Code Loop", "og/projects.png", {
@@ -70,6 +70,18 @@ export function sharePages(): SharePage[] {
 			lede: "Aviary watches your GitHub issues and puts one of your CLI providers on each one until the pull request merges.",
 			tag: "aviary watch owner/repo",
 		}),
+		sharePage(
+			"guide/workflows.md",
+			"guide/workflows.html",
+			"Workflows",
+			"og/workflows.png",
+			{
+				eyebrow: "Aviary · Workflows",
+				headline: "Turn any chat into an *automation.*",
+				lede: "When a message matches, a workflow runs and decides how to respond: reply, stay silent, or route it elsewhere.",
+				tag: "trigger: message",
+			},
+		),
 		sharePage("skills/index.md", "skills/", "Skills", "og/skills.png", {
 			eyebrow: "Aviary skills",
 			headline: "Skills that ship *work.*",

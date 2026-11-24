@@ -75,54 +75,9 @@ Slack, Discord, and Signal handle files sent with a message the same way. Every 
 
 ## Workflows
 
-A workflow is a channel automation that works like a [scheduled task](./scheduled-tasks.md), but runs when a message arrives on the channel instead of on a schedule. For example, a workflow can triage every message containing "crash" in a Slack channel and reply in the same conversation.
+A workflow is a channel automation that works like a [scheduled task](./scheduled-tasks.md), but runs when a message arrives on the channel instead of on a schedule. For example, a workflow can triage every message containing "crash" in a Slack channel and reply in the same conversation. When an active workflow matches a message, it handles the message instead of the agent's normal chat reply.
 
-Add, edit, pause, resume and delete a channel's workflows in its settings, on the **Workflows** tab. The form is the task form, with a trigger in place of the schedule:
-
-- **Source entry** is the conversation to watch: a Slack or Discord channel, or a Signal contact or group. Empty watches every conversation on the channel.
-- **Text match** is a case-insensitive wildcard over the whole message text: `*` matches anything (including line breaks) and `?` one character. `*crash*` matches every message containing "crash". Empty matches every message, like `*`.
-- **Would match** tests the current text match against the entry's recent messages as you type.
-- **Model override**, **Send Via** and **While a run is active** work as they do for tasks. Send Via can be **silent**, **reply to the source conversation**, a session, a [Code Loop job](/guide/scheduled-tasks#sending-output-to-a-code-loop-job), or another channel.
-- The prompt, its live analysis, **Try to precompile** and the model override are the same section the task editors use. As you type, the prompt is analyzed (debounced, and a newer edit cancels the analysis in flight) and the form shows whether it can be precompiled, with the reason when it can't, and the estimated tokens and cost of each run. The estimate includes the triggering message and the messages before it that each run's prompt carries, so it is higher than for the same scheduled task. When the workflow will be precompiled, the estimate is 0 tokens per run, with the model's cost beside it for comparison.
-
-### Precompiled workflows
-
-A prompt workflow can be precompiled like a [project task](./scheduled-tasks.md#precompiled-project-tasks). **Try to precompile** follows `scheduler.precompute_tasks` for a new workflow (on by default), and `task_schedule` and `task_update` take `precompile`. Saving compiles the prompt in the background when it passes the determinism gate. The workflow keeps its prompt, and each matching message then:
-
-1. Runs the compiled script, which reads the message from the Lua global `trigger` (`trigger.message.text`, `.sender`, `trigger.before`, `trigger.channel`, `trigger.entry`). What the script prints is the workflow's reply; a script that decides not to reply calls `tool.task_no_reply({reason = "..."})` instead (see [Not replying](#not-replying)).
-2. Falls back to a normal model run on the prompt if the script or the compile fails. The run shows **Succeeded via fallback**, the script's error is in the run's logs, and the workflow's card says its last run fell back to the model.
-
-A script that fails on its first run is set aside, and one that fails 3 runs in a row turns precompile off, exactly as for project tasks; the workflow's page says why. Workflow cards, the Workflows tab and the workflow's page show a badge with the compiled state (**Compiled**, **Compiling…**, **Not precompiled** or **Runs on model**), and the page also counts compile attempts, fallback runs and script failures.
-
-When a message matches one or more active workflows, **the workflows replace the agent's own reply**: every matching workflow runs, in name order, and the agent does not answer the message itself. Whether anything is said back is up to each workflow's Send Via. The message is still recorded in the channel's conversation, marked **Handled by workflow** with a link to each run. The agent replies as usual only when no active workflow matches. Paused workflows never match, so a message that matches only paused workflows gets the normal reply. A workflow with an empty text match takes over every message on its entry, and the form says so.
-
-### Not replying
-
-A workflow's final message is sent verbatim as its reply, so a run that decides not to answer must not explain itself in its final message: that explanation would be the reply. Instead the run calls the `task_no_reply` tool with a short reason, and the prompt every delivering run gets says so. A run that called it sends nothing, whatever it wrote afterwards. Its run log shows **Skipped reply:** with the reason, its row in the workflow's run history says "Skipped reply: …", and the workflow's card says its last run did not reply, with the reason on hover. The message stays **Handled by workflow**, so the agent does not reply to it either. Scheduled tasks use the same tool when there is nothing to report.
-
-Workflows only see messages the channel accepts through its `allow_from` rules, and never run on the agent's own messages, so a workflow cannot loop on its replies.
-
-Each run goes through the same job queue as scheduled tasks, with the same run history, logs, statuses and overlap handling. A prompt workflow's run gets the triggering message, and the few messages before it, below its prompt. Each run records its **trigger context**: the channel and entry, the sender's display name (never a raw ID or phone number), the message and its attachments, timestamps, and the messages just before and after it. Usage records attribute each run's tokens to the workflow and its channel.
-
-In the channel's chat, its workflows show as cards above the conversation, active ones first. **Hide paused** filters out paused workflows, and the strip collapses to icons; both choices are remembered. While a workflow is triggered (a run queued) or running, a colored segment travels clockwise around its card, amber while triggered and blue while running. Under `prefers-reduced-motion` the card gets a static colored border instead. Clicking a card opens the workflow's page: live logs for the current run, previous runs with their results, each run's trigger context, and **Run now**, **Pause** and settings.
-
-In YAML or a task file, a workflow is a task with `trigger: message`:
-
-```yaml
-agents:
-  - name: lobby
-    tasks:
-      - name: triage-crashes
-        trigger: message
-        channel: Team Slack   # the agent's channel, by name or ID
-        entry: C0123456789    # optional: one conversation on it
-        match: "*crash*"      # optional: empty matches every message
-        target: reply         # silent (empty), reply, session:<name>, or channel:<name>
-        precompile: true      # optional: run a compiled script, falling back to the model
-        prompt: Triage this crash report and reply with next steps.
-```
-
-Renaming a channel moves its workflows along, and removing a channel deletes them.
+Manage a channel's workflows in its settings, on the **Workflows** tab, and follow their runs from the cards above the channel's chat. See the [Workflows guide](./workflows.md) for setup, reply behavior, run history, examples and the YAML shape.
 
 ## Slack
 

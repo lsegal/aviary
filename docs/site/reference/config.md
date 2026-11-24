@@ -225,7 +225,7 @@ A plain string in `allow_from` is equivalent to `{ from: "<string>" }`.
 
 ### agents[].tasks
 
-A list of scheduled, file-watch or message-triggered tasks for this agent. A task with `trigger: message` is a [workflow](/guide/channels#workflows).
+A list of scheduled, file-watch or message-triggered tasks for this agent. A task with `trigger: message` is a [workflow](/guide/workflows).
 
 ```yaml
 tasks:
@@ -261,6 +261,25 @@ tasks:
 | `entry` | string | | Workflows: the conversation on the channel to watch; empty watches every conversation |
 | `match` | string | | Workflows: case-insensitive wildcard (`*`, `?`) the whole message must match; empty matches every message |
 | `model` | string | | Project tasks and workflows: a model override for the task's runs |
+
+A [workflow](/guide/workflows) is a task with `trigger: message`. It takes `channel`, `entry` and `match` instead of a schedule, and its `target` may be `reply`:
+
+```yaml
+tasks:
+  - name: be-nice
+    trigger: message
+    channel: Family Signal  # the agent's channel, by name or ID
+    entry: ""               # one conversation on it; empty watches every conversation
+    match: "*"              # case-insensitive wildcard; empty matches every message
+    target: reply           # silent (empty), reply, session:<name>, channel:<name> or codeloop:<owner/repo>#<number>
+    overlap: queue          # queue (default) or skip a match while a run is active
+    precompile: true        # run a compiled script, falling back to the model
+    prompt: |
+      If this message is positive, reply with one short, warm sentence.
+      Otherwise call task_no_reply with a short reason.
+```
+
+The related MCP tools are [`workflow_entries`](/reference/mcp/browser-and-channels#workflow-entries), [`workflow_preview`](/reference/mcp/browser-and-channels#workflow-preview) and [`task_no_reply`](/reference/mcp/tasks-and-jobs#task-no-reply).
 
 ### agents[].projects
 

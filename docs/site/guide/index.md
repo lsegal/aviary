@@ -7,6 +7,7 @@ This section is the operator-facing documentation track for Aviary. The structur
 - [Getting Started](./getting-started) covers installation, server startup, token-based login, and the first control-panel session.
 - [Configuration](./configuration) is the durable source for `aviary.yaml`, provider auth, agent definitions, permissions, and runtime defaults.
 - [Channels](./channels) covers Slack, Discord, and Signal setup, sender rules, and channel delivery routing.
+- [Workflows](./workflows) covers channel automations that run when a matching message arrives: setup, reply behavior, run history, and examples.
 - [Security & Permissions](./security-permissions) covers host setup, server hardening, agent permission design, and external sandboxing recommendations.
 - [Sessions & Conversations](./sessions-conversations) explains how session history, memory, and cancellation work, and how Aviary differs from more sequential chat tools.
 - [Scheduled Tasks](./scheduled-tasks) covers cron and file-watch triggers, the precompiler, zero-token Lua script execution, and the sandboxed scripting API.
