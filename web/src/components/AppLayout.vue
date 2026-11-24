@@ -343,7 +343,7 @@
 
     <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <PageBreadcrumb v-if="breadcrumb && pageCrumbs.length > 1" testid="page" :crumbs="pageCrumbs"
-        :back="crumbParent(pageCrumbs)"
+        :back="crumbParent(pageCrumbs)" :switcher="leafSwitcher"
         class="shrink-0 border-b border-gray-200 px-2 py-1.5 sm:px-4 dark:border-gray-800" />
       <slot />
     </main>
@@ -411,6 +411,7 @@ import { useNavPrefs } from "../composables/useNavPrefs";
 import { arrangeNav, type NavList } from "../lib/navPrefs";
 import { AGENT_PAGES, agentPagePath } from "../lib/agentPages";
 import { crumbParent, routeCrumbs } from "../lib/breadcrumb";
+import { useCrumbSwitcher } from "../composables/useCrumbSwitcher";
 import { MINIMAL_AGENT_PAGES } from "../lib/minimalMode";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
@@ -1105,7 +1106,13 @@ const pageCrumbs = computed(() =>
 			const s = chatSessions.sessions(agent).find((x) => x.id === id);
 			return s && chatDisplayName(s);
 		},
-	}),
+	}, typeof route.query.file === "string" ? route.query.file : ""),
+);
+// The leaf's switcher between its sibling projects, tasks, channels or
+// files (#1063).
+const leafSwitcher = useCrumbSwitcher(
+	computed(() => pageCrumbs.value.at(-1)?.switcher),
+	projects,
 );
 
 function flyoutItems(children: NavChild[]): RailFlyoutItem[] {
