@@ -3,8 +3,9 @@ package models
 import (
 	"testing"
 
-	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/lsegal/aviary/internal/clidefs"
 )
 
 func TestProviders(t *testing.T) {
