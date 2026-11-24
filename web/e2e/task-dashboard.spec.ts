@@ -554,8 +554,9 @@ test("Recompile restarts a precompiled task whose script was turned off", async 
 	});
 	await page.goto("/agents/assistant/tasks/report");
 
-	const badge = page.getByTestId("task-precompile-badge");
-	await expect(badge).toHaveAttribute("data-state", "set-aside");
+	const badge = page.getByTestId("compiled-status-chip");
+	await expect(badge).toHaveAttribute("data-state", "fallback");
+	await expect(badge).toHaveText("Falling back to model");
 	await expect(page.getByTestId("task-precompile-note")).toBeVisible();
 
 	await page.getByTestId("task-recompile").click();

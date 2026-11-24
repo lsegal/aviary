@@ -830,6 +830,7 @@ placeholder="Default project agent model"
 	:show-precompile="precompilesBesidePrompt(selectedTask)" :precompile="selectedTask.precompile === true"
 	:show-model="selectedTask.type === 'project' || isWorkflow(selectedTask)" :model="selectedTask.model ?? ''"
 	@update:prompt="selectedTask.prompt = $event" @update:precompile="selectedTask.precompile = $event"
+	:saved-task="savedTaskOf(agent.name, selectedTask.name)" :task-agent="agent.name"
 	@update:model="selectedTask.model = $event || undefined" />
 <div class="flex gap-2 mt-3">
 <!-- Move task to file -->
@@ -1045,7 +1046,13 @@ export default defineComponent({
 			if (ch.type === "signal") return "+15551234567 or group ID";
 			return "Conversation ID";
 		};
+		// The edited task as saved, whose compiled script shows beside its prompt.
+		const savedTaskOf = (agentName: string, taskName: string) =>
+			store.config?.agents
+				.find((a) => a.name === agentName)
+				?.tasks?.find((t) => t.name === taskName);
 		return Object.assign(settings, {
+			savedTaskOf,
 			CHANNEL_TABS,
 			channelTab,
 			channelDeliverToPlaceholder,

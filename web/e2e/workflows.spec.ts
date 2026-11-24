@@ -573,7 +573,7 @@ test("a workflow's precompile choice is saved and only sent again when it change
 		"/agents/assistant/channels/Team%20Slack/settings?tab=workflows",
 	);
 	await expect(
-		page.getByTestId("workflow-row").getByTestId("task-precompile-badge"),
+		page.getByTestId("workflow-row").getByTestId("compiled-status-chip"),
 	).toHaveText("Compiled");
 
 	// A new workflow precompiles by default.
@@ -652,10 +652,10 @@ test("workflow cards and the detail view show the compiled state and fallback ru
 	);
 	await page.goto("/agents/assistant/channels/Team%20Slack");
 	const card = page.getByTestId("workflow-card");
-	await expect(card.getByTestId("task-precompile-badge")).toHaveText(
-		"Compiled",
+	await expect(card.getByTestId("compiled-status-chip")).toHaveText(
+		"Falling back to model",
 	);
-	await expect(card.getByTestId("task-precompile-badge")).toHaveAttribute(
+	await expect(card.getByTestId("compiled-status-chip")).toHaveAttribute(
 		"title",
 		/failed its last run/,
 	);
@@ -670,8 +670,8 @@ test("workflow cards and the detail view show the compiled state and fallback ru
 	await card.click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/triage$/);
 	await expect(
-		page.getByTestId("task-header").getByTestId("task-precompile-badge"),
-	).toHaveText("Compiled · 1 failed");
+		page.getByTestId("task-header").getByTestId("compiled-status-chip"),
+	).toHaveAttribute("data-state", "fallback");
 	await expect(page.getByTestId("task-precompile-note")).toContainText(
 		"failed on its first run",
 	);
