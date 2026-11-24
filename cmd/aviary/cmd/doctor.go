@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/buildinfo"
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
@@ -224,6 +225,23 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		writeProjectsAgentGates(os.Stdout, registry)
 	}
 
+	// ── Browser profile ───────────────────────────────────────────────────────
+	_, _ = fmt.Fprintln(os.Stdout)
+	_, _ = fmt.Fprintln(os.Stdout, "Browser profile")
+	_, _ = fmt.Fprintln(os.Stdout, "───────────────")
+	profile := strings.TrimSpace(cfg.Browser.ProfileDir)
+	if profile == "" {
+		profile = browser.DefaultProfileDir()
+	}
+	_, _ = fmt.Fprintf(os.Stdout, "  Directory : %s\n", profile)
+	status, statusErr := browser.InspectProfile(profile)
+	if statusErr != nil {
+		_, _ = fmt.Fprintf(os.Stdout, "  [ERROR] %v\n", statusErr)
+		nerrs++
+	} else {
+		_, _ = fmt.Fprintf(os.Stdout, "  %s\n", describeBrowserProfile(status))
+	}
+
 	_, _ = fmt.Fprintf(os.Stdout, "\n%d error(s), %d warning(s)\n", nerrs, nwarns)
 	if !doctorDisableVersion {
 		if err := maybeRunDoctorVersionCheck(); err != nil {
@@ -267,6 +285,28 @@ func describeCLIBackend(report clidoctor.Report) (bool, string) {
 		line += "; version " + report.VersionNote
 	}
 	return report.Auth == clidoctor.SignedIn && report.VersionNote == "", line
+}
+
+// describeBrowserProfile renders the browser profile lock's state for the
+// doctor. The lock is the operating system's own, so it cannot outlive the
+// process holding it: a holder named here is still running, and stopping it is
+// what frees the profile. A record left behind by a run that exited is cleared
+// by the inspection itself.
+func describeBrowserProfile(status browser.ProfileStatus) string {
+	switch {
+	case status.Held && status.Owner != nil:
+		return fmt.Sprintf("[INFO] lock held by a running Aviary instance (%s); stop that instance to free the profile", status.Owner)
+	case status.Held:
+		return "[INFO] lock held by a running Aviary instance that left no details; stop that instance to free the profile"
+	}
+	line := "[OK] lock free"
+	if status.Reclaimed && status.Owner != nil {
+		line += fmt.Sprintf("; cleared a stale lock record left by an exited run (%s)", status.Owner)
+	}
+	if status.ChromeRunning {
+		line += "; Aviary's browser is running on it"
+	}
+	return line
 }
 
 // writeProjectsAgentGates lists every agent the registry gates out of Code Loop

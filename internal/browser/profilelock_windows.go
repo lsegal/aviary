@@ -37,3 +37,22 @@ func chromeHoldsProfile(profile string) bool {
 	}
 	return os.Remove(path) != nil
 }
+
+// processAlive reports whether a process with pid runs on this host.
+// OpenProcess can succeed for a process that has exited, so its exit code is
+// checked as well.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if err != nil {
+		return false
+	}
+	defer windows.CloseHandle(handle) //nolint:errcheck
+	var code uint32
+	if err := windows.GetExitCodeProcess(handle, &code); err != nil {
+		return false
+	}
+	return code == 259 // STILL_ACTIVE
+}

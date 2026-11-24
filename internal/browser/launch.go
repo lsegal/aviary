@@ -103,10 +103,18 @@ func waitForChrome(ctx context.Context, cdpBaseURL string) (string, error) {
 // the launch would only time out. The lock is released again at once: the
 // detached browser outlives this process, so it cannot hold the claim, and an
 // owned browser started later sees it through chromeHoldsProfile instead.
+//
+// A browser this same process holds the profile for is reused by
+// ensureChrome before the launch gets here, so reaching it with the profile
+// held by this process means that browser has not come up yet.
 func checkProfileFree(profile string) error {
 	lock, err := LockProfile(profile)
+	var locked *ProfileLockedError
+	if errors.As(err, &locked) && locked.Self {
+		return fmt.Errorf("%w (%s): wait for it to start or finish, or set the browser profile_directory setting to use a different directory", err, profile)
+	}
 	if errors.Is(err, ErrProfileLocked) {
-		return fmt.Errorf("%w (%s): set the browser profile_directory setting to use a different directory", err, profile)
+		return fmt.Errorf("%w (%s): stop that instance, or set the browser profile_directory setting to use a different directory", err, profile)
 	}
 	lock.Release()
 	return nil

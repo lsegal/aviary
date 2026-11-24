@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/startup"
@@ -121,4 +122,18 @@ func freePort(t *testing.T) int {
 	port := ln.Addr().(*net.TCPAddr).Port
 	require.NoError(t, ln.Close())
 	return port
+}
+
+func TestDescribeBrowserProfile(t *testing.T) {
+	owner := &browser.ProfileOwner{PID: 4242, ConfigDir: "/home/u/.config/aviary", DevTools: "http://127.0.0.1:9222"}
+	held := describeBrowserProfile(browser.ProfileStatus{Held: true, Owner: owner})
+	assert.Contains(t, held, "pid 4242")
+	assert.Contains(t, held, "config dir /home/u/.config/aviary")
+	assert.Contains(t, held, "stop that instance")
+
+	reclaimed := describeBrowserProfile(browser.ProfileStatus{Reclaimed: true, Owner: owner})
+	assert.True(t, strings.HasPrefix(reclaimed, "[OK] lock free"), reclaimed)
+	assert.Contains(t, reclaimed, "cleared a stale lock record")
+
+	assert.Equal(t, "[OK] lock free; Aviary's browser is running on it", describeBrowserProfile(browser.ProfileStatus{ChromeRunning: true}))
 }
