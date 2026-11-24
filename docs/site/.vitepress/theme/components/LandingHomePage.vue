@@ -13,9 +13,25 @@ interface ShowcaseItem {
 	lightSrc: string;
 	darkSrc: string;
 	alt: string;
+	// href links the entry to its guide page.
+	href?: string;
 }
 
 const showcaseItems: ShowcaseItem[] = [
+	{
+		title: "Workflows",
+		description:
+			"Turn any chat into an automation: when a message matches, a workflow runs and decides how to respond.",
+		bullets: [
+			"Matches on any channel conversation.",
+			"Full run history with who and what triggered it.",
+			"Reply, stay silent, or route elsewhere.",
+		],
+		lightSrc: "/screenshots/workflow-strip-light.png",
+		darkSrc: "/screenshots/workflow-strip-dark.png",
+		alt: "Workflow cards above a channel's conversation, with messages handled by workflows",
+		href: "/guide/workflows",
+	},
 	{
 		title: "Plan the morning",
 		description:
@@ -155,34 +171,41 @@ const docsLinks = [
 	},
 	{
 		number: "05",
+		title: "Workflows",
+		description:
+			"Run a workflow when a matching message arrives, and reply, stay silent, or route it elsewhere.",
+		href: "/guide/workflows",
+	},
+	{
+		number: "06",
 		title: "Security and permissions",
 		description:
 			"Lock down agent access and choose sensible host isolation for safer deployments.",
 		href: "/guide/security-permissions",
 	},
 	{
-		number: "06",
+		number: "07",
 		title: "Scheduled tasks",
 		description:
 			"Timers, file triggers, and how Aviary compiles tasks into free scripts.",
 		href: "/guide/scheduled-tasks",
 	},
 	{
-		number: "07",
+		number: "08",
 		title: "Day-to-day ops",
 		description:
 			"Manage chats, check jobs, read logs, and handle the everyday while Aviary is running.",
 		href: "/guide/operations",
 	},
 	{
-		number: "08",
+		number: "09",
 		title: "MCP tool reference",
 		description:
 			"Exact tool names, inputs, and behavior for building automations.",
 		href: "/reference/mcp/",
 	},
 	{
-		number: "09",
+		number: "10",
 		title: "CLI reference",
 		description: "Every command and flag the dashboard exposes, at the prompt.",
 		href: "/reference/cli",
@@ -262,7 +285,7 @@ onBeforeUnmount(() => {
 					</h1>
 					<p class="landing-hero-lede reveal">
 						Aviary is a full AI assistant platform. Connect your AI models to Slack, Signal, Discord, and more. Have
-						conversations, set up scheduled tasks, and let your agents work for you, all managed from a CLI or a
+						conversations, set up scheduled tasks, turn chats into workflows, and let your agents work for you, all managed from a CLI or a
 						web-based control panel.
 					</p>
 
@@ -485,6 +508,13 @@ onBeforeUnmount(() => {
 										{{ bullet }}
 									</li>
 								</ul>
+								<a v-if="activeShowcase.href" class="landing-showcase-link" :href="withBase(activeShowcase.href)">
+									Read the {{ activeShowcase.title }} guide
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+										aria-hidden="true">
+										<path d="M5 12h14M13 5l7 7-7 7" />
+									</svg>
+								</a>
 							</div>
 						</div>
 					</div>
@@ -630,9 +660,9 @@ onBeforeUnmount(() => {
 			</div>
 		</section>
 
-		<section class="landing-band" id="workflows">
+		<section class="landing-band" id="use-cases">
 			<div class="landing-wrap">
-				<div class="landing-eyebrow reveal">Core workflows</div>
+				<div class="landing-eyebrow reveal">Everyday use</div>
 				<h2 class="landing-section-title reveal">
 					What you <em>actually</em> use Aviary for.
 				</h2>
@@ -1626,6 +1656,21 @@ onBeforeUnmount(() => {
 	flex: none;
 }
 
+.landing-showcase-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 16px;
+	color: var(--brand);
+	font-size: 14px;
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.landing-showcase-link:hover {
+	text-decoration: underline;
+}
+
 .landing-bento {
 	display: grid;
 	grid-template-columns: repeat(6, 1fr);
@@ -2252,6 +2297,11 @@ onBeforeUnmount(() => {
 	gap: 12px;
 }
 
+/* A card left alone on the last row of three spans it. */
+.landing-docs-grid > .landing-doc-card:last-child:nth-child(3n + 1) {
+	grid-column: 1 / -1;
+}
+
 .landing-doc-card {
 	position: relative;
 	display: block;
@@ -2516,6 +2566,10 @@ onBeforeUnmount(() => {
 
 	.landing-docs-grid {
 		grid-template-columns: repeat(2, 1fr);
+	}
+
+	.landing-docs-grid > .landing-doc-card:last-child:nth-child(3n + 1) {
+		grid-column: auto;
 	}
 
 	.landing-projects-steps {

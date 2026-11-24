@@ -256,7 +256,7 @@ Send a local file to the current conversation channel. Use this to share screens
 
 ## workflow_entries
 
-List the conversations (entries) a channel has received messages on, such as Slack channels or Signal contacts and groups, for picking a [workflow](/guide/channels#workflows)'s source entry.
+List the conversations (entries) a channel has received messages on, such as Slack channels or Signal contacts and groups, for picking a [workflow](/guide/workflows)'s source entry.
 
 **Arguments:**
 

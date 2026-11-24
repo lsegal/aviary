@@ -335,7 +335,7 @@ func runStatus(_ *cobra.Command, _ []string) error {
 	// the platform service name, but include the canonical service name
 	// being queried for clarity.
 	serviceName := "aviary"
-	running, pid, err := server.IsRunning()
+	running, pid, err := configServerRunning(cfgFile)
 	if err != nil {
 		return fmt.Errorf("checking server status: %w", err)
 	}

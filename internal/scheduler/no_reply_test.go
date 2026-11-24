@@ -53,7 +53,7 @@ func TestWorkerPool_RunCompiledWorkflowNoReply(t *testing.T) {
 		job, err := q.EnqueueWithType("alpha/be-nice", "prompt", "alpha", "Reply only to positive messages", "", "reply", 1, "", "")
 		require.NoError(t, err)
 		job.TriggerContext = &domain.TriggerContext{Channel: "team", Entry: "C1", Message: domain.TriggerMessage{Text: "test you're mean"}}
-		_, handled, err := p.runCompiledWorkflow(agent.WithJobID(context.Background(), job.ID), job, cfg, p.deliverFor(job))
+		_, handled, err := p.runCompiledPrompt(agent.WithJobID(context.Background(), job.ID), job, cfg, p.deliverFor(job))
 		require.NoError(t, err)
 		return job, handled
 	}

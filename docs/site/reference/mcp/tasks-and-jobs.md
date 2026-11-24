@@ -74,7 +74,7 @@ Schedule a one-time or recurring task.
 | `name` | string | | Task name (required to persist as a recurring task in config) |
 | `target` | string | | Output delivery target |
 | `trigger_type` | string | | `"cron"` or `"watch"` |
-| `trigger` | string | | `once`, `interval`, `daily`, `weekly` or `cron`; inferred from the fields below when omitted. `message` defines a [workflow](/guide/channels#workflows) instead |
+| `trigger` | string | | `once`, `interval`, `daily`, `weekly` or `cron`; inferred from the fields below when omitted. `message` defines a [workflow](/guide/workflows) instead |
 | `channel` | string | | Workflows: the agent's channel whose messages run it |
 | `entry` | string | | Workflows: the conversation on the channel to watch (see `workflow_entries`); empty watches every conversation |
 | `match` | string | | Workflows: case-insensitive wildcard (`*`, `?`) the whole message must match; empty matches every message |
@@ -93,7 +93,7 @@ Schedule a one-time or recurring task.
 
 **Side effects:** Queues a job. For recurring named tasks, updates `aviary.yaml`. When `scheduler.precompute_tasks` is enabled, prompt tasks trigger an LLM compile call to convert the prompt to a Lua script unless `precompile=false` is provided for that task.
 
-**Workflows:** with `trigger=message` the task runs when a matching message arrives on `channel`, and replaces the agent's own reply to it. A workflow takes no schedule, `in`, `every`, `at`, `days`, `start_at`, `run_once` or `missed`. A prompt workflow keeps its prompt; with `precompile` (default `scheduler.precompute_tasks`) a deterministic one runs a compiled script on each matching message and falls back to the model when the script fails; see [Precompiled workflows](/guide/channels#precompiled-workflows). Its `target` may also be `reply`, which answers in the conversation that triggered the run, and `model` overrides the agent's model. `overlap` applies as for scheduled tasks.
+**Workflows:** with `trigger=message` the task runs when a matching message arrives on `channel`, and replaces the agent's own reply to it. A workflow takes no schedule, `in`, `every`, `at`, `days`, `start_at`, `run_once` or `missed`. A prompt workflow keeps its prompt; with `precompile` (default `scheduler.precompute_tasks`) a deterministic one runs a compiled script on each matching message and falls back to the model when the script fails; see [Precompiled workflows](/guide/workflows#precompiled-workflows). Its `target` may also be `reply`, which answers in the conversation that triggered the run, and `model` overrides the agent's model. `overlap` applies as for scheduled tasks.
 
 **Notes:** `in` and a schedule trigger are mutually exclusive — set exactly one per call. To both create a recurring task and fire it once immediately for testing, make two separate `task_schedule`/`task_run` calls rather than passing both fields at once. For `type=script`, `content` must be Aviary embedded Lua — not shell commands or shebang scripts. Do not add timezone conversion logic unless the task explicitly requires it.
 
@@ -103,7 +103,7 @@ Schedule a one-time or recurring task.
 
 Change fields of an existing task. Only the fields passed change; an empty string clears a field.
 
-**Arguments:** `name` (required; `agent/task` or a task name), `agent`, and any of `enabled`, `content`, `target`, `schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`, `watch`, `project`, `model`, `precompile` (project tasks and prompt workflows only: turns the precompiled script on or off), and for workflows `channel`, `entry` and `match`.
+**Arguments:** `name` (required; `agent/task` or a task name), `agent`, and any of `enabled`, `content`, `target`, `schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`, `watch`, `project`, `model`, `precompile` (prompt and project tasks, scheduled or workflows: turns the precompiled script on or off; script tasks have no prompt to compile), and for workflows `channel`, `entry` and `match`.
 
 **Side effects:** Writes the task's markdown file in the agent's `tasks/` directory and reloads the scheduler.
 
@@ -176,7 +176,7 @@ Stop scheduled task jobs. Stops all matching pending and running jobs.
 
 ## task_no_reply
 
-Only in a scheduled task or workflow run: end the run without replying, so nothing is sent to its target or the conversation that triggered it, even if the run writes a final message afterwards. The run log records the skip and its reason (delivery status `skipped`). Precompiled scripts call it as `tool.task_no_reply({reason = "..."})`. Outside a run it returns an error. Agent tool allowlists never hide it.
+Only in a scheduled task or workflow run: end the run without replying, so nothing is sent to its target or the conversation that triggered it, even if the run writes a final message afterwards. The run log records the skip and its reason (delivery status `skipped`). Precompiled scripts call it as `tool.task_no_reply({reason = "..."})`. Outside a run it returns an error. Agent tool allowlists never hide it. See [Not replying](/guide/workflows#not-replying).
 
 **Arguments:** `reason` (required), a short note on why, such as `message was negative`.
 

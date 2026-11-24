@@ -218,34 +218,15 @@ export function isWorkflow(task: Pick<AgentTask, "trigger">): boolean {
 }
 
 /**
- * Whether task keeps its prompt when precompiled, with its compiled script
- * beside it to fall back from: a project task or a prompt workflow.
+ * Whether task can be precompiled, keeping its prompt with its compiled
+ * script beside it to fall back from: a prompt task, scheduled or a
+ * workflow, or a project task. A script task has no prompt to compile. It
+ * mirrors config.TaskConfig.PrecompilesBesidePrompt on the server.
  */
 export function precompilesBesidePrompt(
-	task: Pick<AgentTask, "trigger" | "type">,
+	task: Pick<AgentTask, "type">,
 ): boolean {
-	const type = agentTaskType(task.type);
-	return type === "project" || (isWorkflow(task) && type === "prompt");
-}
-
-/**
- * Where a precompiling task's script stands: compiled; compiling, not yet
- * analyzed; not deterministic enough to compile; set aside after it failed,
- * or precompile turned off for it; or "" for a task that does not precompile.
- */
-export type PrecompileState =
-	| "compiled"
-	| "compiling"
-	| "not-deterministic"
-	| "set-aside"
-	| "";
-
-export function precompileState(task: AgentTask): PrecompileState {
-	if (!precompilesBesidePrompt(task)) return "";
-	if (task.precompile !== true) return task.precompile_note ? "set-aside" : "";
-	if (task.compiled?.trim()) return "compiled";
-	if (task.precompile_note) return "set-aside";
-	return task.compiled_key ? "not-deterministic" : "compiling";
+	return agentTaskType(task.type) !== "script";
 }
 
 /** A task's session, which every run of the task shares. */

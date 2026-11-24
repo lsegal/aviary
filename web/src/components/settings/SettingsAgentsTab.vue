@@ -828,8 +828,10 @@ placeholder="Default project agent model"
 	:target="selectedTask.target ?? ''" :project="selectedTask.project ?? ''" :rows="12" prompt-class="min-h-[28vh]"
 	:trigger="isWorkflow(selectedTask) ? null : taskTrigger(selectedTask)" :trigger-type="isWorkflow(selectedTask) ? 'message' : 'schedule'"
 	:show-precompile="precompilesBesidePrompt(selectedTask)" :precompile="selectedTask.precompile === true"
+	:precompile-help="scheduledPromptPrecompileHelp(selectedTask)"
 	:show-model="selectedTask.type === 'project' || isWorkflow(selectedTask)" :model="selectedTask.model ?? ''"
 	@update:prompt="selectedTask.prompt = $event" @update:precompile="selectedTask.precompile = $event"
+	:saved-task="savedTaskOf(agent.name, selectedTask.name)" :task-agent="agent.name"
 	@update:model="selectedTask.model = $event || undefined" />
 <div class="flex gap-2 mt-3">
 <!-- Move task to file -->
@@ -883,6 +885,7 @@ import { projectOwner } from "../../lib/projectSettings";
 import { projectPath } from "../../lib/projects";
 import {
 	type AgentTask,
+	agentTaskType,
 	isWorkflow,
 	precompilesBesidePrompt,
 	useSettingsStore,
@@ -1036,6 +1039,12 @@ export default defineComponent({
 			),
 			query: { scheduled: `${agentName}/${task.name}` },
 		});
+		// A scheduled prompt task's precompile keeps its prompt beside the
+		// script, as a project task's does; other tasks use the default help.
+		const scheduledPromptPrecompileHelp = (task: AgentTask) =>
+			!isWorkflow(task) && agentTaskType(task.type) === "prompt"
+				? "Compile a deterministic prompt into a script that runs without the model; a run whose script fails falls back to the model"
+				: "";
 		// The sidebar's delete dialog confirms and removes the task.
 		const removeTask = (agent: string, name: string) =>
 			openItemDialog({ kind: "task", agent, mode: "delete", name });
@@ -1045,7 +1054,13 @@ export default defineComponent({
 			if (ch.type === "signal") return "+15551234567 or group ID";
 			return "Conversation ID";
 		};
+		// The edited task as saved, whose compiled script shows beside its prompt.
+		const savedTaskOf = (agentName: string, taskName: string) =>
+			store.config?.agents
+				.find((a) => a.name === agentName)
+				?.tasks?.find((t) => t.name === taskName);
 		return Object.assign(settings, {
+			savedTaskOf,
 			CHANNEL_TABS,
 			channelTab,
 			channelDeliverToPlaceholder,
@@ -1062,6 +1077,7 @@ export default defineComponent({
 			removeTask,
 			isWorkflow,
 			precompilesBesidePrompt,
+			scheduledPromptPrecompileHelp,
 		});
 	},
 });

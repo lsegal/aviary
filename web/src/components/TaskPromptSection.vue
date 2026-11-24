@@ -4,15 +4,38 @@
 		Only the trigger half differs between editors. -->
 	<div class="space-y-3" :data-testid="`${idPrefix}-prompt-section`">
 		<div>
-			<label :for="`${idPrefix}-prompt`" class="field-label">{{ type === "script" ? "Script" : "Prompt" }}</label>
-			<textarea :id="`${idPrefix}-prompt`" v-model="prompt" name="prompt" :data-testid="promptTestId" :rows="rows"
-				class="field-input font-mono text-xs" :class="promptClass"
-				:placeholder="type === 'script' ? 'print(\'hello from lua\')' : promptPlaceholder" />
-			<p v-if="$slots.hint" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-				<slot name="hint" />
-			</p>
-			<TaskCostFeedback :agent="agent" :prompt="prompt" :type="type" :target="target" :project="project"
-				:model="model" :trigger="trigger" :trigger-type="triggerType" :precompile="precompiles" />
+			<div class="flex flex-wrap items-center gap-2">
+				<label :for="`${idPrefix}-prompt`" class="field-label">{{ type === "script" ? "Script" : "Prompt" }}</label>
+				<CompiledStatusChip v-if="showCompiled" :task="savedTask!" :attempts="compiles.attempts.value" :edited-prompt="prompt"
+					detail clickable @open="panelOpen = true" />
+				<button v-if="showCompiled" type="button" :data-testid="`${idPrefix}-compiled-toggle`" :aria-pressed="panelOpen"
+					:aria-controls="`${idPrefix}-compiled-panel`"
+					class="ml-auto inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs"
+					:class="panelOpen ? 'border-blue-600 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-950/50 dark:text-blue-300' : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'"
+					@click="panelOpen = !panelOpen">
+					<CodeBracketIcon aria-hidden="true" class="h-3.5 w-3.5" /> {{ panelOpen ? "Hide compiled" : "Show compiled" }}
+				</button>
+			</div>
+			<!-- The compiled script sits beside the prompt, like a markdown
+				preview, and stacks below it on narrow screens. -->
+			<div :class="showCompiled && panelOpen ? 'grid min-w-0 gap-3 md:grid-cols-2' : ''">
+				<div class="min-w-0">
+					<textarea :id="`${idPrefix}-prompt`" v-model="prompt" name="prompt" :data-testid="promptTestId" :rows="rows"
+						class="field-input font-mono text-xs" :class="promptClass"
+						:placeholder="type === 'script' ? 'print(\'hello from lua\')' : promptPlaceholder" />
+					<p v-if="$slots.hint" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+						<slot name="hint" />
+					</p>
+					<TaskCostFeedback :agent="agent" :prompt="prompt" :type="type" :target="target" :project="project"
+						:model="model" :trigger="trigger" :trigger-type="triggerType" :precompile="precompiles"
+						@analysis="analysis = $event" />
+				</div>
+				<CompiledScriptPanel v-if="showCompiled && panelOpen" :id="`${idPrefix}-compiled-panel`" :agent="taskAgent || agent"
+					:task="savedTask!" :edited-prompt="prompt" :attempts="compiles.attempts.value"
+					:last-failed-run="compiles.lastFailedRun.value" :analysis="analysis" :busy="compiles.busy.value"
+					:recompiling="compiles.recompiling.value" :error="compiles.error.value"
+					@recompile="compiles.recompile()" @disable="disable" />
+			</div>
 		</div>
 
 		<div v-if="showPrecompile" class="flex items-start gap-3" :class="canPrecompile ? '' : 'opacity-60'">
@@ -37,12 +60,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import CodeBracketIcon from "@heroicons/vue/24/outline/CodeBracketIcon";
+import { computed, onMounted, ref } from "vue";
 import { useAvailableModels } from "../composables/useAvailableModels";
-import type { TaskTriggerType } from "../lib/taskAnalysis";
+import {
+	useCompiledPanelOpen,
+	useTaskCompiles,
+} from "../composables/useTaskCompiles";
+import type { TaskAnalysis, TaskTriggerType } from "../lib/taskAnalysis";
 import type { TriggerFields } from "../lib/trigger";
+import { type AgentTask, precompilesBesidePrompt } from "../stores/settings";
 import ModelSelector from "./ModelSelector.vue";
 import TaskCostFeedback from "./TaskCostFeedback.vue";
+import CompiledScriptPanel from "./tasks/CompiledScriptPanel.vue";
+import CompiledStatusChip from "./tasks/CompiledStatusChip.vue";
 
 const prompt = defineModel<string>("prompt", { required: true });
 const precompile = defineModel<boolean>("precompile", { default: false });
@@ -72,6 +103,10 @@ const props = withDefaults(
 		promptTestId?: string;
 		promptClass?: string;
 		rows?: number;
+		/** The task as saved, whose compiled status and script show beside the prompt. */
+		savedTask?: AgentTask;
+		/** The agent the saved task belongs to, when it differs from agent. */
+		taskAgent?: string;
 	}>(),
 	{
 		type: "prompt",
@@ -88,6 +123,8 @@ const props = withDefaults(
 		promptTestId: undefined,
 		promptClass: "",
 		rows: 6,
+		savedTask: undefined,
+		taskAgent: "",
 	},
 );
 
@@ -95,6 +132,27 @@ const { availableModelOptions, refreshCredentials } = useAvailableModels();
 onMounted(() => {
 	if (props.showModel) void refreshCredentials();
 });
+
+// ── Compiled script ─────────────────────────────────────────────────────────
+
+/** Whether the saved task precompiles beside its prompt, so its compiled state shows. */
+const showCompiled = computed(
+	() =>
+		!!props.savedTask &&
+		precompilesBesidePrompt(props.savedTask) &&
+		props.type !== "script" &&
+		(props.savedTask.precompile === true || !!props.savedTask.precompile_note),
+);
+const panelOpen = useCompiledPanelOpen();
+const analysis = ref<TaskAnalysis | null>(null);
+const compiles = useTaskCompiles(
+	computed(() => props.taskAgent || props.agent),
+	computed(() => (showCompiled.value ? props.savedTask : undefined)),
+);
+async function disable() {
+	await compiles.disablePrecompile();
+	if (!compiles.error.value) precompile.value = false;
+}
 
 /** A script is already a script, so only prompts precompile. */
 const canPrecompile = computed(() => props.type !== "script");
