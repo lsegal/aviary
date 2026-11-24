@@ -38,7 +38,7 @@ export default defineConfig({
 			pageRoute(pageData.relativePath),
 			baseUrl,
 		).toString();
-		// Skill, home and Code Loop pages get their own generated 1200×630
+		// Skill, home, Code Loop and Workflows pages get their own generated 1200×630
 		// card; every other page gets the default card with its own title
 		// (#763, #888).
 		const card = page ?? defaultSharePage;
@@ -90,6 +90,7 @@ export default defineConfig({
 						{ text: "Getting Started", link: "/guide/getting-started" },
 						{ text: "Configuration", link: "/guide/configuration" },
 						{ text: "Channels", link: "/guide/channels" },
+						{ text: "Workflows", link: "/guide/workflows" },
 						{ text: "Voice Messages", link: "/guide/voice" },
 						{
 							text: "Security & Permissions",
