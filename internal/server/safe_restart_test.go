@@ -460,6 +460,55 @@ func TestSelfUpdater_ReportsFailedPull(t *testing.T) {
 	assert.Equal(t, saferestart.AutoWaitingRestart, auto.State)
 }
 
+func TestSelfUpdater_RetriesSoonWhenTheCheckoutIsBusy(t *testing.T) {
+	srv, _, _ := setupSafeRestart(t, "dev", update.CheckResult{})
+	origRetry := gitBusyRetry
+	gitBusyRetry = 10 * time.Millisecond
+	t.Cleanup(func() { gitBusyRetry = origRetry })
+	gitCheckout = func() string { return "/src/aviary" }
+	versionCheck = func(context.Context, *http.Client) (update.CheckResult, error) { return gitModeCheck(2), nil }
+	var mu sync.Mutex
+	pulls := 0
+	gitPull = func(context.Context, string) (update.GitPullResult, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		pulls++
+		return update.GitPullResult{}, fmt.Errorf("%w (.git/index.lock)", update.ErrGitBusy)
+	}
+	runUpdater(t, srv, true)
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return pulls >= 3
+	}, 2*time.Second, 5*time.Millisecond, "a busy checkout is retried well before the next check interval")
+	auto := srv.RestartStatus().AutoUpdate
+	require.NotNil(t, auto)
+	assert.Equal(t, update.ErrCodeGitBusy, auto.Code)
+}
+
+func TestRequestRestart_RemovesStaleLockBeforePulling(t *testing.T) {
+	srv, _, _ := setupSafeRestart(t, "dev", update.CheckResult{})
+	origRemove := removeStaleLock
+	t.Cleanup(func() { removeStaleLock = origRemove })
+	gitCheckout = func() string { return "/src/aviary" }
+	var steps []string
+	removeStaleLock = func(context.Context, string) error { steps = append(steps, "remove"); return nil }
+	gitPull = func(context.Context, string) (update.GitPullResult, error) {
+		steps = append(steps, "pull")
+		return update.GitPullResult{To: "abc"}, nil
+	}
+	_, err := srv.requestRestart(context.Background(), saferestart.Request{Upgrade: true, RemoveStaleLock: true})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"remove", "pull"}, steps)
+
+	steps = nil
+	removeStaleLock = func(context.Context, string) error { return update.ErrGitBusy }
+	_, err = srv.requestRestart(context.Background(), saferestart.Request{Upgrade: true, RemoveStaleLock: true})
+	require.ErrorIs(t, err, update.ErrGitBusy)
+	assert.Empty(t, steps, "no pull when the lock could not be removed")
+}
+
 func TestSelfUpdater_OffLeavesUpdateAlone(t *testing.T) {
 	srv, _, _ := setupSafeRestart(t, "dev", update.CheckResult{})
 	gitCheckout = func() string { return "/src/aviary" }

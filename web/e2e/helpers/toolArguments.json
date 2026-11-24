@@ -392,6 +392,7 @@
 	"server_status": [],
 	"server_upgrade": [
 		"force",
+		"remove_stale_lock",
 		"version",
 		"when"
 	],
