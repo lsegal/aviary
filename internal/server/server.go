@@ -204,7 +204,7 @@ func New(cfg *config.Config, token string) *Server {
 		mcp.SyncLiveServer(s.cfg)
 	})
 
-	s.registerRoutes(trace)
+	s.registerRoutes()
 	return s
 }
 
@@ -275,7 +275,8 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 	}
 }
 
-func (s *Server) registerRoutes(trace *startup.Trace) {
+func (s *Server) registerRoutes() {
+	trace := startup.Current()
 	endPhase := trace.Phase("MCP tool registration")
 	mcpSrv := mcp.NewServer()
 	endPhase()
@@ -341,6 +342,18 @@ func (s *Server) registerRoutes(trace *startup.Trace) {
 // codingSkillsSyncInterval is how often the server looks for providers set
 // up since the last check, so they get the skills Aviary ships.
 const codingSkillsSyncInterval = 15 * time.Minute
+
+// installShippedSkills installs the skills Aviary ships on first launch, and
+// syncShippedSkills keeps them installed until ctx ends. Tests replace them,
+// as both write to the CLIs' own skill directories.
+var (
+	installShippedSkills = func(ctx context.Context) {
+		codingskills.Default().InstallOnFirstLaunch(ctx, config.BaseDir())
+	}
+	syncShippedSkills = func(ctx context.Context) {
+		codingskills.Default().RunSync(ctx, codingSkillsSyncInterval)
+	}
+)
 
 // updateCodingSkills moves every signed-in CLI's skills to version, the
 // release an upgrade installs.
@@ -441,7 +454,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		s.httpSrv = &http.Server{Handler: s.mux, ErrorLog: newServerErrorLog()}
+		streams, endStreams := context.WithCancel(context.Background())
+		s.httpSrv = &http.Server{Handler: endableStreams(streams, s.mux), ErrorLog: newServerErrorLog()}
 
 		errCh := make(chan error, 1)
 		go func(httpSrv *http.Server, ln net.Listener) {
@@ -483,7 +497,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			// the rest of the server shuts down.
 			s.sched.Halt()
 		}
-		_ = s.httpSrv.Shutdown(context.Background())
+		shutdownHTTP(s.httpSrv, endStreams, httpDrainWait)
 		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
@@ -515,6 +529,40 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 }
 
+// httpDrainWait bounds how long stopping the HTTP server waits for requests
+// still running once streams have been ended.
+const httpDrainWait = 5 * time.Second
+
+// endableStreams ends every event stream h is serving, such as an MCP
+// client's standing GET /mcp stream or the log stream, once streams is
+// canceled. Those never finish on their own, so without this every restart
+// waited for its watchdog.
+func endableStreams(streams context.Context, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			h.ServeHTTP(w, r)
+			return
+		}
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+		stop := context.AfterFunc(streams, cancel)
+		defer stop()
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// shutdownHTTP stops srv: it ends its event streams, waits up to wait for
+// other requests to finish, then closes whatever is still open.
+func shutdownHTTP(srv *http.Server, endStreams context.CancelFunc, wait time.Duration) {
+	endStreams()
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		slog.Warn("server: requests still running at shutdown; closing them", "waited", wait, "err", err)
+		_ = srv.Close()
+	}
+}
+
 // backgroundStopWait bounds how long shutdown waits for background
 // initialization that is still running, such as a channel connecting.
 const backgroundStopWait = 5 * time.Second
@@ -543,10 +591,11 @@ func (s *Server) startBackground(ctx context.Context, trace *startup.Trace, boot
 	// Install the skills Aviary ships globally on first launch, keep them
 	// installed and matching this release, and move them to the new release
 	// when Aviary upgrades.
+	install, syncSkills := installShippedSkills, syncShippedSkills
 	trace.Go("skills", "skill sync", func() error {
-		codingskills.Default().InstallOnFirstLaunch(ctx, config.BaseDir())
+		install(ctx)
 		return nil
-	}, func() { codingskills.Default().RunSync(ctx, codingSkillsSyncInterval) })
+	}, func() { syncSkills(ctx) })
 
 	if s.projects != nil {
 		boot.Add(1)

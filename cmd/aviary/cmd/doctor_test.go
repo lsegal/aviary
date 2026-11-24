@@ -14,6 +14,8 @@ import (
 
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
+	"github.com/lsegal/aviary/internal/startup"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 func TestWriteProjectsAgentGates_ListsAgy(t *testing.T) {
@@ -70,6 +72,31 @@ func TestDoctorServerStatus_ReadsPIDFileBesideConfig(t *testing.T) {
 
 	got := doctorServerStatus(cfgPath, freePort(t))
 	assert.Contains(t, got, "running (PID "+strconv.Itoa(os.Getpid()))
+}
+
+func TestDoctorBootSummary_ShowsRunningServersBoot(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", "")
+	t.Setenv("AVIARY_PID_FILE", "")
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+	cfgPath := filepath.Join(t.TempDir(), "aviary.yaml")
+	assert.Empty(t, doctorBootSummary(cfgPath), "no server is running")
+
+	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(cfgPath), "aviary.pid"), []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600))
+	assert.Empty(t, doctorBootSummary(cfgPath), "the server saved no boot report")
+
+	require.NoError(t, store.WriteJSON(startup.Path(), startup.Report{
+		PID:        os.Getpid(),
+		MCPReadyMS: 400,
+		TotalMS:    3200,
+		Ready:      true,
+		Phases:     []startup.Phase{{Name: "channels connect", StartMS: 400, DurationMS: 2800, Background: true}},
+	}))
+	assert.Equal(t, "boot: 3.20s, MCP ready at 0.40s; slowest: channels connect 2.80s", doctorBootSummary(cfgPath))
+
+	require.NoError(t, store.WriteJSON(startup.Path(), startup.Report{PID: os.Getpid() + 1, MCPReadyMS: 400}))
+	assert.Empty(t, doctorBootSummary(cfgPath), "a report from an earlier process is stale")
 }
 
 func TestDoctorServerStatus_ProbesPortWithoutPIDFile(t *testing.T) {
