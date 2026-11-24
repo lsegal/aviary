@@ -1,20 +1,18 @@
 <template>
   <AppLayout>
-    <div class="h-full overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.08),_transparent_28%),linear-gradient(to_bottom,_rgba(255,255,255,0.96),_rgba(249,250,251,1))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.15),_transparent_26%),linear-gradient(to_bottom,_rgba(3,7,18,0.96),_rgba(3,7,18,1))]">
+    <template #header-icon>
+      <SystemPageIcon page-key="models" tile />
+    </template>
+    <template #header>
+      <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
+        Browse the provider/model pairs Aviary accepts for agent and default model selection: the built-in catalog plus the models of every installed CLI provider.
+      </p>
+    </template>
+    <template #header-actions>
+      <SystemSettingsLink />
+    </template>
+    <div class="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.08),_transparent_28%),linear-gradient(to_bottom,_rgba(255,255,255,0.96),_rgba(249,250,251,1))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.15),_transparent_26%),linear-gradient(to_bottom,_rgba(3,7,18,0.96),_rgba(3,7,18,1))]">
       <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div class="flex items-start gap-3">
-            <SystemPageIcon page-key="models" tile />
-            <div>
-              <h2 class="text-xl font-bold text-gray-900 dark:text-white">Supported Models</h2>
-              <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-                Browse the provider/model pairs Aviary accepts for agent and default model selection: the built-in catalog plus the models of every installed CLI provider.
-              </p>
-            </div>
-          </div>
-          <SystemSettingsLink />
-        </div>
-
         <div class="mb-6 grid gap-3 sm:grid-cols-3">
           <div class="rounded-2xl border border-gray-200 bg-white/90 p-4 backdrop-blur dark:border-gray-800 dark:bg-gray-900/90">
             <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">Models</p>

@@ -94,11 +94,11 @@ import type { AgentChannel, AgentTask } from "../../stores/settings";
 import EmptyStateCard from "../ui/EmptyStateCard.vue";
 import SectionHeading from "../ui/SectionHeading.vue";
 import StatCard from "../ui/StatCard.vue";
+import AddWorkflowMenu from "./AddWorkflowMenu.vue";
 import ChannelCard from "./ChannelCard.vue";
 import ChannelMessagesCard from "./ChannelMessagesCard.vue";
 import { ago, type ChannelActivity } from "./channelActivity";
 import WorkflowCard from "./WorkflowCard.vue";
-import AddWorkflowMenu from "./AddWorkflowMenu.vue";
 
 // The Channels page before a channel is picked: a summary of the agent's
 // channels, a card per channel, every workflow, and each channel's latest

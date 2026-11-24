@@ -347,7 +347,10 @@
         <template v-if="$slots['header-actions']" #actions><slot name="header-actions" /></template>
         <slot name="header" />
       </PageHeader>
-      <slot />
+      <!-- The page fills what the header leaves. -->
+      <div class="flex min-h-0 flex-1 flex-col">
+        <slot />
+      </div>
     </main>
 
     <NavEditDialog :groups="navEditGroups" />
@@ -393,7 +396,7 @@ import {
 	ref,
 	watch,
 } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { type RouteLocationRaw, useRoute, useRouter } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useChannelDialogs } from "../composables/useChannelDialogs";
@@ -490,6 +493,11 @@ const props = defineProps<{
 	crumbs?: PageCrumb[];
 	/** The header's back link, when not the nearest linking crumb. */
 	back?: PageBack | null;
+	/**
+	 * Crumbs below the route's, for a panel its query opens; the route's
+	 * last crumb then links to from, the page without the panel.
+	 */
+	trail?: { from: RouteLocationRaw; crumbs: PageCrumb[] } | null;
 }>();
 const auth = useAuthStore();
 // An `aviary watch` session shows only Code Loop and Scheduled Tasks.
@@ -1109,7 +1117,14 @@ const headerCrumbs = computed((): PageCrumb[] => {
 			return s && chatDisplayName(s);
 		},
 	});
-	return crumbs.length > 1 ? crumbs : [];
+	if (crumbs.length < 2) return [];
+	if (!props.trail?.crumbs.length) return crumbs;
+	const here = crumbs.at(-1) as PageCrumb;
+	return [
+		...crumbs.slice(0, -1),
+		{ label: here.label, to: props.trail.from },
+		...props.trail.crumbs,
+	];
 });
 
 function flyoutItems(children: NavChild[]): RailFlyoutItem[] {

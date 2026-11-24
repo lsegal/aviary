@@ -1,12 +1,12 @@
 <template>
   <AppLayout>
-    <div class="flex h-full flex-col overflow-hidden">
+    <template #header-icon>
+      <SystemPageIcon page-key="logs" tile />
+    </template>
+    <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
       <!-- Filter bar -->
       <div class="shrink-0 border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
         <div class="flex flex-wrap items-center gap-2">
-          <SystemPageIcon page-key="logs" tile />
-          <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">Logs</span>
-
           <!-- Connection dot -->
           <span class="h-2 w-2 shrink-0 rounded-full"
             :class="logs.connected.value ? 'bg-green-500' : 'bg-red-400 animate-pulse'"
