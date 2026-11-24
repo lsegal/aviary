@@ -9,12 +9,14 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/logging"
@@ -26,8 +28,6 @@ import (
 // watchOptions holds the watch command flags.
 type watchOptions struct {
 	agent             string
-	model             string
-	fallbacks         []string
 	concurrency       int
 	interval          string
 	delivery          string
@@ -71,8 +71,9 @@ flags override the Code Loop settings. The targets run under --agent, else the
 agent of yours that owns them, else models.defaults. Use 'aviary project add'
 to watch a project permanently.
 
-Jobs run on that agent's model and fallbacks unless a job model is set:
---model and repeatable --fallback, else the AVIARY_WATCH_MODEL and
+Jobs run on that agent's model and fallbacks unless a job model override is
+set, the Code Loop settings' model and fallbacks: --model and repeatable
+--fallback (in the order given), else the AVIARY_WATCH_MODEL and
 AVIARY_WATCH_FALLBACKS (comma-separated) environment variables, else
 projects.model and projects.fallbacks in your aviary.yaml. Each is a model of
 a provider reached through a CLI, as claude/opus or claude:opus, whose CLI
@@ -99,8 +100,12 @@ watch once its PID is gone.`,
 func init() {
 	f := watchCmd.Flags()
 	f.StringVar(&watchOpts.agent, "agent", "", "Aviary agent the targets run under; its model and fallbacks pick the jobs' CLI providers (default: the agent that owns the target, else models.defaults)")
-	f.StringVar(&watchOpts.model, "model", "", "CLI provider model jobs run on in place of the agent's, such as claude:opus or claude/opus (env AVIARY_WATCH_MODEL; config projects.model)")
-	f.StringArrayVar(&watchOpts.fallbacks, "fallback", nil, "CLI provider model jobs fall back to when --model's quota is used up, repeatable, in order (env AVIARY_WATCH_FALLBACKS, comma-separated; config projects.fallbacks)")
+	f.String("model", "", "CLI provider model the jobs run with in place of the agent's, such as claude/opus or claude:opus (env AVIARY_WATCH_MODEL; config projects.model)")
+	f.StringArray("fallback", nil, "CLI provider model jobs fall back to, repeatable, tried in the order given (env AVIARY_WATCH_FALLBACKS, comma-separated; config projects.fallbacks)")
+	// --provider is the deprecated name of --model, kept out of help and
+	// completions until it is removed.
+	f.String("provider", "", "deprecated: use --model")
+	_ = f.MarkHidden("provider")
 	f.IntVar(&watchOpts.concurrency, "concurrency", 0, "jobs that run at once (default 3)")
 	f.StringVar(&watchOpts.interval, "interval", "", "time between GitHub polls (default 20s for browser delivery, 30s otherwise)")
 	f.StringVar(&watchOpts.delivery, "delivery", "", "browser, poll or webhook (default browser: read GitHub through Aviary's browser, signed in as you)")
@@ -139,6 +144,56 @@ func watchTargets(args []string) ([]string, error) {
 	return targets, nil
 }
 
+// watchAgent turns --agent, --model, --fallback and the deprecated
+// --provider into the agent the session runs under. --provider works as
+// --model with a warning on warn; passing both is an error.
+func watchAgent(flags *pflag.FlagSet, warn io.Writer) (watchAgentChoice, error) {
+	agent, _ := flags.GetString("agent")
+	model, _ := flags.GetString("model")
+	fallbacks, _ := flags.GetStringArray("fallback")
+	choice := watchAgentChoice{Name: agent}
+	modelFlag := "--model"
+	if flags.Changed("provider") {
+		if flags.Changed("model") {
+			return choice, errors.New("--provider is the deprecated name of --model; pass only --model")
+		}
+		_, _ = fmt.Fprintln(warn, "--provider is deprecated; use --model")
+		model, _ = flags.GetString("provider")
+		modelFlag = "--provider"
+	}
+	if flags.Changed("model") || flags.Changed("provider") {
+		spec, err := watchModelSpec(modelFlag, model)
+		if err != nil {
+			return choice, err
+		}
+		choice.Model = spec
+	}
+	for _, fallback := range fallbacks {
+		spec, err := watchModelSpec("--fallback", fallback)
+		if err != nil {
+			return choice, err
+		}
+		choice.Fallbacks = append(choice.Fallbacks, spec)
+	}
+	return choice, nil
+}
+
+// watchModelSpec checks that a model flag's value is <provider>/<model>
+// or the <provider>:<model> shorthand; config.ValidateProjectModel checks
+// the provider and its CLI once the session's config is known.
+func watchModelSpec(flag, value string) (string, error) {
+	spec := strings.TrimSpace(value)
+	sep := "/"
+	if !strings.Contains(spec, "/") {
+		sep = ":"
+	}
+	provider, name, ok := strings.Cut(spec, sep)
+	if !ok || provider == "" || strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("%s %q is not a model: expected <provider>/<model>, such as claude/opus", flag, value)
+	}
+	return spec, nil
+}
+
 // watchSettings turns the flags into the settings the watch overrides.
 func watchSettings() (config.ProjectsConfig, error) {
 	settings := config.ProjectsConfig{
@@ -154,7 +209,6 @@ func watchSettings() (config.ProjectsConfig, error) {
 		BrowserVision:     watchOpts.browserVision,
 		BrowserVisible:    watchOpts.browserVisible,
 	}
-	settings.Model, settings.Fallbacks = watchModels(os.Getenv)
 	if watchOpts.concurrency < 0 {
 		return settings, errors.New("--concurrency cannot be negative")
 	}
@@ -183,29 +237,21 @@ const (
 	watchFallbacksEnv = "AVIARY_WATCH_FALLBACKS"
 )
 
-// watchModels returns the job model and fallbacks from --model and
-// --fallback, else from AVIARY_WATCH_MODEL and AVIARY_WATCH_FALLBACKS. The
-// flags and the variables are taken separately, so --model with
-// AVIARY_WATCH_FALLBACKS set keeps those fallbacks.
-func watchModels(getenv func(string) string) (string, []string) {
-	model := strings.TrimSpace(watchOpts.model)
-	if model == "" {
-		model = strings.TrimSpace(getenv(watchModelEnv))
+// withWatchModelEnv fills the choice's model from AVIARY_WATCH_MODEL and its
+// fallbacks from the comma-separated AVIARY_WATCH_FALLBACKS when --model and
+// --fallback leave them unset.
+func withWatchModelEnv(choice watchAgentChoice, getenv func(string) string) watchAgentChoice {
+	if choice.Model == "" {
+		choice.Model = strings.TrimSpace(getenv(watchModelEnv))
 	}
-	var fallbacks []string
-	for _, fallback := range watchOpts.fallbacks {
-		if fallback = strings.TrimSpace(fallback); fallback != "" {
-			fallbacks = append(fallbacks, fallback)
-		}
-	}
-	if len(fallbacks) == 0 {
+	if len(choice.Fallbacks) == 0 {
 		for _, fallback := range strings.Split(getenv(watchFallbacksEnv), ",") {
 			if fallback = strings.TrimSpace(fallback); fallback != "" {
-				fallbacks = append(fallbacks, fallback)
+				choice.Fallbacks = append(choice.Fallbacks, fallback)
 			}
 		}
 	}
-	return model, fallbacks
+	return choice
 }
 
 func runWatch(cmd *cobra.Command, args []string) (err error) {
@@ -217,6 +263,11 @@ func runWatch(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
+	agent, err := watchAgent(cmd.Flags(), cmd.ErrOrStderr())
+	if err != nil {
+		return err
+	}
+	agent = withWatchModelEnv(agent, os.Getenv)
 	// Past the flags, an error is the session's, not a usage mistake.
 	cmd.SilenceUsage = true
 	out := cmd.OutOrStdout()
@@ -224,13 +275,10 @@ func runWatch(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
-	if err := config.ValidateProjectModels(global.Models, global.Projects.Override(settings)); err != nil {
-		return err
-	}
 	for _, dir := range sweepStaleWatchDirs(os.TempDir()) {
 		_, _ = fmt.Fprintf(out, "Removed %s, left behind by an earlier watch.\n", dir)
 	}
-	session, err := startWatchSession(os.TempDir(), global, sources, watchOpts.agent, targets, settings)
+	session, err := startWatchSession(os.TempDir(), global, sources, agent, targets, settings)
 	// The session directory goes on every way out, a panic included.
 	defer func() {
 		if cleanupErr := endWatchSession(session); cleanupErr != nil {
@@ -278,6 +326,17 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 	server.SetWebUIEnabled(webUI)
 	defer server.SetMinimalMode(false)
 	defer server.SetWebUIEnabled(true)
+	if webUI && !tui {
+		if problem := server.WebAssetsProblem(); problem != "" {
+			_, _ = fmt.Fprintf(out, "warning: %s\n", problem)
+		}
+	}
+
+	removePortFile, err := writeWatchPortFile(session.Port)
+	if err != nil {
+		return err
+	}
+	defer removePortFile()
 
 	ctx, stop := signal.NotifyContext(ctx, watchSignals...)
 	defer stop()
@@ -290,7 +349,7 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 
 	webURL := ""
 	if webUI {
-		webURL = fmt.Sprintf("http://127.0.0.1:%d/agents/%s/projects", session.Port, url.PathEscape(session.Agent))
+		webURL = fmt.Sprintf("%s/agents/%s/projects", watchWebBase(session.Port), url.PathEscape(session.Agent))
 	}
 	title := strings.Join(targets, ", ")
 	if !tui {
@@ -336,6 +395,39 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 	}
 	_, _ = fmt.Fprintln(out, "Watch session ended.")
 	return err
+}
+
+// Environment variables scripts/dev-watch.mjs (pnpm dev:watch) sets to put
+// the Vite dev server in front of a watch session.
+const (
+	// watchPortFileEnv names a file the session writes its server's port
+	// to once it is chosen, and removes when the session ends, so the dev
+	// server can proxy to whichever free port the session took.
+	watchPortFileEnv = "AVIARY_WATCH_PORT_FILE"
+	// watchWebURLEnv is the base URL the session's web UI is opened at in
+	// place of the session's own server.
+	watchWebURLEnv = "AVIARY_WATCH_WEB_URL"
+)
+
+// writeWatchPortFile writes port to the file watchPortFileEnv names, if any,
+// and returns a func removing it.
+func writeWatchPortFile(port int) (func(), error) {
+	path := os.Getenv(watchPortFileEnv)
+	if path == "" {
+		return func() {}, nil
+	}
+	if err := os.WriteFile(path, []byte(strconv.Itoa(port)+"\n"), 0o600); err != nil {
+		return nil, fmt.Errorf("writing %s: %w", watchPortFileEnv, err)
+	}
+	return func() { _ = os.Remove(path) }, nil
+}
+
+// watchWebBase is the base URL the session's web UI is opened at.
+func watchWebBase(port int) string {
+	if base := strings.TrimRight(os.Getenv(watchWebURLEnv), "/"); base != "" {
+		return base
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
 }
 
 // serveWatch runs the session's server until ctx ends, starting it again

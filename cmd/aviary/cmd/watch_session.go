@@ -175,6 +175,15 @@ func watchPortFree(port int) bool {
 	return true
 }
 
+// watchAgentChoice is the agent a watch session's targets run under, from
+// --agent, and the --model and --fallback models that override the jobs'
+// models.
+type watchAgentChoice struct {
+	Name      string
+	Model     string
+	Fallbacks []string
+}
+
 // watchSessionAgent picks the agent of the user's config the targets run
 // under: the --agent one, else the one agent that owns them. It returns a
 // copy holding only what jobs run with, so none of the agent's channels,
@@ -246,9 +255,20 @@ func watchSessionConfig(global *config.Config, sources globalWatchSources, agent
 // startWatchSession creates the session's directory, points Aviary's config,
 // data and auth lookups at it and the shared credentials, and writes its
 // config. The caller removes s.Dir when the session ends.
-func startWatchSession(parent string, global *config.Config, sources globalWatchSources, agentName string, targets []string, settings config.ProjectsConfig) (*watchSession, error) {
-	agent, err := watchSessionAgent(global, agentName, targets)
+func startWatchSession(parent string, global *config.Config, sources globalWatchSources, choice watchAgentChoice, targets []string, settings config.ProjectsConfig) (*watchSession, error) {
+	agent, err := watchSessionAgent(global, choice.Name, targets)
 	if err != nil {
+		return nil, err
+	}
+	// --model and --fallback are the session's job model override, laid
+	// over projects.model and projects.fallbacks, never the agent's own.
+	if choice.Model != "" {
+		settings.Model = choice.Model
+	}
+	if len(choice.Fallbacks) > 0 {
+		settings.Fallbacks = slices.Clone(choice.Fallbacks)
+	}
+	if err := config.ValidateProjectModels(global.Models, global.Projects.Override(settings)); err != nil {
 		return nil, err
 	}
 	start := global.Server.Port

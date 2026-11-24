@@ -9,7 +9,6 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/lsegal/aviary/internal/config"
 	internalmcp "github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/store"
 )
@@ -112,37 +111,20 @@ func TestWatchSettingsFromFlags(t *testing.T) {
 	}
 }
 
-func TestWatchModelFromFlagsAndEnv(t *testing.T) {
-	t.Cleanup(func() { watchOpts = watchOptions{} })
-	t.Setenv(watchModelEnv, "gemini/pro")
-	t.Setenv(watchFallbacksEnv, " codex/gpt-5.6 , ,claude/sonnet")
-	settings, err := watchSettings()
-	if err != nil {
-		t.Fatal(err)
+func TestWatchModelEnvFillsWhatFlagsLeaveUnset(t *testing.T) {
+	env := map[string]string{watchModelEnv: "gemini/pro", watchFallbacksEnv: " codex/gpt-5.6 , ,claude/sonnet"}
+	getenv := func(k string) string { return env[k] }
+	got := withWatchModelEnv(watchAgentChoice{Name: "bot"}, getenv)
+	if got.Name != "bot" || got.Model != "gemini/pro" || !slices.Equal(got.Fallbacks, []string{"codex/gpt-5.6", "claude/sonnet"}) {
+		t.Fatalf("env choice = %+v", got)
 	}
-	if settings.Model != "gemini/pro" || !slices.Equal(settings.Fallbacks, []string{"codex/gpt-5.6", "claude/sonnet"}) {
-		t.Fatalf("env settings = %+v", settings)
+	got = withWatchModelEnv(watchAgentChoice{Model: "claude:opus", Fallbacks: []string{"codex:gpt-5.6"}}, getenv)
+	if got.Model != "claude:opus" || !slices.Equal(got.Fallbacks, []string{"codex:gpt-5.6"}) {
+		t.Fatalf("flags should win over env: %+v", got)
 	}
-	if err := watchCmd.Flags().Parse([]string{"--model", "claude:opus", "--fallback", "codex:gpt-5.6", "--fallback", "gemini/pro"}); err != nil {
-		t.Fatal(err)
-	}
-	settings, err = watchSettings()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if settings.Model != "claude:opus" || !slices.Equal(settings.Fallbacks, []string{"codex:gpt-5.6", "gemini/pro"}) {
-		t.Fatalf("flags should win over env: %+v", settings)
-	}
-	cfg := &config.Config{
-		Agents:   []config.AgentConfig{{Name: "bot", Model: "cli/claude/sonnet", Projects: config.AgentProjectsConfig{{Target: "o/r"}}}},
-		Projects: config.ProjectsConfig{Model: "cli/qwen/m"}.Override(settings),
-	}
-	if got := config.ProjectJobSpecs(cfg, "bot"); !slices.Equal(got, []string{"claude/opus", "codex/gpt-5.6", "gemini/pro"}) {
-		t.Fatalf("watched project job specs = %v", got)
-	}
-	for _, flag := range []string{"--model", "--fallback", watchModelEnv, watchFallbacksEnv} {
-		if !strings.Contains(watchCmd.Long, flag) {
-			t.Errorf("aviary watch --help does not document %s", flag)
+	for _, text := range []string{"--model", "--fallback", watchModelEnv, watchFallbacksEnv, "projects.model"} {
+		if !strings.Contains(watchCmd.Long, text) {
+			t.Errorf("aviary watch --help does not document %s", text)
 		}
 	}
 }
