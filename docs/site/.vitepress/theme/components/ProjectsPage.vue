@@ -258,7 +258,7 @@ onBeforeUnmount(() => {
 						<span class="tl"><span /><span /><span /></span>
 						<span>terminal · aviary watch owner/repo</span>
 					</div>
-					<img :src="withBase('/screenshots/watch-tui.png')" alt="The aviary watch terminal board with its prompt chat open: a question, a collapsed tool call, the agent's reply, and the log pane" />
+					<img :src="withBase('/screenshots/watch-tui.png')" alt="The aviary watch terminal board with its one-row filter header and prompt chat open: a question, a collapsed tool call, the agent's reply, and the selected job's output" />
 				</div>
 				<div>
 					<p class="pp-eyebrow">The terminal</p>
