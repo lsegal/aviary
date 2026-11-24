@@ -176,7 +176,13 @@ test("each nested page shows the shared header with its crumbs and parent link",
 		await expect(crumbs).toHaveRole("navigation");
 		await expect(crumbs).toHaveAccessibleName("Breadcrumb");
 		await expect(crumbs.getByRole("listitem")).toHaveText(c.crumbs);
-		await expect(crumbs.getByRole("link")).toHaveText(c.crumbs.slice(0, -1));
+		// Every ancestor links; the title may hold its own outside link.
+		await expect(
+			crumbs
+				.getByRole("listitem")
+				.filter({ hasNot: crumbs.locator('[aria-current="page"]') })
+				.getByRole("link"),
+		).toHaveText(c.crumbs.slice(0, -1));
 		const current = crumbs.locator('[aria-current="page"]');
 		await expect(current).toHaveText(c.crumbs.at(-1) as string);
 		await expect(current).not.toHaveRole("link");

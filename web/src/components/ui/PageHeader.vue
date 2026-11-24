@@ -20,7 +20,15 @@
 									class="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
 								<h2 v-if="i === crumbs.length - 1" aria-current="page" data-testid="page-title"
 									class="min-w-0 truncate">
-									<a v-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
+									<span v-if="switcher" class="inline-flex min-w-0 max-w-full items-center gap-1">
+										<BreadcrumbSwitcher :label="crumb.label" :title="switcher.title" :items="switcher.items" />
+										<a v-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
+											:aria-label="titleLink.title" :title="titleLink.title"
+											class="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200">
+											<ArrowTopRightOnSquareIcon aria-hidden="true" class="h-4 w-4" />
+										</a>
+									</span>
+									<a v-else-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
 										class="hover:underline" :title="titleLink.title">{{ crumb.label }}</a>
 									<template v-else>{{ crumb.label }}</template>
 								</h2>
@@ -55,9 +63,12 @@
 // the title is marked the current page, even where a crumb's route matches
 // it but for its query, so crumbs render their own anchors.
 import ArrowLeftIcon from "@heroicons/vue/24/outline/ArrowLeftIcon";
+import ArrowTopRightOnSquareIcon from "@heroicons/vue/24/outline/ArrowTopRightOnSquareIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import { computed } from "vue";
 import type { RouteLocationRaw } from "vue-router";
+import type { SwitcherItem } from "../../lib/switcher";
+import BreadcrumbSwitcher from "./BreadcrumbSwitcher.vue";
 
 export interface PageCrumb {
 	label: string;
@@ -80,6 +91,8 @@ const props = defineProps<{
 	back?: PageBack | null;
 	/** An outside page the title opens in a new tab, such as a repository. */
 	titleLink?: { href: string; title: string } | null;
+	/** Makes the title a switcher between its siblings (#1063). */
+	switcher?: { title: string; items: SwitcherItem[] } | null;
 }>();
 
 const parent = computed((): PageBack | null => {

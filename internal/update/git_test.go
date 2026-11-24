@@ -180,13 +180,13 @@ func TestCheck_GitModeReportsUpstreamState(t *testing.T) {
 func TestCurrentVersion_DevCheckoutReportsHEAD(t *testing.T) {
 	checkout, other := setupCheckout(t)
 	withGitMode(t, "dev", checkout, false)
-	if got, want := CurrentVersion(), gitT(t, checkout, "rev-parse", "HEAD"); got != want {
+	if got, want := CurrentVersion(context.Background()), gitT(t, checkout, "rev-parse", "HEAD"); got != want {
 		t.Fatalf("CurrentVersion() = %q, want HEAD %q", got, want)
 	}
 	if _, err := GitPull(context.Background(), checkout); err != nil {
 		t.Fatalf("GitPull: %v", err)
 	}
-	if got, want := CurrentVersion(), gitT(t, other, "rev-parse", "HEAD"); got != want {
+	if got, want := CurrentVersion(context.Background()), gitT(t, other, "rev-parse", "HEAD"); got != want {
 		t.Fatalf("after pull: CurrentVersion() = %q, want new HEAD %q", got, want)
 	}
 }
@@ -197,11 +197,11 @@ func TestCurrentVersion_DevFallbacks(t *testing.T) {
 	t.Cleanup(func() { buildRevision = origRevision })
 
 	buildRevision = func() string { return "0123456789abcdef0123456789abcdef01234567" }
-	if got := CurrentVersion(); got != "0123456789abcdef0123456789abcdef01234567" {
+	if got := CurrentVersion(context.Background()); got != "0123456789abcdef0123456789abcdef01234567" {
 		t.Fatalf("outside a checkout: CurrentVersion() = %q, want the embedded revision", got)
 	}
 	buildRevision = func() string { return "" }
-	if got := CurrentVersion(); got != "dev" {
+	if got := CurrentVersion(context.Background()); got != "dev" {
 		t.Fatalf("no revision: CurrentVersion() = %q, want dev", got)
 	}
 }
@@ -209,7 +209,7 @@ func TestCurrentVersion_DevFallbacks(t *testing.T) {
 func TestCurrentVersion_ReleaseBuildUnchanged(t *testing.T) {
 	checkout, _ := setupCheckout(t)
 	withGitMode(t, "1.2.3", checkout, false)
-	if got := CurrentVersion(); got != "1.2.3" {
+	if got := CurrentVersion(context.Background()); got != "1.2.3" {
 		t.Fatalf("release: CurrentVersion() = %q, want 1.2.3", got)
 	}
 }
@@ -255,12 +255,12 @@ func TestCheckoutDir_EnvIsAuthoritativeOutsideTheCheckout(t *testing.T) {
 	checkout := initCheckout(t, "module github.com/lsegal/aviary\r\n\r\ngo 1.25\r\n")
 	t.Chdir(t.TempDir())
 	t.Setenv(CheckoutEnv, filepath.Join(checkout, "internal"))
-	if got := checkoutDir(); got != checkout {
-		t.Fatalf("checkoutDir() = %q, want %q from %s", got, checkout, CheckoutEnv)
+	if got := findCheckout(); got != checkout {
+		t.Fatalf("findCheckout() = %q, want %q from %s", got, checkout, CheckoutEnv)
 	}
 	t.Setenv(CheckoutEnv, t.TempDir())
-	if got := checkoutDir(); got != "" {
-		t.Fatalf("checkoutDir() = %q for a non-checkout %s, want none", got, CheckoutEnv)
+	if got := findCheckout(); got != "" {
+		t.Fatalf("findCheckout() = %q for a non-checkout %s, want none", got, CheckoutEnv)
 	}
 }
 
@@ -268,13 +268,13 @@ func TestCheckoutDir_FallsBackToWorkingDirectory(t *testing.T) {
 	checkout := initCheckout(t, "module github.com/lsegal/aviary\r\n")
 	t.Setenv(CheckoutEnv, "")
 	t.Chdir(filepath.Join(checkout, "internal"))
-	if got := checkoutDir(); got != checkout {
-		t.Fatalf("checkoutDir() = %q, want %q", got, checkout)
+	if got := findCheckout(); got != checkout {
+		t.Fatalf("findCheckout() = %q, want %q", got, checkout)
 	}
 	other := initCheckout(t, "module example.com/other\n")
 	t.Chdir(other)
-	if got := checkoutDir(); got != "" {
-		t.Fatalf("checkoutDir() = %q in another module, want none", got)
+	if got := findCheckout(); got != "" {
+		t.Fatalf("findCheckout() = %q in another module, want none", got)
 	}
 }
 

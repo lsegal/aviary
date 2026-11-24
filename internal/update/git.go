@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -58,22 +60,47 @@ var (
 		_, err := os.Stat("/.dockerenv")
 		return err == nil
 	}
-	checkoutDir = func() string {
-		if dir := os.Getenv(CheckoutEnv); dir != "" {
-			return verifyCheckout(dir)
-		}
+	// checkoutDir returns the checkout git mode works on. It is a variable
+	// so tests can stub it.
+	checkoutDir = cachedCheckout
+)
+
+var (
+	checkoutMu    sync.Mutex
+	checkoutFound bool
+	checkoutTop   string
+)
+
+// cachedCheckout returns findCheckout's answer, computed once per process: a
+// running backend never moves to another checkout, so request paths never
+// run git to find it again.
+func cachedCheckout() string {
+	checkoutMu.Lock()
+	defer checkoutMu.Unlock()
+	if !checkoutFound {
+		checkoutTop, checkoutFound = findCheckout(), true
+	}
+	return checkoutTop
+}
+
+// findCheckout locates the Aviary checkout from CheckoutEnv, else the working
+// directory.
+func findCheckout() string {
+	dir := os.Getenv(CheckoutEnv)
+	if dir == "" {
 		wd, err := os.Getwd()
 		if err != nil {
 			return ""
 		}
-		return verifyCheckout(wd)
+		dir = wd
 	}
-)
+	return verifyCheckout(dir)
+}
 
 // verifyCheckout returns the top level of the git checkout containing dir
 // when it is an Aviary checkout, or "" otherwise.
 func verifyCheckout(dir string) string {
-	out, err := runGit(context.Background(), dir, "rev-parse", "--show-toplevel")
+	out, err := runGit(WithCaller(context.Background(), "checkout detection"), dir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return ""
 	}
@@ -83,6 +110,71 @@ func verifyCheckout(dir string) string {
 		return ""
 	}
 	return top
+}
+
+// headTTL is how long checkoutHead reuses a HEAD it read. A pull or an update
+// check refreshes it right away (see ClearCache and readGitCheckResult); the
+// TTL only bounds how long a commit made outside Aviary goes unreported.
+var headTTL = time.Minute
+
+var (
+	headMu     sync.Mutex
+	headDir    string
+	headSHA    string
+	headReadAt time.Time
+)
+
+// checkoutHead returns the commit checked out in dir, reading it with git at
+// most once per headTTL. Concurrent callers wait for one read instead of
+// each running git.
+func checkoutHead(ctx context.Context, dir string) string {
+	headMu.Lock()
+	defer headMu.Unlock()
+	if dir == headDir && time.Since(headReadAt) < headTTL {
+		return headSHA
+	}
+	return readHeadLocked(ctx, dir)
+}
+
+// refreshHead reads the commit checked out in dir now, updating the cache.
+func refreshHead(ctx context.Context, dir string) string {
+	headMu.Lock()
+	defer headMu.Unlock()
+	return readHeadLocked(ctx, dir)
+}
+
+// readHeadLocked reads dir's HEAD into the cache, holding headMu. A failed
+// read keeps the last known commit and is not retried until headTTL passes,
+// and a changed HEAD is logged.
+func readHeadLocked(ctx context.Context, dir string) string {
+	sha, err := runGit(ctx, dir, "rev-parse", "HEAD")
+	headReadAt = time.Now()
+	if dir != headDir {
+		headDir, headSHA = dir, ""
+	}
+	if err != nil || sha == "" {
+		return headSHA
+	}
+	if headSHA != "" && sha != headSHA {
+		slog.Info("update: checkout HEAD changed", "component", "update", "caller", callerOf(ctx),
+			"dir", dir, "from", shortSHA(headSHA), "to", shortSHA(sha))
+	}
+	headSHA = sha
+	return sha
+}
+
+// expireHead makes the next checkoutHead read HEAD again.
+func expireHead() {
+	headMu.Lock()
+	headReadAt = time.Time{}
+	headMu.Unlock()
+}
+
+func shortSHA(sha string) string {
+	if len(sha) > 12 {
+		return sha[:12]
+	}
+	return sha
 }
 
 // modulePath returns the module path declared by a go.mod file, tolerating
@@ -133,6 +225,10 @@ func RequestRebuild() bool {
 	return os.WriteFile(path, nil, 0o600) == nil
 }
 
+// gitRuns counts the git commands the updater has started, so tests can
+// check that request paths do not run git.
+var gitRuns atomic.Int64
+
 // gitWaitDelay is how long a cancelled git command has to exit after its
 // interrupt before it is killed.
 const gitWaitDelay = time.Minute
@@ -146,6 +242,7 @@ const gitWriteTimeout = 10 * time.Minute
 // polling never takes .git/index.lock. A cancelled context interrupts git,
 // which removes its lock files as it exits, instead of killing it.
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
+	gitRuns.Add(1)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
@@ -153,9 +250,12 @@ func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd.WaitDelay = gitWaitDelay
 	start := time.Now()
 	out, err := cmd.CombinedOutput()
-	slog.Debug("update: git", "component", "update", "caller", callerOf(ctx), "dir", dir,
-		"args", strings.Join(args, " "), "duration", time.Since(start), "error", err)
 	if err != nil {
+		// Successful commands are not logged: version lookups would flood
+		// the log. Some failures are expected, such as a branch without an
+		// upstream, so they stay at debug level.
+		slog.Debug("update: git failed", "component", "update", "caller", callerOf(ctx), "dir", dir,
+			"args", strings.Join(args, " "), "duration", time.Since(start), "error", err)
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
@@ -239,7 +339,7 @@ func gitCheckResult(ctx context.Context, dir string) (out CheckResult, err error
 		return nil
 	})
 	if lockErr != nil {
-		out = CheckResult{CurrentVersion: CurrentVersion(), CheckedAt: time.Now().UTC(), Message: lockErr.Error()}
+		out = CheckResult{CurrentVersion: CurrentVersion(ctx), CheckedAt: time.Now().UTC(), Message: lockErr.Error()}
 		return out, lockErr
 	}
 	return out, err
@@ -247,7 +347,8 @@ func gitCheckResult(ctx context.Context, dir string) (out CheckResult, err error
 
 func readGitCheckResult(ctx context.Context, dir string) (CheckResult, error) {
 	st, err := readGitState(ctx, dir)
-	out := CheckResult{CurrentVersion: CurrentVersion(), CheckedAt: time.Now().UTC(), Git: &st}
+	refreshHead(ctx, dir)
+	out := CheckResult{CurrentVersion: CurrentVersion(ctx), CheckedAt: time.Now().UTC(), Git: &st}
 	if err != nil {
 		out.Message = err.Error()
 		return out, err

@@ -98,7 +98,7 @@ test("the Files page is one file bar over a full-page editor", async ({
 
 	// The shared page header (#1064), without the settings actions.
 	const main = page.locator("main");
-	await expect(page.getByTestId("page-title")).toHaveText("Files");
+	await expect(page.getByTestId("page-title")).toHaveText("AGENTS.md");
 	await expect(main.getByRole("button", { name: "Reload" })).toHaveCount(0);
 	await expect(main.getByRole("button", { name: "Save Changes" })).toHaveCount(
 		0,

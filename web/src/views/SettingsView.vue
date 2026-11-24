@@ -1,5 +1,6 @@
 <template>
-	<AppLayout :crumbs="pageHeader.crumbs" :back="pageHeader.back">
+	<AppLayout :crumbs="isAgentFilesPage ? undefined : pageHeader.crumbs"
+		:back="isAgentFilesPage ? undefined : pageHeader.back">
 		<template v-if="activeTab === 'sessions' || activeTab === 'skills'" #header-icon>
 			<SystemPageIcon :page-key="activeTab" tile />
 		</template>
@@ -1168,8 +1169,8 @@ const pageHeader = computed(
 );
 
 /**
- * The Files page is a full-page editor: the open file's bar replaces the
- * page header, and the editor fills the rest of the page.
+ * The Files page is a full-page editor below the shared page header, which
+ * names the open file from the route and switches between files (#1063).
  */
 const isAgentFilesPage = computed(
 	() =>

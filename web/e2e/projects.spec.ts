@@ -2227,8 +2227,8 @@ test("job details open under the project header, keeping the chat and logs panel
 	// The project header and its buttons stay.
 	await expect(
 		page
-			.getByTestId("page-header")
-			.getByRole("link", { name: "lsegal/aviary" }),
+			.getByTestId("page-breadcrumb")
+			.getByRole("link", { name: "lsegal/aviary", exact: true }),
 	).toBeVisible();
 	await expect(page.getByTestId("delivery-status")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
@@ -2298,8 +2298,8 @@ test("loading a job details URL shows the project header with that job open", as
 	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
 	await expect(
 		page
-			.getByTestId("page-header")
-			.getByRole("link", { name: "lsegal/aviary" }),
+			.getByTestId("page-breadcrumb")
+			.getByRole("link", { name: "lsegal/aviary", exact: true }),
 	).toBeVisible();
 	await expect(page.getByTestId("prompt-chat-toggle")).toBeVisible();
 	await expect(page.getByTestId("logs-toggle")).toBeVisible();

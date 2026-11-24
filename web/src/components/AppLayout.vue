@@ -342,7 +342,8 @@
     </nav>
 
     <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <PageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back" :title-link="titleLink">
+      <PageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back" :title-link="titleLink"
+        :switcher="leafSwitcher">
         <template v-if="$slots['header-icon']" #icon><slot name="header-icon" /></template>
         <template v-if="$slots['header-actions']" #actions><slot name="header-actions" /></template>
         <slot name="header" />
@@ -415,7 +416,8 @@ import { useRouteExpandedGroup } from "../composables/useRouteExpandedGroup";
 import { useNavPrefs } from "../composables/useNavPrefs";
 import { arrangeNav, type NavList } from "../lib/navPrefs";
 import { AGENT_PAGES, agentPagePath } from "../lib/agentPages";
-import { routeCrumbs } from "../lib/breadcrumb";
+import { type Crumb, routeCrumbs } from "../lib/breadcrumb";
+import { useCrumbSwitcher } from "../composables/useCrumbSwitcher";
 import { MINIMAL_AGENT_PAGES } from "../lib/minimalMode";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
@@ -1118,16 +1120,22 @@ const headerCrumbs = computed((): PageCrumb[] => {
 			const s = chatSessions.sessions(agent).find((x) => x.id === id);
 			return s && chatDisplayName(s);
 		},
-	});
+	}, typeof route.query.file === "string" ? route.query.file : "");
 	if (crumbs.length < 2) return [];
 	if (!props.trail?.crumbs.length) return crumbs;
-	const here = crumbs.at(-1) as PageCrumb;
+	const here = crumbs.at(-1) as Crumb;
 	return [
 		...crumbs.slice(0, -1),
 		{ label: here.label, to: props.trail.from },
 		...props.trail.crumbs,
 	];
 });
+// The leaf's switcher between its sibling projects, tasks, channels or
+// files (#1063).
+const leafSwitcher = useCrumbSwitcher(
+	computed(() => (headerCrumbs.value.at(-1) as Crumb | undefined)?.switcher),
+	projects,
+);
 
 function flyoutItems(children: NavChild[]): RailFlyoutItem[] {
 	return children.map((c) => ({
