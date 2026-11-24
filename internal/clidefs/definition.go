@@ -312,6 +312,25 @@ type JSONL struct {
 	// paths belong to is what lets the decoder read each shape as itself. It
 	// needs Type.
 	Events map[string]JSONLEvent `json:"events,omitempty"`
+	// Result names the event the CLI ends a finished turn with, so a run
+	// that reached it is known to have finished its work even when the
+	// process it ran in did not exit cleanly afterwards (#1122). It needs
+	// Type.
+	Result *JSONLResult `json:"result,omitempty"`
+}
+
+// JSONLResult describes a stream's final result event: the value of the JSONL
+// block's type path that marks it and, optionally, where it says whether the
+// turn succeeded.
+type JSONLResult struct {
+	// Event is the type of the final result event.
+	Event string `json:"event"`
+	// Status is the path to the field the event reports how the turn ended
+	// in, and Success the values of it that mean the turn completed. Any
+	// other value marks the turn failed; a missing or empty one does not.
+	// Without Status, every final result event is a success.
+	Status  string   `json:"status,omitempty"`
+	Success []string `json:"success,omitempty"`
 }
 
 // JSONLEvent are the paths the decoder reads out of one event type, replacing
