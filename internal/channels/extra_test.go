@@ -60,6 +60,11 @@ func TestSendOnConfiguredChannel_Success(t *testing.T) {
 
 }
 
+// failingLaunch stands in for signal-cli so tests never spawn the real binary.
+func failingLaunch(context.Context, *sharedDaemon) (string, *exec.Cmd, error) {
+	return "", nil, fmt.Errorf("signal-cli launch disabled in tests")
+}
+
 // ── Signal.Start no-phone no-addr path ───────────────────────────────────────
 
 // TestStart_NoPhoneNoAddr ensures that when both phone and addr are empty,
@@ -79,13 +84,7 @@ func TestStart_NoPhoneNoAddr(t *testing.T) {
 // present (or ctx times out before the daemon becomes ready), run exits cleanly.
 func TestSharedDaemon_ContextCancelsDuringRun(t *testing.T) {
 	// Prevent tests from spawning the real signal-cli; stub the launcher.
-	orig := launchDaemonImpl
-	launchDaemonImpl = func(_ context.Context, _ *sharedDaemon) (string, *exec.Cmd, error) {
-		return "", nil, fmt.Errorf("signal-cli launch disabled in tests")
-	}
-	defer func() { launchDaemonImpl = orig }()
-
-	d := &sharedDaemon{phone: "+15550001111"}
+	d := &sharedDaemon{phone: "+15550001111", launch: failingLaunch}
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	// run should return when ctx is cancelled (signal-cli absent → error, then ctx done).
@@ -105,13 +104,7 @@ func TestSharedDaemon_ContextCancelsDuringRun(t *testing.T) {
 // run to return immediately without launching signal-cli.
 func TestSharedDaemon_CancelBeforeRun(t *testing.T) {
 	// Prevent tests from spawning the real signal-cli; stub the launcher.
-	orig := launchDaemonImpl
-	launchDaemonImpl = func(_ context.Context, _ *sharedDaemon) (string, *exec.Cmd, error) {
-		return "", nil, fmt.Errorf("signal-cli launch disabled in tests")
-	}
-	defer func() { launchDaemonImpl = orig }()
-
-	d := &sharedDaemon{phone: "+15550001111"}
+	d := &sharedDaemon{phone: "+15550001111", launch: failingLaunch}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	done := make(chan struct{})
@@ -130,11 +123,28 @@ func TestSharedDaemon_CancelBeforeRun(t *testing.T) {
 // when the shared daemon has not yet become ready.
 func TestStart_StopBeforeDaemonReady(t *testing.T) {
 	// Use a unique phone to avoid sharing with other tests.
-	ch := NewSignalChannel("+15559990000", "", nil, false, false, false, false, "m", nil)
+	const phone = "+15559990000"
+	launched := make(chan struct{})
+	d := &sharedDaemon{phone: phone, launch: func(ctx context.Context, d *sharedDaemon) (string, *exec.Cmd, error) {
+		defer close(launched)
+		return failingLaunch(ctx, d)
+	}}
+	globalDaemonHub.mu.Lock()
+	globalDaemonHub.daemons[phone] = d
+	globalDaemonHub.mu.Unlock()
+
+	ch := NewSignalChannel(phone, "", nil, false, false, false, false, "m", nil)
 	ch.Stop() // pre-close done so Start returns immediately
 	ctx := context.Background()
 	err := ch.Start(ctx)
 	assert.NoError(t, err)
+
+	// Don't let the daemon goroutine outlive the test.
+	select {
+	case <-launched:
+	case <-time.After(2 * time.Second):
+		t.Fatal("shared daemon goroutine did not run")
+	}
 }
 
 // ── sharedDaemon.launchDaemon: binary-not-found path ─────────────────────────
@@ -143,13 +153,7 @@ func TestStart_StopBeforeDaemonReady(t *testing.T) {
 // is absent, exercising the cmd.Start error path.
 func TestSharedDaemon_LaunchDaemonBinaryNotFound(t *testing.T) {
 	// Prevent tests from spawning the real signal-cli; stub the launcher.
-	orig := launchDaemonImpl
-	launchDaemonImpl = func(_ context.Context, _ *sharedDaemon) (string, *exec.Cmd, error) {
-		return "", nil, fmt.Errorf("signal-cli launch disabled in tests")
-	}
-	defer func() { launchDaemonImpl = orig }()
-
-	d := &sharedDaemon{phone: "+15550001111"}
+	d := &sharedDaemon{phone: "+15550001111", launch: failingLaunch}
 	ctx := context.Background()
 	addr, cmd, err := d.launchDaemon(ctx)
 	if err == nil {
