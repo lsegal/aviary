@@ -38,7 +38,9 @@
 				@click="openAdd">
 				<PlusIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
-			<QueueMenu v-if="!aggregate" :no-merge="status?.noMerge" @pick="openQueue($event, project)" />
+			<!-- A watch session's board is one agent's, so it queues when it has one project. -->
+			<QueueMenu v-if="!aggregate || targets.length === 1" :no-merge="status?.noMerge"
+				@pick="openQueue($event, project || targets[0])" />
 			<button v-if="!aggregate" type="button" data-testid="schedule-new" title="Schedule a task for this project"
 				class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 				:disabled="!scheduleAgent" @click="onNewSchedule">

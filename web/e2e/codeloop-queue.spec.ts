@@ -1,0 +1,470 @@
+import { expect, type Page, test } from "@playwright/test";
+import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+
+// Queueing pull requests for gh-safe-merge and Discussion threads for
+// gh-discuss from a Code Loop board (#1095). Fixtures follow the payloads
+// internal/projects' Manager returns.
+
+const minutesAgo = (m: number) =>
+	new Date(Date.now() - m * 60_000).toISOString();
+
+const TARGET = "lsegal/aviary";
+
+const queuedActions = (status: string) => ({
+	retry: ["paused", "complete", "failed"].includes(status),
+	pause: ["queued", "active", "waiting"].includes(status),
+	resume: status === "paused",
+	stop: ["queued", "active", "waiting", "paused"].includes(status),
+});
+
+const JOBS = [
+	{
+		key: `${TARGET}#218`,
+		target: TARGET,
+		number: 218,
+		title: "Fix the scheduler's missed fires",
+		status: "complete",
+		state: "done",
+		kind: "issue",
+		agent: "claude",
+		model: "opus",
+		repository: TARGET,
+		issue_url: `https://github.com/${TARGET}/issues/218`,
+		pull_request: 230,
+		pull_request_url: `https://github.com/${TARGET}/pull/230`,
+		pull_request_state: "open",
+		started: minutesAgo(40),
+		actions: { retry: true, pause: false, resume: false, stop: false },
+	},
+	{
+		key: `${TARGET}#1201`,
+		target: TARGET,
+		number: 1201,
+		title: "Add a dark theme toggle",
+		status: "active",
+		state: "running",
+		kind: "merge",
+		agent: "claude",
+		model: "opus",
+		repository: TARGET,
+		issue_url: `https://github.com/${TARGET}/pull/1201`,
+		pull_request: 1201,
+		queue_position: 1,
+		started: minutesAgo(3),
+		actions: queuedActions("active"),
+	},
+	{
+		key: `${TARGET}#1207`,
+		target: TARGET,
+		number: 1207,
+		title: "Bump vite",
+		status: "queued",
+		state: "starting",
+		kind: "merge",
+		repository: TARGET,
+		issue_url: `https://github.com/${TARGET}/pull/1207`,
+		pull_request: 1207,
+		queue_position: 2,
+		started: minutesAgo(1),
+		actions: queuedActions("queued"),
+		retry_unavailable: "Already queued",
+	},
+	{
+		key: `${TARGET}#1190`,
+		target: TARGET,
+		number: 1190,
+		title: "Rewrite the poller",
+		status: "failed",
+		state: "failed",
+		kind: "merge",
+		repository: TARGET,
+		issue_url: `https://github.com/${TARGET}/pull/1190`,
+		pull_request: 1190,
+		summary: "Skipped: the pull request conflicts with main",
+		started: minutesAgo(20),
+		actions: queuedActions("failed"),
+	},
+	{
+		key: `${TARGET}#44`,
+		target: TARGET,
+		number: 44,
+		title: "How do I watch a Project board?",
+		status: "queued",
+		state: "starting",
+		kind: "discuss",
+		repository: TARGET,
+		issue_url: `https://github.com/${TARGET}/discussions/44`,
+		started: minutesAgo(1),
+		actions: queuedActions("queued"),
+		retry_unavailable: "Already queued",
+	},
+];
+
+const PULLS = [
+	{
+		number: 1210,
+		title: "Fix typo in README",
+		author: "octocat",
+		url: `https://github.com/${TARGET}/pull/1210`,
+		ci: "passing",
+		review: "approved",
+		mergeable: "mergeable",
+	},
+	{
+		number: 1212,
+		title: "Speed up the job list",
+		author: "hubot",
+		url: `https://github.com/${TARGET}/pull/1212`,
+		ci: "pending",
+		review: "review_required",
+		mergeable: "conflicting",
+	},
+	{
+		number: 1207,
+		title: "Bump vite",
+		author: "dependabot",
+		url: `https://github.com/${TARGET}/pull/1207`,
+		ci: "failing",
+		review: "none",
+		mergeable: "mergeable",
+		owned_by: `${TARGET}#1207`,
+	},
+	{
+		number: 230,
+		title: "Fix the scheduler's missed fires",
+		author: "lsegal",
+		url: `https://github.com/${TARGET}/pull/230`,
+		ci: "passing",
+		review: "none",
+		mergeable: "mergeable",
+	},
+];
+
+async function setup(page: Page, { noMerge = false } = {}) {
+	const calls: Record<string, Record<string, unknown>[]> = {};
+	const record = (tool: string, args?: Record<string, unknown>) => {
+		calls[tool] ??= [];
+		calls[tool].push(args ?? {});
+	};
+	await setAuthToken(page);
+	await mockMCP(page, {
+		agent_list: [],
+		config_get: {
+			agents: [
+				{
+					name: "coder",
+					model: "cli/claude/opus",
+					projects: [{ target: TARGET }],
+				},
+			],
+		},
+		project_status: {
+			identity: "7F3CA91B",
+			running: true,
+			targets: [TARGET],
+			issue_counts: { [TARGET]: 3 },
+			states: { starting: 2, paused: 0, running: 1, done: 1, failed: 1 },
+			jobs: {
+				running: 1,
+				queued: 2,
+				paused: 0,
+				completed: 1,
+				merged_24h: 0,
+				failed: 1,
+			},
+			concurrency: 2,
+			delivery: "poll",
+			poll_interval: "30s",
+			no_merge: noMerge,
+			last_check: minutesAgo(0.1),
+		},
+		project_job_list: { jobs: JOBS, total: JOBS.length, offset: 0, limit: 500 },
+		project_job_get: (args?: Record<string, unknown>) => ({
+			...JOBS.find((j) => j.number === args?.number),
+			scrollback: "",
+			events: [],
+		}),
+		project_queue_candidates: (args?: Record<string, unknown>) => {
+			record("project_queue_candidates", args);
+			if (args?.skill === "gh-discuss")
+				return {
+					target: TARGET,
+					repository: TARGET,
+					skill: "gh-discuss",
+					no_merge: noMerge,
+					discussions: [
+						{
+							number: 51,
+							title: "Is Windows supported?",
+							author: "ada",
+							url: "",
+							category: "Q&A",
+							comments: 0,
+							answered: false,
+						},
+						{
+							number: 44,
+							title: "How do I watch a Project board?",
+							author: "bob",
+							url: "",
+							category: "Q&A",
+							comments: 0,
+							answered: false,
+							owned_by: `${TARGET}#44`,
+						},
+					],
+				};
+			return {
+				target: TARGET,
+				repository: TARGET,
+				skill: "gh-safe-merge",
+				no_merge: noMerge,
+				pull_requests: PULLS,
+			};
+		},
+		project_job_queue: (args?: Record<string, unknown>) => {
+			record("project_job_queue", args);
+			const numbers = (args?.numbers as number[]) ?? [];
+			return {
+				target: TARGET,
+				skill: args?.skill,
+				results: numbers.map((number, i) => ({
+					number,
+					queued: true,
+					key: `${TARGET}#${number}`,
+					...(args?.skill === "gh-safe-merge" ? { position: i + 3 } : {}),
+				})),
+			};
+		},
+	});
+	return calls;
+}
+
+const BOARD = `/agents/coder/projects/${encodeURIComponent(TARGET)}`;
+
+test("the header's Queue menu offers Fix issue, Safe merge PR and Discuss", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto(BOARD);
+	await page.getByTestId("queue-menu").click();
+	const items = page.getByTestId("queue-menu-items");
+	await expect(items.getByRole("menuitem")).toHaveText([
+		/Fix issue/,
+		/Safe merge PR/,
+		/Discuss/,
+	]);
+});
+
+test("the safe-merge picker lists open PRs and queues the picked ones in order", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto(BOARD);
+	await page.getByTestId("queue-menu").click();
+	await page.getByTestId("queue-gh-safe-merge").click();
+	const dialog = page.getByTestId("queue-dialog");
+	await expect(dialog).toHaveAttribute("data-skill", "gh-safe-merge");
+	const rows = dialog.getByTestId("queue-candidate");
+	await expect(rows).toHaveCount(4);
+	const typo = rows.filter({ hasText: "#1210" });
+	await expect(typo).toContainText("octocat");
+	await expect(typo).toContainText("passing");
+	await expect(typo).toContainText("approved");
+	await expect(typo).toContainText("clean");
+	await expect(rows.filter({ hasText: "#1212" })).toContainText("conflicts");
+	// A pull request a job already owns names the job and cannot be picked.
+	const owned = rows.filter({ hasText: "#1207" });
+	await expect(owned.getByTestId("queue-owned")).toHaveText(`${TARGET}#1207`);
+	await expect(owned).toHaveAttribute("aria-disabled", "true");
+	await owned.click({ force: true });
+	await expect(owned.getByTestId("queue-order")).toHaveCount(0);
+
+	// Picking order is merge order.
+	await rows.filter({ hasText: "#1212" }).click();
+	await rows.filter({ hasText: "#1210" }).click();
+	await expect(
+		rows.filter({ hasText: "#1212" }).getByTestId("queue-order"),
+	).toHaveText("1");
+	await expect(
+		rows.filter({ hasText: "#1210" }).getByTestId("queue-order"),
+	).toHaveText("2");
+
+	// Search narrows the list.
+	await dialog.getByTestId("queue-search").fill("typo");
+	await expect(rows).toHaveCount(1);
+	await dialog.getByTestId("queue-search").fill("");
+
+	await dialog.getByTestId("queue-submit").click();
+	await expect
+		.poll(() => calls.project_job_queue?.[0])
+		.toEqual({
+			target: TARGET,
+			skill: "gh-safe-merge",
+			numbers: [1212, 1210],
+			titles: { "1210": "Fix typo in README", "1212": "Speed up the job list" },
+		});
+	await expect(dialog.getByTestId("queue-results")).toContainText(
+		"#1212: queued, #3 in the merge lane",
+	);
+});
+
+test("merge and discuss jobs show as board cards with their place and reason", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto(BOARD);
+	await expect(page.getByTestId("job-card")).toHaveCount(JOBS.length, {
+		timeout: 15_000,
+	});
+	const running = page
+		.getByTestId("job-card")
+		.filter({ hasText: "Add a dark theme toggle" });
+	await expect(running.getByTestId("job-kind")).toHaveText("Safe merge");
+	await expect(running.getByTestId("job-queue-position")).toHaveText(
+		"merging now",
+	);
+	await expect(running.getByRole("link", { name: "PR #1201" })).toHaveAttribute(
+		"href",
+		`https://github.com/${TARGET}/pull/1201`,
+	);
+	await expect(running.getByRole("button", { name: "Stop" })).toBeVisible();
+
+	const queued = page.getByTestId("job-card").filter({ hasText: "Bump vite" });
+	await expect(queued.getByTestId("job-queue-position")).toHaveText(
+		"#2 in the merge queue",
+	);
+	await expect(queued.getByRole("button", { name: "Retry" })).toBeDisabled();
+
+	const failed = page
+		.getByTestId("job-card")
+		.filter({ hasText: "Rewrite the poller" });
+	await expect(failed.getByTestId("job-reason")).toHaveText(
+		"Skipped: the pull request conflicts with main",
+	);
+	await expect(failed.getByRole("button", { name: "Retry" })).toBeEnabled();
+
+	const discuss = page
+		.getByTestId("job-card")
+		.filter({ hasText: "watch a Project board" });
+	await expect(discuss.getByTestId("job-kind")).toHaveText("Discuss");
+	await expect(
+		discuss.getByRole("link", { name: "Discussion #44" }),
+	).toHaveAttribute("href", `https://github.com/${TARGET}/discussions/44`);
+	await expect(discuss.getByTestId("job-agent")).toContainText("gh-discuss");
+});
+
+test("a fix job's linked PR offers Safe merge, which opens the picker with it picked", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto(BOARD);
+	const fix = page.getByTestId("job-card").filter({ hasText: "#218" });
+	await fix.getByRole("button", { name: "Safe merge" }).click();
+	const dialog = page.getByTestId("queue-dialog");
+	await expect(
+		dialog
+			.getByTestId("queue-candidate")
+			.filter({ hasText: "#230" })
+			.getByTestId("queue-order"),
+	).toHaveText("1");
+	await dialog.getByTestId("queue-submit").click();
+	await expect.poll(() => calls.project_job_queue?.[0]?.numbers).toEqual([230]);
+	// Merge jobs never offer a Safe merge of their own.
+	await page.keyboard.press("Escape");
+	const merge = page.getByTestId("job-card").filter({ hasText: "Bump vite" });
+	await expect(merge.getByRole("button", { name: "Safe merge" })).toHaveCount(
+		0,
+	);
+});
+
+test("with no_merge, safe merge is disabled with an explanation and hidden on cards", async ({
+	page,
+}) => {
+	await setup(page, { noMerge: true });
+	await page.goto(BOARD);
+	await page.getByTestId("queue-menu").click();
+	const item = page.getByTestId("queue-gh-safe-merge");
+	await expect(item).toHaveAttribute("data-disabled", "");
+	await expect(item).toContainText("no_merge");
+	await expect(item).toHaveAttribute(
+		"title",
+		/no_merge setting leaves pull requests for a human/,
+	);
+	await page.keyboard.press("Escape");
+	const fix = page.getByTestId("job-card").filter({ hasText: "#218" });
+	await expect(fix.getByRole("button", { name: "Safe merge" })).toHaveCount(0);
+});
+
+test("Discuss queues picked threads and Fix issue queues typed issue numbers", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto(BOARD);
+	await page.getByTestId("queue-menu").click();
+	await page.getByTestId("queue-gh-discuss").click();
+	const dialog = page.getByTestId("queue-dialog");
+	const rows = dialog.getByTestId("queue-candidate");
+	await expect(
+		rows.filter({ hasText: "#44" }).getByTestId("queue-owned"),
+	).toBeVisible();
+	await rows.filter({ hasText: "#51" }).click();
+	await dialog.getByTestId("queue-submit").click();
+	await expect
+		.poll(() => calls.project_job_queue?.[0])
+		.toMatchObject({ skill: "gh-discuss", numbers: [51] });
+	await dialog.getByRole("button", { name: "Close" }).click();
+
+	await page.getByTestId("queue-menu").click();
+	await page.getByTestId("queue-gh-fix").click();
+	await dialog.getByTestId("queue-issues").fill("#12, 15");
+	await expect(dialog.getByTestId("queue-submit")).toHaveText("Queue 2 issues");
+	await dialog.getByTestId("queue-submit").click();
+	await expect
+		.poll(() => calls.project_job_queue?.[1])
+		.toMatchObject({ skill: "gh-fix", numbers: [12, 15] });
+});
+
+test("a watch session's one-project board offers the Queue menu", async ({
+	page,
+}) => {
+	await page.addInitScript(() => localStorage.removeItem("aviary_token"));
+	await page.route("/api/health", (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				ok: true,
+				version: "dev",
+				auth_disabled: true,
+				minimal: true,
+			}),
+		}),
+	);
+	await mockMCP(page, {
+		agent_list: [{ name: "watch" }],
+		job_list: [],
+		task_list: [],
+		task_upcoming: [],
+		config_validate: [],
+		config_get: {
+			agents: [{ name: "watch", projects: [{ target: "owner/repo" }] }],
+		},
+		project_status: {
+			states: { starting: 0, paused: 0, running: 0, done: 0, failed: 0 },
+			targets: ["owner/repo"],
+		},
+		project_job_list: { jobs: [], total: 0, offset: 0, limit: 50 },
+		project_queue_candidates: {
+			target: "owner/repo",
+			repository: "owner/repo",
+			pull_requests: [],
+		},
+	});
+	await page.goto("/agents/watch/projects");
+	await page.getByTestId("queue-menu").click();
+	await page.getByTestId("queue-gh-safe-merge").click();
+	await expect(page.getByTestId("queue-dialog")).toContainText(
+		"No open pull requests",
+	);
+});
