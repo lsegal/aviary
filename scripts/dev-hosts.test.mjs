@@ -25,9 +25,10 @@ test("defaults to localhost, the hostname, its .local name, and LAN IPv4s", () =
 });
 
 test("does not add .local to a dotted hostname", () => {
-	const hosts = devHosts({ env: {}, hostname: "box.example.com", interfaces: {} });
-	assert.ok(hosts.includes("box.example.com"));
-	assert.ok(!hosts.includes("box.example.com.local"));
+	assert.deepEqual(
+		devHosts({ env: {}, hostname: "box.example.com", interfaces: {} }),
+		["localhost", "127.0.0.1", "::1", "box.example.com"],
+	);
 });
 
 test("adds AVIARY_DEV_HOSTS and Vite's additional allowed hosts", () => {
