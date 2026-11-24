@@ -67,6 +67,7 @@ Upgrade Aviary with a safe restart. Aviary installs the release, updates the ski
 | --- | --- | --- | --- |
 | `version` | string | | Release to install, with or without a leading `v`; defaults to the latest |
 | `when` | string | | `now` (default) restarts right away; `idle` holds new jobs and upgrades once no jobs are running |
+| `remove_stale_lock` | boolean | | Dev checkout only: first remove a stale `.git/index.lock` (at least 10 minutes old) that blocks the pull. A younger lock is left alone. |
 
 **Returns:** the restart state (see `server_version_check`). `noop: true` with a `message` means there was nothing to install; `emulated: true` marks a simulated upgrade in a development build.
 

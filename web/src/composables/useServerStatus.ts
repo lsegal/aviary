@@ -34,6 +34,9 @@ export interface AutoUpdateStatus {
 	version?: string;
 	state?: "waiting-restart" | "applying";
 	error?: string;
+	/** Classifies error: another git command held the checkout's lock, or
+	 * a stale .git/index.lock blocks the pull. */
+	code?: "git-busy" | "git-stale-lock";
 }
 
 export type RestartWhen = "now" | "idle";
@@ -226,13 +229,17 @@ export function useServerStatus() {
 		await refreshVersionStatus();
 	}
 
-	async function triggerUpgrade(when: RestartWhen) {
+	async function triggerUpgrade(
+		when: RestartWhen,
+		opts: { removeStaleLock?: boolean } = {},
+	) {
 		upgrading.value = true;
 		try {
 			const st = JSON.parse(
 				await callTool("server_upgrade", {
 					version: latestVersion.value || undefined,
 					when,
+					remove_stale_lock: opts.removeStaleLock || undefined,
 				}),
 			) as RestartStatus;
 			upgradeDialogOpen.value = false;

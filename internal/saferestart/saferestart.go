@@ -232,6 +232,10 @@ type Request struct {
 	Cancel bool `json:"cancel,omitempty"`
 	// Force restarts without waiting for in-flight MCP calls to finish.
 	Force bool `json:"force,omitempty"`
+	// RemoveStaleLock first removes a stale .git/index.lock that blocks a
+	// git-mode update. A lock young enough to belong to a running git
+	// command is left alone.
+	RemoveStaleLock bool `json:"removeStaleLock,omitempty"`
 }
 
 // Status describes the current restart state and the jobs a restart would stop.
@@ -269,4 +273,7 @@ type AutoUpdate struct {
 	State string `json:"state,omitempty"`
 	// Error is why the last attempt to apply the update failed.
 	Error string `json:"error,omitempty"`
+	// Code classifies Error as one of update's ErrCode* constants, such as
+	// git-busy when another git command held the checkout's lock.
+	Code string `json:"code,omitempty"`
 }
