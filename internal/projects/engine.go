@@ -394,6 +394,11 @@ type Engine struct {
 	inboxOnce  sync.Once
 	inbox      *jobInbox
 	liveNudges sync.Map
+	// queueOnce/queue hold the merge and discuss jobs queued on demand
+	// (issue #1095), and queueRequests carries new ones into the Run loop.
+	queueOnce     sync.Once
+	queue         *jobQueue
+	queueRequests queueRequestChannel
 	// projectTasks carries core's project task runs into the Run loop.
 	projectTasks projectTaskChannel
 	// settingsOnce/settingsRequests carry live settings updates
@@ -2315,6 +2320,8 @@ func (w *Engine) Run(ctx context.Context) error {
 	var stopRun func(request jobActionRequest, key string, job JobSnapshot, noun string)
 	// runDiscussion runs a Discussion thread's agent as a board job.
 	var runDiscussion func(ctx context.Context, issue Issue) error
+	// queue runs the merge and discuss jobs queued on demand (issue #1095).
+	queue := &queueLoop{w: w, ctx: ctx, sem: sem, wg: &wg, tasks: &tasks, jobMu: &jobMu, jobs: jobs, workMu: &workMu, cancellations: cancellations, runExits: runExits, publish: publish, workFinished: workFinished, wake: make(chan struct{}, 1), lanes: map[string]string{}}
 	// acquireDispatchSlot waits for a free slot for the queued job key, as
 	// acquireSlot does, while also answering job actions, so the owner can
 	// pause the queued job or stop a running one to free its slot (issue
@@ -2328,6 +2335,10 @@ func (w *Engine) Run(ctx context.Context) error {
 				request.done <- w.applySettingsRequest(request.update, sem)
 			case request := <-w.projectTaskRequests():
 				startScheduled(request)
+			case request := <-w.queueRequestsChan():
+				queue.serve(request)
+			case <-queue.wake:
+				queue.dispatch()
 			case request := <-w.jobActionRequests():
 				serveJobAction(request, true)
 				workMu.Lock()
@@ -3672,6 +3683,10 @@ func (w *Engine) Run(ctx context.Context) error {
 			serveScheduledAction(request, key, job)
 			return
 		}
+		if core.Queued(job.Kind) {
+			queue.action(request, key, job)
+			return
+		}
 		if job.Kind == core.JobKindDiscussion {
 			// The next poll answers a thread that still has no reply, so a
 			// discussion is only ever stopped.
@@ -4197,6 +4212,7 @@ func (w *Engine) Run(ctx context.Context) error {
 	// main.go's run() -- can take a real amount of time, and a settings or
 	// job-action request that lands during that window must not block on a
 	// channel nothing is reading yet.
+	queue.restore()
 	close(w.readyChan())
 	if err := poll(nil); err != nil {
 		if ctx.Err() != nil {
@@ -4315,6 +4331,10 @@ func (w *Engine) Run(ctx context.Context) error {
 			}
 		case request := <-w.projectTaskRequests():
 			startScheduled(request)
+		case request := <-w.queueRequestsChan():
+			queue.serve(request)
+		case <-queue.wake:
+			queue.dispatch()
 		case <-ctx.Done():
 			w.logf("shutdown requested; waiting for running tasks to finish")
 			wg.Wait()

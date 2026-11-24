@@ -54,10 +54,14 @@ type JobSnapshot struct {
 	TasksDone  int
 	TasksTotal int
 	Progress   int
-	// Kind is JobKindIssue, JobKindDiscussion, or JobKindSchedule, and
-	// ScheduleID names the schedule a scheduled run fired from.
+	// Kind is JobKindIssue, JobKindDiscussion, JobKindSchedule, JobKindMerge,
+	// or JobKindDiscuss, and ScheduleID names the schedule a scheduled run
+	// fired from.
 	Kind       string
 	ScheduleID string
+	// QueuePosition is a queued merge job's place in the project's serial
+	// merge lane, from 1 for the next to run, and 0 for every other job.
+	QueuePosition int
 	// Finished is when a scheduled run ended, Summary its one-line result,
 	// and Fallback whether its precompiled script failed so the model ran
 	// it. Dismissed hides a failed scheduled run from the board's Failed
@@ -73,7 +77,18 @@ const (
 	JobKindIssue      = "issue"
 	JobKindDiscussion = "discussion"
 	JobKindSchedule   = "schedule"
+	// JobKindMerge is a pull request queued on demand for gh-safe-merge, and
+	// JobKindDiscuss a Discussion thread queued on demand for gh-discuss
+	// (issue #1095). Unlike a Discussions board's JobKindDiscussion, both
+	// wait in the persisted job queue and accept every job action.
+	JobKindMerge   = "merge"
+	JobKindDiscuss = "discuss"
 )
+
+// Queued returns whether kind is one of the job kinds queued on demand.
+func Queued(kind string) bool {
+	return kind == JobKindMerge || kind == JobKindDiscuss
+}
 
 // The states of a job's pull request the board draws.
 const (
@@ -358,12 +373,35 @@ func JobActionsFor(job JobSnapshot) JobActions {
 	if job.Kind == JobKindDiscussion {
 		return JobActions{Stop: running, RetryReason: "The next poll answers the discussion again while it has no reply"}
 	}
+	if Queued(job.Kind) {
+		return queuedJobActions(job.Status)
+	}
 	if job.Kind != JobKindSchedule {
 		return JobActionAvailability(job.Status)
 	}
 	actions := JobActions{Stop: running, Retry: job.Status == "complete" || job.Status == "failed"}
 	if !actions.Retry {
 		actions.RetryReason = "The scheduled run has not finished"
+	}
+	return actions
+}
+
+// queuedJobActions reports the job actions a job queued on demand accepts in
+// status. Pause holds it in the queue, Retry on a paused job resumes it in its
+// place, and Retry on a finished job queues it again at the end.
+func queuedJobActions(status string) JobActions {
+	actions := JobActions{
+		Retry: status == "paused" || status == "complete" || status == "failed",
+		Pause: status == "queued" || status == "active" || status == "waiting",
+		Stop:  status == "queued" || status == "active" || status == "waiting" || status == "paused",
+	}
+	switch status {
+	case "queued":
+		actions.RetryReason = "Already queued"
+	case "active", "waiting":
+		actions.RetryReason = "Already running"
+	case "stopping":
+		actions.RetryReason = "Waiting for the stopped run to exit"
 	}
 	return actions
 }
