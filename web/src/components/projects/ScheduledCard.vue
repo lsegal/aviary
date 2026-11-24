@@ -3,31 +3,34 @@
 		opens: its name is a link stretched over the box, and the output and
 		the footer's controls sit above it. -->
 	<article data-testid="scheduled-card"
-		class="relative flex h-full max-h-[50vh] min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border border-violet-200 bg-white focus-within:ring-2 focus-within:ring-blue-500 hover:border-violet-400 hover:shadow-sm dark:border-violet-900 dark:bg-gray-900 dark:hover:border-violet-700">
+		class="@container relative flex h-full max-h-[50vh] min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border border-violet-200 bg-white focus-within:ring-2 focus-within:ring-blue-500 hover:border-violet-400 hover:shadow-sm dark:border-violet-900 dark:bg-gray-900 dark:hover:border-violet-700">
 		<div class="shrink-0 space-y-1 px-4 pb-2.5 pt-3">
-			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-				<!-- One card per schedule: a run shows Running here in place, and
-					a failed last run shows Failed until the next success or a
-					dismissal. -->
-				<span v-if="running" data-testid="scheduled-state" data-state="running"
-					class="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+			<!-- One line in every state, so a run never changes the card's
+				height (#1157). -->
+			<div class="flex min-w-0 items-center gap-2 text-xs">
+				<!-- One card per schedule: a run shows here in place, as the chip
+					that opens the run with how long it has run, and a failed last
+					run shows Failed until the next success or a dismissal. -->
+				<router-link v-if="running" :to="runTo" data-testid="scheduled-running"
+					:title="runOpen ? 'Open this run' : 'Open this task'"
+					class="relative z-10 inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-700 hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-950">
 					<span aria-hidden="true" data-testid="scheduled-spinner"
 						class="h-3 w-3 animate-spin rounded-full border-2 border-blue-300 border-t-blue-600 dark:border-blue-800 dark:border-t-blue-300" />
-					Running
-				</span>
+					<span data-testid="scheduled-state" data-state="running">{{ activeLabel }}</span><template v-if="runStarted"> · <span data-testid="scheduled-elapsed" class="tabular-nums">{{ age(runStarted, now) }}</span></template>
+				</router-link>
 				<span v-else data-testid="scheduled-state" data-state="scheduled"
-					class="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
+					class="shrink-0 rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
 					Scheduled
 				</span>
 				<router-link v-if="showProject" :to="projectBoardPath" data-testid="scheduled-project"
-					class="relative z-10 truncate rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+					class="relative z-10 min-w-0 truncate rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
 					:title="`Open ${schedule.project}'s board`">{{ schedule.project }}</router-link>
 				<PausedChip v-if="next.kind === 'paused'" />
 				<span v-if="failed" data-testid="scheduled-failed"
-					class="rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-700 dark:bg-red-950/50 dark:text-red-300">
+					class="shrink-0 rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-700 dark:bg-red-950/50 dark:text-red-300">
 					Failed
 				</span>
-				<span class="ml-auto truncate font-mono text-gray-500 dark:text-gray-400">{{ schedule.id }}</span>
+				<span class="ml-auto min-w-0 truncate font-mono text-gray-500 dark:text-gray-400">{{ schedule.id }}</span>
 			</div>
 			<h3 class="text-base font-semibold leading-snug text-gray-900 dark:text-white">
 				<router-link :to="taskTo" data-testid="scheduled-card-link"
@@ -36,7 +39,7 @@
 			<p class="truncate text-xs text-gray-500 dark:text-gray-400" :title="schedule.prompt">{{ truncatePrompt(schedule.prompt, 120) }}</p>
 			<!-- Trigger and next run share one line. A one-time trigger that has
 				fired has no next run while its run is in flight: the running
-				control below says so, instead of "none". -->
+				chip above says so, instead of "none". -->
 			<p data-testid="scheduled-run-details" class="flex min-w-0 items-center gap-1.5 text-xs text-gray-700 dark:text-gray-200">
 				<span data-testid="scheduled-trigger" class="truncate" :title="trigger">{{ trigger }}</span>
 				<template v-if="next.kind !== 'running'">
@@ -66,8 +69,13 @@
 			</p>
 		</div>
 		<!-- The output area a job card has: the run's live output while it
-			runs, or what the schedule last did or does next between runs. -->
-		<JobOutputPane v-if="running && job" :job="job" testid="scheduled-output" class="relative z-10" />
+			runs, or what the schedule last did or does next between runs. Both
+			keep the same height, and the output toggle sits in the output's
+			corner rather than in the footer (#1157). -->
+		<div v-if="running && job" class="relative z-10 flex min-h-0 flex-[1_1_7rem] flex-col">
+			<JobOutputPane :job="job" testid="scheduled-output" />
+			<JobOutputToggle class="absolute right-2 top-2 bg-white shadow-sm dark:bg-gray-900" />
+		</div>
 		<div v-else data-testid="scheduled-empty"
 			class="flex min-h-0 flex-[1_1_7rem] items-center justify-center bg-slate-950 px-4 py-3 text-center text-xs text-slate-300">
 			<p data-testid="scheduled-last" class="flex min-w-0 items-center justify-center gap-1.5">
@@ -81,18 +89,12 @@
 				</template>
 			</p>
 		</div>
-		<div class="relative z-10 flex shrink-0 cursor-auto flex-wrap items-center gap-2 border-t border-gray-100 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
-			<router-link :to="to" aria-label="Edit schedule" title="Edit this schedule"
-				class="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+		<!-- The footer is one row in every state: a run adds nothing to it, and
+			on a narrow card Settings and Pause fold into a menu (#1157). -->
+		<div data-testid="scheduled-footer"
+			class="relative z-10 flex min-w-0 shrink-0 cursor-auto flex-nowrap items-center gap-2 border-t border-gray-100 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
+			<router-link :to="to" aria-label="Edit schedule" title="Edit this schedule" :class="ICON_BUTTON">
 				<PencilIcon aria-hidden="true" class="h-4 w-4" />
-			</router-link>
-			<!-- The running state shows once: as the control that opens the run. -->
-			<router-link v-if="running" :to="runTo" data-testid="scheduled-running"
-				:title="runOpen ? 'Open this run' : 'Open this task'"
-				class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950">
-				<span aria-hidden="true" class="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
-				{{ activeLabel }}<template v-if="runStarted"> · <span data-testid="scheduled-elapsed">{{ age(runStarted, now) }}</span></template>
-				<ArrowsPointingOutIcon aria-hidden="true" class="h-3.5 w-3.5" />
 			</router-link>
 			<button v-if="failed && job" type="button" :disabled="busy" data-testid="scheduled-dismiss"
 				title="Dismiss this failed run; the card still shows it until the next run"
@@ -100,39 +102,63 @@
 				@click="emit('dismiss', job)">
 				Dismiss
 			</button>
-			<button type="button" :disabled="busy" aria-label="Run now" title="Run this schedule now"
-				class="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+			<button type="button" :disabled="busy" aria-label="Run now" title="Run this schedule now" :class="ICON_BUTTON"
 				@click="emit('run', schedule)">
 				<PlayIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
 			<button type="button" aria-label="Settings" title="Open this scheduled task's settings"
-				class="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-				@click="emit('settings', schedule)">
+				:class="[ICON_BUTTON, '@max-[16rem]:hidden']" @click="emit('settings', schedule)">
 				<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
 			<button type="button" :disabled="busy" :aria-label="schedule.enabled ? 'Pause' : 'Resume'"
 				:title="schedule.enabled ? 'Pause this schedule' : 'Resume this schedule'"
-				class="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-				@click="emit('toggle', schedule)">
+				:class="[ICON_BUTTON, '@max-[16rem]:hidden']" @click="emit('toggle', schedule)">
 				<PauseIcon v-if="schedule.enabled" aria-hidden="true" class="h-4 w-4" />
 				<PlayCircleIcon v-else aria-hidden="true" class="h-4 w-4" />
 			</button>
-			<JobOutputToggle v-if="running && job" />
-			<div class="flex min-w-0 flex-1 flex-col items-end text-right font-mono text-xs">
-				<span v-if="agentLabel" data-testid="scheduled-agent" class="max-w-full truncate text-gray-500 dark:text-gray-400"
-					:title="agentLabel">{{ agentLabel }}</span>
-			</div>
+			<DropdownMenuRoot>
+				<DropdownMenuTrigger asChild>
+					<button type="button" aria-label="More actions" title="More actions" data-testid="scheduled-more"
+						:class="[ICON_BUTTON, 'hidden @max-[16rem]:block']">
+						<EllipsisHorizontalIcon aria-hidden="true" class="h-4 w-4" />
+					</button>
+				</DropdownMenuTrigger>
+				<DropdownMenuPortal>
+					<DropdownMenuContent align="end" :side-offset="6" data-testid="scheduled-more-items"
+						class="z-50 min-w-40 rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+						<DropdownMenuItem :class="MENU_ITEM" @select="emit('settings', schedule)">
+							<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
+							Settings
+						</DropdownMenuItem>
+						<DropdownMenuItem :disabled="busy" :class="MENU_ITEM" @select="emit('toggle', schedule)">
+							<PauseIcon v-if="schedule.enabled" aria-hidden="true" class="h-4 w-4" />
+							<PlayCircleIcon v-else aria-hidden="true" class="h-4 w-4" />
+							{{ schedule.enabled ? "Pause" : "Resume" }}
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenuPortal>
+			</DropdownMenuRoot>
+			<span v-if="agentLabel" data-testid="scheduled-agent"
+				class="ml-auto min-w-0 truncate text-right font-mono text-xs text-gray-500 dark:text-gray-400"
+				:title="agentLabel">{{ agentLabel }}</span>
 		</div>
 	</article>
 </template>
 
 <script setup lang="ts">
-import ArrowsPointingOutIcon from "@heroicons/vue/24/outline/ArrowsPointingOutIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
+import EllipsisHorizontalIcon from "@heroicons/vue/24/outline/EllipsisHorizontalIcon";
 import PauseIcon from "@heroicons/vue/24/outline/PauseIcon";
 import PencilIcon from "@heroicons/vue/24/outline/PencilIcon";
 import PlayCircleIcon from "@heroicons/vue/24/outline/PlayCircleIcon";
 import PlayIcon from "@heroicons/vue/24/outline/PlayIcon";
+import {
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuPortal,
+	DropdownMenuRoot,
+	DropdownMenuTrigger,
+} from "radix-vue";
 import { computed } from "vue";
 import type { RouteLocationRaw } from "vue-router";
 import { projectOwner } from "../../lib/projectSettings";
@@ -184,6 +210,11 @@ const emit = defineEmits<{
 	dismiss: [job: ProjectJob];
 }>();
 
+const ICON_BUTTON =
+	"shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800";
+const MENU_ITEM =
+	"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-700 outline-none data-[disabled]:cursor-not-allowed data-[highlighted]:bg-gray-100 data-[disabled]:opacity-50 dark:text-gray-200 dark:data-[highlighted]:bg-gray-800";
+
 const entry = computed(() => props.job?.schedule);
 const trigger = computed(() => triggerSummary(props.schedule));
 const next = computed(() => scheduleNext(props.schedule, entry.value));
@@ -214,14 +245,14 @@ const agentLabel = computed(() =>
 );
 const activeLabel = computed(() => {
 	if (entry.value?.state === "starting") return "Starting";
-	if (runOpen.value) return "Running now";
+	if (runOpen.value) return "Running";
 	switch (active.value?.status) {
 		case "queued":
 			return "Queued";
 		case "retrying":
 			return "Retrying";
 		default:
-			return "Running now";
+			return "Running";
 	}
 });
 
@@ -244,7 +275,7 @@ const lastTo = computed(() => {
 	if (!job || !number) return undefined;
 	return jobPath(projectOwner(settings.config, job.target), job.target, number);
 });
-// The running control opens the running run's view; without it, the task's
+// The running chip opens the running run's view; without it, the task's
 // page, whose session shows the run.
 const runTo = computed<RouteLocationRaw>(() => {
 	const job = props.job;

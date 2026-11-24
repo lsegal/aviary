@@ -220,8 +220,8 @@
 								@toggle="onScheduleAction(toggleSchedule, $event)" @settings="openScheduleSettings"
 								@dismiss="onAction(dismiss, $event)" />
 							<JobCard v-for="job in boardJobs" :key="job.id" :job="job" :now="now" :show-project="aggregate"
-								:busy="busyJob === job.id" :no-merge="status?.noMerge" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
-								@summarize="onSummarize" @safe-merge="openQueue('gh-safe-merge', $event.target, [$event.pr])" />
+								:busy="busyJob === job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
+								@summarize="onSummarize" />
 						</section>
 						</template>
 
@@ -240,7 +240,7 @@
 			<ProjectChatPanel v-if="(project || aggregate) && chatOpen && !auth.minimal" ref="chatPanel" :project="project" @close="chatOpen = false"
 				@turn-end="void refreshSchedules()" />
 		</div>
-		<QueueDialog :target="queueTarget" :skill="queueSkill" :preselect="queuePreselect" :no-merge="status?.noMerge"
+		<QueueDialog :target="queueTarget" :skill="queueSkill" :no-merge="status?.noMerge"
 			@close="queueSkill = null" @queued="refresh" />
 		<AddProjectDialog v-if="adding" :agent="routeAgent" @close="closeAdd" @added="onAdded" />
 	</AppLayout>
@@ -723,14 +723,11 @@ async function onAction(
 	}
 }
 
-// The Queue menu's picker, or a job card's Safe merge on its linked pull
-// request, which opens it with that pull request picked (#1095).
+// The Queue menu's picker (#1095).
 const queueSkill = ref<QueueSkill | null>(null);
 const queueTarget = ref("");
-const queuePreselect = ref<number[]>([]);
-function openQueue(skill: QueueSkill, target: string, numbers: number[] = []) {
+function openQueue(skill: QueueSkill, target: string) {
 	queueTarget.value = target;
-	queuePreselect.value = numbers;
 	queueSkill.value = skill;
 }
 

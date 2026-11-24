@@ -73,12 +73,6 @@
 				@click="emit('summarize', job)">
 				<SparklesIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
-			<button v-if="canSafeMerge" type="button" :disabled="busy" data-testid="job-safe-merge"
-				aria-label="Safe merge" :title="`Queue PR #${job.pr} for gh-safe-merge`"
-				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-				@click="emit('safe-merge', job)">
-				<ArrowsRightLeftIcon aria-hidden="true" class="h-4 w-4" />
-			</button>
 			<button v-if="job.actions.stop" type="button" :disabled="busy"
 				aria-label="Stop" title="Stop this job"
 				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-red-950/40"
@@ -99,7 +93,6 @@
 <script setup lang="ts">
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowsPointingOutIcon from "@heroicons/vue/24/outline/ArrowsPointingOutIcon";
-import ArrowsRightLeftIcon from "@heroicons/vue/24/outline/ArrowsRightLeftIcon";
 import SparklesIcon from "@heroicons/vue/24/outline/SparklesIcon";
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";
 import { computed } from "vue";
@@ -127,14 +120,11 @@ const props = defineProps<{
 	busy?: boolean;
 	/** Names the job's project, on a board of several. */
 	showProject?: boolean;
-	/** no_merge leaves pull requests for a human, so Safe merge is hidden. */
-	noMerge?: boolean;
 }>();
 const emit = defineEmits<{
 	retry: [job: ProjectJob];
 	stop: [job: ProjectJob];
 	summarize: [job: ProjectJob];
-	"safe-merge": [job: ProjectJob];
 }>();
 
 const settings = useSettingsStore();
@@ -190,15 +180,6 @@ const reason = computed(() =>
 		? props.job.summary
 		: "",
 );
-// A fix job's open pull request can be handed to gh-safe-merge.
-const canSafeMerge = computed(
-	() =>
-		!props.noMerge &&
-		props.job.kind === "issue" &&
-		props.job.pr > 0 &&
-		props.job.prState !== "merged",
-);
-
 const progressPct = computed(() =>
 	Math.round((props.job.progressDone / props.job.progressTotal) * 100),
 );

@@ -1,6 +1,6 @@
 {
 	"name": "aviary",
-	"version": "0.7.27",
+	"version": "0.7.28",
 	"private": true,
 	"packageManager": "pnpm@8.15.9",
 	"type": "module",
@@ -37,6 +37,7 @@
 		"build:release": "pnpm run build:web && node scripts/build-release.mjs",
 		"build:generate": "go generate ./...",
 		"build:clean": "node scripts/clean.mjs",
+		"icons": "node scripts/generate-icons.mjs",
 		"preview": "vite preview",
 		"lint": "concurrently -n go,web \"pnpm lint:go\" \"pnpm lint:web\"",
 		"lint:go": "go tool golangci-lint run ./...",
