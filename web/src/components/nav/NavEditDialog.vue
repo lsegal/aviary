@@ -9,7 +9,7 @@
 					Drag or move items to reorder them, and hide the ones you don't use. Changes save as you go and follow you to your other devices.
 				</p>
 			</div>
-			<div class="min-h-0 flex-1 space-y-5 overflow-y-auto bg-gray-50 px-5 py-4 dark:bg-gray-950">
+			<div data-testid="nav-edit-scroll" class="min-h-0 flex-1 space-y-5 overflow-y-auto bg-gray-50 px-5 py-4 dark:bg-gray-950">
 				<NavOrderList v-for="g in groups" :key="g.list" :list="g.list" :title="g.title" :items="g.items" />
 			</div>
 			<div class="flex items-center gap-2 border-t border-gray-200 px-5 py-3 dark:border-gray-800">

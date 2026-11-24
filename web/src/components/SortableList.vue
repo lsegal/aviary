@@ -77,7 +77,7 @@ const reducedMotion = () =>
 const settleTransition = computed(() =>
 	instant.value
 		? ""
-		: "transition-[top,transform] duration-150 ease-out motion-reduce:transition-none",
+		: "motion-safe:transition-[top,transform] motion-safe:duration-150 motion-safe:ease-out",
 );
 
 /** The landing spot, in list coordinates. */
@@ -95,8 +95,8 @@ function rowClass(key: string): string {
 	if (d?.key === key) {
 		const lift = settling.value
 			? ""
-			: "scale-[1.02] -rotate-1 shadow-xl ring-2 ring-blue-500 motion-reduce:scale-100 motion-reduce:rotate-0";
-		return `z-10 rounded-lg ${lift} ${settling.value ? settleTransition.value : "transition-[box-shadow,scale,rotate] duration-150"}`;
+			: "shadow-xl ring-2 ring-blue-500 motion-safe:scale-[1.02] motion-safe:-rotate-1";
+		return `z-10 rounded-lg ${lift} ${settling.value ? settleTransition.value : "motion-safe:transition-[box-shadow,scale,rotate] motion-safe:duration-150"}`;
 	}
 	return settleTransition.value;
 }
@@ -275,15 +275,29 @@ function update() {
 	d.to = to;
 }
 
-async function drop() {
+/** Ends the drop at once, as when the list unmounts while it settles. */
+let finishDrop: (() => void) | null = null;
+
+function drop() {
 	cleanup?.();
 	const d = drag.value;
-	if (!d) return;
-	if (!reducedMotion()) {
-		settling.value = true;
-		d.offset = placeholder.value.top - d.tops[d.from];
-		await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
+	if (!d || finishDrop) return;
+	let timer = 0;
+	finishDrop = () => {
+		clearTimeout(timer);
+		finishDrop = null;
+		commit(d);
+	};
+	if (reducedMotion()) {
+		finishDrop();
+		return;
 	}
+	settling.value = true;
+	d.offset = placeholder.value.top - d.tops[d.from];
+	timer = window.setTimeout(() => finishDrop?.(), SETTLE_MS);
+}
+
+async function commit(d: Drag) {
 	// Render the new order with every row already where it shows, so
 	// nothing jumps when the transforms clear.
 	instant.value = true;
@@ -315,5 +329,8 @@ function onHandleKey(e: KeyboardEvent, key: string) {
 	emit("reorder", keys, key);
 }
 
-onBeforeUnmount(() => cleanup?.());
+onBeforeUnmount(() => {
+	cleanup?.();
+	finishDrop?.();
+});
 </script>
