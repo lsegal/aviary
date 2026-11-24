@@ -295,7 +295,8 @@ func (s *Server) gitUpgrade(ctx context.Context, dir, when string) (saferestart.
 
 // awaitHotReload waits in the background for forgo to reload the code a pull
 // brought in, replacing any earlier wait. When the reload goes live nothing
-// restarts; otherwise the existing safe restart runs (when supervised).
+// restarts (refreshOnHotReload registers its MCP tools); otherwise the
+// existing safe restart runs (when supervised).
 func (s *Server) awaitHotReload(dir string, since int, when string, res update.GitPullResult) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.restart.mu.Lock()
@@ -320,7 +321,6 @@ func (s *Server) awaitHotReload(dir string, since int, when string, res update.G
 			return // a newer pull or shutdown took over
 		}
 		if result.Applied {
-			refreshAfterHotReload()
 			slog.Info("server: dev update applied via hot reload", "component", "update", "to", res.To, "generation", result.Generation)
 			return
 		}
@@ -332,6 +332,23 @@ func (s *Server) awaitHotReload(dir string, since int, when string, res update.G
 			slog.Warn("server: restarting after a failed hot reload", "component", "update", "error", err)
 		}
 	}()
+}
+
+// refreshOnHotReload registers the MCP tools again after every reload forgo
+// applies, whichever process changed the sources: this server's own update,
+// aviary upgrade pulling the checkout, or an edit. It runs until ctx ends.
+func (s *Server) refreshOnHotReload(ctx context.Context, dir string) {
+	since := hotReloadGen(dir)
+	opts := hotReloadWait
+	for ctx.Err() == nil {
+		result := waitHotReload(ctx, dir, since, opts)
+		if result.Generation > since {
+			since = result.Generation
+		}
+		if result.Applied && ctx.Err() == nil {
+			refreshAfterHotReload()
+		}
+	}
 }
 
 func (s *Server) cancelRestart() (saferestart.Status, error) {
