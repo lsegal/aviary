@@ -466,7 +466,9 @@ test("a renamed task's session takes the new name", async ({ page }) => {
 
 	await taskRows(page).getByTestId("sidebar-item-link").click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/nightly-cleanup$/);
-	await expect(page.getByTestId("settings-title")).toHaveText("nightly-cleanup");
+	await expect(page.getByTestId("settings-title")).toHaveText(
+		"nightly-cleanup",
+	);
 	await expect(page.getByText("nightly-cleanup: all green")).toBeVisible();
 });
 

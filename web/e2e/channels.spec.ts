@@ -357,7 +357,9 @@ test("Agent Settings has no Channels section and its old address redirects", asy
 }) => {
 	await mockChannels(page, [TEAM]);
 	await page.goto("/agents/assistant/settings");
-	await expect(page.getByTestId("settings-title")).toContainText("Agent Settings");
+	await expect(page.getByTestId("settings-title")).toContainText(
+		"Agent Settings",
+	);
 	await expect(page.getByTestId("channel-settings")).toHaveCount(0);
 	await expect(
 		page.getByRole("heading", { name: "Channels", exact: true }),

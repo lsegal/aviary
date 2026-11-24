@@ -1,10 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expectSettingsHeader } from "./helpers/settingsHeader";
 
 // Every nested page shows where it is, from its agent or System down, with a
 // back link to its parent, also with the sidebar collapsed and on narrow
 // screens; the collapsed rail lists each page's items in a flyout (#1036).
-// Every one shows them in the same shared page header (#1064).
+// Every one shows them in the same shared page header (#1064):
+// the Settings page header (#1125).
 
 const LONG_PROJECT = "lsegal/a-repository-with-a-very-long-name-indeed";
 
@@ -189,6 +191,7 @@ test("each nested page shows the shared header with its crumbs and parent link",
 		const back = page.getByTestId("settings-back");
 		await expect(back).toHaveAccessibleName(`Back to ${c.back}`);
 		await expect(back).toHaveAttribute("href", c.parent);
+		await expectSettingsHeader(page);
 	}
 });
 

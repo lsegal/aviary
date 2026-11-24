@@ -59,7 +59,9 @@ async function mockAviary(page: Page) {
 /** Opens url once its breadcrumb shows; a cold dev server compiles slowly. */
 async function open(page: Page, url: string) {
 	await page.goto(url);
-	await expect(page.getByTestId("settings-title")).toBeVisible({ timeout: 15_000 });
+	await expect(page.getByTestId("settings-title")).toBeVisible({
+		timeout: 15_000,
+	});
 }
 
 function trigger(page: Page) {

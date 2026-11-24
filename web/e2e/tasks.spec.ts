@@ -128,7 +128,9 @@ test("the Scheduled Tasks root page has no Reload or Save Changes", async ({
 	await mockTasks(page);
 	await page.goto("/agents/assistant/tasks");
 
-	await expect(page.getByTestId("settings-title")).toHaveText("Scheduled Tasks");
+	await expect(page.getByTestId("settings-title")).toHaveText(
+		"Scheduled Tasks",
+	);
 	await expect(page.getByTestId("tasks-overview")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Reload" })).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "Save Changes" })).toHaveCount(
@@ -362,7 +364,9 @@ test("System → Jobs redirects to Scheduled Tasks and has no nav entry", async 
 	await page.goto("/system/jobs");
 
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks$/);
-	await expect(page.getByTestId("settings-title")).toHaveText("Scheduled Tasks");
+	await expect(page.getByTestId("settings-title")).toHaveText(
+		"Scheduled Tasks",
+	);
 	await expect(page.locator('a[href="/system/jobs"]')).toHaveCount(0);
 });
 

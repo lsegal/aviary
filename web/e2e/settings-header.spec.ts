@@ -1,9 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expectSettingsHeader } from "./helpers/settingsHeader";
 
 // Every Settings page shares one header: a back link to the page the
 // settings belong to and a breadcrumb whose crumbs link to their pages (#986).
-// It is the header every nested page shares (#1064).
+// It is the header every nested page shares (#1064). Every page keeps its
+// look: sticky, bordered and blurred, below the page's padding (#1125).
 
 const NOW = new Date().toISOString();
 
@@ -166,6 +168,7 @@ test("task, agent, project and System settings show crumbs to their own parents"
 			c.crumbs.at(-1) as string,
 		);
 		await expect(backLink(page)).toHaveAccessibleName(c.back);
+		await expectSettingsHeader(page);
 		await backLink(page).click();
 		await expect(page).toHaveURL(c.parent);
 	}
