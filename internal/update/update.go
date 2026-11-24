@@ -54,7 +54,7 @@ type CheckResult struct {
 }
 
 // noCheckoutMessage explains the NoCheckout state.
-const noCheckoutMessage = "This dev build found no source checkout, so updates cannot be checked. Run Aviary with " + CheckoutEnv + " set to the checkout root (pnpm dev sets it)."
+const noCheckoutMessage = "This dev build found no source checkout, so updates cannot be checked. Run Aviary with " + CheckoutEnv + " set to the checkout root (pnpm dev sets it), or run aviary upgrade --release to install the latest release."
 
 // InstallOptions controls how a release is downloaded and installed.
 type InstallOptions struct {

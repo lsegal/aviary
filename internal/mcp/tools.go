@@ -2865,6 +2865,7 @@ func registerServerTools(s *sdkmcp.Server) {
 		Version string `json:"version,omitempty" jsonschema:"release to install, with or without a leading v; defaults to the latest release"`
 		When    string `json:"when,omitempty" jsonschema:"now (default) stops running jobs at a checkpoint and resumes them after the restart; idle holds new jobs and upgrades once no jobs are running"`
 		Force   bool   `json:"force,omitempty" jsonschema:"restart without waiting for in-flight MCP tool calls to finish"`
+		Release bool   `json:"release,omitempty" jsonschema:"dev build only: install the release instead of pulling the source checkout"`
 		// RemoveStaleLock clears a stale lock a failed update reported.
 		RemoveStaleLock bool `json:"remove_stale_lock,omitempty" jsonschema:"dev checkout only: first remove a stale .git/index.lock (at least 10 minutes old) that blocks the pull"`
 	}
@@ -2873,7 +2874,7 @@ func registerServerTools(s *sdkmcp.Server) {
 		Name:        "server_upgrade",
 		Description: "Upgrade Aviary with a safe restart: install the release, update skills for every signed-in CLI provider, checkpoint running jobs, restart, and resume each job in its own session. Does nothing when already current. A dev build in a source checkout instead runs git pull --ff-only (refused when the tree has local changes) and does not restart; hot reload picks up the new code",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args serverUpgradeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		return requestSafeRestart(update.WithCaller(ctx, "server_upgrade"), saferestart.Request{When: args.When, Upgrade: true, Version: args.Version, Force: args.Force, RemoveStaleLock: args.RemoveStaleLock})
+		return requestSafeRestart(update.WithCaller(ctx, "server_upgrade"), saferestart.Request{When: args.When, Upgrade: true, Version: args.Version, Release: args.Release, Force: args.Force, RemoveStaleLock: args.RemoveStaleLock})
 	})
 
 	type serverRestartArgs struct {

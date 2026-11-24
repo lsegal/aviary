@@ -55,6 +55,15 @@ func releaseDownloadURL(base, repo, version, asset string) string {
 	return fmt.Sprintf("%s/%s/releases/download/%s/%s", downloadBase(base), repo, NormalizeVersion(version), asset)
 }
 
+// LatestRelease returns the latest Aviary release tag, read from the
+// releases/latest redirect without calling GitHub's REST API.
+func LatestRelease(ctx context.Context, client *http.Client) (string, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return resolveLatestVersion(ctx, client, "", DefaultRepo)
+}
+
 // resolveLatestVersion reads the latest release tag from the Location of the
 // <base>/<repo>/releases/latest redirect.
 func resolveLatestVersion(ctx context.Context, client *http.Client, base, repo string) (string, error) {

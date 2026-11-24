@@ -50,6 +50,7 @@ func exitStalledRestart() {
 
 var (
 	versionCheck    = update.Check
+	latestRelease   = update.LatestRelease
 	installRelease  = update.Install
 	gitCheckout     = update.GitCheckout
 	gitPull         = update.GitPull
@@ -163,7 +164,7 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 		return saferestart.Status{}, fmt.Errorf("when must be %q or %q", saferestart.WhenNow, saferestart.WhenIdle)
 	}
 
-	if req.Upgrade {
+	if req.Upgrade && !req.Release {
 		if dir := gitCheckout(); dir != "" {
 			if req.RemoveStaleLock {
 				if err := removeStaleLock(ctx, dir); err != nil {
@@ -176,12 +177,21 @@ func (s *Server) requestRestart(ctx context.Context, req saferestart.Request) (s
 
 	version := ""
 	if req.Upgrade {
-		check, err := versionCheck(ctx, &http.Client{Timeout: 15 * time.Second})
-		if err != nil && check.LatestVersion == "" {
-			return saferestart.Status{}, err
-		}
 		version = update.NormalizeVersion(req.Version)
+		if version == "" && req.Release {
+			// A dev build's version check compares its checkout, not
+			// releases, so look the release up directly.
+			latest, err := latestRelease(ctx, &http.Client{Timeout: 15 * time.Second})
+			if err != nil {
+				return saferestart.Status{}, err
+			}
+			version = update.NormalizeVersion(latest)
+		}
 		if version == "" {
+			check, err := versionCheck(ctx, &http.Client{Timeout: 15 * time.Second})
+			if err != nil && check.LatestVersion == "" {
+				return saferestart.Status{}, err
+			}
 			if check.NoCheckout {
 				return saferestart.Status{}, errors.New(check.Message)
 			}
