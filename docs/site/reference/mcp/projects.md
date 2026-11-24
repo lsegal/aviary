@@ -24,6 +24,14 @@ A job is named by its issue `number`. `target` is needed only when several proje
 | `project_issue_comment` | `aviary project issue comment` | |
 | `project_issue_create` | `aviary project issue create` | |
 | `project_issue_backfill_media` | `aviary project issue backfill-media` | |
+| `project_task_list` | `aviary project task list` | read-only |
+| `project_task_get` | `aviary project task get` | read-only |
+| `project_task_create` | `aviary project task create` | |
+| `project_task_update` | `aviary project task update` | |
+| `project_task_pause` | `aviary project task pause` | |
+| `project_task_resume` | `aviary project task resume` | |
+| `project_task_run` | `aviary project task run` | |
+| `project_task_delete` | `aviary project task delete` | destructive |
 | `project_check` | `aviary project check` | read-only |
 
 Settings have no tool of their own. A project lives in the `projects:` list of the agent that owns it in `aviary.yaml` ([`agents[].projects`](/reference/config#agents-projects)), and the settings every project shares live in the top-level `projects:` section ([`projects`](/reference/config#projects)). Both are read and written with `config_get` and `config_save`, and are applied to the running engine when the file changes.
@@ -131,6 +139,20 @@ Images and videos are uploaded and embedded in the issue. See [Attachments](#att
 - `skip_turn_media: true` leaves the turn's media out.
 
 GitHub takes PNG, JPEG, GIF, WebP and SVG images up to 10 MB, and MP4, MOV and WebM videos up to 100 MB. If any file is missing, has another type, or is too large, the call fails with an error that names the file and the reason, and nothing is posted. The result's `attachments` lists the files that were attached. Uploading needs push access to the repository.
+
+## Project scheduled tasks
+
+The `project_task_*` tools manage the [scheduled tasks](/guide/scheduled-tasks) of the projects this instance watches, and only theirs: a task of any other project, or one that is not a `project` task, is refused. They are how the [prompt chat](/guide/projects#prompt-chat) manages tasks. They validate, save, preview and run through the same code as `task_schedule`, `task_update`, `task_delete`, `task_preview` and `task_run`, so a task they create looks the same as one made on the Scheduled Tasks page. Every change they make is written to the Code Loop log.
+
+A task is named by `name`, or `<agent>/<task>` as `id` gives it. `project` is needed only when tasks of several watched projects share the name.
+
+- **`project_task_list`**: the tasks of every watched project, or of `project`. Each has `id`, `name`, `agent`, `project`, `enabled` and `paused`, `trigger` (the plain-language schedule), `next_run`, `last_run` (`fire_time`, `status`, `summary`), `precompile` (`enabled`, `compiled`, `verified`, `failures`, `note`), and `source`: `kind` `file` for a Markdown task file in its agent's `tasks/` directory, or `config` for `aviary.yaml`, with its `path`.
+- **`project_task_get`**: one task, adding `prompt`, `model`, `send_to`, `trigger_fields` (`schedule`, `trigger`, `every`, `at`, `days`, `timezone`, `start_at`, `run_once`, `overlap`, `missed`), `next_runs`, `runs_per_30_days`, and `recent_runs`, newest first.
+- **`project_task_create`**: `project`, `content` (the prompt), a schedule trigger (`schedule`, or `trigger` with `every`, `at`, `days` or `start_at`), and optional `name`, `timezone`, `overlap`, `missed`, `model`, `send_to` and `precompile`. The task belongs to the agent that owns the project; a runtime watch no agent owns is refused. The result's `preview` has `schedule`, `next_runs` and `runs_per_30_days`, and `estimate` has the determinism `verdict` and the `per_run` token and cost estimate, as `task_analyze` reports them. `dry_run: true` returns them without saving. An invalid trigger fails with `task_schedule`'s error.
+- **`project_task_update`**: changes only the fields passed, as `task_update` does; an empty string clears one. `new_name` renames the task, `new_project` moves it to another watched project of the same agent, and `enabled` pauses or resumes it. The result's `edit` says how it was saved: a task file is edited directly; a task defined in `aviary.yaml` is saved to a task file that replaces that definition.
+- **`project_task_pause`**, **`project_task_resume`**: stop or restart its fires. A run already in flight keeps going; pause it with `project_job_pause`.
+- **`project_task_run`**: fires it now, as `task_run` does.
+- **`project_task_delete`**: without `confirm`, deletes nothing and returns `removes`, a description of what goes, including its run history, to show before asking for confirmation. With `confirm: true` it deletes the task and its history through `task_delete`, which refuses a task defined in `aviary.yaml`.
 
 ## project_issue_backfill_media
 
