@@ -140,6 +140,14 @@ test("settings pages fit a phone at the largest text size (#1093)", async ({
 		),
 	);
 	await mockSettings(page);
+	// The server holds the same choice, as it does once the user saved it.
+	await page.route("/api/preferences/display", (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ textSize: "xlarge" }),
+		}),
+	);
 	for (const url of [
 		"/agents/Aviary/channels/signal/settings",
 		"/agents/Aviary/tasks?task=release-aviary",
