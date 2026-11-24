@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -230,6 +231,17 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 	server.SetWebUIEnabled(webUI)
 	defer server.SetMinimalMode(false)
 	defer server.SetWebUIEnabled(true)
+	if webUI && !tui {
+		if problem := server.WebAssetsProblem(); problem != "" {
+			_, _ = fmt.Fprintf(out, "warning: %s\n", problem)
+		}
+	}
+
+	removePortFile, err := writeWatchPortFile(session.Port)
+	if err != nil {
+		return err
+	}
+	defer removePortFile()
 
 	ctx, stop := signal.NotifyContext(ctx, watchSignals...)
 	defer stop()
@@ -242,7 +254,7 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 
 	webURL := ""
 	if webUI {
-		webURL = fmt.Sprintf("http://127.0.0.1:%d/agents/%s/projects", session.Port, url.PathEscape(session.Agent))
+		webURL = fmt.Sprintf("%s/agents/%s/projects", watchWebBase(session.Port), url.PathEscape(session.Agent))
 	}
 	title := strings.Join(targets, ", ")
 	if !tui {
@@ -288,6 +300,39 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 	}
 	_, _ = fmt.Fprintln(out, "Watch session ended.")
 	return err
+}
+
+// Environment variables scripts/dev-watch.mjs (pnpm dev:watch) sets to put
+// the Vite dev server in front of a watch session.
+const (
+	// watchPortFileEnv names a file the session writes its server's port
+	// to once it is chosen, and removes when the session ends, so the dev
+	// server can proxy to whichever free port the session took.
+	watchPortFileEnv = "AVIARY_WATCH_PORT_FILE"
+	// watchWebURLEnv is the base URL the session's web UI is opened at in
+	// place of the session's own server.
+	watchWebURLEnv = "AVIARY_WATCH_WEB_URL"
+)
+
+// writeWatchPortFile writes port to the file watchPortFileEnv names, if any,
+// and returns a func removing it.
+func writeWatchPortFile(port int) (func(), error) {
+	path := os.Getenv(watchPortFileEnv)
+	if path == "" {
+		return func() {}, nil
+	}
+	if err := os.WriteFile(path, []byte(strconv.Itoa(port)+"\n"), 0o600); err != nil {
+		return nil, fmt.Errorf("writing %s: %w", watchPortFileEnv, err)
+	}
+	return func() { _ = os.Remove(path) }, nil
+}
+
+// watchWebBase is the base URL the session's web UI is opened at.
+func watchWebBase(port int) string {
+	if base := strings.TrimRight(os.Getenv(watchWebURLEnv), "/"); base != "" {
+		return base
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
 }
 
 // serveWatch runs the session's server until ctx ends, starting it again
