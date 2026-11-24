@@ -1,6 +1,6 @@
 <template>
 	<section data-testid="kanban" aria-label="Jobs by state" class="flex gap-3 overflow-x-auto pb-2">
-		<div v-if="showScheduled && scheduleTo" data-testid="kanban-column" data-state="scheduled"
+		<div v-if="showScheduled" data-testid="kanban-column" data-state="scheduled"
 			class="flex min-w-44 flex-1 basis-0 flex-col rounded-xl border border-violet-200 bg-violet-50/40 dark:border-violet-900 dark:bg-violet-950/20">
 			<h3 class="flex items-center gap-2 border-b border-violet-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-violet-700 dark:border-violet-900 dark:text-violet-300">
 				<span class="h-2 w-2 rounded-full bg-violet-500" />
@@ -8,7 +8,7 @@
 				<span class="ml-auto font-normal tabular-nums text-violet-400">{{ schedules.length }}</span>
 			</h3>
 			<div class="flex flex-col gap-2 p-2">
-				<!-- The card opens the task's page; the pencil, the schedule's editor. -->
+				<!-- The card opens the task's page; the gear, its task settings. -->
 				<article v-for="s in schedules" :key="s.id" data-testid="kanban-scheduled-card"
 					class="relative min-w-0 cursor-pointer space-y-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs focus-within:ring-2 focus-within:ring-blue-500 hover:border-violet-400 dark:border-violet-900 dark:bg-gray-900 dark:hover:border-violet-700">
 					<div class="flex items-center gap-1">
@@ -16,10 +16,11 @@
 							class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 after:absolute after:inset-0 after:rounded-lg hover:underline focus:outline-none dark:text-white">
 							{{ s.name }}
 						</router-link>
-						<router-link :to="scheduleTo(s)" aria-label="Edit schedule" title="Edit this schedule"
-							class="relative z-10 shrink-0 rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white">
-							<PencilIcon aria-hidden="true" class="h-3.5 w-3.5" />
-						</router-link>
+						<button type="button" data-testid="kanban-scheduled-settings" aria-label="Task settings" title="Task settings"
+							class="relative z-10 shrink-0 rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+							@click="emit('settings', s)">
+							<Cog6ToothIcon aria-hidden="true" class="h-3.5 w-3.5" />
+						</button>
 					</div>
 					<router-link v-if="showProject" :to="projectBoardPath(s.project)" data-testid="kanban-scheduled-project"
 						class="relative z-10 block w-fit max-w-full truncate rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
@@ -90,9 +91,8 @@
 </template>
 
 <script setup lang="ts">
-import PencilIcon from "@heroicons/vue/24/outline/PencilIcon";
+import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import { computed } from "vue";
-import type { RouteLocationRaw } from "vue-router";
 import { projectOwner } from "../../lib/projectSettings";
 import {
 	age,
@@ -129,8 +129,6 @@ const props = withDefaults(
 		now: number;
 		/** The project's scheduled tasks, shown in their own Scheduled column. */
 		schedules?: ProjectSchedule[];
-		/** Where a scheduled box opens its detail view; without it there is no Scheduled column. */
-		scheduleTo?: (s: ProjectSchedule) => RouteLocationRaw;
 		/** The schedules' board entries: their last and next runs and any run in flight. */
 		scheduleEntries?: ProjectJob[];
 		/** Names each scheduled card's project, on a board of several. */
@@ -138,11 +136,11 @@ const props = withDefaults(
 	}>(),
 	{
 		schedules: () => [],
-		scheduleTo: undefined,
 		scheduleEntries: () => [],
 		showProject: false,
 	},
 );
+const emit = defineEmits<{ settings: [schedule: ProjectSchedule] }>();
 
 function entryOf(s: ProjectSchedule) {
 	return scheduleJob(props.scheduleEntries, s.id);

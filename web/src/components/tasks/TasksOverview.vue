@@ -469,12 +469,13 @@ const runsTask = ref("");
 const busy = ref("");
 const actionError = ref("");
 
-// A task opens on its page, as its sidebar row does; settings are behind Edit.
+// A task opens on its page, as its sidebar row does; settings are behind
+// its gear.
 function openTask(name: string) {
 	void router.push(taskSessionPath(props.agent, name));
 }
 
-function editTask(name: string) {
+function openSettings(name: string) {
 	openItemDialog({ kind: "task", agent: props.agent, mode: "edit", name });
 }
 
@@ -486,7 +487,7 @@ function viewRuns(r: TaskRow) {
 function onAction(r: TaskRow, action: TaskAction) {
 	if (action === "run") void runNow(r);
 	else if (action === "toggle") void setEnabled(r, !r.enabled);
-	else if (action === "edit") editTask(r.task.name);
+	else if (action === "settings") openSettings(r.task.name);
 	else viewRuns(r);
 }
 

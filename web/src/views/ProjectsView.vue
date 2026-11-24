@@ -1,6 +1,6 @@
 <template>
-	<AppLayout :trail="detailSchedule ? { from: boardQuery, crumbs: [{ label: detailSchedule.name }] } : null"
-		:title-link="project && !jobOpen && !detailSchedule ? { href: targetURL(project), title: `Open ${project} on GitHub` } : null">
+	<AppLayout
+		:title-link="project && !jobOpen ? { href: targetURL(project), title: `Open ${project} on GitHub` } : null">
 		<template v-if="(project || aggregate) && !jobOpen" #header-status>
 				<span v-if="aggregate" data-testid="board-projects"
 					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
@@ -83,6 +83,9 @@
 						</p>
 						<p v-if="error" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
 							{{ error }}
+						</p>
+						<p v-if="scheduleError" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+							{{ scheduleError }}
 						</p>
 
 						<UpNextStrip v-if="!aggregate" :runs="upcoming" :now="now" @open="openSchedule" />
@@ -183,25 +186,9 @@
 								</nav>
 						</div>
 
-						<section v-if="detailSchedule" data-testid="schedule-detail" :aria-label="`Schedule ${detailSchedule.name}`"
-							class="space-y-4 rounded-xl border border-violet-200 bg-white p-4 dark:border-violet-900 dark:bg-gray-900">
-							<header class="flex flex-wrap items-center gap-2">
-								<span class="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">Scheduled</span>
-								<h2 class="truncate text-lg font-semibold text-gray-900 dark:text-white">{{ detailSchedule.name }}</h2>
-							</header>
-							<p v-if="scheduleError" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-								{{ scheduleError }}
-							</p>
-							<ScheduleEditor :key="detailSchedule.id" :schedule="detailSchedule" :save="saveSchedule"
-								:remove="removeSchedule" :run-now="runScheduleNow" :preview="previewSchedule"
-								@deleted="router.replace(boardQuery)" />
-							<ScheduleRunHistory :schedule="detailSchedule" :entry="scheduleJob(scheduleEntries, detailSchedule.id)" :now="now" />
-						</section>
-
-						<template v-else>
 						<div v-if="loading && !boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
 						<KanbanBoard v-else-if="kanban" :jobs="boardJobs" :filters="filters" :now="now" :schedules="boardSchedules"
-							:schedule-entries="scheduleEntries" :schedule-to="scheduleTo" :show-project="aggregate" />
+							:schedule-entries="scheduleEntries" :show-project="aggregate" @settings="openScheduleSettings" />
 						<div v-else-if="!boardJobs.length && !boardSchedules.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
 							<p>No jobs match “<b class="text-gray-800 dark:text-gray-100">{{ search.trim() }}</b>”.</p>
 							<button type="button" class="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -213,7 +200,7 @@
 						</div>
 						<div v-else-if="!boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
 						<section v-else class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Jobs">
-							<ScheduledCard v-for="s in boardSchedules" :key="s.id" :schedule="s" :now="now" :to="scheduleTo(s)"
+							<ScheduledCard v-for="s in boardSchedules" :key="s.id" :schedule="s" :now="now"
 								:show-project="aggregate"
 								:job="scheduleJob(scheduleEntries, s.id)" :busy="busySchedule === s.id"
 								@run="onScheduleAction(runScheduleNow, $event)"
@@ -223,7 +210,6 @@
 								:busy="busyJob === job.id" :no-merge="status?.noMerge" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
 								@summarize="onSummarize" @safe-merge="openQueue('gh-safe-merge', $event.target, [$event.pr])" />
 						</section>
-						</template>
 
 						<footer v-if="status" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
 							<span v-if="status.targets.length">
@@ -273,8 +259,6 @@ import ProjectNavRow from "../components/projects/ProjectNavRow.vue";
 import QueueDialog from "../components/projects/QueueDialog.vue";
 import QueueMenu from "../components/projects/QueueMenu.vue";
 import ScheduledCard from "../components/projects/ScheduledCard.vue";
-import ScheduleEditor from "../components/projects/ScheduleEditor.vue";
-import ScheduleRunHistory from "../components/projects/ScheduleRunHistory.vue";
 import StatChipRow, {
 	type StatChip,
 } from "../components/projects/StatChipRow.vue";
@@ -319,7 +303,7 @@ import {
 } from "../lib/projects";
 import { shortVersion } from "../lib/version";
 import { useAuthStore } from "../stores/auth";
-import { useSettingsStore } from "../stores/settings";
+import { taskSessionPath, useSettingsStore } from "../stores/settings";
 
 // A selected state chip fills with that state's color; Starting is orange.
 const FILTER_ACTIVE: Record<BoardFilter, string> = {
@@ -426,16 +410,9 @@ watch(
 	() => [statesKey.value, route.query.state, route.query.tab, route.query.view],
 	() => {
 		// The board replaced the old Schedules view: its links land on the
-		// board's scheduled items, with the linked schedule's editor open.
+		// board's scheduled items.
 		if (route.query.tab === "schedules" || route.query.view === "schedules") {
-			const { schedule } = route.query;
-			void router.replace({
-				query: {
-					state: "scheduled",
-					scheduled:
-						typeof schedule === "string" && schedule ? schedule : undefined,
-				},
-			});
+			void router.replace({ query: { state: "scheduled" } });
 			return;
 		}
 		if (typeof route.query.state === "string") {
@@ -484,10 +461,7 @@ const {
 	upcoming,
 	agents: scheduleAgents,
 	error: scheduleError,
-	save: saveSchedule,
-	remove: removeSchedule,
 	runNow: runScheduleNow,
-	preview: previewSchedule,
 	refresh: refreshSchedules,
 } = useProjectSchedules(project, targets);
 // The projects' scheduled tasks are their own kind of box on the board, one
@@ -506,30 +480,6 @@ const boardSchedules = computed(() =>
 	),
 );
 const boardJobs = computed(() => (showJobs.value ? jobs.value : []));
-// A scheduled box opens its editor on the board, at ?scheduled=<id>, so a
-// reload or a shared link opens the same place. A board of several projects
-// opens it on its own project's board, where the editor lives.
-function scheduleTo(s: ProjectSchedule) {
-	if (aggregate.value)
-		return {
-			path: projectPath(
-				projectOwner(settingsStore.config, s.project),
-				s.project,
-			),
-			query: { scheduled: s.id },
-		};
-	return { query: { ...boardQuery.value.query, scheduled: s.id } };
-}
-const boardQuery = computed(() => {
-	const { scheduled: _, ...query } = route.query;
-	return { query };
-});
-const detailSchedule = computed(() => {
-	const id = route.query.scheduled;
-	return typeof id === "string"
-		? (schedules.value.find((s) => s.id === id) ?? null)
-		: null;
-});
 // A scheduled box's footer runs, pauses and resumes its task in place, and
 // opens its settings in the shared task dialog, as the sidebar's gear does.
 const busySchedule = ref("");
@@ -557,8 +507,10 @@ async function toggleSchedule(s: ProjectSchedule) {
 function openScheduleSettings(s: ProjectSchedule) {
 	openItemDialog({ kind: "task", mode: "edit", agent: s.agent, name: s.name });
 }
+// An Up next run opens its task's page, as the task's card does.
 function openSchedule(id: string) {
-	void router.push({ query: { ...route.query, scheduled: id } });
+	const s = schedules.value.find((t) => t.id === id);
+	if (s) void router.push(taskSessionPath(s.agent, s.name));
 }
 
 // The agent a new scheduled task runs under: the project's owner, or the

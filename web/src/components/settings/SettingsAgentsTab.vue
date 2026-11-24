@@ -715,7 +715,7 @@
 <AppCombobox v-model="selectedTask.project" aria-label="Project" placeholder="Select a watched project…"
 	empty-text="No matching projects" :options="projectTargetOptions(selectedTask).map((t: string) => ({ value: t, label: t }))" />
 <router-link v-if="selectedTask.project" data-testid="task-project-schedule-link"
-	:to="projectScheduleLink(agent.name, selectedTask)"
+	:to="projectScheduleLink(selectedTask)"
 	class="mt-1 inline-block text-xs text-blue-600 hover:underline dark:text-blue-400">Open in the project's schedules</router-link>
 </div>
 <div data-testid="task-model">
@@ -890,13 +890,13 @@ export default defineComponent({
 		);
 		const store = useSettingsStore();
 		const { open: openItemDialog } = useAgentItemDialogs();
-		// A project scheduled task is also edited from its project's board.
-		const projectScheduleLink = (agentName: string, task: AgentTask) => ({
+		// A project scheduled task also shows on its project's board.
+		const projectScheduleLink = (task: AgentTask) => ({
 			path: projectPath(
 				projectOwner(store.config, task.project ?? ""),
 				task.project ?? "",
 			),
-			query: { scheduled: `${agentName}/${task.name}` },
+			query: { state: "scheduled" },
 		});
 		// A scheduled prompt task's precompile keeps its prompt beside the
 		// script, as a project task's does; other tasks use the default help.

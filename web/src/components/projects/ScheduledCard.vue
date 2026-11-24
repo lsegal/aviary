@@ -82,10 +82,6 @@
 			</p>
 		</div>
 		<div class="relative z-10 flex shrink-0 cursor-auto flex-wrap items-center gap-2 border-t border-gray-100 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
-			<router-link :to="to" aria-label="Edit schedule" title="Edit this schedule"
-				class="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-				<PencilIcon aria-hidden="true" class="h-4 w-4" />
-			</router-link>
 			<!-- The running state shows once: as the control that opens the run. -->
 			<router-link v-if="running" :to="runTo" data-testid="scheduled-running"
 				:title="runOpen ? 'Open this run' : 'Open this task'"
@@ -105,11 +101,6 @@
 				@click="emit('run', schedule)">
 				<PlayIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
-			<button type="button" aria-label="Settings" title="Open this scheduled task's settings"
-				class="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-				@click="emit('settings', schedule)">
-				<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
-			</button>
 			<button type="button" :disabled="busy" :aria-label="schedule.enabled ? 'Pause' : 'Resume'"
 				:title="schedule.enabled ? 'Pause this schedule' : 'Resume this schedule'"
 				class="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -118,6 +109,13 @@
 				<PlayCircleIcon v-else aria-hidden="true" class="h-4 w-4" />
 			</button>
 			<JobOutputToggle v-if="running && job" />
+			<!-- The gear, always the last action, edits the task in the full task
+				settings, as the sidebar's gear does. -->
+			<button type="button" data-testid="scheduled-settings" aria-label="Task settings" title="Task settings"
+				class="shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+				@click="emit('settings', schedule)">
+				<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
+			</button>
 			<div class="flex min-w-0 flex-1 flex-col items-end text-right font-mono text-xs">
 				<span v-if="agentLabel" data-testid="scheduled-agent" class="max-w-full truncate text-gray-500 dark:text-gray-400"
 					:title="agentLabel">{{ agentLabel }}</span>
@@ -130,7 +128,6 @@
 import ArrowsPointingOutIcon from "@heroicons/vue/24/outline/ArrowsPointingOutIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import PauseIcon from "@heroicons/vue/24/outline/PauseIcon";
-import PencilIcon from "@heroicons/vue/24/outline/PencilIcon";
 import PlayCircleIcon from "@heroicons/vue/24/outline/PlayCircleIcon";
 import PlayIcon from "@heroicons/vue/24/outline/PlayIcon";
 import { computed } from "vue";
@@ -166,8 +163,6 @@ import JobOutputToggle from "./JobOutputToggle.vue";
 const props = defineProps<{
 	schedule: ProjectSchedule;
 	now: number;
-	/** Where the box's Edit schedule link opens the schedule's editor. */
-	to: RouteLocationRaw;
 	/**
 	 * The schedule's board entry, its latest run with its last and next run
 	 * and recent runs, whose output the box shows while it runs.
