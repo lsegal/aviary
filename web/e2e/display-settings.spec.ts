@@ -53,8 +53,8 @@ test("Display is Settings' last tab, under the shared header", async ({
 	await tabs.last().click();
 	await expect(page).toHaveURL("/system/display");
 	await expect(page.getByTestId("settings-display")).toBeVisible();
-	await expect(page.getByTestId("page-title")).toHaveText("Settings");
-	await expect(page.getByTestId("page-breadcrumb")).toContainText("System");
+	await expect(page.getByTestId("settings-title")).toHaveText("Settings");
+	await expect(page.getByTestId("settings-breadcrumb")).toContainText("System");
 	// Changes apply at once, so there's no Save Changes.
 	await expect(page.getByRole("button", { name: "Save Changes" })).toHaveCount(
 		0,
