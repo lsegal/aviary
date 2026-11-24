@@ -143,6 +143,12 @@ export interface ProjectJob {
 	state: BoardState;
 	skill: string;
 	cli: string;
+	/**
+	 * Where the job's model comes from, "project override" or "from agent
+	 * <name>", when it runs on its project's models; only the job detail
+	 * reports it.
+	 */
+	modelSource: string;
 	issueURL: string;
 	pr: number;
 	prURL: string;
@@ -383,6 +389,7 @@ export function normalizeJob(v: unknown): ProjectJob {
 				: normalizeBoardState(raw.state),
 		skill: SKILLS[str(raw.kind)] ?? str(raw.kind),
 		cli: model ? `${agent}/${model}` : agent,
+		modelSource: str(raw.model_source),
 		issueURL,
 		pr: num(raw.pull_request),
 		prURL,

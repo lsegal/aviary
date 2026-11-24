@@ -60,6 +60,10 @@
 				<dt class="text-gray-500">agent</dt>
 				<dd data-testid="job-agent" class="min-w-0 truncate font-mono text-gray-700 dark:text-gray-300">{{ agentLabel }}</dd>
 			</template>
+			<template v-if="job.cli && job.modelSource">
+				<dt class="text-gray-500">model</dt>
+				<dd data-testid="job-model" class="min-w-0 truncate text-gray-700 dark:text-gray-300"><span class="font-mono">{{ job.cli }}</span> ({{ job.modelSource }})</dd>
+			</template>
 			<template v-if="!job.scheduled">
 				<dt class="text-gray-500">clone</dt>
 				<dd data-testid="job-clone" class="flex min-w-0 items-start gap-2">

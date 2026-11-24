@@ -42,7 +42,7 @@
 		</section>
 
 		<section :class="CARD">
-			<h3 :class="CARD_HEAD">Jobs run on <span :class="CARD_NOTE">{{ agentLabel }}'s model, then down its fallbacks when quota runs out</span></h3>
+			<h3 :class="CARD_HEAD">Jobs run on <span :class="CARD_NOTE" data-testid="job-models-source">{{ overridden ? "The shared job model (project override) in place of " + agentLabel + "'s" : agentLabel + "'s model" }}, then down its fallbacks when quota runs out</span></h3>
 			<div class="space-y-2 p-4">
 				<p v-if="!models.length" class="text-sm text-red-600 dark:text-red-400" data-testid="agent-problem">
 					{{ agentLabel }} has no model a job can run on. Set one on its Settings page.
@@ -133,6 +133,7 @@ import {
 	agentProjectsYAML,
 	isListed,
 	type JobModelsConfig,
+	jobModelOverride,
 	jobModels,
 	joinReportTarget,
 	type ProjectReports,
@@ -181,6 +182,10 @@ const cliNames = computed(() =>
 if (cliStatus.clis.value === null) void cliStatus.refresh();
 
 const agentLabel = computed(() => props.agent.name || "This agent");
+// The shared job model, when set, replaces every agent's for its projects.
+const overridden = computed(
+	() => jobModelOverride(props.config, cliNames.value).length > 0,
+);
 const section = computed<AgentProjectsSection>(
 	() => props.agent.projects ?? [],
 );

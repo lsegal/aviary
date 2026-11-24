@@ -68,6 +68,21 @@
 				<span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">How much jobs' CLI providers may do
 					without asking, translated into each CLI's own flags at launch.</span>
 			</label>
+			<div class="grid gap-4 sm:grid-cols-2" data-testid="project-job-model">
+				<label class="block">
+					<span :class="LABEL">Job model <DefaultTag :on="isDefault('model')" /></span>
+					<ModelSelector v-model="form.model" :options="cliModelOptions" data-field="model"
+						placeholder="Each project's agent's model" empty-text="No installed CLI provider has this model" />
+				</label>
+				<label class="block">
+					<span :class="LABEL">Job fallbacks</span>
+					<ModelSelector v-model="form.fallbacks" :options="cliModelOptions" multiple data-field="fallbacks"
+						:placeholder="form.model ? 'Add fallbacks…' : 'Pick a job model first'" />
+				</label>
+				<span class="block text-xs text-gray-500 dark:text-gray-400 sm:col-span-2">Models of installed CLI
+					providers that every project's jobs run on, in order, in place of the owning agent's model and
+					fallbacks. Leave empty to use the agent's.</span>
+			</div>
 			<details class="rounded-lg border border-gray-200 dark:border-gray-800" :open="advancedOpen">
 				<summary class="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Issue selection and checking</summary>
 				<div class="grid gap-4 border-t border-gray-200 p-3 dark:border-gray-800 sm:grid-cols-2">
@@ -158,6 +173,7 @@ import {
 	useProjectClones,
 	useProjectInstanceID,
 } from "../../composables/useProjectSettings";
+import { useProviderStatus } from "../../composables/useProviderAuth";
 import { APPROVAL_MODES } from "../../lib/approval";
 import {
 	cloneState,
@@ -174,6 +190,7 @@ import {
 	withSettings,
 } from "../../lib/projectSettings";
 import type { AppConfig } from "../../stores/settings";
+import ModelSelector from "../ModelSelector.vue";
 import { AppSelect } from "../ui/select";
 import { settingsViewContextKey } from "./context";
 import SettingsAgentProjects from "./SettingsAgentProjects.vue";
@@ -225,6 +242,15 @@ function DefaultTag(p: { on: boolean }) {
 		: null;
 }
 DefaultTag.props = ["on"];
+
+// Jobs run only on providers reached through a CLI, so the job model picker
+// offers the installed CLI providers' models.
+const cliStatus = useProviderStatus();
+const cliModelOptions = computed(() =>
+	(cliStatus.clis.value ?? [])
+		.filter((cli) => cli.installed)
+		.flatMap((cli) => cli.models),
+);
 
 const clones = useProjectClones();
 const instanceID = useProjectInstanceID();
