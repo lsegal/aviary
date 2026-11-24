@@ -449,8 +449,8 @@ func (r *AgentRunner) promptCore(
 				}
 			}
 			if !isCLI {
-				// A CLI turn lists these once it knows which turn it takes over.
-				if block := inFlightToolCallsBlock(runningSessionToolCalls(r.agent.ID, sessionID, nil), time.Now()); block != "" {
+				// A CLI turn lists these right before its message instead.
+				if block := inFlightToolCallsBlock(runningSessionToolCalls(r.agent.ID, sessionID), time.Now()); block != "" {
 					systemPrompt += "\n\n" + block
 				}
 			}

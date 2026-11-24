@@ -96,34 +96,9 @@ type cliTurn struct {
 	messages     []string
 	media        []string
 	promptMsgIDs []string
-	// interrupted are the tool calls the turns this one took over made.
-	interrupted []sessionToolCall
-	// answered, folded and calls are guarded by cliProcs.mu.
+	// answered and folded are guarded by cliProcs.mu.
 	answered bool
 	folded   bool
-	calls    []sessionToolCall // the tool calls this turn made, in order
-}
-
-// noteToolEvent records a tool call the turn started or finished.
-func (t *cliTurn) noteToolEvent(ev *ToolEvent) {
-	cliProcs.mu.Lock()
-	defer cliProcs.mu.Unlock()
-	for i := range t.calls {
-		if t.calls[i].id == ev.ID {
-			if ev.Done {
-				t.calls[i].done, t.calls[i].result, t.calls[i].err = true, ev.Result, ev.Error
-			}
-			return
-		}
-	}
-	t.calls = append(t.calls, sessionToolCall{id: ev.ID, name: ev.Name, args: ev.Args, started: time.Now(), done: ev.Done, result: ev.Result, err: ev.Error})
-}
-
-// madeCalls returns the tool calls t and the turns it took over made.
-func (t *cliTurn) madeCalls() []sessionToolCall {
-	cliProcs.mu.Lock()
-	defer cliProcs.mu.Unlock()
-	return append(append([]sessionToolCall(nil), t.interrupted...), t.calls...)
 }
 
 // foldCLITurn takes over the unanswered turn running on the conversation at
@@ -249,7 +224,6 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 			turnState.messages = append(append([]string(nil), prior.messages...), in.message)
 			turnState.media = append(append([]string(nil), prior.media...), in.mediaURLs...)
 			turnState.promptMsgIDs = append(append([]string(nil), prior.promptMsgIDs...), turnState.promptMsgIDs...)
-			turnState.interrupted = prior.madeCalls()
 			defer registerCLITurn(key, turnState)()
 		}
 	}
@@ -285,9 +259,6 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 	// Only output reaches the turn's consumers once the turn has answered;
 	// what a turn that was folded in produces is dropped.
 	emit := func(ev StreamEvent) {
-		if ev.Type == StreamEventTool && ev.Tool != nil && ev.Tool.ID != "" {
-			turnState.noteToolEvent(ev.Tool)
-		}
 		if (ev.Type == StreamEventText || ev.Type == StreamEventTool) && !turnState.answer() {
 			return
 		}
@@ -319,20 +290,12 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 	} else if missed != "" {
 		prefix = append(prefix, missed)
 	}
-	// What other turns are still doing, and what the turns this one took
-	// over already did, come right before the messages.
-	interruptedIDs := map[string]bool{}
-	for _, call := range turnState.interrupted {
-		interruptedIDs[call.id] = true
+	// The tool calls other turns in the session are still running come right
+	// before the message, since the history above does not show them yet.
+	inFlight := inFlightToolCallsBlock(runningSessionToolCalls(r.agent.ID, in.sessionID), time.Now())
+	if inFlight != "" {
+		prefix = append(prefix, inFlight)
 	}
-	var callNotes []string
-	if block := inFlightToolCallsBlock(runningSessionToolCalls(r.agent.ID, in.sessionID, interruptedIDs), time.Now()); block != "" {
-		callNotes = append(callNotes, block)
-	}
-	if block := interruptedTurnBlock(turnState.interrupted); block != "" {
-		callNotes = append(callNotes, block)
-	}
-	prefix = append(prefix, callNotes...)
 	if len(prefix) > 0 {
 		turn.Text = strings.Join(prefix, "\n\n") + "\n\n" + turn.Text
 	}
@@ -386,8 +349,8 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		opts.MCPURL, opts.MCPToken = proc.sessOptsMCP()
 		if proc.sess, err = newCLISession(opts); err == nil {
 			retry := cliagent.Turn{Text: message, MediaURLs: turnState.media}
-			if len(callNotes) > 0 {
-				retry.Text = strings.Join(callNotes, "\n\n") + "\n\n" + retry.Text
+			if inFlight != "" {
+				retry.Text = inFlight + "\n\n" + retry.Text
 			}
 			if prior := r.cliPriorConversation(in.sessionID, in.systemPrompt); prior != "" {
 				retry.Text = prior + "\n\n" + retry.Text
