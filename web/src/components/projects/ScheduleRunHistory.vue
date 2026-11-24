@@ -30,6 +30,7 @@ import type { RouteLocationRaw } from "vue-router";
 import { projectOwner } from "../../lib/projectSettings";
 import {
 	age,
+	finishedScheduleRun,
 	formatFire,
 	jobPath,
 	type ProjectJob,
@@ -39,7 +40,6 @@ import {
 	runResultClass,
 	runResultIcon,
 	runResultLabel,
-	scheduleLastRun,
 } from "../../lib/projects";
 import { useSettingsStore } from "../../stores/settings";
 
@@ -79,7 +79,7 @@ const rows = computed<Row[]>(() => {
 		}));
 	}
 	return props.schedule.history.map((run) => {
-		const last = scheduleLastRun({ history: [run] });
+		const last = finishedScheduleRun(run);
 		return {
 			key: run.fireTime,
 			at: run.fireTime,

@@ -52,9 +52,10 @@
 				strip of recent results; the output area below shows its
 				summary. It stays while the next run is in flight. -->
 			<p v-if="last" data-testid="scheduled-last-run" class="flex min-w-0 items-center gap-1.5 text-xs text-gray-700 dark:text-gray-200">
-				<span data-testid="scheduled-last-result" :data-result="last.result" class="shrink-0 font-semibold"
-					:class="runResultClass(last.result)" :title="runResultLabel(last.result) || last.status">{{ runResultIcon(last.result) }}</span>
-				<span data-testid="scheduled-last-time" class="truncate" :title="formatFire(last.at)">Last run {{ age(last.at, now) }} ago<template v-if="runResultLabel(last.result)"> · {{ runResultLabel(last.result).toLowerCase() }}</template></span>
+				<span v-if="last.result" data-testid="scheduled-last-result" :data-result="last.result" class="shrink-0 font-semibold"
+					:class="runResultClass(last.result)" :title="runResultLabel(last.result)">{{ runResultIcon(last.result) }}</span>
+				<component :is="lastTo ? 'router-link' : 'span'" :to="lastTo" data-testid="scheduled-last-time" class="truncate"
+					:class="lastTo ? 'relative z-10 hover:underline' : ''" :title="formatFire(last.at)">Last run {{ age(last.at, now) }} ago · {{ (runResultLabel(last.result) || last.status).toLowerCase() }}</component>
 				<span v-if="strip.length > 1" data-testid="scheduled-strip" aria-label="Recent results"
 					class="ml-auto shrink-0 font-mono tracking-tighter">
 					<span v-for="(r, i) in strip" :key="i" :class="runResultClass(r)">{{ runResultIcon(r) }}</span>
@@ -224,6 +225,13 @@ const taskTo = computed(() =>
 );
 
 const settings = useSettingsStore();
+// The last run's line opens that run's view when the board has it.
+const lastTo = computed(() => {
+	const job = props.job;
+	const number = last.value?.number;
+	if (!job || !number) return undefined;
+	return jobPath(projectOwner(settings.config, job.target), job.target, number);
+});
 // The running control opens the running run's view; without it, the task's
 // page, whose session shows the run.
 const runTo = computed<RouteLocationRaw>(() => {

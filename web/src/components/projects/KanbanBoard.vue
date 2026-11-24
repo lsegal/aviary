@@ -36,7 +36,7 @@
 						<template v-else>No next run</template>
 					</p>
 					<p v-if="lastOf(s)" data-testid="kanban-scheduled-last" class="flex items-center gap-1 text-gray-500 dark:text-gray-400">
-						<span :class="runResultClass(lastOf(s)!.result)">{{ runResultIcon(lastOf(s)!.result) }}</span>
+						<span v-if="lastOf(s)!.result" :class="runResultClass(lastOf(s)!.result)">{{ runResultIcon(lastOf(s)!.result) }}</span>
 						Last run {{ age(lastOf(s)!.at, now) }} ago
 					</p>
 					<p data-testid="kanban-scheduled-prompt" class="truncate text-gray-500 dark:text-gray-400" :title="s.prompt">
