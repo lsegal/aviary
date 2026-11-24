@@ -210,7 +210,7 @@ func startFakeServer(t *testing.T, state *runningServer) *fakeServer {
 			record("server_upgrade")
 			return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: `{}`}}}, struct{}{}, nil
 		})
-		handler = sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return s }, nil)
+		handler = sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return s }, &sdkmcp.StreamableHTTPOptions{JSONResponse: true})
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", handler)

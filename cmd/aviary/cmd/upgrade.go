@@ -141,7 +141,7 @@ func runReleaseUpgrade(check update.CheckResult, forced bool) error {
 	}
 	srv, running := findRunningServer()
 	targets := []string{exePath}
-	restart := running && !srv.Unresponsive && srv.InstallType == update.InstallRelease
+	restart := running && srv.Problem == "" && srv.InstallType == update.InstallRelease
 	if restart && srv.Executable != "" && !sameFile(srv.Executable, exePath) {
 		// The server re-executes its own binary, so that is the one to swap.
 		targets = append(targets, srv.Executable)
@@ -161,8 +161,8 @@ func runReleaseUpgrade(check update.CheckResult, forced bool) error {
 	switch {
 	case !running:
 		return nil
-	case srv.Unresponsive:
-		return unresponsiveServerError(installed)
+	case srv.Problem != "":
+		return unmanagedServerError(installed, srv.Problem)
 	case !restart:
 		fmt.Println(otherServerNote(srv.CheckResult))
 		return nil
@@ -210,7 +210,7 @@ func runSourceUpgrade(check update.CheckResult) error {
 		dir = update.SourceCheckout()
 	}
 	srv, running := findRunningServer()
-	sameCheckout := running && !srv.Unresponsive && srv.InstallType == update.InstallSource && srv.Git != nil && sameDir(srv.Git.Dir, dir)
+	sameCheckout := running && srv.Problem == "" && srv.InstallType == update.InstallSource && srv.Git != nil && sameDir(srv.Git.Dir, dir)
 	hotDir, since := "", 0
 	if sameCheckout && srv.Git.HotReload {
 		hotDir = srv.Git.HotReloadDir
@@ -243,8 +243,8 @@ func runSourceUpgrade(check update.CheckResult) error {
 	switch {
 	case !running || sameCheckout:
 		return nil
-	case srv.Unresponsive:
-		return errors.New("the running Aviary server did not respond, so it could not be restarted on the pulled code. " + restartHint)
+	case srv.Problem != "":
+		return fmt.Errorf("the running Aviary server %s, so it could not be restarted on the pulled code. %s", srv.Problem, restartHint)
 	}
 	fmt.Println(otherServerNote(srv.CheckResult))
 	return nil
@@ -293,10 +293,10 @@ var waitHotReload = update.WaitHotReload
 // restartHint tells the user how to restart a server aviary upgrade could not.
 const restartHint = "Restart it to run the new version: aviary stop, then aviary serve."
 
-// unresponsiveServerError reports a binary upgraded under a server that did
-// not answer, which still runs the old version.
-func unresponsiveServerError(version string) error {
-	return fmt.Errorf("upgraded to %s, but the running Aviary server did not respond, so it could not be restarted and still runs the old version. %s", version, restartHint)
+// unmanagedServerError reports a binary upgraded under a server that could
+// not be restarted for problem, which still runs the old version.
+func unmanagedServerError(version, problem string) error {
+	return fmt.Errorf("upgraded to %s, but the running Aviary server %s, so it could not be restarted and still runs the old version. %s", version, problem, restartHint)
 }
 
 // restartOnNewBinary has the running server restart safely, checkpointing
@@ -336,7 +336,7 @@ var serverRestartPoll = time.Second
 func awaitServer(current func(runningServer) bool) error {
 	deadline := time.Now().Add(serverRestartWait)
 	for {
-		if srv, ok := findRunningServer(); ok && !srv.Unresponsive {
+		if srv, ok := findRunningServer(); ok && srv.Problem == "" {
 			switch {
 			case srv.Restart.Phase != "" && srv.Restart.Phase != saferestart.PhaseIdle:
 			case srv.Restart.Error != "":
@@ -364,8 +364,9 @@ type runningServer struct {
 	Executable string `json:"executable,omitempty"`
 	// Restart is the server's restart state.
 	Restart saferestart.Status `json:"restart"`
-	// Unresponsive is set when the server process runs but did not answer.
-	Unresponsive bool `json:"-"`
+	// Problem, when set, says why the running server cannot be restarted:
+	// it did not respond, or could not report its install.
+	Problem string `json:"-"`
 }
 
 // findRunningServer reports the running server's install. ok is false when
@@ -376,9 +377,13 @@ var findRunningServer = func() (srv runningServer, ok bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	out, isError, err := dispatcher.CallToolWithProgress(ctx, "server_version_check", map[string]any{}, func(string) bool { return false })
-	if err != nil || isError || json.Unmarshal([]byte(out), &srv) != nil {
-		return runningServer{Unresponsive: true}, true
+	out, err := dispatcher.CallTool(ctx, "server_version_check", map[string]any{})
+	if err != nil {
+		return runningServer{Problem: "did not respond"}, true
+	}
+	if json.Unmarshal([]byte(out), &srv) != nil {
+		// A tool error comes back as its message.
+		return runningServer{Problem: "could not report its install (" + strings.TrimSpace(out) + ")"}, true
 	}
 	return srv, true
 }
@@ -388,11 +393,13 @@ var findRunningServer = func() (srv runningServer, ok bool) {
 var restartServer = func(when string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	out, isError, err := dispatcher.CallToolWithProgress(ctx, "server_restart", map[string]any{"when": when}, func(string) bool { return false })
+	out, err := dispatcher.CallTool(ctx, "server_restart", map[string]any{"when": when})
 	if err != nil {
 		return err
 	}
-	if isError {
+	// The restart status comes back as JSON, and a tool error as its message.
+	var st saferestart.Status
+	if json.Unmarshal([]byte(out), &st) != nil {
 		return errors.New(strings.TrimSpace(out))
 	}
 	return nil
