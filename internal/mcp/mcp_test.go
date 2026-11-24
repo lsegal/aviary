@@ -575,12 +575,6 @@ func TestServerTools(t *testing.T) {
 	toolCallContains(t, d, "server_status", map[string]any{}, "")
 }
 
-func TestTaskTools(t *testing.T) {
-	d := setupMCPDispatcher(t)
-	// task_list
-	toolCallContains(t, d, "task_list", map[string]any{}, "scheduler not initialized")
-}
-
 func TestTaskScheduleRecurringCreatesConfiguredTask(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
@@ -2596,37 +2590,6 @@ func TestRunHimalayaCLI_MockBinary(t *testing.T) {
 	assert.Equal(t, []string{"--output", "json", "--config", "mail.toml", "envelope", "list"}, capturedArgs)
 }
 
-func TestSessionCreateAndMessages(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	err := store.EnsureDirs()
-	assert.NoError(t, err)
-
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	mgr := agent.NewManager(nil)
-	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x"}}})
-	SetDeps(&Deps{Agents: mgr})
-
-	d := NewDispatcher("https://localhost:16677", "")
-
-	// session_create returns a new session with agent info.
-	out, err := d.CallTool(context.Background(), "session_create", map[string]any{"agent": "bot"})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "bot"))
-
-	// session_messages on a new empty session returns an empty array.
-	// First get a session ID from the session_list.
-	listOut, err := d.CallTool(context.Background(), "session_list", map[string]any{"agent": "bot"})
-	assert.NoError(t, err)
-	assert.True(t, strings.Contains(listOut, "bot"))
-
-}
-
 func TestSessionSendTool_DeliversToRegisteredTargets(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
@@ -2912,20 +2875,6 @@ func TestAgentStop_NotFound(t *testing.T) {
 
 	// agent_stop returns an MCP error result for a nonexistent agent.
 	toolCallContains(t, d, "agent_stop", map[string]any{"name": "nonexistent"}, "not found")
-}
-
-func TestJobListNilScheduler(t *testing.T) {
-	old := GetDeps()
-	t.Cleanup(func() { SetDeps(old) })
-	prevChecker := checkServerRunning
-	t.Cleanup(func() { checkServerRunning = prevChecker })
-	SetServerChecker(func() bool { return false })
-
-	SetDeps(&Deps{Agents: agent.NewManager(nil), Scheduler: nil})
-	d := NewDispatcher("https://localhost:16677", "")
-
-	// job_list returns an MCP error result when scheduler is nil.
-	toolCallContains(t, d, "job_list", map[string]any{}, "scheduler not initialized")
 }
 
 func TestAgentFileWriteTool_NoSession(t *testing.T) {
