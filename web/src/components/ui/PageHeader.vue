@@ -19,7 +19,11 @@
 								<ChevronRightIcon v-if="i > 0" aria-hidden="true"
 									class="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
 								<h2 v-if="i === crumbs.length - 1" aria-current="page" data-testid="page-title"
-									class="min-w-0 truncate">{{ crumb.label }}</h2>
+									class="min-w-0 truncate">
+									<a v-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
+										class="hover:underline" :title="titleLink.title">{{ crumb.label }}</a>
+									<template v-else>{{ crumb.label }}</template>
+								</h2>
 								<router-link v-else-if="crumb.to" v-slot="{ href, navigate }" :to="crumb.to" custom>
 									<a :href="href"
 										class="min-w-0 truncate rounded text-gray-500 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-white"
@@ -74,6 +78,8 @@ const props = defineProps<{
 	 * crumb above the current page that links, and none when null.
 	 */
 	back?: PageBack | null;
+	/** An outside page the title opens in a new tab, such as a repository. */
+	titleLink?: { href: string; title: string } | null;
 }>();
 
 const parent = computed((): PageBack | null => {

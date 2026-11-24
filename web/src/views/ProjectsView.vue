@@ -1,5 +1,6 @@
 <template>
-	<AppLayout :trail="detailSchedule ? { from: boardQuery, crumbs: [{ label: detailSchedule.name }] } : null">
+	<AppLayout :trail="detailSchedule ? { from: boardQuery, crumbs: [{ label: detailSchedule.name }] } : null"
+		:title-link="project && !jobOpen && !detailSchedule ? { href: targetURL(project), title: `Open ${project} on GitHub` } : null">
 		<template v-if="project || aggregate" #header>
 			<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
 				<span v-if="aggregate" data-testid="board-projects"
@@ -32,11 +33,6 @@
 			</p>
 		</template>
 		<template v-if="project || aggregate" #header-actions>
-			<a v-if="!aggregate" :href="targetURL(project)" target="_blank" rel="noopener noreferrer" data-testid="project-github-link"
-			:aria-label="`Open ${project} on GitHub`" :title="`Open ${project} on GitHub`"
-			class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-			<ArrowTopRightOnSquareIcon aria-hidden="true" class="h-5 w-5" />
-			</a>
 			<button v-if="aggregate" type="button" data-testid="board-add-project" aria-label="Add project" title="Add project"
 				class="rounded-lg border border-blue-600 bg-blue-600 p-1.5 text-white hover:bg-blue-700"
 				@click="openAdd">
@@ -250,7 +246,6 @@
 
 <script setup lang="ts">
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
-import ArrowTopRightOnSquareIcon from "@heroicons/vue/24/outline/ArrowTopRightOnSquareIcon";
 import CalendarDaysIcon from "@heroicons/vue/24/outline/CalendarDaysIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronDownIcon from "@heroicons/vue/24/outline/ChevronDownIcon";

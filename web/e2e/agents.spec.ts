@@ -1269,8 +1269,11 @@ test("a task saved with a session name selects that session", async ({
 
 test("settings deep links scroll to their section", async ({ page }) => {
 	await page.setViewportSize({ width: 1280, height: 720 });
+	// The section headings in the page, not the header's title crumb.
 	const heading = (name: string) =>
-		page.getByRole("heading", { name, exact: true });
+		page
+			.getByTestId("settings-scroll")
+			.getByRole("heading", { name, exact: true });
 
 	await openAgentPage(page, "settings/permissions");
 	await expect(heading("Permissions")).toBeInViewport();

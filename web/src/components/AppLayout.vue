@@ -342,7 +342,7 @@
     </nav>
 
     <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <PageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back">
+      <PageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back" :title-link="titleLink">
         <template v-if="$slots['header-icon']" #icon><slot name="header-icon" /></template>
         <template v-if="$slots['header-actions']" #actions><slot name="header-actions" /></template>
         <slot name="header" />
@@ -498,6 +498,8 @@ const props = defineProps<{
 	 * last crumb then links to from, the page without the panel.
 	 */
 	trail?: { from: RouteLocationRaw; crumbs: PageCrumb[] } | null;
+	/** An outside page the header's title opens in a new tab. */
+	titleLink?: { href: string; title: string } | null;
 }>();
 const auth = useAuthStore();
 // An `aviary watch` session shows only Code Loop and Scheduled Tasks.

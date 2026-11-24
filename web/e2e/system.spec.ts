@@ -83,9 +83,7 @@ test("system tools shows grouped MCP tools and active skills", async ({
 }) => {
 	await page.goto("/system/tools");
 
-	await expect(
-		page.getByRole("heading", { name: "System Tools" }),
-	).toBeVisible();
+	await expect(page.getByTestId("page-title")).toHaveText("Tools");
 	await expect(page.getByText("agent_list")).toBeVisible();
 	await expect(page.getByText("task_update")).toBeVisible();
 	await expect(

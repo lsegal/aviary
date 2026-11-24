@@ -96,9 +96,9 @@ test("the Files page is one file bar over a full-page editor", async ({
 		);
 	await page.keyboard.press("Escape");
 
-	// No settings page header or its duplicate actions.
+	// The shared page header (#1064), without the settings actions.
 	const main = page.locator("main");
-	await expect(page.getByTestId("page-title")).toHaveCount(0);
+	await expect(page.getByTestId("page-title")).toHaveText("Files");
 	await expect(main.getByRole("button", { name: "Reload" })).toHaveCount(0);
 	await expect(main.getByRole("button", { name: "Save Changes" })).toHaveCount(
 		0,

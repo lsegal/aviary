@@ -362,7 +362,13 @@ test("an agent board shows a scheduled run as a job card while it runs", async (
 		.toEqual({ target: "lsegal/aviary", number: FIRE });
 	// An agent board lists jobs in their job states, so a schedule between
 	// runs, which is in none, never shows as a job card (#977).
-	expect(calls.project_job_list?.at(-1)?.states).toEqual([
+	// The board's own read; the sidebar's and the nav row's counts poll too.
+	const boardReads = (calls.project_job_list ?? []).filter(
+		(c) =>
+			Array.isArray(c?.targets) &&
+			!(c?.kinds as string[] | undefined)?.includes("schedule"),
+	);
+	expect(boardReads.at(-1)?.states).toEqual([
 		"starting",
 		"paused",
 		"running",
@@ -802,7 +808,6 @@ test("a scheduled card's pencil opens its editor within the project page", async
 	await expect(
 		page.getByTestId("page-breadcrumb").getByRole("listitem"),
 	).toHaveText(["System", "Watch: lsegal/aviary", "nightly-triage"]);
-	await expect(page.getByTestId("project-github-link")).toBeVisible();
 	await expect(page.getByTestId("schedule-new")).toBeVisible();
 	const detail = page.getByTestId("schedule-detail");
 	const editor = detail.getByTestId("schedule-editor");
