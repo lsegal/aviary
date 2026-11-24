@@ -26,6 +26,11 @@ type Manager struct {
 	headless   bool
 	reuseTabs  bool
 	sessions   map[string]*Session
+	// borrowed is the DevTools endpoint of a browser this process already
+	// runs on the profile, such as Code Loop's, used in place of launching
+	// one on cdpPort that Chrome would only hand over to it (issue #1171).
+	borrowed   string
+	borrowedMu sync.Mutex // protects borrowed, apart from the long-held launch lock
 }
 
 const defaultOperationTimeout = 15 * time.Second
@@ -67,7 +72,7 @@ func (m *Manager) Open(ctx context.Context, url string) (string, error) {
 		}
 	}
 
-	cdpBaseURL := DebugURL(m.cdpPort)
+	cdpBaseURL := m.debugURL()
 	tab, err := createTab(opCtx, cdpBaseURL, url)
 	if err != nil {
 		return "", err
@@ -156,9 +161,9 @@ func normalizeBrowserURL(raw string) string {
 func (m *Manager) Tabs() ([]ChromeTab, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultOperationTimeout)
 	defer cancel()
-	pages, err := PageTargets(ctx, DebugURL(m.cdpPort))
+	pages, err := PageTargets(ctx, m.debugURL())
 	if err != nil {
-		return nil, fmt.Errorf("chrome not running on port %d", m.cdpPort)
+		return nil, fmt.Errorf("chrome not running at %s", m.debugURL())
 	}
 	return pages, nil
 }
@@ -247,7 +252,7 @@ func (m *Manager) Resize(ctx context.Context, tabID string, width, height int) e
 // CloseTab closes the given tab via the CDP /json/close endpoint and removes
 // its cached session.
 func (m *Manager) CloseTab(tabID string) error {
-	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/json/close/%s", m.cdpPort, tabID)) //nolint:noctx
+	resp, err := http.Get(m.debugURL() + "/json/close/" + tabID) //nolint:noctx
 	if err != nil {
 		return err
 	}
@@ -293,6 +298,7 @@ func (m *Manager) ensureChrome(ctx context.Context) (string, error) {
 	}
 	cdpBaseURL := DebugURL(m.cdpPort)
 	if wsURL, err := WebSocketURL(ctx, cdpBaseURL); err == nil {
+		m.setBorrowed("")
 		return wsURL, nil
 	}
 
@@ -300,6 +306,10 @@ func (m *Manager) ensureChrome(ctx context.Context) (string, error) {
 	defer m.mu.Unlock()
 	// Double-check after acquiring lock.
 	if wsURL, err := WebSocketURL(ctx, cdpBaseURL); err == nil {
+		m.setBorrowed("")
+		return wsURL, nil
+	}
+	if wsURL, ok := m.borrowSameProcessBrowser(ctx); ok {
 		return wsURL, nil
 	}
 
@@ -318,6 +328,44 @@ func (m *Manager) ensureChrome(ctx context.Context) (string, error) {
 
 	slog.Warn("browser: headed launch failed; retrying in headless mode", "port", m.cdpPort, "err", err)
 	return launchChromeAndWait(ctx, m, cdpBaseURL, true)
+}
+
+// debugURL is the DevTools endpoint operations go to: the borrowed browser
+// while one is in use, otherwise the one on cdpPort.
+func (m *Manager) debugURL() string {
+	m.borrowedMu.Lock()
+	borrowed := m.borrowed
+	m.borrowedMu.Unlock()
+	if borrowed != "" {
+		return borrowed
+	}
+	return DebugURL(m.cdpPort)
+}
+
+// setBorrowed records the browser operations go to in place of the one on
+// cdpPort, "" for that one.
+func (m *Manager) setBorrowed(baseURL string) {
+	m.borrowedMu.Lock()
+	defer m.borrowedMu.Unlock()
+	if baseURL != "" && m.borrowed != baseURL {
+		slog.Info("browser: reusing this instance's browser on the profile", "profile", m.userDataDir(), "devtools", baseURL)
+	}
+	m.borrowed = baseURL
+}
+
+// borrowSameProcessBrowser reuses a browser this process already runs on the
+// profile. Chrome allows one browser per profile, so launching another there
+// would only be handed over to it.
+func (m *Manager) borrowSameProcessBrowser(ctx context.Context) (string, bool) {
+	holder := sameProcessBrowser(m.userDataDir())
+	if holder != "" {
+		if wsURL, err := WebSocketURL(ctx, holder); err == nil {
+			m.setBorrowed(holder)
+			return wsURL, true
+		}
+	}
+	m.setBorrowed("")
+	return "", false
 }
 
 func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {

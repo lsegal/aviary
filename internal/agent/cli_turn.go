@@ -290,6 +290,12 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 	} else if missed != "" {
 		prefix = append(prefix, missed)
 	}
+	// The tool calls other turns in the session are still running come right
+	// before the message, since the history above does not show them yet.
+	inFlight := inFlightToolCallsBlock(runningSessionToolCalls(r.agent.ID, in.sessionID), time.Now())
+	if inFlight != "" {
+		prefix = append(prefix, inFlight)
+	}
 	if len(prefix) > 0 {
 		turn.Text = strings.Join(prefix, "\n\n") + "\n\n" + turn.Text
 	}
@@ -343,6 +349,9 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		opts.MCPURL, opts.MCPToken = proc.sessOptsMCP()
 		if proc.sess, err = newCLISession(opts); err == nil {
 			retry := cliagent.Turn{Text: message, MediaURLs: turnState.media}
+			if inFlight != "" {
+				retry.Text = inFlight + "\n\n" + retry.Text
+			}
 			if prior := r.cliPriorConversation(in.sessionID, in.systemPrompt); prior != "" {
 				retry.Text = prior + "\n\n" + retry.Text
 			}

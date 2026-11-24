@@ -212,6 +212,9 @@ func LaunchOwned(ctx context.Context, options OwnedOptions) (*OwnedBrowser, erro
 		return nil, err
 	}
 	owned.WSURL = wsURL
+	// Aviary's own browser tools reuse this browser rather than launch one
+	// that Chrome would hand over to it.
+	owned.lock.SetDevTools(owned.BaseURL())
 	return owned, nil
 }
 

@@ -483,13 +483,15 @@ func (m *Manager) IssueComment(ctx context.Context, repository string, number in
 }
 
 // IssueCreate is project_issue_create: file an issue through gh-create with
-// this instance's identity, uploading and embedding attachments.
-func (m *Manager) IssueCreate(ctx context.Context, repository, text, model string, attachments []string) (map[string]any, error) {
+// this instance's identity, uploading and embedding request's attachments.
+// An empty request.Repository means the only watched repository.
+func (m *Manager) IssueCreate(ctx context.Context, request core.IssueCreate) (map[string]any, error) {
 	engine := m.engine()
 	if engine == nil {
 		return nil, ErrNotWatching
 	}
-	if strings.TrimSpace(text) == "" {
+	repository := request.Repository
+	if strings.TrimSpace(request.Text) == "" {
 		return nil, errors.New("the issue description is empty")
 	}
 	if repository == "" {
@@ -499,7 +501,8 @@ func (m *Manager) IssueCreate(ctx context.Context, repository, text, model strin
 		}
 		repository = resolved
 	}
-	result, err := engine.CreateIssue(ctx, core.IssueCreate{Repository: repository, Text: text, Model: model, Attachments: attachments})
+	request.Repository = repository
+	result, err := engine.CreateIssue(ctx, request)
 	if err != nil {
 		return nil, err
 	}

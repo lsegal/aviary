@@ -101,6 +101,8 @@ The `System information` block starts with the Aviary version and an `Install ty
 
 When the server is running, a `Startup` line summarizes its latest boot: total boot time, when `/mcp` became ready, any subsystems still initializing, and the slowest phases.
 
+The `Browser profile` block reports the lock on the browser `profile_directory`. When a running Aviary instance holds it, the block names that instance: its PID, host, start time, config directory, and DevTools endpoint. Stop that instance to free the profile. The lock is held by the operating system, so it never outlives the process that took it. A lock record left by a run that exited is cleared when the doctor runs.
+
 ```
 aviary doctor [flags]
 ```

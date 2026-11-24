@@ -3,10 +3,14 @@ package projects
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/projects/core"
@@ -146,4 +150,88 @@ func TestCreatedIssueURLMatchesWholeURLsOnly(t *testing.T) {
 			t.Errorf("createdIssueURL(%q) = %q, want %q", test.output, got, test.want)
 		}
 	}
+}
+
+// A reworded request from a session that is filing, or just filed, an issue
+// on the same repository is refused with that issue, unless marked distinct
+// (issue #1174).
+func TestCreateIssueRefusesARewordedDuplicateFromTheSameSession(t *testing.T) {
+	var runs atomic.Int32
+	release := make(chan struct{})
+	w := &Engine{Registry: clidefs.MustBuiltin(), Runner: CommandRunner{Agent: "claude/opus", Agents: []string{"claude/opus"}}, Out: &syncBuffer{}}
+	w.oneShotRun = func(_ context.Context, _ agentSpec, prompt string) (string, error) {
+		n := runs.Add(1)
+		if n == 1 {
+			<-release
+		}
+		repository := "o/r"
+		if strings.Contains(prompt, "o/other") {
+			repository = "o/other"
+		}
+		return fmt.Sprintf("Filed https://github.com/%s/issues/%d\n", repository, 70+n), nil
+	}
+	first := core.IssueCreate{Repository: "o/r", Text: "Browser profile is reported in use by another instance", Session: "s1"}
+	filed := make(chan error, 1)
+	go func() {
+		_, err := w.CreateIssue(context.Background(), first)
+		filed <- err
+	}()
+	require.Eventually(t, func() bool { return runs.Load() == 1 }, 5*time.Second, time.Millisecond)
+
+	// While the first is filing, a reworded one is refused.
+	reworded := core.IssueCreate{Repository: "O/R", Text: "Aviary can't open its own browser: profile lock false positive", Session: "s1"}
+	_, err := w.CreateIssue(context.Background(), reworded)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already being filed on o/r")
+	assert.Contains(t, err.Error(), `"Browser profile is reported in use by another instance"`)
+	assert.Contains(t, err.Error(), "distinct: true")
+
+	close(release)
+	require.NoError(t, <-filed)
+
+	// Once filed, the reworded one gets the filed issue's URL.
+	_, err = w.CreateIssue(context.Background(), reworded)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "issue https://github.com/o/r/issues/71 was filed from this session")
+	assert.EqualValues(t, 1, runs.Load())
+
+	// Another session, another repository, or a distinct request files its own.
+	for _, request := range []core.IssueCreate{
+		{Repository: "o/r", Text: "Another bug", Session: "s2"},
+		{Repository: "o/other", Text: "Another bug", Session: "s1"},
+		{Repository: "o/r", Text: "A separate bug", Session: "s1", Distinct: true},
+		{Repository: "o/r", Text: "No session"},
+	} {
+		if _, err := w.CreateIssue(context.Background(), request); err != nil {
+			t.Errorf("CreateIssue(%+v) = %v", request, err)
+		}
+	}
+	assert.EqualValues(t, 5, runs.Load())
+}
+
+// A session's filed issue stops refusing other requests after
+// sessionFilingMemory, and a failed filing never refuses them.
+func TestIssueFilingsSessionWindow(t *testing.T) {
+	var f issueFilings
+	now := time.Now()
+	asker := issueAsker{session: "s", text: "one"}
+	key := issueFilingKey{repository: "o/r", text: "one"}
+	filing, started, err := f.start(key, asker, now)
+	require.NoError(t, err)
+	require.True(t, started)
+	f.finish(key, filing, core.IssueCreateResult{URL: "https://github.com/o/r/issues/1"}, nil, now)
+
+	other := issueFilingKey{repository: "o/r", text: "two"}
+	_, _, err = f.start(other, issueAsker{session: "s", text: "two"}, now.Add(sessionFilingMemory-time.Second))
+	require.Error(t, err)
+	_, started, err = f.start(other, issueAsker{session: "s", text: "two"}, now.Add(sessionFilingMemory+time.Second))
+	require.NoError(t, err)
+	require.True(t, started)
+
+	var g issueFilings
+	filing, _, _ = g.start(key, asker, now)
+	g.finish(key, filing, core.IssueCreateResult{}, errors.New("gh is signed out"), now)
+	_, started, err = g.start(other, issueAsker{session: "s", text: "two"}, now)
+	require.NoError(t, err)
+	assert.True(t, started)
 }

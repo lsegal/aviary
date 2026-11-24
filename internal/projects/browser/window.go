@@ -73,6 +73,9 @@ func OpenWindow(ctx context.Context, config Config) error {
 		return fmt.Errorf("start browser (%s): %w", binary, err)
 	}
 	window := &openWindow{OwnedChild: started, baseURL: aviarybrowser.DebugURL(port)}
+	// Aviary's own browser tools reuse this window's browser while it is open
+	// rather than launch one that Chrome would hand over to it.
+	lock.SetDevTools(window.baseURL)
 	return window.run(ctx, profile)
 }
 
