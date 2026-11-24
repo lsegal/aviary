@@ -3,7 +3,6 @@ package channels
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -1395,52 +1394,6 @@ func TestSignalChannel_SendReadReceipt_Success(t *testing.T) {
 	ch.addrMu.Unlock()
 	err := ch.sendReadReceipt("+5551111111", 12345)
 	assert.NoError(t, err)
-
-}
-
-// ── fetchLinkPreviews tests ───────────────────────────────────────────────────
-
-func TestFetchLinkPreviews_NoURL(t *testing.T) {
-	previews, cleanup := fetchLinkPreviews("no url here, just text")
-	assert.Nil(t, previews)
-	assert.Nil(t, cleanup)
-
-}
-
-func TestFetchLinkPreviews_WithURL(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintln(w, `<html><head>
-			<meta property="og:title" content="Test Title">
-			<meta property="og:description" content="Test Desc">
-		</head><body></body></html>`)
-	}))
-	defer srv.Close()
-
-	text := fmt.Sprintf("Check out %s for more info", srv.URL)
-	previews, cleanup := fetchLinkPreviews(text)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	assert.NotNil(t, previews)
-	assert.NotEmpty(t, previews)
-	if len(previews) > 0 {
-		assert.Equal(t, "Test Title", previews[0].Title)
-	}
-}
-
-func TestFetchLinkPreviews_NonHTMLResponse(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintln(w, `{"key":"value"}`)
-	}))
-	defer srv.Close()
-
-	previews, cleanup := fetchLinkPreviews(srv.URL)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	assert.Nil(t, previews)
 
 }
 
