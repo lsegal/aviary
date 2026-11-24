@@ -194,6 +194,8 @@ Then open the control panel at that address and install it:
 - **Desktop Chrome and Edge:** click the install icon at the right end of the address bar, or open the menu and choose **Cast, save, and share → Install page as app** (Chrome) or **Apps → Install this site as an app** (Edge).
 - **iOS and iPadOS (Safari):** tap **Share** → **Add to Home Screen**, keep the name **Aviary**, and tap **Add**.
 
+The installed app's icon is the Aviary bird on a white rounded tile on every platform, including the Windows taskbar, Start menu and desktop shortcuts. The browser tab keeps the bird without a tile, which looks better on light and dark tab strips. The theme color matches the control panel header (light gray, or dark gray in dark mode), and the splash screen is white. All icon sizes are generated from `web/icons/icon.svg` by `pnpm icons`.
+
 The installed app opens in its own window. Navigate with the sidebar (or the menu button on narrow screens); on Android the system back gesture also works. Links to other sites, such as GitHub issues or provider sign-in pages, open in your browser instead of replacing the app window.
 
 The app always loads the current control panel from the server, so after an upgrade it shows the new version on the next launch without clearing any cache. Its service worker caches nothing but a "server unreachable" page, which it shows when the app is opened while the Aviary server is stopped or the device can't reach it; tap **Try again** once the server is back. The service worker is only registered by the production server (`aviary serve`), not by `pnpm dev`.
