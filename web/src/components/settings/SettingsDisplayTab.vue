@@ -55,11 +55,7 @@ import { computed, nextTick, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useDisplayPrefs } from "../../composables/useDisplayPrefs";
 import { useNavPrefs } from "../../composables/useNavPrefs";
-import {
-	isDefaultDisplay,
-	TEXT_SIZES,
-	THEMES,
-} from "../../lib/displayPrefs";
+import { isDefaultDisplay, TEXT_SIZES, THEMES } from "../../lib/displayPrefs";
 import { isCustomized } from "../../lib/navPrefs";
 import NavEditor from "../nav/NavEditor.vue";
 

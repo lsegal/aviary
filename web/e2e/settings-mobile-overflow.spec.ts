@@ -100,6 +100,7 @@ for (const width of [320, 375, 430]) {
 			"/projects/settings?agent=Aviary&project=o%2Fr",
 			"/projects/settings",
 			"/system/settings",
+			"/system/display",
 		]) {
 			await page.goto(url);
 			await expectNoHorizontalOverflow(page, url);
@@ -121,3 +122,39 @@ for (const width of [320, 375, 430]) {
 		await context.close();
 	});
 }
+
+test("settings pages fit a phone at the largest text size (#1093)", async ({
+	browser,
+}) => {
+	const context = await browser.newContext({
+		viewport: { width: 375, height: 800 },
+		hasTouch: false,
+		isMobile: false,
+		ignoreHTTPSErrors: true,
+	});
+	const page = await context.newPage();
+	await page.addInitScript(() =>
+		localStorage.setItem(
+			"aviary.display.prefs",
+			JSON.stringify({ textSize: "xlarge" }),
+		),
+	);
+	await mockSettings(page);
+	for (const url of [
+		"/agents/Aviary/channels/signal/settings",
+		"/agents/Aviary/tasks?task=release-aviary",
+		"/agents/Aviary/settings",
+		"/projects/settings",
+		"/system/settings",
+		"/system/providers",
+		"/system/display",
+	]) {
+		await page.goto(url);
+		await expect(page.locator("html")).toHaveAttribute(
+			"data-text-size",
+			"xlarge",
+		);
+		await expectNoHorizontalOverflow(page, url);
+	}
+	await context.close();
+});

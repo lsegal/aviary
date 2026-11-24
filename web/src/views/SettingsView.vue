@@ -100,10 +100,10 @@
 				</div>
 				<template v-else>
 					<nav v-if="settingsTabActive" role="tablist" aria-label="Settings" data-testid="settings-tabs"
-						class="mb-6 flex gap-1 border-b border-gray-200 dark:border-gray-800">
+						class="scrollbar-none mb-6 flex gap-1 overflow-x-auto border-b border-gray-200 dark:border-gray-800">
 						<RouterLink v-for="tab in settingsTabs" :key="tab.key" :to="tab.to" role="tab"
 							:aria-selected="activeTab === tab.key" :data-testid="`settings-tab-${tab.key}`"
-							class="-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors"
+							class="-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors"
 							:class="activeTab === tab.key
 								? 'border-blue-600 text-gray-950 dark:border-blue-400 dark:text-white'
 								: 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-900 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-white'">

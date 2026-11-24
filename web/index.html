@@ -18,7 +18,7 @@
       // Apply the cached display preferences (#1093) before the first paint,
       // so a load never flashes the wrong theme or text size. Mirrors
       // applyDisplayPrefs in src/lib/displayPrefs.ts.
-      (function () {
+      (() => {
         var prefs = {};
         try {
           prefs = JSON.parse(localStorage.getItem("aviary.display.prefs") || "{}") || {};
