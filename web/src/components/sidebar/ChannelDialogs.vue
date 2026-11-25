@@ -36,58 +36,31 @@
 	</DialogRoot>
 
 	<!-- Remove a channel, archiving or deleting its sessions. -->
-	<AlertDialogRoot :open="dialog?.mode === 'remove'" @update:open="(v) => { if (!v && !busy) close() }">
-		<AlertDialogPortal>
-			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
-			<AlertDialogContent data-testid="channel-remove-dialog"
-				class="fixed left-1/2 top-1/2 z-50 w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
-				<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
-					Remove channel?
-				</AlertDialogTitle>
-				<AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-					This removes
-					<span class="break-all font-medium text-gray-900 dark:text-white">{{ dialog?.channel }}</span>
-					and its settings. Tasks and reports that deliver to it stop delivering.
-				</AlertDialogDescription>
-				<fieldset class="mt-4 space-y-2">
-					<legend class="text-sm font-medium text-gray-900 dark:text-white">Its chat sessions</legend>
-					<label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
-						<input v-model="sessions" type="radio" value="archive" name="channel-sessions" data-testid="channel-remove-archive"
-							class="mt-0.5 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-						<span>Archive<span class="block text-xs text-gray-500 dark:text-gray-400">Keep them, with their history, as regular chats under Chats.</span></span>
-					</label>
-					<label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
-						<input v-model="sessions" type="radio" value="delete" name="channel-sessions" data-testid="channel-remove-delete"
-							class="mt-0.5 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-						<span>Delete<span class="block text-xs text-gray-500 dark:text-gray-400">Permanently delete them and all their messages. This cannot be undone.</span></span>
-					</label>
-				</fieldset>
-				<p v-if="error" role="alert" class="mt-3 text-sm text-red-600 dark:text-red-400">{{ error }}</p>
-				<div class="mt-6 flex justify-end gap-3">
-					<AlertDialogCancel :disabled="busy"
-						class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
-						Cancel
-					</AlertDialogCancel>
-					<button type="button" :disabled="busy"
-						class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-						@click="remove">
-						Remove
-					</button>
-				</div>
-			</AlertDialogContent>
-		</AlertDialogPortal>
-	</AlertDialogRoot>
+	<ConfirmDialog :open="dialog?.mode === 'remove'" title="Remove channel?" :action="remove" confirm-label="Remove"
+		busy-label="Removing…" test-id="channel-remove-dialog" @update:open="(v) => { if (!v) close() }">
+		<p>
+			This removes
+			<span class="break-all font-medium text-gray-900 dark:text-white">{{ dialog?.channel }}</span>
+			and its settings. Tasks and reports that deliver to it stop delivering.
+		</p>
+		<fieldset class="mt-4 space-y-2">
+			<legend class="text-sm font-medium text-gray-900 dark:text-white">Its chat sessions</legend>
+			<label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
+				<input v-model="sessions" type="radio" value="archive" name="channel-sessions" data-testid="channel-remove-archive"
+					class="mt-0.5 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+				<span>Archive<span class="block text-xs text-gray-500 dark:text-gray-400">Keep them, with their history, as regular chats under Chats.</span></span>
+			</label>
+			<label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
+				<input v-model="sessions" type="radio" value="delete" name="channel-sessions" data-testid="channel-remove-delete"
+					class="mt-0.5 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
+				<span>Delete<span class="block text-xs text-gray-500 dark:text-gray-400">Permanently delete them and all their messages. This cannot be undone.</span></span>
+			</label>
+		</fieldset>
+	</ConfirmDialog>
 </template>
 
 <script setup lang="ts">
 import {
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogOverlay,
-	AlertDialogPortal,
-	AlertDialogRoot,
-	AlertDialogTitle,
 	DialogClose,
 	DialogContent,
 	DialogDescription,
@@ -106,6 +79,7 @@ import {
 	channelSettingsPath,
 } from "../../lib/channels";
 import { useSettingsStore } from "../../stores/settings";
+import ConfirmDialog from "../ui/ConfirmDialog.vue";
 import { AppSelect } from "../ui/select";
 
 const { dialog, close } = useChannelDialogs();
@@ -151,25 +125,17 @@ async function create() {
 async function remove() {
 	const d = dialog.value;
 	if (!d?.channel) return;
-	busy.value = true;
-	error.value = "";
-	try {
-		await callTool("channel_remove", {
-			agent: d.agent,
-			channel: d.channel,
-			sessions: sessions.value,
-		});
-		await settings.fetchConfig();
-		close();
-		// Leave the removed channel's pages.
-		const removed = decodeURIComponent(channelPath(d.agent, d.channel));
-		const current = decodeURIComponent(route.path);
-		if (current === removed || current.startsWith(`${removed}/`))
-			await router.push(channelPath(d.agent));
-	} catch (e) {
-		error.value = message(e);
-	} finally {
-		busy.value = false;
-	}
+	await callTool("channel_remove", {
+		agent: d.agent,
+		channel: d.channel,
+		sessions: sessions.value,
+	});
+	await settings.fetchConfig();
+	close();
+	// Leave the removed channel's pages.
+	const removed = decodeURIComponent(channelPath(d.agent, d.channel));
+	const current = decodeURIComponent(route.path);
+	if (current === removed || current.startsWith(`${removed}/`))
+		await router.push(channelPath(d.agent));
 }
 </script>

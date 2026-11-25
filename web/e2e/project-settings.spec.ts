@@ -129,6 +129,7 @@ async function setup(
 		jobs?: { number: number; status: string }[];
 		clonesError?: string;
 		clones?: typeof CLONES;
+		removeError?: string;
 		sessions?: object[];
 	} = {},
 ) {
@@ -151,6 +152,7 @@ async function setup(
 		},
 		project_remove: (args?: Args) => {
 			record("project_remove", args);
+			if (opts.removeError) throw new Error(opts.removeError);
 			return {
 				target: args?.target,
 				removed: true,
@@ -1235,6 +1237,37 @@ test("a project row's ✕ deletes that project after a confirmation naming it an
 	expect(calls.project_remove).toEqual([{ target: "lsegal/nupp" }]);
 	// The removal goes through project_remove alone, never a config rewrite.
 	expect(calls.config_save).toBeUndefined();
+});
+
+test("a failed project delete keeps the confirmation open with the error", async ({
+	page,
+}) => {
+	const calls = await setup(page, {
+		config: {
+			...CONFIG,
+			agents: [
+				CONFIG.agents[0],
+				{
+					...CONFIG.agents[1],
+					projects: [{ target: "lsegal/aviary" }, { target: "lsegal/nupp" }],
+				},
+			],
+		},
+		removeError: "project is locked",
+	});
+	await page.goto("/projects/settings?agent=coder");
+	await page.getByRole("button", { name: "Delete lsegal/nupp" }).click();
+	const dialog = page.getByTestId("delete-project-dialog");
+	await dialog.getByRole("button", { name: "Delete project" }).click();
+	await expect(dialog.getByTestId("delete-project-dialog-error")).toContainText(
+		"project is locked",
+	);
+	await expect(dialog).toBeVisible();
+	await expect(page.getByTestId("agent-project")).toHaveCount(2);
+	expect(calls.project_remove).toEqual([{ target: "lsegal/nupp" }]);
+
+	await dialog.getByRole("button", { name: "Cancel" }).click();
+	await expect(dialog).toBeHidden();
 });
 
 test("a project being added has nothing to delete", async ({ page }) => {

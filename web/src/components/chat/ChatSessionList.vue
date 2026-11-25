@@ -24,55 +24,22 @@
 			</template>
 		</SidebarItemList>
 
-		<AlertDialogRoot :open="confirmOpen" @update:open="(open) => (confirmOpen = open)">
-			<AlertDialogPortal>
-				<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
-				<AlertDialogContent
-					class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
-					<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
-						<template v-if="confirmKind === 'clear'">
-							Clear <span class="break-all">{{ confirmTarget ? chatDisplayName(confirmTarget) : "" }}</span>?
-						</template>
-						<template v-else>Delete chat?</template>
-					</AlertDialogTitle>
-					<AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-						<template v-if="confirmKind === 'clear'">
-							This removes all messages in this chat. The chat itself stays. This cannot be undone.
-						</template>
-						<template v-else>
-							This will permanently delete
-							<span class="break-all font-medium text-gray-900 dark:text-white">{{ confirmTarget ? chatDisplayName(confirmTarget) : "" }}</span>
-							and all its messages. This cannot be undone.
-						</template>
-					</AlertDialogDescription>
-					<div class="mt-6 flex justify-end gap-3">
-						<AlertDialogCancel
-							class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
-							Cancel
-						</AlertDialogCancel>
-						<AlertDialogAction
-							class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
-							@click="confirmAction">
-							{{ confirmKind === "clear" ? "Clear" : "Delete" }}
-						</AlertDialogAction>
-					</div>
-				</AlertDialogContent>
-			</AlertDialogPortal>
-		</AlertDialogRoot>
+		<ConfirmDialog v-model:open="confirmOpen" :title="confirmTitle" :action="confirmAction"
+			:confirm-label="confirmKind === 'clear' ? 'Clear' : 'Delete'"
+			:busy-label="confirmKind === 'clear' ? 'Clearing…' : 'Deleting…'" test-id="chat-confirm-dialog">
+			<p v-if="confirmKind === 'clear'">
+				This removes all messages in this chat. The chat itself stays. This cannot be undone.
+			</p>
+			<p v-else>
+				This will permanently delete
+				<span class="break-all font-medium text-gray-900 dark:text-white">{{ confirmTarget ? chatDisplayName(confirmTarget) : "" }}</span>
+				and all its messages. This cannot be undone.
+			</p>
+		</ConfirmDialog>
 	</div>
 </template>
 
 <script setup lang="ts">
-import {
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogOverlay,
-	AlertDialogPortal,
-	AlertDialogRoot,
-	AlertDialogTitle,
-} from "radix-vue";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { age } from "../../lib/projects";
@@ -86,6 +53,7 @@ import {
 import SidebarItemList from "../sidebar/SidebarItemList.vue";
 import SidebarItemRow from "../sidebar/SidebarItemRow.vue";
 import type { SidebarItemAction } from "../sidebar/types";
+import ConfirmDialog from "../ui/ConfirmDialog.vue";
 
 const props = defineProps<{ agent: string }>();
 
@@ -247,26 +215,23 @@ function askConfirm(kind: "delete" | "clear", s: ChatSession) {
 	confirmOpen.value = true;
 }
 
+const confirmTitle = computed(() =>
+	confirmKind.value === "clear"
+		? `Clear ${confirmTarget.value ? chatDisplayName(confirmTarget.value) : ""}?`
+		: "Delete chat?",
+);
+
 async function confirmAction() {
 	const s = confirmTarget.value;
-	confirmOpen.value = false;
 	if (!s) return;
 	if (confirmKind.value === "clear") {
-		try {
-			await store.clear(props.agent, s.id);
-		} catch (e) {
-			console.error("Failed to clear chat", e);
-		}
+		await store.clear(props.agent, s.id);
 		return;
 	}
-	try {
-		await store.remove(props.agent, s.id);
-		if (activeId.value === s.id) {
-			const main = sessions.value.find(isMainChat);
-			await router.push(chatPath(props.agent, main?.id ?? ""));
-		}
-	} catch (e) {
-		console.error("Failed to delete chat", e);
+	await store.remove(props.agent, s.id);
+	if (activeId.value === s.id) {
+		const main = sessions.value.find(isMainChat);
+		await router.push(chatPath(props.agent, main?.id ?? ""));
 	}
 }
 </script>
