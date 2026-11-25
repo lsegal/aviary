@@ -2,29 +2,29 @@ class Aviary < Formula
   desc "Aviary: the AI Agent Nest"
   homepage "https://aviary.bot"
   license "MIT"
-  version "0.7.39"
+  version "0.7.40"
 
   on_macos do
     on_arm do
-      url "https://github.com/lsegal/aviary/releases/download/v0.7.39/aviary_v0.7.39_darwin_arm64.tar.gz"
-      sha256 "62152344673b3aa4bbf04382da6d62d97ee4513495bc95cf3b88ce40392711ac"
+      url "https://github.com/lsegal/aviary/releases/download/v0.7.40/aviary_v0.7.40_darwin_arm64.tar.gz"
+      sha256 "b3937565107ff7bc6dd0e294b9b893e812c19c7aa226e03526ebd325a261f83b"
     end
 
     on_intel do
-      url "https://github.com/lsegal/aviary/releases/download/v0.7.39/aviary_v0.7.39_darwin_amd64.tar.gz"
-      sha256 "c3daed8e367c1eeea8a1d251b6f57da9669f20583472e2ca2f84233cdcc119f7"
+      url "https://github.com/lsegal/aviary/releases/download/v0.7.40/aviary_v0.7.40_darwin_amd64.tar.gz"
+      sha256 "8b6ba78fe350daf25b3dce3f31153735d4fe22750734cc214208318f44921dec"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/lsegal/aviary/releases/download/v0.7.39/aviary_v0.7.39_linux_arm64.tar.gz"
-      sha256 "3f3e526422e15b9e8ac4ad9490e886240feabcca9e10e6ce5659bcb0c01719ea"
+      url "https://github.com/lsegal/aviary/releases/download/v0.7.40/aviary_v0.7.40_linux_arm64.tar.gz"
+      sha256 "eaabe84b5489325dad5bc0eb98dad13aa9cf2080be6ef415deaf2715fe4371be"
     end
 
     on_intel do
-      url "https://github.com/lsegal/aviary/releases/download/v0.7.39/aviary_v0.7.39_linux_amd64.tar.gz"
-      sha256 "f46aea842c1d40b1816359785202748a56bb6db34066dc4e8133b5d3e7c14a49"
+      url "https://github.com/lsegal/aviary/releases/download/v0.7.40/aviary_v0.7.40_linux_amd64.tar.gz"
+      sha256 "8edfc71520e9788117dae7e791869484dbdf69fc3f01510a1ddbbaa4a6a8ceb7"
     end
   end
 
