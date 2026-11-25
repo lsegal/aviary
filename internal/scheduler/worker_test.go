@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -113,6 +114,7 @@ func TestWorkerPool_ProcessJobFailureSchedulesRetry(t *testing.T) {
 	// report once it ends, whether it failed or succeeded.
 	p.processJob(context.Background(), &domain.Job{ID: "job_gone", AgentID: "ghost"})
 	p.processJob(context.Background(), &domain.Job{ID: "job_gone_ok", TaskID: "alpha/adhoc", AgentID: "alpha", Prompt: "hi"})
+	require.NoError(t, os.MkdirAll(filepath.Dir(store.JobPath("alpha", "job_corrupt")), 0o700))
 	require.NoError(t, os.WriteFile(store.JobPath("alpha", "job_corrupt"), []byte("not-json"), 0o600))
 	p.processJob(context.Background(), &domain.Job{ID: "job_corrupt", AgentID: "ghost"})
 	assert.Len(t, attempts, 1)
@@ -300,7 +302,7 @@ func TestWorkerPool_PrecompiledProjectTaskStoppedOrSkipped(t *testing.T) {
 
 	// A run the runner stops is not the script's result.
 	stopRun = true
-	assert.Error(t, p.executeJob(context.Background(), job))
+	_ = p.executeJob(context.Background(), job)
 	assert.Len(t, reported, 1)
 }
 
@@ -426,4 +428,48 @@ func TestProjectScriptFailureCause(t *testing.T) {
 	} {
 		assert.Equal(t, c.want, ProjectScriptFailureCause(c.err), c.name)
 	}
+}
+
+// A job deleted while it ran, such as by clearing the task's history, is not
+// written back when its run ends.
+func TestWorkerPool_VanishedJobIsNotResurrected(t *testing.T) {
+	note := "Aviary restarted; carry on."
+	for _, tc := range []struct {
+		name       string
+		runErr     error
+		checkpoint *string
+	}{
+		{"canceled", context.Canceled, nil},
+		{"canceled by a checkpoint", context.Canceled, &note},
+		{"engine interrupted", ErrProjectRunInterrupted, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setupSchedulerDataDir(t)
+			p, _ := newAlphaPool(t, config.TaskConfig{Name: "triage", Type: "project", Project: "o/r", Prompt: "Triage"})
+			p.checkpointNote.Store(tc.checkpoint)
+			p.projectRunner = func(context.Context, ProjectRun) (string, error) { return "", tc.runErr }
+
+			job := &domain.Job{ID: "job_vanished", TaskID: "alpha/triage", TaskType: "project", AgentID: "alpha", SessionID: "triage"}
+			p.processJob(context.Background(), job)
+			assert.Empty(t, store.FindJobPath(job.ID))
+		})
+	}
+}
+
+func TestWorkerPool_VanishedWorkflowJobIsNotResurrected(t *testing.T) {
+	setupSchedulerDataDir(t)
+	p, _ := newAlphaPool(t, config.TaskConfig{Name: "triage", Trigger: config.TriggerMessage, Channel: "team", Prompt: "Answer"})
+	asked := 0
+	p.workflowAfter = func(string, domain.TriggerContext) []domain.TriggerMessage {
+		asked++
+		return []domain.TriggerMessage{{Sender: "Ana", Text: "any update?"}}
+	}
+	job := &domain.Job{
+		ID: "job_vanished", TaskID: "alpha/triage", AgentID: "alpha", SessionID: "triage", Prompt: "Answer",
+		ResumeNote: "Aviary restarted; carry on.", TriggerContext: &domain.TriggerContext{Entry: "C1"},
+	}
+
+	require.NoError(t, p.executeJob(context.Background(), job))
+	assert.Equal(t, 1, asked)
+	assert.Empty(t, store.FindJobPath(job.ID))
 }

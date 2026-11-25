@@ -1744,7 +1744,9 @@ func TestManager_SendThreadAndMediaOnConfiguredChannel(t *testing.T) {
 
 type failingMediaSender struct{ mockChannel }
 
-func (f *failingMediaSender) SendMedia(string, string, string) error { return fmt.Errorf("upload rejected") }
+func (f *failingMediaSender) SendMedia(string, string, string) error {
+	return fmt.Errorf("upload rejected")
+}
 
 func TestRouteMediaDelivery_ReturnsLastError(t *testing.T) {
 	mgr := NewManager()

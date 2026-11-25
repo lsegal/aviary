@@ -100,8 +100,10 @@ func TestSlackChannel_PostAndEditResolveTargetAndReturnTimestamp(t *testing.T) {
 		},
 		{
 			name: "EditMessage",
-			call: func(c *SlackChannel) (string, error) { return "", c.EditMessage("#alerts", "1710000001.000100", "edited") },
-			path: "/chat.update",
+			call: func(c *SlackChannel) (string, error) {
+				return "", c.EditMessage("#alerts", "1710000001.000100", "edited")
+			},
+			path:     "/chat.update",
 			wantForm: map[string]string{"channel": "C123", "ts": "1710000001.000100", "text": "edited"},
 		},
 		{
@@ -226,9 +228,9 @@ const (
 
 func TestSlackChannel_StartLoadsIdentityAndReturnsSocketModeError(t *testing.T) {
 	server, _ := newFakeSlackAPI(t, map[string]string{
-		"/auth.test":            `{"ok":true,"user_id":"UBOT","team":" Team "}`,
-		"/users.list":           slackUsersListOK,
-		"/conversations.list":   slackConversationsListOK,
+		"/auth.test":             `{"ok":true,"user_id":"UBOT","team":" Team "}`,
+		"/users.list":            slackUsersListOK,
+		"/conversations.list":    slackConversationsListOK,
 		"/apps.connections.open": slackInvalidAuth,
 	})
 	ch := newStartTestSlackChannel(server.URL, []config.AllowFromEntry{{From: "@alice", AllowedGroups: "#general"}})
@@ -424,17 +426,17 @@ func TestSlackChannel_MessageRepliedFetchesLatestReply(t *testing.T) {
 		wantFetches int
 	}{
 		{
-			name:    "latest_reply field",
-			replies: repliesOK,
-			channel: "C123",
-			message: &slack.Msg{Timestamp: rootTS, ThreadTimestamp: rootTS, LatestReply: replyTS},
+			name:     "latest_reply field",
+			replies:  repliesOK,
+			channel:  "C123",
+			message:  &slack.Msg{Timestamp: rootTS, ThreadTimestamp: rootTS, LatestReply: replyTS},
 			wantText: "<@UBOT> follow up", wantFetches: 2,
 		},
 		{
-			name:    "replies list fallback with mismatched ts",
-			replies: repliesOK,
-			channel: "C123",
-			message: &slack.Msg{Timestamp: rootTS, Replies: []slack.Reply{{Timestamp: "1710000004.000400"}}},
+			name:     "replies list fallback with mismatched ts",
+			replies:  repliesOK,
+			channel:  "C123",
+			message:  &slack.Msg{Timestamp: rootTS, Replies: []slack.Reply{{Timestamp: "1710000004.000400"}}},
 			wantText: "<@UBOT> follow up", wantLog: "fetch returned ts=" + replyTS + " expected=1710000004.000400", wantFetches: 2,
 		},
 		{
