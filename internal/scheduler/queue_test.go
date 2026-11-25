@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -43,6 +44,9 @@ func readJob(t *testing.T, id string) domain.Job {
 // breakJobDir replaces agent's jobs directory with a file, so listing it fails.
 func breakJobDir(t *testing.T, agentID string) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reports reading a file as a directory as not found, which listing treats as empty")
+	}
 	require.NoError(t, os.MkdirAll(store.AgentDir(agentID), 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(store.AgentDir(agentID), "jobs"), []byte("x"), 0o600))
 }
