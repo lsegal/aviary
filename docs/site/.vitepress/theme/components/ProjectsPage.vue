@@ -241,7 +241,10 @@ onBeforeUnmount(() => {
 					</p>
 					<p class="pp-muted">
 						When a job merges, fails, or starts waiting, a short report goes to
-						the Slack, Discord, or Signal channel you pick.
+						the Slack, Discord, or Signal channel you pick. A failed or waiting
+						job also raises an Aviary
+						<a :href="withBase('/guide/notifications')">notification</a>, as a
+						banner in the web UI or a system notification.
 					</p>
 				</div>
 				<div class="pp-window reveal">

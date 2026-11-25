@@ -750,7 +750,7 @@ onBeforeUnmount(() => {
 					What you <em>actually</em> use Aviary for.
 				</h2>
 				<p class="landing-section-sub reveal">
-					Seven day-to-day jobs the nest handles out of the box.
+					Eight day-to-day jobs the nest handles out of the box.
 				</p>
 
 				<div class="landing-bento">
@@ -990,6 +990,37 @@ onBeforeUnmount(() => {
 								<span class="voice-chip">whisper.cpp &#183; base.en</span>
 								<span class="voice-chip">audio stays local</span>
 								<span class="voice-chip">ready in Docker</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="card c-wide-6 reveal">
+						<div class="kind">Notifications &#183; 08</div>
+						<h3>Step away. Aviary tells you when it needs you.</h3>
+						<p>
+							Get a notice when an agent replies in another chat, a Code Loop job
+							fails or waits on you, or a scheduled task finishes. Pick a banner,
+							a toast, or a system notification for each event, add a sound, and
+							set quiet hours so off-hours events wait in the bell.
+							<a :href="withBase('/guide/notifications')">Set up notifications</a>.
+						</p>
+						<div class="notify-vis">
+							<div class="notify-item banner">
+								<span class="notify-style">banner</span>
+								Code Loop job failed: fix/issue-412
+							</div>
+							<div class="notify-item">
+								<span class="notify-style">toast</span>
+								assistant replied in Release planning
+							</div>
+							<div class="notify-item">
+								<span class="notify-style">system</span>
+								nightly-backup-check finished
+							</div>
+							<div class="voice-chips">
+								<span class="voice-chip">quiet hours 22:00&#8211;07:00</span>
+								<span class="voice-chip">sound per event</span>
+								<span class="voice-chip">notify tool &#183; REST API</span>
 							</div>
 						</div>
 					</div>
@@ -2322,6 +2353,35 @@ onBeforeUnmount(() => {
 	font-size: 11.5px;
 }
 
+.notify-vis {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 10px 16px;
+	margin-top: auto;
+}
+
+.notify-item {
+	padding: 10px 12px;
+	border: 1px solid var(--rule);
+	border-radius: 12px;
+	background: color-mix(in oklab, var(--bg-soft) 80%, transparent);
+	color: var(--ink);
+	font-size: 13.5px;
+	line-height: 1.5;
+}
+
+.notify-item.banner {
+	border-color: color-mix(in oklab, var(--brand) 45%, var(--rule));
+	background: color-mix(in oklab, var(--brand) 12%, transparent);
+}
+
+.notify-style {
+	display: block;
+	color: var(--ink-3);
+	font-family: var(--mono);
+	font-size: 11px;
+}
+
 .security-grid {
 	display: grid;
 	grid-template-columns: repeat(3, 1fr);
@@ -2836,7 +2896,8 @@ onBeforeUnmount(() => {
 
 @media (max-width: 540px) {
 
-	.voice-vis {
+	.voice-vis,
+	.notify-vis {
 		grid-template-columns: 1fr;
 	}
 
