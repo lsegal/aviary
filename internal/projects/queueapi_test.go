@@ -214,7 +214,7 @@ func TestManagerQueueFixesSkipsPollWhenEveryIssueHasAJob(t *testing.T) {
 
 func TestManagerQueueCandidatesUsesEngine(t *testing.T) {
 	m := newTestManager(t)
-	m.running = &engineRun{engine: browserDeliveryEngine(func(_ context.Context, args ...string) ([]byte, error) {
+	m.running = &engineRun{engine: browserDeliveryEngine(func(context.Context, ...string) ([]byte, error) {
 		return []byte(`[{"number":7,"title":"Fix it","url":"u","author":{"login":"alice"}}]`), nil
 	})}
 	result, err := m.QueueCandidates(context.Background(), " ", "", SkillSafeMerge)
