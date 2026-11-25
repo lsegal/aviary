@@ -48,7 +48,6 @@ func (m *skillMgrModel) refreshInstalled() {
 }
 
 func (m skillMgrModel) Init() tea.Cmd {
-	m.refreshInstalled()
 	return nil
 }
 
@@ -245,7 +244,11 @@ var skillMgrProgramOptions = func() []tea.ProgramOption {
 }
 
 func runSkillMgr(cfg *config.Config, cfgPath string) error {
-	p := tea.NewProgram(newSkillMgrModel(cfg, cfgPath), skillMgrProgramOptions()...)
+	// Load the list before the program starts: Init has a value receiver, so
+	// anything it sets on the model is discarded.
+	m := newSkillMgrModel(cfg, cfgPath)
+	m.refreshInstalled()
+	p := tea.NewProgram(m, skillMgrProgramOptions()...)
 	if _, err := p.Run(); err != nil {
 		return err
 	}
