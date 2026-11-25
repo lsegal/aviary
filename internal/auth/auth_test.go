@@ -222,6 +222,25 @@ func TestBrowserOAuthCallbackHandlerValidatesState(t *testing.T) {
 		default:
 		}
 	})
+
+	t.Run("valid state without code", func(t *testing.T) {
+		codeCh := make(chan browserOAuthCallbackResult, 1)
+		errCh := make(chan error, 1)
+		handler := browserOAuthCallbackHandler("expected-state", codeCh, errCh)
+		req := httptest.NewRequest(http.MethodGet, "/auth/callback?state=expected-state", nil)
+		res := httptest.NewRecorder()
+
+		handler(res, req)
+
+		assert.Equal(t, http.StatusBadRequest, res.Code)
+		assert.Contains(t, res.Body.String(), "missing code")
+		assert.ErrorContains(t, <-errCh, "no code in OAuth callback")
+		select {
+		case <-codeCh:
+			assert.Fail(t, "callback without a code produced an authorization code")
+		default:
+		}
+	})
 }
 
 func TestOAuthToken_IsExpired(t *testing.T) {
