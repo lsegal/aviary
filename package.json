@@ -1,6 +1,6 @@
 {
 	"name": "aviary",
-	"version": "0.7.52",
+	"version": "0.7.53",
 	"private": true,
 	"packageManager": "pnpm@8.15.9",
 	"type": "module",
