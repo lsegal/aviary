@@ -642,7 +642,12 @@ func GitHubLogin(ctx context.Context) (*OAuthToken, error) {
 			}
 		}
 	}()
-	defer srv.Shutdown(context.Background()) //nolint:errcheck
+	defer func() {
+		_ = srv.Shutdown(context.Background())
+		// Shutdown only closes listeners Serve has started tracking, so close ln
+		// too: an early return can beat the goroutine and leave the port bound.
+		_ = ln.Close()
+	}()
 
 	// Build authorize URL
 	u, _ := url.Parse(GitHubAuthorizeURL)
