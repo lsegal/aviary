@@ -360,6 +360,8 @@ func TestProjectUpdateSetsAndResetsAProjectsOwnFilter(t *testing.T) {
 	require.NoError(t, config.Save("", cfg))
 	m.Reconcile(cfg)
 	queries := fakeIssueSearch(m, 12)
+	var events []projects.ProjectEvent
+	m.SetProjectObserver(func(ev projects.ProjectEvent) { events = append(events, ev) })
 
 	checked := callJSON(t, d, "project_filter_check", map[string]any{"target": "o/a", "filter": "label:bug  -label:wip"})
 	assert.EqualValues(t, 12, checked["matches"])
@@ -371,6 +373,7 @@ func TestProjectUpdateSetsAndResetsAProjectsOwnFilter(t *testing.T) {
 	assert.EqualValues(t, 12, updated["matches"])
 	assert.Equal(t, "label:bug -label:wip", updated["issue_filter"])
 	assert.Contains(t, *queries, "repo:o/a is:issue state:open label:bug -label:wip")
+	assert.Contains(t, events, projects.ProjectEvent{Type: projects.ProjectUpdated, Target: "o/a", Agent: "coder"}, "open clients hear of the change")
 
 	saved, err := config.Load("")
 	require.NoError(t, err)
