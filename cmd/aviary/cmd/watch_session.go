@@ -233,7 +233,7 @@ func watchSessionAgent(global *config.Config, name string, targets []string) (co
 // providers, browser, approval and Code Loop settings with the flags'
 // overrides, one agent owning the targets, and a server on port that needs
 // no token and serves plain HTTP on the loopback interface only.
-func watchSessionConfig(global *config.Config, sources globalWatchSources, agent config.AgentConfig, targets []string, settings config.ProjectsConfig, port int) *config.Config {
+func watchSessionConfig(global *config.Config, sources globalWatchSources, agent config.AgentConfig, targets []string, mode string, settings config.ProjectsConfig, port int) *config.Config {
 	cfg := &config.Config{
 		Server: config.ServerConfig{
 			Port:             port,
@@ -250,7 +250,7 @@ func watchSessionConfig(global *config.Config, sources globalWatchSources, agent
 	}
 	cfg.Browser.ProfileDir = sources.profileDir
 	for _, target := range targets {
-		agent.Projects = append(agent.Projects, config.ProjectConfig{Target: target})
+		agent.Projects = append(agent.Projects, config.ProjectConfig{Target: target, Mode: mode})
 	}
 	cfg.Agents = []config.AgentConfig{agent}
 	return cfg
@@ -259,7 +259,7 @@ func watchSessionConfig(global *config.Config, sources globalWatchSources, agent
 // startWatchSession creates the session's directory, points Aviary's config,
 // data and auth lookups at it and the shared credentials, and writes its
 // config. The caller removes s.Dir when the session ends.
-func startWatchSession(parent string, global *config.Config, sources globalWatchSources, choice watchAgentChoice, targets []string, settings config.ProjectsConfig) (*watchSession, error) {
+func startWatchSession(parent string, global *config.Config, sources globalWatchSources, choice watchAgentChoice, targets []string, mode string, settings config.ProjectsConfig) (*watchSession, error) {
 	agent, err := watchSessionAgent(global, choice.Name, targets)
 	if err != nil {
 		return nil, err
@@ -301,7 +301,7 @@ func startWatchSession(parent string, global *config.Config, sources globalWatch
 	if err := store.EnsureDirs(); err != nil {
 		return s, fmt.Errorf("initializing the watch session directory: %w", err)
 	}
-	cfg := watchSessionConfig(global, sources, agent, targets, settings, port)
+	cfg := watchSessionConfig(global, sources, agent, targets, mode, settings, port)
 	if err := config.Save(s.ConfigPath, cfg); err != nil {
 		return s, fmt.Errorf("writing the watch session config: %w", err)
 	}

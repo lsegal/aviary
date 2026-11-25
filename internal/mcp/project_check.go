@@ -55,6 +55,8 @@ type projectCheckArgs struct {
 	// Models are the owning agent's model and fallbacks as an unsaved form
 	// holds them, so the check follows edits before they are saved.
 	Models []string `json:"models,omitempty" jsonschema:"the owning agent's model and fallbacks, in order, in place of its saved ones"`
+	// Mode is the mode the project will use, as an unsaved form holds it.
+	Mode string `json:"mode,omitempty" jsonschema:"watch to pick up issues matching the filter, or manual to only run work queued on demand; empty uses the saved project's mode, else watch"`
 }
 
 // ProjectCheck is one add-project prerequisite and its outcome.
@@ -79,6 +81,7 @@ type ProjectCheckResult struct {
 	Repo   string            `json:"repo,omitempty"`
 	Kind   string            `json:"kind"`
 	Fork   bool              `json:"fork"`
+	Mode   string            `json:"mode"`
 	OK     bool              `json:"ok"`
 	Checks []ProjectCheck    `json:"checks"`
 	CLIs   []ProjectCheckCLI `json:"clis"`
@@ -124,9 +127,18 @@ func runProjectCheck(ctx context.Context, args projectCheckArgs) (*ProjectCheckR
 	if err != nil {
 		return nil, err
 	}
-	res := &ProjectCheckResult{Target: target, Repo: repo, Kind: kind}
+	mode, err := projectCheckMode(target, args.Mode)
+	if err != nil {
+		return nil, err
+	}
+	res := &ProjectCheckResult{Target: target, Repo: repo, Kind: kind, Mode: mode}
 	add := func(name, status, format string, a ...any) {
 		res.Checks = append(res.Checks, ProjectCheck{Name: name, Status: status, Message: fmt.Sprintf(format, a...)})
+	}
+	if mode == config.ProjectModeManual {
+		add("mode", projectCheckInfo, "manual: no issue watching; only work you queue, scheduled project tasks and agent tools start jobs")
+	} else {
+		add("mode", projectCheckInfo, "watch: open issues matching the project's filter are picked up")
 	}
 
 	signedIn := checkGHAuth(ctx, add)
@@ -334,11 +346,27 @@ func joinList(items []string, conjunction string) string {
 	return strings.Join(items[:len(items)-1], ", ") + " " + conjunction + " " + items[len(items)-1]
 }
 
+// projectCheckMode is the mode project_check reports: mode when given, else
+// the saved project's, else watch.
+func projectCheckMode(target, mode string) (string, error) {
+	if strings.TrimSpace(mode) != "" {
+		return config.NormalizeProjectMode(mode)
+	}
+	if cfg, err := projectConfig(); err == nil {
+		for _, project := range cfg.ProjectList() {
+			if strings.TrimSpace(project.Target) == target && project.Manual() {
+				return config.ProjectModeManual, nil
+			}
+		}
+	}
+	return config.ProjectModeWatch, nil
+}
+
 func registerProjectCheckTool(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name: "project_check",
 		Description: "Check whether a repository, Project board or Discussions board can be watched as a project: " +
-			"GitHub access, installed CLI providers and the gh-fix skill on the ones the project runs on, and whether pull requests must come from a fork. " +
+			"GitHub access, installed CLI providers and the gh-fix skill on the ones the project runs on, whether pull requests must come from a fork, and the project's mode (watch or manual). " +
 			"Read-only; writes nothing.",
 		Annotations: readOnlyTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectCheckArgs) (*sdkmcp.CallToolResult, struct{}, error) {
