@@ -1141,3 +1141,40 @@ func TestRemoteControlInertNoticeWarnsWhenOptedIn(t *testing.T) {
 		t.Errorf("notice = %q, want no notice when remote control is off", got)
 	}
 }
+
+// Each step of moving a board card can fail, and the error says which.
+func TestSetIssueStatusReportsEachProjectStepFailure(t *testing.T) {
+	view := []byte(`{"id":"PVT_project"}`)
+	fields := []byte(`{"fields":[{"id":"PVTSSF_status","name":"Status","options":[{"id":"opt_progress","name":"In Progress"}]}]}`)
+	failed := errors.New("exit status 1")
+	for _, c := range []struct {
+		name      string
+		responses [][]byte
+		errs      []error
+		want      string
+	}{
+		{"undecodable project", [][]byte{[]byte("not json")}, []error{nil}, "decode project"},
+		{"project without an ID", [][]byte{[]byte(`{}`)}, []error{nil}, "project 3 has no ID"},
+		{"field list", [][]byte{view, []byte("rate limited")}, []error{nil, failed}, "list project fields: exit status 1: rate limited"},
+		{"no matching option", [][]byte{view, []byte(`{"fields":[{"id":"PVTSSF_status","name":"Status","options":[{"id":"opt_done","name":"Done"}]}]}`)}, []error{nil, nil}, `project 3 has no Status option "In Progress"`},
+		{"item edit", [][]byte{view, fields, []byte("item is archived")}, []error{nil, nil, failed}, "item is archived"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			call := 0
+			gh := GHCLI{ReadyState: "Ready", runCommand: func(_ context.Context, args ...string) ([]byte, error) {
+				if call >= len(c.responses) {
+					t.Fatalf("unexpected gh call: %q", args)
+				}
+				call++
+				return c.responses[call-1], c.errs[call-1]
+			}}
+			err := gh.SetIssueStatus(context.Background(), "https://github.com/users/owner/projects/3", Issue{Number: 7, ProjectItemID: "PVTI_item"}, "In Progress")
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("SetIssueStatus() = %v, want %q", err, c.want)
+			}
+			if call != len(c.responses) {
+				t.Fatalf("gh calls = %d, want %d", call, len(c.responses))
+			}
+		})
+	}
+}
