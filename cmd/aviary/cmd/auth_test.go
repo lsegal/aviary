@@ -491,8 +491,12 @@ func TestAuthLoginCommandDispatchesByProvider(t *testing.T) {
 				return testToken(code), nil
 			}
 		}, "anthropic:oauth"},
-		{"openai", func() { openAILogin = func(context.Context) (*authpkg.OAuthToken, error) { return testToken("o"), nil } }, "openai:oauth"},
-		{"GEMINI", func() { geminiLogin = func(context.Context) (*authpkg.OAuthToken, error) { return testToken("g"), nil } }, "gemini:oauth"},
+		{"openai", func() {
+			openAILogin = func(context.Context) (*authpkg.OAuthToken, error) { return testToken("o"), nil }
+		}, "openai:oauth"},
+		{"GEMINI", func() {
+			geminiLogin = func(context.Context) (*authpkg.OAuthToken, error) { return testToken("g"), nil }
+		}, "gemini:oauth"},
 		{"github-copilot", func() { authLoginPat = "ghp_flag" }, "github-copilot:default"},
 	}
 	for _, tt := range tests {
