@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { formatReport, parseProfile } from "./go-coverage.mjs";
+import {
+	formatCobertura,
+	formatReport,
+	parseLines,
+	parseProfile,
+} from "./go-coverage.mjs";
 
 const profile = `mode: atomic
 example.com/m/a/a.go:1.1,3.2 4 1
@@ -36,4 +41,44 @@ test("reports the total and lists the lowest-coverage packages first", () => {
 		["c", "a", "b", "."],
 	);
 	assert.match(markdown, /\| `a` \| 70\.0% \| 14 \/ 20 \|/);
+});
+
+test("maps blocks to repository-relative line hits, keeping the highest count", () => {
+	const files = parseLines(
+		`mode: atomic
+example.com/m/a/a.go:1.1,3.2 4 0
+example.com/m/a/a.go:3.5,4.2 1 2
+example.com/m/a/a.go:1.1,3.2 4 1
+other.org/x/x.go:2.1,2.9 1 0
+`,
+		"example.com/m",
+	);
+	assert.deepEqual(
+		Object.fromEntries([...files].map(([file, lines]) => [file, Object.fromEntries(lines)])),
+		{
+			"a/a.go": { 1: 1, 2: 1, 3: 2, 4: 2 },
+			"other.org/x/x.go": { 2: 0 },
+		},
+	);
+});
+
+test("writes Cobertura XML with per-file classes and line totals", () => {
+	const files = parseLines(
+		`mode: set
+example.com/m/a/a.go:1.1,2.2 1 1
+example.com/m/a/b.go:5.1,5.9 1 0
+example.com/m/main.go:3.1,3.9 1 1
+`,
+		"example.com/m",
+	);
+	const { lineRate, xml } = formatCobertura(files, 1_700_000_000_000);
+	assert.equal(lineRate, 75);
+	assert.match(
+		xml,
+		/<coverage line-rate="0\.7500" branch-rate="0" lines-covered="3" lines-valid="4" [^>]*timestamp="1700000000">/,
+	);
+	assert.match(xml, /<package name="a" line-rate="0\.6667"/);
+	assert.match(xml, /<class name="b\.go" filename="a\/b\.go" line-rate="0\.0000"[^>]*>\s*<methods\/>\s*<lines>\s*<line number="5" hits="0"\/>/);
+	assert.match(xml, /<package name="\." line-rate="1\.0000"/);
+	assert.match(xml, /<class name="main\.go" filename="main\.go"/);
 });
