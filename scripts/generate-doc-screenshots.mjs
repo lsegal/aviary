@@ -640,6 +640,52 @@ const transcriptionStatus = {
 };
 
 // Mocks every page needs, which a capture's own fixtures override.
+// The bell's history (/api/notifications), so the sidebar footer shows it
+// with an unread count.
+const notificationHistory = {
+	notifications: [
+		{
+			id: "n-3",
+			type: "codeloop.failed",
+			severity: "error",
+			title: "lsegal/forgo#80 failed",
+			body: "CI failed on PR #84",
+			link: "/agents/coder/projects/lsegal%2Fforgo/jobs/80",
+			section: "Code Loop",
+			time: minutesAgo(58),
+			read: false,
+			count: 1,
+			delivery: "big",
+		},
+		{
+			id: "n-2",
+			type: "chat.reply",
+			severity: "info",
+			title: "researcher replied",
+			body: "Here are the three papers worth reading first.",
+			link: "/agents/researcher/chat",
+			section: "Chats",
+			time: minutesAgo(75),
+			read: false,
+			count: 1,
+			delivery: "small",
+		},
+		{
+			id: "n-1",
+			type: "task.run",
+			severity: "success",
+			title: "daily-inbox-triage finished",
+			link: "/agents/assistant/tasks/daily-inbox-triage",
+			section: "Scheduled tasks & workflows",
+			time: minutesAgo(270),
+			read: true,
+			count: 1,
+			delivery: "small",
+		},
+	],
+	unread: 2,
+};
+
 const commonFixtures = {
 	config_get: docsConfig,
 	config_validate: [],
@@ -1166,6 +1212,55 @@ function projectInTargets(args, target) {
 	return !Array.isArray(args.targets) || args.targets.includes(target);
 }
 
+// A scheduled prompt on lsegal/aviary: task_list carries the task and
+// project_job_list (kinds: schedule) its board entry, so the board shows a
+// scheduled card between the running jobs and the finished ones.
+const projectSchedule = {
+	id: "coder/nightly-triage",
+	name: "nightly-triage",
+	agent_name: "coder",
+	agent_id: "coder",
+	type: "project",
+	project: "lsegal/aviary",
+	model: "cli/claude/opus",
+	prompt: "Triage issues opened since the last run and label them.",
+	enabled: true,
+	trigger: "daily",
+	at: "02:00",
+	description: "daily at 02:00",
+	next_run: iso(-1, 2),
+};
+
+const projectScheduleEntry = {
+	key: "lsegal/aviary#9001",
+	target: "lsegal/aviary",
+	number: 9001,
+	title: "nightly-triage",
+	status: "complete",
+	state: "scheduled",
+	kind: "schedule",
+	schedule_id: projectSchedule.id,
+	last_run: {
+		key: "lsegal/aviary#9001",
+		number: 9001,
+		status: "complete",
+		state: "done",
+		result: "succeeded",
+		summary: "Labeled 4 issues and opened #229 for a duplicate report",
+		started: minutesAgo(19 * 60),
+		finished: minutesAgo(19 * 60 - 5),
+		duration_ms: 312000,
+	},
+	next_run: { at: projectSchedule.next_run, paused: false, queued: false },
+	recent_runs: [9001, 8990, 8977].map((number) => ({
+		key: `lsegal/aviary#${number}`,
+		number,
+		status: "complete",
+		state: "done",
+		result: "succeeded",
+	})),
+};
+
 const projectsFixtures = {
 	agent_list: [],
 	config_get: {
@@ -1215,7 +1310,14 @@ const projectsFixtures = {
 			last_check: minutesAgo(0.1),
 		};
 	},
+	task_list: [projectSchedule],
 	project_job_list: (args) => {
+		if (Array.isArray(args.kinds) && args.kinds.includes("schedule")) {
+			const jobs = projectInTargets(args, projectScheduleEntry.target)
+				? [projectScheduleEntry]
+				: [];
+			return { jobs, total: jobs.length, offset: 0, limit: args.limit ?? 50 };
+		}
 		const jobs = projectJobs.filter(
 			(job) =>
 				projectInTargets(args, job.target) &&
@@ -1611,6 +1713,14 @@ async function configurePage(page, fixtures) {
 		});
 	});
 
+	await page.route("**/api/notifications", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify(notificationHistory),
+		});
+	});
+
 	await page.route("**/api/version", async (route) => {
 		await route.fulfill({
 			status: 200,
@@ -1810,6 +1920,11 @@ async function captureSettingsPage({
 		colorScheme: theme,
 	});
 	try {
+		// Headless Chromium reports notifications as denied even when granted,
+		// which Settings → Notifications would show as blocked.
+		await page.addInitScript(() => {
+			Object.defineProperty(Notification, "permission", { get: () => "granted" });
+		});
 		await configurePage(page, settingsFixtures);
 		await openPage(page, pathname, readySelector);
 		await page.screenshot({
@@ -1872,6 +1987,14 @@ async function main() {
 				pathname: "/agents/assistant/settings/permissions",
 				outputName: "security-minded.png",
 				readySelector: 'label:has-text("Filesystem Allowed Paths")',
+				theme,
+			});
+
+			await captureSettingsPage({
+				browser,
+				pathname: "/system/notifications",
+				outputName: "system-notifications.png",
+				readySelector: '[data-testid="settings-notifications"]',
 				theme,
 			});
 
