@@ -94,6 +94,10 @@ export interface ProjectStatus {
 	interval: string;
 	/** The issue search that selects work; empty picks up every open issue. */
 	issueFilter: string;
+	/** Each project's issue search: its own filter, else issueFilter. */
+	issueFilters: Record<string, string>;
+	/** The projects with their own issue filter instead of the shared one. */
+	customFilters: string[];
 	/** GitHub logins whose comments may steer jobs. */
 	allowedCommenters: string[];
 	/** no_merge leaves pull requests for a human, so safe merge is off. */
@@ -634,6 +638,10 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		cachedAt: str(raw.cached_at),
 		interval: str(raw.poll_interval),
 		issueFilter: str(raw.issue_filter),
+		issueFilters: Object.fromEntries(
+			Object.entries(obj(raw.issue_filters)).map(([k, v]) => [k, str(v)]),
+		),
+		customFilters: arr(raw.custom_filters).map(str).filter(Boolean),
 		allowedCommenters: arr(raw.allowed_commenters).map(str).filter(Boolean),
 		noMerge: raw.no_merge === true,
 		slotsUsed: num(jobs.running),
