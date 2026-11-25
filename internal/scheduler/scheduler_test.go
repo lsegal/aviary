@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1151,4 +1152,108 @@ func TestWorkerPool_ExecutePrecompiledProjectJob(t *testing.T) {
 	require.NoError(t, p.executeJob(context.Background(), plain))
 	assert.Empty(t, compiledFor)
 	assert.Equal(t, 4, modelRuns)
+}
+
+func TestScheduler_StopJobsByBareTaskName(t *testing.T) {
+	setupSchedulerDataDir(t)
+	s, err := New(agent.NewManager(nil), 1)
+	require.NoError(t, err)
+	t.Cleanup(s.Stop)
+	q := s.Queue()
+
+	pending := map[string]*domain.Job{}
+	for _, task := range []string{"alpha/daily", "beta/daily", "alpha/other"} {
+		job, err := q.Enqueue(task, strings.Split(task, "/")[0], "p", "", 1, "", "")
+		require.NoError(t, err)
+		pending[task] = job
+	}
+	running := map[string]*domain.Job{}
+	for _, task := range []string{"gamma/daily", "gamma/nightly"} {
+		job, err := q.StartImmediate(task, "gamma", "p", "", "", "")
+		require.NoError(t, err)
+		running[task] = job
+		startFakeRun(t, s.pool, job)
+	}
+	status := func(job *domain.Job) domain.JobStatus { return readJob(t, job.ID).Status }
+
+	stopped, err := s.StopJobs("daily")
+	require.NoError(t, err)
+	assert.Equal(t, 3, stopped, "both queued daily runs and the running one")
+	assert.Equal(t, domain.JobStatusCanceled, status(pending["alpha/daily"]))
+	assert.Equal(t, domain.JobStatusCanceled, status(pending["beta/daily"]))
+	assert.Equal(t, domain.JobStatusPending, status(pending["alpha/other"]))
+	assert.Eventually(t, func() bool { return status(running["gamma/daily"]) == domain.JobStatusCanceled }, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, domain.JobStatusInProgress, status(running["gamma/nightly"]))
+
+	stopped, err = s.StopJobs("")
+	require.NoError(t, err)
+	assert.Equal(t, 2, stopped, "everything left")
+	assert.Equal(t, domain.JobStatusCanceled, status(pending["alpha/other"]))
+	assert.Eventually(t, func() bool { return status(running["gamma/nightly"]) == domain.JobStatusCanceled }, 5*time.Second, 10*time.Millisecond)
+}
+
+func TestScheduler_StopJobsReportsUnlistableJobs(t *testing.T) {
+	setupSchedulerDataDir(t)
+	s, err := New(agent.NewManager(nil), 1)
+	require.NoError(t, err)
+	t.Cleanup(s.Stop)
+	breakJobDir(t, "broken")
+
+	stopped, err := s.StopJobs("")
+	assert.Error(t, err)
+	assert.Zero(t, stopped)
+}
+
+// The hooks set on the scheduler reach the runs its workers execute.
+func TestScheduler_HooksReachTaskRuns(t *testing.T) {
+	setupSchedulerDataDir(t)
+	precompile := true
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m", Tasks: []config.TaskConfig{{
+		Name: "stale", Type: "project", Every: "1h", Project: "o/r", Prompt: "Label stale issues", Target: "session:ops", Precompile: &precompile,
+	}}}}}
+	mgr := agent.NewManager(nil)
+	mgr.Reconcile(cfg)
+	s, err := New(mgr, 1)
+	require.NoError(t, err)
+	t.Cleanup(s.Stop)
+	s.Reconcile(cfg)
+
+	var mu sync.Mutex
+	var events []string
+	record := func(e string) { mu.Lock(); events = append(events, e); mu.Unlock() }
+	checkout := t.TempDir()
+	s.SetProjectRunner(func(ctx context.Context, run ProjectRun) (string, error) {
+		record("run " + run.Project)
+		return run.RunCompiled(ctx, func(context.Context) (string, error) { return checkout, nil }, func(string, ...any) {})
+	})
+	s.SetTaskCompiler(func(_ context.Context, agentName, taskName string) (string, error) {
+		record("compile " + agentName + "/" + taskName)
+		return `print("Labeled 2 issues")`, nil
+	})
+	s.SetTaskScriptReporter(func(_, taskName string, err error) error {
+		record(fmt.Sprintf("report %s %v", taskName, err))
+		return nil
+	})
+	s.SetTaskOutputDelivery(func(_ domain.OutputSource, _, route, text string) (*domain.JobDelivery, error) {
+		record("deliver " + route + " " + text)
+		return nil, nil
+	})
+	s.SetWorkflowHooks(
+		func(string, domain.TriggerContext, string) error { return nil },
+		func(string, domain.TriggerContext) []domain.TriggerMessage { return nil },
+	)
+	assert.NotNil(t, s.pool.workflowReply)
+	assert.NotNil(t, s.pool.workflowAfter)
+
+	job, err := s.Trigger("stale")
+	require.NoError(t, err)
+	assert.Eventually(t, func() bool { return readJob(t, job.ID).Status == domain.JobStatusCompleted }, 10*time.Second, 10*time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{
+		"run o/r",
+		"compile alpha/stale",
+		"report stale <nil>",
+		"deliver session:ops Labeled 2 issues",
+	}, events)
 }

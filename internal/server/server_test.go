@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -2260,4 +2261,287 @@ func TestDeliverOutput_SilentRecordsNothing(t *testing.T) {
 func TestTaskRunPath(t *testing.T) {
 	assert.Equal(t, "/agents/bot/tasks/daily%20digest/runs/job_1", taskRunPath(domain.OutputSource{Task: "bot/daily digest", JobID: "job_1"}))
 	assert.Empty(t, taskRunPath(domain.OutputSource{}))
+}
+
+// slackBlocksChannel is a Slack-like channel that records thread messages,
+// Block Kit sends and edits, and can fail each of them.
+type slackBlocksChannel struct {
+	stubChannel
+	mu          sync.Mutex
+	thread      []string
+	blockSends  []string
+	blockEdits  []string
+	threadErr   error
+	blockErr    error
+	blockEditEr error
+}
+
+func (c *slackBlocksChannel) SendThreadMessageAndGetID(_, _, text string) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.thread = append(c.thread, text)
+	return fmt.Sprintf("thread-%d", len(c.thread)), c.threadErr
+}
+
+func (c *slackBlocksChannel) SendThreadBlocksAndGetID(_, _, _ string, blocks ...slack.Block) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.blockSends = append(c.blockSends, sectionText(blocks))
+	if c.blockErr != nil {
+		return "", c.blockErr
+	}
+	return fmt.Sprintf("blocks-%d", len(c.blockSends)), nil
+}
+
+func (c *slackBlocksChannel) EditMessageBlocks(_, msgID, _ string, blocks ...slack.Block) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.blockEdits = append(c.blockEdits, msgID+"|"+sectionText(blocks))
+	return c.blockEditEr
+}
+
+func (c *slackBlocksChannel) EditMessage(string, string, string) error { return nil }
+
+func (c *slackBlocksChannel) snapshot() (thread, sends, edits []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string{}, c.thread...), append([]string{}, c.blockSends...), append([]string{}, c.blockEdits...)
+}
+
+func sectionText(blocks []slack.Block) string {
+	var parts []string
+	for _, b := range blocks {
+		if s, ok := b.(*slack.SectionBlock); ok && s.Text != nil {
+			parts = append(parts, s.Text.Text)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+type threadOnlyChannel struct {
+	stubChannel
+	recordingThreadChannel
+}
+
+func TestNewSlackThreadStreamer(t *testing.T) {
+	thread := channels.IncomingMessage{Type: "slack", Channel: "C1", ThreadTS: " 171.5 "}
+	tests := []struct {
+		name        string
+		channelType string
+		ch          channels.Channel
+		msg         channels.IncomingMessage
+		want        bool
+		wantBlocks  bool
+		wantEditor  bool
+	}{
+		{name: "not slack", channelType: "signal", ch: &slackBlocksChannel{}, msg: thread},
+		{name: "top-level message", channelType: "slack", ch: &slackBlocksChannel{}, msg: channels.IncomingMessage{Type: "slack", Channel: "C1"}},
+		{name: "channel cannot post to threads", channelType: "slack", ch: stubChannel{}, msg: thread},
+		{name: "plain thread sender", channelType: "slack", ch: &threadOnlyChannel{}, msg: thread, want: true},
+		{name: "blocks and edits", channelType: "slack", ch: &slackBlocksChannel{}, msg: thread, want: true, wantBlocks: true, wantEditor: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newSlackThreadStreamer(tt.channelType, tt.ch, tt.msg)
+			if !tt.want {
+				assert.Nil(t, s)
+				return
+			}
+			require.NotNil(t, s)
+			assert.Equal(t, "C1", s.channel)
+			assert.Equal(t, "171.5", s.threadTS)
+			assert.Equal(t, tt.wantBlocks, s.blocks != nil)
+			assert.Equal(t, tt.wantEditor, s.editor != nil)
+		})
+	}
+}
+
+func TestSlackThreadStreamer_UpsertUpdatesTheSameCallInPlace(t *testing.T) {
+	ch := &slackBlocksChannel{}
+	s := newSlackThreadStreamer("slack", ch, channels.IncomingMessage{Type: "slack", Channel: "C1", ThreadTS: "171.5"})
+	require.NotNil(t, s)
+
+	s.UpsertToolOutput(&agent.ToolEvent{Name: "web_search", Args: map[string]any{"q": "go"}})
+	s.UpsertToolOutput(&agent.ToolEvent{Name: "web_search", Args: map[string]any{"q": "go"}, Result: "found it"})
+	s.UpsertToolOutput(&agent.ToolEvent{Name: "web_search", Args: map[string]any{"q": "rust"}})
+	s.UpsertToolOutput(nil)
+	s.UpsertToolOutput(&agent.ToolEvent{Name: "  "})
+
+	thread, sends, edits := ch.snapshot()
+	assert.Empty(t, thread)
+	require.Len(t, sends, 1, "the first call posts the tool message")
+	assert.Contains(t, sends[0], ":thinking_face: `web_search`")
+	require.Len(t, edits, 2, "later calls edit it")
+	assert.True(t, strings.HasPrefix(edits[0], "blocks-1|"))
+	assert.Contains(t, edits[0], ":white_check_mark: `web_search`")
+	assert.NotContains(t, edits[0], ":thinking_face:", "a finished call replaces its pending entry")
+	assert.Contains(t, edits[1], `{"q":"rust"}`)
+	assert.Contains(t, edits[1], "found it", "a call with other args is listed separately")
+}
+
+func TestSlackThreadStreamer_FailedSendsAreRetried(t *testing.T) {
+	ch := &slackBlocksChannel{threadErr: errors.New("rate limited"), blockErr: errors.New("rate limited")}
+	s := newSlackThreadStreamer("slack", ch, channels.IncomingMessage{Type: "slack", Channel: "C1", ThreadTS: "171.5"})
+	require.NotNil(t, s)
+
+	s.Append("answer")
+	s.UpsertToolOutput(&agent.ToolEvent{Name: "shell", Args: map[string]any{"cmd": "ls"}})
+	s.Flush()
+	assert.Empty(t, s.toolMsgID, "a failed tool post leaves nothing to edit")
+	assert.Empty(t, s.pending.String(), "a failed answer is not resent")
+
+	ch.mu.Lock()
+	ch.blockErr = nil
+	ch.blockEditEr = errors.New("message gone")
+	ch.mu.Unlock()
+	s.FlushTools()
+	assert.Equal(t, "blocks-3", s.toolMsgID, "the tool message is posted again")
+	s.FlushTools()
+
+	thread, sends, edits := ch.snapshot()
+	assert.Equal(t, []string{"answer"}, thread)
+	assert.Len(t, sends, 3)
+	assert.Len(t, edits, 1)
+}
+
+func TestSlackThreadStreamer_WithoutBlocksPostsToolsAsText(t *testing.T) {
+	ch := &recordingThreadChannel{}
+	s := &slackThreadStreamer{thread: ch, channel: "C1", threadTS: "171.5"}
+	s.UpsertToolOutput(&agent.ToolEvent{Name: "shell", Args: map[string]any{"cmd": "ls"}, Result: "a.go"})
+	s.UpsertToolOutput(&agent.ToolEvent{Name: "shell", Args: map[string]any{"cmd": "ls"}, Result: "b.go"})
+
+	lines := ch.snapshot()
+	require.Len(t, lines, 1, "without Block Kit the tool message cannot be edited")
+	assert.Contains(t, lines[0], "a.go")
+	assert.Equal(t, "msg-1", s.toolMsgID)
+}
+
+func TestSlackThreadStreamer_NilAndEmpty(t *testing.T) {
+	var s *slackThreadStreamer
+	s.Append("text")
+	s.UpsertToolOutput(&agent.ToolEvent{Name: "shell"})
+	s.Flush()
+	s.FlushTools()
+	assert.Nil(t, s.toolBlocks())
+
+	ch := &recordingThreadChannel{}
+	empty := &slackThreadStreamer{thread: ch}
+	empty.Append("")
+	empty.Flush()
+	assert.Nil(t, empty.toolBlocks())
+	assert.Empty(t, ch.snapshot(), "nothing to say sends nothing")
+}
+
+func TestFormatToolDisclosuresBlock_Limits(t *testing.T) {
+	tools := make([]slackToolDisclosure, 10)
+	for i := range tools {
+		tools[i] = slackToolDisclosure{Name: fmt.Sprintf("tool_%d", i), Result: "ok"}
+	}
+	text := formatToolDisclosuresBlock(tools, 10000)
+	assert.Contains(t, text, "`tool_7`")
+	assert.NotContains(t, text, "`tool_8`")
+	assert.True(t, strings.HasSuffix(text, "\n... 2 more"))
+
+	text = formatToolDisclosuresBlock(tools, 80)
+	assert.Contains(t, text, "`tool_0`")
+	assert.NotContains(t, text, "`tool_1`")
+	assert.True(t, strings.HasSuffix(text, "\n... truncated"))
+}
+
+func TestToolTextHelpers(t *testing.T) {
+	assert.Equal(t, ":thinking_face: `noop`", formatToolSummaryLine(slackToolDisclosure{Name: "noop"}))
+	assert.Equal(t, "", compactToolInput(nil, 10))
+	assert.Equal(t, "", compactToolInput(map[string]any{"ch": make(chan int)}, 10), "unencodable input is left out")
+
+	for _, tt := range []struct {
+		name  string
+		fn    func(string, int) string
+		in    string
+		limit int
+		want  string
+	}{
+		{"line collapses whitespace", singleLineToolText, " a\n\tb  c ", 0, "a b c"},
+		{"line tiny limit", singleLineToolText, "abcdef", 2, ".."},
+		{"code fits", truncateSlackCodeBlock, " x ", 10, "x"},
+		{"code truncated", truncateSlackCodeBlock, "abcdefghij", 6, "abc..."},
+		{"code tiny limit", truncateSlackCodeBlock, "abcdef", 3, "..."},
+		{"code fence escaped", truncateSlackCodeBlock, "a```b", 0, "a`​``b"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.fn(tt.in, tt.limit))
+		})
+	}
+}
+
+func TestChannelSessionNameForIncoming(t *testing.T) {
+	setupServerDataDir(t)
+	separate := config.ChannelConfig{SeparateTopLevelSessions: boolPtr(true)}
+	reply := channels.IncomingMessage{Type: "slack", Channel: "C1", ThreadTS: "171.5", IsThreadReply: true}
+	touch := func(agentID, name string) {
+		p := store.SessionPath(agentID, name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o755))
+		require.NoError(t, os.WriteFile(p, nil, 0o600))
+	}
+	touch("legacy", "slack:C1")
+	touch("both", "slack:C1")
+	touch("both", "slack:C1:171.5")
+
+	tests := []struct {
+		name  string
+		agent string
+		cc    config.ChannelConfig
+		msg   channels.IncomingMessage
+		want  string
+	}{
+		{"not slack", "a", separate, channels.IncomingMessage{Type: "signal", Channel: "+1", IsThreadReply: true}, "signal:+1"},
+		{"shared session", "a", config.ChannelConfig{}, reply, "slack:C1"},
+		{"top-level message", "a", separate, channels.IncomingMessage{Type: "slack", Channel: "C1", ThreadTS: "171.5"}, "slack:C1:171.5"},
+		{"reply without a thread", "a", separate, channels.IncomingMessage{Type: "slack", Channel: "C1", IsThreadReply: true}, "slack:C1"},
+		{"new thread session", "a", separate, reply, "slack:C1:171.5"},
+		{"thread started before separate sessions", "legacy", separate, reply, "slack:C1"},
+		{"existing thread session", "both", separate, reply, "slack:C1:171.5"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, channelSessionNameForIncoming(tt.agent, tt.cc, tt.msg))
+		})
+	}
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func TestFindChannelConfig(t *testing.T) {
+	assert.False(t, func() bool { _, ok := (&Server{}).findChannelConfig("bot", "slack", "C1"); return ok }(),
+		"no config, no channel")
+
+	srv := &Server{cfg: &config.Config{Agents: []config.AgentConfig{
+		{Name: "other", Channels: []config.ChannelConfig{{Type: "slack", ID: "C1", Name: "wrong"}}},
+		{Name: "bot", Channels: []config.ChannelConfig{{Type: "slack", ID: "C2"}, {Type: "slack", ID: "C1", Name: "right"}}},
+	}}}
+	cc, ok := srv.findChannelConfig("bot", "slack", "C1")
+	require.True(t, ok)
+	assert.Equal(t, "right", cc.Name)
+	_, ok = srv.findChannelConfig("bot", "signal", "C1")
+	assert.False(t, ok)
+}
+
+func TestDeliverToChannel_Errors(t *testing.T) {
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Channels: []config.ChannelConfig{{Type: "slack", ID: "C1", Name: "alerts"}}}}}
+	tests := []struct {
+		name    string
+		cfg     *config.Config
+		agent   string
+		channel string
+		wantErr string
+	}{
+		{"no config", nil, "bot", "alerts", "no configuration loaded"},
+		{"unknown channel", cfg, "bot", "ops", `agent "bot" has no channel named "ops"`},
+		{"unknown agent", cfg, "ghost", "alerts", `agent "ghost" is not configured`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := &Server{cfg: tt.cfg}
+			assert.EqualError(t, srv.deliverToChannel(tt.agent, tt.channel, "hi"), tt.wantErr)
+		})
+	}
 }

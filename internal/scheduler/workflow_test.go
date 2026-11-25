@@ -183,6 +183,12 @@ func TestWorkerDeliversWorkflowReplies(t *testing.T) {
 	assert.Equal(t, []string{"session:ops:fyi"}, delivered)
 
 	assert.Error(t, p.deliverFor(&domain.Job{})("alpha", "reply", "x"), "a run without a triggering message cannot reply")
+
+	// Without the hooks wired, other targets are dropped quietly but a reply
+	// reports that it cannot be sent.
+	bare := &WorkerPool{}
+	assert.NoError(t, bare.deliverFor(job)("alpha", "session:ops", "fyi"))
+	assert.EqualError(t, bare.deliverFor(job)("alpha", "reply", "on it"), "workflow replies are not available")
 }
 
 func TestWorkerPool_RunCompiledWorkflow(t *testing.T) {
