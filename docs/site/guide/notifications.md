@@ -2,6 +2,9 @@
 
 Aviary tells you when something happens while you're looking elsewhere: an agent replies in another chat, a Code Loop job fails or waits on you, or a scheduled task or workflow finishes or fails. Notifications are controlled from **Settings → Notifications**, and the settings are saved on the server, so they follow you to every browser and device.
 
+![Settings → Notifications](/screenshots/system-notifications-light.png){.light-only}
+![Settings → Notifications](/screenshots/system-notifications-dark.png){.dark-only}
+
 ## Where notifications appear
 
 Every notification goes to the **bell** next to the connection icon (in the sidebar footer, the collapsed rail, or the phone header). It shows the unread count; click it for the recent notifications, newest first, with **Mark all read** and **Clear**. Clicking a notification anywhere opens its page: the chat, the Code Loop job card, the task run, or the task.
