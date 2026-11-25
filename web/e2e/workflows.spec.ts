@@ -127,6 +127,8 @@ async function mockWorkflows(
 		],
 	};
 	const calls: Record<string, Record<string, unknown>[]> = {};
+	/** Tool failures to report, by tool name. */
+	const failures: Record<string, string> = {};
 	const record = (tool: string, args?: Record<string, unknown>) => {
 		calls[tool] ??= [];
 		calls[tool].push(args ?? {});
@@ -255,15 +257,33 @@ async function mockWorkflows(
 				t.precompile = args.precompile;
 			return "updated";
 		},
+		task_stop: (args?: Record<string, unknown>) => {
+			record("task_stop", args);
+			return "stopped";
+		},
 		task_delete: (args?: Record<string, unknown>) => {
 			record("task_delete", args);
+			if (failures.task_delete) throw new Error(failures.task_delete);
 			config.agents[0].tasks = config.agents[0].tasks.filter(
 				(t) => t !== find(args?.name),
 			);
 			return "deleted";
 		},
 	});
-	return { config, calls };
+	return { config, calls, failures };
+}
+
+/**
+ * Dismisses and records every native alert, confirm or prompt, which the
+ * caller expects to stay empty.
+ */
+function nativeDialogs(page: Page): string[] {
+	const seen: string[] = [];
+	page.on("dialog", (d) => {
+		seen.push(`${d.type()}: ${d.message()}`);
+		void d.dismiss();
+	});
+	return seen;
 }
 
 test("the Workflows tab adds a workflow with an entry, a match and a preview", async ({
@@ -330,10 +350,157 @@ test("the Workflows tab pauses and deletes a workflow", async ({ page }) => {
 		});
 	await expect(page.getByTestId("workflow-row")).toContainText("Paused");
 
-	page.once("dialog", (d) => d.accept());
+	const dialogs = nativeDialogs(page);
 	await page.getByTestId("workflow-delete").click();
+	const dialog = page.getByRole("alertdialog", {
+		name: "Delete workflow triage?",
+	});
+	await expect(dialog).toContainText("definition and its run history");
+	await expect(dialog).toContainText("can't be undone");
+	await expect(page.getByTestId("workflow-delete-runs")).toHaveCount(0);
+
+	// Cancel and Esc both keep the workflow.
+	await dialog.getByRole("button", { name: "Cancel" }).click();
+	await expect(dialog).toHaveCount(0);
+	await page.getByTestId("workflow-delete").click();
+	await expect(dialog).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(dialog).toHaveCount(0);
+	expect(calls.task_delete).toBeUndefined();
+	await expect(page.getByTestId("workflow-row")).toHaveCount(1);
+
+	await page.getByTestId("workflow-delete").click();
+	await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+	await expect(dialog).toHaveCount(0);
 	await expect(page.getByTestId("workflows-empty")).toBeVisible();
+	await expect(page.getByTestId("toast")).toHaveText("Deleted workflow triage");
 	expect(calls.task_delete?.[0]).toMatchObject({ name: "assistant/triage" });
+	expect(calls.task_stop?.[0]).toMatchObject({ name: "assistant/triage" });
+	expect(dialogs).toEqual([]);
+});
+
+test("the workflow edit form's Danger Zone deletes the workflow and returns to the list (#1311)", async ({
+	page,
+}) => {
+	const { calls } = await mockWorkflows(page, [TRIAGE, LOG_ALL]);
+	const dialogs = nativeDialogs(page);
+	await page.goto(
+		"/agents/assistant/channels/Team%20Slack/settings?tab=workflows",
+	);
+
+	// A new workflow has nothing to delete.
+	await page.getByTestId("workflow-add").click();
+	await expect(page.getByTestId("workflow-form")).toBeVisible();
+	await expect(page.getByTestId("workflow-danger-zone")).toHaveCount(0);
+	await page.getByRole("button", { name: "Cancel" }).click();
+
+	await page
+		.locator("[data-testid=workflow-row][data-workflow=triage]")
+		.getByTestId("workflow-edit")
+		.click();
+	const zone = page.getByTestId("workflow-danger-zone");
+	await expect(zone).toContainText("Danger Zone");
+	await expect(zone).toContainText("definition and its run history");
+
+	const dialog = page.getByRole("alertdialog", {
+		name: "Delete workflow triage?",
+	});
+	await zone.getByRole("button", { name: "Delete workflow" }).click();
+	await expect(dialog).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByTestId("workflow-form")).toBeVisible();
+
+	await zone.getByRole("button", { name: "Delete workflow" }).click();
+	await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+	await expect(page.getByTestId("workflow-form")).toHaveCount(0);
+	await expect(page.getByTestId("workflow-row")).toHaveCount(1);
+	await expect(page.getByTestId("workflow-row")).toHaveAttribute(
+		"data-workflow",
+		"log-all",
+	);
+	await expect(page.getByTestId("toast")).toHaveText("Deleted workflow triage");
+	expect(calls.task_delete).toEqual([{ name: "assistant/triage" }]);
+	expect(dialogs).toEqual([]);
+});
+
+test("deleting a running workflow says its runs stop, and stops them (#1311)", async ({
+	page,
+}) => {
+	const { calls } = await mockWorkflows(
+		page,
+		[TRIAGE],
+		[
+			{
+				id: "job-1",
+				task_id: "assistant/triage",
+				agent_id: "assistant",
+				status: "in_progress",
+				created_at: NOW,
+				updated_at: NOW,
+			},
+			{
+				id: "job-0",
+				task_id: "assistant/triage",
+				agent_id: "assistant",
+				status: "completed",
+				created_at: AGO,
+				updated_at: AGO,
+			},
+		],
+	);
+	const dialogs = nativeDialogs(page);
+	await page.goto(
+		"/agents/assistant/channels/Team%20Slack/settings?tab=workflows",
+	);
+	await page.getByTestId("workflow-delete").click();
+	await expect(page.getByTestId("workflow-delete-runs")).toHaveText(
+		"A run is in progress or queued. Deleting stops it, and the workflow won't run again.",
+	);
+	await page
+		.getByTestId("workflow-delete-dialog")
+		.getByRole("button", { name: "Delete", exact: true })
+		.click();
+	await expect(page.getByTestId("workflows-empty")).toBeVisible();
+	expect(calls.task_stop).toEqual([{ name: "assistant/triage" }]);
+	expect(dialogs).toEqual([]);
+});
+
+test("the workflow delete modal reports a failure, traps focus and fits a phone (#1311)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 375, height: 667 });
+	const { calls, failures } = await mockWorkflows(page, [TRIAGE]);
+	failures.task_delete = "permission denied";
+	const dialogs = nativeDialogs(page);
+	await page.goto(
+		"/agents/assistant/channels/Team%20Slack/settings?tab=workflows",
+	);
+	await page.getByTestId("workflow-delete").click();
+	const dialog = page.getByTestId("workflow-delete-dialog");
+	await expect(dialog).toHaveAccessibleName("Delete workflow triage?");
+	await expect(dialog).toHaveAccessibleDescription(/can't be undone/);
+	const box = await dialog.boundingBox();
+	expect(box?.x).toBeGreaterThanOrEqual(0);
+	expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(375);
+
+	// Tabbing cycles inside the modal.
+	for (let i = 0; i < 4; i++) {
+		await page.keyboard.press("Tab");
+		expect(
+			await dialog.evaluate((el) => el.contains(document.activeElement)),
+		).toBe(true);
+	}
+
+	await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+	await expect(page.getByTestId("workflow-delete-dialog-error")).toHaveText(
+		/permission denied/,
+	);
+	await expect(dialog).toBeVisible();
+	expect(calls.task_delete).toHaveLength(1);
+	expect(calls.task_stop).toBeUndefined();
+	await expect(page.getByTestId("workflow-row")).toHaveCount(1);
+	expect(dialogs).toEqual([]);
 });
 
 test("the channel chat shows workflow cards, active first, with a remembered collapse and paused filter", async ({

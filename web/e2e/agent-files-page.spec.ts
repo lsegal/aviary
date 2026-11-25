@@ -199,24 +199,30 @@ test("Refresh re-reads the open file and asks before discarding edits", async ({
 	await refresh.click();
 	await expect(editor).toHaveValue("# Memory v2");
 
-	// With unsaved edits, declining the confirmation keeps them.
+	// With unsaved edits, it asks in the app's own modal (#1311); keeping
+	// the edits closes it.
+	const dialogs: string[] = [];
+	page.on("dialog", (d) => {
+		dialogs.push(d.message());
+		void d.dismiss();
+	});
 	store.set("MEMORY.md", "# Memory v3");
 	await editor.fill("# My unsaved edit");
-	const prompts: string[] = [];
-	page.once("dialog", (dialog) => {
-		prompts.push(dialog.message());
-		void dialog.dismiss();
-	});
+	const prompt = page.getByTestId("discard-file-dialog");
 	await refresh.click();
-	await expect
-		.poll(() => prompts)
-		.toEqual(["Discard unsaved changes to MEMORY.md and reload it from disk?"]);
+	await expect(prompt).toHaveAccessibleName("Discard unsaved changes?");
+	await expect(prompt).toContainText(
+		"Discard unsaved changes to MEMORY.md and reload it from disk?",
+	);
+	await prompt.getByRole("button", { name: "Keep editing" }).click();
+	await expect(prompt).toHaveCount(0);
 	await expect(menuButton).toBeEnabled();
 	await expect(editor).toHaveValue("# My unsaved edit");
 
-	// Accepting replaces them with the file on disk.
-	page.once("dialog", (dialog) => void dialog.accept());
+	// Confirming replaces them with the file on disk.
 	await refresh.click();
+	await prompt.getByRole("button", { name: "Discard and reload" }).click();
+	await expect(prompt).toHaveCount(0);
 	await expect(editor).toHaveValue("# Memory v3");
 
 	// Once saved, edits are no longer unsaved, so Refresh does not ask.
@@ -224,13 +230,10 @@ test("Refresh re-reads the open file and asks before discarding edits", async ({
 	await editor.press("ControlOrMeta+s");
 	await expect.poll(() => store.get("MEMORY.md")).toBe("# Saved edit");
 	store.set("MEMORY.md", "# Memory v4");
-	page.once("dialog", (dialog) => {
-		prompts.push(dialog.message());
-		void dialog.dismiss();
-	});
 	await refresh.click();
 	await expect(editor).toHaveValue("# Memory v4");
-	expect(prompts).toHaveLength(1);
+	await expect(prompt).toHaveCount(0);
+	expect(dialogs).toEqual([]);
 });
 
 test("the menu renames and deletes the open file", async ({ page }) => {
