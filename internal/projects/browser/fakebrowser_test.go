@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -40,10 +41,21 @@ func runFakeBrowser(args []string) {
 			port = value
 		}
 	}
-	singleton, err := os.OpenFile(filepath.Join(dataDir, "FakeSingletonLock"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	lock := filepath.Join(dataDir, "FakeSingletonLock")
+	singleton, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
-		os.Exit(0)
+		// Like Chrome, a lock left by a process that has since died is stale
+		// and taken over, so a profile can be relaunched after a stop.
+		owner, readErr := os.ReadFile(lock)
+		pid, atoiErr := strconv.Atoi(string(owner))
+		if readErr != nil || atoiErr != nil || processRunning(pid) {
+			os.Exit(0)
+		}
+		if singleton, err = os.OpenFile(lock, os.O_TRUNC|os.O_WRONLY, 0o600); err != nil {
+			os.Exit(0)
+		}
 	}
+	_, _ = fmt.Fprint(singleton, os.Getpid())
 	_ = singleton.Close()
 	serveFakeWindow(dataDir)
 	http.HandleFunc("/json/version", func(w http.ResponseWriter, _ *http.Request) {

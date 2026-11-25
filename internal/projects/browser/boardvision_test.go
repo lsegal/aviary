@@ -135,6 +135,10 @@ func TestBoardVisionRecoveredReferencesBecomeAddressableIssues(t *testing.T) {
 		{Repository: "lsegal/yard", Number: 398, Status: "In Progress"},
 		// The same item twice is what a scrolled screenshot can look like.
 		{Repository: "lsegal/aviary", Number: 412, Status: "Todo"},
+		// References that name no repository or no number cannot be
+		// addressed, so they are dropped.
+		{Number: 7, Status: "Todo"},
+		{Repository: "lsegal/aviary", Status: "Todo"},
 	}
 	vision, asks, _ := testVisionRefs(t, visionRunLimit, visionCooldown, clock, answer, true)
 	page := &visionBoardPage{fakeBoardPage: fakeBoardPage{documents: []string{readBoardFixture(t, "project-board-loading.html")}}}
@@ -211,6 +215,27 @@ func TestBoardWithoutVisionNeverScreenshots(t *testing.T) {
 	}
 	if page.screenshots != 0 {
 		t.Fatalf("the default build took %d screenshot(s)", page.screenshots)
+	}
+}
+
+// A page that cannot be photographed gives the fallback nothing to read, so
+// the agent is never asked and the extraction failure is what the caller sees.
+func TestBoardVisionSkipsAPageThatCannotScreenshot(t *testing.T) {
+	clock := &visionClock{step: DefaultWatchInterval}
+	vision, asks, _ := testVisionRefs(t, visionRunLimit, visionCooldown, clock, nil, true)
+	page := &fakeBoardPage{documents: []string{readBoardFixture(t, "project-board-loading.html")}}
+	board := &Board{
+		Page:           func(string) (Page, error) { return page, nil },
+		sleep:          func(context.Context, time.Duration) bool { return true },
+		settleAttempts: 2,
+		Vision:         vision,
+	}
+
+	if _, err := board.ListIssues(context.Background(), boardTarget); !errors.Is(err, ErrExtraction) {
+		t.Fatalf("expected the extraction error, got %v", err)
+	}
+	if *asks != 0 {
+		t.Fatalf("the agent was asked %d time(s) without a screenshot", *asks)
 	}
 }
 

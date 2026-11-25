@@ -3,7 +3,9 @@ package projects
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -431,5 +433,222 @@ func TestWatchdogLogsAFailedUnblockCallsOutput(t *testing.T) {
 				t.Errorf("each job should get one history entry: %v", history)
 			}
 		})
+	}
+}
+
+// TestTriggerUnblockRunsRequestedRounds covers rounds asked for from the prompt
+// area while the timed watchdog is off: a named job is covered even though it
+// is not stuck, and a request that names a discussion, an unknown job, or
+// finds nothing stuck is logged without an agent call.
+func TestTriggerUnblockRunsRequestedRounds(t *testing.T) {
+	calls := newUnblockCalls("UNBLOCK o/r#3 none: its CI is still running")
+	logs := &syncBuffer{}
+	w := watchdogEngine(calls, logs)
+	w.SetUnblockInterval(0)
+	list := &jobList{}
+	list.set(
+		JobSnapshot{Target: "o/r", Number: 3, Status: "active", WaitReason: "waiting on CI", Log: "running tests"},
+		JobSnapshot{Target: "https://github.com/o/r/discussions", Number: 4, Status: "active"},
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.watchStuckJobs(ctx, list.get)
+
+	if err := w.TriggerUnblock(" o/r#3 "); err != nil {
+		t.Fatal(err)
+	}
+	calls.await(t, 1)
+	prompt := calls.prompt(0)
+	if !strings.Contains(prompt, "key: o/r#3") || !strings.Contains(prompt, "stuck because: named from the prompt area while active: waiting on CI") {
+		t.Fatalf("requested round prompt does not cover the named job:\n%s", prompt)
+	}
+	awaitLog(t, logs, "o/r#3 needed no action: its CI is still running")
+
+	for _, tc := range []struct{ key, want string }{
+		{"https://github.com/o/r/discussions#4", "the unblock round requested for https://github.com/o/r/discussions#4 cannot run: it is a discussion"},
+		{"o/r#99", "the unblock round requested for o/r#99 cannot run: aviary has no such job"},
+		{"", "the unblock round requested from the prompt area found no stuck jobs"},
+	} {
+		if err := w.TriggerUnblock(tc.key); err != nil {
+			t.Fatal(err)
+		}
+		awaitLog(t, logs, tc.want)
+	}
+	if calls.count() != 1 {
+		t.Fatalf("unblock calls = %d, want only the named job's", calls.count())
+	}
+}
+
+// TestTriggerUnblockRefusesASecondPendingRequest checks a request made while
+// another is still waiting for the watchdog fails instead of blocking.
+func TestTriggerUnblockRefusesASecondPendingRequest(t *testing.T) {
+	w := &Engine{}
+	if err := w.TriggerUnblock("o/r#1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.TriggerUnblock("o/r#2"); err == nil || !strings.Contains(err.Error(), "already requested") {
+		t.Fatalf("second request error = %v, want it refused", err)
+	}
+	if key := <-w.unblockTriggers(); key != "o/r#1" {
+		t.Fatalf("pending request = %q, want the first one", key)
+	}
+}
+
+// TestRequestedStuckJobsWithoutAKeyNeedsAFullWatch checks an unnamed request
+// made sooner than the shortest interval after the last look covers only
+// paused jobs, since a running job has not been silent long enough, while a
+// key naming a stuck job returns that job alone with its history.
+func TestRequestedStuckJobsWithoutAKeyNeedsAFullWatch(t *testing.T) {
+	jobs := []JobSnapshot{
+		{Target: "o/r", Number: 1, Status: "active", Log: "same"},
+		{Target: "o/r", Number: 2, Status: "paused", WaitReason: "merge conflict"},
+	}
+	baseline := scrollbacks(jobs)
+	history := map[string][]string{"o/r#2": {"posted a comment"}}
+	stuck, err := requestedStuckJobs(jobs, baseline, history, 10*time.Second, "")
+	if err != nil || len(stuck) != 1 || stuck[0].Key != "o/r#2" {
+		t.Fatalf("early unnamed request = %+v, %v; want the paused job only", stuck, err)
+	}
+	stuck, err = requestedStuckJobs(jobs, baseline, history, 2*time.Minute, "o/r#2")
+	if err != nil || len(stuck) != 1 || stuck[0].Why != "paused: merge conflict" || !slices.Equal(stuck[0].Tried, []string{"posted a comment"}) {
+		t.Fatalf("named stuck job = %+v, %v", stuck, err)
+	}
+	stuck, err = requestedStuckJobs(jobs, baseline, history, 2*time.Minute, "")
+	if err != nil || len(stuck) != 2 {
+		t.Fatalf("unnamed request after a full interval = %+v, %v; want both jobs", stuck, err)
+	}
+}
+
+// TestValidateUnblockAgentChecksTheOverride checks the unblock override is
+// held to the registry: the agent must exist, and a model must be one it
+// accepts, while an empty agent defers to the coding agent.
+func TestValidateUnblockAgentChecksTheOverride(t *testing.T) {
+	registry := acmeRegistry(t)
+	for _, tc := range []struct {
+		config unblockConfig
+		ok     bool
+	}{
+		{unblockConfig{}, true},
+		{unblockConfig{Model: "anything"}, true},
+		{unblockConfig{Agent: "acme"}, true},
+		{unblockConfig{Agent: "acme", Model: "acme-1"}, true},
+		{unblockConfig{Agent: "nosuchagent"}, false},
+		{unblockConfig{Agent: "acme", Model: "acme-2"}, false},
+	} {
+		if err := validateUnblockAgent(registry, tc.config); (err == nil) != tc.ok {
+			t.Errorf("validateUnblockAgent(%+v) = %v, want ok=%v", tc.config, err, tc.ok)
+		}
+	}
+}
+
+// acmeRegistry registers one agent that enumerates the models it accepts.
+func acmeRegistry(t *testing.T) *clidefs.Registry {
+	t.Helper()
+	registry, err := clidefs.NewRegistry(clidefs.Definition{
+		Name: "acme", Binary: "acme", Models: clidefs.NewAllowList("acme-1"),
+		Args:    clidefs.Args{Run: []clidefs.Fragment{{Args: []string{"{prompt}"}}}, Resume: []clidefs.Fragment{{Args: []string{"{prompt}"}}}},
+		Session: clidefs.Session{Assign: clidefs.AssignNone},
+		Output:  clidefs.Output{Format: clidefs.FormatText},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return registry
+}
+
+// TestOneShotSpecRejectsWhatItCannotRun checks each reason an out-of-band
+// call cannot resolve its agent is reported rather than run.
+func TestOneShotSpecRejectsWhatItCannotRun(t *testing.T) {
+	registry := acmeRegistry(t)
+	for _, tc := range []struct {
+		name   string
+		engine *Engine
+		config unblockConfig
+		want   string
+	}{
+		{"no coding agent", &Engine{Registry: registry, Runner: &fakeRunner{}}, unblockConfig{}, "no coding agent is configured"},
+		{"unknown override", &Engine{Registry: registry}, unblockConfig{Agent: "nosuchagent"}, "nosuchagent"},
+		{"model the coding agent refuses", &Engine{Registry: registry, Runner: CommandRunner{Agent: "acme", Definitions: registry}}, unblockConfig{Model: "acme-2"}, "acme-1"},
+		{"coding agent outside the registry", &Engine{Registry: registry, Runner: CommandRunner{Agent: "ghost"}}, unblockConfig{Model: "m"}, "ghost"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if spec, err := tc.engine.oneShotSpec(tc.config); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("oneShotSpec = %+v, %v; want an error naming %q", spec, err, tc.want)
+			}
+		})
+	}
+}
+
+// TestUnblockRoundReportsWhyItCannotRun checks a round whose agent cannot be
+// resolved, or which has no command runner to run it, logs why and records
+// nothing.
+func TestUnblockRoundReportsWhyItCannotRun(t *testing.T) {
+	stuck := []stuckJob{{Key: "o/r#1", Job: JobSnapshot{Target: "o/r", Number: 1, Status: "paused"}, Why: "paused"}}
+	for _, tc := range []struct {
+		name     string
+		runner   AgentRunner
+		override string
+		want     string
+	}{
+		{"unknown agent", CommandRunner{Agent: "claude"}, "nosuchagent", "cannot run the unblock agent: unknown agent"},
+		{"no command runner", &fakeRunner{}, "claude", "cannot run the unblock agent: no coding agent is configured"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := &syncBuffer{}
+			w := &Engine{Registry: clidefs.MustBuiltin(), Runner: tc.runner, Out: logs}
+			w.SetUnblockAgent(unblockConfig{Agent: tc.override})
+			history := map[string][]string{}
+			w.runUnblockRound(context.Background(), stuck, history, time.Minute)
+			if got := logs.String(); !strings.Contains(got, tc.want) {
+				t.Fatalf("log = %q, want %q", got, tc.want)
+			}
+			if len(history) != 0 {
+				t.Fatalf("history = %v, want nothing recorded for a round that never ran", history)
+			}
+		})
+	}
+}
+
+// TestUnblockRoundRunsTheCodingAgentOutOfBand runs a real round through the
+// command runner: the stand-in agent is launched with the round's prompt, and
+// a reply without a closing report is recorded as such.
+func TestUnblockRoundRunsTheCodingAgentOutOfBand(t *testing.T) {
+	registry := oneShotRegistry(t)
+	record := filepath.Join(t.TempDir(), "prompt.md")
+	t.Setenv(oneShotHelperRecordEnv, record)
+	logs := &syncBuffer{}
+	w := &Engine{Identity: "ABCD1234", Registry: registry, Runner: CommandRunner{Agent: "argvagent", Definitions: registry}, Out: logs}
+	stuck := []stuckJob{{Key: "o/r#1", Job: JobSnapshot{Target: "o/r", Number: 1, Status: "paused", Title: "Flaky build"}, Why: "paused"}}
+	history := map[string][]string{}
+	w.runUnblockRound(context.Background(), stuck, history, time.Minute)
+	got, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "key: o/r#1") || !strings.Contains(string(got), "title: Flaky build") {
+		t.Fatalf("agent received prompt:\n%s", got)
+	}
+	if !strings.Contains(logs.String(), "running one unblock agent call (argvagent) for 1 job(s)") || !strings.Contains(logs.String(), "reported no action for o/r#1") {
+		t.Fatalf("log = %q", logs.String())
+	}
+	if len(history["o/r#1"]) != 1 || !strings.Contains(history["o/r#1"][0], "the unblock agent ran but reported no action") {
+		t.Fatalf("history = %v", history)
+	}
+}
+
+// TestRunUnblockReturnsTheAgentsText checks the one-shot call returns what
+// the agent wrote, and refuses an agent the registry does not define.
+func TestRunUnblockReturnsTheAgentsText(t *testing.T) {
+	registry := oneShotRegistry(t)
+	runner := CommandRunner{Agent: "stdinagent", Definitions: registry}
+	output, err := runner.runUnblock(context.Background(), agentSpec{Name: "stdinagent"}, "unblock o/r#1")
+	if err != nil {
+		t.Fatalf("runUnblock: %v (output %q)", err, output)
+	}
+	if got := strings.TrimSpace(output); got != "arguments=0 stdin=13 file=0" {
+		t.Fatalf("agent output = %q", got)
+	}
+	if _, err := runner.runUnblock(context.Background(), agentSpec{Name: "ghost"}, "x"); err == nil || !strings.Contains(err.Error(), "ghost") {
+		t.Fatalf("unknown agent error = %v", err)
 	}
 }

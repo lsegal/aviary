@@ -640,3 +640,239 @@ func TestCellFieldName(t *testing.T) {
 		}
 	}
 }
+
+// TestParseBoardDocumentCardShapes covers the card and column shapes the
+// captured fixtures do not: columns named only by a group label or not at all,
+// cards titled only by their label, and links that only look like issues.
+func TestParseBoardDocumentCardShapes(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		document string
+		want     []boardRow
+	}{
+		{
+			name: "group column labelled with its status",
+			document: `<div role="group" aria-label="Status: In Progress">
+				<a href="https://github.com/lsegal/aviary/issues/5" aria-label="Fix the parser"></a>
+			</div>`,
+			want: []boardRow{{Number: 5, Repository: "lsegal/aviary", Title: "Fix the parser", Status: "In Progress"}},
+		},
+		{
+			name: "untitled column and links that are not issues",
+			document: `<div data-testid="board-column">
+				<a>no link</a>
+				<a href="http://[::1">malformed</a>
+				<a href="https://example.com/lsegal/aviary/issues/3">elsewhere</a>
+				<a href="/lsegal/aviary/issues/0">no number</a>
+				<a href="/lsegal/aviary/issues/8">Real card<script>render()</script></a>
+			</div>`,
+			want: []boardRow{{Number: 8, Repository: "lsegal/aviary", Title: "Real card"}},
+		},
+		{
+			name: "table cell of another field that mentions status",
+			document: `<table><tr>
+				<td><a href="/lsegal/aviary/issues/9">Ship it</a></td>
+				<td style="width: var(--column-Labels-width)" class="status-label">bug</td>
+				<td data-testid="status-cell">Todo</td>
+			</tr></table>`,
+			want: []boardRow{{Number: 9, Repository: "lsegal/aviary", Title: "Ship it", Status: "Todo"}},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rows, ready, err := parseBoardDocument(test.document)
+			if err != nil {
+				t.Fatalf("parseBoardDocument: %v", err)
+			}
+			if !ready {
+				t.Fatal("the board was not recognised as rendered")
+			}
+			if !reflect.DeepEqual(rows, test.want) {
+				t.Fatalf("rows = %+v, want %+v", rows, test.want)
+			}
+		})
+	}
+}
+
+// scrollFailingPage is a board page that renders and then fails on a later
+// read, so a failure part-way through scrolling a board is reported.
+type scrollFailingPage struct {
+	fakeBoardPage
+	scrollErr error
+	readErr   error
+}
+
+func (p *scrollFailingPage) Eval(script string, out any) error {
+	if _, ok := out.(*bool); ok && p.scrollErr != nil {
+		return p.scrollErr
+	}
+	if _, ok := out.(*string); ok && p.readErr != nil && p.reads > 0 {
+		return p.readErr
+	}
+	return p.fakeBoardPage.Eval(script, out)
+}
+
+// TestBoardReportsReadFailures checks every way reading a board can fail is
+// reported as an error naming what failed, rather than as an empty board.
+func TestBoardReportsReadFailures(t *testing.T) {
+	const target = "https://github.com/users/lsegal/projects/3"
+	board := readBoardFixture(t, "project-board-table.html")
+	for _, test := range []struct {
+		name   string
+		target string
+		page   func() (Page, error)
+		want   string
+	}{
+		{
+			name:   "invalid target",
+			target: "not a target",
+			page:   func() (Page, error) { return &fakeBoardPage{}, nil },
+			want:   "target must be",
+		},
+		{
+			name:   "no tab",
+			target: target,
+			page:   func() (Page, error) { return nil, errors.New("browser is closed") },
+			want:   "browser is closed",
+		},
+		{
+			name:   "unreadable page",
+			target: target,
+			page:   func() (Page, error) { return &fakeBoardPage{evalErr: errors.New("tab crashed")}, nil },
+			want:   "read project board " + target + ": tab crashed",
+		},
+		{
+			name:   "scroll fails",
+			target: target,
+			page: func() (Page, error) {
+				return &scrollFailingPage{fakeBoardPage: fakeBoardPage{documents: []string{board}}, scrollErr: errors.New("tab crashed")}, nil
+			},
+			want: "scroll project board " + target + ": tab crashed",
+		},
+		{
+			name:   "read after scrolling fails",
+			target: target,
+			page: func() (Page, error) {
+				return &scrollFailingPage{fakeBoardPage: fakeBoardPage{documents: []string{board}, scrolls: []bool{true}}, readErr: errors.New("tab crashed")}, nil
+			},
+			want: "read project board " + target + ": tab crashed",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			board := &Board{
+				Page:  func(string) (Page, error) { return test.page() },
+				sleep: func(context.Context, time.Duration) bool { return true },
+			}
+			_, err := board.ListIssues(context.Background(), test.target)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want one containing %q", err, test.want)
+			}
+		})
+	}
+}
+
+// TestNewBoardReadsThroughTheBrowsersTabs checks the board a run builds reads
+// each target through that target's own tab of the run's browser.
+func TestNewBoardReadsThroughTheBrowsersTabs(t *testing.T) {
+	const target = "https://github.com/users/lsegal/projects/3"
+	tab := &Tab{}
+	browser := &Browser{tabs: map[string]*Tab{target: tab}}
+	board := NewBoard(browser, "is:open", true, nil, nil)
+	if board.Filter != "is:open" || !board.AllIssues || board.Profile != "" {
+		t.Fatalf("board = %+v, want the filter and all-issues setting passed through", board)
+	}
+	page, err := board.Page(target)
+	if err != nil {
+		t.Fatalf("Page: %v", err)
+	}
+	if page != tab {
+		t.Fatal("the board did not read through the target's tab")
+	}
+	// Suspended for a sign-in window, the browser hands out no tabs.
+	browser.closed = true
+	if page, err := board.Page(target); err == nil || page != nil {
+		t.Fatalf("Page on a closed browser = %v, %v; want an error", page, err)
+	}
+}
+
+// TestBoardPauseWaitsOutTheSettleDelay checks the real settle wait: it lasts
+// the configured delay, and a run being shut down cuts it short.
+func TestBoardPauseWaitsOutTheSettleDelay(t *testing.T) {
+	board := &Board{settleDelay: 20 * time.Millisecond}
+	started := time.Now()
+	if !board.pause(context.Background()) {
+		t.Fatal("pause reported a shutdown that did not happen")
+	}
+	if waited := time.Since(started); waited < board.settleDelay {
+		t.Fatalf("pause returned after %s, want at least %s", waited, board.settleDelay)
+	}
+
+	board.settleDelay = time.Hour
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if board.pause(ctx) {
+		t.Fatal("pause sat out its delay during shutdown")
+	}
+}
+
+// fakeWorkSource answers the API-backed checks a browser-mode watch forwards.
+type fakeWorkSource struct {
+	asked []string
+}
+
+func (s *fakeWorkSource) OriginatingWorkState(_ context.Context, repo string, number int) (core.OriginatingWorkState, error) {
+	s.asked = append(s.asked, fmt.Sprintf("state %s#%d", repo, number))
+	return core.OriginatingWorkState{IssueState: "OPEN"}, nil
+}
+
+func (s *fakeWorkSource) StacksEnabled(_ context.Context, repo string) (bool, error) {
+	s.asked = append(s.asked, "stacks "+repo)
+	return true, nil
+}
+
+func (s *fakeWorkSource) HydrateIssue(_ context.Context, repo string, issue *core.Issue) error {
+	s.asked = append(s.asked, fmt.Sprintf("hydrate %s#%d", repo, issue.Number))
+	issue.Body = "hydrated"
+	return nil
+}
+
+// workStateOnly reports work state and nothing else.
+type workStateOnly struct{}
+
+func (workStateOnly) OriginatingWorkState(context.Context, string, int) (core.OriginatingWorkState, error) {
+	return core.OriginatingWorkState{}, nil
+}
+
+// TestWatchIssuesForwardsAPIChecks checks the API-backed checks browser mode
+// cannot read off a page reach the API client, and that a watch without one
+// says so instead of reporting a default.
+func TestWatchIssuesForwardsAPIChecks(t *testing.T) {
+	ctx := context.Background()
+	work := &fakeWorkSource{}
+	source := WatchIssues{Work: work}
+	state, err := source.OriginatingWorkState(ctx, "lsegal/aviary", 7)
+	if err != nil || state.IssueState != "OPEN" {
+		t.Fatalf("OriginatingWorkState = %+v, %v; want the API's answer", state, err)
+	}
+	if enabled, err := source.StacksEnabled(ctx, "lsegal/aviary"); err != nil || !enabled {
+		t.Fatalf("StacksEnabled = %t, %v; want the API's answer", enabled, err)
+	}
+	issue := &core.Issue{Number: 7}
+	if err := source.HydrateIssue(ctx, "lsegal/aviary", issue); err != nil || issue.Body != "hydrated" {
+		t.Fatalf("HydrateIssue = %v, body %q; want the API's issue", err, issue.Body)
+	}
+	want := []string{"state lsegal/aviary#7", "stacks lsegal/aviary", "hydrate lsegal/aviary#7"}
+	if !reflect.DeepEqual(work.asked, want) {
+		t.Fatalf("API asked %v, want %v", work.asked, want)
+	}
+
+	if _, err := (WatchIssues{}).OriginatingWorkState(ctx, "lsegal/aviary", 7); err == nil || !strings.Contains(err.Error(), "#7") {
+		t.Fatalf("OriginatingWorkState with no API: %v, want an error naming the issue", err)
+	}
+	limited := WatchIssues{Work: workStateOnly{}}
+	if enabled, err := limited.StacksEnabled(ctx, "lsegal/aviary"); err != nil || enabled {
+		t.Fatalf("StacksEnabled with no stack source = %t, %v; want stacks reported off", enabled, err)
+	}
+	if err := limited.HydrateIssue(ctx, "lsegal/aviary", issue); err == nil || !strings.Contains(err.Error(), "#7") {
+		t.Fatalf("HydrateIssue with no issue source: %v, want an error naming the issue", err)
+	}
+}

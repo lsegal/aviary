@@ -3,8 +3,12 @@ package projects
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -12,8 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/projects/browser"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/store"
@@ -518,5 +524,286 @@ func TestManagerIdentityIsRememberedAcrossRestarts(t *testing.T) {
 	}
 	if state.InstanceID != first.Identity() {
 		t.Fatalf("stored instance id = %q, want %q", state.InstanceID, first.Identity())
+	}
+}
+
+// stubEngineIO keeps a test manager's engine off GitHub and Chrome: every gh
+// call fails except the login lookup, and launching a browser fails the test.
+func stubEngineIO(t *testing.T, m *Manager) {
+	t.Helper()
+	previous := startBrowserDriver
+	t.Cleanup(func() { startBrowserDriver = previous })
+	startBrowserDriver = func(context.Context, browser.Config) (*browser.Browser, error) {
+		t.Error("the engine launched a browser")
+		return nil, errors.New("no browser in tests")
+	}
+	m.ghRunCommand = func(_ context.Context, args ...string) ([]byte, error) {
+		if slices.Equal(args, []string{"api", "user", "--jq", ".login"}) {
+			return []byte("octocat\n"), nil
+		}
+		return nil, errors.New("gh is unavailable in tests")
+	}
+}
+
+// TestManagerAppliesLiveSettingsWithoutARestart checks a change to settings
+// a running engine accepts reaches that same engine, and removing the last
+// target stops it.
+func TestManagerAppliesLiveSettingsWithoutARestart(t *testing.T) {
+	var routed atomic.Bool
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Shutdown)
+	stubEngineIO(t, m)
+	m.SetMentionRouter(func(context.Context, string) error { routed.Store(true); return nil })
+	m.SetUsageRecorder(func(domain.UsageRecord) {})
+	m.Reconcile(ownedBy(config.ProjectsConfig{Delivery: DeliveryPoll, Concurrency: 1}, "o/r"))
+	engine := m.engine()
+	if engine == nil {
+		t.Fatalf("engine did not start: %v", m.Status(t.Context(), 0, nil)["error"])
+	}
+	if engine.RouteMention == nil || engine.RecordUsage == nil {
+		t.Fatal("the engine was not handed the mention router and usage recorder")
+	}
+	if err := engine.RouteMention(t.Context(), "hi"); err != nil || !routed.Load() {
+		t.Fatalf("the engine's mention route did not reach the router: %v", err)
+	}
+	if got := engine.AllowedCommenters; !slices.Equal(got, []string{"octocat"}) {
+		t.Fatalf("allowed commenters = %q, want the gh login", got)
+	}
+
+	m.Reconcile(ownedBy(config.ProjectsConfig{Delivery: DeliveryPoll, Concurrency: 2, NoMerge: true, AllowedCommenters: []string{"alice"}, UnblockInterval: "5m"}, "o/r"))
+	if m.engine() != engine {
+		t.Fatal("a live settings change restarted the engine")
+	}
+	snapshot, err := engine.CurrentSettings(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Concurrency != 2 || !snapshot.NoMerge || !slices.Equal(snapshot.AllowedCommenters, []string{"alice"}) {
+		t.Fatalf("settings after the live update = %+v, commenters %q", snapshot, snapshot.AllowedCommenters)
+	}
+	if got := engine.UnblockInterval(); got != 5*time.Minute {
+		t.Fatalf("unblock interval after the live update = %s, want 5m", got)
+	}
+
+	m.Reconcile(ownedBy(config.ProjectsConfig{Delivery: DeliveryPoll}))
+	if m.engine() != nil {
+		t.Fatal("the engine kept running with no targets")
+	}
+}
+
+// TestManagerStartRunResolvesTheGitHubLogin checks the login lookup an engine
+// start depends on: without allowed commenters a failed lookup is the
+// retryable login error, while with them the engine still starts, without a
+// self login, and round-robins across several agents.
+func TestManagerStartRunResolvesTheGitHubLogin(t *testing.T) {
+	m := newTestManager(t)
+	stubEngineIO(t, m)
+	m.ghRunCommand = func(context.Context, ...string) ([]byte, error) {
+		return []byte(`{"message": "Bad credentials"}`), errors.New("exit status 1")
+	}
+	settings := engineSettings{Targets: []string{"o/r"}, Agents: []string{"codex", "claude/opus"}, Delivery: DeliveryPoll, Interval: time.Hour, Concurrency: 1}
+	if run, err := m.startRun(settings); !errors.Is(err, errLoginLookup) {
+		t.Fatalf("startRun = %v, %v; want the login lookup error", run, err)
+	}
+	var ran atomic.Bool
+	m.SetAviaryAgentRunner(func(context.Context, AviaryAgentRun) error { ran.Store(true); return nil })
+	settings.AllowedCommenters = []string{"octo"}
+	run, err := m.startRun(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.stopRun(run) })
+	runner := run.engine.Runner.(CommandRunner)
+	if run.engine.SelfLogin != "" || !slices.Equal(run.engine.AllowedCommenters, []string{"octo"}) {
+		t.Fatalf("self login = %q, allowed = %q", run.engine.SelfLogin, run.engine.AllowedCommenters)
+	}
+	if runner.agentCursor == nil {
+		t.Fatal("an engine with two agents has no agent cursor to rotate them")
+	}
+	if runner.Aviary == nil || runner.Aviary(t.Context(), AviaryAgentRun{}) != nil || !ran.Load() {
+		t.Fatal("the runner was not handed the Aviary agent runner")
+	}
+	if got := runner.Quotas(); got != nil {
+		t.Fatalf("quotas before any reading = %v", got)
+	}
+	readings := map[string]string{"codex": "42% left"}
+	m.quotas.Store(&readings)
+	if got := runner.Quotas(); !reflect.DeepEqual(got, readings) {
+		t.Fatalf("quotas = %v, want the manager's latest readings", got)
+	}
+}
+
+// TestManagerStartsNothingAfterShutdown checks a config change or a pending
+// login retry arriving after Shutdown never starts an engine.
+func TestManagerStartsNothingAfterShutdown(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stubEngineIO(t, m)
+	m.Shutdown()
+	m.Reconcile(ownedBy(config.ProjectsConfig{Delivery: DeliveryPoll}, "o/r"))
+	m.retryLoginLater(errLoginLookup)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.running != nil || m.loginRetry != nil || m.lastError != "" {
+		t.Fatalf("after shutdown: running = %v, login retry = %v, error = %q", m.running, m.loginRetry, m.lastError)
+	}
+}
+
+// TestManagerReportsAnEngineThatCannotStart checks settings the engine
+// refuses at start surface as the status error instead of a silent stop.
+func TestManagerReportsAnEngineThatCannotStart(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Shutdown)
+	stubEngineIO(t, m)
+	m.Reconcile(ownedBy(config.ProjectsConfig{Delivery: DeliveryPoll, UnblockAgent: "nosuchagent"}, "o/r"))
+	if m.engine() != nil {
+		t.Fatal("an engine started with an unknown unblock agent")
+	}
+	if message, _ := m.Status(t.Context(), 0, nil)["error"].(string); !strings.Contains(message, "nosuchagent") {
+		t.Fatalf("status error = %q, want it to name the unknown unblock agent", message)
+	}
+}
+
+// TestManagerStartRunRejectsAgentsItCannotRun checks each agent spec is
+// checked against the registry before anything starts.
+func TestManagerStartRunRejectsAgentsItCannotRun(t *testing.T) {
+	m := newTestManager(t)
+	for _, tc := range []struct {
+		name     string
+		settings engineSettings
+		want     string
+	}{
+		{"unknown agent", engineSettings{Targets: []string{"o/r"}, Agents: []string{"nosuchagent"}}, `agent "nosuchagent"`},
+		{"unknown target agent", engineSettings{Targets: []string{"o/r"}, Agents: []string{"codex"}, TargetAgents: map[string][]string{"o/r": {"ghost/x"}}}, `agent "ghost/x"`},
+		{"aviary without an agent", engineSettings{Targets: []string{"o/r"}, Agents: []string{"aviary"}}, "name the Aviary agent to run, as aviary/<agent>"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if run, err := m.startRun(tc.settings); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("startRun = %v, %v; want an error containing %q", run, err, tc.want)
+			}
+		})
+	}
+}
+
+// TestManagerWebhookStartFailures checks webhook delivery that cannot get its
+// secret, its listener, or its tunnel fails the start with the reason and
+// leaves nothing listening.
+func TestManagerWebhookStartFailures(t *testing.T) {
+	previous := openWebhookAuthStore
+	t.Cleanup(func() { openWebhookAuthStore = previous })
+	openWebhookAuthStore = func() (auth.Store, error) { return nil, errors.New("credential store is locked") }
+	m := newTestManager(t)
+	stubEngineIO(t, m)
+	for _, tc := range []struct {
+		name    string
+		webhook config.ProjectsWebhookConfig
+		want    string
+	}{
+		{"secret", config.ProjectsWebhookConfig{Secret: "auth:webhook", Listen: "127.0.0.1:0"}, "projects webhook secret: credential store is locked"},
+		{"listener", config.ProjectsWebhookConfig{Listen: "127.0.0.1:-1"}, "listen for webhooks on 127.0.0.1:-1"},
+		{"tunnel", config.ProjectsWebhookConfig{Listen: "127.0.0.1:0", NgrokBinary: filepath.Join(t.TempDir(), "no-ngrok")}, "not found"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			settings := engineSettings{Targets: []string{"o/r"}, Agents: []string{"codex"}, AllowedCommenters: []string{"octo"}, Delivery: "webhook", Interval: time.Hour, Concurrency: 1, Webhook: tc.webhook}
+			if run, err := m.startRun(settings); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("startRun = %v, %v; want an error containing %q", run, err, tc.want)
+			}
+		})
+	}
+}
+
+// TestManagerStartsWebhookDelivery runs webhook delivery end to end against
+// stand-in ngrok and gh executables: the listener comes up, the tunnel's URL
+// is registered as the repository's webhook, and the tunnel reaches the
+// listener when the engine checks it.
+func TestManagerStartsWebhookDelivery(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in ngrok and gh are shell scripts")
+	}
+	bin := t.TempDir()
+	calls := filepath.Join(bin, "gh-calls")
+	// The stand-in ngrok reports a tunnel whose public URL is the listener
+	// itself, the last argument it is given, so probes reach the server.
+	writeScript(t, filepath.Join(bin, "fake-ngrok"), `for a; do addr=$a; done
+echo '{"lvl":"info","msg":"started tunnel","url":"http://'"$addr"'"}'
+exec sleep 60
+`)
+	writeScript(t, filepath.Join(bin, "gh"), `echo "$@" >> `+calls+`
+cat > /dev/null
+echo '[]'
+`)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	m := newTestManager(t)
+	stubEngineIO(t, m)
+	recordLogs(t, m)
+	settings := engineSettings{
+		Targets: []string{"o/r"}, Agents: []string{"codex"}, AllowedCommenters: []string{"octo"},
+		Delivery: "webhook", Interval: time.Hour, Concurrency: 1,
+		Webhook: config.ProjectsWebhookConfig{Listen: "127.0.0.1:0", Path: "/hooks/github", Secret: "s3cret", NgrokBinary: filepath.Join(bin, "fake-ngrok")},
+	}
+	run, err := m.startRun(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.stopRun(run) })
+	logs, _ := m.logsSince(0, 0)
+	if !slices.ContainsFunc(logs, func(line string) bool { return strings.HasPrefix(line, "ngrok tunnel ready at http://127.0.0.1:") }) ||
+		!slices.Contains(logs, "configured GitHub webhook for o/r") {
+		t.Fatalf("logs = %q, want the tunnel and the configured webhook", logs)
+	}
+	recorded, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(recorded), "api repos/o/r/hooks --method POST") {
+		t.Fatalf("gh calls = %q, want the webhook created", recorded)
+	}
+	if !run.engine.UseWebhooks || run.engine.Webhooks == nil || run.engine.WebhookOnline == nil {
+		t.Fatal("the engine was not wired to the webhook supervisor")
+	}
+	run.engine.Webhooks(t.Context())
+	if !run.engine.WebhookOnline() {
+		t.Fatalf("the tunnel did not reach the webhook listener; logs = %q", logs)
+	}
+}
+
+func writeScript(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestLogWriterLogsEachNonBlankLine checks process output forwarded to the
+// log arrives one line per entry, without blank lines, and is reported as
+// fully written.
+func TestLogWriterLogsEachNonBlankLine(t *testing.T) {
+	var lines []string
+	writer := logWriter{logf: func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }}
+	input := "first\n\n  \nsecond %d\n"
+	if n, err := writer.Write([]byte(input)); n != len(input) || err != nil {
+		t.Fatalf("Write = %d, %v", n, err)
+	}
+	if !slices.Equal(lines, []string{"first", "second %d"}) {
+		t.Fatalf("lines = %q", lines)
+	}
+}
+
+// TestProjectModelStringNamesItsSource checks status shows where a model came
+// from, and nothing for a target with no model.
+func TestProjectModelStringNamesItsSource(t *testing.T) {
+	if got := (ProjectModel{Model: "claude/opus", Source: "project override"}).String(); got != "claude/opus (project override)" {
+		t.Fatalf("String = %q", got)
+	}
+	if got := (ProjectModel{Source: "project override"}).String(); got != "" {
+		t.Fatalf("String without a model = %q", got)
 	}
 }
