@@ -189,6 +189,16 @@ ruleset alongside the Restrict code coverage rule. GitHub evaluates the rule
 without waiting for uploads, so the required check is what holds a pull
 request until its coverage is in.
 
+The upload needs [GitHub Code Quality](https://docs.github.com/code-security/code-quality)
+enabled for the repository (Settings → Code quality); without it the upload
+returns HTTP 404 and `coverage` fails.
+
+Line coverage measured when this was set up (November 2026): Go 89.2%
+(54,445 / 61,057 lines), web 83.8% (5,242 / 6,259 lines), 88.7% combined. A
+minimum of **85%** is a reasonable starting threshold for the rule: it leaves a
+few points of headroom for normal churn while catching large drops. The
+`coverage` job summary reports the current numbers for every run.
+
 Pull requests from forks get a read-only token, so the upload step skips them
 with a notice and `coverage` still passes. Their coverage is not evaluated
 until the change lands on a branch in this repository.
