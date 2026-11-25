@@ -262,10 +262,11 @@ func TestSkillMgrSaveCurrentCreatesSkillsMap(t *testing.T) {
 	got, cmd := m.saveCurrent()
 	assert.Nil(t, cmd)
 	m = got.(skillMgrModel)
-	require.Contains(t, m.cfg.Skills, "alpha")
-	assert.False(t, m.cfg.Skills["alpha"].Enabled)
 	assert.Equal(t, "Saved alpha.", m.message)
-	assert.FileExists(t, cfgPath)
+	assert.Empty(t, m.err)
+	loaded, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	assert.False(t, loaded.Skills["alpha"].Enabled)
 }
 
 func TestSkillMgrSaveCurrentError(t *testing.T) {
