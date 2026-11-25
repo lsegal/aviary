@@ -9,10 +9,26 @@ import (
 	"github.com/lsegal/aviary/internal/store"
 )
 
+// sender is the part of *channels.Manager that session delivery uses.
+type sender interface {
+	SendThreadOnConfiguredChannel(agentName, channelType, configuredID, channelID, threadTS, text string) error
+	SendOnConfiguredChannel(agentName, channelType, configuredID, channelID, text string) error
+	RouteDelivery(channelType, channelID, text string) error
+	SendMediaOnConfiguredChannel(agentName, channelType, configuredID, channelID, caption, filePath string) error
+	RouteMediaDelivery(channelType, channelID, caption, filePath string) error
+}
+
 // Register wires the session's text and media delivery to the configured
 // target described by the sidecar entry.
 func Register(agentID, agentName, sessionID string, target store.SessionChannel, mgr *channels.Manager) {
-	if mgr == nil || sessionID == "" || target.Type == "" || target.ID == "" {
+	if mgr == nil {
+		return
+	}
+	register(agentID, agentName, sessionID, target, mgr)
+}
+
+func register(agentID, agentName, sessionID string, target store.SessionChannel, mgr sender) {
+	if sessionID == "" || target.Type == "" || target.ID == "" {
 		return
 	}
 
