@@ -31,6 +31,11 @@ func TestUnansweredUserMessageID(t *testing.T) {
 	require.NoError(t, store.AppendJSONL(path, domain.Message{ID: "msg_3", Role: domain.MessageRoleUser, Content: "again"}))
 	require.NoError(t, store.AppendJSONL(path, domain.Message{ID: "msg_4", Role: domain.MessageRoleAssistant, Content: "partial"}))
 	assert.Empty(t, UnansweredUserMessageID("retry", "sess", "again", nil), "a turn that moved on is not run again")
+
+	assert.Empty(t, UnansweredUserMessageID("retry", "", "hello", nil), "no session means no message to retry")
+	assert.Empty(t, UnansweredUserMessageID("retry", "missing", "hello", nil), "a session with no file has no message to retry")
+	require.NoError(t, MarkMessageResponded("retry", "markers", "msg_1", "msg_2"))
+	assert.Empty(t, UnansweredUserMessageID("retry", "markers", "hello", nil), "a session holding only markers has no user message")
 }
 
 func TestAgentRunner_RetryReusesFailedUserMessage(t *testing.T) {
