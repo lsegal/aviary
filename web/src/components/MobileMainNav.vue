@@ -1,9 +1,9 @@
 <template>
   <!-- One line that scrolls sideways instead of wrapping, like the Code Loop
-       chip row (#1003): swipe it on touch, with a thin scrollbar and a fade
-       on each edge that has more pills past it. -->
+       chip row (#1003): swipe it on touch, with no visible scrollbar (#1209)
+       and a fade on each edge that has more pills past it. -->
   <nav ref="row" aria-label="Main" data-testid="mobile-main-nav"
-    class="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain pb-1.5 [scrollbar-width:thin]"
+    class="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain pb-1.5 scrollbar-none"
     :style="fadeStyle" @scroll.passive="measure">
     <router-link v-for="item in items" :key="item.key" :to="item.to" :data-testid="item.testid"
       :data-key="item.key" :data-active="item.active || undefined" :aria-current="item.active ? 'page' : undefined"

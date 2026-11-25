@@ -3565,3 +3565,80 @@ for (const { name, width, height } of [
 		}
 	});
 }
+
+test("at 390px the Code Loop header wraps and the top nav hides its scrollbar (#1209)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await setup(page);
+	await page.goto("/agents/coder/projects");
+	const title = page.getByTestId("settings-title");
+	await expect(title).toHaveText("Code Loop");
+	await expect(page.getByTestId("instance-id")).toBeVisible();
+
+	// The title is whole, and the chips wrap onto the line below it.
+	expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+		true,
+	);
+	const titleBox = await title.boundingBox();
+	for (const id of ["board-projects", "delivery-status", "instance-id"]) {
+		const box = await page.getByTestId(id).boundingBox();
+		expect(box?.y, `${id} below the title`).toBeGreaterThanOrEqual(
+			(titleBox?.y ?? 0) + (titleBox?.height ?? 0) - 1,
+		);
+		expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
+	}
+
+	// Nothing in the header is wider than the screen, so nothing scrolls.
+	const header = await page.getByTestId("settings-header").evaluate((root) => ({
+		wide: [root, ...root.querySelectorAll("*")]
+			.filter((el) => el.getBoundingClientRect().right > window.innerWidth + 1)
+			.map((el) => el.outerHTML.slice(0, 80)),
+		scrollers: [root, ...root.querySelectorAll("*")]
+			.filter((el) => el.scrollWidth > el.clientWidth + 1)
+			.filter((el) => getComputedStyle(el).overflowX !== "hidden")
+			.map((el) => el.outerHTML.slice(0, 80)),
+	}));
+	expect(header).toEqual({ wide: [], scrollers: [] });
+	expect(
+		await page.evaluate(
+			() => document.documentElement.scrollWidth <= window.innerWidth,
+		),
+	).toBe(true);
+
+	// The top nav and the chip rows swipe without a visible scrollbar.
+	for (const id of ["mobile-main-nav", "project-nav", "stat-row"]) {
+		const row = page.getByTestId(id);
+		if (!(await row.count())) continue;
+		expect(
+			await row.evaluate((el: HTMLElement) => ({
+				width: getComputedStyle(el).scrollbarWidth,
+				bar: el.offsetHeight - el.clientHeight,
+			})),
+			id,
+		).toEqual({ width: "none", bar: 0 });
+	}
+	const nav = page.getByTestId("mobile-main-nav");
+	const navLayout = await nav.evaluate((el) => {
+		const box = el.getBoundingClientRect();
+		const active = el.querySelector("[data-active]")?.getBoundingClientRect();
+		return {
+			overflowX: getComputedStyle(el).overflowX,
+			scrolls: el.scrollWidth > el.clientWidth,
+			activeInView:
+				!!active &&
+				active.left >= box.left - 1 &&
+				active.right <= box.right + 1,
+		};
+	});
+	expect(navLayout.overflowX).toBe("auto");
+	expect(navLayout.activeInView).toBe(true);
+	if (navLayout.scrolls) {
+		await nav.evaluate((el) => {
+			el.scrollLeft = 0;
+		});
+		await expect
+			.poll(() => nav.evaluate((el) => getComputedStyle(el).maskImage))
+			.toMatch(/rgba\(0, 0, 0, 0\)\)$/);
+	}
+});
