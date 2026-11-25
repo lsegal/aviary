@@ -680,6 +680,16 @@ func baBreakStore(t *testing.T, st *auth.FileStore) {
 	assert.Error(t, st.Set("probe", "x"))
 }
 
+// baAssertStoreBlocked checks that msg reports the failure to create the auth
+// directory that baBreakStore replaced with a file. The OS wording differs
+// ("not a directory" on Unix, "cannot find the path" on Windows), so it matches
+// the failing operation and path instead.
+func baAssertStoreBlocked(t *testing.T, msg string) {
+	t.Helper()
+	assert.Contains(t, msg, "mkdir ")
+	assert.Contains(t, msg, filepath.Join(filepath.Base(store.DataDir()), "auth")+":")
+}
+
 func TestBrowserAuthFallbackStoreUsesDataDir(t *testing.T) {
 	d, _ := baSetupAuth(t)
 	SetDeps(&Deps{}) // no injected store: tools open the one under the data dir
@@ -726,9 +736,9 @@ func TestBrowserAuthStoreWriteAndLookupErrors(t *testing.T) {
 
 	require.NoError(t, st.Set("ba:present", "v"))
 	baBreakStore(t, st)
-	assert.Contains(t, baCallErr(t, d, "auth_set", map[string]any{"name": "ba:new", "value": "v"}), "not a directory")
+	baAssertStoreBlocked(t, baCallErr(t, d, "auth_set", map[string]any{"name": "ba:new", "value": "v"}))
 	got := baCallErr(t, d, "auth_delete", map[string]any{"name": "ba:present"})
-	assert.Contains(t, got, "not a directory")
+	baAssertStoreBlocked(t, got)
 }
 
 func TestBrowserAuthSlackChannelsListErrors(t *testing.T) {
@@ -803,7 +813,7 @@ func TestBrowserAuthAnthropicCompleteFailures(t *testing.T) {
 	require.NoError(t, err)
 	baBreakStore(t, st)
 	got = baCallErr(t, d, "auth_login_anthropic_complete", map[string]any{"code": "good"})
-	assert.Contains(t, got, "not a directory")
+	baAssertStoreBlocked(t, got)
 }
 
 // baRequirePortFree skips the test when a fixed OAuth callback port is taken
@@ -901,7 +911,7 @@ func TestBrowserAuthGeminiLoginFailures(t *testing.T) {
 	start = baStartBrowserLogin(t, d, "auth_login_gemini")
 	baBreakStore(t, st)
 	baHitCallback(t, start["callback_url"].(string)+"/", start["url"].(string), url.Values{"code": {"c"}})
-	assert.Contains(t, baCallErr(t, d, "auth_login_gemini_complete", map[string]any{}), "not a directory")
+	baAssertStoreBlocked(t, baCallErr(t, d, "auth_login_gemini_complete", map[string]any{}))
 
 	// The callback port is already taken, so the login cannot start.
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", auth.GeminiCallbackPort))
@@ -959,7 +969,7 @@ func TestBrowserAuthOpenAILoginFailures(t *testing.T) {
 	start = baStartBrowserLogin(t, d, "auth_login_openai")
 	baBreakStore(t, st)
 	baHitCallback(t, start["callback_url"].(string), start["url"].(string), url.Values{"code": {"c"}})
-	assert.Contains(t, baCallErr(t, d, "auth_login_openai_complete", map[string]any{}), "not a directory")
+	baAssertStoreBlocked(t, baCallErr(t, d, "auth_login_openai_complete", map[string]any{}))
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", auth.OpenAICallbackPort))
 	require.NoError(t, err)
@@ -1035,5 +1045,5 @@ func TestBrowserAuthCopilotDeviceLoginFailures(t *testing.T) {
 	_, err = d.CallTool(context.Background(), "auth_login_github_copilot", map[string]any{})
 	require.NoError(t, err)
 	baBreakStore(t, st)
-	assert.Contains(t, baCallErr(t, d, "auth_login_github_copilot_complete", map[string]any{}), "not a directory")
+	baAssertStoreBlocked(t, baCallErr(t, d, "auth_login_github_copilot_complete", map[string]any{}))
 }
