@@ -3,6 +3,8 @@ package llm
 import (
 	"context"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/lsegal/aviary/internal/models"
 )
@@ -56,38 +58,67 @@ func CompactToTokenBudget(req Request, budget int) Request {
 	// If still over budget (e.g., a single message is too large), truncate
 	// message content from the front to keep the most recent text.
 	if EstimateRequestTokens(Request{System: req.System, Messages: msgs}) > budget {
-		// Compute allowed characters based on remaining token budget (conservative).
-		sysToks := EstimateTokens(req.System)
-		allowedTokens := budget - sysToks
-		if allowedTokens < 1 {
-			allowedTokens = 1
-		}
-		allowedWords := int(float64(allowedTokens) / 1.3)
-		if allowedWords < 1 {
-			allowedWords = 1
-		}
-		maxChars := allowedWords * 4
 		if len(msgs) > 0 {
-			// Keep only the last message and truncate its content.
+			// Keep only the last message and truncate its content to whatever
+			// budget remains after the system prompt and the message overhead.
 			last := msgs[len(msgs)-1]
-			s := last.Content
-			if len(s) > maxChars {
-				s = s[len(s)-maxChars:]
-			}
-			last.Content = s
+			last.Content = keepTrailingTokens(last.Content, budget-EstimateRequestTokens(Request{System: req.System})-2)
 			msgs = []Message{last}
 		} else {
 			// Fallback: truncate system prompt.
-			s := req.System
-			if len(s) > maxChars {
-				s = s[len(s)-maxChars:]
-			}
-			req.System = s
+			req.System = keepTrailingTokens(req.System, budget)
 		}
 	}
 
 	req.Messages = msgs
 	return req
+}
+
+// keepTrailingTokens returns the shortest suffix of s cut at a word boundary
+// whose EstimateTokens is at most maxTokens. It first caps s at a conservative
+// character count so a few very long words cannot slip through, then drops
+// leading words until the estimate fits. At least one word is always kept.
+func keepTrailingTokens(s string, maxTokens int) string {
+	if maxTokens < 1 {
+		maxTokens = 1
+	}
+	allowedWords := int(float64(maxTokens) / 1.3)
+	if allowedWords < 1 {
+		allowedWords = 1
+	}
+	if maxChars := allowedWords * 4; len(s) > maxChars {
+		s = s[len(s)-maxChars:]
+		for len(s) > 0 && !utf8.RuneStart(s[0]) {
+			s = s[1:]
+		}
+	}
+	words := len(strings.Fields(s))
+	keep := words
+	for keep > 1 && int(float64(keep)*1.3) > maxTokens {
+		keep--
+	}
+	if keep == words {
+		return s
+	}
+	// Walk back from the end to the start of the keep-th last word.
+	seen := 0
+	inWord := false
+	for i := len(s); i > 0; {
+		r, size := utf8.DecodeLastRuneInString(s[:i])
+		if unicode.IsSpace(r) {
+			if inWord {
+				seen++
+				if seen == keep {
+					return s[i:]
+				}
+			}
+			inWord = false
+		} else {
+			inWord = true
+		}
+		i -= size
+	}
+	return s
 }
 
 // ModelInputBudget returns the input token budget for a given model. Catalog
