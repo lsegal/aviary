@@ -2,9 +2,13 @@ package projects
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -378,5 +382,137 @@ func TestEngineTracksRunWaitingOnWakeupForCheckpoint(t *testing.T) {
 	waitForJobStatus(t, h.reporter, 7, "failed")
 	if got := h.w.Active.trackedNumbers(); len(got) != 0 {
 		t.Fatalf("tracked runs after stop = %v, want none", got)
+	}
+}
+
+func TestCheckpointSkipsRemovedCheckout(t *testing.T) {
+	result := checkpointIssue7(t, filepath.Join(t.TempDir(), "gone"))
+	if result.Outcome != checkpointNothing || !strings.Contains(result.Detail, "no longer exists") {
+		t.Fatalf("checkpoint = %+v, want nothing to push for a removed checkout", result)
+	}
+}
+
+func TestCheckpointRefusesInterruptedMerge(t *testing.T) {
+	_, checkout := checkpointRepo(t)
+	writeCheckpointFile(t, filepath.Join(checkout, "a.txt"), "dirty\n")
+	writeCheckpointFile(t, filepath.Join(checkout, ".git", "MERGE_HEAD"), gitIn(t, checkout, "rev-parse", "HEAD")+"\n")
+	tip := gitIn(t, checkout, "rev-parse", "HEAD")
+
+	result := checkpointIssue7(t, checkout)
+	if result.Outcome != checkpointFailed || !strings.Contains(result.Detail, "a merge is in progress") {
+		t.Fatalf("checkpoint = %+v, want failed for the interrupted merge", result)
+	}
+	if got := gitIn(t, checkout, "rev-parse", "HEAD"); got != tip {
+		t.Fatal("refused checkpoint left a commit behind")
+	}
+}
+
+// A push the remote rejects takes the checkpoint commit back, leaving the
+// agent's changes uncommitted as it left them.
+func TestCheckpointRejectedPushUncommitsTheCheckpoint(t *testing.T) {
+	remote, checkout := checkpointRepo(t)
+	hook := filepath.Join(remote, "hooks", "pre-receive")
+	writeCheckpointFile(t, hook, "#!/bin/sh\necho rejected by policy >&2\nexit 1\n")
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeCheckpointFile(t, filepath.Join(checkout, "a.txt"), "dirty\n")
+	tip := gitIn(t, checkout, "rev-parse", "HEAD")
+	status := gitIn(t, checkout, "status", "--porcelain")
+
+	result := checkpointIssue7(t, checkout)
+	if result.Outcome != checkpointFailed || !strings.Contains(result.Detail, "rejected or unreachable") {
+		t.Fatalf("checkpoint = %+v, want failed as rejected", result)
+	}
+	if got := gitIn(t, checkout, "rev-parse", "HEAD"); got != tip {
+		t.Fatal("rejected checkpoint left its commit behind")
+	}
+	if got := gitIn(t, checkout, "status", "--porcelain"); got != status {
+		t.Fatalf("rejected checkpoint changed the tree: %q, want %q", got, status)
+	}
+}
+
+// fakeCheckpointGit answers checkpoint git commands for a checkout on
+// fix/issue-7-x tracking origin, failing the first command whose arguments
+// start with fail.
+func fakeCheckpointGit(fail string, answers map[string]string) checkpointGit {
+	return func(_ context.Context, _ string, args ...string) (string, error) {
+		command := strings.Join(args, " ")
+		if fail != "" && strings.HasPrefix(command, fail) {
+			return "", errors.New(fail + " failed")
+		}
+		for prefix, answer := range answers {
+			if strings.HasPrefix(command, prefix) {
+				return answer, nil
+			}
+		}
+		switch {
+		case strings.HasPrefix(command, "symbolic-ref --quiet --short HEAD"):
+			return "fix/issue-7-x", nil
+		case strings.Contains(command, "@{upstream}"):
+			return "origin/fix/issue-7-x", nil
+		case strings.HasPrefix(command, "config branch."):
+			return "origin", nil
+		case strings.HasPrefix(command, "symbolic-ref --quiet refs/remotes/"):
+			return "refs/remotes/origin/main", nil
+		case strings.HasPrefix(command, "rev-parse --git-path"):
+			return "", errors.New("no git dir")
+		}
+		return "", nil
+	}
+}
+
+func TestCheckpointReportsFailingGitSteps(t *testing.T) {
+	dirty := map[string]string{"status": "?? new.txt"}
+	pushed := map[string]string{"ls-remote": "abc123\trefs/heads/fix/issue-7-x"}
+	for _, c := range []struct {
+		name    string
+		fail    string
+		answers map[string]string
+		want    string
+	}{
+		{"no remote", "config branch.", nil, "has no remote configured"},
+		{"status", "status", nil, "git status: status failed"},
+		{"add", "add", dirty, "git add: add failed"},
+		{"commit", "commit", dirty, "git commit: commit failed"},
+		{"counting unpushed commits", "rev-list", pushed, "count unpushed commits"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			result := checkpointCheckout(context.Background(), fakeCheckpointGit(c.fail, c.answers), checkpointRun{Target: "o/r", Number: 7, Checkout: t.TempDir()})
+			if result.Outcome != checkpointFailed || !strings.Contains(result.Detail, c.want) {
+				t.Fatalf("checkpoint = %+v, want failed with %q", result, c.want)
+			}
+		})
+	}
+}
+
+func TestActiveAgentsPauseAllSkipsSchedulesInIssueOrder(t *testing.T) {
+	agents := &activeAgents{}
+	agents.add(Issue{Target: "o/r", Number: 9}, "")
+	agents.add(Issue{Target: "a/b", Number: 3}, "")
+	agents.add(Issue{Target: "o/r", Number: 2}, "")
+	agents.add(Issue{Target: "o/r", Number: 5, ScheduleID: "nightly"}, "")
+	var got []string
+	for _, run := range agents.pauseAll() {
+		got = append(got, run.Target+"#"+strconv.Itoa(run.Number))
+	}
+	if want := []string{"a/b#3", "o/r#2", "o/r#9"}; !slices.Equal(got, want) {
+		t.Fatalf("paused runs = %q, want %q", got, want)
+	}
+}
+
+func TestShutdownCheckpointerSetLogRedirectsOutcomes(t *testing.T) {
+	agents := &activeAgents{}
+	agents.add(Issue{Target: "o/r", Number: 4}, "")
+	early := 0
+	s := newShutdownCheckpointer(agents, func(string, ...interface{}) { early++ })
+	var logged []string
+	s.SetLog(func(format string, args ...interface{}) { logged = append(logged, fmt.Sprintf(format, args...)) })
+	s.Checkpoint()
+	if early != 0 {
+		t.Fatalf("the replaced log got %d lines", early)
+	}
+	if !slices.ContainsFunc(logged, func(line string) bool { return strings.Contains(line, "o/r#4 nothing to push: no checkout yet") }) {
+		t.Fatalf("logged = %q", logged)
 	}
 }

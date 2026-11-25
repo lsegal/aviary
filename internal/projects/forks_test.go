@@ -52,6 +52,7 @@ func TestGHCLIForkFor(t *testing.T) {
 		{"not writable", []string{"false", "me/r\n"}, []error{nil, nil}, "me/r", false, []string{"api repos/o/r --jq .permissions.push", "api -X POST repos/o/r/forks --jq .full_name"}},
 		{"permission read fails", []string{"gh: Not Found (HTTP 404)"}, []error{errors.New("exit status 1")}, "", true, []string{"api repos/o/r --jq .permissions.push"}},
 		{"fork fails", []string{"false", "gh: Forbidden (HTTP 403)"}, []error{nil, errors.New("exit status 1")}, "", true, []string{"api repos/o/r --jq .permissions.push", "api -X POST repos/o/r/forks --jq .full_name"}},
+		{"fork name is not a repository", []string{"false", "Forked!\n"}, []error{nil, nil}, "", true, []string{"api repos/o/r --jq .permissions.push", "api -X POST repos/o/r/forks --jq .full_name"}},
 	} {
 		var args []string
 		gh := GHCLI{runCommand: func(_ context.Context, a ...string) ([]byte, error) {

@@ -406,3 +406,84 @@ func TestDirSizeStopsWhenCancelled(t *testing.T) {
 		t.Fatalf("dirSize after cancel err = %v", err)
 	}
 }
+
+// A clone another job's checkout points at, or that a live agent for its issue
+// has not announced yet, is in use even when its own job finished.
+func TestClassifyCloneFindsOtherUsers(t *testing.T) {
+	root := t.TempDir()
+	rec := cloneRecord{Path: filepath.Join(root, "r-gh-fix-1"), Job: "o/r#1", Issue: 1}
+	done := map[string]workState{"o/r#1": {Status: "completed"}}
+	for _, c := range []struct {
+		name  string
+		usage cloneUsage
+		want  string
+	}{
+		{"an unannounced agent for its issue", cloneUsage{live: []checkpointRun{{Target: "o/r", Number: 1}}}, "has not announced its checkout"},
+		{"a running board job", cloneUsage{jobs: map[string]JobSnapshot{"o/r#1": {Status: "active"}}}, "job is active"},
+		{"another job's checkout", cloneUsage{work: map[string]workState{"o/r#1": {Status: "completed"}, "o/r#2": {Status: "paused", CheckoutDirectory: rec.Path}}}, "job o/r#2 is paused"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			c.usage.roots = []string{root}
+			if c.usage.work == nil {
+				c.usage.work = done
+			}
+			if verdict, reason := classifyClone(rec, c.usage); verdict != cloneInUse || !strings.Contains(reason, c.want) {
+				t.Fatalf("clone = %d, %q; want in use with %q", verdict, reason, c.want)
+			}
+		})
+	}
+}
+
+// Clear reads the work state again before removing each clone, and keeps a
+// clone when that second read fails.
+func TestClearClonesKeepsCloneWhenWorkStateTurnsUnreadable(t *testing.T) {
+	root := t.TempDir()
+	dir := makeClone(t, root, "r-gh-fix-1", "o/r")
+	reg, err := loadCloneRegistry("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.record(cloneRecord{Path: dir, Job: "o/r#1", Issue: 1}); err != nil {
+		t.Fatal(err)
+	}
+	reads := 0
+	result, err := clearClones(reg, func() cloneUsage {
+		reads++
+		if reads > 1 {
+			return cloneUsage{roots: []string{root}, workErr: errors.New("state locked")}
+		}
+		return cloneUsage{roots: []string{root}, work: map[string]workState{"o/r#1": {Status: "completed"}}}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kept != 1 || len(result.Removed) != 0 || len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "state locked") {
+		t.Fatalf("clear = %+v, want the clone kept with the read error", result)
+	}
+	if !isDir(dir) {
+		t.Fatal("clear removed a clone it could not classify")
+	}
+}
+
+func TestCloneRegistryLoadAndRootErrors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "clones.json")
+	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadCloneRegistry(path); err == nil {
+		t.Fatal("loaded a corrupt clone registry")
+	}
+	var none *cloneRegistry
+	if err := none.record(cloneRecord{Path: "/tmp/x"}); err != nil || none.list() != nil {
+		t.Fatalf("nil registry record = %v, list = %v", err, none.list())
+	}
+	// A root whose parent is a file cannot be created.
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	blocked := filepath.Join(file, "clones")
+	if _, err := pickCloneRoot([]string{blocked}); !errors.Is(err, errNoCloneSpace) || !strings.Contains(err.Error(), blocked) {
+		t.Fatalf("pick with an uncreatable root = %v, want errNoCloneSpace naming it", err)
+	}
+}

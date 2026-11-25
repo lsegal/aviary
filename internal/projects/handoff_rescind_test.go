@@ -1,10 +1,12 @@
 package projects
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -212,5 +214,43 @@ func TestShutdownCheckpointerRescindsAfterTheCheckpoint(t *testing.T) {
 	}
 	if _, ok := want["rescind #2"]; ok {
 		t.Fatalf("events = %q, want the failed checkpoint's claim kept", events)
+	}
+}
+
+// A comment API failure while rescinding or reclaiming ownership is logged
+// and leaves the ticket's claims as they were.
+func TestRescindAndReclaimLogCommentFailures(t *testing.T) {
+	claimed := signComment(startingClaimBody, "SELF")
+	rescinded := []string{signComment(startingClaimBody, "OLD"), signComment(stoppingClaimBody, "OLD")}
+	issue := Issue{Number: 1, Repository: "o/r", Target: "o/r"}
+	for _, c := range []struct {
+		name     string
+		existing []string
+		listErr  error
+		postErr  error
+		act      func(*Engine)
+		want     string
+	}{
+		{"rescind list", []string{claimed}, errors.New("list down"), nil, func(w *Engine) { w.rescindOwnership(context.Background(), issue) }, "not rescinded on shutdown; reading its claims failed: list down"},
+		{"rescind post", []string{claimed}, nil, errors.New("post down"), func(w *Engine) { w.rescindOwnership(context.Background(), issue) }, "not rescinded on shutdown: post down"},
+		{"reclaim list", rescinded, errors.New("list down"), nil, func(w *Engine) { w.reclaimRescinded(context.Background(), nil, issue) }, "failed to check for rescinded ownership: list down"},
+		{"reclaim post", rescinded, nil, errors.New("post down"), func(w *Engine) { w.reclaimRescinded(context.Background(), nil, issue) }, "failed to reclaim rescinded ownership: post down"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			comments := newFakeCommentClient()
+			for _, body := range c.existing {
+				comments.inject("o/r", 1, Comment{Body: body, CreatedAt: time.Now()})
+			}
+			comments.listErr, comments.postErr = c.listErr, c.postErr
+			var out bytes.Buffer
+			c.act(&Engine{Comments: comments, Identity: "SELF", Out: &out})
+			if !strings.Contains(out.String(), c.want) {
+				t.Fatalf("log = %q, want %q", out.String(), c.want)
+			}
+			comments.listErr = nil
+			if posted, _ := comments.ListComments(context.Background(), "o/r", 1); len(posted) != len(c.existing) {
+				t.Fatalf("comments = %+v, want the existing %d unchanged", posted, len(c.existing))
+			}
+		})
 	}
 }

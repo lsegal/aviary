@@ -395,3 +395,150 @@ func TestListOpenPullRequests(t *testing.T) {
 		}
 	}
 }
+
+func TestJobQueueEdits(t *testing.T) {
+	t.Run("without a path it keeps jobs in memory", func(t *testing.T) {
+		q := &jobQueue{}
+		if err := q.add(queuedJob{Skill: SkillSafeMerge, Target: "o/r", Number: 1}); err != nil {
+			t.Fatal(err)
+		}
+		if got := q.list(); len(got) != 1 || got[0].Number != 1 {
+			t.Fatalf("list = %+v", got)
+		}
+	})
+	t.Run("missing keys change nothing", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "queue.json")
+		q := &jobQueue{path: path}
+		if err := q.add(queuedJob{Skill: SkillDiscuss, Target: "o/r", Number: 2}); err != nil {
+			t.Fatal(err)
+		}
+		saved, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := q.remove("o/r#9"); err != nil {
+			t.Fatal(err)
+		}
+		if err := q.setPaused("o/r#9", true); err != nil {
+			t.Fatal(err)
+		}
+		after, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(after) != string(saved) {
+			t.Fatalf("queue file changed from %s to %s", saved, after)
+		}
+		if got := q.list(); len(got) != 1 || got[0].Paused {
+			t.Fatalf("list = %+v", got)
+		}
+	})
+	t.Run("emptying it reports a file it cannot remove", func(t *testing.T) {
+		// A non-empty directory in the queue file's place cannot be removed.
+		path := filepath.Join(t.TempDir(), "queue.json")
+		if err := os.MkdirAll(filepath.Join(path, "child"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		q := &jobQueue{path: path, loaded: true, items: []queuedJob{{Skill: SkillSafeMerge, Target: "o/r", Number: 3}}}
+		if err := q.remove("o/r#3"); err == nil {
+			t.Fatal("removing the last job did not report the undeletable queue file")
+		}
+	})
+}
+
+func TestQueueJobsValidatesRequest(t *testing.T) {
+	w := &Engine{Targets: []string{"o/r", "users/me/projects/1"}}
+	for _, c := range []struct {
+		name    string
+		request QueueRequest
+		want    string
+	}{
+		{"no repository for a project", QueueRequest{Target: "users/me/projects/1", Skill: SkillDiscuss, Numbers: []int{1}}, "name the repository"},
+		{"no numbers", QueueRequest{Target: "o/r", Skill: SkillDiscuss}, "at least one number"},
+		{"non-positive number", QueueRequest{Target: "o/r", Skill: SkillDiscuss, Numbers: []int{4, 0}}, "0 is not a pull request"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := w.QueueJobs(context.Background(), c.request)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+}
+
+func TestQueuedJobOwner(t *testing.T) {
+	merge := queuedJob{Skill: SkillSafeMerge, Target: "o/r", Repository: "o/r", Number: 7}
+	discuss := queuedJob{Skill: SkillDiscuss, Target: "o/r", Repository: "o/r", Number: 7}
+	for _, c := range []struct {
+		name string
+		jobs map[string]JobSnapshot
+		item queuedJob
+		want string
+	}{
+		{"finished jobs own nothing", map[string]JobSnapshot{"o/r#7": {Status: "complete"}}, merge, ""},
+		{"another repository's pull request", map[string]JobSnapshot{"x/y#3": {Status: "active", Target: "x/y", PullRequest: 7}}, merge, ""},
+		{"a fix job's pull request in another repository", map[string]JobSnapshot{"board#3": {Status: "active", Repository: "o/r", PullRequestRepository: "x/y", PullRequest: 7}}, merge, ""},
+		{"a fix job's pull request", map[string]JobSnapshot{"board#3": {Status: "active", Repository: "O/R", PullRequestRepository: "o/r", PullRequest: 7}}, merge, "board#3"},
+		{"a merge of the same number on another board", map[string]JobSnapshot{"board#7": {Status: "queued", Repository: "o/r", Kind: core.JobKindMerge, Number: 7}}, merge, "board#7"},
+		{"a discussion job answering the thread", map[string]JobSnapshot{"board#7": {Status: "active", Repository: "o/r", Kind: core.JobKindDiscussion, Number: 7}}, discuss, "board#7"},
+		{"an issue job with the thread's number", map[string]JobSnapshot{"board#7": {Status: "active", Repository: "o/r", Kind: core.JobKindIssue, Number: 7}}, discuss, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := queuedJobOwner(c.jobs, c.item); got != c.want {
+				t.Fatalf("owner = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestQueuedJobActionsRefuseTheirStatus(t *testing.T) {
+	runner := newQueueRunner()
+	w, _ := startQueueEngine(t, runner, t.TempDir(), 1)
+	queueJob(t, w, SkillSafeMerge, 1, 2)
+	waitStarted(t, runner)
+	waitJob(t, w, 2, func(j JobSnapshot) bool { return j.Status == "queued" })
+	if err := queueAction(t, w, "retry", 2); err == nil || !strings.Contains(err.Error(), "Already queued") {
+		t.Fatalf("retrying a queued merge: %v", err)
+	}
+	if err := queueAction(t, w, "archive", 2); err == nil || !strings.Contains(err.Error(), "merge jobs cannot be archive") {
+		t.Fatalf("unknown action: %v", err)
+	}
+	runner.finish <- nil
+	waitJob(t, w, 1, func(j JobSnapshot) bool { return j.Status == "complete" })
+	for _, action := range []string{"pause", "stop"} {
+		if err := queueAction(t, w, action, 1); err == nil || !strings.Contains(err.Error(), "while complete") {
+			t.Fatalf("%s on a complete merge: %v", action, err)
+		}
+	}
+	// With no_merge set, a finished merge is not queued again.
+	w.noMerge.Store(true)
+	if err := queueAction(t, w, "retry", 1); !errors.Is(err, ErrNoMergeQueue) {
+		t.Fatalf("retry with no_merge = %v, want ErrNoMergeQueue", err)
+	}
+	if job, _ := scheduledJob(w, 1); job.Status != "complete" {
+		t.Fatalf("refused retry left #1 %s", job.Status)
+	}
+}
+
+func TestStoppingAPausedMergeTakesItOffTheBoard(t *testing.T) {
+	runner := newQueueRunner()
+	w, _ := startQueueEngine(t, runner, t.TempDir(), 1)
+	queueJob(t, w, SkillSafeMerge, 1, 2)
+	waitStarted(t, runner)
+	if err := queueAction(t, w, "pause", 2); err != nil {
+		t.Fatal(err)
+	}
+	waitJob(t, w, 2, func(j JobSnapshot) bool { return j.Status == "paused" })
+	if err := queueAction(t, w, "stop", 2); err != nil {
+		t.Fatal(err)
+	}
+	if _, found := scheduledJob(w, 2); found {
+		t.Fatal("a stopped paused merge is still on the board")
+	}
+	for _, item := range w.jobQueue().list() {
+		if item.Number == 2 {
+			t.Fatalf("a stopped paused merge is still queued: %+v", item)
+		}
+	}
+	runner.finish <- nil
+}
