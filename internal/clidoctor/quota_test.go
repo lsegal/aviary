@@ -340,3 +340,141 @@ func TestQuotaReadingKeepsAGoodReading(t *testing.T) {
 		t.Fatalf("reading = %q, want empty for an agent with no reader", got)
 	}
 }
+
+// TestScanCodexQuotaReadsTheRateLimitReply checks the app-server reply parser
+// skips the initialize reply and stray output, formats the rate limit reply,
+// and reports a failed or missing rate limit reply instead of an empty quota.
+func TestScanCodexQuotaReadsTheRateLimitReply(t *testing.T) {
+	weekly := `{"id":1,"result":{}}` + "\n" + "not json\n" +
+		`{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":30,"windowDurationMins":10080}}}}` + "\n"
+	if got, err := scanCodexQuota(strings.NewReader(weekly)); got != "weekly 70% left" || err != nil {
+		t.Fatalf("weekly quota = %q (err %v)", got, err)
+	}
+	session := `{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":120,"windowDurationMins":300}}}}`
+	if got, err := scanCodexQuota(strings.NewReader(session)); got != "quota 0% left" || err != nil {
+		t.Fatalf("over-limit quota = %q (err %v), want it clamped at 0%%", got, err)
+	}
+	if got, err := scanCodexQuota(strings.NewReader(`{"id":2,"result":{"rateLimits":{}}}`)); got != "" || err != nil {
+		t.Fatalf("quota without a primary limit = %q (err %v), want empty", got, err)
+	}
+	_, err := scanCodexQuota(strings.NewReader(`{"id":2,"error":{"message":"not signed in"}}`))
+	if err == nil || !strings.Contains(err.Error(), "not signed in") {
+		t.Fatalf("error reply err = %v, want the server's error", err)
+	}
+	_, err = scanCodexQuota(strings.NewReader(`{"id":1,"result":{}}`))
+	if err == nil || !strings.Contains(err.Error(), "not received") {
+		t.Fatalf("missing reply err = %v, want not received", err)
+	}
+}
+
+// TestCodexQuotaReaderReadsAndCachesTheAppServerReply runs the Codex reader
+// against a fake app-server that answers the rate limit request, and checks a
+// second read inside the cache window does not start the CLI again.
+func TestCodexQuotaReaderReadsAndCachesTheAppServerReply(t *testing.T) {
+	counter := filepath.Join(t.TempDir(), "runs")
+	binary := fakeQuotaBinary(t, fmt.Sprintf(`printf 'x' >> %q
+while read -r line; do
+  case "$line" in
+    *rateLimits/read*) printf '%%s\n' '{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":45}}}}' ;;
+  esac
+done`, counter))
+	reader := &codexQuotaReader{Binary: binary}
+	for range 2 {
+		if got, err := reader.Read(context.Background()); got != "quota 55% left" || err != nil {
+			t.Fatalf("quota = %q (err %v), want %q", got, err, "quota 55% left")
+		}
+	}
+	runs, err := os.ReadFile(counter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("ran codex %d times within the cache window, want 1", len(runs))
+	}
+}
+
+// TestClaudeQuotaReaderCachesItsReading checks the Claude reader keeps a good
+// reading for the cache window instead of re-running the CLI on every poll.
+func TestClaudeQuotaReaderCachesItsReading(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.json")
+	if err := os.WriteFile(path, []byte(claudeWeekOnlyUsage), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	counter := filepath.Join(dir, "runs")
+	reader := &claudeQuotaReader{Binary: fakeQuotaBinary(t, fmt.Sprintf("printf 'x' >> %q; cat %q", counter, path))}
+	for range 2 {
+		if got, err := reader.Read(context.Background()); got != "week 78% left" || err != nil {
+			t.Fatalf("quota = %q (err %v)", got, err)
+		}
+	}
+	runs, err := os.ReadFile(counter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("ran claude %d times within the cache window, want 1", len(runs))
+	}
+}
+
+// TestFormatCommandQuotaFieldTypes covers the field shapes a quota command
+// may print: a numeric reset timestamp, a quoted percentage, values outside
+// 0-100, and fields that are absent, blank, or not a value at all.
+func TestFormatCommandQuotaFieldTypes(t *testing.T) {
+	document := map[string]any{
+		"used":   float64(130),
+		"quoted": " 40% ",
+		"bad":    "lots",
+		"reset":  float64(1700000000),
+		"blank":  "  ",
+		"list":   []any{"a"},
+		"nested": "leaf",
+	}
+	cases := []struct {
+		name    string
+		spec    clidefs.Quota
+		want    string
+		wantErr string
+	}{
+		{name: "numeric reset", spec: clidefs.Quota{PercentUsed: "used", ResetAt: "reset", Format: "{percentLeft}% left until {resetAt}"}, want: "0% left until 1700000000"},
+		{name: "quoted percent", spec: clidefs.Quota{PercentUsed: "quoted", Format: "{percentUsed}% used"}, want: "40% used"},
+		{name: "unparsable percent", spec: clidefs.Quota{PercentUsed: "bad"}, wantErr: `"bad" is missing or not a number`},
+		{name: "list percent", spec: clidefs.Quota{PercentUsed: "list"}, wantErr: `"list" is missing or not a number`},
+		{name: "empty path", spec: clidefs.Quota{PercentUsed: " "}, wantErr: "missing or not a number"},
+		{name: "path through a leaf", spec: clidefs.Quota{PercentUsed: "nested.deeper"}, wantErr: "missing or not a number"},
+		{name: "blank reset", spec: clidefs.Quota{ResetAt: "blank", Format: "resets {resetAt}"}, wantErr: `"blank" is missing`},
+		{name: "list reset", spec: clidefs.Quota{ResetAt: "list", Format: "resets {resetAt}"}, wantErr: `"list" is missing`},
+		{name: "absent reset", spec: clidefs.Quota{ResetAt: "gone", Format: "resets {resetAt}"}, wantErr: `"gone" is missing`},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := formatCommandQuota(test.spec, document)
+			if test.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("quota = %q (err %v), want error mentioning %q", got, err, test.wantErr)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("quota = %q (err %v), want %q", got, err, test.want)
+			}
+		})
+	}
+}
+
+// TestReadQuotaUsesTheAgentsReader checks ReadQuota reads one agent through
+// its definition's reader, trims the reading, and reads nothing for an agent
+// that tracks no quota.
+func TestReadQuotaUsesTheAgentsReader(t *testing.T) {
+	binary := fakeQuotaBinary(t, `printf '{"used":10}'`)
+	registry := registryWith(t,
+		definitionWithQuota(t, "muse", clidefs.Quota{Reader: clidefs.QuotaCommand, Command: []string{"{binary}"}, PercentUsed: "used", Format: " {percentLeft}% left "}),
+		definitionWithQuota(t, "quiet", clidefs.Quota{}),
+	)
+	if got, err := ReadQuota(context.Background(), registry, "muse", binary); got != "90% left" || err != nil {
+		t.Fatalf("muse quota = %q (err %v), want %q", got, err, "90% left")
+	}
+	if got, err := ReadQuota(context.Background(), registry, "quiet", binary); got != "" || err != nil {
+		t.Fatalf("quiet quota = %q (err %v), want nothing", got, err)
+	}
+}

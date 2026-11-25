@@ -293,3 +293,167 @@ func TestConfigHomeValidateTrust(t *testing.T) {
 		assert.Contains(t, err.Error(), tc.want)
 	}
 }
+
+// TestHomeEnvWithoutConfigHome shows a definition that declares no ConfigHome
+// launches against the user's own directory: no overlay variable is added and
+// the launch env is just the definition's Env.
+func TestHomeEnvWithoutConfigHome(t *testing.T) {
+	definition := Definition{Name: "plain", Env: map[string]string{"PLAIN_MODE": "1"}}
+	base := t.TempDir()
+	home, err := definition.HomeEnv(base)
+	require.NoError(t, err)
+	assert.Empty(t, home)
+	own, err := definition.OwnHomeEnv(base)
+	require.NoError(t, err)
+	assert.Empty(t, own)
+	env, err := definition.LaunchEnv(base)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"PLAIN_MODE=1"}, env)
+	entries, err := os.ReadDir(base)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "no overlay is prepared without a ConfigHome")
+}
+
+// TestConfigHomeDefaultWithoutTilde shows a Default that is not under ~/ is
+// used as given, made absolute.
+func TestConfigHomeDefaultWithoutTilde(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cli-home")
+	t.Setenv("X_HOME", "")
+	home, err := ConfigHome{Env: "X_HOME", Default: dir}.Home()
+	require.NoError(t, err)
+	assert.Equal(t, dir, home)
+}
+
+// TestLaunchEnvReportsAnOverlayItCannotPrepare shows each way preparing the
+// overlay can fail is reported with the variable it was for, while LaunchEnv
+// still returns the definition's own Env so the caller can launch against the
+// user's directory instead.
+func TestLaunchEnvReportsAnOverlayItCannotPrepare(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, root string) (ConfigHome, string)
+		want  string
+	}{
+		{
+			name: "home under a file",
+			setup: func(t *testing.T, root string) (ConfigHome, string) {
+				blocker := filepath.Join(root, "file")
+				require.NoError(t, os.WriteFile(blocker, nil, 0o600))
+				t.Setenv("X_HOME", filepath.Join(blocker, "home"))
+				return ConfigHome{Env: "X_HOME", Default: "~/.x", Private: []string{"settings.json"}}, t.TempDir()
+			},
+		},
+		{
+			name: "base is a file",
+			setup: func(t *testing.T, root string) (ConfigHome, string) {
+				t.Setenv("X_HOME", filepath.Join(root, "home"))
+				base := filepath.Join(root, "base")
+				require.NoError(t, os.WriteFile(base, nil, 0o600))
+				return ConfigHome{Env: "X_HOME", Default: "~/.x", Private: []string{"settings.json"}}, base
+			},
+		},
+		{
+			name: "private file is a directory",
+			setup: func(t *testing.T, root string) (ConfigHome, string) {
+				home := filepath.Join(root, "home")
+				require.NoError(t, os.MkdirAll(filepath.Join(home, "settings.json"), 0o700))
+				t.Setenv("X_HOME", home)
+				return ConfigHome{Env: "X_HOME", Default: "~/.x", Private: []string{"settings.json"}}, t.TempDir()
+			},
+			want: "preparing the X_HOME overlay",
+		},
+		{
+			name: "trusted settings are not JSON",
+			setup: func(t *testing.T, root string) (ConfigHome, string) {
+				home := filepath.Join(root, "home")
+				require.NoError(t, os.MkdirAll(home, 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(home, "settings.json"), []byte("{not json"), 0o600))
+				t.Setenv("X_HOME", home)
+				return ConfigHome{
+					Env: "X_HOME", Default: "~/.x", Private: []string{"settings.json"},
+					Trust: &WorkspaceTrust{File: "settings.json", Path: []string{"projects", "{dir}"}},
+				}, t.TempDir()
+			},
+			want: "trusting the workspace in the X_HOME overlay: reading settings.json",
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			configHome, base := test.setup(t, t.TempDir())
+			definition := Definition{Name: "x", Env: map[string]string{"X_MODE": "1"}, ConfigHome: &configHome}
+			env, err := definition.LaunchEnv(base, t.TempDir())
+			require.Error(t, err)
+			if test.want != "" {
+				assert.Contains(t, err.Error(), test.want)
+			}
+			assert.Equal(t, []string{"X_MODE=1"}, env, "the definition's Env is still returned")
+		})
+	}
+}
+
+// TestOverlayRefreshFailsWhenAStaleCopyCannotBeRemoved shows a Private file
+// the user deleted is removed from the overlay on refresh, and that a copy
+// which cannot be removed is reported rather than left silently stale.
+func TestOverlayRefreshFailsWhenAStaleCopyCannotBeRemoved(t *testing.T) {
+	home, base := t.TempDir(), t.TempDir()
+	t.Setenv("X_HOME", home)
+	configHome := ConfigHome{Env: "X_HOME", Default: "~/.x", Private: []string{"settings.json"}}
+	require.NoError(t, os.WriteFile(filepath.Join(home, "settings.json"), []byte("{}"), 0o600))
+	overlay, err := configHome.Overlay(base)
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(overlay, "settings.json"))
+
+	require.NoError(t, os.Remove(filepath.Join(home, "settings.json")))
+	_, err = configHome.Overlay(base)
+	require.NoError(t, err)
+	assert.NoFileExists(t, filepath.Join(overlay, "settings.json"), "the copy of a deleted Private file stays")
+
+	// A non-empty directory in the copy's place cannot be removed.
+	require.NoError(t, os.MkdirAll(filepath.Join(overlay, "settings.json", "inner"), 0o700))
+	_, err = configHome.Overlay(base)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "preparing the X_HOME overlay")
+}
+
+// TestWorkspaceKeysOfNoWorkspace shows an empty workspace contributes no
+// trusted key, so a launch without a workspace trusts nothing new.
+func TestWorkspaceKeysOfNoWorkspace(t *testing.T) {
+	assert.Empty(t, workspaceKeys(""))
+}
+
+// TestWorkspaceKeysOfSymlinkedWorkspace shows a workspace reached through a
+// link is keyed both by the path it was opened at and by its resolved path,
+// so a CLI that resolves links still finds the workspace trusted.
+func TestWorkspaceKeysOfSymlinkedWorkspace(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	target := filepath.Join(root, "real")
+	require.NoError(t, os.Mkdir(target, 0o700))
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	assert.Equal(t, []string{filepath.ToSlash(link), filepath.ToSlash(target)}, workspaceKeys(link))
+}
+
+// TestConfigHomeForgetsTrustWhenNoWorkspaceRemains shows the overlay's list
+// of trusted workspaces is deleted once none of them exists, and that a list
+// which cannot be deleted is reported instead of trusting stale workspaces.
+func TestConfigHomeForgetsTrustWhenNoWorkspaceRemains(t *testing.T) {
+	home, _ := trustHome(t)
+	base, workspace := t.TempDir(), t.TempDir()
+	overlay, err := home.Overlay(base, workspace)
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(overlay, trustedFile))
+
+	require.NoError(t, os.Remove(workspace))
+	_, err = home.Overlay(base)
+	require.NoError(t, err)
+	assert.NoFileExists(t, filepath.Join(overlay, trustedFile))
+
+	require.NoError(t, os.MkdirAll(filepath.Join(overlay, trustedFile, "inner"), 0o700))
+	_, err = home.Overlay(base)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "trusting the workspace in the X_HOME overlay")
+}

@@ -710,3 +710,170 @@ func TestIntegration_StoreSetup(t *testing.T) {
 
 	}
 }
+
+// TestSetAuthDir verifies a shared auth directory replaces SubDir(DirAuth)
+// and is never created by EnsureDirs, which belongs to another data dir.
+func TestSetAuthDir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+	shared := filepath.Join(tmp, "elsewhere", "auth")
+	SetAuthDir(shared)
+	t.Cleanup(func() { SetAuthDir("") })
+
+	assert.Equal(t, shared, SubDir(DirAuth))
+	assert.Equal(t, filepath.Join(tmp, "aviary", DirCerts), SubDir(DirCerts))
+
+	assert.NoError(t, EnsureDirs())
+	_, err := os.Stat(shared)
+	assert.True(t, os.IsNotExist(err), "shared auth dir must not be created")
+	_, err = os.Stat(filepath.Join(tmp, "aviary", DirAuth))
+	assert.True(t, os.IsNotExist(err), "local auth dir is replaced by the shared one")
+
+	SetAuthDir("")
+	assert.Equal(t, filepath.Join(tmp, "aviary", DirAuth), SubDir(DirAuth))
+}
+
+func TestCLIHomesDir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+	assert.Equal(t, filepath.Join(tmp, "aviary", "cli-homes"), CLIHomesDir())
+}
+
+func TestWorkspaceDirDefaultsToWorkingDir(t *testing.T) {
+	SetWorkspaceDir("")
+	wd, err := os.Getwd()
+	assert.NoError(t, err)
+	assert.Equal(t, wd, WorkspaceDir())
+}
+
+func TestNormalizeAgentFileRejectsInvalidPaths(t *testing.T) {
+	abs, err := filepath.Abs("x.md")
+	assert.NoError(t, err)
+	for _, tc := range []struct {
+		file string
+		want string
+	}{
+		{"   ", "file is required"},
+		{".", "file is required"},
+		{"notes/..", "file is required"},
+		{abs, "relative to the agent directory"},
+		{"..", "stay within"},
+		{"../x/y.md", "stay within"},
+	} {
+		_, err := normalizeAgentFile(tc.file)
+		assert.ErrorContains(t, err, tc.want, "file %q", tc.file)
+	}
+	got, err := normalizeAgentFile(" notes/./a/../b.md ")
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join("notes", "b.md"), got)
+}
+
+func TestRenameAgentFile(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	assert.NoError(t, WriteAgentFile("bot", "draft.txt", "hello"))
+	assert.NoError(t, WriteAgentFile("bot", "taken.txt", "other"))
+
+	// Moving into a new subdirectory creates it.
+	assert.NoError(t, RenameAgentFile("bot", "draft.txt", "notes/final.txt"))
+	content, err := ReadAgentFile("bot", "notes/final.txt")
+	assert.NoError(t, err)
+	assert.Equal(t, "hello", content)
+	_, err = ReadAgentFile("bot", "draft.txt")
+	assert.True(t, os.IsNotExist(err))
+
+	// Renaming onto an existing file is refused and leaves both intact.
+	err = RenameAgentFile("bot", "notes/final.txt", "taken.txt")
+	assert.ErrorContains(t, err, "already exists")
+	content, err = ReadAgentFile("bot", "taken.txt")
+	assert.NoError(t, err)
+	assert.Equal(t, "other", content)
+
+	// Renaming to itself is a no-op.
+	assert.NoError(t, RenameAgentFile("bot", "taken.txt", "./taken.txt"))
+
+	// Protected root files cannot be the source or the destination.
+	assert.ErrorContains(t, RenameAgentFile("bot", "RULES.md", "x.md"), "protected")
+	assert.ErrorContains(t, RenameAgentFile("bot", "taken.txt", "memory.md"), "protected")
+
+	// A missing source and invalid paths are errors.
+	err = RenameAgentFile("bot", "missing.txt", "new.txt")
+	assert.True(t, os.IsNotExist(err))
+	assert.ErrorContains(t, RenameAgentFile("bot", "", "new.txt"), "required")
+	assert.ErrorContains(t, RenameAgentFile("bot", "taken.txt", "../out.txt"), "stay within")
+}
+
+func TestListAgentFilesMissingAgent(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	files, err := ListAgentFiles("nobody")
+	assert.NoError(t, err)
+	assert.Nil(t, files)
+}
+
+func TestReadAgentFileStripsMarkdownComments(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	assert.NoError(t, WriteAgentFile("bot", "NOTES.MD", "keep\n<!-- one-line -->\n<!--\nmulti\n-->\nend"))
+	assert.NoError(t, WriteAgentFile("bot", "raw.txt", "<!-- kept -->"))
+
+	content, err := ReadAgentFile("bot", "NOTES.MD")
+	assert.NoError(t, err)
+	assert.Equal(t, "keep\nend", content)
+
+	content, err = ReadAgentFile("bot", "raw.txt")
+	assert.NoError(t, err)
+	assert.Equal(t, "<!-- kept -->", content)
+
+	_, err = ReadAgentFile("bot", "absent.md")
+	assert.True(t, os.IsNotExist(err))
+	_, err = ReadAgentFile("bot", "")
+	assert.ErrorContains(t, err, "required")
+}
+
+func TestTaskCompilePaths(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	p := TaskCompilePath("bot", "compile:1")
+	assert.Equal(t, filepath.Join(tmp, "aviary", DirAgents, "bot", "task_compiles", "compile_1.json"), p)
+
+	assert.Equal(t, "", FindTaskCompilePath("c1"))
+	assert.Empty(t, AllTaskCompileDirs())
+
+	found := TaskCompilePath("bot", "c1")
+	assert.NoError(t, os.MkdirAll(filepath.Dir(found), 0o700))
+	assert.NoError(t, os.WriteFile(found, []byte("{}"), 0o600))
+	// An agent without task_compiles and a stray file are skipped.
+	assert.NoError(t, os.MkdirAll(AgentDir("idle"), 0o700))
+	assert.NoError(t, os.WriteFile(filepath.Join(tmp, "aviary", DirAgents, "stray"), nil, 0o600))
+
+	assert.Equal(t, found, FindTaskCompilePath("c1"))
+	assert.Equal(t, "", FindTaskCompilePath("c2"))
+	assert.Equal(t, []string{filepath.Dir(found)}, AllTaskCompileDirs())
+}
+
+func TestSessionSidecarAndCheckpointPaths(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+	agent := filepath.Join(tmp, "aviary", DirAgents, "bot")
+
+	assert.Equal(t, filepath.Join(agent, "sessions", "signal_+1.meta.json"), SessionMetaPath("bot", "signal:+1"))
+	assert.Equal(t, filepath.Join(agent, "checkpoints"), CheckpointDir("bot"))
+	assert.Equal(t, filepath.Join(agent, "checkpoints", "run_1.json"), CheckpointPath("bot", "run/1"))
+	assert.Equal(t, filepath.Join(agent, "checkpoints", "default.json"), CheckpointPath("bot", " "))
+}
+
+func TestFindSessionPathMissing(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	assert.Equal(t, "", FindSessionPath("", "main"))
+	assert.Equal(t, "", FindSessionPath("bot", "  "))
+	assert.Equal(t, "", FindSessionPath("bot", "main"))
+}
+
+func TestFindJobPathLegacy(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	legacy := filepath.Join(SubDir(DirJobs), "old.json")
+	assert.NoError(t, os.MkdirAll(filepath.Dir(legacy), 0o700))
+	assert.NoError(t, os.WriteFile(legacy, []byte("{}"), 0o600))
+	assert.Equal(t, legacy, FindJobPath("old"))
+}

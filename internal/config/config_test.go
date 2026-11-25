@@ -1814,3 +1814,212 @@ func TestServerURL(t *testing.T) {
 	t.Setenv("AVIARY_CONFIG_SERVER_NO_TLS", "true")
 	assert.Equal(t, "http://localhost:16677", ServerURL(ServerConfig{}))
 }
+
+func TestSetDefaultPath(t *testing.T) {
+	t.Cleanup(func() { SetDefaultPath("") })
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	custom := filepath.Join(t.TempDir(), "watch.yaml")
+	SetDefaultPath(custom)
+	assert.Equal(t, custom, DefaultPath())
+
+	cfg := Default()
+	cfg.Server.Port = 4321
+	require.NoError(t, Save("", &cfg), "an empty path saves to the custom default")
+	loaded, err := Load(custom)
+	require.NoError(t, err)
+	assert.Equal(t, 4321, loaded.Server.Port)
+
+	SetDefaultPath("")
+	assert.Equal(t, filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "aviary", "aviary.yaml"), DefaultPath(), "empty path restores automatic resolution")
+}
+
+func TestBaseDir_PrefersExistingConfigFile(t *testing.T) {
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", "")
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	dir := filepath.Join(xdg, "aviary")
+	require.NoError(t, os.MkdirAll(dir, 0o750))
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "aviary.yml"), []byte("server:\n  port: 1\n"), 0o600))
+	assert.Equal(t, dir, BaseDir(), "aviary.yml alone locates the base dir")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "aviary.yaml"), []byte("server:\n  port: 1\n"), 0o600))
+	assert.Equal(t, dir, BaseDir())
+}
+
+func TestLoad_AlternateYmlFilename(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "aviary.yml"), []byte("server:\n  port: 7001\n"), 0o600))
+
+	cfg, err := Load(filepath.Join(dir, "aviary.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, 7001, cfg.Server.Port, "falls back to aviary.yml beside the missing aviary.yaml")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "aviary.yml"), []byte("server: [\n"), 0o600))
+	_, err = Load(filepath.Join(dir, "aviary.yaml"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "aviary.yml", "parse errors name the file actually read")
+}
+
+func TestLoad_MissingConfigIsEmpty(t *testing.T) {
+	cfg, err := Load(filepath.Join(t.TempDir(), "aviary.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, &Config{}, cfg)
+}
+
+func TestLoad_UnreadablePathErrors(t *testing.T) {
+	// A directory where the config file should be cannot be read as a file.
+	path := filepath.Join(t.TempDir(), "aviary.yaml")
+	require.NoError(t, os.Mkdir(path, 0o750))
+	_, err := Load(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reading config")
+}
+
+func TestRestoreLatestBackup(t *testing.T) {
+	t.Run("restores the newest backup", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "aviary.yaml")
+		for _, port := range []int{5001, 5002} {
+			cfg := Default()
+			cfg.Server.Port = port
+			require.NoError(t, Save(path, &cfg))
+		}
+
+		require.NoError(t, RestoreLatestBackup(path))
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, 5001, cfg.Server.Port, "the config saved before the last save comes back")
+	})
+
+	t.Run("recreates a deleted config dir", func(t *testing.T) {
+		root := t.TempDir()
+		backupDir := filepath.Join(root, "cfg", "backups")
+		require.NoError(t, os.MkdirAll(backupDir, 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(backupDir, "aviary.yml.bak.1"), []byte("server:\n  port: 5003\n"), 0o600))
+
+		path := filepath.Join(root, "cfg", "aviary.yaml")
+		require.NoError(t, RestoreLatestBackup(path))
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, 5003, cfg.Server.Port)
+	})
+
+	t.Run("missing backup", func(t *testing.T) {
+		err := RestoreLatestBackup(filepath.Join(t.TempDir(), "aviary.yaml"))
+		require.Error(t, err)
+		assert.Equal(t, "latest config backup not found", err.Error())
+	})
+
+	t.Run("empty path uses the default path", func(t *testing.T) {
+		t.Cleanup(func() { SetDefaultPath("") })
+		path := filepath.Join(t.TempDir(), "aviary.yaml")
+		SetDefaultPath(path)
+		for _, port := range []int{5004, 5005} {
+			cfg := Default()
+			cfg.Server.Port = port
+			require.NoError(t, Save(path, &cfg))
+		}
+		require.NoError(t, RestoreLatestBackup(""))
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, 5004, cfg.Server.Port)
+	})
+}
+
+// issueMessages returns the messages of every issue reported for field.
+func issueMessages(issues []Issue, field string) []string {
+	var out []string
+	for _, iss := range issues {
+		if iss.Field == field {
+			out = append(out, iss.Message)
+		}
+	}
+	return out
+}
+
+func TestValidate_ServerTLS(t *testing.T) {
+	dir := t.TempDir()
+	cert := filepath.Join(dir, "cert.pem")
+	key := filepath.Join(dir, "key.pem")
+	require.NoError(t, os.WriteFile(cert, []byte("cert"), 0o600))
+	require.NoError(t, os.WriteFile(key, []byte("key"), 0o600))
+
+	t.Run("readable cert and key", func(t *testing.T) {
+		issues := Validate(&Config{Server: ServerConfig{TLS: &TLSConfig{Cert: cert, Key: key}}}, nil)
+		assert.Empty(t, issueMessages(issues, "server.tls"))
+		assert.Empty(t, issueMessages(issues, "server.tls.cert"))
+		assert.Empty(t, issueMessages(issues, "server.tls.key"))
+	})
+
+	t.Run("cert without key", func(t *testing.T) {
+		issues := Validate(&Config{Server: ServerConfig{TLS: &TLSConfig{Cert: cert}}}, nil)
+		msgs := issueMessages(issues, "server.tls")
+		require.Len(t, msgs, 1)
+		assert.Contains(t, msgs[0], "cert set: true, key set: false")
+	})
+
+	t.Run("missing files", func(t *testing.T) {
+		missingCert := filepath.Join(dir, "nope-cert.pem")
+		missingKey := filepath.Join(dir, "nope-key.pem")
+		issues := Validate(&Config{Server: ServerConfig{TLS: &TLSConfig{Cert: missingCert, Key: missingKey}}}, nil)
+		assert.Empty(t, issueMessages(issues, "server.tls"))
+		require.Len(t, issueMessages(issues, "server.tls.cert"), 1)
+		assert.Contains(t, issueMessages(issues, "server.tls.cert")[0], "cannot read certificate file")
+		require.Len(t, issueMessages(issues, "server.tls.key"), 1)
+		assert.Contains(t, issueMessages(issues, "server.tls.key")[0], "cannot read key file")
+	})
+}
+
+func TestValidate_ServerDurations(t *testing.T) {
+	valid := Validate(&Config{Server: ServerConfig{RestartCallGrace: "10s", RestartCallMaxWait: "1m", FailedTaskTimeout: "2h"}}, nil)
+	for _, field := range []string{"server.restart_call_grace", "server.restart_call_max_wait", "server.failed_task_timeout"} {
+		assert.Empty(t, issueMessages(valid, field), field)
+	}
+
+	invalid := Validate(&Config{Server: ServerConfig{RestartCallGrace: "soon", RestartCallMaxWait: "0s", FailedTaskTimeout: "eventually"}}, nil)
+	assert.Equal(t, []string{`invalid duration "soon": time: invalid duration "soon"`}, issueMessages(invalid, "server.restart_call_grace"))
+	assert.Equal(t, []string{"restart_call_max_wait must be a positive duration"}, issueMessages(invalid, "server.restart_call_max_wait"))
+	require.Len(t, issueMessages(invalid, "server.failed_task_timeout"), 1)
+	assert.Contains(t, issueMessages(invalid, "server.failed_task_timeout")[0], `invalid duration "eventually"`)
+
+	negative := Validate(&Config{Server: ServerConfig{FailedTaskTimeout: "-1h"}}, nil)
+	assert.Equal(t, []string{"failed_task_timeout must be a positive duration"}, issueMessages(negative, "server.failed_task_timeout"))
+}
+
+func TestValidate_AgentNameAndPermissions(t *testing.T) {
+	issues := Validate(&Config{Agents: []AgentConfig{{Name: "team/bot", Model: "anthropic/claude-opus-4-5"}}}, nil)
+	msgs := issueMessages(issues, "agents[0].name")
+	require.Len(t, msgs, 1)
+	assert.Contains(t, msgs[0], "must not contain '/'")
+
+	standard := Validate(&Config{Agents: []AgentConfig{{Name: "bot", Permissions: &PermissionsConfig{Preset: PermissionsPresetStandard, CLIBuiltinTools: true}}}}, nil)
+	assert.Equal(t, []string{"cli_builtin_tools requires the full permissions preset"}, issueMessages(standard, "agents[0].permissions.cli_builtin_tools"))
+
+	full := Validate(&Config{Agents: []AgentConfig{{Name: "bot", Permissions: &PermissionsConfig{Preset: PermissionsPresetFull, CLIBuiltinTools: true}}}}, nil)
+	assert.Empty(t, issueMessages(full, "agents[0].permissions.cli_builtin_tools"))
+}
+
+func TestValidate_DuplicateChannelID(t *testing.T) {
+	cfg := &Config{Agents: []AgentConfig{{Name: "bot", Channels: []ChannelConfig{
+		{Type: "slack", ID: "C1", Name: "one"},
+		{Type: "slack", ID: " C1 ", Name: "two"},
+		{Type: "discord", ID: "C1", Name: "three"},
+	}}}}
+	issues := Validate(cfg, nil)
+	assert.Len(t, issueMessages(issues, "agents[0].channels[1].id"), 1, "same type and id collide")
+	assert.Empty(t, issueMessages(issues, "agents[0].channels[2].id"), "the same id on another type is distinct")
+}
+
+func TestValidate_TaskIdleTimeout(t *testing.T) {
+	task := func(idle string) *Config {
+		return &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "t", Schedule: "*/5 * * * *", Prompt: "p", IdleTimeout: idle}}}}}
+	}
+	const field = "agents[0].tasks[0].idle_timeout"
+	assert.Empty(t, issueMessages(Validate(task("0"), nil), field), "0 disables the timeout")
+	assert.Empty(t, issueMessages(Validate(task("10m"), nil), field))
+	require.Len(t, issueMessages(Validate(task("whenever"), nil), field), 1)
+	assert.Contains(t, issueMessages(Validate(task("whenever"), nil), field)[0], `invalid duration "whenever"`)
+	assert.Equal(t, []string{"idle_timeout must not be negative"}, issueMessages(Validate(task("-1m"), nil), field))
+}
