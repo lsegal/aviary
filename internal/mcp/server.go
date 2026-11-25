@@ -26,10 +26,15 @@ func NewServer() *mcp.Server {
 
 // HTTPHandler returns an http.Handler for the MCP server using the
 // Streamable HTTP transport (MCP spec compliant).
+//
+// The SDK's localhost protection is off: it refuses any request reaching a
+// loopback address under a non-loopback Host header with 403, which breaks
+// the web UI whenever it is opened by hostname (e.g. https://mymac.local:16677)
+// or through a local proxy. The server's own bearer-token auth guards /mcp.
 func HTTPHandler(s *mcp.Server) http.Handler {
 	base := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return s
-	}, nil)
+	}, &mcp.StreamableHTTPOptions{DisableLocalhostProtection: true})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if agentID := r.Header.Get("X-Aviary-Agent-ID"); agentID != "" {
