@@ -250,15 +250,10 @@ test("mobile header controls have 40px tap targets (#1317)", async ({
 	await expect(buttons.nth(0)).toHaveAccessibleName("Update available: v0.7.0");
 	for (const button of await buttons.all()) {
 		const box = await button.boundingBox();
-		if (!box) throw new Error("control not laid out");
-		expect(
-			box.width,
-			await button.getAttribute("aria-label"),
-		).toBeGreaterThanOrEqual(40);
-		expect(
-			box.height,
-			await button.getAttribute("aria-label"),
-		).toBeGreaterThanOrEqual(40);
+		const name = (await button.getAttribute("aria-label")) ?? "";
+		if (!box) throw new Error(`${name} not laid out`);
+		expect(box.width, name).toBeGreaterThanOrEqual(40);
+		expect(box.height, name).toBeGreaterThanOrEqual(40);
 	}
 	// The icons themselves keep their size.
 	await expect(status.locator("svg").first()).toHaveCSS("width", "16px");
