@@ -713,7 +713,11 @@ export function summarizeProjects(
 export type ProjectMode = "watch" | "manual";
 
 /** The project modes, as the add-project flow and the header menu offer them. */
-export const PROJECT_MODES: { value: ProjectMode; label: string; hint: string }[] = [
+export const PROJECT_MODES: {
+	value: ProjectMode;
+	label: string;
+	hint: string;
+}[] = [
 	{
 		value: "watch",
 		label: "Watch issues",

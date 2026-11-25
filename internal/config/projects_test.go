@@ -259,3 +259,45 @@ func TestValidateWarnsOnATaskForAnotherAgentsProject(t *testing.T) {
 		t.Fatalf("project issues = %v", fields)
 	}
 }
+
+func TestProjectMode(t *testing.T) {
+	for mode, want := range map[string]string{"": ProjectModeWatch, "watch": ProjectModeWatch, " Manual ": ProjectModeManual} {
+		if got, err := NormalizeProjectMode(mode); err != nil || got != want {
+			t.Errorf("NormalizeProjectMode(%q) = %q, %v; want %q", mode, got, err, want)
+		}
+	}
+	if _, err := NormalizeProjectMode("sometimes"); err == nil || !strings.Contains(err.Error(), "use watch or manual") {
+		t.Errorf("NormalizeProjectMode accepted an unknown mode: %v", err)
+	}
+	list := AgentProjectsConfig{{Target: "acme/watched"}, {Target: "acme/manual", Mode: "manual"}, {Target: "acme/manual", Mode: "manual"}}
+	if got := list.ManualTargets(); !slices.Equal(got, []string{"acme/manual"}) {
+		t.Errorf("ManualTargets = %v", got)
+	}
+}
+
+func TestProjectModeRoundTripAndValidation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "aviary.yaml")
+	cfg := Default()
+	cfg.Agents = []AgentConfig{{Name: "bot", Model: "m", Projects: AgentProjectsConfig{{Target: "acme/watched"}, {Target: "acme/manual", Mode: ProjectModeManual}}}}
+	if err := Save(path, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if got := strings.Count(string(data), "mode:"); got != 1 {
+		t.Fatalf("config has %d mode keys; omitting mode keeps watch:\n%s", got, data)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Agents[0].Projects[0].Manual() || !loaded.Agents[0].Projects[1].Manual() {
+		t.Fatalf("loaded projects = %+v", loaded.Agents[0].Projects)
+	}
+	cfg.Agents[0].Projects[0].Mode = "sometimes"
+	issues := Validate(&cfg, nil)
+	if !slices.ContainsFunc(issues, func(issue Issue) bool {
+		return issue.Field == "agents[0].projects[0].mode" && strings.Contains(issue.Message, "unknown project mode")
+	}) {
+		t.Fatalf("an unknown mode passed validation: %+v", issues)
+	}
+}

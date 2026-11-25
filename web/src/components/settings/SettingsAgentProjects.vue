@@ -153,16 +153,16 @@ import {
 	jobModels,
 	joinReportTarget,
 	type ProjectReports,
+	projectManual,
 	projectOwner,
 	projectTargets,
 	REPORT_EVENTS,
 	reportsError,
 	reportsFromSection,
 	splitReportTarget,
+	withMode,
 	withoutProject,
 	withProject,
-	projectManual,
-	withMode,
 	withReports,
 } from "../../lib/projectSettings";
 import { PROJECT_MODES, projectPath } from "../../lib/projects";
