@@ -238,8 +238,14 @@ func skillBoolLabel(v bool) string {
 	return tuiDimStyle.Render("disabled")
 }
 
+// skillMgrProgramOptions returns the Bubble Tea options for the skill manager.
+// Tests replace it to run the manager without a terminal.
+var skillMgrProgramOptions = func() []tea.ProgramOption {
+	return []tea.ProgramOption{tea.WithAltScreen()}
+}
+
 func runSkillMgr(cfg *config.Config, cfgPath string) error {
-	p := tea.NewProgram(newSkillMgrModel(cfg, cfgPath), tea.WithAltScreen())
+	p := tea.NewProgram(newSkillMgrModel(cfg, cfgPath), skillMgrProgramOptions()...)
 	if _, err := p.Run(); err != nil {
 		return err
 	}
