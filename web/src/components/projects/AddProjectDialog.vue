@@ -6,7 +6,9 @@
 			<form class="px-5 pt-5 sm:px-6" @submit.prevent="start">
 				<h2 id="add-project-title" class="text-lg font-semibold text-gray-900 dark:text-white">Watch a repository</h2>
 				<p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
-					Open issues matching the issue filter (assigned to you by default) are claimed, fixed on their own branch, and opened as pull requests.
+					{{ mode === "manual"
+						? "Issues are never picked up on their own: jobs start only when you queue them, from scheduled tasks, or from agent tools."
+						: "Open issues matching the issue filter (assigned to you by default) are claimed, fixed on their own branch, and opened as pull requests." }}
 				</p>
 
 				<label for="add-project-target" class="mt-5 block text-xs font-medium text-gray-700 dark:text-gray-300">
@@ -15,6 +17,21 @@
 				<input id="add-project-target" ref="input" v-model="target" type="text" autocomplete="off" spellcheck="false"
 					placeholder="owner/repo"
 					class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:border-gray-700 dark:bg-gray-950 dark:text-white" />
+
+				<fieldset class="mt-4" data-testid="add-project-mode">
+					<legend class="block text-xs font-medium text-gray-700 dark:text-gray-300">Issue discovery</legend>
+					<div class="mt-1 grid gap-2 sm:grid-cols-2">
+						<label v-for="option in PROJECT_MODES" :key="option.value" :data-testid="`add-project-mode-${option.value}`"
+							class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm"
+							:class="mode === option.value ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/40' : 'border-gray-300 dark:border-gray-700'">
+							<input v-model="mode" type="radio" name="add-project-mode" :value="option.value" class="mt-0.5" />
+							<span class="flex flex-col">
+								<span class="font-medium text-gray-900 dark:text-white">{{ option.label }}</span>
+								<span class="text-xs text-gray-500 dark:text-gray-400">{{ option.hint }}</span>
+							</span>
+						</label>
+					</div>
+				</fieldset>
 
 				<section v-if="target.trim()" data-testid="add-project-checks" aria-live="polite"
 					class="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-800 dark:bg-gray-950">
@@ -64,7 +81,7 @@
 			</form>
 			<footer class="border-t border-gray-200 bg-gray-50 px-5 py-3 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400 sm:px-6">
 				Same from a terminal:
-				<code class="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">aviary project add {{ normalized || "owner/repo" }} --agent {{ agent }}</code>
+				<code class="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">aviary project add {{ normalized || "owner/repo" }} --agent {{ agent }}{{ mode === "manual" ? " --mode manual" : "" }}</code>
 				<p class="mt-1">The project is saved to {{ agent }}'s projects in aviary.yaml and managed in its settings.</p>
 			</footer>
 		</div>
@@ -87,6 +104,7 @@ import {
 	projectOwner,
 	settingsFromSection,
 } from "../../lib/projectSettings";
+import { PROJECT_MODES, type ProjectMode } from "../../lib/projects";
 import { useSettingsStore } from "../../stores/settings";
 
 // agent owns the new project: the agent whose Code Loop board the dialog
@@ -107,6 +125,7 @@ const cliNames = computed(() =>
 // The probe is slow, so it runs here only when nothing is cached yet.
 if (cliStatus.clis.value === null) void cliStatus.refresh();
 const target = ref(props.initial ?? "");
+const mode = ref<ProjectMode>("watch");
 const input = ref<HTMLInputElement | null>(null);
 // The owning agent's job models, once the config has loaded, pick which CLI
 // providers need skills; a reloaded config re-runs the check.
@@ -115,6 +134,7 @@ const { result, checking, error } = useProjectCheck(target, () => ({
 	models: store.config
 		? jobModels(props.agent, store.config, cliNames.value).map((m) => m.model)
 		: undefined,
+	mode: mode.value,
 }));
 const addProject = useAddProject();
 const starting = ref(false);
@@ -155,7 +175,7 @@ async function start() {
 	starting.value = true;
 	startError.value = "";
 	try {
-		await addProject(normalized.value, agent.value);
+		await addProject(normalized.value, agent.value, mode.value);
 		// The config watcher reloads the server; refresh the copy here so the
 		// board shows the new project's agent.
 		await store.fetchConfig();

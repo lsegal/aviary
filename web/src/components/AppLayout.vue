@@ -164,6 +164,7 @@
               <router-link v-for="p in soleAgent.projects" :key="p.key" :to="p.to"
                 :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
                 <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
+                <ProjectManualBadge v-if="p.manual && !p.loading" />
                 <ProjectLoadingBadge v-if="p.loading" />
                 <ProjectRunningBadge v-else :running="p.running ?? 0" />
               </router-link>
@@ -205,6 +206,7 @@
                   <router-link v-for="p in a.projects" :key="p.key" :to="p.to"
                     :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
                     <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
+                    <ProjectManualBadge v-if="p.manual && !p.loading" />
                     <ProjectLoadingBadge v-if="p.loading" />
                     <ProjectRunningBadge v-else :running="p.running ?? 0" />
                   </router-link>
@@ -443,6 +445,7 @@ import AutoUpdateError from "./AutoUpdateError.vue";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
 import MobileMainNav, { type MobileNavItem } from "./MobileMainNav.vue";
 import ProjectLoadingBadge from "./projects/ProjectLoadingBadge.vue";
+import ProjectManualBadge from "./projects/ProjectManualBadge.vue";
 import ProjectRunningBadge from "./projects/ProjectRunningBadge.vue";
 import ChatSessionList from "./chat/ChatSessionList.vue";
 import AgentFileList from "./sidebar/AgentFileList.vue";
@@ -473,6 +476,8 @@ interface NavChild {
 	running?: number;
 	/** A project just added, whose counts Code Loop is still reading. */
 	loading?: boolean;
+	/** A manual-mode project, never searched for issues (#1307). */
+	manual?: boolean;
 	/** Overrides the path match, for items picked by a query. */
 	active?: boolean;
 	/** A paused scheduled task, shown dimmed with a pause icon. */
@@ -745,6 +750,7 @@ function projectChild(owner: string, p: ProjectSummary): NavChild {
 		to: projectPath(owner, p.name),
 		running: p.running,
 		loading: p.loading,
+		manual: p.manual,
 	};
 }
 

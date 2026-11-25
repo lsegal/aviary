@@ -27,6 +27,8 @@ export interface ProjectEntry {
 	reports?: ProjectReportsEntry;
 	// Other per-project settings pass through untouched.
 	[key: string]: unknown;
+	/** "manual" never searches the project for issues (#1307); unset watches. */
+	mode?: "manual";
 }
 
 /** The reports form. With enabled false nothing is saved. */
@@ -481,6 +483,29 @@ export function withReports(
 		// Keep the entry's other fields; only reports change here.
 		const { reports: _, ...rest } = p;
 		return reports ? { ...rest, reports } : rest;
+	});
+}
+
+/** Whether target's entry is in manual mode. */
+export function projectManual(
+	section: AgentProjectsSection | undefined,
+	target: string,
+): boolean {
+	return (section ?? []).some(
+		(p) => sameTarget(p.target, target) && p.mode === "manual",
+	);
+}
+
+/** The projects with target's mode set; watch, the default, is written as no mode. */
+export function withMode(
+	section: AgentProjectsSection | undefined,
+	target: string,
+	manual: boolean,
+): AgentProjectsSection {
+	return (section ?? []).map((p) => {
+		if (!sameTarget(p.target, target)) return p;
+		const { mode: _, ...rest } = p;
+		return manual ? { ...rest, mode: "manual" as const } : rest;
 	});
 }
 

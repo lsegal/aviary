@@ -13,6 +13,9 @@
 					<span class="h-1.5 w-1.5 rounded-full" :class="online ? 'bg-green-500' : 'bg-red-500'" />
 					{{ online ? "live" : "offline" }}
 				</span>
+				<span v-if="manual" data-testid="project-manual-chip"
+					class="inline-flex shrink-0 items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
+					title="Manual mode: this project is never searched for issues; only work you queue, scheduled tasks and agent tools start jobs">Manual</span>
 				<span v-if="status?.instanceID" data-testid="instance-id"
 					class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-200"
 					:title="`This instance signs its GitHub claims as /aviary:${status.instanceID}`">
@@ -21,12 +24,13 @@
 		</template>
 		<template v-if="(project || aggregate) && !jobOpen && status" #header>
 			<div class="break-words" :class="{ 'sm:truncate': !editingFilter }" data-testid="board-subtitle">
-				<IssueFilterEditor v-if="filterTarget" v-model:editing="editingFilter" :target="filterTarget"
+				<template v-if="manual">Manual: no issue watching</template>
+				<IssueFilterEditor v-else-if="filterTarget" v-model:editing="editingFilter" :target="filterTarget"
 					:filter="status.issueFilters[filterTarget] ?? status.issueFilter"
 					:custom="status.customFilters.includes(filterTarget)" @saved="refresh" />
 				<template v-else-if="status.issueFilter">Issues matching <code data-testid="issue-filter" class="font-mono">{{ status.issueFilter }}</code></template>
 				<template v-else>All open issues</template>
-				<template v-if="status.delivery"> · {{ status.delivery }}</template>
+				<template v-if="status.delivery && !manual"> · {{ status.delivery }}</template>
 				<template v-if="status.lastChecked"> · checked {{ age(status.lastChecked, now) }} ago</template>
 				<span v-if="status.stale" data-testid="stale-indicator" class="text-gray-400 dark:text-gray-500"
 					title="Showing the state saved before the last restart until the first live poll confirms it">
@@ -64,6 +68,7 @@
 				@click="chatOpen = !chatOpen">
 				<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
+			<ProjectModeMenu v-if="filterTarget" :target="filterTarget" :manual="manual" @changed="refresh" />
 			<router-link :to="settingsPath" data-testid="project-settings-link" aria-label="Settings" title="Settings"
 				:class="HEADER_ICON_CLS">
 				<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
@@ -219,7 +224,7 @@
 						<footer v-if="status" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
 							<span v-if="status.targets.length">
 								Targets:
-								<template v-for="(t, i) in status.targets" :key="t.name">{{ i ? ", " : "" }}{{ t.name }} ({{ t.issues }})</template>
+								<template v-for="(t, i) in status.targets" :key="t.name">{{ i ? ", " : "" }}{{ t.name }} ({{ issueCountLabel(t) }})</template>
 							</span>
 							<span v-if="version">Version {{ shortVersion(version) }}</span>
 						</footer>
@@ -257,6 +262,7 @@ import AppLayout from "../components/AppLayout.vue";
 import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import IssueFilterEditor from "../components/projects/IssueFilterEditor.vue";
+import ProjectModeMenu from "../components/projects/ProjectModeMenu.vue";
 import JobCard from "../components/projects/JobCard.vue";
 import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
@@ -297,6 +303,7 @@ import {
 	type BoardFilter,
 	type BoardState,
 	boardItems,
+	issueCountLabel,
 	jobStates,
 	type ProjectJob,
 	type ProjectSchedule,
@@ -469,6 +476,13 @@ const filterTarget = computed(() =>
 	targets.value.length === 1 ? targets.value[0] : "",
 );
 const editingFilter = ref(false);
+// A manual project (#1307) is never searched for issues, so its header says
+// so in place of the issue filter.
+const manual = computed(
+	() =>
+		!!filterTarget.value &&
+		!!status.value?.targets.find((t) => t.name === filterTarget.value)?.manual,
+);
 const {
 	schedules,
 	upcoming,
