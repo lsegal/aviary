@@ -308,6 +308,15 @@
 			</form>
 		</div>
 	</Teleport>
+
+	<ConfirmDialog :open="!!discardPrompt" title="Discard unsaved changes?" confirm-label="Discard and reload"
+		busy-label="Reloading…" cancel-label="Keep editing" test-id="discard-file-dialog" :action="discardAndReload"
+		@cancel="keepEditsAndReload" @update:open="(v) => { if (!v) discardPrompt = null }">
+		<p>
+			Discard unsaved changes to <b class="font-mono font-medium text-gray-900 dark:text-white">{{ discardPrompt?.file }}</b>
+			and reload it from disk?
+		</p>
+	</ConfirmDialog>
 </template>
 
 <script setup lang="ts">
@@ -351,6 +360,7 @@ import SettingsProjectsTab from "../components/settings/SettingsProjectsTab.vue"
 import SettingsProvidersTab from "../components/settings/SettingsProvidersTab.vue";
 import SettingsSessionsTab from "../components/settings/SettingsSessionsTab.vue";
 import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
+import ConfirmDialog from "../components/ui/ConfirmDialog.vue";
 import { Skeleton } from "../components/ui/skeleton";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useAgentNav } from "../composables/useAgentNav";
@@ -2025,17 +2035,30 @@ async function syncAgentTemplates(agentName: string) {
 	}
 }
 
+/** Refresh's question before it replaces unsaved edits to an agent's file. */
+const discardPrompt = ref<{ agent: string; file: string } | null>(null);
+
 /** The file bar's Refresh: reloads the list and the open file from disk,
  * asking before it replaces unsaved edits. Declining keeps the edits and
  * reloads only the list. */
 async function refreshAgentFiles(agentName: string) {
 	const state = getAgentFileState(agentName);
-	const reread =
-		!agentFileDirty(state) ||
-		window.confirm(
-			`Discard unsaved changes to ${state.selectedFile} and reload it from disk?`,
-		);
-	await loadAgentFiles(agentName, reread);
+	if (agentFileDirty(state)) {
+		discardPrompt.value = { agent: agentName, file: state.selectedFile };
+		return;
+	}
+	await loadAgentFiles(agentName, true);
+}
+
+async function discardAndReload() {
+	if (discardPrompt.value)
+		await loadAgentFiles(discardPrompt.value.agent, true);
+}
+
+async function keepEditsAndReload() {
+	const prompt = discardPrompt.value;
+	discardPrompt.value = null;
+	if (prompt) await loadAgentFiles(prompt.agent, false);
 }
 
 async function preloadAgentFiles() {

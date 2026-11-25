@@ -15,6 +15,13 @@
 			"!**/*.css"
 		]
 	},
+	"linter": {
+		"rules": {
+			"suspicious": {
+				"noAlert": "error"
+			}
+		}
+	},
 	"overrides": [
 		{
 			"includes": ["**/*.vue"],
