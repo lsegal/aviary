@@ -259,7 +259,15 @@ func runStart(_ *cobra.Command, _ []string) error {
 	}()
 
 	if traceStartup {
-		go printStartupTrace(ctx)
+		traced := make(chan struct{})
+		go func() {
+			defer close(traced)
+			printStartupTrace(ctx)
+		}()
+		defer func() {
+			cancel()
+			<-traced
+		}()
 	}
 
 	// Start server; restart when config changes require it.
