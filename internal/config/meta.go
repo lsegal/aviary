@@ -178,6 +178,18 @@ func setReflectValue(v reflect.Value, value string) error {
 		default:
 			return fmt.Errorf("expected boolean, got %q", value)
 		}
+	case reflect.Pointer:
+		// Optional fields such as server.auto_update (*bool): an empty value
+		// leaves the field unset so its default applies.
+		if value == "" {
+			v.Set(reflect.Zero(v.Type()))
+			return nil
+		}
+		p := reflect.New(v.Type().Elem())
+		if err := setReflectValue(p.Elem(), value); err != nil {
+			return err
+		}
+		v.Set(p)
 	case reflect.Interface:
 		// scheduler.concurrency: any = "auto" | integer
 		// scheduler.precompute_tasks: boolean
@@ -204,7 +216,7 @@ func ensureMeta() {
 		return
 	}
 	metaInit = true
-	cachedSectionFields = parseSchemaFields()
+	cachedSectionFields = parseSchemaFields(schemaJSON)
 }
 
 // schemaNode is a minimal JSON schema object for metadata extraction.
@@ -219,9 +231,9 @@ type schemaNode struct {
 	XOrder       int                    `json:"x-order"`
 }
 
-func parseSchemaFields() map[string][]FieldMeta {
+func parseSchemaFields(data []byte) map[string][]FieldMeta {
 	var root schemaNode
-	if err := json.Unmarshal(schemaJSON, &root); err != nil {
+	if err := json.Unmarshal(data, &root); err != nil {
 		return nil
 	}
 	sections := []string{"server", "browser", "scheduler", "search", "models"}
