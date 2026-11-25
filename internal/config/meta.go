@@ -178,6 +178,16 @@ func setReflectValue(v reflect.Value, value string) error {
 		default:
 			return fmt.Errorf("expected boolean, got %q", value)
 		}
+	case reflect.Pointer:
+		if value == "" {
+			v.Set(reflect.Zero(v.Type()))
+			return nil
+		}
+		elem := reflect.New(v.Type().Elem())
+		if err := setReflectValue(elem.Elem(), value); err != nil {
+			return err
+		}
+		v.Set(elem)
 	case reflect.Interface:
 		// scheduler.concurrency: any = "auto" | integer
 		// scheduler.precompute_tasks: boolean
