@@ -373,7 +373,9 @@ func registerProjectTools(s *sdkmcp.Server) {
 					}
 					watch.Settings = *args.Settings
 				}
-				if err := m.AddWatch(watch); err != nil {
+				// The project is watched once this returns; the engine
+				// restarts onto it and polls it in the background.
+				if err := m.AddWatchInBackground(watch); err != nil {
 					return nil, err
 				}
 				return map[string]any{"target": target, "runtime": true}, nil
@@ -403,7 +405,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 			if err := config.Save("", cfg); err != nil {
 				return nil, err
 			}
-			m.Reconcile(cfg)
+			m.ReconcileInBackground(cfg)
 			return map[string]any{"target": target, "agent": agent, "saved": true}, nil
 		})
 	})
@@ -416,7 +418,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			target := strings.TrimSpace(args.Target)
 			stopped := m.InFlightJobs(target)
-			runtime := m.RemoveWatch(target)
+			runtime := m.RemoveWatchInBackground(target)
 			if args.Runtime {
 				if !runtime {
 					return nil, fmt.Errorf("%s has no runtime watch", target)
@@ -440,7 +442,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 				if err := config.Save("", cfg); err != nil {
 					return nil, err
 				}
-				m.Reconcile(cfg)
+				m.ReconcileInBackground(cfg)
 			}
 			if !saved && !runtime {
 				return nil, fmt.Errorf("%s is not watched", target)

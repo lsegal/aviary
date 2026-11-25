@@ -10,14 +10,18 @@ import {
 	type ProjectJob,
 	type ProjectSchedule,
 	type ProjectStatus,
-	type ProjectSummary,
 	parseToolJSON,
 	projectSchedules,
 	sortJobs,
-	summarizeProjects,
 	type UpcomingRun,
 } from "../lib/projects";
 import { useSettingsStore } from "../stores/settings";
+import {
+	projectList,
+	projectListAvailable,
+	readProjectListFrom,
+	refreshProjectList,
+} from "./projectListStore";
 import { useMCP } from "./useMCP";
 
 /** How often the board and run view re-read the engine, in milliseconds. */
@@ -56,33 +60,16 @@ function usePoll(fn: () => Promise<void>, interval: number) {
 }
 
 /**
- * The watched projects and their live counts, for the sidebar. With
- * withSchedules it also counts each project's scheduled tasks.
+ * The watched projects and their live counts, shared by every view that
+ * lists them, polled every interval and kept live by /api/ws project events.
+ * With withSchedules it also counts each project's scheduled tasks.
  */
 export function useProjectList(interval = 10_000, withSchedules = false) {
 	const { callTool } = useMCP();
-	const projects = ref<ProjectSummary[]>([]);
-	const available = ref(false);
-
-	const { refresh } = usePoll(async () => {
-		try {
-			const [statusText, listText, taskText] = await Promise.all([
-				callTool("project_status", {}),
-				callTool("project_job_list", { limit: ALL_JOBS_LIMIT }),
-				withSchedules ? callTool("task_list", {}) : Promise.resolve(""),
-			]);
-			projects.value = summarizeProjects(
-				normalizeStatus(parseToolJSON(statusText)),
-				normalizeJobList(parseToolJSON(listText)).jobs,
-				withSchedules ? parseToolJSON(taskText) : undefined,
-			);
-			available.value = true;
-		} catch {
-			available.value = false;
-		}
-	}, interval);
-
-	return { projects, available, refresh };
+	const release = readProjectListFrom(callTool, withSchedules);
+	onUnmounted(release);
+	const { refresh } = usePoll(refreshProjectList, interval);
+	return { projects: projectList, available: projectListAvailable, refresh };
 }
 
 /**

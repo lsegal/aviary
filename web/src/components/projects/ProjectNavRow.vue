@@ -52,26 +52,39 @@ const rows = computed(() =>
 		const p = projects.value.find((s) => s.name === name);
 		const running = p?.running ?? 0;
 		const waiting = p?.waiting ?? 0;
-		const state = running ? "running" : waiting ? "waiting" : "idle";
+		const loading = p?.loading === true;
+		const state = loading
+			? "loading"
+			: running
+				? "running"
+				: waiting
+					? "waiting"
+					: "idle";
 		return {
 			name,
 			state,
 			dot:
-				state === "running"
-					? "bg-blue-500"
-					: state === "waiting"
-						? "bg-amber-500"
-						: "bg-gray-400",
-			count: running
-				? `${running} running`
-				: waiting
-					? `${waiting} waiting`
-					: "0",
-			label: running
-				? `${running} running ${running === 1 ? "job" : "jobs"}`
-				: waiting
-					? `${waiting} waiting ${waiting === 1 ? "job" : "jobs"}`
-					: "no active jobs",
+				state === "loading"
+					? "bg-gray-400 animate-pulse"
+					: state === "running"
+						? "bg-blue-500"
+						: state === "waiting"
+							? "bg-amber-500"
+							: "bg-gray-400",
+			count: loading
+				? "checking GitHub…"
+				: running
+					? `${running} running`
+					: waiting
+						? `${waiting} waiting`
+						: "0",
+			label: loading
+				? "checking GitHub for its issues and jobs"
+				: running
+					? `${running} running ${running === 1 ? "job" : "jobs"}`
+					: waiting
+						? `${waiting} waiting ${waiting === 1 ? "job" : "jobs"}`
+						: "no active jobs",
 			scheduled: p?.scheduled ?? 0,
 		};
 	}),

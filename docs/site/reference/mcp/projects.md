@@ -116,9 +116,11 @@ Watch a project. A saved project is added to its agent's `projects:` list.
 - `runtime` (optional): watch until the server stops without writing `aviary.yaml`.
 - `settings` (optional, runtime only): projects settings that override the shared `projects:` settings while the watch runs. `model` and `fallbacks` set the [job model override](/guide/projects#job-model-override); an unknown provider or a CLI that is not installed fails the call.
 
+The call returns as soon as the project is watched. `project_status` lists it right away, under `loading_targets` until its first poll, while the engine restarts onto it and reads GitHub in the background. Every open control panel shows the new project at once: the server sends a `project-added` event on the `/api/ws` stream, then `project-updated` when the project's issue count or jobs change.
+
 ## project_remove
 
-Stop watching a project, removing it from the agent that owns it. Running jobs are checkpointed first.
+Stop watching a project, removing it from the agent that owns it. Running jobs are checkpointed first, in the background: the call returns once the project is no longer watched, and the server sends a `project-removed` event on the `/api/ws` stream.
 
 **Arguments:** `target`, and `runtime` (optional) to stop only a runtime watch.
 

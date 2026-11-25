@@ -8,6 +8,11 @@ import {
 	type ProjectClone,
 } from "../lib/projectSettings";
 import { normalizeStatus, parseToolJSON } from "../lib/projects";
+import {
+	dropProject,
+	insertProject,
+	refreshProjectList,
+} from "./projectListStore";
 import { useMCP } from "./useMCP";
 
 /**
@@ -156,12 +161,21 @@ export function useProjectCheck(
 
 /**
  * Adds target to agent's projects (project_add), saving it to that agent in
- * aviary.yaml; the running watch picks it up right away.
+ * aviary.yaml; the running watch picks it up right away. Every view lists
+ * the project, as checking GitHub, before the server answers, and drops it
+ * again when the add fails.
  */
 export function useAddProject() {
 	const { callTool } = useMCP();
 	return async (target: string, agent: string) => {
-		await callTool("project_add", { target, agent });
+		const undo = insertProject(target, agent);
+		try {
+			await callTool("project_add", { target, agent });
+		} catch (e) {
+			undo();
+			throw e;
+		}
+		void refreshProjectList();
 	};
 }
 
@@ -188,9 +202,12 @@ export function useRemoveProject(target: Ref<string>) {
 	}
 
 	async function remove(): Promise<number[]> {
+		const removed = target.value;
 		const res = parseToolJSON(
-			await callTool("project_remove", { target: target.value }),
+			await callTool("project_remove", { target: removed }),
 		) as { stopped_jobs?: number[] } | null;
+		dropProject(removed);
+		void refreshProjectList();
 		return res?.stopped_jobs ?? [];
 	}
 

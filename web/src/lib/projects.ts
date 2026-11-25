@@ -62,6 +62,9 @@ export interface ProjectSummary {
 	issues: number;
 	/** The project's scheduled tasks, when the list read them. */
 	scheduled?: number;
+	/** Code Loop has not read the project from GitHub yet, so its counts
+	 * are not known: it was just added. */
+	loading?: boolean;
 }
 
 /** One CLI provider: the models the board's jobs run on and its quota. */
@@ -75,6 +78,8 @@ export interface CLIStatus {
 export interface ProjectTarget {
 	name: string;
 	issues: number;
+	/** Not read from GitHub yet, so issues is not known. */
+	loading?: boolean;
 }
 
 export interface ProjectStatus {
@@ -622,6 +627,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 	const jobs = obj(raw.jobs);
 	const counts = obj(raw.issue_counts);
 	const states = obj(raw.states);
+	const loading = arr(raw.loading_targets).map(str);
 	return {
 		instanceID: str(raw.identity),
 		running: raw.running !== false,
@@ -646,6 +652,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		targets: arr(raw.targets).map((t) => ({
 			name: str(t),
 			issues: num(counts[str(t)]),
+			...(loading.includes(str(t)) ? { loading: true } : {}),
 		})),
 		clis: arr(raw.clis)
 			.map(obj)
@@ -679,6 +686,7 @@ export function summarizeProjects(
 			issues: t.issues,
 			running: mine.filter((j) => isRunning(j.status)).length,
 			waiting: mine.filter((j) => isWaiting(j.status)).length,
+			...(t.loading ? { loading: true } : {}),
 			...(tasks === undefined
 				? {}
 				: { scheduled: projectSchedules(tasks, t.name).length }),
