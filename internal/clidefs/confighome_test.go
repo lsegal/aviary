@@ -421,6 +421,22 @@ func TestWorkspaceKeysOfNoWorkspace(t *testing.T) {
 	assert.Empty(t, workspaceKeys(""))
 }
 
+// TestWorkspaceKeysOfSymlinkedWorkspace shows a workspace reached through a
+// link is keyed both by the path it was opened at and by its resolved path,
+// so a CLI that resolves links still finds the workspace trusted.
+func TestWorkspaceKeysOfSymlinkedWorkspace(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	target := filepath.Join(root, "real")
+	require.NoError(t, os.Mkdir(target, 0o700))
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	assert.Equal(t, []string{filepath.ToSlash(link), filepath.ToSlash(target)}, workspaceKeys(link))
+}
+
 // TestConfigHomeForgetsTrustWhenNoWorkspaceRemains shows the overlay's list
 // of trusted workspaces is deleted once none of them exists, and that a list
 // which cannot be deleted is reported instead of trusting stale workspaces.
