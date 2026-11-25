@@ -172,15 +172,16 @@ func TestFollowFile(t *testing.T) {
 	}
 	waitForOutput(t, out, "first\nsecond\npartial\nnew\n")
 
-	// A temporarily missing file (rotation) is retried until it reappears.
+	// A temporarily missing file (rotation) is retried until it reappears;
+	// a replacement shorter than the old offset is read from the start.
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(50 * time.Millisecond)
-	if err := os.WriteFile(path, []byte("rotated\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("r2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	waitForOutput(t, out, "first\nsecond\npartial\nnew\nrotated\n")
+	waitForOutput(t, out, "first\nsecond\npartial\nnew\nr2\n")
 
 	cancel()
 	select {
@@ -281,6 +282,23 @@ func TestLogsCmdLogDirError(t *testing.T) {
 	out := &syncBuffer{}
 	if err := logsCmd.RunE(newLogsTestCmd(context.Background(), out), nil); err == nil {
 		t.Fatal("logs succeeded, want MkdirAll error")
+	}
+	if out.String() != "" {
+		t.Fatalf("output = %q, want empty", out.String())
+	}
+}
+
+func TestLogsCmdUnreadableLogFile(t *testing.T) {
+	useLogsTestDataDir(t)
+	setLogsFlags(t, true, 10)
+	// A directory at the log file path exists but cannot be read as a file.
+	if err := os.MkdirAll(logging.LogFilePath(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &syncBuffer{}
+	if err := logsCmd.RunE(newLogsTestCmd(context.Background(), out), nil); err == nil {
+		t.Fatal("logs succeeded, want read error")
 	}
 	if out.String() != "" {
 		t.Fatalf("output = %q, want empty", out.String())
