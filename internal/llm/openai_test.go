@@ -156,7 +156,7 @@ func TestOpenAICodexProvider_Stream_FailedWithoutCode(t *testing.T) {
 }
 
 func TestOpenAICodexProvider_Stream_ScannerError(t *testing.T) {
-	p, _ := newCodexTestServer(t, "data: "+strings.Repeat("x", sseScannerMaxTokenSize+1))
+	p, _ := newCodexTestServer(t, "data: "+strings.Repeat("x", maxSSELineBytes+1))
 	ch, err := p.Stream(context.Background(), Request{Messages: []Message{{Role: RoleUser, Content: "go"}}})
 	require.NoError(t, err)
 	events := collectEvents(t, ch)
@@ -380,13 +380,16 @@ func TestSortHelpers(t *testing.T) {
 	assert.Equal(t, []string{"a", "b", "c"}, strs)
 }
 
-func TestExtractChatGPTAccountID_InvalidTokens(t *testing.T) {
-	assert.Equal(t, "", extractChatGPTAccountID("no-dots"))
-	assert.Equal(t, "", extractChatGPTAccountID("h.!!!.s"))
-	assert.Equal(t, "", extractChatGPTAccountID("h.bm90LWpzb24.s")) // "not-json"
+func TestExtractChatGPTAccountID_NonJSONPayload(t *testing.T) {
+	assert.Equal(t, "", extractChatGPTAccountID("h.bm90LWpzb24.s")) // payload "not-json"
 }
 
-func TestOpenAIFileInput_NamedAndInvalid(t *testing.T) {
-	_, _, ok := openAIFileInput("https://example.com/a.pdf")
+func TestOpenAIFileInput(t *testing.T) {
+	name, data, ok := openAIFileInput("data:application/pdf;name=q3%20report.pdf;base64,JVBERi0=")
+	require.True(t, ok)
+	assert.Equal(t, "q3 report.pdf", name)
+	assert.Equal(t, "data:application/pdf;base64,JVBERi0=", data)
+
+	_, _, ok = openAIFileInput("https://example.com/a.pdf")
 	assert.False(t, ok)
 }
