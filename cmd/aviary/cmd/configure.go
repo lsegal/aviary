@@ -56,6 +56,10 @@ var configureSchedulerCmd = &cobra.Command{
 	RunE:  runConfigureScheduler,
 }
 
+// configureWizard runs the full configure wizard. Tests replace it to avoid
+// launching interactive programs.
+var configureWizard = runWizard
+
 func init() {
 	configureCmd.AddCommand(
 		configureGeneralCmd,
@@ -76,11 +80,11 @@ func runConfigure(_ *cobra.Command, _ []string) error {
 		cfg = &d
 	}
 	st := authStore()
-	return runWizard(cfg, cfgFile, st)
+	return configureWizard(cfg, cfgFile, st)
 }
 
 func runConfigureProviders(_ *cobra.Command, _ []string) error {
-	return runProviderMgr(authStore())
+	return configureProviderMgr(authStore())
 }
 
 func runConfigureGeneral(_ *cobra.Command, _ []string) error {
@@ -88,7 +92,7 @@ func runConfigureGeneral(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	return runGeneralForm(cfg, cfgFile)
+	return configureGeneralForm(cfg, cfgFile)
 }
 
 func runConfigureAgents(_ *cobra.Command, _ []string) error {
@@ -96,7 +100,7 @@ func runConfigureAgents(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	return runAgentMgr(cfg, cfgFile)
+	return configureAgentMgr(cfg, cfgFile)
 }
 
 func runConfigureSkills(_ *cobra.Command, _ []string) error {
@@ -104,7 +108,7 @@ func runConfigureSkills(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	return runSkillMgr(cfg, cfgFile)
+	return configureSkillMgr(cfg, cfgFile)
 }
 
 func runConfigureServer(_ *cobra.Command, _ []string) error {
@@ -112,7 +116,7 @@ func runConfigureServer(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	return runServerForm(cfg, cfgFile)
+	return configureServerForm(cfg, cfgFile)
 }
 
 func runConfigureBrowser(_ *cobra.Command, _ []string) error {
@@ -120,7 +124,7 @@ func runConfigureBrowser(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	return runBrowserForm(cfg, cfgFile)
+	return configureBrowserForm(cfg, cfgFile)
 }
 
 func runConfigureScheduler(_ *cobra.Command, _ []string) error {
@@ -128,5 +132,5 @@ func runConfigureScheduler(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	return runSchedulerForm(cfg, cfgFile)
+	return configureSchedulerForm(cfg, cfgFile)
 }
