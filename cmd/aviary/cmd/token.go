@@ -17,14 +17,15 @@ var tokenCmd = &cobra.Command{
 
 The token is used to authenticate with the Aviary web UI and API.
 Run with --new to replace the existing token with a freshly generated one.`,
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		out := cmd.OutOrStdout()
 		if tokenNewFlag {
 			tok, err := server.GenerateToken()
 			if err != nil {
 				return fmt.Errorf("generating token: %w", err)
 			}
-			fmt.Println("New token generated:")
-			fmt.Println(tok)
+			_, _ = fmt.Fprintln(out, "New token generated:")
+			_, _ = fmt.Fprintln(out, tok)
 			return nil
 		}
 
@@ -32,7 +33,7 @@ Run with --new to replace the existing token with a freshly generated one.`,
 		if err != nil {
 			return err
 		}
-		fmt.Println(tok)
+		_, _ = fmt.Fprintln(out, tok)
 		return nil
 	},
 }
