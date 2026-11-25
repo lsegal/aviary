@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -595,4 +596,346 @@ func TestCompleteCLIText_RejectsAPIModels(t *testing.T) {
 	useFakeCLI(t)
 	_, err := CompleteCLIText(context.Background(), "anthropic/claude-haiku", "s", "p")
 	assert.Error(t, err)
+}
+
+// scriptedCLI answers each CLI turn through send and records every session
+// started and every turn's text.
+type scriptedCLI struct {
+	mu       sync.Mutex
+	send     func(ctx context.Context, opts cliagent.Options, turn cliagent.Turn, onEvent func(cliagent.Event)) (cliagent.Result, error)
+	startErr error
+	sessions []*scriptedCLISession
+	texts    []string
+}
+
+type scriptedCLISession struct {
+	cli    *scriptedCLI
+	opts   cliagent.Options
+	closed bool
+}
+
+func (s *scriptedCLISession) Send(ctx context.Context, turn cliagent.Turn, onEvent func(cliagent.Event)) (cliagent.Result, error) {
+	s.cli.mu.Lock()
+	s.cli.texts = append(s.cli.texts, turn.Text)
+	s.cli.mu.Unlock()
+	return s.cli.send(ctx, s.opts, turn, onEvent)
+}
+
+func (s *scriptedCLISession) Close() error {
+	s.cli.mu.Lock()
+	defer s.cli.mu.Unlock()
+	s.closed = true
+	return nil
+}
+
+func useScriptedCLI(t *testing.T, cli *scriptedCLI) *scriptedCLI {
+	t.Helper()
+	prev := newCLISession
+	newCLISession = func(opts cliagent.Options) (cliagent.Session, error) {
+		cli.mu.Lock()
+		defer cli.mu.Unlock()
+		if cli.startErr != nil {
+			return nil, cli.startErr
+		}
+		s := &scriptedCLISession{cli: cli, opts: opts}
+		cli.sessions = append(cli.sessions, s)
+		return s, nil
+	}
+	t.Cleanup(func() { newCLISession = prev })
+	return cli
+}
+
+func replyCLI(text string) func(context.Context, cliagent.Options, cliagent.Turn, func(cliagent.Event)) (cliagent.Result, error) {
+	return func(_ context.Context, _ cliagent.Options, _ cliagent.Turn, onEvent func(cliagent.Event)) (cliagent.Result, error) {
+		onEvent(cliagent.Event{Type: cliagent.EventText, Text: text})
+		return cliagent.Result{Text: text}, nil
+	}
+}
+
+func TestCLITurn_StaleResumeStartsAFreshSessionSeededWithHistory(t *testing.T) {
+	setTestDataDir(t)
+	toolClient := &recordingToolClient{tools: []ToolInfo{{Name: "memory_search", Description: "Search memory"}}}
+	useToolClient(t, toolClient, nil)
+	cli := useScriptedCLI(t, &scriptedCLI{
+		send: func(_ context.Context, opts cliagent.Options, _ cliagent.Turn, onEvent func(cliagent.Event)) (cliagent.Result, error) {
+			if opts.ResumeID != "" {
+				return cliagent.Result{}, errors.New("no conversation found with session ID")
+			}
+			onEvent(cliagent.Event{Type: cliagent.EventToolStart, Tool: &cliagent.ToolEvent{ID: "b1", Name: "Bash", Args: map[string]any{"command": "ls"}}})
+			onEvent(cliagent.Event{Type: cliagent.EventText, Text: "fresh answer"})
+			return cliagent.Result{Text: "fresh answer"}, nil
+		},
+	})
+
+	runner := newCLITestRunner(t, "agent_resume", nil)
+	verbose := true
+	runner.cfg.Verbose = &verbose
+	notesPath := store.NotesPath(runner.memoryPoolID())
+	require.NoError(t, os.MkdirAll(filepath.Dir(notesPath), 0o700))
+	require.NoError(t, os.WriteFile(notesPath, []byte("- Prefers tea"), 0o600))
+	_, err := NewSessionManager().GetOrCreateNamed("agent_resume", "main")
+	require.NoError(t, err)
+	require.NoError(t, AppendMessageToSession("agent_resume", "main", domain.MessageRoleUser, "earlier question"))
+	require.NoError(t, AppendMessageToSession("agent_resume", "main", domain.MessageRoleAssistant, "earlier answer"))
+	require.NoError(t, store.UpdateSessionMeta(store.SessionMetaPath("agent_resume", "main"), func(meta *store.SessionMeta) {
+		meta.CLI = &store.CLISessionMeta{Backend: "claude", ID: "stale-id"}
+	}))
+
+	got := runTurn(WithSessionID(context.Background(), "main"), t, runner, "hello", nil, RunOverrides{}, nil)
+	require.Equal(t, StreamEventDone, got.terminal, "err: %v", got.err)
+	assert.Equal(t, "fresh answer", got.text)
+	assert.Equal(t, []string{"I am running `ls`"}, got.statuses, "verbose mode narrates the CLI's own tool calls")
+
+	require.Len(t, cli.sessions, 2)
+	stale, fresh := cli.sessions[0], cli.sessions[1]
+	assert.Equal(t, "stale-id", stale.opts.ResumeID)
+	assert.True(t, stale.closed, "the failed resume's process is closed")
+	assert.Empty(t, fresh.opts.ResumeID)
+	assert.NotEmpty(t, fresh.opts.NewSessionID)
+	assert.NotEmpty(t, fresh.opts.MCPURL)
+	assert.Equal(t, stale.opts.MCPURL, fresh.opts.MCPURL, "the fresh session keeps the turn's Aviary tools")
+	assert.Equal(t, stale.opts.MCPToken, fresh.opts.MCPToken)
+
+	require.Len(t, cli.texts, 2)
+	retry := cli.texts[1]
+	assert.True(t, strings.HasPrefix(retry, "<memory_context>"), "recalled memory leads the retried turn")
+	assert.Contains(t, retry, "Prefers tea")
+	assert.Contains(t, retry, "<prior_conversation>")
+	assert.Contains(t, retry, "<user> earlier question")
+	assert.Contains(t, retry, "<assistant> earlier answer")
+	assert.True(t, strings.HasSuffix(retry, "hello"))
+
+	meta, err := store.ReadSessionMeta(store.SessionMetaPath("agent_resume", "main"))
+	require.NoError(t, err)
+	assert.Nil(t, meta.CLI, "the stale CLI session is forgotten")
+}
+
+func TestCLITurn_FailuresEndTheTurn(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		model     string
+		cli       *scriptedCLI
+		wantErr   string
+		wantStop  bool
+		wantUsage bool
+	}{
+		{
+			name: "CLI turn fails",
+			cli: &scriptedCLI{send: func(context.Context, cliagent.Options, cliagent.Turn, func(cliagent.Event)) (cliagent.Result, error) {
+				return cliagent.Result{}, errors.New("cli crashed")
+			}},
+			wantErr:   "cli crashed",
+			wantUsage: true,
+		},
+		{
+			name:      "CLI fails to start",
+			cli:       &scriptedCLI{startErr: errors.New("claude not installed")},
+			wantErr:   "claude not installed",
+			wantUsage: true,
+		},
+		{
+			name:      "unknown CLI backend",
+			model:     "cli/bogus/model",
+			cli:       &scriptedCLI{send: replyCLI("unused")},
+			wantErr:   `unknown CLI backend "bogus"`,
+			wantUsage: true,
+		},
+		{
+			name: "turn canceled",
+			cli: &scriptedCLI{send: func(ctx context.Context, _ cliagent.Options, _ cliagent.Turn, _ func(cliagent.Event)) (cliagent.Result, error) {
+				<-ctx.Done()
+				return cliagent.Result{}, ctx.Err()
+			}},
+			wantStop: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setTestDataDir(t)
+			cli := useScriptedCLI(t, tc.cli)
+			runner := newCLITestRunner(t, "agent_clifail", nil)
+			var delivered string
+			RegisterSessionDelivery("agent_clifail", "fail-sess", "signal", "+1", func(text string) { delivered = text })
+			t.Cleanup(func() { ClearSessionDelivery("agent_clifail", "fail-sess") })
+			ctx, cancel := context.WithCancel(WithSessionID(context.Background(), "fail-sess"))
+			defer cancel()
+			if tc.wantStop {
+				go func() {
+					assert.Eventually(t, func() bool {
+						cli.mu.Lock()
+						defer cli.mu.Unlock()
+						return len(cli.texts) > 0
+					}, 5*time.Second, 5*time.Millisecond)
+					cancel()
+				}()
+			}
+
+			got := runTurn(ctx, t, runner, "hi", nil, RunOverrides{Model: tc.model}, nil)
+			if tc.wantStop {
+				assert.Equal(t, StreamEventStop, got.terminal)
+				assert.Empty(t, delivered, "a canceled turn delivers nothing")
+			} else {
+				assert.Equal(t, StreamEventError, got.terminal)
+				assert.ErrorContains(t, got.err, tc.wantErr)
+				assert.Contains(t, delivered, "Error: "+tc.wantErr)
+			}
+			records, err := store.ReadJSONL[domain.UsageRecord](store.UsagePath())
+			require.NoError(t, err)
+			if tc.wantUsage {
+				require.Len(t, records, 1)
+				assert.True(t, records[0].HasError)
+			} else {
+				assert.Empty(t, records)
+			}
+
+			// A turn that failed to start leaves no conversation behind holding
+			// the session: the next turn starts one.
+			cli.mu.Lock()
+			cli.startErr = nil
+			cli.send = replyCLI("recovered")
+			cli.mu.Unlock()
+			got = runTurn(WithSessionID(context.Background(), "fail-sess"), t, runner, "again", nil, RunOverrides{}, nil)
+			assert.Equal(t, StreamEventDone, got.terminal, "err: %v", got.err)
+			assert.Equal(t, "recovered", got.text)
+		})
+	}
+}
+
+func TestCLITurn_EphemeralTurnUsesStreamedTextAndRequestContext(t *testing.T) {
+	setTestDataDir(t)
+	cli := useScriptedCLI(t, &scriptedCLI{
+		send: func(_ context.Context, _ cliagent.Options, _ cliagent.Turn, onEvent func(cliagent.Event)) (cliagent.Result, error) {
+			onEvent(cliagent.Event{Type: cliagent.EventText, Text: "streamed "})
+			onEvent(cliagent.Event{Type: cliagent.EventText, Text: "reply"})
+			return cliagent.Result{}, nil
+		},
+	})
+	runner := newCLITestRunner(t, "agent_eph", nil)
+	overrides := noHistory()
+	overrides.Context = "board: 3 jobs running"
+
+	got := runTurn(WithSessionID(context.Background(), "eph-sess"), t, runner, "status?", nil, overrides, nil)
+	require.Equal(t, StreamEventDone, got.terminal, "err: %v", got.err)
+	assert.Equal(t, "streamed reply", got.text)
+
+	require.Len(t, cli.sessions, 1)
+	assert.True(t, cli.sessions[0].opts.Ephemeral, "a turn without history runs in a throwaway CLI session")
+	assert.Empty(t, cli.sessions[0].opts.NewSessionID)
+	assert.True(t, cli.sessions[0].closed, "the throwaway session is closed after its turn")
+	require.Len(t, cli.texts, 1)
+	assert.Contains(t, cli.texts[0], "<request_context>")
+	assert.Contains(t, cli.texts[0], "board: 3 jobs running")
+
+	msgs := sessionMessages(t, "agent_eph", "eph-sess")
+	require.Len(t, msgs, 2)
+	assert.Equal(t, "streamed reply", msgs[1].Content, "the streamed text is the stored answer when the result has none")
+}
+
+func TestCompleteCLIText_Failures(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		cli     *scriptedCLI
+		want    string
+		wantErr string
+	}{
+		{name: "CLI fails to start", cli: &scriptedCLI{startErr: errors.New("not installed")}, wantErr: "not installed"},
+		{
+			name: "CLI turn fails",
+			cli: &scriptedCLI{send: func(context.Context, cliagent.Options, cliagent.Turn, func(cliagent.Event)) (cliagent.Result, error) {
+				return cliagent.Result{}, errors.New("crashed")
+			}},
+			wantErr: "crashed",
+		},
+		{
+			name: "streamed text when the result is empty",
+			cli: &scriptedCLI{send: func(_ context.Context, _ cliagent.Options, _ cliagent.Turn, onEvent func(cliagent.Event)) (cliagent.Result, error) {
+				onEvent(cliagent.Event{Type: cliagent.EventUsage, Usage: &cliagent.Usage{InputTokens: 1}})
+				onEvent(cliagent.Event{Type: cliagent.EventText, Text: " Trip plan "})
+				return cliagent.Result{}, nil
+			}},
+			want: "Trip plan",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			useScriptedCLI(t, tc.cli)
+			got, err := CompleteCLIText(context.Background(), "claude/haiku", "Name this chat.", "plan a trip")
+			if tc.wantErr != "" {
+				assert.EqualError(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestCLIArgs_UnknownBackendAndNoRules(t *testing.T) {
+	bogus := cliagent.Backend("bogus")
+	assert.Nil(t, cliApprovalArgs(bogus, clidefs.ApprovalFull))
+	assert.Nil(t, cliExtraDirArgs(bogus, clidefs.ApprovalFull, "/work", "/agent"))
+	assert.Nil(t, cliLaunchEnv(bogus, "/work"))
+	args, enforce := cliPermissionArgs(bogus, clidefs.ApprovalFull, &config.PermissionsConfig{}, "/work")
+	assert.Nil(t, args)
+	assert.Nil(t, enforce)
+	args, enforce = cliPermissionArgs(cliagent.Claude, clidefs.ApprovalFull, nil, "/work")
+	assert.Nil(t, args, "an agent without permissions passes no rules")
+	assert.Nil(t, enforce)
+}
+
+func TestCLIWorkingDir_ExpandsHome(t *testing.T) {
+	setTestDataDir(t)
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+	t.Setenv("AVIARY_TEST_PROJECT", "proj")
+	runner := newCLITestRunner(t, "agent_wd", nil)
+	runner.cfg.WorkingDir = " ~/code/$AVIARY_TEST_PROJECT "
+	assert.Equal(t, filepath.Join(home, "code", "proj"), runner.workingDir())
+
+	runner.cfg.WorkingDir = ""
+	assert.Equal(t, store.AgentDir("agent_wd"), runner.workingDir(), "without a working_dir the CLI runs in the agent's directory")
+}
+
+func TestCLIProcLifecycleHelpers(t *testing.T) {
+	sess := &scriptedCLISession{cli: &scriptedCLI{}}
+	p := &cliProc{sess: sess}
+	p.close()
+	assert.True(t, p.closed)
+	assert.True(t, sess.closed)
+	sess.closed = false
+	p.close()
+	assert.False(t, sess.closed, "closing twice closes the session once")
+
+	r := &AgentRunner{agent: &domain.Agent{ID: "agent_idle"}}
+	r.scheduleCLIIdle(p)
+	assert.Nil(t, p.idle, "a closed conversation is not kept for idling")
+	url, token := p.sessOptsMCP()
+	assert.Empty(t, url, "a conversation without tools has no MCP endpoint")
+	assert.Empty(t, token)
+
+	turn := &cliTurn{cancel: func() {}}
+	unregister := registerCLITurn("agent_idle\x00s", turn)
+	defer unregister()
+	require.Same(t, turn, foldCLITurn("agent_idle\x00s"))
+	assert.False(t, turn.answer(), "a folded turn cannot answer")
+	assert.Nil(t, foldCLITurn("agent_idle\x00s"), "a turn is folded once")
+}
+
+func TestCLIMissedTurns_KeepsTheNewest(t *testing.T) {
+	key := "agent_missed\x00" + t.Name()
+	for i := 1; i <= cliMaxMissedTurns+2; i++ {
+		noteCLIMissedTurn(key, "q"+strconv.Itoa(i), "a"+strconv.Itoa(i))
+	}
+	got := takeCLIMissedTurns(key)
+	assert.NotContains(t, got, "User: q1\n")
+	assert.NotContains(t, got, "User: q2\n")
+	assert.Contains(t, got, "User: q3\nAssistant: a3\n")
+	assert.Contains(t, got, "User: q12\nAssistant: a12\n")
+	assert.Empty(t, takeCLIMissedTurns(key), "missed turns are delivered once")
+}
+
+func TestCLIPriorConversation_SkipsToolOnlyHistory(t *testing.T) {
+	setTestDataDir(t)
+	runner := newCLITestRunner(t, "agent_prior", nil)
+	assert.Empty(t, runner.cliPriorConversation("prior-sess", ""), "an empty session has no prior conversation")
+	require.NoError(t, AppendMessageToSession("agent_prior", "prior-sess", domain.MessageRoleUser, "only message"))
+	assert.Empty(t, runner.cliPriorConversation("prior-sess", ""), "the current message alone is not prior conversation")
 }

@@ -717,3 +717,218 @@ func TestSafeRestart_GitModeNoBackendChange(t *testing.T) {
 	}
 	assert.Equal(t, []string{"pull /src/aviary"}, *log)
 }
+
+func TestRequestRestart_UpgradeCheckFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		check   update.CheckResult
+		err     error
+		wantErr string
+	}{
+		{name: "check failed without a version", err: errors.New("github unreachable"), wantErr: "github unreachable"},
+		{name: "no checkout to compare", check: update.CheckResult{NoCheckout: true, Message: "not a release build"}, wantErr: "not a release build"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, p, log := setupSafeRestart(t, "1.2.3", tt.check)
+			versionCheck = func(context.Context, *http.Client) (update.CheckResult, error) { return tt.check, tt.err }
+
+			_, err := srv.requestRestart(context.Background(), saferestart.Request{Upgrade: true})
+			require.EqualError(t, err, tt.wantErr)
+			assert.Equal(t, saferestart.PhaseIdle, srv.RestartStatus().Phase)
+			assert.Empty(t, *log)
+			held, _ := p.snapshot()
+			assert.Empty(t, held, "a failed check holds no jobs")
+		})
+	}
+}
+
+func TestRequestRestart_EmulatedUpgradeChangesNothing(t *testing.T) {
+	srv, p, log := setupSafeRestart(t, "dev", update.CheckResult{CurrentVersion: "1.2.3", LatestVersion: "1.3.0", UpgradeAvailable: true})
+	require.NoError(t, update.ConfigureEmulation("1.2.3:1.3.0"))
+	t.Cleanup(func() { _ = update.ConfigureEmulation("") })
+
+	st, err := srv.requestRestart(context.Background(), saferestart.Request{Upgrade: true})
+	require.NoError(t, err)
+	assert.True(t, st.Emulated)
+	assert.True(t, st.Noop)
+	assert.Equal(t, "v1.3.0", st.Version)
+	assert.Contains(t, st.Message, "Emulated upgrade completed")
+	assert.Empty(t, *log, "an emulated upgrade installs nothing")
+	held, _ := p.snapshot()
+	assert.Empty(t, held)
+}
+
+func TestRestartRequests_WhileUpdating(t *testing.T) {
+	srv, p, _ := setupSafeRestart(t, "1.2.3", update.CheckResult{})
+	srv.restart.mu.Lock()
+	srv.restart.status = saferestart.Status{Phase: saferestart.PhaseUpdating}
+	srv.restart.mu.Unlock()
+
+	st, err := srv.requestRestart(context.Background(), saferestart.Request{})
+	require.EqualError(t, err, "a restart is already in progress")
+	assert.Equal(t, saferestart.PhaseUpdating, st.Phase)
+
+	st, err = srv.requestRestart(context.Background(), saferestart.Request{Cancel: true})
+	require.ErrorContains(t, err, "cannot be canceled")
+	assert.Equal(t, saferestart.PhaseUpdating, st.Phase)
+	held, _ := p.snapshot()
+	assert.Empty(t, held, "neither request touched job holds")
+}
+
+func TestCancelRestart_NothingToCancel(t *testing.T) {
+	srv, p, _ := setupSafeRestart(t, "1.2.3", update.CheckResult{})
+
+	st, err := srv.requestRestart(context.Background(), saferestart.Request{Cancel: true})
+	require.NoError(t, err)
+	assert.Equal(t, saferestart.PhaseIdle, st.Phase)
+	held, _ := p.snapshot()
+	assert.Empty(t, held)
+}
+
+func TestSafeRestart_NewerRequestReplacesWaitingOne(t *testing.T) {
+	srv, p, log := setupSafeRestart(t, "1.2.3", update.CheckResult{})
+	p.setJobs([]saferestart.Job{{Source: "projects", ID: "o/r#4"}})
+
+	_, err := srv.requestRestart(context.Background(), saferestart.Request{When: saferestart.WhenIdle})
+	require.NoError(t, err)
+	st, err := srv.requestRestart(context.Background(), saferestart.Request{When: saferestart.WhenNow})
+	require.NoError(t, err)
+	assert.Equal(t, saferestart.WhenNow, st.When)
+
+	waitReexec(t, srv)
+	assert.Equal(t, []string{"checkpoint"}, *log, "only the newer request restarts")
+	select {
+	case <-srv.reexecCh:
+		t.Fatal("the replaced request also restarted")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestPublishRestartStatus_SnapshotForNewDashboards(t *testing.T) {
+	t.Cleanup(func() { publishRestartStatus(saferestart.Status{Phase: saferestart.PhaseIdle}) })
+
+	st := saferestart.Status{Phase: saferestart.PhaseWaiting, When: saferestart.WhenIdle}
+	publishRestartStatus(st)
+	snap := currentRestartSnapshot()
+	require.NotNil(t, snap)
+	assert.Equal(t, st, *snap)
+
+	st.When = saferestart.WhenNow
+	assert.Equal(t, saferestart.WhenIdle, currentRestartSnapshot().When, "the snapshot is a copy")
+
+	publishRestartStatus(saferestart.Status{Phase: saferestart.PhaseIdle})
+	assert.Nil(t, currentRestartSnapshot(), "an idle server reports no restart")
+}
+
+func TestSafeRestart_GitModeUnlistableChangesRestart(t *testing.T) {
+	srv, _, log := setupSafeRestart(t, "dev", update.CheckResult{})
+	gitCheckout = func() string { return "/src/aviary" }
+	gitPull = func(context.Context, string) (update.GitPullResult, error) {
+		return update.GitPullResult{From: "aaa1111", To: "bbb2222", Commits: 3, Supervised: true}, nil
+	}
+	planDevReload = func(context.Context, string, string, string, bool) (update.DevReloadPlan, error) {
+		return update.DevReloadPlan{}, errors.New("git diff failed")
+	}
+
+	st, err := srv.requestRestart(context.Background(), saferestart.Request{Upgrade: true})
+	require.NoError(t, err)
+	assert.Contains(t, st.Message, "listing the pulled changes failed: git diff failed")
+	waitReexec(t, srv)
+	assert.Equal(t, []string{"checkpoint"}, *log)
+}
+
+func TestSafeRestart_PerformRestartFailures(t *testing.T) {
+	t.Run("executable not found", func(t *testing.T) {
+		srv, _, log := setupSafeRestart(t, "1.2.3", update.CheckResult{})
+		executablePath = func() (string, error) { return "", errors.New("no such file") }
+
+		_, err := srv.requestRestart(context.Background(), saferestart.Request{})
+		require.NoError(t, err)
+		require.Eventually(t, func() bool { return srv.RestartStatus().Error != "" }, 2*time.Second, 10*time.Millisecond)
+		st := srv.RestartStatus()
+		assert.Equal(t, saferestart.PhaseIdle, st.Phase)
+		assert.Equal(t, "locating executable: no such file", st.Error)
+		assert.False(t, st.Held)
+		assert.Empty(t, *log, "nothing is checkpointed")
+	})
+
+	t.Run("skill update failure does not stop the upgrade", func(t *testing.T) {
+		srv, _, log := setupSafeRestart(t, "1.2.3", update.CheckResult{CurrentVersion: "1.2.3", LatestVersion: "v1.3.0", UpgradeAvailable: true})
+		logs := captureLogs(t)
+		saferestart.RegisterSkillsUpdater("failing", func(context.Context, string) error { return errors.New("skills offline") })
+		t.Cleanup(func() { saferestart.UnregisterSkillsUpdater("failing") })
+
+		_, err := srv.requestRestart(context.Background(), saferestart.Request{Upgrade: true})
+		require.NoError(t, err)
+		waitReexec(t, srv)
+		assert.Contains(t, *log, "checkpoint")
+		assert.Contains(t, logs.String(), "skills offline")
+	})
+}
+
+func TestRunDone_WithoutRunContext(t *testing.T) {
+	srv := &Server{}
+	assert.Nil(t, srv.runDone(), "a server that is not running is never done")
+	ctx, cancel := context.WithCancel(context.Background())
+	srv.runCtx = ctx
+	cancel()
+	select {
+	case <-srv.runDone():
+	default:
+		t.Fatal("runDone did not follow the run context")
+	}
+}
+
+func TestSelfUpdater_FailedCheck(t *testing.T) {
+	srv, _, _ := setupSafeRestart(t, "dev", update.CheckResult{})
+	origRetry := gitBusyRetry
+	gitBusyRetry = 10 * time.Millisecond
+	t.Cleanup(func() { gitBusyRetry = origRetry })
+	var mu sync.Mutex
+	checks := 0
+	checkErr := fmt.Errorf("%w (.git/index.lock)", update.ErrGitBusy)
+	versionCheck = func(context.Context, *http.Client) (update.CheckResult, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		checks++
+		return update.CheckResult{}, checkErr
+	}
+	count := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return checks
+	}
+	runUpdater(t, srv, true)
+
+	require.Eventually(t, func() bool { return count() >= 3 }, 2*time.Second, 5*time.Millisecond,
+		"a check the busy checkout blocked is retried soon")
+	assert.Nil(t, srv.RestartStatus().AutoUpdate, "a failed check publishes no update")
+
+	mu.Lock()
+	checkErr = errors.New("network down")
+	before := checks
+	mu.Unlock()
+	require.Eventually(t, func() bool { return count() > before }, 2*time.Second, 5*time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, before+1, count(), "any other failure waits for the next check interval")
+}
+
+func TestAutoApply_TurnedOff(t *testing.T) {
+	for _, phase := range []string{saferestart.PhaseIdle, saferestart.PhaseUpdating} {
+		t.Run(phase, func(t *testing.T) {
+			srv, _, log := setupSafeRestart(t, "1.2.3", update.CheckResult{})
+			off := false
+			srv.cfg.Server.AutoUpdate = &off
+			srv.restart.mu.Lock()
+			srv.restart.status = saferestart.Status{Phase: phase}
+			srv.restart.auto = &saferestart.AutoUpdate{Version: "v1.3.0", State: saferestart.AutoApplying}
+			srv.restart.mu.Unlock()
+
+			applied := srv.autoApply(context.Background(), update.CheckResult{LatestVersion: "v1.3.0", UpgradeAvailable: true})
+			assert.False(t, applied)
+			assert.Nil(t, srv.RestartStatus().AutoUpdate, "turning auto_update off clears the pending update")
+			assert.Empty(t, *log)
+		})
+	}
+}

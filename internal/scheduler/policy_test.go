@@ -363,3 +363,96 @@ func TestListTasksNextRunAroundAFire(t *testing.T) {
 		assert.Equal(t, domain.TaskRunQueued, during.History[len(during.History)-1].Status)
 	})
 }
+
+func TestRecordAttemptStatusAndObserver(t *testing.T) {
+	setupSchedulerDataDir(t)
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	s := newPolicyScheduler(t, &now)
+	s.Reconcile(singleTask(config.TaskConfig{Name: "t", Every: "1h", Prompt: "p"}))
+	key := "alpha/t"
+	type observed struct {
+		status  domain.TaskRunStatus
+		summary string
+	}
+	var seen []observed
+	s.SetRunObserver(func(_ domain.Job, status domain.TaskRunStatus, summary string) {
+		seen = append(seen, observed{status, summary})
+	})
+
+	for _, tc := range []struct {
+		status      domain.JobStatus
+		output, err string
+		want        domain.TaskRunStatus
+		summary     string
+	}{
+		{domain.JobStatusFailed, "partial work", "agent exited 1", domain.TaskRunFailed, "agent exited 1"},
+		{domain.JobStatusPending, "partial work", "rate limited", domain.TaskRunRetrying, "rate limited"},
+		{domain.JobStatusFailed, "partial work", "", domain.TaskRunFailed, "partial work"},
+		{domain.JobStatusCanceled, "stopped early", "ignored", domain.TaskRunCanceled, "stopped early"},
+	} {
+		s.mu.Lock()
+		job := s.fireLocked(key, s.armed[key].spec, "schedule", now, nil)
+		s.mu.Unlock()
+		require.NotNil(t, job)
+		job.Status, job.Output, job.Error = tc.status, tc.output, tc.err
+		s.recordAttempt(*job, time.Second)
+
+		run := lastRun(t, s, key)
+		assert.Equal(t, tc.want, run.Status)
+		assert.Equal(t, tc.summary, run.Summary)
+		require.NotEmpty(t, seen)
+		assert.Equal(t, observed{tc.want, tc.summary}, seen[len(seen)-1])
+	}
+
+	s.SetRunObserver(nil)
+	seen = nil
+	s.recordAttempt(domain.Job{TaskID: key, Status: domain.JobStatusCompleted}, time.Second)
+	assert.Empty(t, seen, "a cleared observer hears nothing")
+}
+
+func TestTaskRunStatus(t *testing.T) {
+	for status, want := range map[domain.JobStatus]domain.TaskRunStatus{
+		domain.JobStatusPending:    domain.TaskRunQueued,
+		domain.JobStatusInProgress: domain.TaskRunRunning,
+		domain.JobStatusFailed:     domain.TaskRunFailed,
+		domain.JobStatusCanceled:   domain.TaskRunCanceled,
+		domain.JobStatusCompleted:  domain.TaskRunCompleted,
+	} {
+		assert.Equal(t, want, taskRunStatus(status), string(status))
+	}
+}
+
+func TestForgetDropsTaskHistory(t *testing.T) {
+	setupSchedulerDataDir(t)
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	s := newPolicyScheduler(t, &now)
+	s.Reconcile(singleTask(config.TaskConfig{Name: "t", Every: "1h", Prompt: "p"}))
+	fireArmed(t, s, "alpha/t")
+	require.NotEmpty(t, listedTask(t, s, "alpha/t").History)
+
+	s.Forget("alpha/t")
+	task := listedTask(t, s, "alpha/t")
+	assert.Empty(t, task.History)
+	assert.Nil(t, task.LastFire)
+}
+
+func TestPreviewWithoutTimeTrigger(t *testing.T) {
+	setupSchedulerDataDir(t)
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	s := newPolicyScheduler(t, &now)
+	s.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Tasks: []config.TaskConfig{
+		{Name: "flow", Trigger: config.TriggerMessage, Channel: "team", Prompt: "p"},
+		{Name: "watcher", Watch: "*.txt", Prompt: "p"},
+		{Name: "broken", Schedule: "not a cron", Prompt: "p"},
+	}}}})
+
+	_, err := s.Preview("missing", 3)
+	assert.ErrorContains(t, err, `task "missing" not found`)
+	for _, name := range []string{"flow", "alpha/watcher"} {
+		fires, err := s.Preview(name, 3)
+		require.NoError(t, err, name)
+		assert.Empty(t, fires, "%s has no time trigger", name)
+	}
+	_, err = s.Preview("broken", 3)
+	assert.Error(t, err, "an invalid schedule cannot be previewed")
+}

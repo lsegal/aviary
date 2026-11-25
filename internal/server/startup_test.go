@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -16,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/startup"
 	"github.com/lsegal/aviary/internal/store"
 )
@@ -248,4 +251,137 @@ func TestEndableStreamsLeavesOtherRequestsAlone(t *testing.T) {
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	h.ServeHTTP(httptest.NewRecorder(), req)
 	assert.False(t, canceled, "a tool call must not be ended with the streams")
+}
+
+func TestServerListen(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	store.SetDataDir(t.TempDir())
+	t.Cleanup(func() { store.SetDataDir("") })
+
+	t.Run("plain", func(t *testing.T) {
+		port := freeTCPPort(t)
+		srv := &Server{cfg: &config.Config{Server: config.ServerConfig{Port: port, NoTLS: true}}}
+		ln, err := srv.listen()
+		require.NoError(t, err)
+		defer func() { _ = ln.Close() }()
+		assert.Equal(t, fmt.Sprintf("127.0.0.1:%d", port), ln.Addr().String())
+	})
+
+	t.Run("tls", func(t *testing.T) {
+		srv := &Server{cfg: &config.Config{Server: config.ServerConfig{Port: freeTCPPort(t)}}}
+		ln, err := srv.listen()
+		require.NoError(t, err)
+		defer func() { _ = ln.Close() }()
+		go func() {
+			conn, err := ln.Accept()
+			if err == nil {
+				_ = conn.(*tls.Conn).Handshake()
+				_ = conn.Close()
+			}
+		}()
+		conn, err := tls.Dial("tcp", ln.Addr().String(), &tls.Config{InsecureSkipVerify: true}) //nolint:gosec // self-signed test certificate
+		require.NoError(t, err, "the listener serves TLS")
+		assert.GreaterOrEqual(t, conn.ConnectionState().Version, uint16(tls.VersionTLS12))
+		_ = conn.Close()
+	})
+
+	t.Run("bad certificate", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "missing.pem")
+		srv := &Server{cfg: &config.Config{Server: config.ServerConfig{Port: freeTCPPort(t), TLS: &config.TLSConfig{Cert: missing, Key: missing}}}}
+		_, err := srv.listen()
+		assert.ErrorContains(t, err, "loading TLS")
+	})
+
+	for _, noTLS := range []bool{true, false} {
+		t.Run(fmt.Sprintf("port in use notls=%v", noTLS), func(t *testing.T) {
+			busy, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			defer func() { _ = busy.Close() }()
+			port := busy.Addr().(*net.TCPAddr).Port
+			srv := &Server{cfg: &config.Config{Server: config.ServerConfig{Port: port, NoTLS: noTLS}}}
+			_, err = srv.listen()
+			assert.ErrorContains(t, err, fmt.Sprintf("listening on 127.0.0.1:%d", port))
+		})
+	}
+}
+
+// startTestServer boots srv on a free port and waits until it answers.
+func startTestServer(t *testing.T, srv *Server, port int) (<-chan error, context.CancelFunc) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(cancel)
+	waitHealthy(t, port)
+	return done, cancel
+}
+
+func waitHealthy(t *testing.T, port int) {
+	t.Helper()
+	client := &http.Client{Timeout: time.Second}
+	require.Eventually(t, func() bool {
+		resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
+		if err != nil {
+			return false
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, 10*time.Second, 10*time.Millisecond, "server never answered /healthz")
+}
+
+func TestListenAndServe_RestartRequests(t *testing.T) {
+	tests := []struct {
+		name    string
+		trigger func(*Server)
+		want    error
+	}{
+		{name: "re-exec", trigger: func(s *Server) { s.reexecCh <- struct{}{} }, want: ErrReexecRequired},
+		{name: "hard restart", trigger: func(s *Server) { s.hardRestartCh <- struct{}{} }, want: ErrRestartRequired},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stubBootSideEffects(t, func(context.Context) {})
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			fired := stubRestartWatchdog(t, time.Minute)
+			require.NoError(t, saferestart.WriteMarker(saferestart.Marker{Reason: "restart"}))
+
+			port := freeTCPPort(t)
+			startup.Begin()
+			srv := New(&config.Config{Server: config.ServerConfig{Port: port, NoTLS: true}}, "tok")
+			done, _ := startTestServer(t, srv, port)
+			_, pending := saferestart.TakeMarker()
+			assert.False(t, pending, "boot consumes the previous restart's marker")
+
+			srv.listenerRestartCh <- struct{}{}
+			waitHealthy(t, port)
+
+			tt.trigger(srv)
+			select {
+			case err := <-done:
+				assert.ErrorIs(t, err, tt.want)
+			case <-time.After(15 * time.Second):
+				t.Fatal("server did not stop")
+			}
+			select {
+			case <-fired:
+				t.Fatal("restart watchdog fired on a clean shutdown")
+			default:
+			}
+		})
+	}
+}
+
+func TestListenAndServe_PortInUse(t *testing.T) {
+	stubBootSideEffects(t, func(context.Context) {})
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() { _ = busy.Close() }()
+	port := busy.Addr().(*net.TCPAddr).Port
+
+	srv := New(&config.Config{Server: config.ServerConfig{Port: port, NoTLS: true}}, "tok")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err = srv.ListenAndServe(ctx)
+	assert.ErrorContains(t, err, fmt.Sprintf("listening on 127.0.0.1:%d", port))
 }
