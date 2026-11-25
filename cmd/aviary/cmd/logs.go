@@ -15,6 +15,9 @@ import (
 var (
 	logsFollow bool
 	logsLines  int
+
+	// logsFollowInterval is how often followFile polls the log file.
+	logsFollowInterval = 350 * time.Millisecond
 )
 
 var logsCmd = &cobra.Command{
@@ -31,7 +34,7 @@ var logsCmd = &cobra.Command{
 			}
 		}
 
-		if err := printTail(path, logsLines); err != nil {
+		if err := printTail(cmd.OutOrStdout(), path, logsLines); err != nil {
 			return err
 		}
 		if !logsFollow {
@@ -42,7 +45,7 @@ var logsCmd = &cobra.Command{
 	},
 }
 
-func printTail(path string, lines int) error {
+func printTail(w io.Writer, path string, lines int) error {
 	if lines <= 0 {
 		return nil
 	}
@@ -60,7 +63,7 @@ func printTail(path string, lines int) error {
 		if ln == "" {
 			continue
 		}
-		fmt.Println(ln)
+		_, _ = fmt.Fprintln(w, ln)
 	}
 	return nil
 }
@@ -71,8 +74,9 @@ func followFile(cmd *cobra.Command, path string) error {
 		offset = st.Size()
 	}
 
+	out := cmd.OutOrStdout()
 	var remainder string
-	ticker := time.NewTicker(350 * time.Millisecond)
+	ticker := time.NewTicker(logsFollowInterval)
 	defer ticker.Stop()
 
 	for {
@@ -114,7 +118,7 @@ func followFile(cmd *cobra.Command, path string) error {
 			for _, part := range parts[:len(parts)-1] {
 				part = strings.TrimSpace(part)
 				if part != "" {
-					fmt.Println(part)
+					_, _ = fmt.Fprintln(out, part)
 				}
 			}
 		}
