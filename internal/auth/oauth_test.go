@@ -514,6 +514,16 @@ func TestGitHubLogin_PKCEFlow(t *testing.T) {
 		}
 	}
 
+	t.Run("browser cannot be opened releases the callback port", func(t *testing.T) {
+		withoutBrowser(t)
+		_, err := run(t, context.Background(), "")
+		assert.ErrorContains(t, err, "opening browser for GitHub OAuth")
+
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", GitHubCallbackPort))
+		require.NoError(t, err, "callback port still bound after GitHubLogin returned")
+		require.NoError(t, ln.Close())
+	})
+
 	t.Run("exchanges the callback code", func(t *testing.T) {
 		opened := withFakeBrowser(t)
 		tok, err := run(t, context.Background(), "?code=gh-code")
@@ -563,13 +573,6 @@ func TestGitHubLogin_PKCEFlow(t *testing.T) {
 		assert.ErrorContains(t, err, "starting OAuth callback server on port 1466")
 	})
 
-	t.Run("browser cannot be opened", func(t *testing.T) {
-		// Runs last: GitHubLogin can return before its server starts tracking
-		// the listener, so the callback port may stay bound afterwards.
-		withoutBrowser(t)
-		_, err := run(t, context.Background(), "")
-		assert.ErrorContains(t, err, "opening browser for GitHub OAuth")
-	})
 }
 
 func TestGitHubExchange_Errors(t *testing.T) {
