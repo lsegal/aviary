@@ -164,22 +164,23 @@ func TestToolsCoreAgentRunStreamsTextAndToolProgress(t *testing.T) {
 	assert.Equal(t, []string{"hello ", "world"}, progress, "each text delta is a progress message")
 
 	model.setMode("tool")
-	model.tool.set("ping", map[string]any{})
+	require.NoError(t, os.WriteFile(store.AgentRulesPath("bot"), []byte("rules-marker"), 0o600))
+	model.tool.set("agent_rules_get", map[string]any{"name": "bot"})
 	progress = nil
 	out, isError, err = d.CallToolWithProgress(context.Background(), "agent_run", map[string]any{
-		"name": "bot", "message": "ping the server", "include_tool_progress": true,
+		"name": "bot", "session": "tools", "message": "read your rules", "include_tool_progress": true,
 	}, func(message string) bool {
 		progress = append(progress, message)
 		return false
 	})
 	require.NoError(t, err)
 	require.False(t, isError, out)
-	assert.Contains(t, out, "pong")
+	assert.Contains(t, out, "rules-marker")
 	var toolMessages int
 	for _, message := range progress {
 		if strings.HasPrefix(message, "[tool]") {
 			toolMessages++
-			assert.Contains(t, message, "ping")
+			assert.Contains(t, message, "agent_rules_get")
 		}
 	}
 	assert.Positive(t, toolMessages, "tool calls are reported with include_tool_progress: %v", progress)
@@ -195,7 +196,7 @@ func TestToolsCoreAgentRunModelErrorIsToolError(t *testing.T) {
 	res, err := c.CallTool(context.Background(), "agent_run", map[string]any{"name": "bot", "message": "hi"})
 	require.NoError(t, err)
 	assert.True(t, res.IsError)
-	assert.Contains(t, extractText(res), "model exploded")
+	assert.Contains(t, extractText(res), "400 Bad Request")
 }
 
 func TestToolsCoreAgentRunSessionIDResumesThatSession(t *testing.T) {
@@ -283,6 +284,9 @@ func TestToolsCoreAgentStopDeletesSessionCheckpoints(t *testing.T) {
 	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", "work")
 	require.NoError(t, err)
 
+	// Recovery of interrupted runs, which drops stale checkpoints, has
+	// finished before these are written.
+	GetDeps().Agents.WaitRecovery()
 	dir := store.CheckpointDir("bot")
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "nested.json"), 0o700))
 	require.NoError(t, store.WriteJSON(filepath.Join(dir, "mine.json"), agent.RunCheckpoint{AgentName: "bot", SessionID: sess.ID}))
@@ -336,6 +340,13 @@ func TestToolsCoreAgentRunScriptSessions(t *testing.T) {
 	assert.Contains(t, extractText(res), "boom")
 }
 
+func TestToolsCoreAgentRunScriptNeedsAgentManager(t *testing.T) {
+	tcSetup(t, botConfig())
+	SetDeps(&Deps{})
+	d := NewDispatcher("https://localhost:16677", "")
+	assert.Contains(t, tcCall(t, d, "agent_run_script", map[string]any{"agent": "bot", "script": "print(1)"}), "agent manager not initialized")
+}
+
 // ── agent config tools ────────────────────────────────────────────────────────
 
 func TestToolsCoreAgentUpdateFallbacksPersist(t *testing.T) {
@@ -375,6 +386,7 @@ func TestToolsCoreAgentRulesRoundTripAndErrors(t *testing.T) {
 
 	assert.Equal(t, `RULES.md written for agent "bot"`, tcCall(t, d, "agent_rules_set", map[string]any{"agent": "bot", "content": "Be brief."}))
 	assert.Equal(t, "Be brief.", tcCall(t, d, "agent_rules_get", map[string]any{"name": "bot"}))
+	assert.Equal(t, "", tcCall(t, d, "agent_rules_get", map[string]any{"name": "norules"}), "an agent without RULES.md has empty rules")
 	assert.Contains(t, tcCall(t, d, "agent_rules_set", map[string]any{"agent": " ", "content": "x"}), "agent is required")
 
 	// RULES.md that is a directory can be neither read nor written.
@@ -415,8 +427,8 @@ func TestToolsCoreSessionHistoryValidatesArguments(t *testing.T) {
 		args map[string]any
 		want string
 	}{
-		{map[string]any{"session_id": "main"}, "agent is required"},
-		{map[string]any{"agent": "bot"}, "session_id is required"},
+		{map[string]any{"agent": " ", "session_id": "main"}, "agent is required"},
+		{map[string]any{"agent": "bot", "session_id": ""}, "session_id is required"},
 		{map[string]any{"agent": "bot", "session_id": "main", "limit": -1}, "limit must be >= 0"},
 		{map[string]any{"agent": "bot", "session_id": "main", "skip": -1}, "skip must be >= 0"},
 		{map[string]any{"agent": "bot", "session_id": "main", "order": "sideways"}, "order must be 'asc' or 'desc'"},
@@ -451,6 +463,10 @@ func TestToolsCoreSessionHistoryFiltersByIDAndJoinsResponseIDs(t *testing.T) {
 	assert.Equal(t, "question", got[0].Content)
 	assert.Equal(t, "a1", got[0].ResponseID)
 
+	require.NoError(t, json.Unmarshal([]byte(tcCall(t, d, "session_history", map[string]any{"agent": "bot", "session_id": sess.ID, "order": "desc", "limit": 1})), &got))
+	require.Len(t, got, 1)
+	assert.Equal(t, "answer", got[0].Content, "limit keeps the newest message in desc order")
+
 	assert.Equal(t, "[]", strings.TrimSpace(tcCall(t, d, "session_history", map[string]any{"agent": "bot", "session_id": sess.ID, "skip": 5})),
 		"skipping past the end leaves nothing")
 }
@@ -460,13 +476,12 @@ func TestToolsCoreSessionListOrdersMainFirst(t *testing.T) {
 	sm := agent.NewSessionManager()
 	main, err := sm.GetOrCreateNamed("bot", "main")
 	require.NoError(t, err)
-	time.Sleep(5 * time.Millisecond)
 	other, err := sm.CreateWithName("bot", "aaa-first")
 	require.NoError(t, err)
 	// A stray file in the agents directory is not an agent.
-	require.NoError(t, os.WriteFile(filepath.Join(store.DataDir(), store.DirAgents, "stray.txt"), nil, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(store.DataDir(), store.DirAgents, "0-stray.txt"), nil, 0o600))
 
-	assert.Contains(t, tcCall(t, d, "session_list", map[string]any{}), "agent name is required")
+	assert.Contains(t, tcCall(t, d, "session_list", map[string]any{"agent": ""}), "agent name is required")
 	var list []struct {
 		ID      string `json:"id"`
 		AgentID string `json:"agent_id"`
@@ -485,10 +500,16 @@ func TestToolsCoreSessionToolsValidateArguments(t *testing.T) {
 	d := tcSetup(t, botConfig())
 
 	for _, tool := range []string{"session_remove", "session_clear", "session_rename", "session_turn"} {
-		assert.Contains(t, tcCall(t, d, tool, map[string]any{"session_id": "sess_1"}), "agent is required", tool)
-		assert.Contains(t, tcCall(t, d, tool, map[string]any{"agent": "bot"}), "session_id is required", tool)
+		withName := func(args map[string]any) map[string]any {
+			if tool == "session_rename" {
+				args["name"] = "x"
+			}
+			return args
+		}
+		assert.Contains(t, tcCall(t, d, tool, withName(map[string]any{"agent": " ", "session_id": "sess_1"})), "agent is required", tool)
+		assert.Contains(t, tcCall(t, d, tool, withName(map[string]any{"agent": "bot", "session_id": " "})), "session_id is required", tool)
 	}
-	assert.Contains(t, tcCall(t, d, "session_create", map[string]any{}), "agent name is required")
+	assert.Contains(t, tcCall(t, d, "session_create", map[string]any{"agent": ""}), "agent name is required")
 	assert.Contains(t, tcCall(t, d, "session_remove", map[string]any{"agent": "bot", "session_id": "sess_missing"}), "not found")
 	assert.Contains(t, tcCall(t, d, "session_rename", map[string]any{"agent": "bot", "session_id": "sess_missing", "name": "x"}), "not found")
 	assert.Contains(t, tcCall(t, d, "session_stop", map[string]any{"session_id": "sess_1"}), "agent is required")
@@ -537,6 +558,13 @@ func TestToolsCoreTaskCompileQueryAndGet(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(store.TaskCompilePath("bot", "tc_broken"), []byte("{"), 0o600))
 	assert.Contains(t, tcCall(t, d, "task_compile_get", map[string]any{"id": "tc_broken"}), "reading task compile tc_broken")
+	assert.Contains(t, tcCall(t, d, "task_compile_get", map[string]any{"id": "tc_none"}), "task compile tc_none not found")
+	assert.Equal(t, []string{"tc_bad", "tc_ok"}, ids(map[string]any{}), "a corrupt record is skipped by the query")
+
+	// A task_compiles entry that is not a directory cannot be listed.
+	require.NoError(t, os.MkdirAll(store.AgentDir("zz"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(store.AgentDir("zz"), "task_compiles"), nil, 0o600))
+	assert.Contains(t, tcCall(t, d, "task_compile_query", map[string]any{}), "reading directory")
 }
 
 func TestToolsCoreJobLogsFallsBackToSessionLog(t *testing.T) {
@@ -667,7 +695,7 @@ func TestToolsCoreConfigRestoreLatestBackupErrors(t *testing.T) {
 }
 
 func TestToolsCoreConfigSaveKeepsRetainedFileTasks(t *testing.T) {
-	d := tcSetup(t, botConfig())
+	d := tcSetup(t, &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "anthropic/claude-3-haiku"}}})
 	cfg, err := config.Load("")
 	require.NoError(t, err)
 	dir := config.AgentTasksDir(cfg.Agents[0])
@@ -678,7 +706,7 @@ func TestToolsCoreConfigSaveKeepsRetainedFileTasks(t *testing.T) {
 	brokenPath := filepath.Join(dir, "broken.md")
 	require.NoError(t, os.WriteFile(brokenPath, []byte("---\nschedule: [unclosed\n---\nbody\n"), 0o600))
 
-	next := config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x", Tasks: []config.TaskConfig{
+	next := config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "anthropic/claude-3-haiku", Tasks: []config.TaskConfig{
 		{Name: "keep", Prompt: "kept", Schedule: "0 0 9 * * *", FromFile: true},
 	}}}}
 	raw, err := json.Marshal(next)
@@ -706,7 +734,7 @@ func TestToolsCoreConfigTaskFileToolErrors(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, after.Agents[0].Tasks, 1, "the inline task stays when its file cannot be written")
 
-	assert.Contains(t, tcCall(t, d, "config_task_convert_to_script", map[string]any{"agent": "ghost", "task": "inline"}), "ghost")
+	assert.Contains(t, tcCall(t, d, "config_task_convert_to_script", map[string]any{"agent": "ghost", "task": "inline"}), "not found")
 }
 
 // ── config_task_rename ────────────────────────────────────────────────────────
@@ -773,7 +801,6 @@ func TestToolsCoreScheduleTaskValidation(t *testing.T) {
 		args map[string]any
 		want string
 	}{
-		{map[string]any{"agent": "bot", "content": "x", "type": "binary"}, `invalid task type "binary"`},
 		{map[string]any{"agent": "bot", "content": "x", "project": "o/r"}, "project and model are only supported for type=project tasks"},
 		{map[string]any{"agent": "bot", "content": "x", "model": "test/y"}, "project and model are only supported for type=project tasks"},
 		{map[string]any{"agent": "bot", "content": "this is not lua (", "type": "script"}, "script tasks require valid Aviary Lua source"},
@@ -782,6 +809,11 @@ func TestToolsCoreScheduleTaskValidation(t *testing.T) {
 	} {
 		assert.Contains(t, tcCall(t, d, "task_schedule", tc.args), tc.want)
 	}
+	// The tool schema rejects unknown types; scheduleTask, which
+	// project_task_create also calls, checks them itself.
+	_, _, err := scheduleTask(context.Background(), nil, taskScheduleArgs{Agent: "bot", Content: "x", Type: "binary"})
+	assert.EqualError(t, err, `invalid task type "binary"`)
+
 	tasks, err := config.LoadAgentTaskFiles(config.AgentConfig{Name: "bot"})
 	require.NoError(t, err)
 	assert.Empty(t, tasks, "rejected requests save no task")

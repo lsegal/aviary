@@ -728,7 +728,7 @@ func TestBrowserAuthStoreWriteAndLookupErrors(t *testing.T) {
 	baBreakStore(t, st)
 	assert.Contains(t, baCallErr(t, d, "auth_set", map[string]any{"name": "ba:new", "value": "v"}), "not a directory")
 	got := baCallErr(t, d, "auth_delete", map[string]any{"name": "ba:present"})
-	assert.NotContains(t, got, "deleted")
+	assert.Contains(t, got, "not a directory")
 }
 
 func TestBrowserAuthSlackChannelsListErrors(t *testing.T) {

@@ -390,6 +390,8 @@ func cfpSetupWatchedProjects(t *testing.T) (*Dispatcher, *projects.Manager) {
 	cfg := cfpLoadConfig(t)
 	cfg.Agents[0].Projects = append(cfg.Agents[0].Projects, config.ProjectConfig{Target: "acme/web"})
 	cfg.Agents[1].Projects = []config.ProjectConfig{{Target: "other/lib"}}
+	// A runtime watch no agent owns runs on models.defaults, which needs a CLI model.
+	cfg.Models.Defaults = &config.ModelDefaults{Model: "cli/codex"}
 	require.NoError(t, config.Save("", cfg))
 	cfg = cfpLoadConfig(t)
 	deps := GetDeps()
