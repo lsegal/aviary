@@ -114,8 +114,14 @@ func (m configureMenuModel) View() string {
 	return b.String()
 }
 
+// configureMenuProgramOptions returns the Bubble Tea options for the
+// configure menu. Tests replace it to run the menu without a terminal.
+var configureMenuProgramOptions = func() []tea.ProgramOption {
+	return []tea.ProgramOption{tea.WithAltScreen()}
+}
+
 func runConfigureMenu(cfg *config.Config, st authpkg.Store) (configureMenuSelection, error) {
-	p := tea.NewProgram(newConfigureMenuModel(cfg, st), tea.WithAltScreen())
+	p := tea.NewProgram(newConfigureMenuModel(cfg, st), configureMenuProgramOptions()...)
 	final, err := p.Run()
 	if err != nil {
 		return configureMenuQuit, err
@@ -126,39 +132,55 @@ func runConfigureMenu(cfg *config.Config, st authpkg.Store) (configureMenuSelect
 	return configureMenuQuit, nil
 }
 
+// configureMenuRunner shows the configure menu and returns the chosen section.
+// Tests replace it to script the wizard's menu choices.
+var configureMenuRunner = runConfigureMenu
+
+// Section editors opened by the configure wizard. Tests replace them to avoid
+// launching interactive programs.
+var (
+	configureGeneralForm   = runGeneralForm
+	configureProviderMgr   = runProviderMgr
+	configureAgentMgr      = runAgentMgr
+	configureSkillMgr      = runSkillMgr
+	configureServerForm    = runServerForm
+	configureBrowserForm   = runBrowserForm
+	configureSchedulerForm = runSchedulerForm
+)
+
 func runWizard(cfg *config.Config, cfgPath string, st authpkg.Store) error {
 	for {
-		selection, err := runConfigureMenu(cfg, st)
+		selection, err := configureMenuRunner(cfg, st)
 		if err != nil {
 			return err
 		}
 		switch selection {
 		case configureMenuGeneral:
-			if err := runGeneralForm(cfg, cfgPath); err != nil {
+			if err := configureGeneralForm(cfg, cfgPath); err != nil {
 				return err
 			}
 		case configureMenuProviders:
-			if err := runProviderMgr(st); err != nil {
+			if err := configureProviderMgr(st); err != nil {
 				return err
 			}
 		case configureMenuAgents:
-			if err := runAgentMgr(cfg, cfgPath); err != nil {
+			if err := configureAgentMgr(cfg, cfgPath); err != nil {
 				return err
 			}
 		case configureMenuSkills:
-			if err := runSkillMgr(cfg, cfgPath); err != nil {
+			if err := configureSkillMgr(cfg, cfgPath); err != nil {
 				return err
 			}
 		case configureMenuServer:
-			if err := runServerForm(cfg, cfgPath); err != nil {
+			if err := configureServerForm(cfg, cfgPath); err != nil {
 				return err
 			}
 		case configureMenuBrowser:
-			if err := runBrowserForm(cfg, cfgPath); err != nil {
+			if err := configureBrowserForm(cfg, cfgPath); err != nil {
 				return err
 			}
 		case configureMenuScheduler:
-			if err := runSchedulerForm(cfg, cfgPath); err != nil {
+			if err := configureSchedulerForm(cfg, cfgPath); err != nil {
 				return err
 			}
 		case configureMenuQuit:
