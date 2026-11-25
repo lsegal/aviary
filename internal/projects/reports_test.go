@@ -163,3 +163,23 @@ func TestManagerDeliversReportsFromSnapshots(t *testing.T) {
 		t.Fatal("no report delivered")
 	}
 }
+
+func TestReporterTellsObserverEveryProjectsEvents(t *testing.T) {
+	// The observer (notifications, #1215) hears jobs of projects that send
+	// no reports too.
+	r, sent := testReporter(reportsConfig(nil))
+	var events []string
+	r.setObserver(func(job core.JobSnapshot, event, text string) {
+		events = append(events, event+"|"+job.Status+"|"+text)
+	})
+	r.observe(core.Snapshot{Jobs: []core.JobSnapshot{reportJob("active")}})
+	r.observe(core.Snapshot{Jobs: []core.JobSnapshot{reportJob("failed")}})
+	r.observe(core.Snapshot{Jobs: []core.JobSnapshot{reportJob("failed")}})
+	if len(*sent) != 0 {
+		t.Fatalf("sent reports while off: %+v", *sent)
+	}
+	want := []string{config.ProjectReportFailed + "|failed|acme/app#7 \"Fix login\" failed.\nhttps://github.com/acme/app/issues/7"}
+	if strings.Join(events, ",") != strings.Join(want, ",") {
+		t.Fatalf("observed %q, want %q", events, want)
+	}
+}

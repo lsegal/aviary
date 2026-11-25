@@ -1,6 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
-import { chooseOption, chooseValue, optionLabels } from "./helpers/select";
+import {
+	chooseOption,
+	chooseValue,
+	expectValue,
+	optionLabels,
+} from "./helpers/select";
 
 interface Channel {
 	type: string;
@@ -342,6 +347,8 @@ test("a scheduled task delivers to a channel picked by name", async ({
 		"silent",
 		"Session",
 		"Code Loop job",
+		"Notify",
+		"Notify on failure only",
 		"Channel: Team Slack",
 	]);
 	await chooseOption(sendVia, "Channel: Team Slack");
@@ -350,6 +357,23 @@ test("a scheduled task delivers to a channel picked by name", async ({
 	await expect.poll(() => calls.config_save?.length ?? 0).toBe(1);
 	const saved = JSON.parse(String(calls.config_save[0].config)) as Config;
 	expect(saved.agents[0].tasks?.[0].target).toBe("channel:Team Slack");
+});
+
+test("a scheduled task can send its result as a notification, on failure only (#1215)", async ({
+	page,
+}) => {
+	const { calls } = await mockChannels(page, [TEAM], {
+		tasks: [{ name: "daily-report", schedule: "0 9 * * *", prompt: "report" }],
+	});
+	await page.goto("/agents/assistant/tasks?task=daily-report");
+	const sendVia = page.getByTestId("task-send-via");
+	await chooseOption(sendVia, "Notify on failure only");
+	await expectValue(sendVia, "notify?failures");
+	await page.getByRole("button", { name: "Save Changes" }).click();
+
+	await expect.poll(() => calls.config_save?.length ?? 0).toBe(1);
+	const saved = JSON.parse(String(calls.config_save[0].config)) as Config;
+	expect(saved.agents[0].tasks?.[0].target).toBe("notify?failures");
 });
 
 test("Agent Settings has no Channels section and its old address redirects", async ({

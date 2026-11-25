@@ -122,6 +122,7 @@ export default defineConfig({
 							link: "/guide/sessions-conversations",
 						},
 						{ text: "Scheduled Tasks", link: "/guide/scheduled-tasks" },
+						{ text: "Notifications", link: "/guide/notifications" },
 						{ text: "Code Loop", link: "/guide/projects" },
 						{ text: "The Code Loop on GitHub", link: "/guide/code-loop" },
 						{ text: "aviary watch", link: "/guide/watch" },
@@ -186,6 +187,10 @@ export default defineConfig({
 						{
 							text: "Usage And Skills Tools",
 							link: "/reference/mcp/usage-and-skills",
+						},
+						{
+							text: "Notification Tools",
+							link: "/reference/mcp/notifications",
 						},
 					],
 				},

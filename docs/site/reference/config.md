@@ -271,7 +271,7 @@ tasks:
     channel: Family Signal  # the agent's channel, by name or ID
     entry: ""               # one conversation on it; empty watches every conversation
     match: "*"              # case-insensitive wildcard; empty matches every message
-    target: reply           # silent (empty), reply, session:<name>, channel:<name> or codeloop:<owner/repo>#<number>
+    target: reply           # silent (empty), reply, session:<name>, channel:<name>, codeloop:<owner/repo>#<number>, notify or notify?failures
     overlap: queue          # queue (default) or skip a match while a run is active
     precompile: true        # run a compiled script, falling back to the model
     prompt: |

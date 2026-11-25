@@ -27,11 +27,57 @@ type DisplayPreferences struct {
 	TextSize string `json:"textSize,omitempty"`
 }
 
+// NotificationPreferences controls the notification system (#1215): the
+// master switch, each delivery method, sound, quiet hours, and each event
+// type. Nil in Preferences means DefaultNotificationPreferences.
+type NotificationPreferences struct {
+	// Enabled is the master switch: off, nothing is delivered anywhere.
+	Enabled bool `json:"enabled"`
+	// System shows browser or installed-app notifications, once the browser
+	// grants permission; InApp shows banners and toasts in the web UI.
+	System bool `json:"system"`
+	InApp  bool `json:"inApp"`
+	// Server has a macOS server show a Notification Center notification
+	// itself when no browser is connected.
+	Server     bool                         `json:"server"`
+	Sound      NotificationSound            `json:"sound"`
+	QuietHours NotificationQuietHours       `json:"quietHours"`
+	Events     map[string]NotificationEvent `json:"events"`
+}
+
+// NotificationSound is how notifications sound. Sound is off by default.
+type NotificationSound struct {
+	Enabled bool `json:"enabled"`
+	// Type is the default sound, one of the web UI's bundled sounds.
+	Type string `json:"type"`
+	// Volume is 0 to 100.
+	Volume int `json:"volume"`
+}
+
+// NotificationQuietHours holds back live delivery between Start and End,
+// "HH:MM" in the server's local time; notifications still reach the bell.
+type NotificationQuietHours struct {
+	Enabled bool   `json:"enabled"`
+	Start   string `json:"start"`
+	End     string `json:"end"`
+}
+
+// NotificationEvent configures one event type.
+type NotificationEvent struct {
+	Enabled bool `json:"enabled"`
+	// Delivery is "big" (a banner across the top), "small" (a corner toast)
+	// or "system" (a system notification, or a toast without permission).
+	Delivery string `json:"delivery"`
+	// Sound is the event's own sound, "" for the default one, or "none".
+	Sound string `json:"sound,omitempty"`
+}
+
 // Preferences holds the user's web UI preferences, kept on the server so
 // they follow the user across browsers and devices.
 type Preferences struct {
-	Navigation NavPreferences     `json:"navigation"`
-	Display    DisplayPreferences `json:"display"`
+	Navigation    NavPreferences           `json:"navigation"`
+	Display       DisplayPreferences       `json:"display"`
+	Notifications *NotificationPreferences `json:"notifications,omitempty"`
 }
 
 var preferencesMu sync.Mutex

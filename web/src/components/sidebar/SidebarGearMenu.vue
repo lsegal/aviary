@@ -14,6 +14,11 @@
 				<SwatchIcon aria-hidden="true" class="h-4 w-4" />
 				Display
 			</DropdownMenuItem>
+			<DropdownMenuItem v-if="minimal" :class="itemClass" data-testid="gear-menu-notifications"
+				@select="router.push('/system/notifications')">
+				<BellIcon aria-hidden="true" class="h-4 w-4" />
+				Notifications
+			</DropdownMenuItem>
 			<template v-else>
 				<DropdownMenuItem :class="itemClass" data-testid="gear-menu-settings" @select="router.push('/system/settings')">
 					<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
@@ -42,12 +47,13 @@
 // The sidebar's gear (#822): a menu of Settings, Edit sidebar (#1003), the
 // safe Restart, and Logout, rather than a link straight to Settings. Edit
 // sidebar opens Settings → Display at its Sidebar section (#1093), and a
-// watch session's menu is Display alone (#991). Hovering, focusing or
+// watch session's menu is Display and Notifications (#991, #1215). Hovering, focusing or
 // opening it prefetches the Settings chunk so choosing Settings routes at
 // once (#897).
 import AdjustmentsHorizontalIcon from "@heroicons/vue/24/outline/AdjustmentsHorizontalIcon";
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowRightOnRectangleIcon from "@heroicons/vue/24/outline/ArrowRightOnRectangleIcon";
+import BellIcon from "@heroicons/vue/24/outline/BellIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import SwatchIcon from "@heroicons/vue/24/outline/SwatchIcon";
 import {

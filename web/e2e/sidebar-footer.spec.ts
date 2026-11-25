@@ -38,7 +38,7 @@ test.beforeEach(async ({ page }) => {
 	await setAuthToken(page);
 });
 
-test("footer is one row: version on the left, connection then gear right-aligned (#838)", async ({
+test("footer is one row: version on the left, bell, connection then gear right-aligned (#838, #1215)", async ({
 	page,
 }) => {
 	await connectHealthy(page);
@@ -52,9 +52,10 @@ test("footer is one row: version on the left, connection then gear right-aligned
 
 	const actions = footer.getByTestId("sidebar-footer-actions");
 	const buttons = actions.getByRole("button");
-	await expect(buttons).toHaveCount(2);
-	await expect(buttons.nth(0)).toHaveAccessibleName("Connected");
-	await expect(buttons.nth(1)).toHaveAccessibleName("Settings menu");
+	await expect(buttons).toHaveCount(3);
+	await expect(buttons.nth(0)).toHaveAccessibleName("Notifications");
+	await expect(buttons.nth(1)).toHaveAccessibleName("Connected");
+	await expect(buttons.nth(2)).toHaveAccessibleName("Settings menu");
 	// Restart and Log out moved into the gear menu (#822).
 	await expect(footer.getByRole("button", { name: "Restart" })).toHaveCount(0);
 	await expect(footer.getByRole("button", { name: "Log out" })).toHaveCount(0);

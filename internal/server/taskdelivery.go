@@ -41,6 +41,8 @@ func (s *Server) deliverOutput(source domain.OutputSource, agentName, route, tex
 			delivery.Message = "delivered to channel " + target.Channel
 		case config.TargetCodeLoop:
 			err = s.deliverToCodeLoop(source, target, text, delivery)
+		case config.TargetNotify:
+			s.notifyTaskRun(source, target, text, delivery)
 		}
 	}
 	if err != nil {

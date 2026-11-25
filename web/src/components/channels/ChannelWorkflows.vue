@@ -158,6 +158,8 @@ import { channelName, channelTarget } from "../../lib/channels";
 import {
 	codeLoopTargetLabel,
 	isCodeLoopTarget,
+	isNotifyTarget,
+	NOTIFY_TARGET_OPTIONS,
 	parseCodeLoopTarget,
 } from "../../lib/taskTargets";
 import {
@@ -231,6 +233,8 @@ function describe(w: AgentTask): string {
 function viaLabel(target: string): string {
 	if (!target || target === "silent") return "silent";
 	if (target === "reply") return "replies in the conversation";
+	if (isNotifyTarget(target))
+		return target.includes("?") ? "notifies on failure" : "notifies";
 	const job = parseCodeLoopTarget(target);
 	if (job) return `sends to ${codeLoopTargetLabel(job)}`;
 	return `sends to ${target.replace(/^channel:|^session:/, "")}`;
@@ -283,6 +287,7 @@ const viaOptions = computed(() => [
 	{ value: "reply", label: "reply to the source conversation" },
 	{ value: "session", label: "a session" },
 	{ value: "codeloop", label: "a Code Loop job" },
+	...NOTIFY_TARGET_OPTIONS.map((o) => ({ ...o, label: o.label.toLowerCase() })),
 	...otherChannels.value.map((c) => ({
 		value: channelTarget(c),
 		label: `channel: ${c}`,

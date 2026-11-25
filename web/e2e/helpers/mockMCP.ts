@@ -126,6 +126,27 @@ export async function mockMCP(page: Page, fixtures: ToolFixtures = {}) {
 		});
 	});
 
+	// Notification settings and the bell's history (#1215), kept the same
+	// way; the history starts empty.
+	let notificationPrefs = {};
+	await page.route("/api/preferences/notifications", async (route) => {
+		const method = route.request().method();
+		if (method === "PUT") notificationPrefs = route.request().postDataJSON();
+		if (method === "DELETE") notificationPrefs = {};
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify(notificationPrefs),
+		});
+	});
+	await page.route(/\/api\/notifications(\/.*)?$/, (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ notifications: [], unread: 0 }),
+		}),
+	);
+
 	await page.route("/mcp", async (route) => {
 		const body = route.request().postDataJSON() as {
 			jsonrpc: string;

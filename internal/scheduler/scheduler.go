@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lsegal/aviary/internal/agent"
@@ -54,6 +55,22 @@ type Scheduler struct {
 	// now returns the wall-clock time without a monotonic reading, so
 	// comparisons stay correct across sleeps.
 	now func() time.Time
+	// runObserver, when set, learns how each run attempt ended.
+	runObserver atomic.Pointer[RunObserver]
+}
+
+// RunObserver learns how a task or workflow run attempt ended: its job as
+// persisted, its status, and the run history's summary of it.
+type RunObserver func(job domain.Job, status domain.TaskRunStatus, summary string)
+
+// SetRunObserver registers what learns how each run attempt ended, such as
+// the notification service.
+func (s *Scheduler) SetRunObserver(fn RunObserver) {
+	if fn == nil {
+		s.runObserver.Store(nil)
+		return
+	}
+	s.runObserver.Store(&fn)
 }
 
 // New creates and wires a Scheduler. Call Start to begin processing.
@@ -485,6 +502,9 @@ func (s *Scheduler) recordAttempt(job domain.Job, duration time.Duration) {
 		summary = summarize(job.Error)
 	}
 	s.state.finishRun(job.TaskID, job.ID, status, summary, duration)
+	if observe := s.runObserver.Load(); observe != nil {
+		(*observe)(job, status, summary)
+	}
 }
 
 func taskType(tc config.TaskConfig) string {

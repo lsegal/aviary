@@ -6,8 +6,10 @@
           <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 shrink-0 object-contain" />
           <span class="shrink-0 text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
           <!-- Links that don't fit, as at a large text size (#1093), wrap
-               out of sight rather than under the status icons. -->
+               out of sight rather than under the status icons. The
+               zero-width first item lets even the first link wrap. -->
           <div class="flex h-8 min-w-0 flex-wrap items-center gap-1 overflow-hidden">
+            <span aria-hidden="true" class="-mr-1 h-8 w-0" />
             <a
               v-for="link in brandLinks"
               :key="link.label"
@@ -37,6 +39,7 @@
             @restart="triggerRestart()" />
           <VersionIndicator v-if="!minimal" :version="version" :latest-version="latestVersion" :status="status"
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
+          <NotificationBell side="bottom" />
           <ConnectionIndicator :status="status" @retry="reconnect()" />
         </div>
       </div>
@@ -272,6 +275,7 @@
           <VersionIndicator v-if="!minimal" :version="version" :latest-version="latestVersion" :status="status"
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <div class="ml-auto flex shrink-0 items-center gap-1" data-testid="sidebar-footer-actions">
+            <NotificationBell />
             <ConnectionIndicator :status="status" @retry="reconnect()" />
             <SidebarGearMenu :minimal="minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
               @restart="triggerRestart()" />
@@ -339,6 +343,7 @@
         <SidebarRailItem v-else-if="!minimal" :label="railVersionLabel" data-testid="sidebar-rail-version">
           <TagIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
+        <NotificationBell rail />
         <ConnectionIndicator :status="status" @retry="reconnect()" />
         <SidebarGearMenu :minimal="minimal" rail :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
           @restart="triggerRestart()" />
@@ -362,6 +367,7 @@
     <AgentItemDialogs />
     <ChannelDialogs />
     <ToastStack />
+    <NotificationBanners />
 
     <UpgradeDialog :open="upgradeDialogOpen" :latest-version="latestVersion" :release-url="releaseUrl"
       :jobs="restart?.jobs ?? []" :busy="upgrading" :git="git" @close="upgradeDialogOpen = false"
@@ -452,6 +458,8 @@ import SettingsPageHeader, {
 	type SettingsCrumb,
 } from "./settings/SettingsPageHeader.vue";
 import SystemPageIcon from "./SystemPageIcon.vue";
+import NotificationBanners from "./notifications/NotificationBanners.vue";
+import NotificationBell from "./notifications/NotificationBell.vue";
 import ToastStack from "./ui/ToastStack.vue";
 import UpgradeDialog from "./UpgradeDialog.vue";
 import VersionIndicator from "./VersionIndicator.vue";

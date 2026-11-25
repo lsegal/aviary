@@ -27,7 +27,15 @@ type reporter struct {
 	events map[string]string
 	// send delivers the reports; tests replace it to run synchronously.
 	send func(func())
+	// observer learns every job's new reportable event, whether or not its
+	// project sends reports.
+	observer JobObserver
 }
+
+// JobObserver learns that a job's status moved to a new reportable event
+// (config.ProjectReportMerged, ProjectReportFailed or ProjectReportWaiting),
+// with the report text it raises.
+type JobObserver func(job core.JobSnapshot, event, text string)
 
 func newReporter() *reporter {
 	return &reporter{
@@ -41,6 +49,13 @@ func newReporter() *reporter {
 func (r *reporter) setDelivery(deliver ReportDelivery) {
 	r.mu.Lock()
 	r.deliver = deliver
+	r.mu.Unlock()
+}
+
+// setObserver sets what learns every job's new reportable event.
+func (r *reporter) setObserver(observe JobObserver) {
+	r.mu.Lock()
+	r.observer = observe
 	r.mu.Unlock()
 }
 
@@ -69,6 +84,10 @@ func (r *reporter) observe(snapshot core.Snapshot) {
 		r.events[key] = event
 		if !seen || event == "" || event == previous {
 			continue
+		}
+		if r.observer != nil {
+			observe, text := r.observer, reportText(job, event)
+			r.send(func() { observe(job, event, text) })
 		}
 		reports := r.projects[strings.TrimSpace(job.Target)]
 		if r.deliver == nil || !reports.Reports(event) {

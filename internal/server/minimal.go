@@ -111,6 +111,12 @@ var minimalTools = map[string]bool{
 	"session_history":  true,
 	"session_turn":     true,
 	"session_stop":     true,
+
+	// Notifications reach a watch session's web UI too (#1215).
+	"notify":                    true,
+	"notification_list":         true,
+	"notification_settings_get": true,
+	"notification_settings_set": true,
 }
 
 // minimalToolAllowed reports whether a minimal-mode server answers a call
