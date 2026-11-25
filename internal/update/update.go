@@ -86,8 +86,7 @@ func DetectInstall() InstallType {
 	return InstallDev
 }
 
-// DescribeInstall explains the detected install type for aviary version and
-// aviary doctor.
+// DescribeInstall explains the detected install type for aviary doctor.
 func DescribeInstall() string {
 	switch DetectInstall() {
 	case InstallRelease:
