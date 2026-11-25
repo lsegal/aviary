@@ -198,7 +198,8 @@ test("mobile header shows the compact version and connection icon on one row", a
 	expect(
 		Math.abs(box.y + box.height / 2 - (logo.y + logo.height / 2)),
 	).toBeLessThan(4);
-	expect(box.height).toBeLessThan(40);
+	// One row of 40px controls (#1317); a second row would double it.
+	expect(box.height).toBeLessThan(60);
 	await expect(page.getByText(/^Version /)).toHaveCount(0);
 
 	await update.click();
@@ -232,4 +233,71 @@ test("mobile header reads version, bell, connection then gear, with the gear rig
 	// The gear ends the row, flush with the header's right edge.
 	expect(row.x + row.width - (gearBox.x + gearBox.width)).toBeLessThan(2);
 	expect(gearBox.x + gearBox.width).toBeLessThanOrEqual(390);
+});
+
+test("mobile header controls have 40px tap targets (#1317)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await connectHealthy(page);
+	await mockServer(page, true);
+	await page.goto("/system/overview");
+
+	const status = page.getByTestId("mobile-header-status");
+	await expect(status.getByTestId("server-version")).toHaveText("31ee10e");
+	const buttons = status.getByRole("button");
+	await expect(buttons).toHaveCount(4);
+	await expect(buttons.nth(0)).toHaveAccessibleName("Update available: v0.7.0");
+	for (const button of await buttons.all()) {
+		const box = await button.boundingBox();
+		if (!box) throw new Error("control not laid out");
+		expect(
+			box.width,
+			await button.getAttribute("aria-label"),
+		).toBeGreaterThanOrEqual(40);
+		expect(
+			box.height,
+			await button.getAttribute("aria-label"),
+		).toBeGreaterThanOrEqual(40);
+	}
+	// The icons themselves keep their size.
+	await expect(status.locator("svg").first()).toHaveCSS("width", "16px");
+
+	// The desktop sidebar footer keeps its 32px controls.
+	await page.setViewportSize({ width: 1280, height: 800 });
+	const bell = page
+		.getByTestId("sidebar-footer-actions")
+		.getByRole("button", { name: "Notifications" });
+	await expect(bell).toBeVisible();
+	expect((await bell.boundingBox())?.height).toBe(32);
+});
+
+test("mobile header fits a 320px phone with an update pending (#1317)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 320, height: 640 });
+	await connectHealthy(page);
+	await mockServer(page, true);
+	await page.goto("/system/overview");
+
+	const status = page.getByTestId("mobile-header-status");
+	await expect(status.getByRole("button")).toHaveCount(4);
+	const title = await page
+		.locator("header")
+		.getByText("Aviary", { exact: true })
+		.boundingBox();
+	const box = await status.boundingBox();
+	const gear = await status.getByTestId("gear-menu-button").boundingBox();
+	if (!title || !box || !gear) throw new Error("header not laid out");
+	// The version text truncates instead of running under the title.
+	expect(box.x).toBeGreaterThanOrEqual(title.x + title.width);
+	expect(gear.x + gear.width).toBeLessThanOrEqual(320);
+	for (const button of await status.getByRole("button").all()) {
+		expect((await button.boundingBox())?.width).toBeGreaterThanOrEqual(40);
+	}
+	expect(
+		await page.evaluate(
+			() => document.documentElement.scrollWidth - window.innerWidth,
+		),
+	).toBe(0);
 });

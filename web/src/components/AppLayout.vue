@@ -1,40 +1,43 @@
 <template>
   <div class="flex h-full flex-col bg-white dark:bg-gray-950 lg:flex-row">
     <header class="border-b border-gray-200 bg-gray-50 px-4 py-2 dark:border-gray-800 dark:bg-gray-900 lg:hidden">
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex min-w-0 items-center gap-2">
-          <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 shrink-0 object-contain" />
-          <span class="shrink-0 text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
-          <!-- Links that don't fit, as at a large text size (#1093), wrap
-               out of sight rather than under the status icons. The
-               zero-width first item lets even the first link wrap. -->
-          <div class="flex h-8 min-w-0 flex-wrap items-center gap-1 overflow-hidden">
-            <span aria-hidden="true" class="-mr-1 h-8 w-0" />
-            <a
-              v-for="link in brandLinks"
-              :key="link.label"
-              :href="link.href"
-              :aria-label="link.label"
-              target="_blank"
-              rel="noreferrer"
-              class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white">
-              <component
-                v-if="link.iconComponent"
-                :is="link.iconComponent"
-                aria-hidden="true"
-                class="h-4 w-4" />
-              <svg
-                v-else
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                aria-hidden="true"
-                class="h-4 w-4">
-                <path :d="link.iconPath" />
-              </svg>
-            </a>
-          </div>
+      <div class="flex items-center gap-2">
+        <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 shrink-0 object-contain" />
+        <span class="shrink-0 text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
+        <!-- Links that don't fit, as at a large text size (#1093), wrap
+             out of sight rather than under the status icons. The
+             zero-width first item lets even the first link wrap. Its
+             zero basis gives the status controls their room first. -->
+        <div class="flex h-8 min-w-0 flex-1 flex-wrap items-center gap-1 overflow-hidden">
+          <span aria-hidden="true" class="-mr-1 h-8 w-0" />
+          <a
+            v-for="link in brandLinks"
+            :key="link.label"
+            :href="link.href"
+            :aria-label="link.label"
+            target="_blank"
+            rel="noreferrer"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white">
+            <component
+              v-if="link.iconComponent"
+              :is="link.iconComponent"
+              aria-hidden="true"
+              class="h-4 w-4" />
+            <svg
+              v-else
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"
+              class="h-4 w-4">
+              <path :d="link.iconPath" />
+            </svg>
+          </a>
         </div>
-        <div class="flex shrink-0 items-center gap-1" data-testid="mobile-header-status">
+        <!-- Each control gets a 40px tap target on phones (#1317); the icons
+             keep their size, and the desktop sidebar footer is untouched.
+             Once the links have given way, the version text truncates so
+             the row never overflows. -->
+        <div class="flex min-w-0 items-center [&_button]:min-h-10 [&_button]:min-w-10 [&_button]:shrink-0" data-testid="mobile-header-status">
           <VersionIndicator v-if="!minimal" :version="version" :latest-version="latestVersion" :status="status"
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <NotificationBell side="bottom" />
