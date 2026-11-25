@@ -115,6 +115,8 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 		"delivery":           settings.Delivery,
 		"poll_interval":      core.FormatInterval(settings.Interval),
 		"issue_filter":       issueFilter(settings),
+		"issue_filters":      targetIssueFilters(settings, watched),
+		"custom_filters":     customFilterTargets(settings, watched),
 		"allowed_commenters": commenters,
 		"quotas":             snapshot.Quotas,
 		"recent_logs":        logs,
@@ -743,4 +745,39 @@ func issueFilter(s engineSettings) string {
 		return ""
 	}
 	return s.Filter
+}
+
+// targetIssueFilters maps each of targets to the issue search that selects
+// its work: its own filter override, else issueFilter.
+func targetIssueFilters(s engineSettings, targets []string) map[string]string {
+	filters := make(map[string]string, len(targets))
+	for _, target := range targets {
+		filter, allIssues := core.NewFilterOverrides(s.TargetFilters).For(target, s.Filter, s.AllIssues)
+		if allIssues {
+			filter = ""
+		}
+		filters[target] = filter
+	}
+	return filters
+}
+
+// IssueFilter is the issue search that selects target's work: its own
+// filter, else the shared one, empty when every open issue is picked up.
+func (m *Manager) IssueFilter(target string) string {
+	m.mu.Lock()
+	cfg := m.effectiveSettingsLocked()
+	settings := engineSettings{Filter: cfg.EffectiveFilter(), AllIssues: cfg.AllIssues, TargetFilters: m.targetFiltersLocked([]string{target})}
+	m.mu.Unlock()
+	return targetIssueFilters(settings, []string{target})[target]
+}
+
+// customFilterTargets lists the targets with their own filter override.
+func customFilterTargets(s engineSettings, targets []string) []string {
+	custom := []string{}
+	for _, target := range targets {
+		if s.TargetFilters[target] != "" {
+			custom = append(custom, target)
+		}
+	}
+	return custom
 }

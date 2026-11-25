@@ -20,8 +20,11 @@
 				</span>
 		</template>
 		<template v-if="(project || aggregate) && !jobOpen && status" #header>
-			<p class="break-words sm:truncate" data-testid="board-subtitle">
-				<template v-if="status.issueFilter">Issues matching <code data-testid="issue-filter" class="font-mono">{{ status.issueFilter }}</code></template>
+			<div class="break-words" :class="{ 'sm:truncate': !editingFilter }" data-testid="board-subtitle">
+				<IssueFilterEditor v-if="filterTarget" v-model:editing="editingFilter" :target="filterTarget"
+					:filter="status.issueFilters[filterTarget] ?? status.issueFilter"
+					:custom="status.customFilters.includes(filterTarget)" @saved="refresh" />
+				<template v-else-if="status.issueFilter">Issues matching <code data-testid="issue-filter" class="font-mono">{{ status.issueFilter }}</code></template>
 				<template v-else>All open issues</template>
 				<template v-if="status.delivery"> · {{ status.delivery }}</template>
 				<template v-if="status.lastChecked"> · checked {{ age(status.lastChecked, now) }} ago</template>
@@ -30,7 +33,7 @@
 					· refreshing…<template v-if="status.cachedAt"> last updated {{ age(status.cachedAt, now) }} ago</template>
 				</span>
 				<template v-if="status.interval"> · every {{ status.interval }}</template>
-			</p>
+			</div>
 		</template>
 		<template v-if="project || aggregate" #header-actions>
 			<button v-if="aggregate" type="button" data-testid="board-add-project" aria-label="Add project" title="Add project"
@@ -253,6 +256,7 @@ import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
+import IssueFilterEditor from "../components/projects/IssueFilterEditor.vue";
 import JobCard from "../components/projects/JobCard.vue";
 import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
@@ -459,6 +463,12 @@ const {
 	dismiss,
 	scheduleEntries,
 } = useProjectBoard(targets, states, search, kanban, ref(true));
+// The header's issue filter is editable for one project (#1213): the
+// project's own board, or a board of a single project such as a watch's.
+const filterTarget = computed(() =>
+	targets.value.length === 1 ? targets.value[0] : "",
+);
+const editingFilter = ref(false);
 const {
 	schedules,
 	upcoming,

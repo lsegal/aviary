@@ -90,6 +90,19 @@ type projectAddArgs struct {
 	Settings *config.ProjectsConfig `json:"settings,omitempty" jsonschema:"For a runtime watch, projects settings that override aviary.yaml while it runs. model and fallbacks (CLI provider models such as claude/opus) replace the owning agent's model and fallbacks for its jobs"`
 }
 
+type projectUpdateArgs struct {
+	Target string `json:"target" jsonschema:"The watched project to change"`
+	// Filter sets the project's own issue search filter.
+	Filter string `json:"filter,omitempty" jsonschema:"This project's own issue search filter, in GitHub search syntax such as label:bug -label:wip assignee:@me; it replaces the shared projects filter for this project only. It is checked against GitHub first and an invalid filter is refused"`
+	// ResetFilter removes the override.
+	ResetFilter bool `json:"reset_filter,omitempty" jsonschema:"Remove this project's own filter so it uses the shared projects filter again"`
+}
+
+type projectFilterCheckArgs struct {
+	Target string `json:"target" jsonschema:"The project to search"`
+	Filter string `json:"filter" jsonschema:"The issue search filter to check, in GitHub search syntax"`
+}
+
 type projectRemoveArgs struct {
 	Target  string `json:"target" jsonschema:"The project to stop watching"`
 	Runtime bool   `json:"runtime,omitempty" jsonschema:"Only stop a runtime watch, leaving aviary.yaml alone"`
@@ -411,6 +424,32 @@ func registerProjectTools(s *sdkmcp.Server) {
 	})
 
 	addTool(s, &sdkmcp.Tool{
+		Name:        "project_filter_check",
+		Description: "Check an issue search filter for a Code Loop project without saving it: its syntax, then a dry-run GitHub search reporting how many open issues of the project it matches in matches. An invalid filter fails with the reason",
+		Annotations: readOnlyTool,
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectFilterCheckArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
+			target := strings.TrimSpace(args.Target)
+			filter := config.JoinFilter([]string{args.Filter})
+			matches, err := m.CheckIssueFilter(ctx, target, filter)
+			if err != nil {
+				return nil, fmt.Errorf("invalid filter: %w", err)
+			}
+			return map[string]any{"target": target, "filter": filter, "matches": matches}, nil
+		})
+	})
+
+	addTool(s, &sdkmcp.Tool{
+		Name:        "project_update",
+		Description: "Change one watched Code Loop project. filter sets the project's own issue search filter, replacing the shared projects filter for this project only, after checking it against GitHub; reset_filter removes it. A saved project's filter is written to its entry in aviary.yaml, a runtime watch's lasts until the watch stops. The project is checked for work right away",
+		Annotations: mutatingTool,
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectUpdateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
+			return updateProject(ctx, m, args)
+		})
+	})
+
+	addTool(s, &sdkmcp.Tool{
 		Name:        "project_remove",
 		Description: "Stop watching a project, removing it from aviary.yaml and from runtime watches. Its running, waiting, queued and paused jobs stop (running ones are checkpointed first) and are listed in stopped_jobs; the repository, its issues and pull requests, and clones on disk are left alone",
 		Annotations: destructiveTool,
@@ -583,4 +622,67 @@ func registerProjectTools(s *sdkmcp.Server) {
 			return m.ImportBrowserProfile(strings.TrimSpace(args.Profile))
 		})
 	})
+}
+
+// updateProject is project_update: it sets or resets a project's own issue
+// filter, on its runtime watch when it has one and otherwise on its saved
+// entry, then checks the project for work.
+func updateProject(ctx context.Context, m *projects.Manager, args projectUpdateArgs) (map[string]any, error) {
+	target := strings.TrimSpace(args.Target)
+	if target == "" {
+		return nil, errors.New("target is required")
+	}
+	filter := config.JoinFilter([]string{args.Filter})
+	switch {
+	case args.ResetFilter && filter != "":
+		return nil, errors.New("pass filter or reset_filter, not both")
+	case !args.ResetFilter && filter == "":
+		return nil, errors.New("nothing to change: pass filter or reset_filter")
+	}
+	result := map[string]any{"target": target}
+	var override []string
+	if filter != "" {
+		matches, err := m.CheckIssueFilter(ctx, target, filter)
+		if err != nil {
+			return nil, fmt.Errorf("invalid filter: %w", err)
+		}
+		override = []string{filter}
+		result["matches"] = matches
+	}
+	runtime, err := m.SetWatchFilter(target, override)
+	if err != nil {
+		return nil, err
+	}
+	if runtime {
+		result["runtime"] = true
+	} else {
+		cfg, err := config.Load("")
+		if err != nil {
+			return nil, err
+		}
+		found := false
+		for i := range cfg.Agents {
+			for j := range cfg.Agents[i].Projects {
+				if strings.TrimSpace(cfg.Agents[i].Projects[j].Target) == target {
+					cfg.Agents[i].Projects[j].Filter = override
+					found = true
+				}
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("%s is not watched", target)
+		}
+		if err := config.Save("", cfg); err != nil {
+			return nil, err
+		}
+		m.Reconcile(cfg)
+		result["saved"] = true
+	}
+	// A stopped engine has nothing to refresh; the next start reads the
+	// new filter.
+	_, _ = m.Refresh(target)
+	m.NotifyUpdated(target)
+	result["custom"] = filter != ""
+	result["issue_filter"] = m.IssueFilter(target)
+	return result, nil
 }

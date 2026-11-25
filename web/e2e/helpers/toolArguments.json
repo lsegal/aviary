@@ -304,6 +304,10 @@
 	],
 	"project_clone_clear": [],
 	"project_clone_list": [],
+	"project_filter_check": [
+		"filter",
+		"target"
+	],
 	"project_github_import": [
 		"profile"
 	],
@@ -467,6 +471,11 @@
 	],
 	"project_unblock_run": [
 		"number",
+		"target"
+	],
+	"project_update": [
+		"filter",
+		"reset_filter",
 		"target"
 	],
 	"provider_cli_list": [],

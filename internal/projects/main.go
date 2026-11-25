@@ -83,10 +83,13 @@ func ngrokTargetAddr(address string) string {
 // GHCLI reads and writes GitHub through the gh CLI, and the public REST API
 // for public repositories.
 type GHCLI struct {
-	Binary     string
-	Filter     string
-	AllIssues  bool
-	ReadyState string
+	Binary    string
+	Filter    string
+	AllIssues bool
+	// FilterOverrides are per-target filters, which replace Filter and
+	// AllIssues for their targets.
+	FilterOverrides *core.FilterOverrides
+	ReadyState      string
 	// Timeout bounds each `gh` call; zero uses ghCommandTimeout. Interactive
 	// callers that must answer quickly set a shorter one.
 	Timeout    time.Duration
@@ -586,14 +589,21 @@ type repositoryProjectItemsPage struct {
 	} `json:"data"`
 }
 
+// filterFor returns the issue search filter and all-issues setting of target:
+// its own override, else the run's.
+func (g GHCLI) filterFor(target string) (string, bool) {
+	return g.FilterOverrides.For(target, g.Filter, g.AllIssues)
+}
+
 // ListIssues lists the dispatchable issues of a target.
 func (g GHCLI) ListIssues(ctx context.Context, repo string) ([]Issue, error) {
 	target, err := parseTarget(repo)
 	if err != nil {
 		return nil, err
 	}
+	filter, allIssues := g.filterFor(repo)
 	if target.IsProject && target.ProjectOwnerType != "" {
-		items, err := g.listProjectItems(ctx, target, g.Filter, g.AllIssues)
+		items, err := g.listProjectItems(ctx, target, filter, allIssues)
 		if err != nil {
 			return nil, err
 		}
@@ -609,7 +619,7 @@ func (g GHCLI) ListIssues(ctx context.Context, repo string) ([]Issue, error) {
 		// A repository-scoped project board (owner/repo/projects/N) leaves
 		// projectOwnerType unset; it still needs the GraphQL-only Projects
 		// v2 API, which has no REST equivalent.
-		issues, err := decodeProjectIssues(g.run(ctx, projectListArgs(target, g.Filter, g.AllIssues)...))
+		issues, err := decodeProjectIssues(g.run(ctx, projectListArgs(target, filter, allIssues)...))
 		if err != nil {
 			return nil, err
 		}
@@ -623,7 +633,6 @@ func (g GHCLI) ListIssues(ctx context.Context, repo string) ([]Issue, error) {
 
 	var issues []Issue
 	usedPublicAPI := false
-	filter, allIssues := g.Filter, g.AllIssues
 	if g.isPublicRepo(ctx, target.Repo) {
 		if got, ok := g.listPublicIssues(ctx, target.Repo, filter, allIssues); ok {
 			issues, usedPublicAPI = got, true
@@ -941,10 +950,11 @@ func (g GHCLI) ProjectState(ctx context.Context, repo string) (string, error) {
 		return "", fmt.Errorf("project state requires a project target, got %q", repo)
 	}
 	var items []projectItem
+	filter, allIssues := g.filterFor(repo)
 	if target.ProjectOwnerType != "" {
-		items, err = g.listProjectItemFields(ctx, target, g.Filter, g.AllIssues, projectItemKeyFields)
+		items, err = g.listProjectItemFields(ctx, target, filter, allIssues, projectItemKeyFields)
 	} else {
-		items, err = decodeProjectItems(g.run(ctx, projectListArgs(target, g.Filter, g.AllIssues)...))
+		items, err = decodeProjectItems(g.run(ctx, projectListArgs(target, filter, allIssues)...))
 	}
 	if err != nil {
 		return "", err

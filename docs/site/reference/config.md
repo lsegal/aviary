@@ -292,6 +292,7 @@ agents:
     fallbacks: [cli/codex/gpt-6.1-terra:high]
     projects:
       - target: owner/repo
+        filter: ["label:bug -label:wip"]   # this project only
       - target: https://github.com/orgs/acme/projects/3
         reports:                   # off unless set
           agent: assistant
@@ -301,6 +302,7 @@ agents:
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board. The agent's model and fallbacks are its jobs' provider and model defaults, in fallback order: a `<cli>/<model>` (or `cli/<cli>/<model>`) model runs jobs on that CLI provider; any other model runs them on the agent itself |
+| `[].filter` | string[] | the shared `projects.filter` | This project's own [issue filter](/guide/projects#issue-filter), replacing the shared `filter` (and `all_issues`) for it alone. Changing it applies to the running engine in place |
 | `[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
 | `[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `channel:<name>` (one of the reports agent's channels) or `session:<name>` |
 | `[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
@@ -482,7 +484,7 @@ projects:
 | `interval` | duration | `30s` | Time between GitHub polls |
 | `delivery` | string | `poll` | `poll` or `webhook` (ngrok tunnel and repository webhooks) |
 | `ready_state` | string | `Todo` or `Ready` | Project board status that marks an item ready |
-| `filter` | string[] | `assignee:@me` | Issue search filter |
+| `filter` | string[] | `assignee:@me` | Issue search filter, for every project without its own `filter` |
 | `all_issues` | bool | `false` | Drop the issue filter and pick up every open issue |
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
 | `approval_mode` | string | `approval.mode` | Code Loop's [approval-mode](#approval) override for the CLI runs it launches: `read-only`, `auto`, or `full` |

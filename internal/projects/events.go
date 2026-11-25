@@ -46,6 +46,15 @@ func (m *Manager) emit(events []ProjectEvent) {
 	}
 }
 
+// NotifyUpdated tells every dashboard that target changed, such as its issue
+// filter, so open clients re-read it at once.
+func (m *Manager) NotifyUpdated(target string) {
+	m.mu.Lock()
+	agent := m.owners[target]
+	m.mu.Unlock()
+	m.emit([]ProjectEvent{{Type: ProjectUpdated, Target: target, Agent: agent}})
+}
+
 // watchedLocked is the watched targets and the agent owning each, or nil
 // when the settings are rejected. m.mu must be held.
 func (m *Manager) watchedLocked() ([]string, map[string]string) {
