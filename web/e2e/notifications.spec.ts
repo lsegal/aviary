@@ -464,7 +464,7 @@ test("the bell shows the unread count and history, with mark-read and clear", as
 	await expect(items.nth(1)).toContainText("×3");
 	await center.getByTestId("notification-mark-all-read").click();
 	await expect(bell.getByTestId("notification-unread")).toHaveCount(0);
-	expect(server.state.reads.at(-1)).toEqual([]);
+	await expect.poll(() => server.state.reads.at(-1)).toEqual([]);
 
 	await items.first().click();
 	await expect(page).toHaveURL("/system/usage");
