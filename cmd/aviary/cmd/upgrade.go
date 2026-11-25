@@ -100,13 +100,25 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("  - %s\n", reason)
 		}
 	}
-	ctx, cancel := context.WithTimeout(update.WithCaller(context.Background(), "aviary upgrade"), 15*time.Second)
-	defer cancel()
-
-	check, err := update.CheckMode(ctx, &http.Client{Timeout: 15 * time.Second}, mode)
+	check, err := upgradeCheck(mode)
 	if err != nil && check.LatestVersion == "" {
 		return err
 	}
+	return applyUpgrade(check, mode)
+}
+
+// upgradeCheck checks this binary's install, in mode, for an upgrade. It is
+// the one check behind both aviary upgrade and the doctor's version check, so
+// the doctor never offers an upgrade the upgrade would not perform.
+func upgradeCheck(mode update.InstallType) (update.CheckResult, error) {
+	ctx, cancel := context.WithTimeout(update.WithCaller(context.Background(), "aviary upgrade"), 15*time.Second)
+	defer cancel()
+	return update.CheckMode(ctx, &http.Client{Timeout: 15 * time.Second}, mode)
+}
+
+// applyUpgrade upgrades the install check describes to the version check
+// found, without checking again.
+func applyUpgrade(check update.CheckResult, mode update.InstallType) error {
 	if check.InstallType == update.InstallSource {
 		return runSourceUpgrade(check)
 	}
@@ -141,7 +153,11 @@ func runReleaseUpgrade(check update.CheckResult, forced bool) error {
 	}
 	srv, running := findRunningServer()
 	targets := []string{exePath}
-	restart := running && srv.Problem == "" && srv.InstallType == update.InstallRelease
+	releaseServer := running && srv.Problem == "" && srv.InstallType == update.InstallRelease
+	// A server already on the target only needs this binary brought up to
+	// it, not a reinstall and a restart that would interrupt its jobs.
+	serverCurrent := releaseServer && update.SameVersion(srv.CurrentVersion, targetVersion)
+	restart := releaseServer && !serverCurrent
 	if restart && srv.Executable != "" && !sameFile(srv.Executable, exePath) {
 		// The server re-executes its own binary, so that is the one to swap.
 		targets = append(targets, srv.Executable)
@@ -163,6 +179,9 @@ func runReleaseUpgrade(check update.CheckResult, forced bool) error {
 		return nil
 	case srv.Problem != "":
 		return unmanagedServerError(installed, srv.Problem)
+	case serverCurrent:
+		fmt.Printf("The running Aviary server is already at %s.\n", update.DisplayVersion(srv.CurrentVersion))
+		return nil
 	case !restart:
 		fmt.Println(otherServerNote(srv.CheckResult))
 		return nil
@@ -457,11 +476,12 @@ func resolveUpgradeTarget(check update.CheckResult, requested string, forced boo
 	return target, false
 }
 
+// maybeRunDoctorVersionCheck reports whether this binary's install, the one
+// aviary upgrade acts on, has an upgrade, and offers to apply it. Accepting
+// applies the upgrade from the same check, so what the prompt names is what
+// gets installed.
 func maybeRunDoctorVersionCheck() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	check, err := update.Check(ctx, &http.Client{Timeout: 10 * time.Second})
+	check, err := upgradeCheck("")
 	if err != nil && check.LatestVersion == "" {
 		fmt.Printf("\nVersion check: [WARN] %v\n", err)
 		return nil
@@ -478,7 +498,7 @@ func maybeRunDoctorVersionCheck() error {
 		return nil
 	}
 
-	fmt.Printf("\nVersion check: [WARN] upgrade available %s -> %s\n", check.CurrentVersion, check.LatestVersion)
+	fmt.Printf("\nVersion check: [WARN] upgrade available %s -> %s%s\n", check.CurrentVersion, check.LatestVersion, doctorUpgradeTarget(check))
 	answer, err := promptYesNo(fmt.Sprintf("Upgrade to %s now? [y/N]: ", check.LatestVersion))
 	if err != nil {
 		return err
@@ -486,10 +506,31 @@ func maybeRunDoctorVersionCheck() error {
 	if !answer {
 		return nil
 	}
-	return runUpgrade(nil, nil)
+	fmt.Println(update.UpgradeSummary())
+	return applyUpgrade(check, "")
 }
 
-func promptYesNo(prompt string) (bool, error) {
+// doctorUpgradeTarget names the install the doctor's upgrade prompt is about
+// when it could be mistaken for another: a release binary other than the one
+// the running server reports a different version for.
+func doctorUpgradeTarget(check update.CheckResult) string {
+	if check.InstallType != update.InstallRelease {
+		return ""
+	}
+	srv, running := findRunningServer()
+	if !running || srv.Problem != "" || update.SameVersion(srv.CurrentVersion, check.CurrentVersion) {
+		return ""
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf(" for %s (the running server is at %s)", exe, update.DisplayVersion(srv.CurrentVersion))
+}
+
+// promptYesNo asks prompt on the console. It is a variable so tests can
+// answer it.
+var promptYesNo = func(prompt string) (bool, error) {
 	fmt.Print(prompt)
 	line, err := readConsoleLine()
 	if err != nil {
