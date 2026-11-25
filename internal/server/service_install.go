@@ -12,6 +12,18 @@ import (
 	"strings"
 )
 
+// Platform and process hooks, replaced in tests so no real service manager,
+// user database, or system directory is touched.
+var (
+	serviceGOOS      = runtime.GOOS
+	execCommand      = exec.Command
+	lookPath         = exec.LookPath
+	lookupUser       = osuser.Lookup
+	userHomeDir      = os.UserHomeDir
+	osExecutable     = os.Executable
+	launchDaemonsDir = "/Library/LaunchDaemons"
+)
+
 // ServiceOptions describes a service to install.
 type ServiceOptions struct {
 	Name        string
@@ -54,7 +66,7 @@ func InstallService(opts ServiceOptions) error {
 		}
 		// Finally fall back to the current user if one is available and not root.
 		if opts.User == "" {
-			if u, err := os.UserHomeDir(); err == nil {
+			if u, err := userHomeDir(); err == nil {
 				// try to parse home dir for username (best-effort)
 				if strings.HasPrefix(u, "/home/") {
 					parts := strings.SplitN(strings.TrimPrefix(u, "/home/"), "/", 2)
@@ -70,7 +82,7 @@ func InstallService(opts ServiceOptions) error {
 			}
 		}
 	}
-	switch runtime.GOOS {
+	switch serviceGOOS {
 	case "linux":
 		// Guard: if dev helper detected but name left as default, prefer a dev service name
 		joined := strings.Join(opts.Args, " ")
@@ -100,13 +112,13 @@ func InstallService(opts ServiceOptions) error {
 	case "windows":
 		return installWindowsService(opts)
 	default:
-		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
+		return fmt.Errorf("unsupported OS: %s", serviceGOOS)
 	}
 }
 
 // UninstallService removes the service registration.
 func UninstallService(name string) error {
-	switch runtime.GOOS {
+	switch serviceGOOS {
 	case "linux":
 		if err := uninstallSystemd(name); err != nil {
 			return trySudoRetry("uninstall", err)
@@ -120,13 +132,13 @@ func UninstallService(name string) error {
 	case "windows":
 		return uninstallWindowsService(name)
 	default:
-		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
+		return fmt.Errorf("unsupported OS: %s", serviceGOOS)
 	}
 }
 
 // StartService starts the named service using the platform's service manager.
 func StartService(name string) error {
-	switch runtime.GOOS {
+	switch serviceGOOS {
 	case "linux":
 		if err := runCmd("systemctl", "--user", "start", name); err != nil {
 			return err
@@ -141,13 +153,13 @@ func StartService(name string) error {
 	case "windows":
 		return runCmd("sc", "start", name)
 	default:
-		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
+		return fmt.Errorf("unsupported OS: %s", serviceGOOS)
 	}
 }
 
 // StopService stops the named service using the platform's service manager.
 func StopService(name string) error {
-	switch runtime.GOOS {
+	switch serviceGOOS {
 	case "linux":
 		if err := runCmd("systemctl", "--user", "stop", name); err != nil {
 			return err
@@ -162,7 +174,7 @@ func StopService(name string) error {
 	case "windows":
 		return runCmd("sc", "stop", name)
 	default:
-		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
+		return fmt.Errorf("unsupported OS: %s", serviceGOOS)
 	}
 }
 
@@ -170,7 +182,7 @@ func StopService(name string) error {
 // re-executes the same aviary binary via sudo to retry the requested action.
 func trySudoRetry(action string, origErr error) error {
 	// Only retry on obvious permission errors and only on POSIX systems.
-	if runtime.GOOS == "windows" {
+	if serviceGOOS == "windows" {
 		return origErr
 	}
 	if os.Getenv("AVIARY_TRIED_SUDO") == "1" {
@@ -182,7 +194,7 @@ func trySudoRetry(action string, origErr error) error {
 		return origErr
 	}
 
-	exe, err := os.Executable()
+	exe, err := osExecutable()
 	if err != nil {
 		return origErr
 	}
@@ -194,7 +206,7 @@ func trySudoRetry(action string, origErr error) error {
 	// Re-run the same invocation under sudo preserving environment.
 	// e.g. `sudo -E <exe> service install-dev-docs` so we don't lose the dev-specific command.
 	sudoArgs := append([]string{"-E", exe}, os.Args[1:]...)
-	cmd := exec.Command("sudo", sudoArgs...)
+	cmd := execCommand("sudo", sudoArgs...)
 	// Ensure AVIARY_TRIED_SUDO is set for the child process environment.
 	cmd.Env = append(os.Environ(), "AVIARY_TRIED_SUDO=1")
 	cmd.Stdout = os.Stdout
@@ -207,13 +219,13 @@ func trySudoRetry(action string, origErr error) error {
 
 func systemdUserDir(username string) (string, error) {
 	if username != "" {
-		u, err := osuser.Lookup(username)
+		u, err := lookupUser(username)
 		if err != nil {
 			return "", fmt.Errorf("looking up user %s: %w", username, err)
 		}
 		return filepath.Join(u.HomeDir, ".config", "systemd", "user"), nil
 	}
-	home, err := os.UserHomeDir()
+	home, err := userHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("getting home dir: %w", err)
 	}
@@ -278,7 +290,7 @@ func uninstallSystemd(name string) error {
 func installLaunchd(opts ServiceOptions) error {
 	// create a LaunchDaemon plist in /Library/LaunchDaemons
 	plistName := "bot.aviary." + opts.Name
-	plistPath := filepath.Join("/Library/LaunchDaemons", plistName+".plist")
+	plistPath := filepath.Join(launchDaemonsDir, plistName+".plist")
 	// program arguments: exec followed by args
 	var b bytes.Buffer
 	b.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
@@ -307,7 +319,7 @@ func installLaunchd(opts ServiceOptions) error {
 
 func uninstallLaunchd(name string) error {
 	plistName := "bot.aviary." + name
-	plistPath := filepath.Join("/Library/LaunchDaemons", plistName+".plist")
+	plistPath := filepath.Join(launchDaemonsDir, plistName+".plist")
 	_ = runCmd("launchctl", "unload", plistPath)
 	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("removing plist: %w", err)
@@ -322,7 +334,7 @@ func installWindowsService(opts ServiceOptions) error {
 	// Use sc.exe to create a simple service. The binPath must be quoted.
 	binPath := fmt.Sprintf("%s %s", opts.Exec, strings.Join(escapeArgs(opts.Args), " "))
 	// sc requires the `binPath=` token and spacing exactly like this.
-	cmd := exec.Command("sc", "create", opts.Name, "binPath=", binPath, "start=", "auto")
+	cmd := execCommand("sc", "create", opts.Name, "binPath=", binPath, "start=", "auto")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("sc create failed: %w: %s", err, string(out))
 	}
@@ -342,7 +354,7 @@ func uninstallWindowsService(name string) error {
 }
 
 func runCmd(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+	cmd := execCommand(name, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s %v: %w: %s", name, args, err, string(out))
 	}
@@ -378,10 +390,10 @@ func escapeXML(s string) string {
 
 // Basic validation: ensure sc.exe exists on Windows
 func validateWindows() error {
-	if runtime.GOOS != "windows" {
+	if serviceGOOS != "windows" {
 		return nil
 	}
-	if _, err := exec.LookPath("sc"); err != nil {
+	if _, err := lookPath("sc"); err != nil {
 		return errors.New("sc.exe not found in PATH")
 	}
 	return nil
