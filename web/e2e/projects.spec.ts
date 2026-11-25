@@ -3577,9 +3577,9 @@ test("at 390px the Code Loop header wraps and the top nav hides its scrollbar (#
 	await expect(page.getByTestId("instance-id")).toBeVisible();
 
 	// The title is whole, and the chips wrap onto the line below it.
-	expect(
-		await title.evaluate((el) => el.scrollWidth <= el.clientWidth),
-	).toBe(true);
+	expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+		true,
+	);
 	const titleBox = await title.boundingBox();
 	for (const id of ["board-projects", "delivery-status", "instance-id"]) {
 		const box = await page.getByTestId(id).boundingBox();
@@ -3626,7 +3626,9 @@ test("at 390px the Code Loop header wraps and the top nav hides its scrollbar (#
 			overflowX: getComputedStyle(el).overflowX,
 			scrolls: el.scrollWidth > el.clientWidth,
 			activeInView:
-				!!active && active.left >= box.left - 1 && active.right <= box.right + 1,
+				!!active &&
+				active.left >= box.left - 1 &&
+				active.right <= box.right + 1,
 		};
 	});
 	expect(navLayout.overflowX).toBe("auto");
