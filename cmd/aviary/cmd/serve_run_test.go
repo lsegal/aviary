@@ -331,7 +331,7 @@ func TestRunStartShutsDownOnSignal(t *testing.T) {
 func TestRunStartPrintsStartupTrace(t *testing.T) {
 	setupServeEnv(t)
 	traceStartup = true
-	serveWith(func(ctx context.Context, _ int) error {
+	serveWith(func(context.Context, int) error {
 		startup.Current().MarkMCPReady()
 		// Give printStartupTrace a few ticks to see the ready boot.
 		time.Sleep(500 * time.Millisecond)
