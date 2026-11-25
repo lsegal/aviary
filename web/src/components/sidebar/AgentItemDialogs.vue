@@ -75,45 +75,18 @@
 		</DialogPortal>
 	</DialogRoot>
 
-	<AlertDialogRoot :open="deleteOpen" @update:open="(v) => { if (!v && !busy) close() }">
-		<AlertDialogPortal>
-			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
-			<AlertDialogContent
-				class="fixed left-1/2 top-1/2 z-50 w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
-				<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
-					Delete {{ dialog?.kind }}?
-				</AlertDialogTitle>
-				<AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-					This will permanently delete
-					<span class="break-all font-medium text-gray-900 dark:text-white">{{ dialog?.name }}</span>.
-					This cannot be undone.
-				</AlertDialogDescription>
-				<p v-if="error" role="alert" class="mt-3 text-sm text-red-600 dark:text-red-400">{{ error }}</p>
-				<div class="mt-6 flex justify-end gap-3">
-					<AlertDialogCancel :disabled="busy"
-						class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
-						Cancel
-					</AlertDialogCancel>
-					<button type="button" :disabled="busy"
-						class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-						@click="confirmDelete">
-						Delete
-					</button>
-				</div>
-			</AlertDialogContent>
-		</AlertDialogPortal>
-	</AlertDialogRoot>
+	<ConfirmDialog :open="deleteOpen" :title="`Delete ${dialog?.kind}?`" :action="confirmDelete" confirm-label="Delete"
+		busy-label="Deleting…" test-id="delete-item-dialog" @update:open="(v) => { if (!v) close() }">
+		<p>
+			This will permanently delete
+			<span class="break-all font-medium text-gray-900 dark:text-white">{{ dialog?.name }}</span>.
+			This cannot be undone.
+		</p>
+	</ConfirmDialog>
 </template>
 
 <script setup lang="ts">
 import {
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogOverlay,
-	AlertDialogPortal,
-	AlertDialogRoot,
-	AlertDialogTitle,
 	DialogClose,
 	DialogContent,
 	DialogDescription,
@@ -146,6 +119,7 @@ import {
 } from "../../stores/settings";
 import TaskPromptSection from "../TaskPromptSection.vue";
 import TriggerEditor from "../TriggerEditor.vue";
+import ConfirmDialog from "../ui/ConfirmDialog.vue";
 import SegmentedControl, {
 	type SegmentedOption,
 } from "../ui/SegmentedControl.vue";
@@ -542,28 +516,20 @@ async function submit() {
 
 async function confirmDelete() {
 	const d = dialog.value;
-	if (!d?.name || busy.value) return;
+	if (!d?.name) return;
 	const name = d.name;
-	busy.value = true;
-	error.value = "";
-	try {
-		const wasShowing = showing(d.kind, d.agent, name);
-		if (d.kind === "task") {
-			await settings.saveAgentTasks(d.agent, (tasks) =>
-				tasks.filter((t) => t.name !== name),
-			);
-		} else {
-			await files.remove(d.agent, name);
-		}
-		close();
-		if (wasShowing)
-			await router.replace(
-				d.kind === "task" ? agentTaskPath(d.agent) : agentFilePath(d.agent),
-			);
-	} catch (e) {
-		error.value = e instanceof Error ? e.message : String(e);
-	} finally {
-		busy.value = false;
+	const wasShowing = showing(d.kind, d.agent, name);
+	if (d.kind === "task") {
+		await settings.saveAgentTasks(d.agent, (tasks) =>
+			tasks.filter((t) => t.name !== name),
+		);
+	} else {
+		await files.remove(d.agent, name);
 	}
+	close();
+	if (wasShowing)
+		await router.replace(
+			d.kind === "task" ? agentTaskPath(d.agent) : agentFilePath(d.agent),
+		);
 }
 </script>

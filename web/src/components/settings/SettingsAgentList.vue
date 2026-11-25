@@ -80,36 +80,17 @@
 		</DialogPortal>
 	</DialogRoot>
 
-	<AlertDialogRoot :open="deleteIdx !== null" @update:open="(v) => { if (!v && !busy) deleteIdx = null }">
-		<AlertDialogPortal>
-			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
-			<AlertDialogContent data-testid="delete-agent-dialog"
-				class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
-				<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
-					Delete {{ deleteTarget?.name || "this agent" }}?
-				</AlertDialogTitle>
-				<AlertDialogDescription class="mt-2 space-y-2 text-sm text-gray-600 dark:text-gray-400">
-					<span class="block">
-						Aviary removes <b class="font-medium text-gray-900 dark:text-white">{{ deleteTarget?.name || "this agent" }}</b>
-						and all of its settings from aviary.yaml. This cannot be undone.
-					</span>
-					<span v-if="dependents.length" data-testid="delete-agent-dependents" class="block text-amber-700 dark:text-amber-400">
-						It still has {{ dependents.join(", ") }}, which stop working with it.
-					</span>
-				</AlertDialogDescription>
-				<p v-if="deleteError" role="alert" class="mt-3 text-sm text-red-600 dark:text-red-400">{{ deleteError }}</p>
-				<div class="mt-6 flex justify-end gap-3">
-					<AlertDialogCancel :disabled="busy"
-						class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
-						Cancel
-					</AlertDialogCancel>
-					<button type="button" :disabled="busy" data-testid="delete-agent-confirm"
-						class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-						@click="confirmDelete">{{ busy ? "Deleting…" : "Delete agent" }}</button>
-				</div>
-			</AlertDialogContent>
-		</AlertDialogPortal>
-	</AlertDialogRoot>
+	<ConfirmDialog :open="deleteIdx !== null" :title="`Delete ${deleteTarget?.name || 'this agent'}?`" :action="confirmDelete"
+		confirm-label="Delete agent" busy-label="Deleting…" test-id="delete-agent-dialog"
+		@update:open="(v) => { if (!v) deleteIdx = null }">
+		<p>
+			Aviary removes <b class="font-medium text-gray-900 dark:text-white">{{ deleteTarget?.name || "this agent" }}</b>
+			and all of its settings from aviary.yaml. This cannot be undone.
+		</p>
+		<p v-if="dependents.length" data-testid="delete-agent-dependents" class="text-amber-700 dark:text-amber-400">
+			It still has {{ dependents.join(", ") }}, which stop working with it.
+		</p>
+	</ConfirmDialog>
 </template>
 
 <script setup lang="ts">
@@ -117,13 +98,6 @@ import EllipsisHorizontalIcon from "@heroicons/vue/24/outline/EllipsisHorizontal
 import PencilSquareIcon from "@heroicons/vue/24/outline/PencilSquareIcon";
 import TrashIcon from "@heroicons/vue/24/outline/TrashIcon";
 import {
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogOverlay,
-	AlertDialogPortal,
-	AlertDialogRoot,
-	AlertDialogTitle,
 	DialogClose,
 	DialogContent,
 	DialogDescription,
@@ -139,6 +113,7 @@ import {
 import { computed, inject, ref } from "vue";
 import { useMCP } from "../../composables/useMCP";
 import type { AgentEntry } from "../../stores/settings";
+import ConfirmDialog from "../ui/ConfirmDialog.vue";
 import { settingsViewContextKey } from "./context";
 
 const settings = inject(settingsViewContextKey);
@@ -197,7 +172,6 @@ async function confirmRename() {
 }
 
 const deleteIdx = ref<number | null>(null);
-const deleteError = ref("");
 const sessionCount = ref(0);
 const deleteTarget = computed(() =>
 	deleteIdx.value === null ? undefined : agents.value[deleteIdx.value],
@@ -224,7 +198,6 @@ const dependents = computed(() => {
 async function openDelete(i: number) {
 	if (deleteBlockedReason.value) return;
 	deleteIdx.value = i;
-	deleteError.value = "";
 	sessionCount.value = 0;
 	const name = agents.value[i]?.name;
 	if (!name) return;
@@ -241,15 +214,7 @@ async function openDelete(i: number) {
 async function confirmDelete() {
 	const i = deleteIdx.value;
 	if (i === null) return;
-	busy.value = true;
-	deleteError.value = "";
-	try {
-		await settings.deleteAgentEntry(i);
-		deleteIdx.value = null;
-	} catch (e) {
-		deleteError.value = e instanceof Error ? e.message : String(e);
-	} finally {
-		busy.value = false;
-	}
+	await settings.deleteAgentEntry(i);
+	deleteIdx.value = null;
 }
 </script>
