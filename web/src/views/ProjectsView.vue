@@ -187,7 +187,7 @@
 						</div>
 
 						<div v-if="loading && !boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
-						<KanbanBoard v-else-if="kanban" :jobs="boardJobs" :filters="filters" :now="now" :schedules="boardSchedules"
+						<KanbanBoard v-else-if="kanban" :jobs="boardJobs" :filters="filters" :now="now" :schedules="boardListSchedules"
 							:schedule-entries="scheduleEntries" :show-project="aggregate" @settings="openScheduleSettings" />
 						<div v-else-if="!boardJobs.length && !boardSchedules.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
 							<p>No jobs match “<b class="text-gray-800 dark:text-gray-100">{{ search.trim() }}</b>”.</p>
@@ -200,15 +200,17 @@
 						</div>
 						<div v-else-if="!boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">No jobs here yet.</div>
 						<section v-else class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3" aria-label="Jobs">
-							<ScheduledCard v-for="s in boardSchedules" :key="s.id" :schedule="s" :now="now"
-								:show-project="aggregate"
-								:job="scheduleJob(scheduleEntries, s.id)" :busy="busySchedule === s.id"
-								@run="onScheduleAction(runScheduleNow, $event)"
-								@toggle="onScheduleAction(toggleSchedule, $event)" @settings="openScheduleSettings"
-								@dismiss="onAction(dismiss, $event)" />
-							<JobCard v-for="job in boardJobs" :key="job.id" :job="job" :now="now" :show-project="aggregate"
-								:busy="busyJob === job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
-								@summarize="onSummarize" />
+							<template v-for="item in boardList" :key="item.kind === 'job' ? item.job.id : item.schedule.id">
+								<ScheduledCard v-if="item.kind === 'schedule'" :schedule="item.schedule" :now="now"
+									:show-project="aggregate"
+									:job="scheduleJob(scheduleEntries, item.schedule.id)" :busy="busySchedule === item.schedule.id"
+									@run="onScheduleAction(runScheduleNow, $event)"
+									@toggle="onScheduleAction(toggleSchedule, $event)" @settings="openScheduleSettings"
+									@dismiss="onAction(dismiss, $event)" />
+								<JobCard v-else :job="item.job" :now="now" :show-project="aggregate"
+									:busy="busyJob === item.job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
+									@summarize="onSummarize" />
+							</template>
 						</section>
 
 						<footer v-if="status" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
@@ -290,6 +292,7 @@ import {
 	BOARD_STATES,
 	type BoardFilter,
 	type BoardState,
+	boardItems,
 	jobStates,
 	type ProjectJob,
 	type ProjectSchedule,
@@ -480,6 +483,20 @@ const boardSchedules = computed(() =>
 	),
 );
 const boardJobs = computed(() => (showJobs.value ? jobs.value : []));
+// The list interleaves scheduled cards with the jobs by when they next run,
+// re-sorting as the clock ticks; the kanban's Scheduled column keeps that
+// order.
+const boardList = computed(() =>
+	boardItems(
+		boardSchedules.value,
+		scheduleEntries.value,
+		boardJobs.value,
+		now.value,
+	),
+);
+const boardListSchedules = computed(() =>
+	boardList.value.flatMap((i) => (i.kind === "schedule" ? [i.schedule] : [])),
+);
 // A scheduled box's footer runs, pauses and resumes its task in place, and
 // opens its settings in the shared task dialog, as the sidebar's gear does.
 const busySchedule = ref("");

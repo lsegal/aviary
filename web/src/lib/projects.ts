@@ -1197,6 +1197,51 @@ export function scheduleJob(
 	return latest;
 }
 
+/** How soon a scheduled card's next run must be for it to lead the board. */
+export const SCHEDULE_SOON_MS = 5 * 60_000;
+
+/** A box of the board's list, in the order it shows. */
+export type BoardItem =
+	| { kind: "schedule"; schedule: ProjectSchedule }
+	| { kind: "job"; job: ProjectJob };
+
+/**
+ * Orders the board's list (#1207): scheduled cards whose next run is due
+ * within five minutes lead, soonest first, then the running jobs. Every other
+ * scheduled card sits behind them by its next run, never by when a run
+ * started, soonest first, with paused cards and cards with no next run last,
+ * then the other jobs.
+ */
+export function boardItems(
+	schedules: ProjectSchedule[],
+	entries: ProjectJob[],
+	jobs: ProjectJob[],
+	now: number,
+): BoardItem[] {
+	const timed = schedules
+		.map((schedule) => {
+			const entry = scheduleJob(entries, schedule.id)?.schedule;
+			const paused = !schedule.enabled || entry?.nextRun?.paused;
+			const at = Date.parse(schedule.nextRun || entry?.nextRun?.at || "");
+			return { schedule, at: paused || Number.isNaN(at) ? Infinity : at };
+		})
+		// Ties, as between untimed cards, keep their name order.
+		.sort((a, b) => (a.at === b.at ? 0 : a.at < b.at ? -1 : 1));
+	const soon = (t: { at: number }) => t.at - now <= SCHEDULE_SOON_MS;
+	const running = (j: ProjectJob) => STATUS_ORDER[j.status] === 0;
+	const schedule = (t: { schedule: ProjectSchedule }): BoardItem => ({
+		kind: "schedule",
+		schedule: t.schedule,
+	});
+	const job = (j: ProjectJob): BoardItem => ({ kind: "job", job: j });
+	return [
+		...timed.filter(soon).map(schedule),
+		...jobs.filter(running).map(job),
+		...timed.filter((t) => !soon(t)).map(schedule),
+		...jobs.filter((j) => !running(j)).map(job),
+	];
+}
+
 /** The dot color of a schedule run's status. */
 export function scheduleRunDot(status: string): string {
 	switch (status) {
