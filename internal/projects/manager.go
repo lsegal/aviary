@@ -113,6 +113,10 @@ type Manager struct {
 	usageRecorder atomic.Pointer[UsageRecorder]
 	// scheduleSource lists core's scheduled tasks; see SetScheduleSource.
 	scheduleSource atomic.Pointer[ScheduleSource]
+	// projectObserver receives project events, and projectStates is what
+	// it last heard of each target; see SetProjectObserver.
+	projectObserver atomic.Pointer[ProjectObserver]
+	projectStates   projectStates
 }
 
 // ScheduleSource lists core's scheduled tasks with their next fire and run
@@ -236,19 +240,55 @@ func (m *Manager) generalApprovalLocked() clidefs.ApprovalMode {
 // project's jobs run on projects.model and projects.fallbacks when model is
 // set, else on its owning agent's model and fallbacks.
 func (m *Manager) Reconcile(cfg *config.Config) {
-	list := cfg.ProjectList()
-	m.reports.configure(list)
-	m.mu.Lock()
-	m.agents = &config.Config{Agents: slices.Clone(cfg.Agents), Models: cfg.Models, Approval: cfg.Approval}
-	m.cfg = cfg.Projects
-	m.list = list
-	m.owners = cfg.ProjectOwners()
-	m.mu.Unlock()
+	m.applyConfig(cfg)
 	_ = m.refresh()
 }
 
+// ReconcileInBackground applies cfg as Reconcile does, but brings the engine
+// in line with it in the background: a new project is in the watched targets,
+// and shows in project_status as loading, as soon as it returns, while the
+// engine restarts onto it and polls it without holding up the caller.
+func (m *Manager) ReconcileInBackground(cfg *config.Config) {
+	m.applyConfig(cfg)
+	go m.refreshInBackground()
+}
+
+func (m *Manager) applyConfig(cfg *config.Config) {
+	list := cfg.ProjectList()
+	m.reports.configure(list)
+	m.changeTargets(func() {
+		m.agents = &config.Config{Agents: slices.Clone(cfg.Agents), Models: cfg.Models, Approval: cfg.Approval}
+		m.cfg = cfg.Projects
+		m.list = list
+		m.owners = cfg.ProjectOwners()
+	})
+}
+
+// refreshInBackground is refresh for a goroutine: refresh logs its own
+// failures and records them for project_status.
+func (m *Manager) refreshInBackground() { _ = m.refresh() }
+
 // AddWatch starts watching targets until RemoveWatch or the server stops.
 func (m *Manager) AddWatch(watch Watch) error {
+	if err := m.addWatch(watch); err != nil {
+		return err
+	}
+	return m.refresh()
+}
+
+// AddWatchInBackground adds watch as AddWatch does, returning once its
+// targets are watched; the engine restarts onto them in the background.
+func (m *Manager) AddWatchInBackground(watch Watch) error {
+	if err := m.addWatch(watch); err != nil {
+		return err
+	}
+	go m.refreshInBackground()
+	return nil
+}
+
+// addWatch validates watch and records it, without touching the engine. A
+// watch whose settings the engine would reject is not recorded.
+func (m *Manager) addWatch(watch Watch) error {
 	if len(watch.Targets) == 0 {
 		return errors.New("a watch needs at least one target")
 	}
@@ -259,35 +299,54 @@ func (m *Manager) AddWatch(watch Watch) error {
 		}
 		watch.Targets[i] = target
 	}
-	m.mu.Lock()
-	m.watches = append(m.watches, watch)
-	m.mu.Unlock()
-	return m.refresh()
+	var err error
+	m.changeTargets(func() {
+		m.watches = append(m.watches, watch)
+		if _, err = m.settingsLocked(); err != nil {
+			m.watches = m.watches[:len(m.watches)-1]
+		}
+	})
+	return err
 }
 
 // RemoveWatch stops runtime watches of target. It reports whether one was
 // removed.
 func (m *Manager) RemoveWatch(target string) bool {
-	m.mu.Lock()
-	removed := false
-	kept := m.watches[:0]
-	for _, watch := range m.watches {
-		watch.Targets = slices.DeleteFunc(watch.Targets, func(t string) bool {
-			if t == target {
-				removed = true
-				return true
-			}
-			return false
-		})
-		if len(watch.Targets) > 0 {
-			kept = append(kept, watch)
-		}
-	}
-	m.watches = kept
-	m.mu.Unlock()
+	removed := m.removeWatch(target)
 	if removed {
 		_ = m.refresh()
 	}
+	return removed
+}
+
+// RemoveWatchInBackground removes target's runtime watches as RemoveWatch
+// does, stopping its jobs in the background.
+func (m *Manager) RemoveWatchInBackground(target string) bool {
+	removed := m.removeWatch(target)
+	if removed {
+		go m.refreshInBackground()
+	}
+	return removed
+}
+
+func (m *Manager) removeWatch(target string) bool {
+	removed := false
+	m.changeTargets(func() {
+		kept := m.watches[:0]
+		for _, watch := range m.watches {
+			watch.Targets = slices.DeleteFunc(watch.Targets, func(t string) bool {
+				if t == target {
+					removed = true
+					return true
+				}
+				return false
+			})
+			if len(watch.Targets) > 0 {
+				kept = append(kept, watch)
+			}
+		}
+		m.watches = kept
+	})
 	return removed
 }
 
@@ -994,6 +1053,14 @@ func (m *Manager) Snapshot(snapshot core.Snapshot) {
 	m.snapshot.Store(&snapshot)
 	m.reports.observe(snapshot)
 	m.cache.observe(snapshot)
+	m.mu.Lock()
+	owners := m.owners
+	m.mu.Unlock()
+	var events []ProjectEvent
+	for _, target := range m.projectStates.changed(snapshot) {
+		events = append(events, ProjectEvent{Type: ProjectUpdated, Target: target, Agent: owners[target]})
+	}
+	m.emit(events)
 }
 
 // SetReportDelivery sets how projects that opted in to reports send them
