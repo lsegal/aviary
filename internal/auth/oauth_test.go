@@ -235,9 +235,12 @@ func TestStartOpenAILogin_NewAttemptReplacesPendingFlow(t *testing.T) {
 	_, err = firstFlow.wait(context.Background())
 	assert.EqualError(t, err, "openai login was replaced by a new attempt")
 
+	secondFlow, ok := getPendingBrowserLogin("openai")
+	require.True(t, ok)
+	assert.NotSame(t, firstFlow, secondFlow)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = CompleteOpenAILogin(ctx)
+	_, err = secondFlow.wait(ctx)
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
