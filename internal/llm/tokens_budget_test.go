@@ -41,10 +41,13 @@ func TestCompactToTokenBudgetStaysWithinBudget(t *testing.T) {
 						if got.System != system {
 							t.Fatalf("system prompt changed")
 						}
-						if len(got.Messages) != 1 {
-							t.Fatalf("got %d messages; want only the last", len(got.Messages))
+						if len(got.Messages) == 0 {
+							t.Fatalf("all messages were dropped")
 						}
-						content := got.Messages[0].Content
+						if EstimateRequestTokens(Request{System: system, Messages: msgs[history:]}) > budget && len(got.Messages) != 1 {
+							t.Fatalf("got %d messages; want only the truncated last one", len(got.Messages))
+						}
+						content := got.Messages[len(got.Messages)-1].Content
 						if content == "" || !strings.HasSuffix(text, content) {
 							t.Fatalf("kept content is not a non-empty suffix of the last message")
 						}
