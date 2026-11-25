@@ -51,6 +51,23 @@ func breakJobDir(t *testing.T, agentID string) {
 	require.NoError(t, os.WriteFile(filepath.Join(store.AgentDir(agentID), "jobs"), []byte("x"), 0o600))
 }
 
+// Back-to-back IDs never collide, even when the clock has not ticked between
+// them, and they still sort in creation order.
+func TestNewIDIsUniqueAndOrdered(t *testing.T) {
+	ids := make([]string, 1000)
+	for i := range ids {
+		ids[i] = newID("job")
+	}
+	seen := map[string]bool{}
+	for i, id := range ids {
+		require.False(t, seen[id], "duplicate id %s", id)
+		seen[id] = true
+		if i > 0 {
+			require.Less(t, ids[i-1], id)
+		}
+	}
+}
+
 func TestJobQueue_ByIDMethodsReportMissingAndUnreadableJobs(t *testing.T) {
 	setupSchedulerDataDir(t)
 	q := NewJobQueue()

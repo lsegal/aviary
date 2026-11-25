@@ -21,9 +21,23 @@ const (
 	defaultRetries = 3
 )
 
-// newID generates a time-based unique identifier with the given prefix.
+var (
+	lastIDMu   sync.Mutex
+	lastIDTime time.Time
+)
+
+// newID generates a time-based unique identifier with the given prefix. The
+// clock can return the same time for back-to-back calls (on Windows it ticks
+// in milliseconds), so each ID is at least a nanosecond after the last one.
 func newID(prefix string) string {
-	ts := time.Now().UTC().Format("20060102_150405.000000000")
+	lastIDMu.Lock()
+	now := time.Now().UTC()
+	if !now.After(lastIDTime) {
+		now = lastIDTime.Add(time.Nanosecond)
+	}
+	lastIDTime = now
+	lastIDMu.Unlock()
+	ts := now.Format("20060102_150405.000000000")
 	return prefix + "_" + strings.ReplaceAll(ts, ".", "_")
 }
 
