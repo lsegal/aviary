@@ -992,6 +992,7 @@ onBeforeUnmount(() => {
 								<span class="voice-chip">ready in Docker</span>
 							</div>
 						</div>
+					</div>
 
 					<div class="card c-wide-6 reveal">
 						<div class="kind">Notifications &#183; 08</div>
@@ -1022,7 +1023,6 @@ onBeforeUnmount(() => {
 								<span class="voice-chip">notify tool &#183; REST API</span>
 							</div>
 						</div>
-					</div>
 					</div>
 				</div>
 			</div>
