@@ -41,11 +41,44 @@ func taskIdleTimeout(job *domain.Job, cfg *config.AgentConfig) time.Duration {
 	return config.DefaultTaskIdleTimeout
 }
 
+// idleTimer is the watchdog's timer. Tests substitute a fake to control when
+// it fires instead of relying on wall-clock sleeps.
+type idleTimer interface {
+	C() <-chan time.Time
+	Reset(d time.Duration)
+	Stop()
+}
+
+// wallTimer is an idleTimer backed by a time.Timer.
+type wallTimer struct{ t *time.Timer }
+
+func newWallTimer(d time.Duration) idleTimer { return wallTimer{time.NewTimer(d)} }
+
+func (w wallTimer) C() <-chan time.Time { return w.t.C }
+
+func (w wallTimer) Reset(d time.Duration) {
+	if !w.t.Stop() {
+		select {
+		case <-w.t.C:
+		default:
+		}
+	}
+	w.t.Reset(d)
+}
+
+func (w wallTimer) Stop() { w.t.Stop() }
+
 // runPromptWatched starts a run with prompt and waits for it to finish,
 // passing each of its stream events to handle. A run that emits no event for
 // idle is canceled and ends with a *jobStalledError. handle is never called
 // after runPromptWatched returns, so the caller may read what it collected.
 func runPromptWatched(ctx context.Context, idle time.Duration, prompt func(context.Context, agent.StreamConsumer), handle agent.StreamConsumer) error {
+	return runPromptWatchedTimer(ctx, idle, newWallTimer, prompt, handle)
+}
+
+// runPromptWatchedTimer is runPromptWatched with the idle timer created by
+// newTimer.
+func runPromptWatchedTimer(ctx context.Context, idle time.Duration, newTimer func(time.Duration) idleTimer, prompt func(context.Context, agent.StreamConsumer), handle agent.StreamConsumer) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -78,11 +111,11 @@ func runPromptWatched(ctx context.Context, idle time.Duration, prompt func(conte
 	})
 
 	var timeout <-chan time.Time
-	var timer *time.Timer
+	var timer idleTimer
 	if idle > 0 {
-		timer = time.NewTimer(idle)
+		timer = newTimer(idle)
 		defer timer.Stop()
-		timeout = timer.C
+		timeout = timer.C()
 	}
 	started := false
 	for {
@@ -94,12 +127,6 @@ func runPromptWatched(ctx context.Context, idle time.Duration, prompt func(conte
 		case <-activity:
 			started = true
 			if timer != nil {
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
 				timer.Reset(idle)
 			}
 		case <-timeout:
