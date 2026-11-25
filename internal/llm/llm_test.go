@@ -49,15 +49,16 @@ func TestFactoryForModel(t *testing.T) {
 	f := NewFactory(func(_ string) (string, error) { return "test-key", nil })
 
 	cases := []struct {
-		model   string
-		wantErr bool
+		model    string
+		wantType Provider
+		wantErr  bool
 	}{
-		{model: "anthropic/claude-sonnet-4.5", wantErr: false},
-		{model: "openai/gpt-4o", wantErr: false},
-		{model: "openai-codex/gpt-5.5", wantErr: false},
-		{model: "google-gemini/gemini-3.5-flash", wantErr: false},
-		{model: "vllm/qwen2.5-coder", wantErr: false},
-		{model: "ollama/llama3.2", wantErr: false},
+		{model: "anthropic/claude-sonnet-4.5", wantType: &AnthropicProvider{}},
+		{model: "openai/gpt-4o", wantType: &OpenAIProvider{}},
+		{model: "openai-codex/gpt-5.5", wantType: &OpenAICodexProvider{}},
+		{model: "google-gemini/gemini-3.5-flash", wantType: &GeminiCodeAssistProvider{}},
+		{model: "vllm/qwen2.5-coder", wantType: &VLLMProvider{}},
+		{model: "ollama/llama3.2", wantType: &OllamaProvider{}},
 		{model: "invalid", wantErr: true},
 		{model: "unknown/model", wantErr: true},
 	}
@@ -71,7 +72,7 @@ func TestFactoryForModel(t *testing.T) {
 				return
 			}
 			assert.NoError(t, err)
-			assert.NotNil(t, p)
+			assert.IsType(t, tc.wantType, p)
 
 		})
 	}
@@ -166,69 +167,42 @@ func TestFactoryNilResolver(t *testing.T) {
 
 }
 
-func TestIntegration_AllProviderKinds(t *testing.T) {
-	f := NewFactory(func(_ string) (string, error) { return "integration-key", nil })
-	models := []string{
-		"anthropic/claude-sonnet-4.5",
-		"openai/gpt-4o-mini",
-		"openai-codex/gpt-5.5",
-		"google-gemini/gemini-pro",
-	}
-	for _, model := range models {
-		t.Run(model, func(t *testing.T) {
-			p, err := f.ForModel(model)
-			assert.NoError(t, err)
-			assert.NotNil(t, p)
+func TestFactoryGeminiRouting(t *testing.T) {
+	const oauthToken = `{"access":"ya29.fake","refresh":"token","expires_at":9999999999999}`
 
+	cases := []struct {
+		name     string
+		model    string
+		authRef  string
+		secret   string
+		wantType Provider
+		wantErr  bool
+	}{
+		// google-gemini/ always uses the OAuth token via Code Assist.
+		{name: "google-gemini oauth", model: "google-gemini/gemini-2.5-flash", authRef: "auth:gemini:oauth", secret: oauthToken, wantType: &GeminiCodeAssistProvider{}},
+		{name: "google-gemini without oauth", model: "google-gemini/gemini-2.5-flash", wantErr: true},
+		// google/ always uses an API key.
+		{name: "google api key", model: "google/gemini-2.5-flash", authRef: "auth:gemini:default", secret: "AIza-fake-key", wantType: &GeminiProvider{}},
+		{name: "gemini-code-assist oauth", model: "gemini-code-assist/gemini-2.5-flash", authRef: "auth:gemini:oauth", secret: oauthToken, wantType: &GeminiCodeAssistProvider{}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := NewFactory(func(ref string) (string, error) {
+				if tc.authRef != "" && ref == tc.authRef {
+					return tc.secret, nil
+				}
+				return "", fmt.Errorf("not found")
+			})
+			p, err := f.ForModel(tc.model)
+			if tc.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.IsType(t, tc.wantType, p)
 		})
 	}
-}
-
-func TestFactoryGemini_OAuthOnly(t *testing.T) {
-	// google-gemini/ always uses OAuth token.
-	f := NewFactory(func(ref string) (string, error) {
-		if ref == "auth:gemini:oauth" {
-			return `{"access":"ya29.fake","refresh":"token","expires_at":9999999999999}`, nil
-		}
-		return "", fmt.Errorf("not found")
-	})
-	p, err := f.ForModel("google-gemini/gemini-2.5-flash")
-	assert.NoError(t, err)
-	_, ok := p.(*GeminiCodeAssistProvider)
-	assert.True(t, ok, "google-gemini/ must use GeminiCodeAssistProvider (OAuth via Code Assist)")
-}
-
-func TestFactoryGemini_ErrorWithoutOAuth(t *testing.T) {
-	f := NewFactory(func(_ string) (string, error) { return "", fmt.Errorf("not found") })
-	_, err := f.ForModel("google-gemini/gemini-2.5-flash")
-	assert.Error(t, err)
-}
-
-func TestFactoryGoogle_APIKeyOnly(t *testing.T) {
-	// google/ always uses API key.
-	f := NewFactory(func(ref string) (string, error) {
-		if ref == "auth:gemini:default" {
-			return "AIza-fake-key", nil
-		}
-		return "", fmt.Errorf("not found")
-	})
-	p, err := f.ForModel("google/gemini-2.5-flash")
-	assert.NoError(t, err)
-	_, ok := p.(*GeminiProvider)
-	assert.True(t, ok, "google/ must use GeminiProvider (API key)")
-}
-
-func TestFactoryGemini_CodeAssistExplicit(t *testing.T) {
-	f := NewFactory(func(ref string) (string, error) {
-		if ref == "auth:gemini:oauth" {
-			return `{"access":"ya29.fake","refresh":"token","expires_at":9999999999999}`, nil
-		}
-		return "", fmt.Errorf("not found")
-	})
-	p, err := f.ForModel("gemini-code-assist/gemini-2.5-flash")
-	assert.NoError(t, err)
-	_, ok := p.(*GeminiCodeAssistProvider)
-	assert.True(t, ok, "expected GeminiCodeAssistProvider for explicit gemini-code-assist provider")
 }
 
 func TestParseImageDataURL(t *testing.T) {
