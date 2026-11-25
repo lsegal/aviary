@@ -72,37 +72,23 @@ func setWatchOpts(t *testing.T, opts watchOptions) {
 	t.Cleanup(func() { watchOpts = old })
 }
 
-func TestWatchSettings(t *testing.T) {
+// TestWatchSettingsFromFlags covers the delivery modes; these are the
+// numbers it leaves out.
+func TestWatchSettingsRejectsBadNumbers(t *testing.T) {
 	tests := []struct {
-		name         string
-		opts         watchOptions
-		wantDelivery string
-		wantError    string
+		name      string
+		opts      watchOptions
+		wantError string
 	}{
-		{name: "defaults", opts: watchOptions{}},
-		{name: "poll in any case", opts: watchOptions{delivery: "POLL", interval: "5m", concurrency: 2}, wantDelivery: "poll"},
-		{name: "browser with vision", opts: watchOptions{delivery: "browser", browserVision: true}, wantDelivery: "browser"},
 		{name: "negative concurrency", opts: watchOptions{concurrency: -1}, wantError: "--concurrency cannot be negative"},
-		{name: "unparsable interval", opts: watchOptions{interval: "soon"}, wantError: `--interval "soon" is not a positive duration`},
 		{name: "zero interval", opts: watchOptions{interval: "0s"}, wantError: `--interval "0s" is not a positive duration`},
-		{name: "unknown delivery", opts: watchOptions{delivery: "carrier-pigeon"}, wantError: `--delivery must be browser, poll or webhook, not "carrier-pigeon"`},
-		{name: "browser flag with webhook", opts: watchOptions{delivery: "webhook", browserVisible: true}, wantError: "apply only to browser delivery, not webhook"},
+		{name: "negative interval", opts: watchOptions{interval: "-5m"}, wantError: `--interval "-5m" is not a positive duration`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			setWatchOpts(t, tt.opts)
-			got, err := watchSettings()
-			if tt.wantError != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.wantError) {
-					t.Fatalf("error = %v, want %q", err, tt.wantError)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got.Delivery != tt.wantDelivery || got.Interval != tt.opts.interval || got.Concurrency != tt.opts.concurrency || got.BrowserVision != tt.opts.browserVision {
-				t.Errorf("settings = %+v", got)
+			if _, err := watchSettings(); err == nil || !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("error = %v, want %q", err, tt.wantError)
 			}
 		})
 	}

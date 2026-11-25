@@ -672,6 +672,7 @@ func TestOtherServerNote(t *testing.T) {
 }
 
 func TestUpgradeMode(t *testing.T) {
+	t.Cleanup(func() { upgradeRelease, upgradeSource = false, false })
 	tests := []struct {
 		release, source bool
 		want            update.InstallType
@@ -684,7 +685,6 @@ func TestUpgradeMode(t *testing.T) {
 		upgradeRelease, upgradeSource = tt.release, tt.source
 		assert.Equal(t, tt.want, upgradeMode(), "--release=%v --source=%v", tt.release, tt.source)
 	}
-	upgradeRelease, upgradeSource = false, false
 }
 
 // stubServer makes findRunningServer report states in turn, repeating the
@@ -779,15 +779,6 @@ func TestRunReleaseUpgradeEmulated(t *testing.T) {
 	assert.Zero(t, *calls, "an emulated upgrade leaves the server alone")
 }
 
-// dirtyCheckout returns an Aviary checkout behind its upstream with an
-// uncommitted change.
-func dirtyCheckout(t *testing.T) string {
-	t.Helper()
-	checkout := checkoutBehindUpstream(t)
-	require.NoError(t, os.WriteFile(filepath.Join(checkout, "go.mod"), []byte("module github.com/lsegal/aviary\n\n// edited\n"), 0o644))
-	return checkout
-}
-
 func TestRunSourceUpgrade(t *testing.T) {
 	tests := []struct {
 		name string
@@ -796,14 +787,15 @@ func TestRunSourceUpgrade(t *testing.T) {
 		chdir   bool
 		dirty   bool
 		server  func() (runningServer, bool)
-		want    []string
+		pulled  bool
+		want    string
 		wantErr string
 	}{
 		{
 			name:   "falls back to the working directory's checkout",
 			chdir:  true,
 			server: noServerState,
-			want:   []string{"Pulled 1 commit(s) into "},
+			pulled: true,
 		},
 		{
 			name:    "refuses a checkout with local changes",
@@ -814,20 +806,21 @@ func TestRunSourceUpgrade(t *testing.T) {
 		{
 			name:    "reports a server it cannot restart",
 			server:  serverState(runningServer{Problem: "did not respond"}),
-			want:    []string{"Pulled 1 commit(s) into "},
+			pulled:  true,
 			wantErr: "the running Aviary server did not respond, so it could not be restarted on the pulled code. " + restartHint,
 		},
 		{
 			name:   "leaves a release server alone",
 			server: serverState(runningServer{CheckResult: update.CheckResult{InstallType: update.InstallRelease, CurrentVersion: "0.7.5"}}),
-			want:   []string{"Pulled 1 commit(s) into ", "release install (v0.7.5), so it was not changed"},
+			pulled: true,
+			want:   "release install (v0.7.5), so it was not changed",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			checkout := checkoutBehindUpstream(t)
 			if tt.dirty {
-				checkout = dirtyCheckout(t)
+				require.NoError(t, os.WriteFile(filepath.Join(checkout, "go.mod"), []byte("module github.com/lsegal/aviary\n\n// edited\n"), 0o644))
 			}
 			check := update.CheckResult{InstallType: update.InstallSource, Git: &update.GitState{Dir: checkout}}
 			if tt.chdir {
@@ -847,22 +840,23 @@ func TestRunSourceUpgrade(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
-			for _, want := range tt.want {
-				assert.Contains(t, out, want+checkout[:0])
-			}
-			if tt.want != nil && strings.HasPrefix(tt.want[0], "Pulled") {
+			if tt.pulled {
 				assert.Contains(t, out, "Pulled 1 commit(s) into "+checkout)
+			} else {
+				assert.NotContains(t, out, "Pulled")
 			}
+			assert.Contains(t, out, tt.want)
 			assert.Empty(t, *restarts, "a server of another kind is never restarted")
 		})
 	}
 }
 
-// pulledCheckout returns an Aviary checkout and the pull result of bringing
-// it to an upstream commit that writes body to file, without pulling.
+// pulledCheckout returns the pull result of bringing an Aviary checkout to a
+// fetched upstream commit that writes body to file, without pulling.
 func pulledCheckout(t *testing.T, file, body string) update.GitPullResult {
 	t.Helper()
 	checkout := checkoutBehindUpstreamWith(t, file, body)
+	gitRun(t, checkout, "fetch", "-q")
 	return update.GitPullResult{Dir: checkout, From: "HEAD", To: "origin/main", Commits: 1}
 }
 
