@@ -427,16 +427,20 @@ func TestActiveDispatcherUsesConfiguredServer(t *testing.T) {
 	assert.Equal(t, dataDir, store.DataDir(), "--data-dir applies to the store")
 }
 
-func TestWriteToolHelp_ReportsAnUnavailableCatalog(t *testing.T) {
+func TestToolCmd_UnavailableServer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(srv.Close)
 	useRemoteDispatcher(t, srv.URL)
 
-	var out bytes.Buffer
-	require.NoError(t, writeToolHelp(context.Background(), &out))
-	assert.Contains(t, out.String(), "Available Tools:\n  unavailable: ")
+	out, err := runToolCmd(t)
+	require.NoError(t, err, "help still renders without the catalog")
+	assert.Contains(t, out, "Available Tools:\n  unavailable: ")
+
+	_, err = runToolCmd(t, "echo")
+	require.Error(t, err, "a tool cannot be looked up")
+	assert.Contains(t, err.Error(), "Service Unavailable")
 }
 
 var errToolWrite = errors.New("write failed")
@@ -466,21 +470,32 @@ func TestToolHelpWritersReturnWriteErrors(t *testing.T) {
 	}}
 	bare := internalmcp.ToolInfo{Name: "bare"}
 
-	writers := map[string]func(io.Writer) error{
-		"tool help":         func(w io.Writer) error { return writeToolHelp(context.Background(), w) },
-		"catalog":           func(w io.Writer) error { return writeToolCatalog(context.Background(), w) },
-		"single tool help":  func(w io.Writer) error { return writeSingleToolHelp(w, described) },
-		"tool without docs": func(w io.Writer) error { return writeSingleToolHelp(w, bare) },
+	tests := []struct {
+		name  string
+		write func(io.Writer) error
+		// noteAfter is the number of header writes writeToolHelp makes before
+		// the catalog: a catalog write that fails after them is followed by
+		// one attempt to write the "unavailable" note. 0 means no note.
+		noteAfter int
+	}{
+		{name: "tool help", write: func(w io.Writer) error { return writeToolHelp(context.Background(), w) }, noteAfter: 12},
+		{name: "catalog", write: func(w io.Writer) error { return writeToolCatalog(context.Background(), w) }},
+		{name: "single tool help", write: func(w io.Writer) error { return writeSingleToolHelp(w, described) }},
+		{name: "tool without docs", write: func(w io.Writer) error { return writeSingleToolHelp(w, bare) }},
 	}
-	for name, write := range writers {
-		t.Run(name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			all := &failingWriter{ok: 1 << 30}
-			require.NoError(t, write(all))
+			require.NoError(t, tt.write(all))
 			require.Positive(t, all.writes)
 			for ok := 0; ok < all.writes; ok++ {
 				w := &failingWriter{ok: ok}
-				require.ErrorIs(t, write(w), errToolWrite, "failing write %d", ok+1)
-				assert.Equal(t, ok+1, w.writes, "nothing is written after write %d fails", ok+1)
+				require.ErrorIs(t, tt.write(w), errToolWrite, "failing write %d", ok+1)
+				want := ok + 1
+				if tt.noteAfter > 0 && ok >= tt.noteAfter {
+					want++
+				}
+				assert.Equal(t, want, w.writes, "nothing more is written after write %d fails", ok+1)
 			}
 		})
 	}

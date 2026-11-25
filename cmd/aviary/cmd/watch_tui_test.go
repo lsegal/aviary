@@ -125,16 +125,15 @@ func watchPoll(t *testing.T, m watchModel) watchModel {
 // back in.
 func watchKey(t *testing.T, m watchModel, key string) (watchModel, tea.Msg) {
 	t.Helper()
-	var msg tea.KeyMsg
-	switch key {
-	case "enter":
-		msg = tea.KeyMsg{Type: tea.KeyEnter}
-	case "right":
-		msg = tea.KeyMsg{Type: tea.KeyRight}
-	case "down":
-		msg = tea.KeyMsg{Type: tea.KeyDown}
-	default:
-		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+	special := map[string]tea.KeyType{
+		"enter": tea.KeyEnter, "right": tea.KeyRight, "down": tea.KeyDown,
+		"left": tea.KeyLeft, "up": tea.KeyUp, "tab": tea.KeyTab, "shift+tab": tea.KeyShiftTab,
+		"home": tea.KeyHome, "end": tea.KeyEnd, "pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown,
+		"ctrl+c": tea.KeyCtrlC,
+	}
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+	if typ, ok := special[key]; ok {
+		msg = tea.KeyMsg{Type: typ}
 	}
 	next, cmd := m.Update(msg)
 	m = next.(watchModel)

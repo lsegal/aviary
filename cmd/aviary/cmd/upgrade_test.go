@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -665,5 +666,439 @@ func TestRunUpgradeSourceRestartsWhenHotReloadFails(t *testing.T) {
 
 func TestOtherServerNote(t *testing.T) {
 	assert.Contains(t, otherServerNote(update.CheckResult{InstallType: update.InstallSource, Git: &update.GitState{Dir: "/src/aviary"}}), "dev build from the source checkout at /src/aviary")
+	assert.Contains(t, otherServerNote(update.CheckResult{InstallType: update.InstallSource}), "dev build from its checkout")
 	assert.Contains(t, otherServerNote(update.CheckResult{InstallType: update.InstallRelease, CurrentVersion: "0.7.3"}), "release install (v0.7.3)")
+	assert.Equal(t, "The running Aviary server is a different kind of install, so it was not changed.", otherServerNote(update.CheckResult{InstallType: update.InstallDev}))
+}
+
+func TestUpgradeMode(t *testing.T) {
+	tests := []struct {
+		release, source bool
+		want            update.InstallType
+	}{
+		{want: ""},
+		{release: true, want: update.InstallRelease},
+		{source: true, want: update.InstallSource},
+	}
+	for _, tt := range tests {
+		upgradeRelease, upgradeSource = tt.release, tt.source
+		assert.Equal(t, tt.want, upgradeMode(), "--release=%v --source=%v", tt.release, tt.source)
+	}
+	upgradeRelease, upgradeSource = false, false
+}
+
+// stubServer makes findRunningServer report states in turn, repeating the
+// last, and returns how many times it was asked.
+func stubServer(t *testing.T, states ...func() (runningServer, bool)) *int {
+	t.Helper()
+	orig := findRunningServer
+	t.Cleanup(func() { findRunningServer = orig })
+	calls := new(int)
+	findRunningServer = func() (runningServer, bool) {
+		i := min(*calls, len(states)-1)
+		*calls++
+		return states[i]()
+	}
+	return calls
+}
+
+func serverState(srv runningServer) func() (runningServer, bool) {
+	return func() (runningServer, bool) { return srv, true }
+}
+
+func noServerState() (runningServer, bool) { return runningServer{}, false }
+
+// stubRestart records the restarts aviary upgrade asks for.
+func stubRestart(t *testing.T) *[]string {
+	t.Helper()
+	orig := restartServer
+	t.Cleanup(func() { restartServer = orig })
+	whens := &[]string{}
+	restartServer = func(when string) error {
+		*whens = append(*whens, when)
+		return nil
+	}
+	return whens
+}
+
+func TestApplyUpgradeWithoutACheckoutNeedsAVersion(t *testing.T) {
+	installs, _ := stubInstall(t)
+	err := applyUpgrade(update.CheckResult{InstallType: update.InstallDev, NoCheckout: true, Message: "no source checkout found"}, "")
+	require.EqualError(t, err, "no source checkout found")
+	assert.Empty(t, *installs)
+}
+
+func TestRunReleaseUpgradeFailures(t *testing.T) {
+	behind := update.CheckResult{CurrentVersion: "0.7.3", LatestVersion: "v0.7.5", UpgradeAvailable: true}
+
+	t.Run("no target version", func(t *testing.T) {
+		installs, _ := stubInstall(t)
+		_, err := captureStdout(t, func() error { return runReleaseUpgrade(update.CheckResult{CurrentVersion: "0.7.3"}, false) })
+		require.EqualError(t, err, "unable to determine a target version")
+		assert.Empty(t, *installs)
+	})
+
+	t.Run("install fails", func(t *testing.T) {
+		_, skills := stubInstall(t)
+		installRelease = func(string, string) (string, error) { return "", errors.New("checksum mismatch") }
+		stubServer(t, noServerState)
+		out, err := captureStdout(t, func() error { return runReleaseUpgrade(behind, false) })
+		require.EqualError(t, err, "checksum mismatch")
+		assert.NotContains(t, out, "Aviary upgraded")
+		assert.Empty(t, *skills, "skills are not updated for a failed install")
+	})
+
+	t.Run("skills update fails", func(t *testing.T) {
+		installs, _ := stubInstall(t)
+		updateSkills = func(context.Context, string) error { return errors.New("provider offline") }
+		stubServer(t, noServerState)
+		out, err := captureStdout(t, func() error { return runReleaseUpgrade(behind, false) })
+		require.NoError(t, err, "a skills failure does not fail the upgrade")
+		assert.Len(t, *installs, 1)
+		assert.Contains(t, out, "Aviary upgraded to v0.7.5.\nUpdating skills for v0.7.5: provider offline\n")
+	})
+}
+
+func TestRunReleaseUpgradeEmulated(t *testing.T) {
+	orig := buildinfo.Version
+	buildinfo.Version = "dev"
+	require.NoError(t, update.ConfigureEmulation("0.7.3:0.7.5"))
+	t.Cleanup(func() {
+		require.NoError(t, update.ConfigureEmulation(""))
+		buildinfo.Version = orig
+	})
+	installs, _ := stubInstall(t)
+	calls := stubServer(t, noServerState)
+
+	out, err := captureStdout(t, func() error {
+		return runReleaseUpgrade(update.CheckResult{CurrentVersion: "0.7.3", LatestVersion: "0.7.5", UpgradeAvailable: true}, false)
+	})
+	require.NoError(t, err)
+	assert.Contains(t, out, "Emulated upgrade to v0.7.5 completed. No files were changed.")
+	assert.Empty(t, *installs)
+	assert.Zero(t, *calls, "an emulated upgrade leaves the server alone")
+}
+
+// dirtyCheckout returns an Aviary checkout behind its upstream with an
+// uncommitted change.
+func dirtyCheckout(t *testing.T) string {
+	t.Helper()
+	checkout := checkoutBehindUpstream(t)
+	require.NoError(t, os.WriteFile(filepath.Join(checkout, "go.mod"), []byte("module github.com/lsegal/aviary\n\n// edited\n"), 0o644))
+	return checkout
+}
+
+func TestRunSourceUpgrade(t *testing.T) {
+	tests := []struct {
+		name string
+		// chdir runs the upgrade from inside the checkout with no checkout in
+		// the check result.
+		chdir   bool
+		dirty   bool
+		server  func() (runningServer, bool)
+		want    []string
+		wantErr string
+	}{
+		{
+			name:   "falls back to the working directory's checkout",
+			chdir:  true,
+			server: noServerState,
+			want:   []string{"Pulled 1 commit(s) into "},
+		},
+		{
+			name:    "refuses a checkout with local changes",
+			dirty:   true,
+			server:  noServerState,
+			wantErr: "has uncommitted changes",
+		},
+		{
+			name:    "reports a server it cannot restart",
+			server:  serverState(runningServer{Problem: "did not respond"}),
+			want:    []string{"Pulled 1 commit(s) into "},
+			wantErr: "the running Aviary server did not respond, so it could not be restarted on the pulled code. " + restartHint,
+		},
+		{
+			name:   "leaves a release server alone",
+			server: serverState(runningServer{CheckResult: update.CheckResult{InstallType: update.InstallRelease, CurrentVersion: "0.7.5"}}),
+			want:   []string{"Pulled 1 commit(s) into ", "release install (v0.7.5), so it was not changed"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkout := checkoutBehindUpstream(t)
+			if tt.dirty {
+				checkout = dirtyCheckout(t)
+			}
+			check := update.CheckResult{InstallType: update.InstallSource, Git: &update.GitState{Dir: checkout}}
+			if tt.chdir {
+				t.Chdir(checkout)
+				check.Git = nil
+			}
+			stubServer(t, tt.server)
+			restarts := stubRestart(t)
+
+			out, err := captureStdout(t, func() error { return runSourceUpgrade(check) })
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				if tt.dirty {
+					assert.Contains(t, err.Error(), "updating the source checkout at "+checkout)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+			for _, want := range tt.want {
+				assert.Contains(t, out, want+checkout[:0])
+			}
+			if tt.want != nil && strings.HasPrefix(tt.want[0], "Pulled") {
+				assert.Contains(t, out, "Pulled 1 commit(s) into "+checkout)
+			}
+			assert.Empty(t, *restarts, "a server of another kind is never restarted")
+		})
+	}
+}
+
+// pulledCheckout returns an Aviary checkout and the pull result of bringing
+// it to an upstream commit that writes body to file, without pulling.
+func pulledCheckout(t *testing.T, file, body string) update.GitPullResult {
+	t.Helper()
+	checkout := checkoutBehindUpstreamWith(t, file, body)
+	return update.GitPullResult{Dir: checkout, From: "HEAD", To: "origin/main", Commits: 1}
+}
+
+func TestApplyPulledCode(t *testing.T) {
+	failedReload := update.HotReloadResult{Generation: 1, Reason: "a type changed shape"}
+	tests := []struct {
+		name         string
+		res          func(t *testing.T) update.GitPullResult
+		git          update.GitState
+		hotDir       bool
+		reload       *update.HotReloadResult
+		want         string
+		wantErr      string
+		wantRestarts []string
+	}{
+		{
+			name: "nothing pulled",
+			res: func(t *testing.T) update.GitPullResult {
+				return update.GitPullResult{Dir: t.TempDir(), To: "abc1234"}
+			},
+			git:  update.GitState{Supervised: true, HotReload: true},
+			want: "is already up to date (abc1234).",
+		},
+		{
+			name: "listing the changes fails under the supervisor",
+			res: func(t *testing.T) update.GitPullResult {
+				return update.GitPullResult{Dir: t.TempDir(), From: "a", To: "b", Commits: 1}
+			},
+			git:          update.GitState{Supervised: true, HotReload: true},
+			want:         "listing the pulled changes failed",
+			wantRestarts: []string{saferestart.WhenNow},
+		},
+		{
+			name: "a restart without the supervisor is left to the user",
+			res: func(t *testing.T) update.GitPullResult {
+				return update.GitPullResult{Dir: t.TempDir(), From: "a", To: "b", Commits: 1}
+			},
+			git:  update.GitState{HotReload: true},
+			want: "listing the pulled changes failed",
+		},
+		{
+			name: "go changes without a hot reload directory",
+			res:  func(t *testing.T) update.GitPullResult { return pulledCheckout(t, "main.go", "package main\n") },
+			git:  update.GitState{Supervised: true, HotReload: true},
+			want: "The backend hot-reloads the new code",
+		},
+		{
+			name:    "a failed hot reload without the supervisor",
+			res:     func(t *testing.T) update.GitPullResult { return pulledCheckout(t, "main.go", "package main\n") },
+			git:     update.GitState{HotReload: true},
+			hotDir:  true,
+			reload:  &failedReload,
+			want:    "could not hot-reload the pulled code: a type changed shape.",
+			wantErr: "the running Aviary server still runs the old code. " + restartHint,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orig := waitHotReload
+			t.Cleanup(func() { waitHotReload = orig })
+			waits := 0
+			waitHotReload = func(context.Context, string, int, update.HotReloadWait) update.HotReloadResult {
+				waits++
+				require.NotNil(t, tt.reload, "no hot reload is awaited")
+				return *tt.reload
+			}
+			restarts := stubRestart(t)
+			stubServer(t, serverState(runningServer{}))
+			hotDir := ""
+			if tt.hotDir {
+				hotDir = t.TempDir()
+			}
+			git := tt.git
+			srv := runningServer{CheckResult: update.CheckResult{InstallType: update.InstallSource, Git: &git}}
+
+			out, err := captureStdout(t, func() error {
+				return applyPulledCode(context.Background(), srv, tt.res(t), hotDir, 0)
+			})
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Contains(t, out, tt.want)
+			assert.Equal(t, tt.reload != nil, waits == 1, "hot reload awaited")
+			if tt.wantRestarts == nil {
+				assert.Empty(t, *restarts)
+			} else {
+				assert.Equal(t, tt.wantRestarts, *restarts)
+			}
+		})
+	}
+}
+
+func TestAwaitServer(t *testing.T) {
+	origWait, origPoll := serverRestartWait, serverRestartPoll
+	serverRestartWait, serverRestartPoll = 50*time.Millisecond, time.Millisecond
+	t.Cleanup(func() { serverRestartWait, serverRestartPoll = origWait, origPoll })
+	restarting := runningServer{Restart: saferestart.Status{Phase: saferestart.PhaseUpdating}}
+	back := runningServer{Restart: saferestart.Status{Phase: saferestart.PhaseIdle}}
+
+	tests := []struct {
+		name      string
+		states    []func() (runningServer, bool)
+		wantErr   string
+		wantPolls int
+	}{
+		{
+			name:      "waits out the restart",
+			states:    []func() (runningServer, bool){serverState(restarting), noServerState, serverState(runningServer{Problem: "did not respond"}), serverState(back)},
+			wantPolls: 4,
+		},
+		{
+			name:    "a failed restart",
+			states:  []func() (runningServer, bool){serverState(runningServer{Restart: saferestart.Status{Phase: saferestart.PhaseIdle, Error: "build failed"}})},
+			wantErr: "the running Aviary server failed to restart: build failed",
+		},
+		{
+			name:    "never comes back",
+			states:  []func() (runningServer, bool){noServerState},
+			wantErr: "the running Aviary server did not come back within 50ms",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			polls := stubServer(t, tt.states...)
+			err := awaitServer(func(runningServer) bool { return true })
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantPolls, *polls)
+		})
+	}
+}
+
+func TestDoctorVersionCheckWithoutAnUpgradeToOffer(t *testing.T) {
+	tests := []struct {
+		name    string
+		stub    func(t *testing.T)
+		want    string
+		wantOut bool
+	}{
+		{
+			name: "check fails",
+			stub: func(t *testing.T) {
+				orig := buildinfo.Version
+				buildinfo.Version = "1.2.3"
+				update.ClearCache()
+				t.Cleanup(func() {
+					buildinfo.Version = orig
+					update.ClearCache()
+				})
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusInternalServerError)
+				}))
+				t.Cleanup(srv.Close)
+				t.Setenv(update.DownloadBaseEnv, srv.URL)
+			},
+			want: "\nVersion check: [WARN] ",
+		},
+		{
+			name: "latest release is not comparable",
+			stub: func(t *testing.T) { stubLatestRelease(t, "v0.7.3", "nightly") },
+			want: "\nVersion check: [INFO] ",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.stub(t)
+			asked := stubPrompt(t, true, nil)
+			installs, _ := stubInstall(t)
+			out, err := captureStdout(t, maybeRunDoctorVersionCheck)
+			require.NoError(t, err, "the doctor reports a version problem without failing")
+			assert.True(t, strings.HasPrefix(out, tt.want), "output: %q", out)
+			assert.Empty(t, *asked)
+			assert.Empty(t, *installs)
+		})
+	}
+}
+
+func TestDoctorVersionCheckPromptAnswers(t *testing.T) {
+	tests := []struct {
+		name      string
+		answer    bool
+		promptErr error
+	}{
+		{name: "declined"},
+		{name: "prompt fails", promptErr: errors.New("no console")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stubLatestRelease(t, "v0.7.3", "v0.7.5")
+			installs, _ := stubInstall(t)
+			stubServer(t, noServerState)
+			orig := promptYesNo
+			t.Cleanup(func() { promptYesNo = orig })
+			asked := 0
+			promptYesNo = func(string) (bool, error) {
+				asked++
+				return tt.answer, tt.promptErr
+			}
+
+			out, err := captureStdout(t, maybeRunDoctorVersionCheck)
+			if tt.promptErr != nil {
+				require.ErrorIs(t, err, tt.promptErr)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, 1, asked)
+			assert.Contains(t, out, "Version check: [WARN] upgrade available v0.7.3 -> v0.7.5\n", "no running server, so no binary is named")
+			assert.Empty(t, *installs)
+			assert.NotContains(t, out, "Upgrading")
+		})
+	}
+}
+
+func TestDoctorUpgradeTargetNamesNothing(t *testing.T) {
+	release := update.CheckResult{InstallType: update.InstallRelease, CurrentVersion: "v0.7.3"}
+	tests := []struct {
+		name   string
+		check  update.CheckResult
+		server func() (runningServer, bool)
+		polls  int
+	}{
+		{name: "not a release install", check: update.CheckResult{InstallType: update.InstallSource, CurrentVersion: "abc"}, server: serverState(runningServer{CheckResult: update.CheckResult{CurrentVersion: "v0.7.5"}})},
+		{name: "no server", check: release, server: noServerState, polls: 1},
+		{name: "server with a problem", check: release, server: serverState(runningServer{Problem: "did not respond"}), polls: 1},
+		{name: "server at the same version", check: release, server: serverState(runningServer{CheckResult: update.CheckResult{CurrentVersion: "0.7.3"}}), polls: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			polls := stubServer(t, tt.server)
+			assert.Empty(t, doctorUpgradeTarget(tt.check))
+			assert.Equal(t, tt.polls, *polls)
+		})
+	}
 }
