@@ -134,7 +134,7 @@ const { result, checking, error } = useProjectCheck(target, () => ({
 	models: store.config
 		? jobModels(props.agent, store.config, cliNames.value).map((m) => m.model)
 		: undefined,
-	mode: mode.value,
+	...(mode.value === "manual" ? { mode: mode.value } : {}),
 }));
 const addProject = useAddProject();
 const starting = ref(false);

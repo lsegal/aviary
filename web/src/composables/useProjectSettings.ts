@@ -176,7 +176,12 @@ export function useAddProject() {
 	return async (target: string, agent: string, mode: ProjectMode = "watch") => {
 		const undo = insertProject(target, agent);
 		try {
-			await callTool("project_add", { target, agent, mode });
+			// Watch is the default, so only manual is passed.
+			await callTool("project_add", {
+				target,
+				agent,
+				...(mode === "manual" ? { mode } : {}),
+			});
 		} catch (e) {
 			undo();
 			throw e;

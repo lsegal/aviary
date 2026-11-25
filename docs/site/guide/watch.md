@@ -36,6 +36,7 @@ Common flags:
 | `--model claude:opus` | the CLI provider and model jobs run on; `--fallback` adds fallbacks |
 | `--concurrency N` | jobs at once |
 | `--filter F` | the issue filter, `assignee:@me` by default |
+| `--manual` | [manual mode](./projects#manual-mode): never search for issues; only queued work, scheduled prompts and agent tools start jobs |
 | `--no-merge` | stop each job at a ready pull request instead of merging it |
 | `--no-webui` | serve no web UI; the TUI still runs |
 | `--no-tui` | print the Code Loop log instead of the TUI |

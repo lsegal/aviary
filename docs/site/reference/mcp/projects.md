@@ -38,7 +38,7 @@ A job is named by its issue `number`. `target` is needed only when several proje
 | `project_task_resume` | `aviary project task resume` | |
 | `project_task_run` | `aviary project task run` | |
 | `project_task_delete` | `aviary project task delete` | destructive |
-| `project_check` | `aviary project check` | read-only |
+| `project_check` | `aviary project check` | read-only; reports the project's `mode`, or the `mode` passed |
 
 Settings have no tool of their own. A project lives in the `projects:` list of the agent that owns it in `aviary.yaml` ([`agents[].projects`](/reference/config#agents-projects)), and the settings every project shares live in the top-level `projects:` section ([`projects`](/reference/config#projects)). Both are read and written with `config_get` and `config_save`, and are applied to the running engine when the file changes.
 
@@ -46,7 +46,7 @@ Settings have no tool of their own. A project lives in the `projects:` list of t
 
 ## project_status
 
-Instance identity, watched projects with issue counts, job counts, the jobs in each board state (`states`: `starting`, `paused`, `running`, `done`, `failed`; a schedule counts once, under `starting` or `running` while a run is in flight and under `failed` while its last run failed and was not dismissed, and never under `done`), delivery mode, poll interval, the shared issue filter that selects work (`issue_filter`, empty when every open issue is picked up), each project's effective filter (`issue_filters`) and the projects with their own (`custom_filters`), last check, quota per CLI provider, the configured agent specs, each project's effective job model, and recent log lines. `models` maps each project to its job `model`, `fallbacks` and `source` (`project override`, `from agent <name>`, or `from models.defaults`), and `model_labels` renders them, such as `claude/opus (project override)`.
+Instance identity, watched projects with issue counts, job counts, the jobs in each board state (`states`: `starting`, `paused`, `running`, `done`, `failed`; a schedule counts once, under `starting` or `running` while a run is in flight and under `failed` while its last run failed and was not dismissed, and never under `done`), delivery mode, poll interval, the shared issue filter that selects work (`issue_filter`, empty when every open issue is picked up), each project's effective filter (`issue_filters`) and the projects with their own (`custom_filters`), each project's mode (`modes`: `watch` or `manual`; a manual project has no entry in `issue_counts`), last check, quota per CLI provider, the configured agent specs, each project's effective job model, and recent log lines. `models` maps each project to its job `model`, `fallbacks` and `source` (`project override`, `from agent <name>`, or `from models.defaults`), and `model_labels` renders them, such as `claude/opus (project override)`.
 
 **Arguments:** `log_offset` (optional): return only the lines logged after this offset. Each response's `log_offset` is the offset to pass next time. `aviary watch --no-tui` tails the log this way. `targets` (optional): count `states` over only these projects' jobs, as `project_job_list` filters them; the board's stat cards pass the projects they show.
 
@@ -116,15 +116,16 @@ Watch a project. A saved project is added to its agent's `projects:` list.
 - `agent` (required unless `runtime` is set): the Aviary agent that owns the project; its model and fallbacks are the jobs' provider and model defaults. A target another agent already owns is refused. For a runtime watch it names the agent the watch runs under; left out, a runtime watch uses the target's owning agent, or `models.defaults`.
 - `reports` (optional, saved projects only): send this project's job events through an Aviary agent's channels, as `{agent, targets, events}`. See [Reports](/guide/projects#reports).
 - `runtime` (optional): watch until the server stops without writing `aviary.yaml`.
+- `mode` (optional): `watch`, the default, picks up open issues matching the filter; `manual` never searches the project for issues. See [Manual mode](/guide/projects#manual-mode). The result reports the `mode`.
 - `settings` (optional, runtime only): projects settings that override the shared `projects:` settings while the watch runs. `model` and `fallbacks` set the [job model override](/guide/projects#job-model-override); an unknown provider or a CLI that is not installed fails the call.
 
 The call returns as soon as the project is watched. `project_status` lists it right away, under `loading_targets` until its first poll, while the engine restarts onto it and reads GitHub in the background. Every open control panel shows the new project at once: the server sends a `project-added` event on the `/api/ws` stream, then `project-updated` when the project's issue count or jobs change.
 
 ## project_update
 
-Change one watched project. `filter` sets the project's own [issue filter](/guide/projects#issue-filter), replacing the shared `projects.filter` (and `all_issues`) for that project only; `reset_filter` removes it. A new filter is checked first, as `project_filter_check` does, and an invalid one is refused with the reason and nothing saved. A saved project's filter is written to its `projects[].filter` in `aviary.yaml`; a runtime watch's lasts until the watch stops. The project is checked for work right away, and open control panels hear of the change through a `project-updated` event on `/api/ws`. The result has the effective `issue_filter`, `custom`, and `matches` for a new filter.
+Change one watched project. `filter` sets the project's own [issue filter](/guide/projects#issue-filter), replacing the shared `projects.filter` (and `all_issues`) for that project only; `reset_filter` removes it. A new filter is checked first, as `project_filter_check` does, and an invalid one is refused with the reason and nothing saved. A saved project's filter is written to its `projects[].filter` in `aviary.yaml`; a runtime watch's lasts until the watch stops. The project is checked for work right away, and open control panels hear of the change through a `project-updated` event on `/api/ws`. `mode` switches the project between `watch` and `manual` ([Manual mode](/guide/projects#manual-mode)) without a restart: switching to manual stops its issue searches and keeps its jobs, and switching to watch checks it for issues right away. A saved project's mode is written to `projects[].mode`, left out for watch. The result has the effective `issue_filter`, `custom`, `mode`, and `matches` for a new filter.
 
-**Arguments:** `target`, and one of `filter` or `reset_filter`.
+**Arguments:** `target`, and at least one of `filter`, `reset_filter` or `mode`.
 
 ## project_filter_check
 

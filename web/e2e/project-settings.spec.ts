@@ -277,6 +277,52 @@ test("adding a project from the single field saves it to the board's agent", asy
 	});
 });
 
+test("a project can be added in manual mode", async ({ page }) => {
+	const calls = await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary?add=1");
+	const dialog = page.getByRole("dialog", { name: "Watch a repository" });
+	await dialog.getByLabel("Repository or project board").fill("lsegal/zvidlib");
+	const watch = dialog.getByRole("radio", { name: /Watch issues/ });
+	await expect(watch).toBeChecked();
+	await dialog
+		.getByRole("radio", { name: /Manual: only what I queue/ })
+		.check();
+	await expect(dialog).toContainText("Issues are never picked up on their own");
+	await expect(dialog.locator("footer code")).toHaveText(
+		"aviary project add lsegal/zvidlib --agent coder --mode manual",
+	);
+	await expect(dialog.getByTestId("add-project-checks")).toContainText(
+		"Ready to go",
+	);
+	await expect.poll(() => calls.project_check?.at(-1)?.mode).toBe("manual");
+	await dialog.getByRole("button", { name: "Start watching" }).click();
+	await expect(dialog).toBeHidden();
+	expect(calls.project_add).toEqual([
+		{ target: "lsegal/zvidlib", agent: "coder", mode: "manual" },
+	]);
+});
+
+test("a project's issue discovery mode is set in its settings", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/projects/settings?agent=coder");
+	const card = page.getByTestId("agent-project-mode");
+	await expect(card.getByRole("radio", { name: /Watch issues/ })).toBeChecked();
+	await card.getByRole("radio", { name: /Manual: only what I queue/ }).check();
+	await expect(page.getByTestId("agent-project-yaml")).toContainText(
+		"mode: manual",
+	);
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(1);
+	expect(savedProjects(calls, "coder")[0].mode).toBe("manual");
+
+	await card.getByRole("radio", { name: /Watch issues/ }).check();
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(2);
+	expect(savedProjects(calls, "coder")[0]).not.toHaveProperty("mode");
+});
+
 test("a project another agent owns cannot be added again", async ({ page }) => {
 	const calls = await setup(page, {
 		check: { ...READY_CHECK, target: "lsegal/aviary", fork: false },
