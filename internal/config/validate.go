@@ -711,6 +711,9 @@ func (v *validator) checkProjects(agents []AgentConfig) {
 				v.errorf(fmt.Sprintf("agents[%d].projects[%d].target", i, j), "a project needs a target")
 				continue
 			}
+			if _, err := NormalizeProjectMode(project.Mode); err != nil {
+				v.errorf(fmt.Sprintf("agents[%d].projects[%d].mode", i, j), "%v", err)
+			}
 			if owner, ok := owners[target]; ok && owner != agent.Name {
 				v.errorf(fmt.Sprintf("agents[%d].projects[%d]", i, j), "%s is already owned by agent %q; a project belongs to exactly one agent", target, owner)
 				continue

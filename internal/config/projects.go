@@ -93,6 +93,10 @@ type ProjectConfig struct {
 	// Filter overrides the shared issue search filter for this project only,
 	// one entry per term group. Empty uses the shared filter.
 	Filter []string `yaml:"filter,omitempty" json:"filter,omitempty"`
+	// Mode is how work reaches the project: "watch" (the default) discovers
+	// issues matching the filter; "manual" never discovers or claims issues,
+	// so only queued jobs, scheduled project tasks and agent tools start work.
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
 	// Reports sends this project's job lifecycle events through an Aviary
 	// agent's channels. Unset means no reports.
 	Reports *ProjectReportsConfig `yaml:"reports,omitempty" json:"reports,omitempty"`
@@ -256,6 +260,41 @@ func (p ProjectsConfig) FilterFor(override []string) string {
 // has no terms.
 func JoinFilter(filter []string) string {
 	return strings.Join(strings.Fields(strings.Join(filter, " ")), " ")
+}
+
+// Project modes.
+const (
+	ProjectModeWatch  = "watch"
+	ProjectModeManual = "manual"
+)
+
+// NormalizeProjectMode returns mode as ProjectModeWatch or ProjectModeManual,
+// empty meaning watch, or an error naming the modes for anything else.
+func NormalizeProjectMode(mode string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", ProjectModeWatch:
+		return ProjectModeWatch, nil
+	case ProjectModeManual:
+		return ProjectModeManual, nil
+	}
+	return "", fmt.Errorf("unknown project mode %q; use %s or %s", mode, ProjectModeWatch, ProjectModeManual)
+}
+
+// Manual reports whether the project is in manual mode.
+func (p ProjectConfig) Manual() bool {
+	return strings.EqualFold(strings.TrimSpace(p.Mode), ProjectModeManual)
+}
+
+// ManualTargets lists the projects in manual mode, in order.
+func (p AgentProjectsConfig) ManualTargets() []string {
+	var targets []string
+	for _, project := range p {
+		target := strings.TrimSpace(project.Target)
+		if target != "" && project.Manual() && !slices.Contains(targets, target) {
+			targets = append(targets, target)
+		}
+	}
+	return targets
 }
 
 // Filters maps every project with its own filter override to that override,

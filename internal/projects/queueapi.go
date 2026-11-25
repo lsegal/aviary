@@ -44,7 +44,7 @@ func (m *Manager) QueueJobs(ctx context.Context, target, repository, skill strin
 		return nil, err
 	}
 	if skill == SkillFix {
-		return m.queueFixes(ctx, target, numbers)
+		return m.queueFixes(ctx, target, repository, numbers)
 	}
 	outcomes, err := engine.QueueJobs(ctx, QueueRequest{Target: target, Repository: repository, Skill: skill, Numbers: numbers, Titles: titles})
 	if err != nil {
@@ -59,8 +59,9 @@ func (m *Manager) QueueJobs(ctx context.Context, target, repository, skill strin
 // queueFixes answers gh-fix for numbers: an issue a job already owns is
 // reported with that job, a finished job is retried, and an issue with no job
 // yet starts a poll, which dispatches it when it matches the project's issue
-// filter.
-func (m *Manager) queueFixes(ctx context.Context, target string, numbers []int) (map[string]any, error) {
+// filter. On a manual-mode project, which is never searched, an issue with
+// no job yet is requested and dispatched whatever the filter.
+func (m *Manager) queueFixes(ctx context.Context, target, repository string, numbers []int) (map[string]any, error) {
 	if len(numbers) == 0 {
 		return nil, errors.New("name at least one issue to fix")
 	}
@@ -81,6 +82,12 @@ func (m *Manager) queueFixes(ctx context.Context, target string, numbers []int) 
 			outcomes = append(outcomes, QueueOutcome{Number: number, Key: key, Queued: true, Reason: "retried its finished job"})
 		case err == nil:
 			outcomes = append(outcomes, QueueOutcome{Number: number, OwnedBy: key, Reason: fmt.Sprintf("job %s is a %s job", key, job.Kind)})
+		case engine.Manual.Has(target):
+			if err := engine.RequestFix(target, repository, number); err != nil {
+				outcomes = append(outcomes, QueueOutcome{Number: number, Reason: err.Error()})
+				continue
+			}
+			outcomes = append(outcomes, QueueOutcome{Number: number, Key: key, Queued: true, Reason: "requested; dispatching it now"})
 		default:
 			if !polled {
 				engine.nudgePoll()
