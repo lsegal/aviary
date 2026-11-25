@@ -17,6 +17,7 @@ Connect at `https://localhost:16677/mcp` using the bearer token from `~/.config/
 | [Auth Tools](./auth#provider_cli_list) | `provider_cli_list` | Providers reached through a CLI and their install, sign-in, quota and models |
 | [Server and Config Tools](./server-and-config) | `ping`, `server_status`, `server_version_check`, `server_upgrade`, `server_restart`, `config_get`, `config_save`, `config_restore_latest_backup`, `config_validate` | Server health, upgrades, and configuration management |
 | [Code Loop Tools](./projects) | `project_status`, `project_job_list`, `project_job_get`, `project_job_explain`, `project_job_retry`, `project_job_pause`, `project_job_resume`, `project_job_stop`, `project_job_dismiss`, `project_job_queue`, `project_queue_candidates`, `project_refresh`, `project_add`, `project_remove`, `project_clone_list`, `project_clone_clear`, `project_unblock_run`, `project_issue_comment`, `project_issue_create`, `project_github_read`, `project_site_fetch`, `project_task_list`, `project_task_get`, `project_task_create`, `project_task_update`, `project_task_pause`, `project_task_resume`, `project_task_run`, `project_task_delete`, `project_check` | Watched GitHub projects and their CLI jobs |
+| [Notification Tools](./notifications) | `notify`, `notification_list`, `notification_settings_get`, `notification_settings_set` | Send notifications and read or change notification settings |
 | [Usage and Skills Tools](./usage-and-skills) | `usage_query`, `skills_list`, `coding_skills_list`, `coding_skills_install`, `web_search` | Token analytics, skill discovery, skills Aviary ships, and web search |
 
 ## Permissions
@@ -25,9 +26,9 @@ Which tools are available to an agent depends on its [permissions preset](/refer
 
 | Preset | Available groups |
 | --- | --- |
-| `standard` _(default)_ | session, task, job, browser, memory, search, skills, usage, project |
+| `standard` _(default)_ | session, task, job, browser, memory, search, skills, usage, project, notify, notification |
 | `full` | all tools |
-| `minimal` | session, memory, task, job, search, usage |
+| `minimal` | session, memory, task, job, search, usage, notify, notification |
 
 Tools in the `agent`, `auth`, `exec`, `file`, and `server` groups are blocked by the `standard` preset. Add them via `permissions.tools` or switch to `full` to use them.
 

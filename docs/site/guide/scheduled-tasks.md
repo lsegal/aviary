@@ -259,7 +259,8 @@ A channel target picks one of the agent's channels by name: `channel:<name>`. Th
 
 - For sessions, use `session:<session-name>`
 - For a Code Loop job, use `codeloop:<project>#<number>`, such as `codeloop:owner/repo#123`
-- In the control panel, a task's **Send Via** picks **Session**, **Code Loop job**, or one of the agent's channels by name
+- For a [notification](/guide/notifications#notify-from-tasks-and-workflows) with the run's summary, use `notify`, or `notify?failures` to notify only when a run fails
+- In the control panel, a task's **Send Via** picks **Session**, **Code Loop job**, **Notify**, **Notify on failure only**, or one of the agent's channels by name
 
 ### Sending output to a Code Loop job
 

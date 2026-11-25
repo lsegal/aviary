@@ -174,7 +174,7 @@ agents:
         channel: Team Slack   # the agent's channel, by name or ID
         entry: C0123456789    # optional: one conversation on it
         match: "*crash*"      # optional: empty matches every message
-        target: reply         # silent (empty), reply, session:<name>, channel:<name> or codeloop:<owner/repo>#<number>
+        target: reply         # silent (empty), reply, session:<name>, channel:<name>, codeloop:<owner/repo>#<number>, notify or notify?failures
         overlap: queue        # optional: queue (default) or skip
         model: anthropic/claude-haiku-4-5  # optional model override
         precompile: true      # optional: run a compiled script, falling back to the model

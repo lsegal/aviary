@@ -109,7 +109,7 @@ The home screen. It shows:
 
 ### Settings (`/system/settings`)
 
-Opened from the sidebar's gear menu, with three tabs: **General**, **Providers & Authentication** and **Display**. **General** covers the `server`, `models`, `browser`, `scheduler`, and `search` config sections. Port and TLS changes require a server restart to take effect.
+Opened from the sidebar's gear menu, with four tabs: **General**, **Providers & Authentication**, **Display** and **Notifications**. **General** covers the `server`, `models`, `browser`, `scheduler`, and `search` config sections. Port and TLS changes require a server restart to take effect.
 
 ### Settings → Providers & Authentication (`/system/providers`)
 
@@ -128,7 +128,11 @@ Your own display preferences. Every change applies at once, with no Save button,
 - **Sidebar** — the [Edit sidebar](#edit-sidebar) lists.
 - **Reset to defaults** — restores the default text size, theme and sidebar.
 
-An `aviary watch` session's gear menu has only **Display**, and Settings shows only this tab.
+An `aviary watch` session's gear menu has only **Display** and **Notifications**, and Settings shows only those tabs.
+
+### Settings → Notifications (`/system/notifications`)
+
+The master switch, delivery methods (in-app, system with the browser's permission state, and macOS Notification Center when no browser is open), each event type's on/off, style and sound, sound (off by default), quiet hours, and **Test notification**. Changes apply at once and are stored on the server per user. The header's bell holds the history. See [Notifications](/guide/notifications).
 
 ### Usage (`/system/usage`)
 
