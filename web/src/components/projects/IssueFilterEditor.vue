@@ -12,13 +12,13 @@
 			<PencilIcon aria-hidden="true" class="h-3.5 w-3.5" />
 		</button>
 	</span>
-	<form v-else data-testid="issue-filter-editor" class="flex w-full min-w-0 flex-wrap items-center gap-1 py-0.5"
+	<form v-else data-testid="issue-filter-editor" class="flex w-full min-w-0 flex-wrap items-center gap-1 py-0.5 align-middle sm:inline-flex sm:w-auto sm:max-w-full"
 		@submit.prevent="save">
 		<label :for="inputId" class="sr-only">Issue filter for {{ target }}</label>
 		<input :id="inputId" ref="input" v-model="draft" data-testid="issue-filter-input" type="text"
 			spellcheck="false" autocomplete="off" autocapitalize="off" :aria-invalid="!!error"
 			:aria-describedby="statusId"
-			class="min-w-0 flex-1 basis-40 rounded border px-1.5 py-0.5 font-mono text-sm text-gray-900 focus:outline-none focus:ring-2 dark:bg-gray-900 dark:text-gray-100 sm:max-w-80"
+			class="min-w-0 flex-1 basis-40 rounded border sm:w-72 sm:flex-none px-1.5 py-0.5 font-mono text-sm text-gray-900 focus:outline-none focus:ring-2 dark:bg-gray-900 dark:text-gray-100"
 			:class="error ? 'border-red-400 focus:ring-red-400 dark:border-red-700' : 'border-gray-300 focus:ring-blue-500 dark:border-gray-700'"
 			@keydown.esc.prevent="cancel" />
 		<button type="submit" data-testid="issue-filter-save" aria-label="Save issue filter" title="Save (Enter)"

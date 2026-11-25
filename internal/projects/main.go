@@ -83,9 +83,9 @@ func ngrokTargetAddr(address string) string {
 // GHCLI reads and writes GitHub through the gh CLI, and the public REST API
 // for public repositories.
 type GHCLI struct {
-	Binary     string
-	Filter     string
-	AllIssues  bool
+	Binary    string
+	Filter    string
+	AllIssues bool
 	// FilterOverrides are per-target filters, which replace Filter and
 	// AllIssues for their targets.
 	FilterOverrides *core.FilterOverrides

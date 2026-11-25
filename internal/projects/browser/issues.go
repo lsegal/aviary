@@ -61,7 +61,7 @@ type IssueSource struct {
 	// FilterOverrides are per-target filters, which replace filter and
 	// allIssues for their targets.
 	FilterOverrides *core.FilterOverrides
-	logf      func(string, ...interface{})
+	logf            func(string, ...interface{})
 	// profile is the browser profile directory, named in the signed-out error
 	// so the user is told which profile to sign in rather than being left to
 	// guess whether the browser profile_directory setting was in play.

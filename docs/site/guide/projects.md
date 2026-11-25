@@ -80,7 +80,11 @@ projects:
 
 ## Which issues run
 
-A repository issue is picked up when it is open and matches the issue filter (`assignee:@me` by default); no label is needed. The board header shows the filter in use, such as "Issues matching `assignee:@me`", or "All open issues" when `all_issues` drops it. On a project board, the item's status must be the ready state, which is `Todo` or `Ready` unless you set one. Board items move to `In Progress` when work starts and `Done` when it finishes.
+A repository issue is picked up when it is open and matches the issue filter (`assignee:@me` by default); no label is needed. The board header shows the filter in use, such as "Issues matching `assignee:@me`", or "All open issues" when `all_issues` drops it.
+
+### Issue filter
+
+Each project can have its own issue filter in place of the shared one. On a project's board, click the pencil after the filter in the header, or double-click the filter, and edit it inline: Enter saves and Esc cancels. While you type, the filter is checked with a dry-run GitHub search that shows how many open issues it matches, and an invalid filter is shown inline and can't be saved. The syntax is the shared filter's: several terms, `label:`, `-label:`, `assignee:`, and so on. Saving writes the filter to that project's entry in `aviary.yaml` (`projects[].filter`), or to the runtime watch for an `aviary watch` session, and checks the project for work right away. A project with its own filter shows a **custom** badge, and **Reset to default** in the editor removes it. The [`project_update`](/reference/mcp/projects#project-update) tool and `aviary project update <target> --filter "..."` do the same. On a project board, the item's status must be the ready state, which is `Todo` or `Ready` unless you set one. Board items move to `In Progress` when work starts and `Done` when it finishes.
 
 - Issues labeled `critical`, then `high`, run before everything else, across all projects.
 - An issue with open sub-issues is a tracking issue and is skipped.

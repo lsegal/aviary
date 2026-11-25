@@ -319,11 +319,11 @@ type engineSettings struct {
 	Agents       []string            `json:"agents"`
 	// Definitions are core's cli_definitions when the settings were built, so
 	// a change to them restarts the run on the new CLI providers.
-	Definitions       map[string]any       `json:"definitions"`
-	Interval          time.Duration        `json:"interval"`
-	Delivery          string               `json:"delivery"`
-	ReadyState        string               `json:"ready_state"`
-	Filter            string               `json:"filter"`
+	Definitions map[string]any `json:"definitions"`
+	Interval    time.Duration  `json:"interval"`
+	Delivery    string         `json:"delivery"`
+	ReadyState  string         `json:"ready_state"`
+	Filter      string         `json:"filter"`
 	// TargetFilters are the targets with their own filter override, which
 	// replaces Filter and AllIssues for them.
 	TargetFilters     map[string]string    `json:"-"`
