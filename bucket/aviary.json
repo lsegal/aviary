@@ -1,12 +1,12 @@
 {
-	"version": "0.7.40",
+	"version": "0.7.41",
 	"description": "Aviary: the AI Agent Nest",
 	"homepage": "https://aviary.bot",
 	"license": "MIT",
 	"architecture": {
 		"64bit": {
-			"url": "https://github.com/lsegal/aviary/releases/download/v0.7.40/aviary_v0.7.40_windows_amd64.tar.gz",
-			"hash": "23854945006fc8fb6e0f0b7159af7d6c1f1cc9696b3c7f1b07c22b2d68925233"
+			"url": "https://github.com/lsegal/aviary/releases/download/v0.7.41/aviary_v0.7.41_windows_amd64.tar.gz",
+			"hash": "7e7af7023ca5d869faa4154a219235557a6c5e9ecbd1cd879bab69c6177d5782"
 		}
 	},
 	"bin": "aviary.exe",
