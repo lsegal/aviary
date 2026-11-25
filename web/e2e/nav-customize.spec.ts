@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 // Customizing the navigation (#1003): the sidebar editor, in Settings →
 // Display (#1093), reorders and hides pages, the result persists on the

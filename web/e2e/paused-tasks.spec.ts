@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 // Paused scheduled tasks: one amber Paused chip, paused sidebar rows, and
 // Pause/Resume in the sidebar's "…" menu (#975).

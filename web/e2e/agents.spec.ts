@@ -1,4 +1,3 @@
-import { expect, test } from "@playwright/test";
 import type { AgentFileArgs } from "./helpers/mockMCP";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import {
@@ -15,6 +14,7 @@ import {
 	openTaskSettings,
 	systemList,
 } from "./helpers/sidebar";
+import { expect, test } from "./helpers/test";
 
 const CONFIG = {
 	server: { port: 16677, tls: { cert: "", key: "" } },

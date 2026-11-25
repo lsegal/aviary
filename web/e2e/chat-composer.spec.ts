@@ -1,6 +1,7 @@
 /// <reference types="node" />
-import { expect, type Page, test } from "@playwright/test";
+
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 const PIXEL_PNG = Buffer.from(
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",

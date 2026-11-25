@@ -1,4 +1,3 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import {
 	chooseOption,
@@ -7,6 +6,7 @@ import {
 	optionLabels,
 } from "./helpers/select";
 import { systemList } from "./helpers/sidebar";
+import { expect, type Page, test } from "./helpers/test";
 
 const STATUS = {
 	identity: "7F3CA91B",

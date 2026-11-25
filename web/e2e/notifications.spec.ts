@@ -1,5 +1,5 @@
-import { expect, type Page, test, type WebSocketRoute } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test, type WebSocketRoute } from "./helpers/test";
 
 // Notifications (#1215): pushed over /api/ws, shown as a banner, a toast or
 // a system notification with a sound, kept in the bell, and controlled from

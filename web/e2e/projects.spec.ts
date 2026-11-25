@@ -1,5 +1,5 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
+import { expect, type Locator, type Page, test } from "./helpers/test";
 
 // Fixtures follow the payloads internal/projects' Manager returns for
 // project_status, project_job_list and project_job_get.

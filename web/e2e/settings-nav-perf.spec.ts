@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 // Choosing Settings from the gear menu routes at once and shows the page
 // shell without waiting on the server (#897).

@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { type ConfigSaveArgs, mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 /** A fresh install with a CLI already signed in: a provider, but no agent. */
 async function mockFreshInstall(page: Page) {

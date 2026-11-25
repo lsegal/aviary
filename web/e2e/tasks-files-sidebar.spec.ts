@@ -1,6 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { chooseOption, expectValue, optionLabels } from "./helpers/select";
+import { expect, type Page, test } from "./helpers/test";
 import {
 	expectSavedTrigger,
 	expectTrigger,

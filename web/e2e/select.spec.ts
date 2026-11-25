@@ -1,9 +1,9 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Locator, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { expectValue, listbox, optionLabels } from "./helpers/select";
+import { expect, type Locator, type Page, test } from "./helpers/test";
 
 // The shared AppSelect/AppCombobox (web/src/components/ui/select) behind every
 // dropdown in the app.

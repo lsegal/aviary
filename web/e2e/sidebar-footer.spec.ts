@@ -1,6 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { openGearMenuItem } from "./helpers/sidebar";
+import { expect, type Page, test } from "./helpers/test";
 
 const health = JSON.stringify({
 	type: "health",

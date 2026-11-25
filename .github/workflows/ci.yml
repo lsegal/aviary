@@ -105,12 +105,14 @@ jobs:
           cache: true
       # Linux also runs the race detector so data races fail CI (#632), and
       # records statement coverage in the same run so it costs no extra test
-      # pass (#1217).
-      - run: go test ${{ matrix.os == 'ubuntu-latest' && '-race -coverprofile=coverage.out' || '' }} ./...
-      # Writes the total and per-package coverage to the job summary.
+      # pass (#1217). -coverpkg credits code that tests in other packages
+      # exercise (#1308).
+      - run: go test ${{ matrix.os == 'ubuntu-latest' && '-race -coverpkg=./... -coverprofile=coverage.out' || '' }} ./...
+      # Writes the total and per-package coverage to the job summary, and the
+      # Cobertura report the coverage job uploads to GitHub.
       - name: Report Go coverage
         if: matrix.os == 'ubuntu-latest'
-        run: node scripts/go-coverage.mjs coverage.out coverage.md
+        run: node scripts/go-coverage.mjs coverage.out coverage.md --cobertura coverage.xml
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'ubuntu-latest'
         with:
@@ -118,6 +120,7 @@ jobs:
           path: |
             coverage.out
             coverage.md
+            coverage.xml
 
   transcription-e2e:
     name: "Test: Transcription E2E"
@@ -326,10 +329,80 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      # Source maps let the E2E coverage map the bundle back to web/src.
       - run: pnpm build:web
+        env:
+          AVIARY_WEB_SOURCEMAP: "1"
       - run: node scripts/build-go.mjs --output aviary
       - run: pnpm exec playwright install --with-deps chromium
+      # Records browser JavaScript coverage in the same run (#1308).
       - run: pnpm test:e2e
+        env:
+          AVIARY_E2E_COVERAGE: "1"
+      - name: Report web coverage
+        run: cat coverage/web/coverage-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web-coverage
+          path: coverage/web/
+
+  # Uploads the Go and web reports to GitHub's code coverage store, which the
+  # "Restrict code coverage" ruleset rule reads (#1308). Mark this check
+  # required: it runs on every pull request and push to main, with no path
+  # filter, and fails when a test job did not produce its report. The upload
+  # skips fork pull requests with a notice, since their token is read-only.
+  coverage:
+    name: coverage
+    needs:
+      - go-tests
+      - web-e2e
+    if: ${{ !cancelled() }}
+    permissions:
+      contents: read
+      code-quality: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the test jobs' reports
+        if: needs.go-tests.result != 'success' || needs.web-e2e.result != 'success'
+        env:
+          GO_TESTS: ${{ needs.go-tests.result }}
+          WEB_E2E: ${{ needs.web-e2e.result }}
+        run: |
+          echo "::error::No coverage to upload: go-tests was $GO_TESTS and web-e2e was $WEB_E2E."
+          exit 1
+      - uses: actions/download-artifact@v8
+        with:
+          name: go-coverage
+          path: go
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-coverage
+          path: web
+      - name: Report line coverage
+        run: |
+          rate() {
+            covered=$(grep -o -m1 'lines-covered="[0-9]*"' "$1" | tr -dc 0-9)
+            valid=$(grep -o -m1 'lines-valid="[0-9]*"' "$1" | tr -dc 0-9)
+            awk -v c="$covered" -v v="$valid" 'BEGIN { printf "%.1f%% (%d / %d lines)", v ? c * 100 / v : 0, c, v }'
+          }
+          {
+            echo "## Line coverage uploaded to GitHub"
+            echo ""
+            echo "| Report | Line coverage |"
+            echo "| --- | ---: |"
+            echo "| Go | $(rate go/coverage.xml) |"
+            echo "| Web | $(rate web/cobertura.xml) |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-code-coverage@v1
+        with:
+          file: go/coverage.xml
+          language: Go
+          label: go
+      - uses: actions/upload-code-coverage@v1
+        with:
+          file: web/cobertura.xml
+          language: TypeScript
+          label: web
 
   docker:
     name: Docker

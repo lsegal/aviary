@@ -1,5 +1,5 @@
-import { expect, type Page, test, type WebSocketRoute } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test, type WebSocketRoute } from "./helpers/test";
 
 // A project added, removed or polled shows in every view at once: in the
 // adding tab before project_add answers, and in every other client through

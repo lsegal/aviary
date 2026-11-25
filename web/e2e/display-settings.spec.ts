@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 // Settings → Display (#1093): text size and theme apply at once, persist on
 // the server with a localStorage cache applied before the first paint, and

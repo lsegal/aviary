@@ -1,6 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { chooseOption, listbox, searchOption } from "./helpers/select";
+import { expect, type Page, test } from "./helpers/test";
 
 // Code Loop jobs as a task's or workflow's output target (#999): the shared
 // job picker in both forms, the target link in the task view, and the run

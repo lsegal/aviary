@@ -17,6 +17,23 @@
 	},
 	"overrides": [
 		{
+			"includes": ["web/e2e/*.spec.ts"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"paths": {
+									"@playwright/test": "Import from ./helpers/test so the spec records E2E coverage."
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		{
 			"includes": ["**/*.vue"],
 			"linter": {
 				"rules": {

@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 // The breadcrumb leaf on a project, task, channel or file page switches
 // between its siblings, like GitHub's repository switcher (#1063).

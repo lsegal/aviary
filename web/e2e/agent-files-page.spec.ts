@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 /** Mocks one agent whose root files live in a store the UI reads and writes. */
 async function mockFiles(page: Page, files: Record<string, string>) {

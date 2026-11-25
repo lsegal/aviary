@@ -1,9 +1,9 @@
-import { expect, test } from "@playwright/test";
 import modelCatalog from "../../internal/models/catalog.json" with {
 	type: "json",
 };
 import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
 import { chooseOption, optionLabels } from "./helpers/select";
+import { expect, test } from "./helpers/test";
 
 const CLI_DEFINITIONS = { acme: { binary: "acme-cli" } };
 

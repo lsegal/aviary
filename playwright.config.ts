@@ -3,6 +3,8 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
 	testDir: "./web/e2e",
 	outputDir: "./test-results",
+	// Writes the merged coverage report when AVIARY_E2E_COVERAGE is set.
+	globalTeardown: "./web/e2e/helpers/coverageTeardown.ts",
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 2 : 0,

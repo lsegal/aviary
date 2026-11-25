@@ -158,6 +158,45 @@ pnpm test:e2e:ui      # Playwright with interactive UI
 pnpm test             # lint + Go tests + e2e (full CI suite)
 ```
 
+E2E specs import `test` and `expect` from `web/e2e/helpers/test.ts`, not from
+`@playwright/test` directly, so every spec records coverage. Biome rejects a
+spec that imports `@playwright/test`.
+
+### Code coverage
+
+CI uploads line coverage to GitHub's code coverage store, which the
+**Restrict code coverage** ruleset rule reads. Coverage comes from the test
+runs CI already makes; no suite runs twice.
+
+- **Go:** the Linux `Test: Go (ubuntu-latest)` job runs
+  `go test -race -coverpkg=./... -coverprofile=coverage.out ./...`.
+  `-coverpkg` credits code that tests in other packages exercise.
+  `scripts/go-coverage.mjs` writes the job summary and converts the profile to
+  Cobertura XML (`--cobertura coverage.xml`).
+- **Web:** the `Test: Web E2E` job builds the web app with source maps
+  (`AVIARY_WEB_SOURCEMAP=1`) and runs Playwright with `AVIARY_E2E_COVERAGE=1`.
+  Each test records Chromium's JavaScript coverage, and after the run
+  [monocart-coverage-reports](https://github.com/cenfun/monocart-coverage-reports)
+  maps it back to `web/src` and writes `coverage/web/cobertura.xml`.
+- **Upload:** the `coverage` job downloads both reports and uploads them with
+  [`actions/upload-code-coverage`](https://github.com/actions/upload-code-coverage),
+  labelled `go` and `web`. It runs on every pull request and every push to
+  `main`, which gives GitHub its baseline, and it has no path filter. If a test
+  job fails or is skipped, `coverage` fails rather than reporting nothing.
+
+To enforce coverage, mark the **`coverage`** status check as required in the
+ruleset alongside the Restrict code coverage rule. GitHub evaluates the rule
+without waiting for uploads, so the required check is what holds a pull
+request until its coverage is in.
+
+Pull requests from forks get a read-only token, so the upload step skips them
+with a notice and `coverage` still passes. Their coverage is not evaluated
+until the change lands on a branch in this repository.
+
+To collect web coverage locally, build with `AVIARY_WEB_SOURCEMAP=1 pnpm build`
+and run `AVIARY_E2E_COVERAGE=1 CI=1 pnpm exec playwright test`; the report is in
+`coverage/web/`.
+
 ## Linting
 
 ```shell

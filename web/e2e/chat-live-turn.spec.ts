@@ -1,5 +1,5 @@
-import { type Browser, expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { type Browser, expect, type Page, test } from "./helpers/test";
 
 /*
  * A chat's running turn lives on the server, so a client that opens or

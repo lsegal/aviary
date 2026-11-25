@@ -1,6 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { expectSettingsHeader } from "./helpers/settingsHeader";
+import { expect, type Page, test } from "./helpers/test";
 
 // Every nested page shows where it is, from its agent or System down, with a
 // back link to its parent, also with the sidebar collapsed and on narrow

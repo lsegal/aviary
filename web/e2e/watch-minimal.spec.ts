@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 // An `aviary watch` session: no token, and only Code Loop and Scheduled
 // Tasks (#991).

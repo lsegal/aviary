@@ -1,6 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
 import { clickCardAt } from "./helpers/cards";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 const HOUR = 3_600_000;
 const iso = (offset: number) => new Date(Date.now() + offset).toISOString();

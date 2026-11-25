@@ -1,7 +1,7 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
 import { clickCardAt } from "./helpers/cards";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { chooseOption, optionLabels } from "./helpers/select";
+import { expect, type Locator, type Page, test } from "./helpers/test";
 import {
 	expectSavedTrigger,
 	expectTrigger,

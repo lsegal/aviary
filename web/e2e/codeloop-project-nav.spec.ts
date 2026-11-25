@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 // The Code Loop board's project pills lead into each project and its
 // scheduled tasks, so they stay reachable with the sidebar collapsed (#1044).

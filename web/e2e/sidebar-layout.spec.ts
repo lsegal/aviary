@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 // The desktop sidebar collapses to an icon rail and resizes from its right
 // edge, and remembers both per browser (#724).

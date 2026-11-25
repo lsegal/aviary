@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 // The Code Loop header's issue filter is editable inline for one project
 // (#1213). The mocks keep each project's own filter the way the Manager does:

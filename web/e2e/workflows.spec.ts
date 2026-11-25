@@ -1,4 +1,3 @@
-import { expect, type Page, test } from "@playwright/test";
 import {
 	analysisCache,
 	sawChecking,
@@ -6,6 +5,7 @@ import {
 } from "./helpers/analysisCache";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { chooseOption } from "./helpers/select";
+import { expect, type Page, test } from "./helpers/test";
 
 interface Task {
 	name: string;

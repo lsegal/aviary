@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 // Settings pages fit a phone: nothing widens the page or the settings
 // scroller past the screen, so the header never slides off the left edge

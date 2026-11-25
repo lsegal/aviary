@@ -1,6 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { expectSettingsHeader } from "./helpers/settingsHeader";
+import { expect, type Page, test } from "./helpers/test";
 
 // Every Settings page shares one header: a back link to the page the
 // settings belong to and a breadcrumb whose crumbs link to their pages (#986).

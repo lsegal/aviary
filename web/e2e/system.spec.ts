@@ -1,7 +1,7 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { chooseValue, expectValue } from "./helpers/select";
 import { systemList } from "./helpers/sidebar";
+import { expect, type Page, test } from "./helpers/test";
 
 test.beforeEach(async ({ page }) => {
 	await setAuthToken(page);

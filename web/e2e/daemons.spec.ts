@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, test } from "./helpers/test";
 
 test.beforeEach(async ({ page }) => {
 	await setAuthToken(page);

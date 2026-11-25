@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
 import { undeclaredArguments } from "./helpers/mockMCP";
+import { expect, test } from "./helpers/test";
 
 // The mock server rejects what the real one would, so a page that sends a
 // tool an argument its schema lacks fails its e2e test (#617).

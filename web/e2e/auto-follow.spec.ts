@@ -1,5 +1,5 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Locator, type Page, test } from "./helpers/test";
 
 /*
  * Every chat and live log view shares one auto-follow behavior (#1072): it

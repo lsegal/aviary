@@ -1,6 +1,6 @@
-import { expect, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { openGearMenuItem } from "./helpers/sidebar";
+import { expect, test } from "./helpers/test";
 
 const runningJobs = [
 	{ source: "projects", id: "lsegal/aviary#12", title: "Fix the parser" },

@@ -11,6 +11,8 @@ export default defineConfig(({ command }) => ({
 	build: {
 		outDir: "dist",
 		emptyOutDir: true,
+		// CI's E2E coverage maps the bundle back to web/src (#1308).
+		sourcemap: !!process.env.AVIARY_WEB_SOURCEMAP,
 	},
 	server: {
 		// Expose the dev server on the LAN over HTTPS: browsers only allow the

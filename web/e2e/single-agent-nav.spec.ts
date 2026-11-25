@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 function agent(name: string) {
 	return { name, model: "anthropic/claude-sonnet-4-5", fallbacks: [] };

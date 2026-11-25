@@ -1,10 +1,10 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
 import {
 	analysisCache,
 	sawChecking,
 	watchForChecking,
 } from "./helpers/analysisCache";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Locator, type Page, test } from "./helpers/test";
 
 // Fixtures follow task_analyze's result (internal/mcp/task_analyze.go).
 

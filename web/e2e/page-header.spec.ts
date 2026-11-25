@@ -1,6 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { expectSettingsHeader } from "./helpers/settingsHeader";
+import { expect, type Page, test } from "./helpers/test";
 
 // Every routed page shows the one shared page header (#1147): the Scheduled
 // Tasks task page's header from before #1067, a breadcrumb bar with an arrow

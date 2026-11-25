@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, type Page, test } from "./helpers/test";
 
 // Queueing pull requests for gh-safe-merge and Discussion threads for
 // gh-discuss from a Code Loop board (#1095). Fixtures follow the payloads
