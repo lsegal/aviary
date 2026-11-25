@@ -1002,6 +1002,13 @@ func (m *Manager) SetReportDelivery(deliver ReportDelivery) {
 	m.reports.setDelivery(deliver)
 }
 
+// SetJobObserver sets what learns every job whose status moves to a new
+// reportable event: failed, waiting or paused, or complete. Notifications
+// use it.
+func (m *Manager) SetJobObserver(observe JobObserver) {
+	m.reports.setObserver(observe)
+}
+
 // logComponent is the slog component Code Loop logs under, which is how
 // project_status picks its lines out of core's log ring.
 const logComponent = "projects"

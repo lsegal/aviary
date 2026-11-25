@@ -23,6 +23,13 @@ const (
 	CodeLoopReopen = "reopen"
 )
 
+// NotifyTarget delivers a run's result as a notification (#1215). With
+// "?"+NotifyFailures it notifies only when the run fails.
+const NotifyTarget = "notify"
+
+// NotifyFailures is the Notify target's option to skip successful runs.
+const NotifyFailures = "failures"
+
 // The kinds of task and workflow delivery targets.
 const (
 	TargetSilent   = "silent"
@@ -30,6 +37,7 @@ const (
 	TargetSession  = "session"
 	TargetChannel  = "channel"
 	TargetCodeLoop = "codeloop"
+	TargetNotify   = "notify"
 )
 
 // TaskTarget is a parsed task or workflow delivery target. ParseTaskTarget is
@@ -46,6 +54,8 @@ type TaskTarget struct {
 	Number  int
 	Resume  bool
 	Reopen  bool
+	// FailuresOnly is a Notify target's NotifyFailures option.
+	FailuresOnly bool
 }
 
 // String writes the target back in its saved form.
@@ -57,6 +67,11 @@ func (t TaskTarget) String() string {
 		return "session:" + t.Session
 	case TargetChannel:
 		return ChannelTarget(t.Channel)
+	case TargetNotify:
+		if t.FailuresOnly {
+			return NotifyTarget + "?" + NotifyFailures
+		}
+		return NotifyTarget
 	case TargetCodeLoop:
 		target := CodeLoopTarget(t.Project, t.Number)
 		var options []string
@@ -80,8 +95,8 @@ func CodeLoopTarget(project string, number int) string {
 }
 
 // ParseTaskTarget resolves a delivery target: empty or "silent", "reply",
-// "session:<name-or-id>", "channel:<channel name>", or
-// "codeloop:<project>#<number>[?resume,reopen]".
+// "session:<name-or-id>", "channel:<channel name>",
+// "codeloop:<project>#<number>[?resume,reopen]", or "notify[?failures]".
 func ParseTaskTarget(target string) (TaskTarget, error) {
 	target = strings.TrimSpace(target)
 	switch {
@@ -89,6 +104,10 @@ func ParseTaskTarget(target string) (TaskTarget, error) {
 		return TaskTarget{Kind: TargetSilent}, nil
 	case IsReplyTarget(target):
 		return TaskTarget{Kind: TargetReply}, nil
+	case strings.EqualFold(target, NotifyTarget):
+		return TaskTarget{Kind: TargetNotify}, nil
+	case strings.EqualFold(target, NotifyTarget+"?"+NotifyFailures):
+		return TaskTarget{Kind: TargetNotify, FailuresOnly: true}, nil
 	case strings.HasPrefix(target, "session:"):
 		ref := strings.TrimSpace(strings.TrimPrefix(target, "session:"))
 		if ref == "" {
@@ -101,7 +120,7 @@ func ParseTaskTarget(target string) (TaskTarget, error) {
 	if name, ok := ChannelTargetName(target); ok && name != "" {
 		return TaskTarget{Kind: TargetChannel, Channel: name}, nil
 	}
-	return TaskTarget{}, fmt.Errorf("invalid target %q; must be empty, \"silent\", \"reply\" (workflows), session:<name-or-id>, channel:<channel name>, or codeloop:<owner/repo>#<number>", target)
+	return TaskTarget{}, fmt.Errorf("invalid target %q; must be empty, \"silent\", \"reply\" (workflows), session:<name-or-id>, channel:<channel name>, codeloop:<owner/repo>#<number>, \"notify\", or \"notify?failures\"", target)
 }
 
 func parseCodeLoopTarget(target string) (TaskTarget, error) {

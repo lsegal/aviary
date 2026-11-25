@@ -29,6 +29,7 @@ import (
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/mcp"
+	"github.com/lsegal/aviary/internal/notify"
 	"github.com/lsegal/aviary/internal/projects"
 	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/scheduler"
@@ -58,6 +59,7 @@ type Server struct {
 	sampler           *ProcSampler
 	watcher           *config.Watcher
 	projects          *projects.Manager
+	notifier          *notify.Service
 	skillsWatcher     *skills.Watcher
 	listenerRestartCh chan struct{}
 	hardRestartCh     chan struct{}
@@ -84,6 +86,7 @@ func New(cfg *config.Config, token string) *Server {
 		reexecCh:          make(chan struct{}, 1),
 	}
 	s.authDisabled.Store(cfg.Server.DisableTokenAuth)
+	s.notifier = s.newNotifier()
 	trace := startup.Current()
 	trace.Time("CLI provider setup", func() { configureCLIProviders(cfg) })
 	configureRestartGate(cfg)
@@ -128,6 +131,7 @@ func New(cfg *config.Config, token string) *Server {
 	if s.sched != nil {
 		s.sched.SetTaskOutputDelivery(s.deliverOutput)
 		s.sched.SetWorkflowHooks(s.replyToWorkflowTrigger, workflowMessagesAfter)
+		s.sched.SetRunObserver(s.observeRun)
 	}
 	s.sampler = NewProcSampler()
 	cdpPort := cfg.Browser.CDPPort
@@ -149,6 +153,7 @@ func New(cfg *config.Config, token string) *Server {
 		s.projects = manager
 		manager.SetLogSource(globalHub.since)
 		manager.SetReportDelivery(s.deliverTaskOutput)
+		manager.SetJobObserver(s.observeCodeLoopJob)
 		manager.SetMentionRouter(s.promptProjectsAgent)
 		manager.SetAviaryAgentRunner(s.runProjectsJobTurn)
 		manager.SetUsageRecorder(func(rec domain.UsageRecord) {
@@ -178,14 +183,18 @@ func New(cfg *config.Config, token string) *Server {
 		Auth:          authStore,
 		Restart:       s.requestRestart,
 		RestartStatus: s.RestartStatus,
+		Notifier:      s.notifier,
 	})
 	agent.SetToolClientFactory(mcp.NewAgentToolClient)
+	replies := newChatReplies(func(e notify.Event) { s.emit(e) })
 	agent.SetSessionMessageObserver(func(agentID, sessionID, role string) {
 		wsBroadcast(wsEvent{Type: "session_message", AgentID: agentID, SessionID: sessionID, Role: role})
+		replies.message(agentID, sessionID, role)
 	})
 	agent.SetSessionProcessingObserver(func(agentID, sessionID string, processing bool) {
 		v := processing
 		wsBroadcast(wsEvent{Type: "session_processing", AgentID: agentID, SessionID: sessionID, IsProcessing: &v})
+		replies.turnState(agentID, sessionID, processing)
 	})
 	agent.SetActiveTurnObserver(func(turn agent.ActiveTurn) {
 		wsBroadcast(sessionTurnEvent(turn))
@@ -337,6 +346,13 @@ func (s *Server) registerRoutes() {
 	// The web UI's navigation order and visibility, kept per user.
 	s.mux.Handle("/api/preferences/navigation", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(navPreferencesHandler)))
 	s.mux.Handle("/api/preferences/display", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(displayPreferencesHandler)))
+	s.mux.Handle("/api/preferences/notifications", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(notificationPreferencesHandler)))
+
+	// Notifications: the bell's history, the notify endpoint, and the
+	// settings page's test.
+	s.mux.Handle("/api/notifications", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.notificationsHandler)))
+	s.mux.Handle("/api/notifications/read", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.notificationsReadHandler)))
+	s.mux.Handle("/api/notifications/test", BearerMiddleware(s.token, s.authDisabled.Load, http.HandlerFunc(s.notificationsTestHandler)))
 
 	// Web UI: SPA served from embedded web/dist.
 	defer trace.Phase("web/static handler")()

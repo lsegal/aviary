@@ -21,6 +21,8 @@ func TestParseTaskTarget(t *testing.T) {
 		{"codeloop:owner/repo#12?resume", TaskTarget{Kind: TargetCodeLoop, Project: "owner/repo", Number: 12, Resume: true}},
 		{"codeloop:owner/repo#12?reopen", TaskTarget{Kind: TargetCodeLoop, Project: "owner/repo", Number: 12, Reopen: true}},
 		{"codeloop:owner/repo#12?resume,reopen", TaskTarget{Kind: TargetCodeLoop, Project: "owner/repo", Number: 12, Resume: true, Reopen: true}},
+		{"notify", TaskTarget{Kind: TargetNotify}},
+		{"notify?failures", TaskTarget{Kind: TargetNotify, FailuresOnly: true}},
 		{"codeloop:https://github.com/users/o/projects/3#7", TaskTarget{Kind: TargetCodeLoop, Project: "https://github.com/users/o/projects/3", Number: 7}},
 	}
 	for _, c := range cases {
@@ -31,7 +33,7 @@ func TestParseTaskTarget(t *testing.T) {
 			assert.Equal(t, c.in, got.String())
 		}
 	}
-	for _, bad := range []string{"telegram", "session:", "codeloop:", "codeloop:owner/repo", "codeloop:#12", "codeloop:owner/repo#0", "codeloop:owner/repo#x", "codeloop:own er/repo#1", "codeloop:owner/repo#1?", "codeloop:owner/repo#1?wake", "codeloop:owner/repo#1?resume,"} {
+	for _, bad := range []string{"telegram", "session:", "codeloop:", "codeloop:owner/repo", "codeloop:#12", "codeloop:owner/repo#0", "codeloop:owner/repo#x", "codeloop:own er/repo#1", "codeloop:owner/repo#1?", "codeloop:owner/repo#1?wake", "codeloop:owner/repo#1?resume,", "notify?", "notify?success", "notify:x"} {
 		_, err := ParseTaskTarget(bad)
 		assert.Error(t, err, bad)
 	}

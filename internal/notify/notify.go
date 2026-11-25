@@ -377,3 +377,42 @@ func newID() string {
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
 }
+
+// MaxBodyBytes caps the body of a notification an event source builds from
+// run output.
+const MaxBodyBytes = 2000
+
+// Clip shortens text to max bytes on a rune boundary.
+func Clip(text string, max int) string {
+	text = strings.TrimSpace(text)
+	if len(text) <= max {
+		return text
+	}
+	cut := max
+	for cut > 0 && text[cut]&0xC0 == 0x80 {
+		cut--
+	}
+	return strings.TrimSpace(text[:cut]) + "…"
+}
+
+// Sanitize limits an event sent through the notify endpoint or tool to the
+// custom type, or the test one, with a known severity, clipped text, and a
+// link inside the web UI.
+func Sanitize(e Event) Event {
+	if e.Type != TypeTest {
+		e.Type = TypeCustom
+	}
+	switch e.Severity {
+	case SeverityInfo, SeveritySuccess, SeverityWarning, SeverityError:
+	default:
+		e.Severity = SeverityInfo
+	}
+	e.Title = Clip(e.Title, 200)
+	e.Body = Clip(e.Body, MaxBodyBytes)
+	e.Link = strings.TrimSpace(e.Link)
+	if !strings.HasPrefix(e.Link, "/") || strings.HasPrefix(e.Link, "//") {
+		e.Link = ""
+	}
+	e.Section = ""
+	return e
+}

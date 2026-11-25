@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/notify"
 	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/startup"
 	"github.com/lsegal/aviary/internal/update"
@@ -46,6 +47,8 @@ type wsEvent struct {
 	Restart *saferestart.Status `json:"restart,omitempty"`
 	// Check is set on "version" events when a new release is found.
 	Check *update.CheckResult `json:"check,omitempty"`
+	// Notification is set on "notification" events.
+	Notification *notify.Notification `json:"notification,omitempty"`
 }
 
 type wsClient struct {
@@ -68,6 +71,13 @@ func wsUnregister(conn *websocket.Conn) {
 	wsClients.mu.Lock()
 	delete(wsClients.m, conn)
 	wsClients.mu.Unlock()
+}
+
+// wsClientCount is how many web UI clients are connected.
+func wsClientCount() int {
+	wsClients.mu.Lock()
+	defer wsClients.mu.Unlock()
+	return len(wsClients.m)
 }
 
 func wsClientFor(conn *websocket.Conn) *wsClient {
