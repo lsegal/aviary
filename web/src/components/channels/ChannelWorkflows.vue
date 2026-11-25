@@ -29,7 +29,7 @@
 					</div>
 					<CompiledStatusChip :task="w" />
 					<button type="button" data-testid="workflow-edit" :class="SMALL_BTN" @click="startEdit(w)">Edit</button>
-					<button type="button" data-testid="workflow-delete" class="danger-btn" @click="remove(w)">Delete</button>
+					<button type="button" data-testid="workflow-delete" class="danger-btn" @click="deleting = w.name">Delete</button>
 				</li>
 			</ul>
 		</template>
@@ -145,7 +145,22 @@
 					Save
 				</button>
 			</div>
+
+			<section v-if="original" data-testid="workflow-danger-zone" aria-labelledby="workflow-danger-zone-heading"
+				class="rounded-xl border border-red-200 bg-white dark:border-red-900/60 dark:bg-gray-900">
+				<h3 id="workflow-danger-zone-heading" class="border-b border-red-200 px-5 py-3 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:text-red-400">Danger Zone</h3>
+				<div class="flex flex-wrap items-center justify-between gap-4 p-5">
+					<p class="text-sm text-gray-600 dark:text-gray-400">Delete this workflow's definition and its run history. It will no longer run.</p>
+					<button type="button" data-testid="workflow-danger-delete" :disabled="busy"
+						class="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
+						@click="deleting = original">
+						Delete workflow
+					</button>
+				</div>
+			</section>
 		</form>
+
+		<WorkflowDeleteDialog :agent="agent" :workflow="deleting" @close="deleting = ''" @deleted="onDeleted" />
 	</div>
 </template>
 
@@ -154,6 +169,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useMCP } from "../../composables/useMCP";
 import { useTaskPause } from "../../composables/useTaskPause";
+import { useToasts } from "../../composables/useToasts";
 import { channelName, channelTarget } from "../../lib/channels";
 import {
 	codeLoopTargetLabel,
@@ -176,6 +192,7 @@ import CompiledStatusChip from "../tasks/CompiledStatusChip.vue";
 import PausedChip from "../tasks/PausedChip.vue";
 import TaskEnabledSwitch from "../tasks/TaskEnabledSwitch.vue";
 import { AppCombobox, AppSelect } from "../ui/select";
+import WorkflowDeleteDialog from "./WorkflowDeleteDialog.vue";
 
 // A channel's workflows: tasks run by a matching message on the channel
 // instead of a schedule. They are created and changed through the same task
@@ -186,6 +203,7 @@ const props = defineProps<{ agent: string; channel: AgentChannel }>();
 const settings = useSettingsStore();
 const { callTool } = useMCP();
 const pause = useTaskPause();
+const { show } = useToasts();
 const route = useRoute();
 const router = useRouter();
 
@@ -397,13 +415,18 @@ async function save() {
 	}
 }
 
-async function remove(w: AgentTask) {
-	if (!window.confirm(`Delete the workflow ${w.name}?`)) return;
+/** The workflow whose delete confirmation is open, from its row or the
+ * edit form's Danger Zone. */
+const deleting = ref("");
+
+async function onDeleted(workflow: string) {
+	deleting.value = "";
+	if (editing.value && original.value === workflow) editing.value = false;
+	show(`Deleted workflow ${workflow}`);
 	try {
-		await callTool("task_delete", { name: `${props.agent}/${w.name}` });
 		await settings.fetchConfig();
 	} catch (e) {
-		error.value = e instanceof Error ? e.message : String(e);
+		show(e instanceof Error ? e.message : String(e), "error");
 	}
 }
 
