@@ -221,6 +221,7 @@ test("Settings has General, Providers & Authentication and Display tabs (#822, #
 		"General",
 		"Providers & Authentication",
 		"Display",
+		"Notifications",
 	]);
 	await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
 	await expect(page.getByTestId("settings-title")).toHaveText("Settings");

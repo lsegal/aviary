@@ -289,6 +289,18 @@
 		"base_uri",
 		"provider"
 	],
+	"notification_list": [],
+	"notification_settings_get": [],
+	"notification_settings_set": [
+		"reset",
+		"settings"
+	],
+	"notify": [
+		"body",
+		"link",
+		"severity",
+		"title"
+	],
 	"ping": [],
 	"project_add": [
 		"agent",

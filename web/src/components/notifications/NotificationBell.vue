@@ -86,9 +86,7 @@ function openItem(n: AppNotification) {
 }
 
 const label = computed(() =>
-	unread.value > 0
-		? `Notifications, ${unread.value} unread`
-		: "Notifications",
+	unread.value > 0 ? `Notifications, ${unread.value} unread` : "Notifications",
 );
 
 const buttonClass = computed(() => {

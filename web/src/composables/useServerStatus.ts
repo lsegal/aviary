@@ -1,6 +1,6 @@
 import { onMounted, onUnmounted, ref } from "vue";
-import { useAuthStore } from "../stores/auth";
 import type { AppNotification } from "../lib/notifications";
+import { useAuthStore } from "../stores/auth";
 import { useMCP } from "./useMCP";
 import { useNotifications } from "./useNotifications";
 

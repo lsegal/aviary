@@ -1,4 +1,5 @@
 import { computed, ref } from "vue";
+import { playSound } from "../lib/notificationSounds";
 import {
 	type AppNotification,
 	defaultNotificationPrefs,
@@ -8,7 +9,6 @@ import {
 	type SystemPermission,
 	systemPermission,
 } from "../lib/notifications";
-import { playSound } from "../lib/notificationSounds";
 import router from "../router";
 import { useAuthStore } from "../stores/auth";
 import { useToasts } from "./useToasts";
@@ -40,6 +40,9 @@ const unread = ref(0);
 const banners = ref<AppNotification[]>([]);
 const permission = ref<SystemPermission>(systemPermission());
 let prefsLoaded = false;
+// What was delivered, by ID and count, so a push that reaches more than one
+// open connection is shown once.
+const delivered = new Set<string>();
 
 async function request<T>(
 	method: string,
@@ -90,7 +93,8 @@ async function refresh() {
 
 async function markRead(ids: string[] = []) {
 	const set = new Set(ids);
-	for (const n of history.value) if (!ids.length || set.has(n.id)) n.read = true;
+	for (const n of history.value)
+		if (!ids.length || set.has(n.id)) n.read = true;
 	unread.value = history.value.filter((n) => !n.read).length;
 	showHistory(
 		await request<HistoryReply>("POST", "/api/notifications/read", { ids }),
@@ -121,12 +125,16 @@ function showBanner(n: AppNotification) {
 }
 
 function showToast(n: AppNotification) {
-	useToasts().show(n.body ? `${n.title}: ${n.body}` : n.title, n.severity === "error" ? "error" : "info", {
-		title: n.title,
-		body: n.body,
-		onClick: n.link ? () => open(n) : undefined,
-		testId: "notification-toast",
-	});
+	useToasts().show(
+		n.body ? `${n.title}: ${n.body}` : n.title,
+		n.severity === "error" ? "error" : "info",
+		{
+			title: n.title,
+			body: n.body,
+			onClick: n.link ? () => open(n) : undefined,
+			testId: "notification-toast",
+		},
+	);
 }
 
 /** Shows n through the OS; false when the browser can't. */
@@ -170,6 +178,9 @@ function showSystem(n: AppNotification): boolean {
  * page already.
  */
 function receive(n: AppNotification) {
+	const key = `${n.id}:${n.count}`;
+	if (delivered.has(key)) return;
+	delivered.add(key);
 	history.value = [n, ...history.value.filter((h) => h.id !== n.id)].slice(
 		0,
 		100,

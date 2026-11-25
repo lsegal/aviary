@@ -6,8 +6,10 @@
           <img :src="logoUrl" alt="Aviary logo" class="h-8 w-8 shrink-0 object-contain" />
           <span class="shrink-0 text-lg font-bold text-gray-900 dark:text-white">Aviary</span>
           <!-- Links that don't fit, as at a large text size (#1093), wrap
-               out of sight rather than under the status icons. -->
+               out of sight rather than under the status icons. The
+               zero-width first item lets even the first link wrap. -->
           <div class="flex h-8 min-w-0 flex-wrap items-center gap-1 overflow-hidden">
+            <span aria-hidden="true" class="-mr-1 h-8 w-0" />
             <a
               v-for="link in brandLinks"
               :key="link.label"

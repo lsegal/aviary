@@ -39,9 +39,7 @@ function option(page: Page, group: string, value: string) {
 
 test.use({ viewport: { width: 1280, height: 900 } });
 
-test("Display is Settings' last tab, under the shared header", async ({
-	page,
-}) => {
+test("Display is a Settings tab, under the shared header", async ({ page }) => {
 	await mockDisplay(page);
 	await page.goto("/system/settings");
 	const tabs = page.getByTestId("settings-tabs").getByRole("tab");
@@ -49,8 +47,9 @@ test("Display is Settings' last tab, under the shared header", async ({
 		"General",
 		"Providers & Authentication",
 		"Display",
+		"Notifications",
 	]);
-	await tabs.last().click();
+	await tabs.nth(2).click();
 	await expect(page).toHaveURL("/system/display");
 	await expect(page.getByTestId("settings-display")).toBeVisible();
 	await expect(page.getByTestId("settings-title")).toHaveText("Settings");

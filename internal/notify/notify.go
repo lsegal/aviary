@@ -84,10 +84,11 @@ const (
 	HistoryLimit = 100
 	// DedupeWindow is how long a repeat of the same event merges into it.
 	DedupeWindow = time.Minute
-	// RateWindow and RateLimit cap one event type to RateLimit deliveries
-	// per window; the rest are grouped into one.
+	// RateWindow is the window the rate limit counts deliveries in.
 	RateWindow = 30 * time.Second
-	RateLimit  = 3
+	// RateLimit caps one event type's deliveries per RateWindow; the rest
+	// are grouped into one.
+	RateLimit = 3
 )
 
 // Service is the notification service.
@@ -382,13 +383,13 @@ func newID() string {
 // run output.
 const MaxBodyBytes = 2000
 
-// Clip shortens text to max bytes on a rune boundary.
-func Clip(text string, max int) string {
+// Clip shortens text to limit bytes on a rune boundary.
+func Clip(text string, limit int) string {
 	text = strings.TrimSpace(text)
-	if len(text) <= max {
+	if len(text) <= limit {
 		return text
 	}
-	cut := max
+	cut := limit
 	for cut > 0 && text[cut]&0xC0 == 0x80 {
 		cut--
 	}

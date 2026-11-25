@@ -72,13 +72,9 @@
 										:aria-checked="prefs.events[t.type]?.delivery === d.value" :class="segment(prefs.events[t.type]?.delivery === d.value)"
 										@click="setEvent(t.type, { delivery: d.value })">{{ d.label }}</button>
 								</div>
-								<select :aria-label="`${t.label}: sound`" data-testid="notification-event-sound" :class="select"
-									:disabled="!prefs.sound.enabled" :value="prefs.events[t.type]?.sound ?? ''"
-									@change="setEvent(t.type, { sound: ($event.target as HTMLSelectElement).value })">
-									<option value="">Default sound</option>
-									<option value="none">No sound</option>
-									<option v-for="s in SOUNDS" :key="s.value" :value="s.value">{{ s.label }}</option>
-								</select>
+								<AppSelect size="sm" :aria-label="`${t.label}: sound`" data-testid="notification-event-sound"
+									:disabled="!prefs.sound.enabled" :model-value="prefs.events[t.type]?.sound ?? ''" :options="eventSoundOptions"
+									@update:model-value="setEvent(t.type, { sound: String($event) })" />
 							</div>
 						</div>
 					</div>
@@ -95,18 +91,16 @@
 						@update:model-value="setSound({ enabled: $event })" />
 				</div>
 				<div class="grid gap-4 sm:grid-cols-2" :class="prefs.sound.enabled ? '' : 'opacity-60'">
-					<label class="block">
+					<div>
 						<span class="field-label">Sound type</span>
 						<div class="flex items-center gap-2">
-							<select data-testid="notifications-sound-type" aria-label="Sound type" :class="select" class="flex-1"
-								:disabled="!prefs.sound.enabled" :value="prefs.sound.type"
-								@change="setSound({ type: ($event.target as HTMLSelectElement).value })">
-								<option v-for="s in SOUNDS" :key="s.value" :value="s.value">{{ s.label }}</option>
-							</select>
+							<AppSelect class="flex-1" data-testid="notifications-sound-type" aria-label="Sound type"
+								:disabled="!prefs.sound.enabled" :model-value="prefs.sound.type" :options="SOUNDS"
+								@update:model-value="setSound({ type: String($event) })" />
 							<button type="button" data-testid="notifications-sound-preview" :class="smallButton" :disabled="!prefs.sound.enabled"
 								@click="playSound(prefs.sound.type, prefs.sound.volume)">Play</button>
 						</div>
-					</label>
+					</div>
 					<label class="block">
 						<span class="field-label">Volume <span class="text-gray-500">{{ prefs.sound.volume }}%</span></span>
 						<input type="range" min="0" max="100" step="5" data-testid="notifications-volume" aria-label="Volume"
@@ -159,6 +153,7 @@
 // Like Display, every change saves at once, on the server.
 import { computed, onMounted } from "vue";
 import { useNotifications } from "../../composables/useNotifications";
+import { playSound } from "../../lib/notificationSounds";
 import {
 	DELIVERIES,
 	EVENT_TYPES,
@@ -167,7 +162,7 @@ import {
 	SOUNDS,
 	systemPermission,
 } from "../../lib/notifications";
-import { playSound } from "../../lib/notificationSounds";
+import { AppSelect } from "../ui/select";
 import ToggleSwitch from "../ui/ToggleSwitch.vue";
 
 const notifications = useNotifications();
@@ -203,6 +198,12 @@ async function sendTest() {
 	await notifications.test();
 }
 
+const eventSoundOptions = [
+	{ value: "", label: "Default sound" },
+	{ value: "none", label: "No sound" },
+	...SOUNDS,
+];
+
 const groups = computed(() => {
 	const out: { section: string; types: typeof EVENT_TYPES }[] = [];
 	for (const t of EVENT_TYPES) {
@@ -237,8 +238,6 @@ const rowLabel = "text-sm font-medium text-gray-900 dark:text-gray-100";
 const rowHint = "mt-0.5 text-xs text-gray-500 dark:text-gray-400";
 const segmented =
 	"inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-gray-700 dark:bg-gray-950";
-const select =
-	"rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-800 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200";
 const smallButton =
 	"rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 transition hover:bg-gray-100 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800";
 
