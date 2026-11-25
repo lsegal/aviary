@@ -285,3 +285,21 @@ test("a watch session keeps Settings → Display and Notifications, behind its o
 		.click();
 	await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
+
+test("a watch session's mobile header reads bell, connection then gear, with no version (#1315)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await mockWatchSession(page);
+	await page.goto("/agents/watch/projects");
+	const status = page.getByTestId("mobile-header-status");
+	await expect(status.getByTestId("server-version")).toHaveCount(0);
+	const buttons = status.getByRole("button");
+	await expect(buttons).toHaveCount(3);
+	await expect(buttons.nth(0)).toHaveAccessibleName("Notifications");
+	await expect(buttons.nth(2)).toHaveAccessibleName("Settings menu");
+	await expect(buttons.nth(1)).toHaveAttribute(
+		"data-testid",
+		"connection-status",
+	);
+});

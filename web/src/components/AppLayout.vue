@@ -35,12 +35,12 @@
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-1" data-testid="mobile-header-status">
-          <SidebarGearMenu :minimal="minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
-            @restart="triggerRestart()" />
           <VersionIndicator v-if="!minimal" :version="version" :latest-version="latestVersion" :status="status"
             :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <NotificationBell side="bottom" />
           <ConnectionIndicator :status="status" @retry="reconnect()" />
+          <SidebarGearMenu :minimal="minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
+            @restart="triggerRestart()" />
         </div>
       </div>
       <div class="relative mt-2">

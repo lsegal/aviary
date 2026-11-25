@@ -204,3 +204,32 @@ test("mobile header shows the compact version and connection icon on one row", a
 	await update.click();
 	await expect(page.getByRole("dialog")).toContainText("v0.7.0");
 });
+
+test("mobile header reads version, bell, connection then gear, with the gear right-most (#1315)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await connectHealthy(page);
+	await mockServer(page);
+	await page.goto("/system/overview");
+
+	const status = page.getByTestId("mobile-header-status");
+	const version = status.getByTestId("server-version");
+	await expect(version).toHaveText("31ee10e");
+	const buttons = status.getByRole("button");
+	await expect(buttons).toHaveCount(3);
+	await expect(buttons.nth(0)).toHaveAccessibleName("Notifications");
+	await expect(buttons.nth(1)).toHaveAccessibleName("Connected");
+	await expect(buttons.nth(2)).toHaveAccessibleName("Settings menu");
+
+	const row = await status.boundingBox();
+	const versionBox = await version.boundingBox();
+	const bellBox = await buttons.nth(0).boundingBox();
+	const gearBox = await status.getByTestId("gear-menu-button").boundingBox();
+	if (!row || !versionBox || !bellBox || !gearBox)
+		throw new Error("header not laid out");
+	expect(versionBox.x + versionBox.width).toBeLessThanOrEqual(bellBox.x);
+	// The gear ends the row, flush with the header's right edge.
+	expect(row.x + row.width - (gearBox.x + gearBox.width)).toBeLessThan(2);
+	expect(gearBox.x + gearBox.width).toBeLessThanOrEqual(390);
+});
