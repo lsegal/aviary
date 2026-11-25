@@ -2465,7 +2465,7 @@ func TestToolTextHelpers(t *testing.T) {
 		{"code fits", truncateSlackCodeBlock, " x ", 10, "x"},
 		{"code truncated", truncateSlackCodeBlock, "abcdefghij", 6, "abc..."},
 		{"code tiny limit", truncateSlackCodeBlock, "abcdef", 3, "..."},
-		{"code fence escaped", truncateSlackCodeBlock, "a```b", 0, "a`​``b"},
+		{"code fence escaped", truncateSlackCodeBlock, "a```b", 0, "a`\u200b``b"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, tt.fn(tt.in, tt.limit))
@@ -2572,14 +2572,23 @@ func (m twoToolModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 	}
-	if n := len(req.Messages); n > 0 && req.Messages[n-1].Role == "tool" {
+	// Only the opening user turn gets tool calls; anything after (tool
+	// results, or a note that a tool is unavailable) gets the answer.
+	users, last := 0, ""
+	for _, m := range req.Messages {
+		if m.Role == "user" {
+			users++
+		}
+		last = m.Role
+	}
+	if users > 1 || last != "user" {
 		chunk(map[string]any{"role": "assistant", "content": "all done"}, nil)
 		chunk(map[string]any{}, "stop")
 	} else {
 		call := func(i int, path string) map[string]any {
 			args, _ := json.Marshal(map[string]any{"path": path})
 			return map[string]any{"index": i, "id": fmt.Sprintf("call_%d", i), "type": "function",
-				"function": map[string]any{"name": "no_such_tool", "arguments": string(args)}}
+				"function": map[string]any{"name": "file_read", "arguments": string(args)}}
 		}
 		chunk(map[string]any{"role": "assistant", "tool_calls": []any{call(0, "a.txt"), call(1, "b.txt")}}, nil)
 		chunk(map[string]any{}, "tool_calls")
@@ -2597,7 +2606,11 @@ func scriptedChannelServer(t *testing.T, model twoToolModel) *Server {
 	verbose := true
 	cfg := &config.Config{
 		Models: config.ModelsConfig{Providers: map[string]config.ProviderConfig{"vllm": {BaseURI: llmSrv.URL + "/v1"}}},
-		Agents: []config.AgentConfig{{Name: "bot", Model: "vllm/test", Verbose: &verbose}},
+		Agents: []config.AgentConfig{{
+			Name: "bot", Model: "vllm/test", Verbose: &verbose,
+			// file_read needs a preset that enables file tools.
+			Permissions: &config.PermissionsConfig{Preset: config.PermissionsPresetFull},
+		}},
 	}
 	srv := New(cfg, "tok")
 	t.Cleanup(func() {
@@ -2694,8 +2707,9 @@ func TestHandleIncomingChannelMessage_SlackThreadShowsToolsAndAnswer(t *testing.
 	require.Len(t, sends, 1)
 	require.NotEmpty(t, edits)
 	last := edits[len(edits)-1]
-	assert.Contains(t, last, `:warning: `+"`no_such_tool`"+` :arrow_right: `+"`"+`{"path":"a.txt"}`)
-	assert.Contains(t, last, `{"path":"b.txt"}`)
+	assert.Contains(t, last, ":white_check_mark: `file_read` :arrow_right: `{\"path\":\"a.txt\"}`")
+	assert.Contains(t, last, ":white_check_mark: `file_read` :arrow_right: `{\"path\":\"b.txt\"}`")
+	assert.Contains(t, last, "no filesystem allowedPaths configured", "each call's output is shown")
 }
 
 func TestHandleIncomingChannelMessage_SlackThreadReportsModelError(t *testing.T) {

@@ -56,7 +56,7 @@ type turnEvents struct {
 
 // runTurn runs one prompt through PromptMediaWithOverrides and collects its
 // events until the turn ends. onEvent, when set, sees each event first.
-func runTurn(t *testing.T, runner *AgentRunner, ctx context.Context, message string, media []string, overrides RunOverrides, onEvent func(StreamEvent)) turnEvents {
+func runTurn(ctx context.Context, t *testing.T, runner *AgentRunner, message string, media []string, overrides RunOverrides, onEvent func(StreamEvent)) turnEvents {
 	t.Helper()
 	var (
 		mu   sync.Mutex
@@ -130,7 +130,7 @@ func TestAgentRunner_NativeToolRoundsRecordErrorsMediaAndResponseID(t *testing.T
 	)
 	ctx := WithSessionID(context.Background(), "rounds-sess")
 
-	got := runTurn(t, runner, ctx, "find cats", nil, RunOverrides{}, nil)
+	got := runTurn(ctx, t, runner, "find cats", nil, RunOverrides{}, nil)
 	require.Equal(t, StreamEventDone, got.terminal, "err: %v", got.err)
 	assert.Equal(t, "Checking.Here.", got.text)
 	assert.Equal(t, []string{`I am searching for "cats"`}, got.statuses, "verbose mode narrates each tool call")
@@ -173,7 +173,7 @@ func TestAgentRunner_NativeToolRoundsRecordErrorsMediaAndResponseID(t *testing.T
 	require.NotNil(t, meta.Conversation)
 	assert.Equal(t, "resp_1", meta.Conversation.ID)
 
-	got = runTurn(t, runner, ctx, "more", nil, RunOverrides{}, nil)
+	got = runTurn(ctx, t, runner, "more", nil, RunOverrides{}, nil)
 	require.Equal(t, StreamEventDone, got.terminal)
 	require.Equal(t, 4, prov.callCount())
 	assert.Equal(t, "resp_1", prov.requests[3].PreviousResponseID, "the next turn resumes the provider conversation")
@@ -196,7 +196,7 @@ func TestAgentRunner_CanceledToolCallStopsTheTurn(t *testing.T) {
 	ctx, cancel := context.WithCancel(WithSessionID(context.Background(), "cancel-sess"))
 	defer cancel()
 
-	got := runTurn(t, runner, ctx, "go", nil, RunOverrides{}, func(e StreamEvent) {
+	got := runTurn(ctx, t, runner, "go", nil, RunOverrides{}, func(e StreamEvent) {
 		if e.Type == StreamEventTool && !e.Tool.Done {
 			cancel()
 		}
@@ -259,7 +259,7 @@ func TestAgentRunner_RefreshesTokenOnceAfter401(t *testing.T) {
 			setTestDataDir(t)
 			runner := NewAgentRunner(&domain.Agent{ID: "agent_401", Name: "auth", Model: "test/model"}, &config.AgentConfig{Name: "auth"}, nil, nil)
 			runner.factory = tc.factory
-			got := runTurn(t, runner, WithSessionID(context.Background(), "auth-sess"), "hi", nil, RunOverrides{}, nil)
+			got := runTurn(WithSessionID(context.Background(), "auth-sess"), t, runner, "hi", nil, RunOverrides{}, nil)
 			assert.Equal(t, tc.wantTerminal, got.terminal)
 			assert.Equal(t, tc.wantText, got.text)
 			if tc.wantTerminal == StreamEventError {
@@ -339,7 +339,7 @@ func TestAgentRunner_FitsOverBudgetRequests(t *testing.T) {
 				call:  func(context.Context, string, map[string]any) (string, error) { return "found", nil },
 			}, nil)
 			runner := NewAgentRunner(&domain.Agent{ID: "agent_budget", Name: "budget", Model: "test/model"}, &config.AgentConfig{Name: "budget"}, prov, nil)
-			got := runTurn(t, runner, WithSessionID(context.Background(), "budget-sess"), tc.message, nil, noHistory(), nil)
+			got := runTurn(WithSessionID(context.Background(), "budget-sess"), t, runner, tc.message, nil, noHistory(), nil)
 			require.Equal(t, StreamEventDone, got.terminal, "err: %v", got.err)
 			assert.True(t, strings.HasSuffix(got.text, "final"))
 			tc.check(t, prov.requests)
@@ -367,7 +367,7 @@ func TestAgentRunner_ToolLoopStopsAfterMaxRounds(t *testing.T) {
 	}, nil)
 	runner := NewAgentRunner(&domain.Agent{ID: "agent_loop", Name: "loop", Model: "test/model"}, &config.AgentConfig{Name: "loop"}, prov, nil)
 
-	got := runTurn(t, runner, WithSessionID(context.Background(), "loop-sess"), "go", nil, noHistory(), nil)
+	got := runTurn(WithSessionID(context.Background(), "loop-sess"), t, runner, "go", nil, noHistory(), nil)
 	require.Equal(t, StreamEventError, got.terminal)
 	assert.EqualError(t, got.err, "tool loop exceeded 200 rounds")
 	mu.Lock()
@@ -417,7 +417,7 @@ func TestAgentRunner_SystemPromptCarriesTurnContext(t *testing.T) {
 			prov := &captureProvider{}
 			runner := NewAgentRunner(&domain.Agent{ID: "agent_ctx", Name: "ctx", Model: "test/model"}, &config.AgentConfig{Name: "ctx"}, prov, nil)
 			ctx := tc.setup(t, runner)
-			got := runTurn(t, runner, ctx, "hello", nil, RunOverrides{}, nil)
+			got := runTurn(ctx, t, runner, "hello", nil, RunOverrides{}, nil)
 			require.Equal(t, StreamEventDone, got.terminal)
 			require.Len(t, prov.requests, 1)
 			for _, want := range tc.want {
@@ -436,7 +436,7 @@ func TestAgentRunner_ToolClientFactoryErrorFailsTheTurn(t *testing.T) {
 	prov := &captureProvider{}
 	runner := NewAgentRunner(&domain.Agent{ID: "agent_mcp_err", Name: "mcp", Model: "test/model"}, &config.AgentConfig{Name: "mcp"}, prov, nil)
 
-	got := runTurn(t, runner, WithSessionID(context.Background(), "mcp-sess"), "hi", nil, RunOverrides{}, nil)
+	got := runTurn(WithSessionID(context.Background(), "mcp-sess"), t, runner, "hi", nil, RunOverrides{}, nil)
 	assert.Equal(t, StreamEventError, got.terminal)
 	assert.EqualError(t, got.err, "mcp down")
 	assert.Equal(t, "Error: mcp down", delivered)
@@ -449,7 +449,7 @@ func TestAgentRunner_NoProviderAndCanceledStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(WithSessionID(context.Background(), "noprov-sess"))
 	cancel()
 
-	got := runTurn(t, runner, ctx, "hi", nil, RunOverrides{}, nil)
+	got := runTurn(ctx, t, runner, "hi", nil, RunOverrides{}, nil)
 	assert.Equal(t, StreamEventStop, got.terminal)
 	for _, m := range sessionMessages(t, "agent_noprov", "noprov-sess") {
 		assert.NotEqual(t, domain.MessageRoleAssistant, m.Role, "a canceled turn stores no provider notice")

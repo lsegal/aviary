@@ -414,6 +414,8 @@ func TestWorkerPool_StopJobsMatcher(t *testing.T) {
 
 func TestProjectScriptFailureCause(t *testing.T) {
 	long := strings.Repeat("é", 100)
+	// A raw Lua runtime error, which ends with its traceback header.
+	luaErr := "<string>:52: lookup failed\nstack traceback:"
 	for _, c := range []struct {
 		name string
 		err  error
@@ -421,7 +423,7 @@ func TestProjectScriptFailureCause(t *testing.T) {
 	}{
 		{"no error", nil, ""},
 		{"gh status", errors.New("gh api failed (HTTP 422)"), "gh 422"},
-		{"lua location dropped", errors.New("<string>:52: lookup failed\nstack traceback:"), "lookup failed"},
+		{"lua location dropped", errors.New(luaErr), "lookup failed"},
 		{"chunk location dropped", errors.New(`[string "main"]:3: bad arg`), "bad arg"},
 		{"shortened", errors.New(long), strings.Repeat("é", 79) + "…"},
 		{"only a location", errors.New("<string>:1: "), "error"},

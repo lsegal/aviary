@@ -681,7 +681,7 @@ func TestCLITurn_StaleResumeStartsAFreshSessionSeededWithHistory(t *testing.T) {
 		meta.CLI = &store.CLISessionMeta{Backend: "claude", ID: "stale-id"}
 	}))
 
-	got := runTurn(t, runner, WithSessionID(context.Background(), "main"), "hello", nil, RunOverrides{}, nil)
+	got := runTurn(WithSessionID(context.Background(), "main"), t, runner, "hello", nil, RunOverrides{}, nil)
 	require.Equal(t, StreamEventDone, got.terminal, "err: %v", got.err)
 	assert.Equal(t, "fresh answer", got.text)
 	assert.Equal(t, []string{"I am running `ls`"}, got.statuses, "verbose mode narrates the CLI's own tool calls")
@@ -769,7 +769,7 @@ func TestCLITurn_FailuresEndTheTurn(t *testing.T) {
 				}()
 			}
 
-			got := runTurn(t, runner, ctx, "hi", nil, RunOverrides{Model: tc.model}, nil)
+			got := runTurn(ctx, t, runner, "hi", nil, RunOverrides{Model: tc.model}, nil)
 			if tc.wantStop {
 				assert.Equal(t, StreamEventStop, got.terminal)
 				assert.Empty(t, delivered, "a canceled turn delivers nothing")
@@ -793,7 +793,7 @@ func TestCLITurn_FailuresEndTheTurn(t *testing.T) {
 			cli.startErr = nil
 			cli.send = replyCLI("recovered")
 			cli.mu.Unlock()
-			got = runTurn(t, runner, WithSessionID(context.Background(), "fail-sess"), "again", nil, RunOverrides{}, nil)
+			got = runTurn(WithSessionID(context.Background(), "fail-sess"), t, runner, "again", nil, RunOverrides{}, nil)
 			assert.Equal(t, StreamEventDone, got.terminal, "err: %v", got.err)
 			assert.Equal(t, "recovered", got.text)
 		})
@@ -813,7 +813,7 @@ func TestCLITurn_EphemeralTurnUsesStreamedTextAndRequestContext(t *testing.T) {
 	overrides := noHistory()
 	overrides.Context = "board: 3 jobs running"
 
-	got := runTurn(t, runner, WithSessionID(context.Background(), "eph-sess"), "status?", nil, overrides, nil)
+	got := runTurn(WithSessionID(context.Background(), "eph-sess"), t, runner, "status?", nil, overrides, nil)
 	require.Equal(t, StreamEventDone, got.terminal, "err: %v", got.err)
 	assert.Equal(t, "streamed reply", got.text)
 

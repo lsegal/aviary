@@ -752,7 +752,7 @@ func TestRequestRestart_EmulatedUpgradeChangesNothing(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, st.Emulated)
 	assert.True(t, st.Noop)
-	assert.Equal(t, "1.3.0", st.Version)
+	assert.Equal(t, "v1.3.0", st.Version)
 	assert.Contains(t, st.Message, "Emulated upgrade completed")
 	assert.Empty(t, *log, "an emulated upgrade installs nothing")
 	held, _ := p.snapshot()
