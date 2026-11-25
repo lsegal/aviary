@@ -43,6 +43,9 @@ type Watch struct {
 	// Filters overrides the issue search filter of single targets of the
 	// watch, one entry per term group, as a saved project's filter does.
 	Filters map[string][]string `json:"filters,omitempty"`
+	// Modes sets the mode of single targets of the watch, "watch" or
+	// "manual", as a saved project's mode does.
+	Modes map[string]string `json:"modes,omitempty"`
 }
 
 // Manager owns the Code Loop engine inside the Aviary server. It builds the
@@ -189,6 +192,9 @@ type engineRun struct {
 	driver browser.Handover
 	// filters are the per-target filters the engine reads, updated live.
 	filters *core.FilterOverrides
+	// manual is the set of manual-mode targets the engine reads, updated
+	// live.
+	manual *core.ManualTargets
 }
 
 // NewManager returns a manager that keeps its work state and job transcripts
@@ -385,7 +391,10 @@ type engineSettings struct {
 	Filter      string         `json:"filter"`
 	// TargetFilters are the targets with their own filter override, which
 	// replaces Filter and AllIssues for them.
-	TargetFilters     map[string]string    `json:"-"`
+	TargetFilters map[string]string `json:"-"`
+	// ManualTargets are the targets in manual mode, which are never
+	// searched for issues.
+	ManualTargets     []string             `json:"-"`
 	AllIssues         bool                 `json:"all_issues"`
 	Approval          clidefs.ApprovalMode `json:"approval"`
 	Webhook           config.ProjectsWebhookConfig
@@ -436,6 +445,7 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		ReadyState:        strings.TrimSpace(cfg.ReadyState),
 		Filter:            cfg.EffectiveFilter(),
 		TargetFilters:     m.targetFiltersLocked(targets),
+		ManualTargets:     m.manualTargetsLocked(targets),
 		AllIssues:         cfg.AllIssues,
 		Approval:          cfg.EffectiveApprovalMode(m.generalApprovalLocked()),
 		Concurrency:       cfg.EffectiveConcurrency(),
@@ -492,6 +502,82 @@ func (m *Manager) targetFiltersLocked(targets []string) map[string]string {
 		}
 	}
 	return filters
+}
+
+// manualTargetsLocked lists the targets in manual mode: a runtime watch's
+// mode, else the saved project's.
+func (m *Manager) manualTargetsLocked(targets []string) []string {
+	saved := config.AgentProjectsConfig(m.list).ManualTargets()
+	var manual []string
+	for _, target := range targets {
+		on := slices.Contains(saved, target)
+		for _, watch := range m.watches {
+			if mode, ok := watch.Modes[target]; ok && slices.Contains(watch.Targets, target) {
+				on = mode == config.ProjectModeManual
+			}
+		}
+		if on {
+			manual = append(manual, target)
+		}
+	}
+	return manual
+}
+
+// ProjectMode returns target's mode, "watch" or "manual".
+func (m *Manager) ProjectMode(target string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.manualTargetsLocked([]string{target})) > 0 {
+		return config.ProjectModeManual
+	}
+	return config.ProjectModeWatch
+}
+
+// ProjectModes maps every one of targets to its mode.
+func (m *Manager) ProjectModes(targets []string) map[string]string {
+	m.mu.Lock()
+	manual := m.manualTargetsLocked(targets)
+	m.mu.Unlock()
+	return projectModes(targets, manual)
+}
+
+func projectModes(targets, manual []string) map[string]string {
+	modes := make(map[string]string, len(targets))
+	for _, target := range targets {
+		modes[target] = config.ProjectModeWatch
+		if slices.Contains(manual, target) {
+			modes[target] = config.ProjectModeManual
+		}
+	}
+	return modes
+}
+
+// SetWatchMode sets the mode of target's runtime watch. It reports whether
+// target has a runtime watch.
+func (m *Manager) SetWatchMode(target, mode string) (bool, error) {
+	mode, err := config.NormalizeProjectMode(mode)
+	if err != nil {
+		return false, err
+	}
+	m.mu.Lock()
+	found := false
+	for i := range m.watches {
+		if !slices.Contains(m.watches[i].Targets, target) {
+			continue
+		}
+		found = true
+		modes := maps.Clone(m.watches[i].Modes)
+		if modes == nil {
+			modes = map[string]string{}
+		}
+		modes[target] = mode
+		m.watches[i].Modes = modes
+	}
+	m.mu.Unlock()
+	if !found {
+		return false, nil
+	}
+	return true, m.refresh()
 }
 
 // SetWatchFilter sets or, with an empty filter, clears the filter override
@@ -754,6 +840,11 @@ func (m *Manager) applyLive(run *engineRun, s engineSettings) error {
 		update.AllowedCommenters = &s.AllowedCommenters
 	}
 	run.filters.Set(s.TargetFilters)
+	// A project switched back to watch mode is searched for work at once.
+	if left := run.manual.Set(s.ManualTargets); len(left) > 0 {
+		m.logf("%s switched to watch mode; checking for issues now", strings.Join(left, ", "))
+		run.engine.nudgePoll()
+	}
 	if _, err := run.engine.ApplySettings(ctx, update); err != nil {
 		m.logf("projects settings not applied: %v", err)
 		return err
@@ -781,7 +872,7 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	run := &engineRun{settings: s, cancel: cancel, done: make(chan struct{}), filters: core.NewFilterOverrides(s.TargetFilters)}
+	run := &engineRun{settings: s, cancel: cancel, done: make(chan struct{}), filters: core.NewFilterOverrides(s.TargetFilters), manual: core.NewManualTargets(s.ManualTargets)}
 	fail := func(err error) (*engineRun, error) {
 		cancel()
 		for _, cleanup := range run.cleanup {
@@ -837,6 +928,7 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 	engine = &Engine{
 		Repo:              s.Targets[0],
 		Targets:           s.Targets,
+		Manual:            run.manual,
 		Interval:          s.Interval,
 		UseWebhooks:       s.Delivery == "webhook",
 		Events:            events,

@@ -60,6 +60,8 @@ export interface ProjectSummary {
 	running: number;
 	waiting: number;
 	issues: number;
+	/** Manual mode: never searched for issues, so issues is not counted. */
+	manual?: boolean;
 	/** The project's scheduled tasks, when the list read them. */
 	scheduled?: number;
 	/** Code Loop has not read the project from GitHub yet, so its counts
@@ -78,6 +80,8 @@ export interface CLIStatus {
 export interface ProjectTarget {
 	name: string;
 	issues: number;
+	/** Manual mode: never searched for issues, so issues is not counted. */
+	manual?: boolean;
 	/** Not read from GitHub yet, so issues is not known. */
 	loading?: boolean;
 }
@@ -630,6 +634,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 	const raw = obj(v);
 	const jobs = obj(raw.jobs);
 	const counts = obj(raw.issue_counts);
+	const modes = obj(raw.modes);
 	const states = obj(raw.states);
 	const loading = arr(raw.loading_targets).map(str);
 	return {
@@ -660,6 +665,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		targets: arr(raw.targets).map((t) => ({
 			name: str(t),
 			issues: num(counts[str(t)]),
+			...(modes[str(t)] === "manual" ? { manual: true } : {}),
 			...(loading.includes(str(t)) ? { loading: true } : {}),
 		})),
 		clis: arr(raw.clis)
@@ -692,6 +698,7 @@ export function summarizeProjects(
 		return {
 			name: t.name,
 			issues: t.issues,
+			...(t.manual ? { manual: true } : {}),
 			running: mine.filter((j) => isRunning(j.status)).length,
 			waiting: mine.filter((j) => isWaiting(j.status)).length,
 			...(t.loading ? { loading: true } : {}),
@@ -700,6 +707,32 @@ export function summarizeProjects(
 				: { scheduled: projectSchedules(tasks, t.name).length }),
 		};
 	});
+}
+
+/** How work reaches a project (#1307). */
+export type ProjectMode = "watch" | "manual";
+
+/** The project modes, as the add-project flow and the header menu offer them. */
+export const PROJECT_MODES: {
+	value: ProjectMode;
+	label: string;
+	hint: string;
+}[] = [
+	{
+		value: "watch",
+		label: "Watch issues",
+		hint: "Pick up open issues matching the filter",
+	},
+	{
+		value: "manual",
+		label: "Manual: only what I queue",
+		hint: "No issue watching; queued work, schedules and agent tools only",
+	},
+];
+
+/** A project's issue count as the board shows it: "manual" in manual mode. */
+export function issueCountLabel(t: ProjectTarget): string {
+	return t.manual ? "manual" : String(t.issues);
 }
 
 export function isRunning(status: JobStatus): boolean {

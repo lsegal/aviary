@@ -102,7 +102,7 @@ func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
 
 	sessionOf := func(choice watchAgentChoice, settings config.ProjectsConfig) (*config.Config, error) {
 		t.Helper()
-		session, err := startWatchSession(t.TempDir(), global, sources, choice, []string{"someone/existing"}, settings)
+		session, err := startWatchSession(t.TempDir(), global, sources, choice, []string{"someone/existing"}, "", settings)
 		t.Cleanup(func() { endWatchSession(session, io.Discard) })
 		if err != nil {
 			return nil, err
@@ -138,11 +138,37 @@ func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
 	if got := config.ProjectJobSpecs(cfg, "coder"); !slices.Equal(got, []string{"claude/opus", "gemini/flash"}) {
 		t.Errorf("no model flags ran jobs on %v, want the agent's own", got)
 	}
+	if got := cfg.Agents[0].Projects[0].Mode; got != "" {
+		t.Errorf("a watch without --manual saved mode %q", got)
+	}
+	session, err := startWatchSession(t.TempDir(), global, sources, watchAgentChoice{}, []string{"someone/existing"}, config.ProjectModeManual, config.ProjectsConfig{})
+	t.Cleanup(func() { endWatchSession(session, io.Discard) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	manual, err := config.Load(session.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := manual.Agents[0].Projects.ManualTargets(); !slices.Equal(got, []string{"someone/existing"}) {
+		t.Errorf("--manual watched manual targets %v", got)
+	}
 	if _, err := sessionOf(watchAgentChoice{Model: "nosuch/m"}, config.ProjectsConfig{}); err == nil || !strings.Contains(err.Error(), `unknown provider "nosuch"`) {
 		t.Errorf("an unknown provider was accepted: %v", err)
 	}
 	if _, err := sessionOf(watchAgentChoice{Model: "claude/opus", Fallbacks: []string{"gemini/pro"}}, config.ProjectsConfig{}); err == nil || !strings.Contains(err.Error(), "the gemini CLI is not installed") {
 		t.Errorf("an uninstalled CLI was accepted: %v", err)
+	}
+}
+
+func TestWatchModeFlag(t *testing.T) {
+	t.Cleanup(func() { watchOpts.manual = false })
+	if got := watchMode(); got != "" {
+		t.Errorf("watchMode without --manual = %q", got)
+	}
+	watchOpts.manual = true
+	if got := watchMode(); got != config.ProjectModeManual {
+		t.Errorf("watchMode with --manual = %q", got)
 	}
 }
 
@@ -167,6 +193,9 @@ func TestWatchHelpAndCompletionsHideProvider(t *testing.T) {
 			if !strings.Contains(out.String(), flag) {
 				t.Errorf("%v lists no %s:\n%s", args, flag, out.String())
 			}
+		}
+		if !strings.Contains(out.String(), "--manual") {
+			t.Errorf("%v lists no --manual:\n%s", args, out.String())
 		}
 		if strings.Contains(out.String(), "--provider") {
 			t.Errorf("%v lists the deprecated --provider:\n%s", args, out.String())

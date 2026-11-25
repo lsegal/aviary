@@ -234,8 +234,13 @@ type UIReporter = core.UIReporter
 // Engine is the Code Loop engine: it watches targets for ready issues, claims
 // them, and runs coding-agent jobs on them up to a concurrency limit.
 type Engine struct {
-	Repo        string
-	Targets     []string
+	Repo    string
+	Targets []string
+	// Manual is the set of targets in manual mode (issue #1307): no poll
+	// searches them for issues or reads their boards, so only work queued
+	// on demand, scheduled project tasks and agent tools start jobs there.
+	// Work already in flight is still followed.
+	Manual      *core.ManualTargets
 	Interval    time.Duration
 	UseWebhooks bool
 	WebUIURL    string
@@ -401,8 +406,12 @@ type Engine struct {
 	liveNudges sync.Map
 	// queueOnce/queue hold the merge and discuss jobs queued on demand
 	// (issue #1095), and queueRequests carries new ones into the Run loop.
-	queueOnce     sync.Once
-	queue         *jobQueue
+	queueOnce sync.Once
+	queue     *jobQueue
+	// fixesOnce/fixes hold the issues asked to be fixed on manual-mode
+	// projects (issue #1307).
+	fixesOnce     sync.Once
+	fixes         *fixRequests
 	queueRequests queueRequestChannel
 	// projectTasks carries core's project task runs into the Run loop.
 	projectTasks projectTaskChannel
@@ -1127,7 +1136,7 @@ func (w *Engine) pollDiscussions(ctx context.Context, n int, targets []string, s
 	workMu.Unlock()
 	var pending []pendingIssue
 	for _, target := range targets {
-		if !isDiscussionTarget(target) {
+		if !isDiscussionTarget(target) || w.Manual.Has(target) {
 			continue
 		}
 		discussions, err := w.Discussions.ListUnansweredDiscussions(ctx, target)
@@ -2453,6 +2462,25 @@ func (w *Engine) Run(ctx context.Context) error {
 			if isDiscussionTarget(target) {
 				continue
 			}
+			if w.Manual.Has(target) {
+				// A manual project is never searched; the issues asked to
+				// be fixed on demand are read back one by one instead.
+				if issueHydrator != nil {
+					workMu.Lock()
+					status := make(map[string]string, len(work))
+					for key, state := range work {
+						if _, running := active[key]; !running {
+							status[key] = state.Status
+						}
+					}
+					workMu.Unlock()
+					issues = append(issues, w.requestedFixIssues(ctx, issueHydrator, target, status)...)
+				}
+				jobMu.Lock()
+				delete(issueCounts, target)
+				jobMu.Unlock()
+				continue
+			}
 			batch, err := w.Issues.ListIssues(ctx, target)
 			if err != nil {
 				return fmt.Errorf("listing %s: %w", target, err)
@@ -2484,7 +2512,7 @@ func (w *Engine) Run(ctx context.Context) error {
 		// mentions are found by scanning each repository's recent comments
 		//.
 		if !w.UseWebhooks && w.Mentions != nil {
-			w.scanDirectMentions(ctx, mentions, mentionScanRepos(targets, issues), observed, directMentions)
+			w.scanDirectMentions(ctx, mentions, mentionScanRepos(w.watchedTargets(targets), w.watchedIssues(issues)), observed, directMentions)
 		} else if w.Mentions != nil {
 			w.scanLinkedPullRequests(ctx, mentions, webhookRepos, observed, directMentions)
 		}
@@ -3868,6 +3896,14 @@ func (w *Engine) Run(ctx context.Context) error {
 			// everything else meanwhile.
 			go w.awaitStoppedRun(ctx, action.Number, exited, request.done)
 		case "retry":
+			if w.Manual.Has(job.Target) {
+				// A manual project is never searched, so the rerun is
+				// requested for the poll to read the issue back.
+				if err := w.fixRequests().add(fixRequest{Target: job.Target, Repository: issueRepository(job.Target, Issue{Repository: job.Repository}), Number: job.Number, RequestedAt: time.Now()}); err != nil {
+					request.done <- err
+					return
+				}
+			}
 			switch job.Status {
 			case "active", "waiting":
 				workMu.Lock()
@@ -4331,6 +4367,10 @@ func (w *Engine) Run(ctx context.Context) error {
 	probeBoards := func(ctx context.Context) bool {
 		changed := false
 		for _, target := range probedTargets {
+			if w.Manual.Has(target) {
+				delete(boardState, target)
+				continue
+			}
 			state, err := w.Projects.ProjectState(ctx, target)
 			if err != nil {
 				if ctx.Err() == nil {

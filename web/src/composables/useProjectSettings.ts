@@ -7,7 +7,11 @@ import {
 	type ProjectCheckResult,
 	type ProjectClone,
 } from "../lib/projectSettings";
-import { normalizeStatus, parseToolJSON } from "../lib/projects";
+import {
+	normalizeStatus,
+	type ProjectMode,
+	parseToolJSON,
+} from "../lib/projects";
 import {
 	dropProject,
 	insertProject,
@@ -103,6 +107,8 @@ export interface ProjectCheckOptions {
 	agent?: string;
 	/** The agent's model and fallbacks as the form holds them, unsaved. */
 	models?: string[];
+	/** The mode the form picks, watch or manual. */
+	mode?: ProjectMode;
 }
 
 /**
@@ -167,10 +173,15 @@ export function useProjectCheck(
  */
 export function useAddProject() {
 	const { callTool } = useMCP();
-	return async (target: string, agent: string) => {
+	return async (target: string, agent: string, mode: ProjectMode = "watch") => {
 		const undo = insertProject(target, agent);
 		try {
-			await callTool("project_add", { target, agent });
+			// Watch is the default, so only manual is passed.
+			await callTool("project_add", {
+				target,
+				agent,
+				...(mode === "manual" ? { mode } : {}),
+			});
 		} catch (e) {
 			undo();
 			throw e;

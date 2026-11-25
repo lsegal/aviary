@@ -90,6 +90,22 @@ Each project can have its own issue filter in place of the shared one. On a proj
 - An issue with open sub-issues is a tracking issue and is skipped.
 - An issue blocked by open dependencies waits. If it is blocked by exactly one issue that already has an open pull request, and the repository allows stacked pull requests, it runs stacked on that pull request.
 
+### Manual mode
+
+A project in manual mode is never searched for issues: Code Loop makes no issue searches, reads no Project board and lists no Discussions for it, so nothing is picked up or claimed on its own, and the project costs no GitHub API calls while it is idle. Work starts only when you queue it (the header's **Queue** menu, or `gh-fix`, `gh-safe-merge` and `gh-discuss` through [`project_job_queue`](/reference/mcp/projects)), from the project's [scheduled prompts](#scheduled-prompts), or from the Code Loop agent's tools. **Fix issue** on a manual project dispatches the issue whatever the filter, reading just that issue from GitHub. Jobs that exist for the project are followed as usual: comments from allowed commenters, pull request and CI status, pauses and merges.
+
+The board header shows a **Manual** chip and reads "Manual: no issue watching · checked 5s ago" in place of the issue filter, which can't be edited while the project is manual. The sidebar and `project_status` show "manual" in place of an issue count (`modes` maps each project to `watch` or `manual`).
+
+Pick the mode when you add a project (**Watch issues** or **Manual: only what I queue**), and change it later from the eye button in the project's header, the project's **Issue discovery** card in its settings, [`project_update`](/reference/mcp/projects#project-update) with `mode`, or `aviary project update <target> --mode manual`. In `aviary.yaml` it is `mode: manual` on the project's entry; leaving `mode` out keeps watch mode. A change applies without a restart: switching to manual stops the searches at once and keeps every job, and switching back to watch checks the project for issues right away. [`aviary watch --manual`](./watch) starts a session's targets in manual mode.
+
+```yaml
+agents:
+  - name: coder
+    projects:
+      - target: owner/repo
+        mode: manual
+```
+
 ## CLI providers
 
 A project's jobs run on the agent that owns it. The agent's model and fallbacks are the provider and model defaults of the project's jobs, in fallback order: a job runs on the first one whose quota is not used up. A `<cli>/<model>` model such as `claude/opus` or `codex/gpt-6.1-terra:high` (or the same with a `cli/` prefix, `cli/claude/opus`) runs the job on that CLI. A model that is not a CLI, such as `anthropic/claude-sonnet-5-5`, runs the job on the agent itself, as `aviary/<agent>` below. An agent without a model takes `models.defaults`, and so does an `aviary watch` session whose targets no agent of yours owns, which then needs a CLI model there.
@@ -161,7 +177,7 @@ The **Queue** menu in a project's header starts work that no poll picks up on it
 
 - **Safe merge PR** opens a picker of the repository's open pull requests, with each one's CI status, review decision, mergeability, author, and the job that already owns it. Picked pull requests become `merge` jobs that run `gh-safe-merge`. They merge one at a time per repository, in the order you picked them, so each one rebases and rechecks on the latest default branch. A merge that's skipped or fails shows its reason on its card.
 - **Discuss** opens a picker of open Discussion threads. Picked threads become `discuss` jobs that run `gh-discuss`.
-- **Fix issue** takes issue numbers. It retries an issue's finished job, or checks GitHub now so that an issue matching the project's filter is dispatched.
+- **Fix issue** takes issue numbers. It retries an issue's finished job, or checks GitHub now so that an issue matching the project's filter is dispatched. On a project in [manual mode](#manual-mode), the issue is dispatched whatever the filter.
 
 The pull request and Discussion pickers list through the authenticated `gh` CLI whatever the project's delivery mode, and reuse a listing for 30 seconds. Both pickers also take numbers typed into their **Queue PR #…** or **Queue discussion #…** box. When nothing can be listed, for example because `gh` isn't signed in, the picker says so and suggests `gh auth login`, and typed numbers still queue.
 

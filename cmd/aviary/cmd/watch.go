@@ -43,6 +43,7 @@ type watchOptions struct {
 	browserVisible    bool
 	noWebUI           bool
 	noTUI             bool
+	manual            bool
 }
 
 var watchOpts watchOptions
@@ -98,7 +99,15 @@ terminal).
 Ctrl+C, SIGTERM, SIGHUP, quitting the TUI or a fatal error ends the session:
 running jobs are stopped and checkpointed, then the temporary directory is
 removed. A directory left behind by a killed session is removed by the next
-watch once its PID is gone.`,
+watch once its PID is gone.
+
+--manual starts the targets in manual mode: the session never searches them
+for issues or reads their boards, so nothing is picked up on its own. Jobs
+start only when you queue them (the board's Queue menu, or gh-fix,
+gh-safe-merge and gh-discuss through project_job_queue), from scheduled
+project tasks, or from the Code Loop agent's tools, and those jobs are still
+followed through comments, CI and merge. The board's project menu switches a
+target between manual and watch while the session runs.`,
 	RunE: runWatch,
 }
 
@@ -117,6 +126,7 @@ func init() {
 	f.StringVar(&watchOpts.readyState, "ready-state", "", "project board status that marks an item ready (default Todo or Ready)")
 	f.StringArrayVar(&watchOpts.filter, "filter", nil, `issue search filter, repeatable (default "assignee:@me")`)
 	f.BoolVar(&watchOpts.allIssues, "all-issues", false, "drop the issue filter and pick up every open issue")
+	f.BoolVar(&watchOpts.manual, "manual", false, "manual mode: never search for issues; only work you queue, scheduled project tasks and agent tools start jobs")
 	f.StringSliceVar(&watchOpts.allowedCommenters, "allowed-commenters", nil, "GitHub logins whose comments steer jobs (default the authenticated gh user)")
 	f.BoolVar(&watchOpts.yolo, "yolo", false, "run jobs in the full approval mode: no CLI sandboxes or permission checks")
 	f.BoolVar(&watchOpts.noMerge, "no-merge", false, "leave finished pull requests ready for a human to merge")
@@ -197,6 +207,14 @@ func watchModelSpec(flag, value string) (string, error) {
 		return "", fmt.Errorf("%s %q is not a model: expected <provider>/<model>, such as claude/opus", flag, value)
 	}
 	return spec, nil
+}
+
+// watchMode is the mode --manual starts the targets in.
+func watchMode() string {
+	if watchOpts.manual {
+		return config.ProjectModeManual
+	}
+	return ""
 }
 
 // watchSettings turns the flags into the settings the watch overrides.
@@ -283,7 +301,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	for _, dir := range sweepStaleWatchDirs(os.TempDir()) {
 		_, _ = fmt.Fprintf(out, "Removed %s, left behind by an earlier watch.\n", dir)
 	}
-	session, err := startWatchSession(os.TempDir(), global, sources, agent, targets, settings)
+	session, err := startWatchSession(os.TempDir(), global, sources, agent, targets, watchMode(), settings)
 	// The session directory goes on every way out, a panic included.
 	defer endWatchSession(session, cmd.ErrOrStderr())
 	if err != nil {

@@ -84,6 +84,8 @@ type projectAddArgs struct {
 	Target  string `json:"target" jsonschema:"owner/repo, a repository URL, a GitHub Project board, or a Discussions board"`
 	Agent   string `json:"agent,omitempty" jsonschema:"The Aviary agent that owns the project; it lands in that agent's projects and its model and fallbacks are the provider and model defaults of the project's jobs. Required unless runtime is set"`
 	Runtime bool   `json:"runtime,omitempty" jsonschema:"Watch until the server stops without writing aviary.yaml, as aviary watch does"`
+	// Mode picks watch or manual.
+	Mode string `json:"mode,omitempty" jsonschema:"watch (the default) picks up open issues matching the filter; manual never searches for issues, so only work queued on demand, scheduled project tasks and agent tools start jobs"`
 	// Reports opts a saved project in to job reports.
 	Reports *config.ProjectReportsConfig `json:"reports,omitempty" jsonschema:"Send this project's job events (merged, failed, waiting) through an Aviary agent's channels; leave out for no reports"`
 	// Settings overrides the shared projects settings for a runtime watch.
@@ -96,6 +98,8 @@ type projectUpdateArgs struct {
 	Filter string `json:"filter,omitempty" jsonschema:"This project's own issue search filter, in GitHub search syntax such as label:bug -label:wip assignee:@me; it replaces the shared projects filter for this project only. It is checked against GitHub first and an invalid filter is refused"`
 	// ResetFilter removes the override.
 	ResetFilter bool `json:"reset_filter,omitempty" jsonschema:"Remove this project's own filter so it uses the shared projects filter again"`
+	// Mode switches the project between watch and manual.
+	Mode string `json:"mode,omitempty" jsonschema:"watch to pick up open issues matching the filter, or manual to stop searching for issues so only work queued on demand, scheduled project tasks and agent tools start jobs. Jobs already in flight carry on either way, and switching to watch checks for issues right away"`
 }
 
 type projectFilterCheckArgs struct {
@@ -371,11 +375,18 @@ func registerProjectTools(s *sdkmcp.Server) {
 			if target == "" {
 				return nil, errors.New("target is required")
 			}
+			mode, err := config.NormalizeProjectMode(args.Mode)
+			if err != nil {
+				return nil, err
+			}
 			if args.Runtime {
 				if args.Reports != nil {
 					return nil, errors.New("reports apply only to a saved project")
 				}
 				watch := projects.Watch{Targets: []string{target}, Agent: strings.TrimSpace(args.Agent)}
+				if mode == config.ProjectModeManual {
+					watch.Modes = map[string]string{target: mode}
+				}
 				if args.Settings != nil {
 					cfg, err := config.Load("")
 					if err != nil {
@@ -391,7 +402,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 				if err := m.AddWatchInBackground(watch); err != nil {
 					return nil, err
 				}
-				return map[string]any{"target": target, "runtime": true}, nil
+				return map[string]any{"target": target, "runtime": true, "mode": mode}, nil
 			}
 			if args.Settings != nil {
 				return nil, errors.New("settings apply only to a runtime watch; change saved settings with config_save")
@@ -414,12 +425,16 @@ func registerProjectTools(s *sdkmcp.Server) {
 			if i < 0 {
 				return nil, fmt.Errorf("agent %q is not configured", agent)
 			}
-			cfg.Agents[i].Projects = append(cfg.Agents[i].Projects, config.ProjectConfig{Target: target, Reports: args.Reports})
+			project := config.ProjectConfig{Target: target, Reports: args.Reports}
+			if mode == config.ProjectModeManual {
+				project.Mode = mode
+			}
+			cfg.Agents[i].Projects = append(cfg.Agents[i].Projects, project)
 			if err := config.Save("", cfg); err != nil {
 				return nil, err
 			}
 			m.ReconcileInBackground(cfg)
-			return map[string]any{"target": target, "agent": agent, "saved": true}, nil
+			return map[string]any{"target": target, "agent": agent, "saved": true, "mode": mode}, nil
 		})
 	})
 
@@ -441,7 +456,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_update",
-		Description: "Change one watched Code Loop project. filter sets the project's own issue search filter, replacing the shared projects filter for this project only, after checking it against GitHub; reset_filter removes it. A saved project's filter is written to its entry in aviary.yaml, a runtime watch's lasts until the watch stops. The project is checked for work right away",
+		Description: "Change one watched Code Loop project. filter sets the project's own issue search filter, replacing the shared projects filter for this project only, after checking it against GitHub; reset_filter removes it. mode switches it between watch and manual (no issue searches; only queued work, scheduled project tasks and agent tools start jobs). A saved project's changes are written to its entry in aviary.yaml, a runtime watch's last until the watch stops. The project is checked for work right away",
 		Annotations: mutatingTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectUpdateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
@@ -625,19 +640,28 @@ func registerProjectTools(s *sdkmcp.Server) {
 }
 
 // updateProject is project_update: it sets or resets a project's own issue
-// filter, on its runtime watch when it has one and otherwise on its saved
-// entry, then checks the project for work.
+// filter and sets its mode, on its runtime watch when it has one and
+// otherwise on its saved entry, then checks the project for work.
 func updateProject(ctx context.Context, m *projects.Manager, args projectUpdateArgs) (map[string]any, error) {
 	target := strings.TrimSpace(args.Target)
 	if target == "" {
 		return nil, errors.New("target is required")
 	}
 	filter := config.JoinFilter([]string{args.Filter})
+	setMode := strings.TrimSpace(args.Mode) != ""
+	setFilter := args.ResetFilter || filter != ""
 	switch {
 	case args.ResetFilter && filter != "":
 		return nil, errors.New("pass filter or reset_filter, not both")
-	case !args.ResetFilter && filter == "":
-		return nil, errors.New("nothing to change: pass filter or reset_filter")
+	case !setFilter && !setMode:
+		return nil, errors.New("nothing to change: pass filter, reset_filter or mode")
+	}
+	mode := ""
+	if setMode {
+		var err error
+		if mode, err = config.NormalizeProjectMode(args.Mode); err != nil {
+			return nil, err
+		}
 	}
 	result := map[string]any{"target": target}
 	var override []string
@@ -649,9 +673,18 @@ func updateProject(ctx context.Context, m *projects.Manager, args projectUpdateA
 		override = []string{filter}
 		result["matches"] = matches
 	}
-	runtime, err := m.SetWatchFilter(target, override)
-	if err != nil {
-		return nil, err
+	runtime := false
+	if setFilter {
+		var err error
+		if runtime, err = m.SetWatchFilter(target, override); err != nil {
+			return nil, err
+		}
+	}
+	if setMode {
+		var err error
+		if runtime, err = m.SetWatchMode(target, mode); err != nil {
+			return nil, err
+		}
 	}
 	if runtime {
 		result["runtime"] = true
@@ -663,9 +696,19 @@ func updateProject(ctx context.Context, m *projects.Manager, args projectUpdateA
 		found := false
 		for i := range cfg.Agents {
 			for j := range cfg.Agents[i].Projects {
-				if strings.TrimSpace(cfg.Agents[i].Projects[j].Target) == target {
+				if strings.TrimSpace(cfg.Agents[i].Projects[j].Target) != target {
+					continue
+				}
+				found = true
+				if setFilter {
 					cfg.Agents[i].Projects[j].Filter = override
-					found = true
+				}
+				if setMode {
+					// Watch is the default, so it is written as no mode.
+					cfg.Agents[i].Projects[j].Mode = ""
+					if mode == config.ProjectModeManual {
+						cfg.Agents[i].Projects[j].Mode = mode
+					}
 				}
 			}
 		}
@@ -679,10 +722,11 @@ func updateProject(ctx context.Context, m *projects.Manager, args projectUpdateA
 		result["saved"] = true
 	}
 	// A stopped engine has nothing to refresh; the next start reads the
-	// new filter.
+	// new settings.
 	_, _ = m.Refresh(target)
 	m.NotifyUpdated(target)
-	result["custom"] = filter != ""
+	result["custom"] = m.IssueFilterCustom(target)
 	result["issue_filter"] = m.IssueFilter(target)
+	result["mode"] = m.ProjectMode(target)
 	return result, nil
 }

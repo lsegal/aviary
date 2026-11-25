@@ -5,6 +5,7 @@ import (
 	"maps"
 	"net/url"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -109,6 +110,60 @@ func (o *FilterOverrides) For(target, filter string, allIssues bool) (string, bo
 		return override, false
 	}
 	return filter, allIssues
+}
+
+// ManualTargets is the set of targets in manual mode, which a running
+// engine never discovers issues for. It reads them on every poll, so a mode
+// change applies without a restart. A nil ManualTargets holds none.
+type ManualTargets struct {
+	mu      sync.RWMutex
+	targets map[string]bool
+}
+
+// NewManualTargets returns the set holding targets.
+func NewManualTargets(targets []string) *ManualTargets {
+	m := &ManualTargets{}
+	m.Set(targets)
+	return m
+}
+
+// Set replaces the set with targets and returns the targets that left it,
+// switching back to watch mode.
+func (m *ManualTargets) Set(targets []string) []string {
+	next := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		next[target] = true
+	}
+	m.mu.Lock()
+	var left []string
+	for target := range m.targets {
+		if !next[target] {
+			left = append(left, target)
+		}
+	}
+	m.targets = next
+	m.mu.Unlock()
+	return left
+}
+
+// Has reports whether target is in manual mode.
+func (m *ManualTargets) Has(target string) bool {
+	if m == nil {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.targets[target]
+}
+
+// List returns the manual targets, sorted.
+func (m *ManualTargets) List() []string {
+	if m == nil {
+		return nil
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return slices.Sorted(maps.Keys(m.targets))
 }
 
 // IssueFilterTerms splits a --filter into the terms a query is actually built

@@ -360,14 +360,14 @@ Watch GitHub projects and fix ready issues with a CLI provider, in a one-off ses
 aviary watch [TARGET ...] [--agent NAME] [--model M] [--fallback M ...]
              [--concurrency N] [--interval D]
              [--delivery browser|poll|webhook] [--ready-state S]
-             [--filter F ...] [--all-issues] [--allowed-commenters LOGINS]
+             [--filter F ...] [--all-issues] [--manual] [--allowed-commenters LOGINS]
              [--yolo] [--no-merge] [--no-changelog]
              [--browser-vision] [--browser-visible] [--no-webui] [--no-tui]
 ```
 
 With no `TARGET`, the current checkout's `origin` repository is watched. `--agent` runs the targets under an Aviary agent, whose model and fallbacks pick the jobs' CLI providers; without it a target runs under the agent that owns it, or `models.defaults`. `--model` sets the session's [job model override](/guide/projects#job-model-override), the shared `projects.model`, in place of that agent's model, and each `--fallback`, in the order given, sets `projects.fallbacks`. Without them, `AVIARY_WATCH_MODEL` and the comma-separated `AVIARY_WATCH_FALLBACKS` set them, and without those, `projects.model` and `projects.fallbacks` in your `aviary.yaml`. Models are `<provider>/<model>`, such as `claude/opus`, or the shorthand `claude:opus`, of a provider reached through a CLI that is installed; anything else is an error. `--provider` is a deprecated name for `--model`: it still works, prints `--provider is deprecated; use --model`, and is an error together with `--model`. Flags override the shared `projects:` settings for the session.
 
-The session serves a minimal web UI, Code Loop and Scheduled Tasks only with no token prompt, on the first free `localhost` port from `server.port` up, and shows a TUI board in the terminal. The TUI's prompt chat (`c`, or `/` to type) talks to the Code Loop agent in the same session as the web board's prompt chat; `?` lists its keys. `--no-webui` serves no web UI; `--no-tui` prints the Code Loop log instead of the TUI. Ctrl+C, `SIGTERM` or `SIGHUP` stops and checkpoints running jobs, then removes the temporary directory; directories left by killed sessions are swept on the next start.
+The session serves a minimal web UI, Code Loop and Scheduled Tasks only with no token prompt, on the first free `localhost` port from `server.port` up, and shows a TUI board in the terminal. The TUI's prompt chat (`c`, or `/` to type) talks to the Code Loop agent in the same session as the web board's prompt chat; `?` lists its keys. `--no-webui` serves no web UI; `--no-tui` prints the Code Loop log instead of the TUI. `--manual` starts the targets in [manual mode](/guide/projects#manual-mode): the session never searches them for issues, so jobs start only from queued work, scheduled prompts and agent tools, and the board's eye button switches a target back to watch mode. Ctrl+C, `SIGTERM` or `SIGHUP` stops and checkpoints running jobs, then removes the temporary directory; directories left by killed sessions are swept on the next start.
 
 ---
 
@@ -377,9 +377,9 @@ Manage Code Loop. Each subcommand calls the `project_*` tool of the same name wi
 
 ```
 aviary project status
-aviary project add <target> [--agent NAME] [--runtime]
+aviary project add <target> [--agent NAME] [--runtime] [--mode watch|manual]
 aviary project remove <target> [--runtime]
-aviary project update <target> --filter "label:bug -label:wip" | --reset_filter true
+aviary project update <target> --filter "label:bug -label:wip" | --reset_filter true | --mode watch|manual
 aviary project filter check <target> --filter FILTER
 aviary project refresh [target]
 aviary project job list [--target T] [--status S] [--offset N] [--limit N]

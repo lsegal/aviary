@@ -304,6 +304,7 @@
 	"ping": [],
 	"project_add": [
 		"agent",
+		"mode",
 		"reports",
 		"runtime",
 		"settings",
@@ -311,6 +312,7 @@
 	],
 	"project_check": [
 		"agent",
+		"mode",
 		"models",
 		"target"
 	],
@@ -487,6 +489,7 @@
 	],
 	"project_update": [
 		"filter",
+		"mode",
 		"reset_filter",
 		"target"
 	],

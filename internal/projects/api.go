@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -97,12 +98,24 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 	if commenters == nil {
 		commenters = []string{}
 	}
+	// A manual project is never searched, so it has no issue count; any
+	// count cached from before it switched modes is dropped.
+	counts := maps.Clone(snapshot.IssueCounts)
+	if counts == nil {
+		counts = map[string]int{}
+	}
+	for _, target := range settings.ManualTargets {
+		delete(counts, target)
+	}
 	status := map[string]any{
 		"identity":     m.Identity(),
 		"running":      running,
 		"targets":      watched,
-		"issue_counts": snapshot.IssueCounts,
-		"states":       boardStateCounts(snapshot.Jobs, targets),
+		"issue_counts": counts,
+		// Each project's mode: watch, or manual for a project never
+		// searched for issues (issue #1307).
+		"modes":  projectModes(watched, settings.ManualTargets),
+		"states": boardStateCounts(snapshot.Jobs, targets),
 		"jobs": map[string]int{
 			"running":    snapshot.Running,
 			"queued":     snapshot.Queued,
@@ -769,6 +782,13 @@ func (m *Manager) IssueFilter(target string) string {
 	settings := engineSettings{Filter: cfg.EffectiveFilter(), AllIssues: cfg.AllIssues, TargetFilters: m.targetFiltersLocked([]string{target})}
 	m.mu.Unlock()
 	return targetIssueFilters(settings, []string{target})[target]
+}
+
+// IssueFilterCustom reports whether target has its own filter override.
+func (m *Manager) IssueFilterCustom(target string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.targetFiltersLocked([]string{target})[target] != ""
 }
 
 // customFilterTargets lists the targets with their own filter override.
