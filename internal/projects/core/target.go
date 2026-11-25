@@ -165,3 +165,37 @@ func ProjectItemQuery(filter string, allIssues bool) string {
 	}
 	return strings.Join(append([]string{"is:issue", "is:open"}, IssueFilterTerms(filter)...), " ")
 }
+
+// ValidateIssueFilter checks filter's search syntax, the checks GitHub's
+// search skips by silently matching nothing: balanced quotes and
+// parentheses, and a value after every qualifier.
+func ValidateIssueFilter(filter string) error {
+	if strings.Count(filter, `"`)%2 != 0 {
+		return fmt.Errorf("unbalanced quote in %q", filter)
+	}
+	depth := 0
+	quoted := false
+	for _, r := range filter {
+		switch {
+		case r == '"':
+			quoted = !quoted
+		case quoted:
+		case r == '(':
+			depth++
+		case r == ')':
+			if depth--; depth < 0 {
+				return fmt.Errorf("unbalanced parenthesis in %q", filter)
+			}
+		}
+	}
+	if depth != 0 {
+		return fmt.Errorf("unbalanced parenthesis in %q", filter)
+	}
+	for _, term := range strings.Fields(filter) {
+		qualifier, value, ok := strings.Cut(strings.TrimLeft(term, "-("), ":")
+		if ok && qualifier != "" && strings.Trim(value, `)"`) == "" {
+			return fmt.Errorf("%s: needs a value", qualifier)
+		}
+	}
+	return nil
+}
