@@ -139,6 +139,7 @@ func ApplyBrowserSources(w *Engine, driver *browser.Browser, options BrowserOpti
 	}
 	repos := browser.NewIssueSource(driver, gh, w.issueHandled, gh.Filter, gh.AllIssues, vision, w.logf)
 	board := browser.NewBoard(driver, gh.Filter, gh.AllIssues, vision, repos.Hydration)
+	repos.FilterOverrides, board.FilterOverrides = gh.FilterOverrides, gh.FilterOverrides
 	recovery := browser.NewSignInRecovery(driver, options.Config(), SignInFlow(), w.logf)
 	w.Issues = browser.NewSignInGuard(browser.WatchIssues{Repos: repos, Board: board, Work: gh}, recovery)
 	w.Projects = board

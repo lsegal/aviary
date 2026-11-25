@@ -47,6 +47,9 @@ type wsEvent struct {
 	Restart *saferestart.Status `json:"restart,omitempty"`
 	// Check is set on "version" events when a new release is found.
 	Check *update.CheckResult `json:"check,omitempty"`
+	// Target is the project a "project-added", "project-removed" or
+	// "project-updated" event is about.
+	Target string `json:"target,omitempty"`
 	// Notification is set on "notification" events.
 	Notification *notify.Notification `json:"notification,omitempty"`
 }

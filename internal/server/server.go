@@ -156,6 +156,9 @@ func New(cfg *config.Config, token string) *Server {
 		manager.SetJobObserver(s.observeCodeLoopJob)
 		manager.SetMentionRouter(s.promptProjectsAgent)
 		manager.SetAviaryAgentRunner(s.runProjectsJobTurn)
+		manager.SetProjectObserver(func(ev projects.ProjectEvent) {
+			wsBroadcast(wsEvent{Type: ev.Type, Target: ev.Target, AgentID: ev.Agent})
+		})
 		manager.SetUsageRecorder(func(rec domain.UsageRecord) {
 			if err := store.AppendJSONL(store.UsagePath(), rec); err != nil {
 				slog.Warn("server: failed to record projects usage", "err", err)
@@ -285,6 +288,9 @@ func (s *Server) applyConfigReload(newCfg *config.Config) {
 	deps.Browser = s.brw
 	s.cfg = newCfg
 	s.authDisabled.Store(newCfg.Server.DisableTokenAuth)
+	// Every dashboard re-reads the config, so an agent, channel, task or
+	// workflow added in one client shows in the others' sidebars at once.
+	wsBroadcast(wsEvent{Type: "config"})
 	if serverSettingsChanged(oldCfg, newCfg) {
 		slog.Info("server: settings changed, rotating listener")
 		select {

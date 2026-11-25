@@ -19,6 +19,8 @@ A job is named by its issue `number`. `target` is needed only when several proje
 | `project_queue_candidates` | `aviary project queue candidates` | read-only |
 | `project_refresh` | `aviary project refresh` | |
 | `project_add` | `aviary project add` | |
+| `project_update` | `aviary project update` | |
+| `project_filter_check` | `aviary project filter check` | read-only |
 | `project_remove` | `aviary project remove` | destructive |
 | `project_clone_list` | `aviary project clone list` | read-only |
 | `project_clone_clear` | `aviary project clone clear` | destructive |
@@ -44,7 +46,7 @@ Settings have no tool of their own. A project lives in the `projects:` list of t
 
 ## project_status
 
-Instance identity, watched projects with issue counts, job counts, the jobs in each board state (`states`: `starting`, `paused`, `running`, `done`, `failed`; a schedule counts once, under `starting` or `running` while a run is in flight and under `failed` while its last run failed and was not dismissed, and never under `done`), delivery mode, poll interval, the issue filter that selects work (`issue_filter`, empty when every open issue is picked up), last check, quota per CLI provider, the configured agent specs, each project's effective job model, and recent log lines. `models` maps each project to its job `model`, `fallbacks` and `source` (`project override`, `from agent <name>`, or `from models.defaults`), and `model_labels` renders them, such as `claude/opus (project override)`.
+Instance identity, watched projects with issue counts, job counts, the jobs in each board state (`states`: `starting`, `paused`, `running`, `done`, `failed`; a schedule counts once, under `starting` or `running` while a run is in flight and under `failed` while its last run failed and was not dismissed, and never under `done`), delivery mode, poll interval, the shared issue filter that selects work (`issue_filter`, empty when every open issue is picked up), each project's effective filter (`issue_filters`) and the projects with their own (`custom_filters`), last check, quota per CLI provider, the configured agent specs, each project's effective job model, and recent log lines. `models` maps each project to its job `model`, `fallbacks` and `source` (`project override`, `from agent <name>`, or `from models.defaults`), and `model_labels` renders them, such as `claude/opus (project override)`.
 
 **Arguments:** `log_offset` (optional): return only the lines logged after this offset. Each response's `log_offset` is the offset to pass next time. `aviary watch --no-tui` tails the log this way. `targets` (optional): count `states` over only these projects' jobs, as `project_job_list` filters them; the board's stat cards pass the projects they show.
 
@@ -116,9 +118,23 @@ Watch a project. A saved project is added to its agent's `projects:` list.
 - `runtime` (optional): watch until the server stops without writing `aviary.yaml`.
 - `settings` (optional, runtime only): projects settings that override the shared `projects:` settings while the watch runs. `model` and `fallbacks` set the [job model override](/guide/projects#job-model-override); an unknown provider or a CLI that is not installed fails the call.
 
+The call returns as soon as the project is watched. `project_status` lists it right away, under `loading_targets` until its first poll, while the engine restarts onto it and reads GitHub in the background. Every open control panel shows the new project at once: the server sends a `project-added` event on the `/api/ws` stream, then `project-updated` when the project's issue count or jobs change.
+
+## project_update
+
+Change one watched project. `filter` sets the project's own [issue filter](/guide/projects#issue-filter), replacing the shared `projects.filter` (and `all_issues`) for that project only; `reset_filter` removes it. A new filter is checked first, as `project_filter_check` does, and an invalid one is refused with the reason and nothing saved. A saved project's filter is written to its `projects[].filter` in `aviary.yaml`; a runtime watch's lasts until the watch stops. The project is checked for work right away, and open control panels hear of the change through a `project-updated` event on `/api/ws`. The result has the effective `issue_filter`, `custom`, and `matches` for a new filter.
+
+**Arguments:** `target`, and one of `filter` or `reset_filter`.
+
+## project_filter_check
+
+Check an issue filter for a project without saving it: its syntax (balanced quotes and parentheses, a value after every qualifier), then a dry-run GitHub search. The result's `matches` is how many open issues of the project it matches; an invalid filter fails with the reason.
+
+**Arguments:** `target`, `filter`.
+
 ## project_remove
 
-Stop watching a project, removing it from the agent that owns it. Running jobs are checkpointed first.
+Stop watching a project, removing it from the agent that owns it. Running jobs are checkpointed first, in the background: the call returns once the project is no longer watched, and the server sends a `project-removed` event on the `/api/ws` stream.
 
 **Arguments:** `target`, and `runtime` (optional) to stop only a runtime watch.
 

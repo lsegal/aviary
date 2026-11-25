@@ -23,7 +23,7 @@ var projectToolNames = []string{
 	"project_status", "project_job_list", "project_job_get", "project_job_explain",
 	"project_job_retry", "project_job_pause", "project_job_resume", "project_job_stop", "project_job_dismiss",
 	"project_job_queue", "project_queue_candidates",
-	"project_refresh", "project_add", "project_remove",
+	"project_refresh", "project_add", "project_update", "project_filter_check", "project_remove",
 	"project_clone_list", "project_clone_clear", "project_unblock_run",
 	"project_issue_comment", "project_issue_create", "project_issue_backfill_media",
 	"project_github_signin", "project_github_use_polling", "project_github_import",
@@ -79,6 +79,8 @@ func TestProjectTools_NilDeps(t *testing.T) {
 		"project_job_queue":        {"skill": "gh-safe-merge", "numbers": []any{1}},
 		"project_queue_candidates": {"skill": "gh-safe-merge"},
 		"project_add":              {"target": "o/r"}, "project_remove": {"target": "o/r"},
+		"project_update":        {"target": "o/r", "filter": "label:bug"},
+		"project_filter_check":  {"target": "o/r", "filter": "label:bug"},
 		"project_issue_comment": {"number": 1, "text": "x"}, "project_issue_create": {"text": "x"},
 		"project_issue_backfill_media": {"numbers": []any{1}},
 		"project_github_import":        {"profile": "/p"},
@@ -122,7 +124,7 @@ func TestProjectTools_SchemasAndHints(t *testing.T) {
 			assert.NotNil(t, tool.Annotations.DestructiveHint, "%s needs an explicit destructive hint", name)
 		}
 	}
-	for _, name := range []string{"project_status", "project_job_list", "project_job_get", "project_job_explain", "project_clone_list", "project_github_read", "project_site_fetch"} {
+	for _, name := range []string{"project_status", "project_job_list", "project_job_get", "project_job_explain", "project_clone_list", "project_github_read", "project_site_fetch", "project_filter_check"} {
 		assert.True(t, tools[name].Annotations.ReadOnlyHint, name)
 	}
 	for _, name := range []string{"project_job_stop", "project_remove", "project_clone_clear"} {
@@ -332,4 +334,92 @@ func exeName(name string) string {
 		return name + ".exe"
 	}
 	return name
+}
+
+// fakeIssueSearch answers the dry-run issue search with count matches and
+// records each query.
+func fakeIssueSearch(m *projects.Manager, count int) *[]string {
+	var queries []string
+	m.SetGHRunCommand(func(_ context.Context, args ...string) ([]byte, error) {
+		for _, arg := range args {
+			if q, ok := strings.CutPrefix(arg, "q="); ok {
+				queries = append(queries, q)
+			}
+		}
+		return json.Marshal(map[string]any{"total_count": count, "items": []any{}})
+	})
+	return &queries
+}
+
+func TestProjectUpdateSetsAndResetsAProjectsOwnFilter(t *testing.T) {
+	d, m := setupProjects(t)
+	cfg := &config.Config{
+		Agents:   []config.AgentConfig{{Name: "coder", Model: "cli/codex", Projects: config.AgentProjectsConfig{{Target: "o/a"}, {Target: "o/b"}}}},
+		Projects: config.ProjectsConfig{Filter: []string{"label:shared"}},
+	}
+	require.NoError(t, config.Save("", cfg))
+	m.Reconcile(cfg)
+	queries := fakeIssueSearch(m, 12)
+	var events []projects.ProjectEvent
+	m.SetProjectObserver(func(ev projects.ProjectEvent) { events = append(events, ev) })
+
+	checked := callJSON(t, d, "project_filter_check", map[string]any{"target": "o/a", "filter": "label:bug  -label:wip"})
+	assert.EqualValues(t, 12, checked["matches"])
+	assert.Equal(t, "label:bug -label:wip", checked["filter"])
+
+	updated := callJSON(t, d, "project_update", map[string]any{"target": "o/a", "filter": "label:bug -label:wip"})
+	assert.Equal(t, true, updated["saved"])
+	assert.Equal(t, true, updated["custom"])
+	assert.EqualValues(t, 12, updated["matches"])
+	assert.Equal(t, "label:bug -label:wip", updated["issue_filter"])
+	assert.Contains(t, *queries, "repo:o/a is:issue state:open label:bug -label:wip")
+	assert.Contains(t, events, projects.ProjectEvent{Type: projects.ProjectUpdated, Target: "o/a", Agent: "coder"}, "open clients hear of the change")
+
+	saved, err := config.Load("")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"label:bug -label:wip"}, saved.Agents[0].Projects[0].Filter)
+	assert.Empty(t, saved.Agents[0].Projects[1].Filter, "other projects keep the shared filter")
+	assert.Equal(t, []string{"label:shared"}, saved.Projects.Filter, "the shared filter is unchanged")
+	status := callJSON(t, d, "project_status", map[string]any{})
+	assert.Equal(t, map[string]any{"o/a": "label:bug -label:wip", "o/b": "label:shared"}, status["issue_filters"])
+	assert.Equal(t, []any{"o/a"}, status["custom_filters"])
+
+	reset := callJSON(t, d, "project_update", map[string]any{"target": "o/a", "reset_filter": true})
+	assert.Equal(t, false, reset["custom"])
+	assert.Equal(t, "label:shared", reset["issue_filter"])
+	saved, err = config.Load("")
+	require.NoError(t, err)
+	assert.Empty(t, saved.Agents[0].Projects[0].Filter)
+	status = callJSON(t, d, "project_status", map[string]any{})
+	assert.Equal(t, []any{}, status["custom_filters"])
+}
+
+func TestProjectUpdateRejectsAnInvalidFilter(t *testing.T) {
+	d, m := setupProjects(t)
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "coder", Model: "cli/codex", Projects: config.AgentProjectsConfig{{Target: "o/a"}}}}}
+	require.NoError(t, config.Save("", cfg))
+	m.Reconcile(cfg)
+	before := readFile(t, config.DefaultPath())
+	fakeIssueSearch(m, 0)
+	toolCallContains(t, d, "project_update", map[string]any{"target": "o/a", "filter": "label:"}, "invalid filter: label: needs a value")
+	toolCallContains(t, d, "project_update", map[string]any{"target": "o/a", "filter": `label:"bug`}, "unbalanced quote")
+	toolCallContains(t, d, "project_filter_check", map[string]any{"target": "o/a", "filter": "(label:bug"}, "unbalanced parenthesis")
+	toolCallContains(t, d, "project_update", map[string]any{"target": "o/a"}, "nothing to change")
+	toolCallContains(t, d, "project_update", map[string]any{"target": "o/a", "filter": "label:x", "reset_filter": true}, "not both")
+	toolCallContains(t, d, "project_update", map[string]any{"target": "o/none", "filter": "label:x"}, "not watched")
+	assert.Equal(t, before, readFile(t, config.DefaultPath()), "an invalid filter is never saved")
+}
+
+func TestProjectUpdateRuntimeWatchKeepsConfig(t *testing.T) {
+	d, m := setupProjects(t)
+	m.Reconcile(&config.Config{Models: config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex/gpt-5.6-terra"}}})
+	before := readFile(t, config.DefaultPath())
+	fakeIssueSearch(m, 3)
+	callJSON(t, d, "project_add", map[string]any{"target": "o/r", "runtime": true})
+	callJSON(t, d, "project_add", map[string]any{"target": "o/s", "runtime": true})
+	updated := callJSON(t, d, "project_update", map[string]any{"target": "o/r", "filter": "label:bug"})
+	assert.Equal(t, true, updated["runtime"])
+	assert.Equal(t, before, readFile(t, config.DefaultPath()))
+	status := callJSON(t, d, "project_status", map[string]any{})
+	assert.Equal(t, map[string]any{"o/r": "label:bug", "o/s": "assignee:@me"}, status["issue_filters"])
 }

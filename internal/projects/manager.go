@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -39,6 +40,9 @@ type Watch struct {
 	// owns.
 	Agent    string                `json:"agent,omitempty"`
 	Settings config.ProjectsConfig `json:"settings,omitzero"`
+	// Filters overrides the issue search filter of single targets of the
+	// watch, one entry per term group, as a saved project's filter does.
+	Filters map[string][]string `json:"filters,omitempty"`
 }
 
 // Manager owns the Code Loop engine inside the Aviary server. It builds the
@@ -113,6 +117,10 @@ type Manager struct {
 	usageRecorder atomic.Pointer[UsageRecorder]
 	// scheduleSource lists core's scheduled tasks; see SetScheduleSource.
 	scheduleSource atomic.Pointer[ScheduleSource]
+	// projectObserver receives project events, and projectStates is what
+	// it last heard of each target; see SetProjectObserver.
+	projectObserver atomic.Pointer[ProjectObserver]
+	projectStates   projectStates
 }
 
 // ScheduleSource lists core's scheduled tasks with their next fire and run
@@ -179,6 +187,8 @@ type engineRun struct {
 	// nil in other modes.
 	signIn *browser.SignInRecovery
 	driver browser.Handover
+	// filters are the per-target filters the engine reads, updated live.
+	filters *core.FilterOverrides
 }
 
 // NewManager returns a manager that keeps its work state and job transcripts
@@ -236,19 +246,55 @@ func (m *Manager) generalApprovalLocked() clidefs.ApprovalMode {
 // project's jobs run on projects.model and projects.fallbacks when model is
 // set, else on its owning agent's model and fallbacks.
 func (m *Manager) Reconcile(cfg *config.Config) {
-	list := cfg.ProjectList()
-	m.reports.configure(list)
-	m.mu.Lock()
-	m.agents = &config.Config{Agents: slices.Clone(cfg.Agents), Models: cfg.Models, Approval: cfg.Approval}
-	m.cfg = cfg.Projects
-	m.list = list
-	m.owners = cfg.ProjectOwners()
-	m.mu.Unlock()
+	m.applyConfig(cfg)
 	_ = m.refresh()
 }
 
+// ReconcileInBackground applies cfg as Reconcile does, but brings the engine
+// in line with it in the background: a new project is in the watched targets,
+// and shows in project_status as loading, as soon as it returns, while the
+// engine restarts onto it and polls it without holding up the caller.
+func (m *Manager) ReconcileInBackground(cfg *config.Config) {
+	m.applyConfig(cfg)
+	go m.refreshInBackground()
+}
+
+func (m *Manager) applyConfig(cfg *config.Config) {
+	list := cfg.ProjectList()
+	m.reports.configure(list)
+	m.changeTargets(func() {
+		m.agents = &config.Config{Agents: slices.Clone(cfg.Agents), Models: cfg.Models, Approval: cfg.Approval}
+		m.cfg = cfg.Projects
+		m.list = list
+		m.owners = cfg.ProjectOwners()
+	})
+}
+
+// refreshInBackground is refresh for a goroutine: refresh logs its own
+// failures and records them for project_status.
+func (m *Manager) refreshInBackground() { _ = m.refresh() }
+
 // AddWatch starts watching targets until RemoveWatch or the server stops.
 func (m *Manager) AddWatch(watch Watch) error {
+	if err := m.addWatch(watch); err != nil {
+		return err
+	}
+	return m.refresh()
+}
+
+// AddWatchInBackground adds watch as AddWatch does, returning once its
+// targets are watched; the engine restarts onto them in the background.
+func (m *Manager) AddWatchInBackground(watch Watch) error {
+	if err := m.addWatch(watch); err != nil {
+		return err
+	}
+	go m.refreshInBackground()
+	return nil
+}
+
+// addWatch validates watch and records it, without touching the engine. A
+// watch whose settings the engine would reject is not recorded.
+func (m *Manager) addWatch(watch Watch) error {
 	if len(watch.Targets) == 0 {
 		return errors.New("a watch needs at least one target")
 	}
@@ -259,35 +305,54 @@ func (m *Manager) AddWatch(watch Watch) error {
 		}
 		watch.Targets[i] = target
 	}
-	m.mu.Lock()
-	m.watches = append(m.watches, watch)
-	m.mu.Unlock()
-	return m.refresh()
+	var err error
+	m.changeTargets(func() {
+		m.watches = append(m.watches, watch)
+		if _, err = m.settingsLocked(); err != nil {
+			m.watches = m.watches[:len(m.watches)-1]
+		}
+	})
+	return err
 }
 
 // RemoveWatch stops runtime watches of target. It reports whether one was
 // removed.
 func (m *Manager) RemoveWatch(target string) bool {
-	m.mu.Lock()
-	removed := false
-	kept := m.watches[:0]
-	for _, watch := range m.watches {
-		watch.Targets = slices.DeleteFunc(watch.Targets, func(t string) bool {
-			if t == target {
-				removed = true
-				return true
-			}
-			return false
-		})
-		if len(watch.Targets) > 0 {
-			kept = append(kept, watch)
-		}
-	}
-	m.watches = kept
-	m.mu.Unlock()
+	removed := m.removeWatch(target)
 	if removed {
 		_ = m.refresh()
 	}
+	return removed
+}
+
+// RemoveWatchInBackground removes target's runtime watches as RemoveWatch
+// does, stopping its jobs in the background.
+func (m *Manager) RemoveWatchInBackground(target string) bool {
+	removed := m.removeWatch(target)
+	if removed {
+		go m.refreshInBackground()
+	}
+	return removed
+}
+
+func (m *Manager) removeWatch(target string) bool {
+	removed := false
+	m.changeTargets(func() {
+		kept := m.watches[:0]
+		for _, watch := range m.watches {
+			watch.Targets = slices.DeleteFunc(watch.Targets, func(t string) bool {
+				if t == target {
+					removed = true
+					return true
+				}
+				return false
+			})
+			if len(watch.Targets) > 0 {
+				kept = append(kept, watch)
+			}
+		}
+		m.watches = kept
+	})
 	return removed
 }
 
@@ -313,11 +378,14 @@ type engineSettings struct {
 	Agents       []string            `json:"agents"`
 	// Definitions are core's cli_definitions when the settings were built, so
 	// a change to them restarts the run on the new CLI providers.
-	Definitions       map[string]any       `json:"definitions"`
-	Interval          time.Duration        `json:"interval"`
-	Delivery          string               `json:"delivery"`
-	ReadyState        string               `json:"ready_state"`
-	Filter            string               `json:"filter"`
+	Definitions map[string]any `json:"definitions"`
+	Interval    time.Duration  `json:"interval"`
+	Delivery    string         `json:"delivery"`
+	ReadyState  string         `json:"ready_state"`
+	Filter      string         `json:"filter"`
+	// TargetFilters are the targets with their own filter override, which
+	// replaces Filter and AllIssues for them.
+	TargetFilters     map[string]string    `json:"-"`
 	AllIssues         bool                 `json:"all_issues"`
 	Approval          clidefs.ApprovalMode `json:"approval"`
 	Webhook           config.ProjectsWebhookConfig
@@ -367,6 +435,7 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		Delivery:          cfg.EffectiveDelivery(),
 		ReadyState:        strings.TrimSpace(cfg.ReadyState),
 		Filter:            cfg.EffectiveFilter(),
+		TargetFilters:     m.targetFiltersLocked(targets),
 		AllIssues:         cfg.AllIssues,
 		Approval:          cfg.EffectiveApprovalMode(m.generalApprovalLocked()),
 		Concurrency:       cfg.EffectiveConcurrency(),
@@ -405,6 +474,52 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		s.UnblockInterval = interval
 	}
 	return s, nil
+}
+
+// targetFiltersLocked maps each of targets with a filter override to it: a
+// runtime watch's override, else the saved project's.
+func (m *Manager) targetFiltersLocked(targets []string) map[string]string {
+	saved := config.AgentProjectsConfig(m.list).Filters()
+	filters := map[string]string{}
+	for _, target := range targets {
+		if filter := saved[target]; filter != "" {
+			filters[target] = filter
+		}
+		for _, watch := range m.watches {
+			if filter := config.JoinFilter(watch.Filters[target]); filter != "" && slices.Contains(watch.Targets, target) {
+				filters[target] = filter
+			}
+		}
+	}
+	return filters
+}
+
+// SetWatchFilter sets or, with an empty filter, clears the filter override
+// of target's runtime watch. It reports whether target has a runtime watch.
+func (m *Manager) SetWatchFilter(target string, filter []string) (bool, error) {
+	m.mu.Lock()
+	found := false
+	for i := range m.watches {
+		if !slices.Contains(m.watches[i].Targets, target) {
+			continue
+		}
+		found = true
+		filters := maps.Clone(m.watches[i].Filters)
+		if filters == nil {
+			filters = map[string][]string{}
+		}
+		if config.JoinFilter(filter) == "" {
+			delete(filters, target)
+		} else {
+			filters[target] = slices.Clone(filter)
+		}
+		m.watches[i].Filters = filters
+	}
+	m.mu.Unlock()
+	if !found {
+		return false, nil
+	}
+	return true, m.refresh()
 }
 
 // jobSpecsLocked resolves each target's job specs, in fallback order, from
@@ -638,6 +753,7 @@ func (m *Manager) applyLive(run *engineRun, s engineSettings) error {
 	if len(s.AllowedCommenters) > 0 {
 		update.AllowedCommenters = &s.AllowedCommenters
 	}
+	run.filters.Set(s.TargetFilters)
 	if _, err := run.engine.ApplySettings(ctx, update); err != nil {
 		m.logf("projects settings not applied: %v", err)
 		return err
@@ -665,7 +781,7 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	run := &engineRun{settings: s, cancel: cancel, done: make(chan struct{})}
+	run := &engineRun{settings: s, cancel: cancel, done: make(chan struct{}), filters: core.NewFilterOverrides(s.TargetFilters)}
 	fail := func(err error) (*engineRun, error) {
 		cancel()
 		for _, cleanup := range run.cleanup {
@@ -673,7 +789,7 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		}
 		return nil, err
 	}
-	gh := GHCLI{Binary: "gh", ReadyState: s.ReadyState, Filter: s.Filter, AllIssues: s.AllIssues, publicRepoCache: &sync.Map{}, selfLoginCache: &sync.Map{}, runCommand: m.ghRunCommand}
+	gh := GHCLI{Binary: "gh", ReadyState: s.ReadyState, Filter: s.Filter, AllIssues: s.AllIssues, FilterOverrides: run.filters, publicRepoCache: &sync.Map{}, selfLoginCache: &sync.Map{}, runCommand: m.ghRunCommand}
 	allowed := s.AllowedCommenters
 	if len(allowed) == 0 {
 		login, err := gh.resolveSelfLogin(ctx)
@@ -994,6 +1110,14 @@ func (m *Manager) Snapshot(snapshot core.Snapshot) {
 	m.snapshot.Store(&snapshot)
 	m.reports.observe(snapshot)
 	m.cache.observe(snapshot)
+	m.mu.Lock()
+	owners := m.owners
+	m.mu.Unlock()
+	var events []ProjectEvent
+	for _, target := range m.projectStates.changed(snapshot) {
+		events = append(events, ProjectEvent{Type: ProjectUpdated, Target: target, Agent: owners[target]})
+	}
+	m.emit(events)
 }
 
 // SetReportDelivery sets how projects that opted in to reports send them

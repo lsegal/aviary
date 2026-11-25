@@ -159,9 +159,13 @@ func (d displayState) anyStale(targets []string) bool {
 func jobKey(job JobSnapshot) string { return fmt.Sprintf("%s#%d", job.Target, job.Number) }
 
 // targetLive reports whether the engine has polled target: it has listed the
-// target's issues, or finished a whole poll.
+// target's issues, or finished a whole poll that covered it. A target added
+// since the engine started is not live until the engine restarts onto it.
 func targetLive(live *core.Snapshot, target string) bool {
 	if live == nil {
+		return false
+	}
+	if len(live.Targets) > 0 && !slices.Contains(live.Targets, target) {
 		return false
 	}
 	if _, ok := live.IssueCounts[target]; ok {
@@ -170,23 +174,54 @@ func targetLive(live *core.Snapshot, target string) bool {
 	return !live.LastPoll.IsZero()
 }
 
+// watchedTargets is the targets to show: the live engine's, in its order,
+// less those no longer configured, then the configured targets the engine
+// has not started on yet. Without configured targets it is the live ones.
+func watchedTargets(live *core.Snapshot, configured []string) []string {
+	if live == nil || len(live.Targets) == 0 {
+		return slices.Clone(configured)
+	}
+	if len(configured) == 0 {
+		return slices.Clone(live.Targets)
+	}
+	targets := make([]string, 0, len(configured))
+	for _, target := range live.Targets {
+		if slices.Contains(configured, target) {
+			targets = append(targets, target)
+		}
+	}
+	for _, target := range configured {
+		if !slices.Contains(targets, target) {
+			targets = append(targets, target)
+		}
+	}
+	return targets
+}
+
 // mergeCached builds the displayed state from the live snapshot, which is nil
 // before the engine publishes one, and the cache, which is nil without one,
 // for the configured targets. Each target the engine has not polled yet shows
 // its cached issue count and jobs, except a job the engine already knows,
 // which shows its live, recovered state. Targets the cache does not know show
-// as loading, and cached targets no longer configured are dropped.
+// as loading, and cached targets no longer configured are dropped. The
+// configured targets win over the live engine's, so a project added or
+// removed shows at once, before the engine restarts onto the change; the
+// live targets stand in only when no settings resolve.
 func mergeCached(live, cached *core.Snapshot, cachedAt time.Time, configured []string) displayState {
 	var display displayState
 	if live != nil {
 		display.Snapshot = *live
 	}
-	targets := configured
-	if live != nil && len(live.Targets) > 0 {
-		targets = live.Targets
-	}
-	display.Targets = slices.Clone(targets)
+	targets := watchedTargets(live, configured)
+	display.Targets = targets
 	if live != nil && !live.LastPoll.IsZero() {
+		// The cache is never newer than a finished poll, so a target the
+		// engine does not watch yet is loading rather than stale.
+		for _, target := range targets {
+			if !targetLive(live, target) {
+				display.Loading = append(display.Loading, target)
+			}
+		}
 		return display
 	}
 	cachedTargets := []string{}

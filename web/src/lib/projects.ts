@@ -62,6 +62,9 @@ export interface ProjectSummary {
 	issues: number;
 	/** The project's scheduled tasks, when the list read them. */
 	scheduled?: number;
+	/** Code Loop has not read the project from GitHub yet, so its counts
+	 * are not known: it was just added. */
+	loading?: boolean;
 }
 
 /** One CLI provider: the models the board's jobs run on and its quota. */
@@ -75,6 +78,8 @@ export interface CLIStatus {
 export interface ProjectTarget {
 	name: string;
 	issues: number;
+	/** Not read from GitHub yet, so issues is not known. */
+	loading?: boolean;
 }
 
 export interface ProjectStatus {
@@ -94,6 +99,10 @@ export interface ProjectStatus {
 	interval: string;
 	/** The issue search that selects work; empty picks up every open issue. */
 	issueFilter: string;
+	/** Each project's issue search: its own filter, else issueFilter. */
+	issueFilters: Record<string, string>;
+	/** The projects with their own issue filter instead of the shared one. */
+	customFilters: string[];
 	/** GitHub logins whose comments may steer jobs. */
 	allowedCommenters: string[];
 	/** no_merge leaves pull requests for a human, so safe merge is off. */
@@ -622,6 +631,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 	const jobs = obj(raw.jobs);
 	const counts = obj(raw.issue_counts);
 	const states = obj(raw.states);
+	const loading = arr(raw.loading_targets).map(str);
 	return {
 		instanceID: str(raw.identity),
 		running: raw.running !== false,
@@ -634,6 +644,10 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		cachedAt: str(raw.cached_at),
 		interval: str(raw.poll_interval),
 		issueFilter: str(raw.issue_filter),
+		issueFilters: Object.fromEntries(
+			Object.entries(obj(raw.issue_filters)).map(([k, v]) => [k, str(v)]),
+		),
+		customFilters: arr(raw.custom_filters).map(str).filter(Boolean),
 		allowedCommenters: arr(raw.allowed_commenters).map(str).filter(Boolean),
 		noMerge: raw.no_merge === true,
 		slotsUsed: num(jobs.running),
@@ -646,6 +660,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		targets: arr(raw.targets).map((t) => ({
 			name: str(t),
 			issues: num(counts[str(t)]),
+			...(loading.includes(str(t)) ? { loading: true } : {}),
 		})),
 		clis: arr(raw.clis)
 			.map(obj)
@@ -679,6 +694,7 @@ export function summarizeProjects(
 			issues: t.issues,
 			running: mine.filter((j) => isRunning(j.status)).length,
 			waiting: mine.filter((j) => isWaiting(j.status)).length,
+			...(t.loading ? { loading: true } : {}),
 			...(tasks === undefined
 				? {}
 				: { scheduled: projectSchedules(tasks, t.name).length }),

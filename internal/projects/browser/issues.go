@@ -58,7 +58,10 @@ type IssueSource struct {
 	// same meaning whichever transport is in use.
 	filter    string
 	allIssues bool
-	logf      func(string, ...interface{})
+	// FilterOverrides are per-target filters, which replace filter and
+	// allIssues for their targets.
+	FilterOverrides *core.FilterOverrides
+	logf            func(string, ...interface{})
 	// profile is the browser profile directory, named in the signed-out error
 	// so the user is told which profile to sign in rather than being left to
 	// guess whether the browser profile_directory setting was in play.
@@ -242,7 +245,8 @@ func (s *IssueSource) ListIssues(ctx context.Context, target string) ([]core.Iss
 	if err != nil {
 		return nil, err
 	}
-	next := issuesURL(parsed.Repo, s.filter, s.allIssues)
+	filter, allIssues := s.FilterOverrides.For(target, s.filter, s.allIssues)
+	next := issuesURL(parsed.Repo, filter, allIssues)
 	var issues []core.Issue
 	seen := map[string]bool{}
 	for visited := 0; visited < issuesPageLimit && next != ""; visited++ {

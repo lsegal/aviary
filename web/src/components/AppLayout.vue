@@ -164,7 +164,8 @@
               <router-link v-for="p in soleAgent.projects" :key="p.key" :to="p.to"
                 :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
                 <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
-                <ProjectRunningBadge :running="p.running ?? 0" />
+                <ProjectLoadingBadge v-if="p.loading" />
+                <ProjectRunningBadge v-else :running="p.running ?? 0" />
               </router-link>
             </div>
           </template>
@@ -204,7 +205,8 @@
                   <router-link v-for="p in a.projects" :key="p.key" :to="p.to"
                     :class="[childLinkClass(isChildActive(p), false), 'flex items-center gap-2']">
                     <span class="min-w-0 flex-1 truncate">{{ p.label }}</span>
-                    <ProjectRunningBadge :running="p.running ?? 0" />
+                    <ProjectLoadingBadge v-if="p.loading" />
+                    <ProjectRunningBadge v-else :running="p.running ?? 0" />
                   </router-link>
                 </div>
               </template>
@@ -440,6 +442,7 @@ import SidebarRowAction from "./SidebarRowAction.vue";
 import AutoUpdateError from "./AutoUpdateError.vue";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
 import MobileMainNav, { type MobileNavItem } from "./MobileMainNav.vue";
+import ProjectLoadingBadge from "./projects/ProjectLoadingBadge.vue";
 import ProjectRunningBadge from "./projects/ProjectRunningBadge.vue";
 import ChatSessionList from "./chat/ChatSessionList.vue";
 import AgentFileList from "./sidebar/AgentFileList.vue";
@@ -468,6 +471,8 @@ interface NavChild {
 	/** Running jobs (a project's, or all of Code Loop'), shown as a
 	 * gray badge when any. */
 	running?: number;
+	/** A project just added, whose counts Code Loop is still reading. */
+	loading?: boolean;
 	/** Overrides the path match, for items picked by a query. */
 	active?: boolean;
 	/** A paused scheduled task, shown dimmed with a pause icon. */
@@ -739,6 +744,7 @@ function projectChild(owner: string, p: ProjectSummary): NavChild {
 		label: p.name,
 		to: projectPath(owner, p.name),
 		running: p.running,
+		loading: p.loading,
 	};
 }
 

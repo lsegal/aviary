@@ -34,6 +34,9 @@ type Board struct {
 	// board page is asked for the same items the GraphQL query selects.
 	Filter    string
 	AllIssues bool
+	// FilterOverrides are per-target filters, which replace Filter and
+	// AllIssues for their targets.
+	FilterOverrides *core.FilterOverrides
 	// Vision is the bounded screenshot-to-agent fallback, shared with the
 	// repository issue source so the per-run cap is one budget for the whole
 	// run. Nil (the default, without the browser vision fallback) means a board that never
@@ -248,7 +251,8 @@ func (b *Board) readRows(ctx context.Context, target string) ([]boardRow, error)
 	if err != nil {
 		return nil, err
 	}
-	if err := page.Navigate(boardURL(parsed, b.Filter, b.AllIssues)); err != nil {
+	filter, allIssues := b.FilterOverrides.For(target, b.Filter, b.AllIssues)
+	if err := page.Navigate(boardURL(parsed, filter, allIssues)); err != nil {
 		return nil, fmt.Errorf("open project board %s: %w", target, err)
 	}
 	if status := page.HTTPStatus(); status >= 400 {
@@ -256,7 +260,7 @@ func (b *Board) readRows(ctx context.Context, target string) ([]boardRow, error)
 		// private repositories are, so the same question is asked here before
 		// the status is blamed on the target (issue #379).
 		if signedOutStatus(page, status) {
-			return nil, &SignedOutError{URL: boardURL(parsed, b.Filter, b.AllIssues), Profile: b.Profile, Status: status}
+			return nil, &SignedOutError{URL: boardURL(parsed, filter, allIssues), Profile: b.Profile, Status: status}
 		}
 		return nil, fmt.Errorf("open project board %s: HTTP %d", target, status)
 	}
@@ -287,7 +291,7 @@ func (b *Board) readRows(ctx context.Context, target string) ([]boardRow, error)
 	// checking at all, because no screenshot of a signed-out page can be read
 	// into issues.
 	if (!rendered || len(rows) == 0) && signedOutPage(page) {
-		return nil, &SignedOutError{URL: boardURL(parsed, b.Filter, b.AllIssues), Profile: b.Profile}
+		return nil, &SignedOutError{URL: boardURL(parsed, filter, allIssues), Profile: b.Profile}
 	}
 	if !rendered {
 		// A board that loaded but never drew its own markup is the same
@@ -296,7 +300,7 @@ func (b *Board) readRows(ctx context.Context, target string) ([]boardRow, error)
 		// ErrExtraction lets callers tell it apart from a navigation or
 		// HTTP failure the way they already can for the issues page.
 		failure := &ExtractionError{
-			URL:    boardURL(parsed, b.Filter, b.AllIssues),
+			URL:    boardURL(parsed, filter, allIssues),
 			Reason: fmt.Sprintf("the board did not render within %s", time.Duration(b.attempts())*b.delay()),
 		}
 		if recovered := b.recoverWithVision(ctx, target, page, failure); len(recovered) > 0 {

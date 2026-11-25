@@ -1,6 +1,8 @@
 import { onMounted, onUnmounted, ref } from "vue";
 import type { AppNotification } from "../lib/notifications";
 import { useAuthStore } from "../stores/auth";
+import { useSettingsStore } from "../stores/settings";
+import { applyProjectEvent, type ProjectEvent } from "./projectListStore";
 import { useMCP } from "./useMCP";
 import { useNotifications } from "./useNotifications";
 
@@ -75,6 +77,7 @@ interface VersionCheck {
  */
 export function useServerStatus() {
 	const auth = useAuthStore();
+	const settings = useSettingsStore();
 	const { callTool } = useMCP();
 	const notifications = useNotifications();
 
@@ -151,6 +154,13 @@ export function useServerStatus() {
 				}
 				if (data.type === "version" && data.check) {
 					applyCheck(data.check);
+					return;
+				}
+				// Projects added, removed or polled anywhere show here at once.
+				if (applyProjectEvent(data as ProjectEvent)) return;
+				// An agent, channel, task or workflow saved in another client.
+				if (data.type === "config") {
+					if (settings.config) void settings.fetchConfig();
 					return;
 				}
 				if (data.type !== "health") return;
