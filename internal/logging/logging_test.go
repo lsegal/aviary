@@ -26,10 +26,7 @@ func setTestDataDir(t *testing.T) {
 
 func TestLogDir(t *testing.T) {
 	setTestDataDir(t)
-	dir := LogDir()
-	assert.NotEqual(t, "", dir)
-	assert.True(t, strings.HasSuffix(dir, "logs"))
-
+	assert.Equal(t, filepath.Join(store.DataDir(), "logs"), LogDir())
 }
 
 func TestLogFilePath(t *testing.T) {
@@ -40,43 +37,28 @@ func TestLogFilePath(t *testing.T) {
 
 }
 
-func TestLogDir_ContainsDataDir(t *testing.T) {
-	setTestDataDir(t)
-	dir := LogDir()
-	dataDir := store.DataDir()
-	assert.True(t, strings.HasPrefix(dir, dataDir))
-
-}
-
 func TestTeeHandler_Enabled(t *testing.T) {
-	var bufA, bufB bytes.Buffer
-	a := slog.NewTextHandler(&bufA, &slog.HandlerOptions{Level: slog.LevelWarn})
-	b := slog.NewTextHandler(&bufB, &slog.HandlerOptions{Level: slog.LevelDebug})
-	h := &teeHandler{a: a, b: b}
-	assert.
-
-		// Debug is enabled because b handles LevelDebug.
-		True(t, h.Enabled(context.Background(), slog.LevelDebug))
-	assert.True(t, // Warn is enabled by both.
-		h.Enabled(context.Background(), slog.LevelWarn))
-	assert.True(t, // Error is enabled by both.
-		h.Enabled(context.Background(), slog.LevelError))
-
-}
-
-func TestTeeHandler_Enabled_BothDisabled(t *testing.T) {
-	var bufA, bufB bytes.Buffer
-	// Both handlers only allow Error and above.
-	a := slog.NewTextHandler(&bufA, &slog.HandlerOptions{Level: slog.LevelError})
-	b := slog.NewTextHandler(&bufB, &slog.HandlerOptions{Level: slog.LevelError})
-	h := &teeHandler{a: a, b: b}
-	assert.
-
-		// Debug and Info should be disabled.
-		False(t, h.Enabled(context.Background(), slog.LevelDebug))
-	assert.False(t, h.Enabled(context.Background(), slog.LevelInfo))
-	assert.True(t, h.Enabled(context.Background(), slog.LevelError))
-
+	tests := []struct {
+		name           string
+		levelA, levelB slog.Level
+		query          slog.Level
+		want           bool
+	}{
+		{"debug enabled by b", slog.LevelWarn, slog.LevelDebug, slog.LevelDebug, true},
+		{"warn enabled by both", slog.LevelWarn, slog.LevelDebug, slog.LevelWarn, true},
+		{"error enabled by both", slog.LevelWarn, slog.LevelDebug, slog.LevelError, true},
+		{"debug disabled by both", slog.LevelError, slog.LevelError, slog.LevelDebug, false},
+		{"info disabled by both", slog.LevelError, slog.LevelError, slog.LevelInfo, false},
+		{"error at both thresholds", slog.LevelError, slog.LevelError, slog.LevelError, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: tt.levelA})
+			b := slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: tt.levelB})
+			h := &teeHandler{a: a, b: b}
+			assert.Equal(t, tt.want, h.Enabled(context.Background(), tt.query))
+		})
+	}
 }
 
 func TestTeeHandler_Handle_WritesToBoth(t *testing.T) {
@@ -91,18 +73,6 @@ func TestTeeHandler_Handle_WritesToBoth(t *testing.T) {
 
 	assert.True(t, strings.Contains(bufA.String(), "hello world"))
 	assert.True(t, strings.Contains(bufB.String(), "hello world"))
-
-}
-
-func TestTeeHandler_Handle_ReturnsNil(t *testing.T) {
-	var buf bytes.Buffer
-	a := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
-	b := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
-	h := &teeHandler{a: a, b: b}
-
-	rec := slog.NewRecord(time.Now(), slog.LevelError, "error message", 0)
-	err := h.Handle(context.Background(), rec)
-	assert.NoError(t, err)
 
 }
 
@@ -183,55 +153,49 @@ func TestInit(t *testing.T) {
 
 }
 
-func TestInit_DoesNotWriteToStderr(t *testing.T) {
-	setTestDataDir(t)
-	Shutdown()
-
+// captureStderr runs fn with os.Stderr redirected to a pipe and returns
+// everything written to it.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
 	origStderr := os.Stderr
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	os.Stderr = w
 	defer func() { os.Stderr = origStderr }()
 
-	err = Init()
-	assert.NoError(t, err)
-
-	slog.Info("file only")
+	fn()
 
 	assert.NoError(t, w.Close())
 	os.Stderr = origStderr
 	out, err := io.ReadAll(r)
 	assert.NoError(t, err)
-	assert.Empty(t, string(out))
 	assert.NoError(t, r.Close())
+	return string(out)
+}
 
+func TestInit_DoesNotWriteToStderr(t *testing.T) {
+	setTestDataDir(t)
 	Shutdown()
+	t.Cleanup(Shutdown)
+
+	out := captureStderr(t, func() {
+		assert.NoError(t, Init())
+		slog.Info("file only")
+	})
+	assert.Empty(t, out)
 }
 
 func TestEnableConsole_WritesToStderr(t *testing.T) {
 	setTestDataDir(t)
 	Shutdown()
+	t.Cleanup(Shutdown)
 
-	origStderr := os.Stderr
-	r, w, err := os.Pipe()
-	assert.NoError(t, err)
-	os.Stderr = w
-	defer func() { os.Stderr = origStderr }()
-
-	err = Init()
-	assert.NoError(t, err)
-
-	EnableConsole()
-	slog.Info("console enabled")
-
-	assert.NoError(t, w.Close())
-	os.Stderr = origStderr
-	out, err := io.ReadAll(r)
-	assert.NoError(t, err)
-	assert.Contains(t, string(out), "console enabled")
-	assert.NoError(t, r.Close())
-
-	Shutdown()
+	out := captureStderr(t, func() {
+		assert.NoError(t, Init())
+		EnableConsole()
+		slog.Info("console enabled")
+	})
+	assert.Contains(t, out, "console enabled")
 }
 
 func TestInitMemory_KeepsLogsOutOfTheDataDir(t *testing.T) {
