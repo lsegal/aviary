@@ -2,6 +2,7 @@ package agent
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -299,4 +300,50 @@ func TestAppendMediaAndWorkflowMessages(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, meta.LastMessageAt)
 	assert.True(t, meta.LastMessageAt.After(at), "an older workflow message does not move the last message time back")
+}
+
+func TestSessionManager_DefaultsForSparseSessionFiles(t *testing.T) {
+	setupSessionDir(t)
+	sm := NewSessionManager()
+
+	sess, err := sm.GetOrCreateNamedTyped("assistant", "", domain.SessionTypeUser)
+	require.NoError(t, err)
+	assert.Equal(t, "main", sess.ID, "an unnamed session is the main session")
+
+	// A header with no type and no usable times takes the inferred type and
+	// the time it was read.
+	require.NoError(t, store.AppendJSONL(store.SessionPath("assistant", "slack:C1"), map[string]any{"id": "slack:C1", "created_at": ""}))
+	before := time.Now()
+	loaded, err := sm.Load("assistant", "slack:C1")
+	require.NoError(t, err)
+	assert.Equal(t, domain.SessionTypeChannel, loaded.Type)
+	assert.Equal(t, "slack:C1", loaded.Name)
+	assert.False(t, loaded.CreatedAt.Before(before))
+	assert.Equal(t, loaded.CreatedAt, loaded.UpdatedAt)
+
+	// An empty session file is cleared into one holding just its header.
+	require.NoError(t, os.WriteFile(store.SessionPath("assistant", "blank"), nil, 0o600))
+	require.NoError(t, sm.Clear("assistant", "blank"))
+	header := headerOf(t, "assistant", "blank")
+	require.NotNil(t, header)
+	assert.Equal(t, "blank", header["id"])
+	assert.NotEmpty(t, header["created_at"])
+}
+
+func TestSessionManager_ListSkipsFilesThatAreNotSessions(t *testing.T) {
+	setupSessionDir(t)
+	sm := NewSessionManager()
+	sess, err := sm.CreateWithName("assistant", "kept")
+	require.NoError(t, err)
+	require.NoError(t, sm.Rename("assistant", sess.ID, "Kept")) // writes a .meta.json sidecar
+	dir := filepath.Dir(store.SessionPath("assistant", sess.ID))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "nested.jsonl"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "empty.jsonl"), nil, 0o600))
+	require.NoError(t, store.AppendJSONL(filepath.Join(dir, "undated.jsonl"), map[string]any{"id": "m1", "role": "user", "content": "no time"}))
+
+	sessions, err := sm.List("assistant")
+	require.NoError(t, err)
+	require.Len(t, sessions, 1, "directories, empty files and files with no times are not sessions")
+	assert.Equal(t, sess.ID, sessions[0].ID)
+	assert.Equal(t, "Kept", sessions[0].Title)
 }

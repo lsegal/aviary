@@ -720,8 +720,10 @@ func TestCLITurn_FailuresEndTheTurn(t *testing.T) {
 		wantUsage bool
 	}{
 		{
-			name:      "CLI turn fails",
-			cli:       &scriptedCLI{send: func(context.Context, cliagent.Options, cliagent.Turn, func(cliagent.Event)) (cliagent.Result, error) { return cliagent.Result{}, errors.New("cli crashed") }},
+			name: "CLI turn fails",
+			cli: &scriptedCLI{send: func(context.Context, cliagent.Options, cliagent.Turn, func(cliagent.Event)) (cliagent.Result, error) {
+				return cliagent.Result{}, errors.New("cli crashed")
+			}},
 			wantErr:   "cli crashed",
 			wantUsage: true,
 		},
@@ -837,8 +839,10 @@ func TestCompleteCLIText_Failures(t *testing.T) {
 	}{
 		{name: "CLI fails to start", cli: &scriptedCLI{startErr: errors.New("not installed")}, wantErr: "not installed"},
 		{
-			name:    "CLI turn fails",
-			cli:     &scriptedCLI{send: func(context.Context, cliagent.Options, cliagent.Turn, func(cliagent.Event)) (cliagent.Result, error) { return cliagent.Result{}, errors.New("crashed") }},
+			name: "CLI turn fails",
+			cli: &scriptedCLI{send: func(context.Context, cliagent.Options, cliagent.Turn, func(cliagent.Event)) (cliagent.Result, error) {
+				return cliagent.Result{}, errors.New("crashed")
+			}},
 			wantErr: "crashed",
 		},
 		{
