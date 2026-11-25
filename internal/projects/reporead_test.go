@@ -237,3 +237,30 @@ func TestSiteHostAllowed(t *testing.T) {
 	assert.False(t, siteHostAllowed(hosts, "evil-aviary.bot"))
 	assert.False(t, siteHostAllowed(hosts, "aviary.bot.evil.com"))
 }
+
+func TestGitHubReadResolvesTheRepositoryToRead(t *testing.T) {
+	fake := &fakeGH{responses: map[string]string{
+		"api --method GET repos/o/r/commits/abc": `{"sha": "abc"}`,
+	}}
+	m := readTestManager(t, fake)
+	ctx := context.Background()
+
+	_, err := m.GitHubRead(ctx, "", "commits/abc", "https://github.com/o/r/commit/abc", "")
+	assert.ErrorContains(t, err, "pass a url or a path, not both")
+	_, err = m.GitHubRead(ctx, "", "", "https://example.com/o/r/commit/abc", "")
+	assert.Error(t, err)
+	_, err = m.GitHubRead(ctx, "o/board", "", "https://github.com/o/r/commit/abc", "")
+	assert.ErrorContains(t, err, "the url is in o/r, not o/board")
+	assert.Empty(t, fake.calls, "a refused read reaches gh")
+
+	// With one watched repository, an unnamed one is that repository.
+	m.snapshot.Store(&core.Snapshot{Targets: []string{"o/r"}})
+	result, err := m.GitHubRead(ctx, "", "commits/abc", "", "")
+	require.NoError(t, err)
+	assert.Equal(t, "o/r", result["repository"])
+
+	m.list = nil
+	m.snapshot.Store(&core.Snapshot{})
+	_, err = m.GitHubRead(ctx, "", "commits/abc", "", "")
+	assert.ErrorContains(t, err, "no repositories are watched")
+}

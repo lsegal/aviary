@@ -33,6 +33,10 @@ func TestListenForWebhooksAssignsRandomPort(t *testing.T) {
 	if port == "0" || port == "" {
 		t.Fatalf("listener address = %q, want an assigned port", listener.Addr())
 	}
+	// An address already in use is reported with the address.
+	if _, err := listenForWebhooks(listener.Addr().String()); err == nil || !strings.Contains(err.Error(), "listen for webhooks on "+listener.Addr().String()) {
+		t.Fatalf("listen on a used address = %v", err)
+	}
 }
 
 func TestNgrokTargetAddrRewritesWildcardHostToLoopback(t *testing.T) {
