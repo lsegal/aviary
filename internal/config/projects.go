@@ -90,6 +90,9 @@ type ProjectConfig struct {
 	// Target is owner/repo, a repository URL, a project board, or a
 	// Discussions board.
 	Target string `yaml:"target" json:"target"`
+	// Filter overrides the shared issue search filter for this project only,
+	// one entry per term group. Empty uses the shared filter.
+	Filter []string `yaml:"filter,omitempty" json:"filter,omitempty"`
 	// Reports sends this project's job lifecycle events through an Aviary
 	// agent's channels. Unset means no reports.
 	Reports *ProjectReportsConfig `yaml:"reports,omitempty" json:"reports,omitempty"`
@@ -238,6 +241,36 @@ func (p ProjectsConfig) EffectiveFilter() string {
 		return filter
 	}
 	return DefaultProjectsFilter
+}
+
+// FilterFor returns the issue search filter a project with override uses:
+// the override, else the shared filter, else DefaultProjectsFilter.
+func (p ProjectsConfig) FilterFor(override []string) string {
+	if filter := JoinFilter(override); filter != "" {
+		return filter
+	}
+	return p.EffectiveFilter()
+}
+
+// JoinFilter joins a filter's term groups into one search, empty when it
+// has no terms.
+func JoinFilter(filter []string) string {
+	return strings.Join(strings.Fields(strings.Join(filter, " ")), " ")
+}
+
+// Filters maps every project with its own filter override to that override,
+// joined into one search.
+func (p AgentProjectsConfig) Filters() map[string]string {
+	filters := map[string]string{}
+	for _, project := range p {
+		target := strings.TrimSpace(project.Target)
+		if filter := JoinFilter(project.Filter); target != "" && filter != "" {
+			if _, ok := filters[target]; !ok {
+				filters[target] = filter
+			}
+		}
+	}
+	return filters
 }
 
 // Targets returns every watched target, in order, without duplicates.

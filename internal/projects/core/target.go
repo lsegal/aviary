@@ -2,9 +2,11 @@ package core
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 )
 
 // DefaultIssueFilter is the search filter a run uses when none is configured:
@@ -69,6 +71,44 @@ func IsProjectTarget(repo string) bool {
 func IsDiscussionTarget(repo string) bool {
 	target, err := ParseTarget(repo)
 	return err == nil && target.IsDiscussion
+}
+
+// FilterOverrides holds per-target issue search filters, each replacing the
+// run's filter and all-issues setting for its target. A running engine reads
+// them on every poll, so a change applies without a restart. A nil
+// FilterOverrides has none.
+type FilterOverrides struct {
+	mu      sync.RWMutex
+	filters map[string]string
+}
+
+// NewFilterOverrides returns overrides holding filters.
+func NewFilterOverrides(filters map[string]string) *FilterOverrides {
+	o := &FilterOverrides{}
+	o.Set(filters)
+	return o
+}
+
+// Set replaces every override with filters.
+func (o *FilterOverrides) Set(filters map[string]string) {
+	o.mu.Lock()
+	o.filters = maps.Clone(filters)
+	o.mu.Unlock()
+}
+
+// For returns the issue search filter and all-issues setting of target: its
+// own override, else filter and allIssues.
+func (o *FilterOverrides) For(target, filter string, allIssues bool) (string, bool) {
+	if o == nil {
+		return filter, allIssues
+	}
+	o.mu.RLock()
+	override := o.filters[target]
+	o.mu.RUnlock()
+	if override != "" {
+		return override, false
+	}
+	return filter, allIssues
 }
 
 // IssueFilterTerms splits a --filter into the terms a query is actually built

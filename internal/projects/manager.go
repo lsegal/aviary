@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -39,6 +40,9 @@ type Watch struct {
 	// owns.
 	Agent    string                `json:"agent,omitempty"`
 	Settings config.ProjectsConfig `json:"settings,omitzero"`
+	// Filters overrides the issue search filter of single targets of the
+	// watch, one entry per term group, as a saved project's filter does.
+	Filters map[string][]string `json:"filters,omitempty"`
 }
 
 // Manager owns the Code Loop engine inside the Aviary server. It builds the
@@ -179,6 +183,8 @@ type engineRun struct {
 	// nil in other modes.
 	signIn *browser.SignInRecovery
 	driver browser.Handover
+	// filters are the per-target filters the engine reads, updated live.
+	filters *core.FilterOverrides
 }
 
 // NewManager returns a manager that keeps its work state and job transcripts
@@ -318,6 +324,9 @@ type engineSettings struct {
 	Delivery          string               `json:"delivery"`
 	ReadyState        string               `json:"ready_state"`
 	Filter            string               `json:"filter"`
+	// TargetFilters are the targets with their own filter override, which
+	// replaces Filter and AllIssues for them.
+	TargetFilters     map[string]string    `json:"-"`
 	AllIssues         bool                 `json:"all_issues"`
 	Approval          clidefs.ApprovalMode `json:"approval"`
 	Webhook           config.ProjectsWebhookConfig
@@ -367,6 +376,7 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		Delivery:          cfg.EffectiveDelivery(),
 		ReadyState:        strings.TrimSpace(cfg.ReadyState),
 		Filter:            cfg.EffectiveFilter(),
+		TargetFilters:     m.targetFiltersLocked(targets),
 		AllIssues:         cfg.AllIssues,
 		Approval:          cfg.EffectiveApprovalMode(m.generalApprovalLocked()),
 		Concurrency:       cfg.EffectiveConcurrency(),
@@ -405,6 +415,52 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		s.UnblockInterval = interval
 	}
 	return s, nil
+}
+
+// targetFiltersLocked maps each of targets with a filter override to it: a
+// runtime watch's override, else the saved project's.
+func (m *Manager) targetFiltersLocked(targets []string) map[string]string {
+	saved := config.AgentProjectsConfig(m.list).Filters()
+	filters := map[string]string{}
+	for _, target := range targets {
+		if filter := saved[target]; filter != "" {
+			filters[target] = filter
+		}
+		for _, watch := range m.watches {
+			if filter := config.JoinFilter(watch.Filters[target]); filter != "" && slices.Contains(watch.Targets, target) {
+				filters[target] = filter
+			}
+		}
+	}
+	return filters
+}
+
+// SetWatchFilter sets or, with an empty filter, clears the filter override
+// of target's runtime watch. It reports whether target has a runtime watch.
+func (m *Manager) SetWatchFilter(target string, filter []string) (bool, error) {
+	m.mu.Lock()
+	found := false
+	for i := range m.watches {
+		if !slices.Contains(m.watches[i].Targets, target) {
+			continue
+		}
+		found = true
+		filters := maps.Clone(m.watches[i].Filters)
+		if filters == nil {
+			filters = map[string][]string{}
+		}
+		if config.JoinFilter(filter) == "" {
+			delete(filters, target)
+		} else {
+			filters[target] = slices.Clone(filter)
+		}
+		m.watches[i].Filters = filters
+	}
+	m.mu.Unlock()
+	if !found {
+		return false, nil
+	}
+	return true, m.refresh()
 }
 
 // jobSpecsLocked resolves each target's job specs, in fallback order, from
@@ -638,6 +694,7 @@ func (m *Manager) applyLive(run *engineRun, s engineSettings) error {
 	if len(s.AllowedCommenters) > 0 {
 		update.AllowedCommenters = &s.AllowedCommenters
 	}
+	run.filters.Set(s.TargetFilters)
 	if _, err := run.engine.ApplySettings(ctx, update); err != nil {
 		m.logf("projects settings not applied: %v", err)
 		return err
@@ -665,7 +722,7 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	run := &engineRun{settings: s, cancel: cancel, done: make(chan struct{})}
+	run := &engineRun{settings: s, cancel: cancel, done: make(chan struct{}), filters: core.NewFilterOverrides(s.TargetFilters)}
 	fail := func(err error) (*engineRun, error) {
 		cancel()
 		for _, cleanup := range run.cleanup {
@@ -673,7 +730,7 @@ func (m *Manager) startRun(s engineSettings) (*engineRun, error) {
 		}
 		return nil, err
 	}
-	gh := GHCLI{Binary: "gh", ReadyState: s.ReadyState, Filter: s.Filter, AllIssues: s.AllIssues, publicRepoCache: &sync.Map{}, selfLoginCache: &sync.Map{}, runCommand: m.ghRunCommand}
+	gh := GHCLI{Binary: "gh", ReadyState: s.ReadyState, Filter: s.Filter, AllIssues: s.AllIssues, FilterOverrides: run.filters, publicRepoCache: &sync.Map{}, selfLoginCache: &sync.Map{}, runCommand: m.ghRunCommand}
 	allowed := s.AllowedCommenters
 	if len(allowed) == 0 {
 		login, err := gh.resolveSelfLogin(ctx)
