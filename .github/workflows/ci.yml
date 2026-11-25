@@ -103,8 +103,21 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      # Linux also runs the race detector so data races fail CI (#632).
-      - run: go test ${{ matrix.os == 'ubuntu-latest' && '-race' || '' }} ./...
+      # Linux also runs the race detector so data races fail CI (#632), and
+      # records statement coverage in the same run so it costs no extra test
+      # pass (#1217).
+      - run: go test ${{ matrix.os == 'ubuntu-latest' && '-race -coverprofile=coverage.out' || '' }} ./...
+      # Writes the total and per-package coverage to the job summary.
+      - name: Report Go coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: node scripts/go-coverage.mjs coverage.out coverage.md
+      - uses: actions/upload-artifact@v7
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: go-coverage
+          path: |
+            coverage.out
+            coverage.md
 
   transcription-e2e:
     name: "Test: Transcription E2E"
