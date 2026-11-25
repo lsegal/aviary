@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"path/filepath"
@@ -20,6 +21,9 @@ type fakeMentionSource struct {
 	reviews  map[string][]RecentComment
 	closing  map[int][]int
 	scans    int
+	// listErr and closingErr fail RecentComments and ClosingIssues.
+	listErr    error
+	closingErr error
 }
 
 func newFakeMentionSource() *fakeMentionSource {
@@ -42,6 +46,9 @@ func (f *fakeMentionSource) RecentComments(_ context.Context, repo string, _ tim
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.scans++
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	return slices.Clone(f.comments[repo]), nil
 }
 
@@ -60,6 +67,9 @@ func (f *fakeMentionSource) RecentReviewComments(_ context.Context, repo string,
 func (f *fakeMentionSource) ClosingIssues(_ context.Context, _ string, number int) ([]int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.closingErr != nil {
+		return nil, f.closingErr
+	}
 	return f.closing[number], nil
 }
 
@@ -781,5 +791,67 @@ func TestMentionPromptLinksTheComment(t *testing.T) {
 		if got := mentionPrompt(issue, test.comment); got != want {
 			t.Errorf("mentionPrompt(%+v) = %q, want %q", test.comment, got, want)
 		}
+	}
+}
+
+// A scan that cannot list comments, verify a mention, or read which issues a
+// pull request closes logs why and acts on the mention on a later scan.
+func TestScanRetriesMentionsItCouldNotVerify(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		number int
+		fail   func(*fakeMentionSource, *fakeCommentClient)
+		heal   func(*fakeMentionSource, *fakeCommentClient)
+		want   string
+		queued string
+	}{
+		{
+			"listing", 7,
+			func(m *fakeMentionSource, _ *fakeCommentClient) { m.listErr = errors.New("search down") },
+			func(m *fakeMentionSource, _ *fakeCommentClient) { m.listErr = nil },
+			"o/r failed to scan recent comments for direct mentions: search down", "o/r#7",
+		},
+		{
+			"verifying", 7,
+			func(_ *fakeMentionSource, c *fakeCommentClient) { c.listErr = errors.New("thread down") },
+			func(_ *fakeMentionSource, c *fakeCommentClient) { c.listErr = nil },
+			"o/r#7 failed to verify direct mention of instance SELF: thread down", "o/r#7",
+		},
+		{
+			"closing issues", 9,
+			func(m *fakeMentionSource, _ *fakeCommentClient) { m.closingErr = errors.New("graphql down") },
+			func(m *fakeMentionSource, _ *fakeCommentClient) { m.closingErr = nil },
+			"o/r#9 failed to read which issues it closes: graphql down", "o/r#7",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			start := time.Now()
+			mentions := newFakeMentionSource()
+			mentions.closing[9] = []int{7}
+			comments := newFakeCommentClient()
+			var out bytes.Buffer
+			w := &Engine{Identity: "SELF", AllowedCommenters: []string{"lsegal"}, Mentions: mentions, Comments: comments, Out: &out}
+			scan := newMentionScan(start)
+			queue := map[string]bool{}
+			scanned := func() {
+				w.scanDirectMentions(context.Background(), scan, []string{"o/r"}, map[string]bool{"o/r#7": true}, queue)
+			}
+			mention := RecentComment{ID: 1, Kind: ConversationComment, Number: c.number, Body: "@/aviary:SELF please look", Author: "lsegal", CreatedAt: start.Add(time.Second), UpdatedAt: start.Add(time.Second)}
+			mentions.add("o/r", mention)
+			comments.inject("o/r", c.number, Comment{Body: mention.Body, Author: "lsegal", CreatedAt: mention.CreatedAt})
+			c.fail(mentions, comments)
+			scanned()
+			if len(queue) != 0 {
+				t.Fatalf("queue = %v after a failed scan", queue)
+			}
+			if !strings.Contains(out.String(), c.want) {
+				t.Fatalf("log = %q, want %q", out.String(), c.want)
+			}
+			c.heal(mentions, comments)
+			scanned()
+			if !queue[c.queued] || len(queue) != 1 {
+				t.Fatalf("queue = %v, want %s once the scan recovers", queue, c.queued)
+			}
+		})
 	}
 }
