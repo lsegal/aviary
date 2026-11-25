@@ -189,7 +189,7 @@ test("Delete confirms with the agent's dependents before deleting", async ({
 
 	await row.getByTestId("settings-agent-menu").click();
 	await page.getByTestId("settings-agent-delete").click();
-	await page.getByTestId("delete-agent-confirm").click();
+	await page.getByTestId("delete-agent-dialog-confirm").click();
 	await expect(dialog).toHaveCount(0);
 	await expect(
 		page.getByTestId("settings-agent-row").getByTestId("settings-agent-name"),

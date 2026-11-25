@@ -173,73 +173,30 @@
 		</div>
 	</AppLayout>
 
-	<!-- Remove agent confirmation dialog -->
-	<AlertDialogRoot :open="removeAgentOpen" @update:open="(v) => { if (!v) removeAgentOpen = false }">
-		<AlertDialogPortal>
-			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
-			<AlertDialogContent
-				class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
-				<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
-					Remove agent?
-				</AlertDialogTitle>
-				<AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-					This will remove
-					<span
-						class="font-medium text-gray-900 dark:text-white">{{ removeAgentTarget !== null ? (draft?.agents[removeAgentTarget]?.name || 'this agent') : '' }}</span>
-					from the configuration. This cannot be undone.
-				</AlertDialogDescription>
-				<div ref="removeAgentBtns" class="mt-6 flex justify-end gap-3">
-					<AlertDialogCancel
-						class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
-						Cancel
-					</AlertDialogCancel>
-					<AlertDialogAction
-						class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
-						@click="confirmRemoveAgent">
-						Remove
-					</AlertDialogAction>
-				</div>
-			</AlertDialogContent>
-		</AlertDialogPortal>
-	</AlertDialogRoot>
+	<ConfirmDialog v-model:open="removeAgentOpen" title="Remove agent?" :action="confirmRemoveAgent"
+		confirm-label="Remove" test-id="remove-agent-dialog">
+		<p>
+			This will remove
+			<span
+				class="font-medium text-gray-900 dark:text-white">{{ removeAgentTarget !== null ? (draft?.agents[removeAgentTarget]?.name || 'this agent') : '' }}</span>
+			from the configuration. This cannot be undone.
+		</p>
+	</ConfirmDialog>
 
-	<!-- Remove session confirmation dialog -->
-	<AlertDialogRoot :open="removeTargetOpen" @update:open="(v) => { if (!v) removeTargetOpen = false }">
-		<AlertDialogPortal>
-			<AlertDialogOverlay class="fixed inset-0 z-50 bg-black/50" />
-			<AlertDialogContent
-				class="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
-				<AlertDialogTitle class="text-base font-bold text-gray-900 dark:text-white">
-					<template v-if="removeKind === 'clear'">
-						Clear <span class="break-all">{{ removeTarget ? chatDisplayName(removeTarget) : '' }}</span>?
-					</template>
-					<template v-else>Remove session?</template>
-				</AlertDialogTitle>
-				<AlertDialogDescription class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-					<template v-if="removeKind === 'clear'">
-						This removes all messages in this chat. The chat itself stays. This cannot be undone.
-					</template>
-					<template v-else>
-						This will permanently delete
-						<span
-							class="break-all font-medium text-gray-900 dark:text-white">{{ removeTarget ? chatDisplayName(removeTarget) : '' }}</span>
-						and all its messages. This cannot be undone.
-					</template>
-				</AlertDialogDescription>
-				<div ref="removeSessionBtns" class="mt-6 flex justify-end gap-3">
-					<AlertDialogCancel
-						class="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
-						Cancel
-					</AlertDialogCancel>
-					<AlertDialogAction
-						class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
-						@click="confirmRemoveSession">
-						{{ removeKind === 'clear' ? 'Clear' : 'Remove' }}
-					</AlertDialogAction>
-				</div>
-			</AlertDialogContent>
-		</AlertDialogPortal>
-	</AlertDialogRoot>
+	<ConfirmDialog v-model:open="removeTargetOpen"
+		:title="removeKind === 'clear' ? `Clear ${removeTarget ? chatDisplayName(removeTarget) : ''}?` : 'Remove session?'"
+		:action="confirmRemoveSession" :confirm-label="removeKind === 'clear' ? 'Clear' : 'Remove'"
+		:busy-label="removeKind === 'clear' ? 'Clearing…' : 'Removing…'" test-id="remove-session-dialog">
+		<p v-if="removeKind === 'clear'">
+			This removes all messages in this chat. The chat itself stays. This cannot be undone.
+		</p>
+		<p v-else>
+			This will permanently delete
+			<span
+				class="break-all font-medium text-gray-900 dark:text-white">{{ removeTarget ? chatDisplayName(removeTarget) : '' }}</span>
+			and all its messages. This cannot be undone.
+		</p>
+	</ConfirmDialog>
 
 	<Teleport to="body">
 		<div
@@ -325,16 +282,6 @@ import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowUturnLeftIcon from "@heroicons/vue/24/outline/ArrowUturnLeftIcon";
 import CheckCircleIcon from "@heroicons/vue/24/outline/CheckCircleIcon";
 import PlusIcon from "@heroicons/vue/24/outline/PlusIcon";
-import {
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogOverlay,
-	AlertDialogPortal,
-	AlertDialogRoot,
-	AlertDialogTitle,
-} from "radix-vue";
 import {
 	computed,
 	nextTick,
@@ -1298,15 +1245,6 @@ function askRemoveSession(s: SessionRow) {
 	removeTarget.value = s;
 	removeTargetOpen.value = true;
 }
-const removeSessionBtns = ref<HTMLElement>();
-watch(removeTargetOpen, (v) => {
-	if (v)
-		setTimeout(() => {
-			const btns =
-				removeSessionBtns.value?.querySelectorAll<HTMLElement>("button");
-			btns?.[btns.length - 1]?.focus();
-		});
-});
 
 const {
 	oauthBusy,
@@ -2354,15 +2292,6 @@ function addAgent() {
 
 const removeAgentTarget = ref<number | null>(null);
 const removeAgentOpen = ref(false);
-const removeAgentBtns = ref<HTMLElement>();
-watch(removeAgentOpen, (v) => {
-	if (v)
-		setTimeout(() => {
-			const btns =
-				removeAgentBtns.value?.querySelectorAll<HTMLElement>("button");
-			btns?.[btns.length - 1]?.focus();
-		});
-});
 
 function removeAgent(index: number) {
 	removeAgentTarget.value = index;
@@ -2373,7 +2302,6 @@ function confirmRemoveAgent() {
 	const index = removeAgentTarget.value;
 	if (index === null) return;
 	removeAgentTarget.value = null;
-	removeAgentOpen.value = false;
 	draft.value.agents.splice(index, 1);
 	if (!draft.value.agents.length) {
 		void router.replace("/agents");
@@ -3353,22 +3281,16 @@ async function stopSession(sessionID: string) {
 
 async function confirmRemoveSession() {
 	const sess = removeTarget.value;
-	removeTarget.value = null;
-	removeTargetOpen.value = false;
 	if (!sess) return;
-	try {
-		if (removeKind.value === "clear") {
-			await chatSessions.clear(sessionAgent.value, sess.id);
-		} else {
-			await callTool("session_remove", {
-				agent: sessionAgent.value,
-				session_id: sess.id,
-			});
-		}
-		await loadSessions();
-	} catch (e) {
-		errorMessage.value = e instanceof Error ? e.message : String(e);
+	if (removeKind.value === "clear") {
+		await chatSessions.clear(sessionAgent.value, sess.id);
+	} else {
+		await callTool("session_remove", {
+			agent: sessionAgent.value,
+			session_id: sess.id,
+		});
 	}
+	await loadSessions();
 }
 
 function formatDate(value: string): string {
