@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"regexp"
@@ -19,15 +20,27 @@ import (
 // watchToolCaller calls an Aviary MCP tool in-process and returns its text result.
 type watchToolCaller func(ctx context.Context, name string, args map[string]any) (string, error)
 
+// watchTUIInput and watchTUIOutput are the terminal the TUI reads keys from
+// and draws on: a nil input is the one Bubble Tea picks, standard input or
+// the controlling TTY. Tests replace them.
+var (
+	watchTUIInput  io.Reader
+	watchTUIOutput io.Writer = os.Stdout
+)
+
 // runWatchTUI runs the full-screen watch TUI until the user quits (q / Ctrl+C) or ctx is cancelled. stream runs the prompt chat's turns; title is a short header such as the watched targets; webURL is the session's web UI URL or "" when it is off.
 func runWatchTUI(ctx context.Context, call watchToolCaller, stream watchStreamCaller, title, webURL string) error {
 	model := newWatchModel(ctx, call, title, webURL)
 	model.stream = stream
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithContext(ctx))
+	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithContext(ctx), tea.WithOutput(watchTUIOutput)}
+	if watchTUIInput != nil {
+		opts = append(opts, tea.WithInput(watchTUIInput))
+	}
+	p := tea.NewProgram(model, opts...)
 	// Ask the terminal to tell Shift+Enter from Enter, so the prompt chat
 	// can add a line with it, and restore its default when the TUI ends.
-	_, _ = fmt.Fprint(os.Stdout, watchModifyOtherKeysOn)
-	defer func() { _, _ = fmt.Fprint(os.Stdout, watchModifyOtherKeysOff) }()
+	_, _ = fmt.Fprint(watchTUIOutput, watchModifyOtherKeysOn)
+	defer func() { _, _ = fmt.Fprint(watchTUIOutput, watchModifyOtherKeysOff) }()
 	_, err := p.Run()
 	if err != nil && ctx.Err() != nil && errors.Is(err, tea.ErrProgramKilled) {
 		// A cancelled session ends the TUI the way quitting does.
