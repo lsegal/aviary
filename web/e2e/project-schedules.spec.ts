@@ -375,7 +375,7 @@ test("board lists scheduled tasks as their own boxes with run details", async ({
 	await page.goto("/system/watches/lsegal%2Faviary");
 
 	const boxes = page.getByTestId("scheduled-card");
-	// Only this project's scheduled tasks, sorted by name.
+	// Only this project's scheduled tasks, by their next run.
 	await expect(boxes).toHaveCount(2);
 	const nightly = boxes.nth(0);
 	await expect(nightly.getByRole("heading")).toHaveText("nightly-triage");
@@ -443,6 +443,76 @@ test("board lists scheduled tasks as their own boxes with run details", async ({
 	await filter.getByRole("button", { name: /^Running/ }).click();
 	await filter.getByRole("button", { name: /^Done/ }).click();
 	await expect(boxes).toHaveCount(0);
+});
+
+test("scheduled cards sit behind running jobs unless their next run is within five minutes (#1207)", async ({
+	page,
+}) => {
+	const at = (name: string, minutes: number, fields = {}) =>
+		schedule({
+			id: `assistant/${name}`,
+			name,
+			prompt: `Run ${name}.`,
+			enabled: true,
+			every: "1d",
+			next_run: minutesFromNow(minutes),
+			...fields,
+		});
+	const issue = (number: number) => ({
+		...ISSUE_JOB,
+		key: `lsegal/aviary#${number}`,
+		number,
+		title: `Issue ${number}`,
+	});
+	await page.clock.install();
+	await setup(page, {
+		// Listed by name; a running task sorts by its next run, never by when
+		// its run started.
+		tasks: [
+			at("a-two-hours", 120),
+			at("b-running", 50, {
+				history: [
+					{
+						fire_time: minutesFromNow(-1),
+						reason: "schedule",
+						status: "running",
+					},
+				],
+			}),
+			at("c-paused", 1, { enabled: false }),
+			at("d-twenty", 20),
+			at("e-three", 3),
+		],
+		jobs: [issue(11), issue(12)],
+		entries: [],
+	});
+	await page.goto("/system/watches/lsegal%2Faviary");
+
+	const order = page
+		.getByRole("region", { name: "Jobs" })
+		.locator("article h3");
+	await expect(order).toHaveText([
+		"e-three",
+		"#11 Issue 11",
+		"#12 Issue 12",
+		"d-twenty",
+		"b-running",
+		"a-two-hours",
+		"c-paused",
+	]);
+
+	// Sixteen minutes on, the twenty-minute card is due within five minutes
+	// and moves up behind the overdue one, with no refresh of the board.
+	await page.clock.fastForward("16:00");
+	await expect(order).toHaveText([
+		"e-three",
+		"d-twenty",
+		"#11 Issue 11",
+		"#12 Issue 12",
+		"b-running",
+		"a-two-hours",
+		"c-paused",
+	]);
 });
 
 test("scheduled cards are compact: trigger and next run share one line (#875)", async ({
@@ -1213,19 +1283,20 @@ test.describe("the agent board's scheduled items (#1107)", () => {
 
 		const cards = page.getByTestId("scheduled-card");
 		await expect(cards).toHaveCount(3);
+		// By next run: zvid-bench in 30m, nightly-triage in 42m, then paused.
 		await expect(cards.getByRole("heading")).toHaveText([
+			"zvid-bench",
 			"nightly-triage",
 			"weekly-deps",
-			"zvid-bench",
 		]);
 		await expect(cards.getByTestId("scheduled-project")).toHaveText([
-			"lsegal/aviary",
-			"lsegal/aviary",
 			"lsegal/zvidlib",
+			"lsegal/aviary",
+			"lsegal/aviary",
 		]);
-		const nightly = cards.nth(0);
-		const weekly = cards.nth(1);
-		const zvid = cards.nth(2);
+		const zvid = cards.nth(0);
+		const nightly = cards.nth(1);
+		const weekly = cards.nth(2);
 		await expect(zvid.getByTestId("scheduled-project")).toHaveAttribute(
 			"href",
 			"/agents/coder/projects/lsegal%2Fzvidlib",
@@ -1277,9 +1348,9 @@ test.describe("the agent board's scheduled items (#1107)", () => {
 		const boxes = page.getByTestId("kanban-scheduled-card");
 		await expect(boxes).toHaveCount(3);
 		await expect(boxes.getByTestId("kanban-scheduled-project")).toHaveText([
-			"lsegal/aviary",
-			"lsegal/aviary",
 			"lsegal/zvidlib",
+			"lsegal/aviary",
+			"lsegal/aviary",
 		]);
 		await page.getByTestId("kanban-toggle").click();
 
@@ -1970,7 +2041,9 @@ test.describe("one card per scheduled task (#977)", () => {
 // state sits in the status chip, the output toggle in the output's corner,
 // and the footer stays one row (#1157).
 test.describe("a running scheduled card keeps its size (#1157)", () => {
-	const neighbor = (name: string) =>
+	// The neighbors run either side of the release's next run, in 3m, so it
+	// stays the middle card.
+	const neighbor = (name: string, minutes: number) =>
 		schedule({
 			id: `assistant/${name}`,
 			name,
@@ -1979,12 +2052,12 @@ test.describe("a running scheduled card keeps its size (#1157)", () => {
 			trigger_type: "interval",
 			every: "1h",
 			description: "every 1h (Local)",
-			next_run: minutesFromNow(30),
+			next_run: minutesFromNow(minutes),
 		});
 	const TASKS_1157 = [
-		neighbor("aviary-find-dupe-tests"),
+		neighbor("aviary-find-dupe-tests", 2),
 		{ ...RELEASE_TASK, name: "aviary-release", model: "cli/claude/opus" },
-		neighbor("aviary-update-docs"),
+		neighbor("aviary-update-docs", 30),
 	];
 	const RUN = 1795457053;
 	const runningEntry = releaseEntry({
