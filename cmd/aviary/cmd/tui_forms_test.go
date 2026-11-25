@@ -382,7 +382,7 @@ func TestSectionFormView(t *testing.T) {
 	m := newSectionFormModel("Browser Settings", "browser", &cfg, "")
 	view := m.View()
 
-	assert.True(t, strings.HasPrefix(view, "Browser Settings") || strings.Contains(view, "Browser Settings"))
+	assert.Contains(t, view, "Browser Settings")
 	assert.Contains(t, view, strings.Repeat("─", 24))
 	assert.NotContains(t, view, strings.Repeat("─", 73))
 	for _, f := range m.fields {
