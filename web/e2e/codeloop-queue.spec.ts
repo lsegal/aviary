@@ -303,18 +303,40 @@ test("the header's Queue menu offers Fix issue, Safe merge PR and Discuss", asyn
 	]);
 });
 
-test("the header's Queue button shows the sidebar's blue + (#1197)", async ({
+test("the header's Queue button looks like its neutral icon neighbors (#1305)", async ({
 	page,
 }) => {
 	await setup(page);
-	await page.goto(BOARD);
-	const plus = page.getByTestId("queue-menu").getByTestId("queue-menu-plus");
-	const blue = (el: Element) => getComputedStyle(el).backgroundColor;
-	await expect
-		.poll(() => plus.evaluate(blue))
-		.toBe(await page.getByTestId("sidebar-add-project").evaluate(blue));
-	await expect(plus).toHaveCSS("color", "rgb(255, 255, 255)");
-	await expect(page.getByTestId("queue-menu")).toHaveText("Queue");
+	const queue = page.getByTestId("queue-menu");
+	const settings = page.getByTestId("project-settings-link");
+	const look = (el: Element) => {
+		const s = getComputedStyle(el);
+		const r = el.getBoundingClientRect();
+		return {
+			background: s.backgroundColor,
+			border: s.borderColor,
+			borderWidth: s.borderWidth,
+			radius: s.borderRadius,
+			color: s.color,
+			padding: s.padding,
+			width: r.width,
+			height: r.height,
+		};
+	};
+	for (const colorScheme of ["light", "dark"] as const) {
+		await page.emulateMedia({ colorScheme });
+		await page.goto(BOARD);
+		await expect(queue).toHaveAttribute("aria-label", "Queue…");
+		await expect(queue).toHaveAttribute("title", "Queue…");
+		await expect(queue).toHaveText("");
+		await expect
+			.poll(() => queue.evaluate(look))
+			.toEqual(await settings.evaluate(look));
+		await settings.hover();
+		const hovered = await settings.evaluate(look);
+		await queue.hover();
+		await expect.poll(() => queue.evaluate(look)).toEqual(hovered);
+	}
 });
 
 test("the safe-merge picker lists open PRs and queues the picked ones in order", async ({
