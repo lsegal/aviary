@@ -3,12 +3,18 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/transcribe"
+)
+
+// depsDetect and depsInstall are seams so tests never shell out to package
+// managers or download a model.
+var (
+	depsDetect  = transcribe.Detect
+	depsInstall = transcribe.Install
 )
 
 var depsCmd = &cobra.Command{
@@ -19,8 +25,8 @@ var depsCmd = &cobra.Command{
 var depsStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show whether whisper-cli, its model, and ffmpeg are installed",
-	RunE: func(_ *cobra.Command, _ []string) error {
-		printDepsStatus(os.Stdout, transcribe.Detect(depsModel()))
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		printDepsStatus(cmd.OutOrStdout(), depsDetect(depsModel()))
 		return nil
 	},
 }
@@ -32,10 +38,11 @@ var depsInstallCmd = &cobra.Command{
 ffmpeg through Homebrew (or winget on Windows), and the configured whisper
 model (default base.en), downloaded to Aviary's deps directory.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		st, err := transcribe.Install(cmd.Context(), depsModel(), func(line string) {
-			_, _ = fmt.Fprintln(os.Stdout, line)
+		out := cmd.OutOrStdout()
+		st, err := depsInstall(cmd.Context(), depsModel(), func(line string) {
+			_, _ = fmt.Fprintln(out, line)
 		})
-		printDepsStatus(os.Stdout, st)
+		printDepsStatus(out, st)
 		return err
 	},
 }
