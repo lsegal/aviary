@@ -39,10 +39,10 @@ func tcSetup(t *testing.T, cfg *config.Config) *Dispatcher {
 // message when the tool fails.
 func tcCall(t *testing.T, d *Dispatcher, tool string, args map[string]any) string {
 	t.Helper()
-	return tcCallCtx(t, context.Background(), d, tool, args)
+	return tcCallCtx(context.Background(), t, d, tool, args)
 }
 
-func tcCallCtx(t *testing.T, ctx context.Context, d *Dispatcher, tool string, args map[string]any) string {
+func tcCallCtx(ctx context.Context, t *testing.T, d *Dispatcher, tool string, args map[string]any) string {
 	t.Helper()
 	out, err := d.CallTool(ctx, tool, args)
 	require.NoError(t, err, tool)
@@ -320,7 +320,7 @@ func TestToolsCoreAgentRunScriptSessions(t *testing.T) {
 	ctx := agent.WithSessionAgentID(context.Background(), "bot")
 	ctx = agent.WithTaskID(ctx, "bot/daily")
 	ctx = agent.WithJobID(ctx, "job_1")
-	out := tcCallCtx(t, ctx, d, "agent_run_script", map[string]any{"script": "print(environment.agent_id)"})
+	out := tcCallCtx(ctx, t, d, "agent_run_script", map[string]any{"script": "print(environment.agent_id)"})
 	assert.Equal(t, "bot", strings.TrimSpace(out))
 
 	sess, err := agent.NewSessionManager().Create("bot")
@@ -884,7 +884,7 @@ func TestToolsCoreScheduleTaskDefaultRoutes(t *testing.T) {
 		return ""
 	}
 	schedule := func(ctx context.Context, name string) {
-		out := tcCallCtx(t, ctx, d, "task_schedule", map[string]any{"agent": "bot", "name": name, "content": "report", "schedule": "0 0 9 * * *", "precompile": false})
+		out := tcCallCtx(ctx, t, d, "task_schedule", map[string]any{"agent": "bot", "name": name, "content": "report", "schedule": "0 0 9 * * *", "precompile": false})
 		require.Contains(t, out, "created", out)
 	}
 

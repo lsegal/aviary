@@ -159,7 +159,7 @@ func (f *baCDP) serveWS(conn *websocket.Conn) {
 		}
 		var params map[string]any
 		_ = json.Unmarshal(msg.Params, &params)
-		ok := true
+		var ok bool
 		switch msg.Method {
 		case "Target.attachToTarget":
 			id, _ := params["targetId"].(string)
