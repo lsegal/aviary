@@ -16,8 +16,8 @@ import (
 )
 
 // TestStatusReadsTheLockUnderXDGStateHome shows skills.sh's lock is read from
-// XDG_STATE_HOME when set, and that a lock that is not JSON leaves the
-// installed copies undated instead of failing the status.
+// XDG_STATE_HOME when set, and that a lock that is not JSON leaves an
+// outdated copy undated instead of failing the status.
 func TestStatusReadsTheLockUnderXDGStateHome(t *testing.T) {
 	m, _, home := newTestManager(t, "v2.0.0", "codex")
 	state := filepath.Join(home, "state")
@@ -27,19 +27,19 @@ func TestStatusReadsTheLockUnderXDGStateHome(t *testing.T) {
 		}
 		return ""
 	}
-	writeSkill(t, filepath.Join(home, ".agents", "skills"), "gh-fix", "fix v2\n")
+	writeSkill(t, filepath.Join(home, ".agents", "skills"), "gh-fix", "fix v1\n")
 	lock := filepath.Join(state, "skills", ".skill-lock.json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(lock), 0o755))
-	require.NoError(t, os.WriteFile(lock, []byte(`{"skills":{"gh-fix":{"source":"lsegal/aviary","ref":"v2.0.0"}}}`), 0o644))
+	require.NoError(t, os.WriteFile(lock, []byte(`{"skills":{"gh-fix":{"source":"lsegal/aviary","ref":"v1.5.0"}}}`), 0o644))
 
 	install := m.Status().Skills[0].Installs[0]
-	assert.Equal(t, "2.0.0", install.Version)
+	assert.Equal(t, "1.5.0", install.Version)
 	assert.Equal(t, Repo, install.Source)
 
 	require.NoError(t, os.WriteFile(lock, []byte("{not json"), 0o644))
 	install = m.Status().Skills[0].Installs[0]
 	assert.True(t, install.Installed)
-	assert.True(t, install.Current, "the copy still matches the bundle")
+	assert.False(t, install.Current)
 	assert.Empty(t, install.Version)
 	assert.Empty(t, install.Source)
 }

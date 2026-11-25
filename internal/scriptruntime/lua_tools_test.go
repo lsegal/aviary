@@ -200,17 +200,17 @@ func TestRunLua_JSONEncodeRejectsUnsupportedValues(t *testing.T) {
 	require.ErrorContains(t, err, "unsupported value: NaN")
 }
 
-func TestRunLua_JSONEncodeSparseTableIsObject(t *testing.T) {
-	got, err := RunLua(context.Background(), `
-		local t = {}
-		t[1] = "a"
-		t[3] = "c"
-		local d = json.decode(json.encode(t))
-		print(d["1"], d["3"])
-		print(json.encode({1.5}))
-	`, Options{})
-	require.NoError(t, err)
-	assert.Equal(t, "a\tc\n{\"1\":1.5}", got)
+func TestRunLua_JSONEncodeRejectsMixedTables(t *testing.T) {
+	// Tables that are not a plain 1..n sequence encode as objects, which
+	// need string keys.
+	for _, script := range []string{
+		`json.encode({"a", k = "v"})`,
+		`json.encode({[0] = "z", "a"})`,
+		`json.encode({[1.5] = "x", "a"})`,
+	} {
+		_, err := RunLua(context.Background(), script, Options{})
+		require.ErrorContains(t, err, "require string keys", script)
+	}
 }
 
 func TestRunLua_OSDateFormats(t *testing.T) {

@@ -2005,7 +2005,7 @@ func TestValidate_DuplicateChannelID(t *testing.T) {
 	cfg := &Config{Agents: []AgentConfig{{Name: "bot", Channels: []ChannelConfig{
 		{Type: "slack", ID: "C1", Name: "one"},
 		{Type: "slack", ID: " C1 ", Name: "two"},
-		{Type: "signal", ID: "C1", Name: "three"},
+		{Type: "discord", ID: "C1", Name: "three"},
 	}}}}
 	issues := Validate(cfg, nil)
 	assert.Len(t, issueMessages(issues, "agents[0].channels[1].id"), 1, "same type and id collide")

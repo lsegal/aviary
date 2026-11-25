@@ -555,18 +555,20 @@ func TestGitHubLogin_PKCEFlow(t *testing.T) {
 		assert.ErrorIs(t, err, context.DeadlineExceeded)
 	})
 
-	t.Run("browser cannot be opened", func(t *testing.T) {
-		withoutBrowser(t)
-		_, err := run(t, context.Background(), "")
-		assert.ErrorContains(t, err, "opening browser for GitHub OAuth")
-	})
-
 	t.Run("callback port in use", func(t *testing.T) {
 		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", GitHubCallbackPort))
 		require.NoError(t, err)
 		defer ln.Close() //nolint:errcheck
 		_, err = run(t, context.Background(), "")
 		assert.ErrorContains(t, err, "starting OAuth callback server on port 1466")
+	})
+
+	t.Run("browser cannot be opened", func(t *testing.T) {
+		// Runs last: GitHubLogin can return before its server starts tracking
+		// the listener, so the callback port may stay bound afterwards.
+		withoutBrowser(t)
+		_, err := run(t, context.Background(), "")
+		assert.ErrorContains(t, err, "opening browser for GitHub OAuth")
 	})
 }
 
