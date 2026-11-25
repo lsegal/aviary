@@ -33,7 +33,7 @@ func (s *manualSource) HydrateIssue(_ context.Context, _ string, issue *Issue) e
 func (s *manualSource) listCalls() int {
 	s.fakeSource.mu.Lock()
 	defer s.fakeSource.mu.Unlock()
-	return s.fakeSource.calls
+	return s.calls
 }
 
 func newManualSource() *manualSource {
