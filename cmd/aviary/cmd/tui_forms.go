@@ -246,22 +246,25 @@ func (m sectionFormModel) View() string {
 	return b.String()
 }
 
-func runServerForm(cfg *config.Config, cfgPath string) error {
-	_, err := tea.NewProgram(newSectionFormModel("Server Settings", "server", cfg, cfgPath), tea.WithAltScreen()).Run()
+// runFormProgram runs a form model as a full-screen program. Tests replace it
+// to exercise the run*Form wrappers without a terminal.
+var runFormProgram = func(m tea.Model) error {
+	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
+}
+
+func runServerForm(cfg *config.Config, cfgPath string) error {
+	return runFormProgram(newSectionFormModel("Server Settings", "server", cfg, cfgPath))
 }
 
 func runGeneralForm(cfg *config.Config, cfgPath string) error {
-	_, err := tea.NewProgram(newSectionFormModel("General Settings", "general", cfg, cfgPath), tea.WithAltScreen()).Run()
-	return err
+	return runFormProgram(newSectionFormModel("General Settings", "general", cfg, cfgPath))
 }
 
 func runBrowserForm(cfg *config.Config, cfgPath string) error {
-	_, err := tea.NewProgram(newSectionFormModel("Browser Settings", "browser", cfg, cfgPath), tea.WithAltScreen()).Run()
-	return err
+	return runFormProgram(newSectionFormModel("Browser Settings", "browser", cfg, cfgPath))
 }
 
 func runSchedulerForm(cfg *config.Config, cfgPath string) error {
-	_, err := tea.NewProgram(newSectionFormModel("Scheduler Settings", "scheduler", cfg, cfgPath), tea.WithAltScreen()).Run()
-	return err
+	return runFormProgram(newSectionFormModel("Scheduler Settings", "scheduler", cfg, cfgPath))
 }
