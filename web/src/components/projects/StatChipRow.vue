@@ -1,8 +1,8 @@
 <template>
-	<!-- One line that scrolls sideways instead of wrapping. The bottom padding
-		keeps the scrollbar off the chips' borders, and a fade on each edge that
-		has more chips past it shows the row continues. -->
-	<section ref="row" class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-1.5 text-xs [scrollbar-width:thin]"
+	<!-- One line that scrolls sideways instead of wrapping. Its scrollbar is
+		hidden (#1209), and a fade on each edge that has more chips past it
+		shows the row continues. -->
+	<section ref="row" class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-1.5 text-xs scrollbar-none"
 		:style="fadeStyle" data-testid="stat-row" @scroll.passive="measure">
 		<component :is="s.filter ? 'button' : 'span'" v-for="s in cards" :key="s.label" :type="s.filter ? 'button' : undefined"
 			class="inline-flex shrink-0 items-baseline gap-1 rounded-full border px-2.5 py-0.5"

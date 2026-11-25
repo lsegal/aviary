@@ -20,7 +20,7 @@
 				</span>
 		</template>
 		<template v-if="(project || aggregate) && !jobOpen && status" #header>
-			<p class="truncate">
+			<p class="break-words sm:truncate" data-testid="board-subtitle">
 				<template v-if="status.issueFilter">Issues matching <code data-testid="issue-filter" class="font-mono">{{ status.issueFilter }}</code></template>
 				<template v-else>All open issues</template>
 				<template v-if="status.delivery"> · {{ status.delivery }}</template>

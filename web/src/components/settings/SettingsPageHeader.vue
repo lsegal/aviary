@@ -45,13 +45,15 @@
 					</slot>
 				</span>
 				<div class="min-w-0 flex-1">
-					<div class="flex min-w-0 items-center gap-2">
-						<h2 data-testid="settings-title" class="min-w-0 truncate text-lg font-bold text-gray-900 dark:text-white">
+					<!-- The status chips wrap below the title rather than squeeze it
+						(#1209); only a title wider than the row truncates. -->
+					<div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+						<h2 data-testid="settings-title" class="max-w-full min-w-0 truncate text-lg font-bold text-gray-900 dark:text-white">
 							<a v-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
 								class="hover:underline" :title="titleLink.title">{{ title }}</a>
 							<template v-else>{{ title }}</template>
 						</h2>
-						<div id="page-header-status" data-testid="settings-status" class="flex shrink-0 items-center gap-2">
+						<div id="page-header-status" data-testid="settings-status" class="flex min-w-0 max-w-full flex-wrap items-center gap-2 empty:hidden">
 							<slot name="status" />
 						</div>
 					</div>

@@ -75,7 +75,7 @@
 
     <div v-if="mobileChildren.length"
       class="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-800 dark:bg-gray-950 lg:hidden">
-      <nav data-testid="mobile-sub-nav" class="group/row relative flex gap-2 overflow-x-auto pb-1" :class="mobileAdd ? 'pr-9' : ''">
+      <nav data-testid="mobile-sub-nav" class="group/row scrollbar-none relative flex gap-2 overflow-x-auto pb-1" :class="mobileAdd ? 'pr-9' : ''">
         <router-link v-for="child in mobileChildren" :key="child.key" :to="child.to"
           :title="child.paused ? 'Paused' : child.disabled ? 'Disabled' : undefined" :data-paused="child.paused || undefined"
           :data-disabled="child.disabled || undefined"
