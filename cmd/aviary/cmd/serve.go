@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -33,6 +32,27 @@ var (
 // startServer runs the server in the foreground; tests replace it.
 var startServer = runStart
 
+// startBackground starts the detached server process and returns its PID;
+// tests replace it.
+var startBackground = func(c *exec.Cmd) (int, error) {
+	if err := c.Start(); err != nil {
+		return 0, err
+	}
+	return c.Process.Pid, nil
+}
+
+// aviaryServer is the part of *server.Server that runStart drives.
+type aviaryServer interface {
+	ListenAndServe(ctx context.Context) error
+	ReexecPath() string
+}
+
+// newServer builds the server runStart serves; tests replace it.
+var newServer = func(cfg *config.Config, tok string) aviaryServer { return server.New(cfg, tok) }
+
+// reexec replaces the process with a new server binary; tests replace it.
+var reexec = update.Reexec
+
 var serveCmd = &cobra.Command{
 	Use:   "serve [start|stop]",
 	Short: "Manage the Aviary server (start/stop)",
@@ -43,75 +63,7 @@ var serveCmd = &cobra.Command{
 			// Errors from here on are runtime failures, not usage errors.
 			cmd.SilenceUsage = true
 			if serveDaemon {
-				// Launch background process and exit.
-				exe, err := os.Executable()
-				if err != nil {
-					return fmt.Errorf("resolving executable: %w", err)
-				}
-
-				// Determine config dir so the background process writes its PID
-				// next to the config (not in /tmp). Use resolveConfigPath to
-				// resolve any explicit --config flag; fall back to defaults.
-				resolvedCfgPath, rerr := resolveConfigPath(cfgFile)
-				cfgDir := ""
-				if rerr == nil {
-					cfgDir = filepath.Dir(resolvedCfgPath)
-					_ = os.MkdirAll(cfgDir, 0o750)
-				}
-
-				// Build args to run the server in the background without -d.
-				procArgs := []string{exe, "serve", "start"}
-
-				// Prepare proc attributes: detach from controlling terminal.
-				files := []*os.File{nil, nil, nil}
-				null, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
-				if err == nil {
-					files = []*os.File{null, null, null}
-				}
-				// Prepare proc attributes: detach from controlling terminal.
-				env := os.Environ()
-				if cfgDir != "" {
-					env = append(env, "AVIARY_CONFIG_BASE_DIR="+cfgDir)
-				}
-				attr := &os.ProcAttr{
-					Dir: func() string {
-						if cfgDir != "" {
-							return cfgDir
-						}
-						return "."
-					}(),
-					Env:   env,
-					Files: files,
-				}
-				if runtime.GOOS == "windows" {
-					// On Windows, use Start with creation flags via exec.Command
-					cmd := exec.Command(exe, "serve", "start")
-					if cfgDir != "" {
-						cmd.Env = append(os.Environ(), "AVIARY_CONFIG_BASE_DIR="+cfgDir)
-					} else {
-						cmd.Env = os.Environ()
-					}
-					cmd.Dir = func() string {
-						if cfgDir != "" {
-							return cfgDir
-						}
-						return "."
-					}()
-					cmd.Stdout = null
-					cmd.Stderr = null
-					if err := cmd.Start(); err != nil {
-						return fmt.Errorf("starting background process: %w", err)
-					}
-					fmt.Printf("Aviary %s started in background (PID %d)\n", buildinfo.Version, cmd.Process.Pid)
-					return nil
-				}
-
-				proc, err := os.StartProcess(exe, procArgs, attr)
-				if err != nil {
-					return fmt.Errorf("starting background process: %w", err)
-				}
-				fmt.Printf("Aviary %s started in background (PID %d)\n", buildinfo.Version, proc.Pid)
-				return nil
+				return startDaemon()
 			}
 			return startServer(nil, nil)
 		}
@@ -134,6 +86,36 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 	// Also add `serve stop` as an explicit subcommand for help clarity.
 	serveCmd.AddCommand(stopCmd)
+}
+
+// startDaemon launches 'aviary serve start' as a background process
+// detached from the terminal, running in the config's directory.
+func startDaemon() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolving executable: %w", err)
+	}
+	c := exec.Command(exe, "serve", "start")
+	c.Env = os.Environ()
+	c.Dir = "."
+	// Run next to the config so the background process writes its PID there
+	// (not in /tmp), honoring an explicit --config flag.
+	if resolvedCfgPath, err := resolveConfigPath(cfgFile); err == nil {
+		cfgDir := filepath.Dir(resolvedCfgPath)
+		_ = os.MkdirAll(cfgDir, 0o750)
+		c.Env = append(c.Env, "AVIARY_CONFIG_BASE_DIR="+cfgDir)
+		c.Dir = cfgDir
+	}
+	if null, err := os.OpenFile(os.DevNull, os.O_RDWR, 0); err == nil {
+		defer null.Close() //nolint:errcheck
+		c.Stdin, c.Stdout, c.Stderr = null, null, null
+	}
+	pid, err := startBackground(c)
+	if err != nil {
+		return fmt.Errorf("starting background process: %w", err)
+	}
+	fmt.Printf("Aviary %s started in background (PID %d)\n", buildinfo.Version, pid)
+	return nil
 }
 
 func resolveConfigPath(path string) (string, error) {
@@ -266,19 +248,31 @@ func runStart(_ *cobra.Command, _ []string) error {
 	// Handle SIGINT/SIGTERM for graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
 	go func() {
-		<-sigCh
-		_, _ = fmt.Fprintln(os.Stdout, "\nShutting down...")
-		cancel()
+		select {
+		case <-sigCh:
+			_, _ = fmt.Fprintln(os.Stdout, "\nShutting down...")
+			cancel()
+		case <-ctx.Done():
+		}
 	}()
 
 	if traceStartup {
-		go printStartupTrace(ctx)
+		traced := make(chan struct{})
+		go func() {
+			defer close(traced)
+			printStartupTrace(ctx)
+		}()
+		defer func() {
+			cancel()
+			<-traced
+		}()
 	}
 
 	// Start server; restart when config changes require it.
 	for {
-		srv := server.New(cfg, tok)
+		srv := newServer(cfg, tok)
 		err := srv.ListenAndServe(ctx)
 		if err == nil || ctx.Err() != nil {
 			return shutdownErr(err)
@@ -292,7 +286,7 @@ func runStart(_ *cobra.Command, _ []string) error {
 				return nil
 			}
 			slog.Info("server: restarting")
-			return update.Reexec(srv.ReexecPath(), os.Args[1:], os.Environ())
+			return reexec(srv.ReexecPath(), os.Args[1:], os.Environ())
 		}
 		if errors.Is(err, server.ErrRestartRequired) {
 			trace = startup.Begin()
