@@ -133,6 +133,8 @@ export function dropProject(target: string) {
 	pending.value = pending.value.filter((n) => n !== target);
 	if (!removed.value.includes(target))
 		removed.value = [...removed.value, target];
+	for (const agent of useSettingsStore().config?.agents ?? [])
+		removeOwner(target, agent.name);
 }
 
 // The sidebar files each project under the agent that owns it in the
@@ -150,7 +152,7 @@ function addOwner(target: string, agent: string): boolean {
 function removeOwner(target: string, agent: string) {
 	const settings = useSettingsStore();
 	const entry = settings.config?.agents.find((a) => a.name === agent);
-	if (entry?.projects)
+	if (entry?.projects?.some((p) => p.target === target))
 		entry.projects = entry.projects.filter((p) => p.target !== target);
 }
 
