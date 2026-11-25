@@ -24,6 +24,19 @@ var authCmd = &cobra.Command{
 var authLoginCode string
 var authLoginPat string
 
+// Login dependencies, swapped out in tests so they never reach the network,
+// a browser, or the real console.
+var (
+	generatePKCE                = authpkg.GeneratePKCE
+	openBrowser                 = authpkg.OpenBrowser
+	anthropicExchange           = authpkg.AnthropicExchange
+	geminiLogin                 = authpkg.GeminiLogin
+	openAILogin                 = authpkg.OpenAILogin
+	copilotLogin                = authpkg.CopilotLogin
+	openConsoleDevice           = openConsole
+	consoleStdin      io.Reader = os.Stdin
+)
+
 var authLoginCmd = &cobra.Command{
 	Use:   "login <provider>",
 	Short: "Authorize with a provider. Providers: anthropic, openai, gemini, github-copilot",
@@ -48,7 +61,7 @@ var authLoginCmd = &cobra.Command{
 }
 
 func loginAnthropic(st authpkg.Store, presetCode string) error {
-	pkce, err := authpkg.GeneratePKCE()
+	pkce, err := generatePKCE()
 	if err != nil {
 		return fmt.Errorf("generating PKCE: %w", err)
 	}
@@ -59,7 +72,7 @@ func loginAnthropic(st authpkg.Store, presetCode string) error {
 	fmt.Println("  ", authURL)
 	fmt.Println()
 
-	if err := authpkg.OpenBrowser(authURL); err != nil {
+	if err := openBrowser(authURL); err != nil {
 		fmt.Println("(Could not open browser automatically; copy the URL above.)")
 	}
 
@@ -79,7 +92,7 @@ func loginAnthropic(st authpkg.Store, presetCode string) error {
 	}
 
 	fmt.Println("Exchanging code for tokens...")
-	token, err := authpkg.AnthropicExchange(context.Background(), code, pkce.Verifier)
+	token, err := anthropicExchange(context.Background(), code, pkce.Verifier)
 	if err != nil {
 		return fmt.Errorf("completing Anthropic login: %w", err)
 	}
@@ -100,7 +113,7 @@ func loginGemini(st authpkg.Store) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 
-	token, err := authpkg.GeminiLogin(ctx)
+	token, err := geminiLogin(ctx)
 	if err != nil {
 		return fmt.Errorf("gemini login: %w", err)
 	}
@@ -120,7 +133,7 @@ func loginOpenAI(st authpkg.Store) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
-	token, err := authpkg.OpenAILogin(ctx)
+	token, err := openAILogin(ctx)
 	if err != nil {
 		return fmt.Errorf("OpenAI login: %w", err)
 	}
@@ -227,7 +240,7 @@ func loginGitHubCopilot(st authpkg.Store, patFlag string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	token, err := authpkg.CopilotLogin(ctx)
+	token, err := copilotLogin(ctx)
 	if err != nil {
 		return fmt.Errorf("github copilot login: %w", err)
 	}
@@ -244,7 +257,7 @@ func loginGitHubCopilot(st authpkg.Store, patFlag string) error {
 // PowerShell where os.Stdin may not behave as a tty.
 func readConsoleLine() (string, error) {
 	// Try the console device first so pasting works on Windows PowerShell.
-	cons, err := openConsole()
+	cons, err := openConsoleDevice()
 	if err == nil {
 		defer cons.Close() //nolint:errcheck
 		line, readErr := bufio.NewReader(cons).ReadString('\n')
@@ -254,7 +267,7 @@ func readConsoleLine() (string, error) {
 		return line, nil
 	}
 	// Fallback to os.Stdin.
-	line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
+	line, readErr := bufio.NewReader(consoleStdin).ReadString('\n')
 	if readErr != nil && readErr != io.EOF {
 		return "", readErr
 	}
