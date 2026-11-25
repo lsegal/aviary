@@ -11,9 +11,7 @@ import (
 // spells whole hours as `1h0m0s`, and the web UI used to divide the same
 // nanosecond value into whole seconds (`3600s`), so one run read differently
 // depending on which status bar was open. Zero components are
-// dropped so short intervals stay as short as they read (`20s`, not `0h0m20s`),
-// and the web dashboard's formatInterval in webui/src/dashboard.js mirrors this
-// exactly; the two are covered by the same table of cases on each side.
+// dropped so short intervals stay as short as they read (`20s`, not `0h0m20s`).
 func FormatInterval(d time.Duration) string {
 	d = d.Round(time.Millisecond)
 	if d <= 0 {
