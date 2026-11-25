@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/skills"
 )
 
 func TestConfigureSkillsSummary(t *testing.T) {
@@ -414,6 +415,20 @@ func TestRunSkillMgr(t *testing.T) {
 	useHeadlessSkillMgr(t, iotest.OneByteReader(strings.NewReader("jkq")))
 	require.NoError(t, runSkillMgr(m.cfg, cfgPath))
 	assert.NoFileExists(t, cfgPath)
+}
+
+func TestRunSkillMgrListsAndTogglesInstalledSkill(t *testing.T) {
+	m, cfgPath := newSkillMgrTestModel(t, nil)
+	installed, err := skills.ListInstalled(m.cfg)
+	require.NoError(t, err)
+	require.NotEmpty(t, installed)
+	first := installed[0]
+	useHeadlessSkillMgr(t, iotest.OneByteReader(strings.NewReader("\r\r\x03")))
+	require.NoError(t, runSkillMgr(m.cfg, cfgPath))
+
+	loaded, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	assert.Equal(t, !first.Enabled, loaded.Skills[first.Name].Enabled)
 }
 
 func TestRunSkillMgrProgramError(t *testing.T) {
