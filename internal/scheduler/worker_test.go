@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 // newAlphaPool returns a worker pool whose manager runs agent "alpha", which
@@ -42,10 +44,19 @@ func TestWorkerPool_RunClaimsAndCompletesQueuedJobs(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		return readJob(t, job.ID).Status == domain.JobStatusCompleted
 	}, 10*time.Second, 10*time.Millisecond)
+
+	// A job run outside the queue once the pool started completes too.
+	now, err := q.StartImmediate("alpha/adhoc", "alpha", "hello", "", "", "")
+	require.NoError(t, err)
+	p.ExecuteNow(now)
+	assert.Eventually(t, func() bool {
+		return readJob(t, now.ID).Status == domain.JobStatusCompleted
+	}, 10*time.Second, 10*time.Millisecond)
 	p.Stop()
 }
 
 func TestWorkerPool_RunClaimsNothingWhenStopped(t *testing.T) {
+	// Each case's workers exit on their own before Stop is called.
 	for _, tc := range []struct {
 		name  string
 		start func(p *WorkerPool)
@@ -56,7 +67,12 @@ func TestWorkerPool_RunClaimsNothingWhenStopped(t *testing.T) {
 			cancel()
 			p.Start(ctx)
 		}},
-		{"held for a safe restart", func(p *WorkerPool) { p.held.Store(true); p.Start(context.Background()) }},
+		{"held for a safe restart", func(p *WorkerPool) {
+			ctx, cancel := context.WithCancel(context.Background())
+			p.held.Store(true)
+			p.Start(ctx)
+			cancel()
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setupSchedulerDataDir(t)
@@ -65,6 +81,7 @@ func TestWorkerPool_RunClaimsNothingWhenStopped(t *testing.T) {
 			require.NoError(t, err)
 
 			tc.start(p)
+			p.wg.Wait()
 			p.Stop()
 			saved := readJob(t, job.ID)
 			assert.Equal(t, domain.JobStatusPending, saved.Status)
@@ -92,8 +109,12 @@ func TestWorkerPool_ProcessJobFailureSchedulesRetry(t *testing.T) {
 	require.Len(t, attempts, 1)
 	assert.Equal(t, saved.Error, attempts[0].Error, "the observer sees the job as persisted")
 
-	// A job that is not on disk has nothing to report once it ends.
+	// A job that is not on disk, or no longer readable, has nothing to
+	// report once it ends, whether it failed or succeeded.
 	p.processJob(context.Background(), &domain.Job{ID: "job_gone", AgentID: "ghost"})
+	p.processJob(context.Background(), &domain.Job{ID: "job_gone_ok", TaskID: "alpha/adhoc", AgentID: "alpha", Prompt: "hi"})
+	require.NoError(t, os.WriteFile(store.JobPath("alpha", "job_corrupt"), []byte("not-json"), 0o600))
+	p.processJob(context.Background(), &domain.Job{ID: "job_corrupt", AgentID: "ghost"})
 	assert.Len(t, attempts, 1)
 }
 
@@ -201,6 +222,86 @@ func TestWorkerPool_ExecuteJob_WorkflowRecordsMessagesAfterTrigger(t *testing.T)
 	again.TriggerContext = &domain.TriggerContext{Entry: "C2"}
 	require.NoError(t, p.executeJob(context.Background(), again))
 	assert.Nil(t, readJob(t, again.ID).TriggerContext)
+
+	// Nor is it without a hook to ask.
+	p.workflowAfter = nil
+	require.NoError(t, p.executeJob(context.Background(), again))
+	assert.Nil(t, readJob(t, again.ID).TriggerContext)
+	assert.Equal(t, []string{"alpha:C1"}, afterFor)
+}
+
+func TestWorkerPool_ExecuteJob_CompiledPromptSkipsModel(t *testing.T) {
+	setupSchedulerDataDir(t)
+	precompile := true
+	p, q := newAlphaPool(t, config.TaskConfig{Name: "digest", Every: "1h", Prompt: "Post the digest", Target: "session:ops", Precompile: &precompile})
+	p.taskCompiler = func(context.Context, string, string) (string, error) { return `print("digest ready")`, nil }
+	var delivered []string
+	p.SetTaskOutputDelivery(func(_ domain.OutputSource, _, _, text string) (*domain.JobDelivery, error) {
+		delivered = append(delivered, text)
+		return nil, nil
+	})
+	job, err := q.Enqueue("alpha/digest", "alpha", "Post the digest", "session:ops", 1, "", "")
+	require.NoError(t, err)
+
+	require.NoError(t, p.executeJob(context.Background(), job))
+	assert.Equal(t, []string{"digest ready"}, delivered, "the script's output, not the model's")
+	assert.Contains(t, readJob(t, job.ID).Output, "running the precompiled script")
+
+	// A run stopped before its script finishes ends with the stop, and runs
+	// no model.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cfg, _ := p.agents.Get("alpha")
+	_, handled, err := p.runCompiledPrompt(ctx, job, cfg.Config(), p.deliverFor(job))
+	assert.True(t, handled)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Len(t, delivered, 1)
+}
+
+func TestWorkerPool_PrecompiledProjectTaskStoppedOrSkipped(t *testing.T) {
+	setupSchedulerDataDir(t)
+	precompile := true
+	p, q := newAlphaPool(t, config.TaskConfig{Name: "stale", Type: "project", Project: "o/r", Prompt: "Label", Target: "session:ops", Precompile: &precompile})
+	p.taskCompiler = func(context.Context, string, string) (string, error) { return `print("Labeled 2 issues")`, nil }
+	var reported []error
+	p.scriptReporter = func(_, _ string, err error) error {
+		reported = append(reported, err)
+		return errors.New("note store unavailable")
+	}
+	var delivered int
+	p.SetTaskOutputDelivery(func(domain.OutputSource, string, string, string) (*domain.JobDelivery, error) {
+		delivered++
+		return nil, nil
+	})
+	stopRun := false
+	p.projectRunner = func(ctx context.Context, run ProjectRun) (string, error) {
+		runCtx := ctx
+		if stopRun {
+			c, cancel := context.WithCancel(ctx)
+			cancel()
+			runCtx = c
+		}
+		return run.RunCompiled(runCtx, func(context.Context) (string, error) { return t.TempDir(), nil }, func(string, ...any) {})
+	}
+	job, err := q.EnqueueWithType("alpha/stale", "project", "alpha", "Label", "", "session:ops", 1, "", "")
+	require.NoError(t, err)
+
+	// A script result the reporter cannot record still completes the run;
+	// the run chose not to reply, so nothing is delivered.
+	agent.SkipReply(job.ID, "nothing new to report")
+	require.NoError(t, p.executeJob(context.Background(), job))
+	assert.Equal(t, []error{nil}, reported)
+	assert.Zero(t, delivered)
+	saved := readJob(t, job.ID)
+	assert.Equal(t, "Labeled 2 issues", saved.Output)
+	require.NotNil(t, saved.Delivery)
+	assert.Equal(t, domain.DeliverySkipped, saved.Delivery.Status)
+	assert.Equal(t, "nothing new to report", saved.Delivery.Message)
+
+	// A run the runner stops is not the script's result.
+	stopRun = true
+	assert.Error(t, p.executeJob(context.Background(), job))
+	assert.Len(t, reported, 1)
 }
 
 func TestWorkflowModel(t *testing.T) {

@@ -2545,3 +2545,216 @@ func TestDeliverToChannel_Errors(t *testing.T) {
 		})
 	}
 }
+
+// twoToolModel is an OpenAI-compatible chat endpoint that answers a user
+// turn by calling two tools at once, then replies "all done" once their
+// results are in. With fail set it rejects every request.
+type twoToolModel struct{ fail bool }
+
+func (m twoToolModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if m.fail {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprint(w, `{"error":{"message":"model rejected the request","type":"invalid_request_error"}}`)
+		return
+	}
+	var req struct {
+		Messages []struct {
+			Role string `json:"role"`
+		} `json:"messages"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	w.Header().Set("Content-Type", "text/event-stream")
+	chunk := func(delta map[string]any, finish any) {
+		data, _ := json.Marshal(map[string]any{
+			"id": "c", "object": "chat.completion.chunk", "created": 0, "model": "m",
+			"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}},
+		})
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+	}
+	if n := len(req.Messages); n > 0 && req.Messages[n-1].Role == "tool" {
+		chunk(map[string]any{"role": "assistant", "content": "all done"}, nil)
+		chunk(map[string]any{}, "stop")
+	} else {
+		call := func(i int, path string) map[string]any {
+			args, _ := json.Marshal(map[string]any{"path": path})
+			return map[string]any{"index": i, "id": fmt.Sprintf("call_%d", i), "type": "function",
+				"function": map[string]any{"name": "no_such_tool", "arguments": string(args)}}
+		}
+		chunk(map[string]any{"role": "assistant", "tool_calls": []any{call(0, "a.txt"), call(1, "b.txt")}}, nil)
+		chunk(map[string]any{}, "tool_calls")
+	}
+	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+}
+
+// scriptedChannelServer runs a verbose agent "bot" on model.
+func scriptedChannelServer(t *testing.T, model twoToolModel) *Server {
+	t.Helper()
+	setupServerDataDir(t)
+	resetSlogForTest()
+	llmSrv := httptest.NewServer(model)
+	t.Cleanup(llmSrv.Close)
+	verbose := true
+	cfg := &config.Config{
+		Models: config.ModelsConfig{Providers: map[string]config.ProviderConfig{"vllm": {BaseURI: llmSrv.URL + "/v1"}}},
+		Agents: []config.AgentConfig{{Name: "bot", Model: "vllm/test", Verbose: &verbose}},
+	}
+	srv := New(cfg, "tok")
+	t.Cleanup(func() {
+		if runner, ok := srv.agents.Get("bot"); ok {
+			runner.Wait()
+		}
+	})
+	return srv
+}
+
+// statusChannel records how verbose status lines reach a channel.
+type statusChannel struct {
+	stubChannel
+	mu    sync.Mutex
+	calls []string
+}
+
+func (c *statusChannel) Send(_, text string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls = append(c.calls, "send:"+text)
+	return nil
+}
+
+func (c *statusChannel) snapshot() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string{}, c.calls...)
+}
+
+type statusIDChannel struct{ *statusChannel }
+
+func (c statusIDChannel) SendAndGetID(_, text string) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls = append(c.calls, "sendid:"+text)
+	return "status-1", nil
+}
+
+type statusEditChannel struct{ statusIDChannel }
+
+func (c statusEditChannel) EditMessage(_, msgID, text string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls = append(c.calls, "edit:"+msgID+":"+text)
+	return nil
+}
+
+func TestHandleIncomingChannelMessage_VerboseStatusLines(t *testing.T) {
+	tests := []struct {
+		name  string
+		ch    func(*statusChannel) channels.Channel
+		kinds []string
+	}{
+		{"plain channel sends each line", func(c *statusChannel) channels.Channel { return c }, []string{"send", "send"}},
+		{"id channel without edits", func(c *statusChannel) channels.Channel { return statusIDChannel{c} }, []string{"sendid", "send"}},
+		{"editable status message", func(c *statusChannel) channels.Channel { return statusEditChannel{statusIDChannel{c}} }, []string{"sendid", "edit"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := scriptedChannelServer(t, twoToolModel{})
+			rec := &statusChannel{}
+			srv.handleIncomingChannelMessage(context.Background(), "bot", "signal", "+100", tt.ch(rec), channels.IncomingMessage{
+				Type: "signal", Channel: "+200", From: "+200", Text: "read both files",
+			})
+			runner, ok := srv.agents.Get("bot")
+			require.True(t, ok)
+			runner.Wait()
+
+			calls := rec.snapshot()
+			require.Len(t, calls, len(tt.kinds), "one status line per tool call: %v", calls)
+			for i, kind := range tt.kinds {
+				assert.True(t, strings.HasPrefix(calls[i], kind+":"), "call %d: %q", i, calls[i])
+			}
+			if tt.kinds[1] == "edit" {
+				assert.Equal(t, 2, strings.Count(calls[1], "\n")+1, "the edit carries both status lines: %q", calls[1])
+			}
+		})
+	}
+}
+
+func TestHandleIncomingChannelMessage_SlackThreadShowsToolsAndAnswer(t *testing.T) {
+	srv := scriptedChannelServer(t, twoToolModel{})
+	ch := &slackBlocksChannel{}
+	srv.handleIncomingChannelMessage(context.Background(), "bot", "slack", "alerts", ch, channels.IncomingMessage{
+		Type: "slack", Channel: "C1", ThreadTS: "171.5", From: "U1", Text: "read both files",
+	})
+	runner, ok := srv.agents.Get("bot")
+	require.True(t, ok)
+	runner.Wait()
+
+	thread, sends, edits := ch.snapshot()
+	assert.Equal(t, []string{"all done"}, thread, "the thread gets one answer and no status lines")
+	require.Len(t, sends, 1)
+	require.NotEmpty(t, edits)
+	last := edits[len(edits)-1]
+	assert.Contains(t, last, `:warning: `+"`no_such_tool`"+` :arrow_right: `+"`"+`{"path":"a.txt"}`)
+	assert.Contains(t, last, `{"path":"b.txt"}`)
+}
+
+func TestHandleIncomingChannelMessage_SlackThreadReportsModelError(t *testing.T) {
+	srv := scriptedChannelServer(t, twoToolModel{fail: true})
+	ch := &slackBlocksChannel{}
+	srv.handleIncomingChannelMessage(context.Background(), "bot", "slack", "alerts", ch, channels.IncomingMessage{
+		Type: "slack", Channel: "C1", ThreadTS: "171.5", From: "U1", Text: "hello",
+	})
+	runner, ok := srv.agents.Get("bot")
+	require.True(t, ok)
+	runner.Wait()
+
+	require.Eventually(t, func() bool {
+		thread, _, _ := ch.snapshot()
+		return len(thread) > 0 && strings.Contains(thread[len(thread)-1], "Error:")
+	}, 5*time.Second, 10*time.Millisecond)
+	thread, _, _ := ch.snapshot()
+	assert.Contains(t, thread[len(thread)-1], "model rejected the request")
+}
+
+func TestHandleIncomingChannelMessage_QuotedMessageJoinsThePrompt(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "stub"}}}
+	srv := New(cfg, "tok")
+
+	srv.handleIncomingChannelMessage(context.Background(), "bot", "signal", "+100", stubChannel{}, channels.IncomingMessage{
+		Type: "signal", Channel: "+200", From: "+200", Text: "is this right?",
+		QuoteAuthor: "Alice", QuoteText: "the build is green",
+	})
+	runner, ok := srv.agents.Get("bot")
+	require.True(t, ok)
+	runner.Wait()
+
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", "signal:+200")
+	require.NoError(t, err)
+	lines, err := store.ReadJSONL[domain.Message](store.SessionPath("bot", sess.ID))
+	require.NoError(t, err)
+	var user []string
+	for _, line := range lines {
+		if line.Role == domain.MessageRoleUser {
+			user = append(user, line.Content)
+		}
+	}
+	assert.Equal(t, []string{"Alice: the build is green\n\nis this right?"}, user)
+}
+
+func TestHandleIncomingChannelMessage_UnknownAgentIsIgnored(t *testing.T) {
+	setupServerDataDir(t)
+	resetSlogForTest()
+	srv := New(&config.Config{}, "tok")
+	ch := &statusChannel{}
+
+	srv.handleIncomingChannelMessage(context.Background(), "ghost", "signal", "+100", ch, channels.IncomingMessage{
+		Type: "signal", Channel: "+200", Text: "hello",
+	})
+
+	sessions, err := agent.NewSessionManager().List("ghost")
+	require.NoError(t, err)
+	assert.Empty(t, sessions, "no session is opened for an agent that does not exist")
+	assert.Empty(t, ch.snapshot())
+}

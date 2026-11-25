@@ -3,6 +3,7 @@ package channels
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,9 +19,12 @@ import (
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/store"
 )
 
@@ -1351,4 +1355,498 @@ func TestSignalChannel_StreamToSink_NoSink(_ *testing.T) {
 	// logSink is nil by default
 	r := io.NopCloser(strings.NewReader("line1\nline2\n"))
 	ch.streamToSink(r) // should not panic
+}
+
+// ── Manager lifecycle with real channel implementations ─────────────────────
+
+// waitSlackStopped waits for a manager-started Slack connection's Start to
+// return. Manager Slack tests use a cancelled context so Start never reaches
+// the network; waiting keeps Stop from racing the still-starting channel.
+func waitSlackStopped(t *testing.T, mgr *Manager, key string) {
+	t.Helper()
+	mgr.mu.Lock()
+	sink := mgr.sinks[key]
+	mgr.mu.Unlock()
+	require.NotNil(t, sink)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(sinkHistory(sink), "slack: socket mode stopped") {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("slack channel %s never stopped", key)
+}
+
+func cancelledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+// waitChannelError polls until the channel reports a runtime error.
+func waitChannelError(t *testing.T, mgr *Manager, key string) string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		mgr.mu.Lock()
+		msg := mgr.errors[key]
+		mgr.mu.Unlock()
+		if msg != "" {
+			return msg
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("channel %s never reported an error", key)
+	return ""
+}
+
+func noopMsgFn(string, string, string, Channel, IncomingMessage) {}
+
+func slackAgent(name, groups string) config.AgentConfig {
+	return config.AgentConfig{Name: name, Channels: []config.ChannelConfig{{
+		Type: "slack", ID: "UBOT", Token: "xoxb-token", URL: "xapp-token",
+		AllowFrom: []config.AllowFromEntry{{From: "*", AllowedGroups: groups}},
+	}}}
+}
+
+func TestManager_ReconcileSharedSlackLifecycle(t *testing.T) {
+	useTempDataDir(t)
+	ctx := cancelledContext()
+	mgr := NewManager()
+	defer mgr.Stop()
+
+	key := channelKey("Ony", "slack", "UBOT")
+	connKey := slackConnectionKey(config.ChannelConfig{Token: "xoxb-token", URL: "xapp-token"})
+	cfg := &config.Config{Agents: []config.AgentConfig{slackAgent("Ony", "C1")}}
+
+	mgr.Reconcile(ctx, cfg, noopMsgFn)
+	waitSlackStopped(t, mgr, key)
+	first := mgr.slack[connKey]
+	require.NotNil(t, first)
+
+	// Unchanged config keeps the running connection.
+	mgr.Reconcile(ctx, cfg, noopMsgFn)
+	assert.Same(t, first, mgr.slack[connKey])
+	assert.Same(t, first.ch, mgr.channels[key])
+
+	// Changed allowFrom replaces the shared connection.
+	cfg = &config.Config{Agents: []config.AgentConfig{slackAgent("Ony", "C2")}}
+	mgr.Reconcile(ctx, cfg, noopMsgFn)
+	second := mgr.slack[connKey]
+	require.NotNil(t, second)
+	assert.NotSame(t, first, second)
+	assert.Equal(t, "C2", second.specs[0].channelConfig.AllowFrom[0].AllowedGroups)
+	waitSlackStopped(t, mgr, key)
+
+	// Dropping Slack from the config stops the connection and its aliases.
+	mgr.Reconcile(ctx, &config.Config{Agents: []config.AgentConfig{{Name: "Ony"}}}, noopMsgFn)
+	assert.Empty(t, mgr.slack)
+	assert.Empty(t, mgr.slackAlias)
+	assert.Empty(t, mgr.List())
+}
+
+func TestManager_ReconcileSkipsChannelsThatFailToStart(t *testing.T) {
+	useTempDataDir(t)
+	require.NoError(t, os.WriteFile(store.StatePath(), []byte("{not json"), 0o600))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mgr := NewManager()
+	defer mgr.Stop()
+
+	mgr.Reconcile(ctx, &config.Config{Agents: []config.AgentConfig{{
+		Name: "bot",
+		Channels: []config.ChannelConfig{
+			{Type: "carrier-pigeon", ID: "coop"},
+			{Type: "slack", ID: "UBOT", Token: "auth:missing_slack_token", URL: "xapp-token"},
+			{Type: "signal", ID: ""},
+		},
+	}}}, noopMsgFn)
+
+	list := mgr.List()
+	require.Len(t, list, 1, "an unreadable state file still starts valid channels")
+	assert.Equal(t, "signal", list[0].Type)
+	assert.Empty(t, mgr.slack)
+}
+
+func TestManager_Restart(t *testing.T) {
+	useTempDataDir(t)
+	ctx := cancelledContext()
+	mgr := NewManager()
+	defer mgr.Stop()
+
+	signalKey := channelKey("bot", "signal", "")
+	slackKey := channelKey("Ony", "slack", "UBOT")
+	connKey := slackConnectionKey(config.ChannelConfig{Token: "xoxb-token", URL: "xapp-token"})
+	cfg := &config.Config{Agents: []config.AgentConfig{
+		{Name: "bot", Channels: []config.ChannelConfig{{Type: "signal"}}},
+		slackAgent("Ony", "C1"),
+	}}
+	mgr.Reconcile(ctx, cfg, noopMsgFn)
+	waitSlackStopped(t, mgr, slackKey)
+
+	t.Run("unknown key", func(t *testing.T) {
+		err := mgr.Restart(ctx, "bot/signal/nope", noopMsgFn)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("signal channel is recreated", func(t *testing.T) {
+		mgr.mu.Lock()
+		before := mgr.channels[signalKey]
+		mgr.mu.Unlock()
+
+		require.NoError(t, mgr.Restart(ctx, signalKey, noopMsgFn))
+
+		mgr.mu.Lock()
+		after := mgr.channels[signalKey]
+		mgr.mu.Unlock()
+		require.NotNil(t, after)
+		assert.NotSame(t, before, after)
+		assert.Equal(t, "bot", after.(*SignalChannel).AgentName)
+	})
+
+	t.Run("shared slack connection is recreated", func(t *testing.T) {
+		before := mgr.slack[connKey]
+		require.NoError(t, mgr.Restart(ctx, slackKey, noopMsgFn))
+		waitSlackStopped(t, mgr, slackKey)
+
+		mgr.mu.Lock()
+		defer mgr.mu.Unlock()
+		after := mgr.slack[connKey]
+		require.NotNil(t, after)
+		assert.NotSame(t, before, after)
+		assert.Same(t, after.ch, mgr.channels[slackKey])
+	})
+
+	t.Run("shared slack restart failure", func(t *testing.T) {
+		mgr.mu.Lock()
+		mgr.slack[connKey].specs[0].channelConfig.Token = "auth:missing_slack_token"
+		mgr.mu.Unlock()
+
+		err := mgr.Restart(ctx, slackKey, noopMsgFn)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "resolve channel auth refs")
+		mgr.mu.Lock()
+		defer mgr.mu.Unlock()
+		assert.Empty(t, mgr.slack, "the old connection was stopped before the failed start")
+		assert.NotContains(t, mgr.channels, slackKey)
+	})
+
+	t.Run("slack alias without an active connection", func(t *testing.T) {
+		mgr.mu.Lock()
+		mgr.slackAlias[slackKey] = connKey
+		mgr.mu.Unlock()
+		err := mgr.Restart(ctx, slackKey, noopMsgFn)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not active")
+	})
+
+	t.Run("channel restart failure", func(t *testing.T) {
+		mgr.mu.Lock()
+		spec := mgr.specs[signalKey]
+		spec.channelConfig.Type = "carrier-pigeon"
+		mgr.specs[signalKey] = spec
+		mgr.mu.Unlock()
+
+		err := mgr.Restart(ctx, signalKey, noopMsgFn)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "could not be created")
+		mgr.mu.Lock()
+		defer mgr.mu.Unlock()
+		assert.NotContains(t, mgr.channels, signalKey)
+	})
+}
+
+func TestManager_StartChannelRecordsRuntimeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"401: Unauthorized","code":0}`))
+	}))
+	defer server.Close()
+	restore := overrideDiscordEndpointsForTest(server.URL + "/")
+	defer restore()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mgr := NewManager()
+	defer mgr.Stop()
+
+	key := channelKey("bot", "discord", "main")
+	mgr.Reconcile(ctx, &config.Config{Agents: []config.AgentConfig{{
+		Name:     "bot",
+		Channels: []config.ChannelConfig{{Type: "discord", ID: "main", Token: "bad-token"}},
+	}}}, noopMsgFn)
+
+	waitChannelError(t, mgr, key)
+	list := mgr.List()
+	require.Len(t, list, 1)
+	assert.NotEmpty(t, list[0].Error)
+}
+
+func TestManager_SignalChannelHandlersFilterAndLogGroupChat(t *testing.T) {
+	useTempDataDir(t)
+	key := channelKey("bot", "signal", "")
+	enabledAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	require.NoError(t, store.WriteAppState(&store.AppState{Channels: map[string]store.ChannelMetadata{key: {EnabledAt: enabledAt}}}))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mgr := NewManager()
+	defer mgr.Stop()
+
+	type routed struct {
+		agent, typ, id string
+		msg            IncomingMessage
+	}
+	var got []routed
+	mgr.Reconcile(ctx, &config.Config{Agents: []config.AgentConfig{{
+		Name: "bot", Channels: []config.ChannelConfig{{Type: "signal"}},
+	}}}, func(agentName, channelType, configuredID string, _ Channel, msg IncomingMessage) {
+		got = append(got, routed{agentName, channelType, configuredID, msg})
+	})
+
+	mgr.mu.Lock()
+	sc := mgr.channels[key].(*SignalChannel)
+	mgr.mu.Unlock()
+	sc.handlerMu.RLock()
+	handler, groupLog := sc.handler, sc.groupLogHandler
+	sc.handlerMu.RUnlock()
+	require.NotNil(t, handler)
+	require.NotNil(t, groupLog)
+
+	handler(IncomingMessage{Type: "signal", Text: "stale", ReceivedAt: enabledAt.Add(-time.Second)})
+	handler(IncomingMessage{Type: "signal", Text: "fresh", ReceivedAt: enabledAt.Add(time.Second)})
+	require.Len(t, got, 1, "messages received before the channel was enabled are dropped")
+	assert.Equal(t, routed{"bot", "signal", "", IncomingMessage{Type: "signal", Text: "fresh", ReceivedAt: enabledAt.Add(time.Second)}}, got[0])
+
+	groupLog(IncomingMessage{Type: "signal", Channel: "G1", From: "+1555", SenderName: "Ann", Text: "  side chatter  "})
+	sess, err := agent.NewSessionManager().GetOrCreateNamed("bot", "signal:G1")
+	require.NoError(t, err)
+	msgs, err := store.ReadJSONL[domain.Message](store.SessionPath("bot", sess.ID))
+	require.NoError(t, err)
+	var texts []string
+	for _, m := range msgs {
+		if m.Role == domain.MessageRoleUser {
+			texts = append(texts, m.Content)
+		}
+	}
+	assert.Equal(t, []string{"side chatter"}, texts)
+}
+
+func userSessionTexts(t *testing.T, agentName, sessionName string) []string {
+	t.Helper()
+	sess, err := agent.NewSessionManager().GetOrCreateNamed(agentName, sessionName)
+	require.NoError(t, err)
+	msgs, err := store.ReadJSONL[domain.Message](store.SessionPath(agentName, sess.ID))
+	require.NoError(t, err)
+	var texts []string
+	for _, m := range msgs {
+		if m.Role == domain.MessageRoleUser {
+			texts = append(texts, m.Content)
+		}
+	}
+	return texts
+}
+
+func TestManager_SharedSlackHandlersRoutePerAgent(t *testing.T) {
+	useTempDataDir(t)
+	lateKey := channelKey("Late", "slack", "UBOT")
+	require.NoError(t, store.WriteAppState(&store.AppState{Channels: map[string]store.ChannelMetadata{
+		lateKey: {EnabledAt: time.Now().Add(time.Hour)},
+	}}))
+	ctx := cancelledContext()
+
+	quiet := slackAgent("Quiet", "C1")
+	quiet.Channels[0].GroupChatHistory = -1
+	quiet.Channels[0].SeparateTopLevelSessions = boolPtr(true)
+	cfg := &config.Config{Agents: []config.AgentConfig{
+		slackAgent("Ony", "C1"),
+		slackAgent("Coder", "C2"),
+		slackAgent("Late", "C1"),
+		quiet,
+	}}
+	var routedTo []string
+	mgr := NewManager()
+	mgr.Reconcile(ctx, cfg, func(agentName, _, _ string, _ Channel, msg IncomingMessage) {
+		routedTo = append(routedTo, agentName+":"+msg.Text)
+	})
+	ch := mgr.channels[channelKey("Ony", "slack", "UBOT")].(*SlackChannel)
+	assert.True(t, ch.ShowAssistantStatus())
+
+	ch.handleMessageEvent(&slackevents.MessageEvent{
+		User: "U9", Channel: "C1", Text: "hello team", TimeStamp: "1710000000.000100",
+	})
+
+	assert.ElementsMatch(t, []string{"Ony:hello team", "Quiet:hello team"}, routedTo,
+		"only agents whose allowFrom matches, and that were enabled before the message, receive it")
+	assert.Equal(t, []string{"hello team"}, userSessionTexts(t, "Ony", "slack:C1"))
+	assert.Empty(t, userSessionTexts(t, "Coder", "slack:C1"), "group transcript is limited to allowed groups")
+	assert.Empty(t, userSessionTexts(t, "Late", "slack:C1"), "group transcript respects the enable time")
+	assert.Empty(t, userSessionTexts(t, "Quiet", "slack:C1:1710000000.000100"), "history disabled")
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func TestManager_SendThreadAndMediaOnConfiguredChannel(t *testing.T) {
+	server, calls := newFakeSlackAPI(t, map[string]string{"/chat.postMessage": slackPostOK})
+	slackCh := newTestSlackChannel(server.URL)
+	media := &mockMediaSender{}
+	plain := &mockChannel{}
+
+	mgr := NewManager()
+	mgr.channels[channelKey("bot", "slack", "UBOT")] = slackCh
+	mgr.channels[channelKey("bot", "signal", "+1")] = media
+	mgr.channels[channelKey("bot", "discord", "d")] = plain
+
+	tests := []struct {
+		name    string
+		call    func() error
+		wantErr string
+	}{
+		{"thread on missing channel", func() error {
+			return mgr.SendThreadOnConfiguredChannel("bot", "slack", "nope", "C1", "1.0", "x")
+		}, "not active"},
+		{"thread unsupported", func() error {
+			return mgr.SendThreadOnConfiguredChannel("bot", "discord", "d", "C1", "1.0", "x")
+		}, "does not support threaded delivery"},
+		{"thread delivered", func() error {
+			return mgr.SendThreadOnConfiguredChannel("bot", "slack", "UBOT", "C123", "1710000000.000100", "in thread")
+		}, ""},
+		{"media on missing channel", func() error {
+			return mgr.SendMediaOnConfiguredChannel("bot", "signal", "nope", "+2", "cap", "/f.png")
+		}, "not active"},
+		{"media unsupported", func() error {
+			return mgr.SendMediaOnConfiguredChannel("bot", "discord", "d", "+2", "cap", "/f.png")
+		}, "does not support media delivery"},
+		{"media delivered", func() error {
+			return mgr.SendMediaOnConfiguredChannel("bot", "signal", "+1", "+2", "cap", "/f.png")
+		}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if tt.wantErr == "" {
+				assert.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
+
+	posts := callsTo(calls(), "/chat.postMessage")
+	require.Len(t, posts, 1)
+	assert.Equal(t, "1710000000.000100", posts[0].Form.Get("thread_ts"))
+	assert.Equal(t, "in thread", posts[0].Form.Get("text"))
+	assert.Equal(t, []mediaCall{{"+2", "cap", "/f.png"}}, media.mediaCalls)
+}
+
+type failingMediaSender struct{ mockChannel }
+
+func (f *failingMediaSender) SendMedia(string, string, string) error { return fmt.Errorf("upload rejected") }
+
+func TestRouteMediaDelivery_ReturnsLastError(t *testing.T) {
+	mgr := NewManager()
+	mgr.channels[channelKey("bot", "signal", "+1")] = &failingMediaSender{}
+
+	err := mgr.RouteMediaDelivery("signal", "+2", "cap", "/f.png")
+
+	require.Error(t, err)
+	assert.Equal(t, "upload rejected", err.Error())
+}
+
+func TestChannelSessionName(t *testing.T) {
+	sep := config.ChannelConfig{SeparateTopLevelSessions: boolPtr(true)}
+	tests := []struct {
+		name string
+		cc   config.ChannelConfig
+		msg  IncomingMessage
+		want string
+	}{
+		{"non-slack ignores thread", sep, IncomingMessage{Type: "signal", Channel: "G1", ThreadTS: "1.0"}, "signal:G1"},
+		{"slack without thread", sep, IncomingMessage{Type: "slack", Channel: "C1", ThreadTS: " "}, "slack:C1"},
+		{"slack thread shares channel session by default", config.ChannelConfig{}, IncomingMessage{Type: "slack", Channel: "C1", ThreadTS: "1.0"}, "slack:C1"},
+		{"slack thread with separate sessions", sep, IncomingMessage{Type: "slack", Channel: "C1", ThreadTS: " 1.0 "}, "slack:C1:1.0"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, channelSessionName(tt.cc, tt.msg), tt.name)
+	}
+}
+
+func TestSlackRoutingHelpers(t *testing.T) {
+	disabled := false
+	assert.False(t, matchesAnyAllowedGroup([]config.AllowFromEntry{
+		{AllowedGroups: "C1", Enabled: &disabled},
+		{AllowedGroups: "C2"},
+	}, "C1"), "disabled entries do not grant groups")
+	assert.True(t, matchesAnyAllowedGroup([]config.AllowFromEntry{{AllowedGroups: "C2"}}, "C2"))
+
+	assert.False(t, anySlackStatusEnabled([]channelSpec{
+		{channelConfig: config.ChannelConfig{ShowTyping: &disabled}},
+	}))
+	assert.True(t, anySlackStatusEnabled([]channelSpec{
+		{channelConfig: config.ChannelConfig{ShowTyping: &disabled}},
+		{channelConfig: config.ChannelConfig{}},
+	}))
+}
+
+func TestRoutedSlackMessage_FallbacksAndThreadContinuation(t *testing.T) {
+	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
+	spec := channelSpec{
+		agentName: "Ony",
+		channelConfig: config.ChannelConfig{
+			Type: "slack", ID: "UCFG",
+			AllowFrom: []config.AllowFromEntry{{From: "*", AllowedGroups: "C1", RespondToMentions: true}},
+		},
+		agentModel:     "agent/model",
+		agentFallbacks: []string{"agent/fallback"},
+	}
+
+	routed, ok := routedSlackMessage(ch, spec, IncomingMessage{From: "U1", Channel: "C1", Text: "<@UCFG> hi"})
+	require.True(t, ok, "the configured ID stands in for an unknown bot user ID")
+	assert.Equal(t, "agent/model", routed.Model)
+	assert.Equal(t, []string{"agent/fallback"}, routed.Fallbacks)
+
+	_, ok = routedSlackMessage(ch, spec, IncomingMessage{From: "U1", Channel: "C1", Text: "no mention"})
+	assert.False(t, ok)
+
+	spec.channelConfig.Fallbacks = []string{"channel/fallback"}
+	routed, ok = routedSlackMessage(ch, spec, IncomingMessage{From: "U1", Channel: "C1", Text: "no mention", IsThreadReply: true})
+	require.True(t, ok, "a thread reply continues an allowed conversation without a new mention")
+	assert.Equal(t, []string{"channel/fallback"}, routed.Fallbacks)
+}
+
+func TestResolveChannelAuthRefs_MissingCredentials(t *testing.T) {
+	useTempDataDir(t)
+	for _, cc := range []config.ChannelConfig{
+		{Token: "auth:missing_token"},
+		{Token: "plain", URL: "auth:missing_url"},
+	} {
+		_, err := resolveChannelAuthRefs(cc)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "auth:missing_")
+	}
+}
+
+func TestShouldProcessIncomingMessage_DefaultsAndMissingState(t *testing.T) {
+	assert.True(t, shouldProcessIncomingMessage(store.ChannelMetadata{}, IncomingMessage{ReceivedAt: time.Unix(0, 0)}),
+		"channels without an enable time accept everything")
+	assert.True(t, shouldProcessIncomingMessage(store.ChannelMetadata{EnabledAt: time.Now().Add(-time.Hour)}, IncomingMessage{}),
+		"a message without a timestamp counts as received now")
+	assert.False(t, shouldProcessIncomingMessage(store.ChannelMetadata{EnabledAt: time.Now().Add(time.Hour)}, IncomingMessage{}))
+
+	assert.Equal(t, store.ChannelMetadata{}, channelMetadata(nil, "k"))
+	assert.Equal(t, store.ChannelMetadata{}, channelMetadata(&store.AppState{}, "k"))
+}
+
+func TestNewChannel_DiscordAndSlackOptions(t *testing.T) {
+	off := false
+	discord := newChannel(config.ChannelConfig{Type: "discord", Token: "t", ShowTyping: &off, DisabledTools: []string{"exec"}}, "m", nil)
+	require.IsType(t, &DiscordChannel{}, discord)
+	assert.Equal(t, []string{"exec"}, discord.(*DiscordChannel).disabledTools)
+
+	slackCh := newChannel(config.ChannelConfig{Type: "slack", Token: "xoxb", URL: "xapp", ShowTyping: &off}, "m", nil)
+	require.IsType(t, &SlackChannel{}, slackCh)
+	assert.False(t, slackCh.(*SlackChannel).ShowAssistantStatus())
 }

@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1277,4 +1279,136 @@ func TestDispatch_MentionPrefixGroupOnly_Default_DMPassesWithoutPrefix(t *testin
 	ch.dispatch([]byte(noPrefix))
 	_, ok := waitMsgTimeout(msgs, 200*time.Millisecond)
 	assert.True(t, ok)
+}
+
+func TestFetchUUID_ResolvesAccountAndToleratesBadResults(t *testing.T) {
+	const phone = "+12130000000"
+	tests := []struct {
+		name     string
+		result   any // nil means the daemon is unreachable
+		wantUUID string
+	}{
+		{"matching account", []map[string]string{
+			{"number": "+19999999999", "uuid": "other-uuid"},
+			{"number": phone, "uuid": ""},
+			{"number": phone, "uuid": "self-uuid"},
+		}, "self-uuid"},
+		{"no matching account", []map[string]string{{"number": "+19999999999", "uuid": "other-uuid"}}, ""},
+		{"unparseable result", "not-a-list", ""},
+		{"daemon unreachable", nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var addr string
+			if tt.result == nil {
+				addr = closedSignalAddr(t)
+			} else {
+				fd := newFakeDaemon(t)
+				defer fd.Close()
+				fd.SetResult("listAccounts", tt.result)
+				addr = fd.Addr()
+			}
+			ch := NewSignalChannel(phone, addr, nil, true, true, true, true, "test", nil)
+			ch.fetchUUID(context.Background())
+			assert.Equal(t, tt.wantUUID, ch.uuid)
+		})
+	}
+}
+
+func TestFetchSignalAttachmentData_Errors(t *testing.T) {
+	tests := []struct {
+		name    string
+		addr    func(t *testing.T) string
+		wantErr string
+	}{
+		{"rpc error", func(t *testing.T) string { return newSignalErrorTCPServer(t, -3, "attachment gone") }, "rpc error: -3 attachment gone"},
+		{"daemon unreachable", closedSignalAddr, "127.0.0.1"},
+		{"empty payload", func(t *testing.T) string {
+			fd := newFakeDaemon(t)
+			t.Cleanup(fd.Close)
+			fd.SetResult("getAttachment", map[string]any{"data": " "})
+			return fd.Addr()
+		}, "empty attachment data"},
+		{"invalid base64", func(t *testing.T) string {
+			fd := newFakeDaemon(t)
+			t.Cleanup(fd.Close)
+			fd.SetResult("getAttachment", "%%%not-base64%%%")
+			return fd.Addr()
+		}, "decoding attachment att-1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ch := NewSignalChannel("+12135550123", tt.addr(t), nil, true, true, true, true, "test", nil)
+			_, err := fetchSignalAttachmentData(context.Background(), ch, ch.phone, "att-1", "+15550001111", "", false)
+			if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestFetchSignalAttachmentData_GroupUsesGroupID(t *testing.T) {
+	fd := newFakeDaemon(t)
+	defer fd.Close()
+	fd.SetResult("getAttachment", base64.StdEncoding.EncodeToString([]byte("jpeg-bytes")))
+	ch := NewSignalChannel("+12135550123", fd.Addr(), nil, true, true, true, true, "test", nil)
+
+	data, err := fetchSignalAttachmentData(context.Background(), ch, ch.phone, "att-2", "+15550001111", "group-abc", true)
+
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("jpeg-bytes"), data)
+	reqs := fd.Requests()
+	if assert.Len(t, reqs, 1) {
+		params, _ := reqs[0]["params"].(map[string]any)
+		assert.Equal(t, "group-abc", params["groupId"])
+		assert.NotContains(t, params, "recipient")
+	}
+}
+
+func TestDecodeSignalAttachmentResult_Rejects(t *testing.T) {
+	for _, raw := range []string{`123`, `{"data":""}`, `""`} {
+		_, err := decodeSignalAttachmentResult(json.RawMessage(raw))
+		assert.Error(t, err, raw)
+	}
+}
+
+func TestIngestSignalAttachment_RemoteURLAndFallbacks(t *testing.T) {
+	useTempDataDir(t)
+	image := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("png-bytes"))
+	}))
+	defer image.Close()
+	missing := httptest.NewServer(http.NotFoundHandler())
+	defer missing.Close()
+
+	ch := NewSignalChannel("", "", nil, true, true, true, true, "test", nil)
+
+	att := ch.ingestSignalAttachment(signalAttachment{
+		ContentType: "image/png",
+		Path:        filepath.Join(t.TempDir(), "missing.png"),
+		URL:         image.URL + "/photos/cat.png",
+	}, "+1555", "+1555", false)
+	assert.Empty(t, att.Err, "a missing local file falls back to the remote URL")
+	assert.Equal(t, "missing.png", att.Name)
+	assert.NotEmpty(t, att.Path)
+
+	att = ch.ingestSignalAttachment(signalAttachment{
+		ContentType: "image/png",
+		DownloadURL: missing.URL + "/gone.png",
+		ID:          "att-3",
+	}, "+1555", "+1555", false)
+	assert.Empty(t, att.Path)
+	assert.Contains(t, att.Err, "signal account phone is required",
+		"the last fallback's error is reported when every source fails")
+}
+
+func TestSignalChannel_SenderNameUsesRememberedProfileName(t *testing.T) {
+	ch := NewSignalChannel("", "", nil, true, true, true, true, "test", nil)
+	ch.rememberName("+1555", "  ")
+	ch.rememberName("", "Nobody")
+	assert.Equal(t, "+1555", ch.senderName("+1555"))
+
+	ch.rememberName("+1555", " Ann ")
+	assert.Equal(t, "Ann", ch.senderName("+1555"))
 }
