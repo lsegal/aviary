@@ -44,6 +44,9 @@ type serveEnv struct {
 // seams when the test ends.
 func setupServeEnv(t *testing.T) *serveEnv {
 	t.Helper()
+	// Created first so its removal runs after the working directory is
+	// restored: Windows cannot remove the current directory.
+	dir := t.TempDir()
 	wd, err := os.Getwd()
 	require.NoError(t, err)
 	prevCfg, prevTrace, prevData := cfgFile, traceStartup, store.DataDir()
@@ -58,7 +61,6 @@ func setupServeEnv(t *testing.T) *serveEnv {
 	t.Setenv("AVIARY_PID_FILE", "")
 	t.Setenv(update.RestartFileEnv, "")
 
-	dir := t.TempDir()
 	env := &serveEnv{
 		dir:     dir,
 		cfgPath: filepath.Join(dir, "cfg", "aviary.yaml"),
@@ -167,7 +169,7 @@ func TestRunStartStatusErrors(t *testing.T) {
 		env := setupServeEnv(t)
 		cfgFile = filepath.Join(env.dir, "bad\x00dir", "aviary.yaml")
 		err := runStart(nil, nil)
-		require.ErrorContains(t, err, "checking server status: setting config base dir")
+		require.ErrorContains(t, err, "checking server status: "+invalidPathErr)
 	})
 }
 
@@ -470,13 +472,22 @@ func TestStartBackgroundStartsProcess(t *testing.T) {
 func TestChdirToConfigDirErrors(t *testing.T) {
 	env := setupServeEnv(t)
 	_, err := chdirToConfigDir(filepath.Join(env.dir, "bad\x00dir", "aviary.yaml"))
-	require.ErrorContains(t, err, "setting config base dir")
+	require.ErrorContains(t, err, invalidPathErr)
 
 	blocker := filepath.Join(env.dir, "file")
 	require.NoError(t, os.WriteFile(blocker, nil, 0o644))
 	_, err = chdirToConfigDir(filepath.Join(blocker, "aviary.yaml"))
 	require.ErrorContains(t, err, "creating config dir")
 }
+
+// invalidPathErr is how a config path containing NUL fails: Windows rejects
+// it while resolving the path, Unix while setting the config base dir.
+var invalidPathErr = func() string {
+	if runtime.GOOS == "windows" {
+		return "resolving config path"
+	}
+	return "setting config base dir"
+}()
 
 // exitedPID returns the PID of a process that has already exited.
 func exitedPID(t *testing.T) int {
