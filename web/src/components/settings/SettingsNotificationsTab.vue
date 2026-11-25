@@ -72,9 +72,11 @@
 										:aria-checked="prefs.events[t.type]?.delivery === d.value" :class="segment(prefs.events[t.type]?.delivery === d.value)"
 										@click="setEvent(t.type, { delivery: d.value })">{{ d.label }}</button>
 								</div>
-								<AppSelect size="sm" :aria-label="`${t.label}: sound`" data-testid="notification-event-sound"
+								<div class="w-36">
+									<AppSelect size="sm" :aria-label="`${t.label}: sound`" data-testid="notification-event-sound"
 									:disabled="!prefs.sound.enabled" :model-value="prefs.events[t.type]?.sound ?? ''" :options="eventSoundOptions"
 									@update:model-value="setEvent(t.type, { sound: String($event) })" />
+								</div>
 							</div>
 						</div>
 					</div>
