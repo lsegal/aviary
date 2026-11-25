@@ -23,7 +23,7 @@
 				<PlusIcon aria-hidden="true" class="h-4 w-4" />
 				New task
 			</button>
-			<template v-if="!tasksRoot && activeTab !== 'display'">
+			<template v-if="!tasksRoot && activeTab !== 'display' && activeTab !== 'notifications'">
 			<button v-if="revertAvailable" type="button" :class="HEADER_ACTION_CLS"
 				:disabled="loading || saving || reverting"
 				@click="revertToLatestBackup"><ArrowUturnLeftIcon aria-hidden="true" class="h-4 w-4" />{{ reverting ? "Reverting…" : "Revert" }}</button>
@@ -114,6 +114,7 @@
 					<SettingsProvidersTab />
 					<SettingsProjectsTab />
 					<SettingsDisplayTab v-if="activeTab === 'display'" />
+					<SettingsNotificationsTab v-if="activeTab === 'notifications'" />
 				</template>
 
 
@@ -343,6 +344,7 @@ import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { settingsViewContextKey } from "../components/settings/context";
 import SettingsAgentsTab from "../components/settings/SettingsAgentsTab.vue";
 import SettingsDisplayTab from "../components/settings/SettingsDisplayTab.vue";
+import SettingsNotificationsTab from "../components/settings/SettingsNotificationsTab.vue";
 import SettingsGeneralTab from "../components/settings/SettingsGeneralTab.vue";
 import type { SettingsCrumb } from "../components/settings/SettingsPageHeader.vue";
 import SettingsProjectsTab from "../components/settings/SettingsProjectsTab.vue";
@@ -375,7 +377,12 @@ import { HEADER_ACTION_CLS } from "../lib/headerActions";
 import { projectTargets } from "../lib/projectSettings";
 import { projectPath } from "../lib/projects";
 import { SETTINGS_TABS } from "../lib/systemNav";
-import { CODELOOP_TARGET_PREFIX, isCodeLoopTarget } from "../lib/taskTargets";
+import {
+	CODELOOP_TARGET_PREFIX,
+	isCodeLoopTarget,
+	isNotifyTarget,
+	NOTIFY_TARGET_OPTIONS,
+} from "../lib/taskTargets";
 import {
 	clampToolNamesForPreset,
 	groupTools,
@@ -421,7 +428,8 @@ type Tab =
 	| "skills"
 	| "sessions"
 	| "providers"
-	| "display";
+	| "display"
+	| "notifications";
 
 interface SessionRow {
 	id: string;
@@ -515,6 +523,7 @@ const systemTabs: Record<string, Tab> = {
 	settings: "general",
 	providers: "providers",
 	display: "display",
+	notifications: "notifications",
 	sessions: "sessions",
 	skills: "skills",
 };
@@ -530,10 +539,13 @@ const activeTab = ref<Tab>(routeToActiveTab());
 const settingsTabActive = computed(() =>
 	SETTINGS_TABS.some((t) => t.key === activeTab.value),
 );
-// A watch session's Settings is Display alone (#991, #1093).
+// A watch session's Settings is Display and Notifications (#991, #1093,
+// #1215).
 const settingsTabs = computed(() =>
 	authStore.minimal
-		? SETTINGS_TABS.filter((t) => t.key === "display")
+		? SETTINGS_TABS.filter(
+				(t) => t.key === "display" || t.key === "notifications",
+			)
 		: SETTINGS_TABS,
 );
 
@@ -1073,6 +1085,7 @@ const systemTabLabels: Record<Exclude<Tab, "agents">, string> = {
 	projects: "Code Loop Settings",
 	providers: "Settings",
 	display: "Settings",
+	notifications: "Settings",
 	sessions: "Sessions",
 	skills: "Skills",
 };
@@ -1112,7 +1125,8 @@ const pageHeader = computed(
 		if (
 			activeTab.value === "general" ||
 			activeTab.value === "providers" ||
-			activeTab.value === "display"
+			activeTab.value === "display" ||
+			activeTab.value === "notifications"
 		)
 			return header([
 				{ label: "System", to: "/system/overview" },
@@ -2533,6 +2547,7 @@ function configuredTaskChannelOptions(agent: AgentEntry): TaskChannelOption[] {
 	return [
 		{ value: "session", label: "Session" },
 		{ value: "codeloop", label: "Code Loop job" },
+		...NOTIFY_TARGET_OPTIONS,
 		...(agent.channels ?? [])
 			.filter((ch) => !!ch.type && !!ch.id)
 			.map((ch) => ({
@@ -2551,6 +2566,7 @@ function parseTaskChannelValue(target?: string): {
 	if (raw.startsWith("session:"))
 		return { selection: "session", target: raw.slice("session:".length) };
 	if (isCodeLoopTarget(raw)) return { selection: "codeloop", target: raw };
+	if (isNotifyTarget(raw)) return { selection: raw.toLowerCase(), target: "" };
 	const name = channelTargetName(raw);
 	if (name) return { selection: channelTarget(name), target: "" };
 	return { selection: "", target: "" };

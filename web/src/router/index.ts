@@ -98,7 +98,7 @@ const router = createRouter({
 			meta: { requiresAuth: true },
 		},
 		{
-			path: "/system/:tab(settings|providers|display|sessions|skills)",
+			path: "/system/:tab(settings|providers|display|notifications|sessions|skills)",
 			component: SettingsView,
 			meta: { requiresAuth: true, view: "settings" },
 		},

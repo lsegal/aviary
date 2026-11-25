@@ -151,6 +151,7 @@ export const SETTINGS_TABS = [
 		to: "/system/providers",
 	},
 	{ key: "display", label: "Display", to: "/system/display" },
+	{ key: "notifications", label: "Notifications", to: "/system/notifications" },
 ] as const;
 
 /** Whether path is one of Settings' tabs rather than a System page. */

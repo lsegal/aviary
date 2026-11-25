@@ -1,6 +1,8 @@
 import { onMounted, onUnmounted, ref } from "vue";
 import { useAuthStore } from "../stores/auth";
+import type { AppNotification } from "../lib/notifications";
 import { useMCP } from "./useMCP";
+import { useNotifications } from "./useNotifications";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
@@ -74,6 +76,7 @@ interface VersionCheck {
 export function useServerStatus() {
 	const auth = useAuthStore();
 	const { callTool } = useMCP();
+	const notifications = useNotifications();
 
 	const status = ref<ConnectionStatus>("connecting");
 	const version = ref<string>("");
@@ -132,7 +135,16 @@ export function useServerStatus() {
 					goos?: string;
 					restart?: RestartStatus;
 					check?: VersionCheck;
+					notification?: AppNotification;
 				};
+				if (data.type === "notification" && data.notification) {
+					notifications.receive(data.notification);
+					return;
+				}
+				if (data.type === "notifications_changed") {
+					void notifications.refresh();
+					return;
+				}
 				if (data.type === "restart" && data.restart) {
 					restart.value = data.restart;
 					return;
@@ -155,6 +167,8 @@ export function useServerStatus() {
 					}
 				}
 				consecutiveFailures = 0;
+				// Each (re)connection catches the bell up on what it missed.
+				if (status.value !== "connected") void notifications.refresh();
 				status.value = "connected";
 			} catch {
 				// ignore malformed frames

@@ -64,3 +64,20 @@ export function parseCodeLoopTarget(target?: string): CodeLoopTarget | null {
 export function codeLoopTargetLabel(t: CodeLoopTarget): string {
 	return `Code Loop ${t.project}#${t.number}`;
 }
+
+// The Notify target (#1215) sends a run's result as a notification; with
+// "?failures" only a failed run notifies.
+export const NOTIFY_TARGET = "notify";
+export const NOTIFY_FAILURES_TARGET = "notify?failures";
+
+/** The Notify targets as "Send via" options. */
+export const NOTIFY_TARGET_OPTIONS = [
+	{ value: NOTIFY_TARGET, label: "Notify" },
+	{ value: NOTIFY_FAILURES_TARGET, label: "Notify on failure only" },
+];
+
+/** Whether target is one of the Notify targets. */
+export function isNotifyTarget(target?: string): boolean {
+	const t = (target ?? "").trim().toLowerCase();
+	return t === NOTIFY_TARGET || t === NOTIFY_FAILURES_TARGET;
+}

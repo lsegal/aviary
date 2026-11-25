@@ -45,3 +45,22 @@ self.addEventListener("fetch", (event) => {
 		}),
 	);
 });
+
+// A notification the app showed through this worker (#1215) opens its page:
+// in an open Aviary window when there is one, otherwise in a new one.
+self.addEventListener("notificationclick", (event) => {
+	event.notification.close();
+	const link = event.notification.data?.link || "/";
+	const url = new URL(link, self.location.origin).href;
+	event.waitUntil(
+		self.clients
+			.matchAll({ type: "window", includeUncontrolled: true })
+			.then((windows) => {
+				const open = windows.find(
+					(w) => new URL(w.url).origin === self.location.origin,
+				);
+				if (open) return open.focus().then((w) => w.navigate(url));
+				return self.clients.openWindow(url);
+			}),
+	);
+});

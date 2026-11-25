@@ -5,7 +5,15 @@ export interface Toast {
 	id: number;
 	message: string;
 	tone: "error" | "info";
+	/** A notification's toast (#1215) shows its title over its body, and
+	 * opens its page when clicked. */
+	title?: string;
+	body?: string;
+	onClick?: () => void;
+	testId?: string;
 }
+
+export type ToastOptions = Pick<Toast, "title" | "body" | "onClick" | "testId">;
 
 // One stack for the whole app, shown by ToastStack in AppLayout.
 const toasts = ref<Toast[]>([]);
@@ -17,9 +25,13 @@ export function useToasts() {
 	function dismiss(id: number) {
 		toasts.value = toasts.value.filter((t) => t.id !== id);
 	}
-	function show(message: string, tone: Toast["tone"] = "info") {
+	function show(
+		message: string,
+		tone: Toast["tone"] = "info",
+		options: ToastOptions = {},
+	) {
 		const id = nextID++;
-		toasts.value = [...toasts.value, { id, message, tone }];
+		toasts.value = [...toasts.value, { id, message, tone, ...options }];
 		setTimeout(() => dismiss(id), TOAST_MS);
 	}
 	return { toasts, show, dismiss };

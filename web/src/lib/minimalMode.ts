@@ -11,12 +11,14 @@ export const MINIMAL_AGENT_PAGES: ReadonlySet<string> = new Set([
 
 // The paths a minimal-mode session serves: an agent's Code Loop boards and
 // jobs, its Scheduled Tasks and their dashboards, the boards' shared
-// settings, Settings → Display (#1093), and runtime watches.
+// settings, Settings → Display (#1093) and Notifications (#1215), and
+// runtime watches.
 const MINIMAL_PATHS = [
 	/^\/agents\/[^/]+\/projects(\/|$)/,
 	/^\/agents\/[^/]+\/tasks(\/|$)/,
 	/^\/projects\/settings\/?$/,
 	/^\/system\/display\/?$/,
+	/^\/system\/notifications\/?$/,
 	/^\/system\/watches\//,
 ];
 
