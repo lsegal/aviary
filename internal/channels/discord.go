@@ -32,6 +32,11 @@ type DiscordChannel struct {
 	seenMessages    receipts
 	logSinkMu       sync.RWMutex
 	logSink         *LogSink
+
+	// openSession and closeSession connect and disconnect the gateway
+	// session. They default to the discordgo methods; tests replace them.
+	openSession  func(*discordgo.Session) error
+	closeSession func(*discordgo.Session) error
 }
 
 // NewDiscordChannel creates a DiscordChannel with the given bot token.
@@ -144,37 +149,15 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	}
 	c.session = s
 
-	s.AddHandler(func(_ *discordgo.Session, m *discordgo.MessageCreate) {
-		botUserID := c.discordBotUserID()
-		if !c.handleMessage(m.Message, botUserID) {
-			return
-		}
-	})
-
-	s.AddHandler(func(_ *discordgo.Session, m *discordgo.MessageUpdate) {
-		if m == nil {
-			return
-		}
-		msg := m.Message
-		if msg == nil {
-			msg = &discordgo.Message{}
-		}
-		if m.BeforeUpdate != nil {
-			if msg.Author == nil {
-				msg.Author = m.BeforeUpdate.Author
-			}
-			if msg.ChannelID == "" {
-				msg.ChannelID = m.BeforeUpdate.ChannelID
-			}
-			if msg.GuildID == "" {
-				msg.GuildID = m.BeforeUpdate.GuildID
-			}
-		}
-		c.handleMessage(msg, c.discordBotUserID())
-	})
+	s.AddHandler(c.onMessageCreate)
+	s.AddHandler(c.onMessageUpdate)
 
 	s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages | discordgo.IntentsMessageContent
-	if err := s.Open(); err != nil {
+	open := c.openSession
+	if open == nil {
+		open = (*discordgo.Session).Open
+	}
+	if err := open(s); err != nil {
 		c.logf("discord: opening session failed: %v", err)
 		return fmt.Errorf("discord: opening session: %w", err)
 	}
@@ -187,7 +170,11 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	case <-c.done:
 		c.logf("discord: stop requested")
 	}
-	err = s.Close()
+	closeFn := c.closeSession
+	if closeFn == nil {
+		closeFn = (*discordgo.Session).Close
+	}
+	err = closeFn(s)
 	if err != nil {
 		c.logf("discord: close failed: %v", err)
 	} else {
@@ -199,6 +186,42 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 // Stop disconnects from Discord.
 func (c *DiscordChannel) Stop() {
 	c.stopOnce.Do(func() { close(c.done) })
+}
+
+func (c *DiscordChannel) onMessageCreate(_ *discordgo.Session, m *discordgo.MessageCreate) {
+	if m == nil {
+		return
+	}
+	c.handleMessage(m.Message, c.discordBotUserID())
+}
+
+func (c *DiscordChannel) onMessageUpdate(_ *discordgo.Session, m *discordgo.MessageUpdate) {
+	if m == nil {
+		return
+	}
+	c.handleMessage(discordUpdatedMessage(m), c.discordBotUserID())
+}
+
+// discordUpdatedMessage returns the message carried by a MESSAGE_UPDATE event,
+// filling in the author, channel, and guild from the cached pre-update message
+// when Discord omitted them from the partial update.
+func discordUpdatedMessage(m *discordgo.MessageUpdate) *discordgo.Message {
+	msg := m.Message
+	if msg == nil {
+		msg = &discordgo.Message{}
+	}
+	if m.BeforeUpdate != nil {
+		if msg.Author == nil {
+			msg.Author = m.BeforeUpdate.Author
+		}
+		if msg.ChannelID == "" {
+			msg.ChannelID = m.BeforeUpdate.ChannelID
+		}
+		if msg.GuildID == "" {
+			msg.GuildID = m.BeforeUpdate.GuildID
+		}
+	}
+	return msg
 }
 
 func (c *DiscordChannel) discordBotUserID() string {
