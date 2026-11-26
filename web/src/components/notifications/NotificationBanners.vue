@@ -8,6 +8,9 @@
 				<span class="block font-semibold [overflow-wrap:anywhere]">{{ n.title }}<span v-if="n.count > 1" class="ml-1 font-normal opacity-70">×{{ n.count }}</span></span>
 				<span v-if="n.body" class="mt-0.5 line-clamp-3 block whitespace-pre-line text-sm opacity-90 [overflow-wrap:anywhere]">{{ n.body }}</span>
 			</button>
+			<button v-if="n.pauseTask" type="button" data-testid="notification-banner-pause"
+				class="shrink-0 rounded-md border border-current px-2 py-1 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10"
+				@click="notifications.pauseTask(n)">Pause</button>
 			<button type="button" aria-label="Dismiss" class="shrink-0 opacity-60 hover:opacity-100" @click="notifications.dismissBanner(n.id)">
 				<XMarkIcon aria-hidden="true" class="h-5 w-5" />
 			</button>

@@ -83,6 +83,39 @@
 				</div>
 			</div>
 
+			<div :class="card" data-testid="notifications-repeats">
+				<h3 :class="heading">Repeated failures</h3>
+				<p :class="hint">For a task, workflow or Code Loop job that keeps failing. A success, or a different error, always notifies again.</p>
+				<div class="divide-y divide-gray-100 dark:divide-gray-800">
+					<div class="flex flex-wrap items-start gap-4 py-3">
+						<div class="min-w-0 flex-1 basis-56">
+							<p :class="rowLabel">Suppress repeats</p>
+							<p :class="rowHint">The same failure again only raises its count in the bell, with no new banner, toast, system notification or sound.</p>
+						</div>
+						<div class="w-36">
+							<AppSelect size="sm" aria-label="Suppress repeats for" data-testid="notifications-repeat-window"
+								:disabled="!prefs.repeats.suppress" :model-value="prefs.repeats.windowMinutes" :options="repeatWindowOptions"
+								@update:model-value="setRepeats({ windowMinutes: Number($event) })" />
+						</div>
+						<ToggleSwitch data-testid="notifications-repeat-suppress" label="Suppress repeats" :model-value="prefs.repeats.suppress"
+							@update:model-value="setRepeats({ suppress: $event })" />
+					</div>
+					<div class="flex flex-wrap items-start gap-4 py-3">
+						<div class="min-w-0 flex-1 basis-56">
+							<p :class="rowLabel">Notify on failures in a row</p>
+							<p :class="rowHint">Once per run of failures, with a Pause action for a scheduled task or workflow.</p>
+						</div>
+						<div class="w-36">
+							<AppSelect size="sm" aria-label="Failures in a row" data-testid="notifications-streak-count"
+								:disabled="!prefs.repeats.streak" :model-value="prefs.repeats.streakCount" :options="streakOptions"
+								@update:model-value="setRepeats({ streakCount: Number($event) })" />
+						</div>
+						<ToggleSwitch data-testid="notifications-streak" label="Notify on failures in a row" :model-value="prefs.repeats.streak"
+							@update:model-value="setRepeats({ streak: $event })" />
+					</div>
+				</div>
+			</div>
+
 			<div :class="card">
 				<div class="flex items-start gap-4">
 					<div class="min-w-0 flex-1">
@@ -161,7 +194,9 @@ import {
 	EVENT_TYPES,
 	type NotificationEventPrefs,
 	type NotificationPrefs,
+	REPEAT_WINDOWS,
 	SOUNDS,
+	STREAK_COUNTS,
 	systemPermission,
 } from "../../lib/notifications";
 import { AppSelect } from "../ui/select";
@@ -184,6 +219,9 @@ function setSound(change: Partial<NotificationPrefs["sound"]>) {
 function setQuiet(change: Partial<NotificationPrefs["quietHours"]>) {
 	set({ quietHours: { ...prefs.value.quietHours, ...change } });
 }
+function setRepeats(change: Partial<NotificationPrefs["repeats"]>) {
+	set({ repeats: { ...prefs.value.repeats, ...change } });
+}
 function setEvent(type: string, change: Partial<NotificationEventPrefs>) {
 	set({
 		events: {
@@ -198,6 +236,32 @@ async function sendTest() {
 	if (prefs.value.system && permission.value === "default")
 		await notifications.requestPermission();
 	await notifications.test();
+}
+
+// A window or count set outside these choices still shows as selected.
+const repeatWindowOptions = computed(() =>
+	withCurrent(
+		REPEAT_WINDOWS,
+		prefs.value.repeats.windowMinutes,
+		(v) => `${v} minutes`,
+	),
+);
+const streakOptions = computed(() =>
+	withCurrent(
+		STREAK_COUNTS,
+		prefs.value.repeats.streakCount,
+		(v) => `${v} failures`,
+	),
+);
+function withCurrent(
+	options: { value: number; label: string }[],
+	current: number,
+	label: (v: number) => string,
+) {
+	if (options.some((o) => o.value === current)) return options;
+	return [...options, { value: current, label: label(current) }].sort(
+		(a, b) => a.value - b.value,
+	);
 }
 
 const eventSoundOptions = [
