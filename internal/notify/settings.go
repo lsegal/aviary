@@ -73,6 +73,20 @@ func eventType(typ string) (EventType, bool) {
 	return EventType{}, false
 }
 
+// DefaultRepeats are the default handling of repeating failures: repeats
+// within six hours merge silently into one entry, and five failures in a row
+// notify once.
+func DefaultRepeats() store.NotificationRepeats {
+	return store.NotificationRepeats{Suppress: true, WindowMinutes: 360, Streak: true, StreakCount: 5}
+}
+
+// The bounds of the repeats settings.
+const (
+	MaxRepeatWindowMinutes = 7 * 24 * 60
+	MinStreakCount         = 2
+	MaxStreakCount         = 100
+)
+
 // DefaultSettings are a new user's notification settings: on, with in-app
 // and system delivery, and sound off.
 func DefaultSettings() store.NotificationPreferences {
@@ -84,6 +98,8 @@ func DefaultSettings() store.NotificationPreferences {
 		QuietHours: store.NotificationQuietHours{Start: "22:00", End: "07:00"},
 		Events:     map[string]store.NotificationEvent{},
 	}
+	repeats := DefaultRepeats()
+	prefs.Repeats = &repeats
 	for _, t := range EventTypes {
 		prefs.Events[t.Type] = t.Default
 	}
@@ -108,6 +124,13 @@ func Normalize(prefs *store.NotificationPreferences) store.NotificationPreferenc
 	if _, ok := parseClock(out.QuietHours.End); !ok {
 		out.QuietHours.End = defaults.QuietHours.End
 	}
+	repeats := DefaultRepeats()
+	if prefs.Repeats != nil {
+		repeats = *prefs.Repeats
+		repeats.WindowMinutes = min(max(repeats.WindowMinutes, 1), MaxRepeatWindowMinutes)
+		repeats.StreakCount = min(max(repeats.StreakCount, MinStreakCount), MaxStreakCount)
+	}
+	out.Repeats = &repeats
 	out.Events = map[string]store.NotificationEvent{}
 	for _, t := range EventTypes {
 		ev, ok := prefs.Events[t.Type]

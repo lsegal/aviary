@@ -25,6 +25,11 @@ export interface AppNotification {
 	sound?: string;
 	/** Arrived during quiet hours: kept in the bell, not shown or played. */
 	quiet?: boolean;
+	/**
+	 * The "<agent>/<task>" its Pause action pauses, on a notification that a
+	 * task has failed many times in a row (#1419).
+	 */
+	pauseTask?: string;
 }
 
 export interface NotificationEventPrefs {
@@ -32,6 +37,17 @@ export interface NotificationEventPrefs {
 	delivery: Delivery;
 	/** "" for the default sound, "none", or a sound. */
 	sound?: string;
+}
+
+/** Mirrors store.NotificationRepeats: how repeating failures notify. */
+export interface NotificationRepeats {
+	/** Merge repeats of the same failure into one entry, delivered once. */
+	suppress: boolean;
+	/** How long after the last repeat the next one still merges. */
+	windowMinutes: number;
+	/** Notify once when a source fails streakCount times in a row. */
+	streak: boolean;
+	streakCount: number;
 }
 
 /** Mirrors store.NotificationPreferences. */
@@ -42,8 +58,24 @@ export interface NotificationPrefs {
 	server: boolean;
 	sound: { enabled: boolean; type: string; volume: number };
 	quietHours: { enabled: boolean; start: string; end: string };
+	repeats: NotificationRepeats;
 	events: Record<string, NotificationEventPrefs>;
 }
+
+/** The repeat windows Settings offers, as notify.MaxRepeatWindowMinutes caps. */
+export const REPEAT_WINDOWS = [
+	{ value: 15, label: "15 minutes" },
+	{ value: 60, label: "1 hour" },
+	{ value: 360, label: "6 hours" },
+	{ value: 1440, label: "1 day" },
+	{ value: 10080, label: "1 week" },
+];
+
+/** The in-a-row counts Settings offers. */
+export const STREAK_COUNTS = [3, 5, 10, 20].map((n) => ({
+	value: n,
+	label: `${n} failures`,
+}));
 
 export const SOUNDS = [
 	{ value: "chime", label: "Chime" },
@@ -121,6 +153,12 @@ export function defaultNotificationPrefs(): NotificationPrefs {
 		server: false,
 		sound: { enabled: false, type: "chime", volume: 60 },
 		quietHours: { enabled: false, start: "22:00", end: "07:00" },
+		repeats: {
+			suppress: true,
+			windowMinutes: 360,
+			streak: true,
+			streakCount: 5,
+		},
 		events: Object.fromEntries(
 			EVENT_TYPES.map((t) => [t.type, { ...t.default }]),
 		),
@@ -152,6 +190,22 @@ export function normalizeNotificationPrefs(raw: unknown): NotificationPrefs {
 			prefs.quietHours.start = r.quietHours.start;
 		if (CLOCK.test(r.quietHours.end ?? ""))
 			prefs.quietHours.end = r.quietHours.end;
+	}
+	if (r.repeats) {
+		const rep = r.repeats;
+		if (typeof rep.suppress === "boolean")
+			prefs.repeats.suppress = rep.suppress;
+		if (typeof rep.streak === "boolean") prefs.repeats.streak = rep.streak;
+		if (typeof rep.windowMinutes === "number")
+			prefs.repeats.windowMinutes = Math.min(
+				10080,
+				Math.max(1, Math.round(rep.windowMinutes)),
+			);
+		if (typeof rep.streakCount === "number")
+			prefs.repeats.streakCount = Math.min(
+				100,
+				Math.max(2, Math.round(rep.streakCount)),
+			);
 	}
 	for (const t of EVENT_TYPES) {
 		const ev = r.events?.[t.type];

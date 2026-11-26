@@ -223,3 +223,42 @@ func TestNotificationPreferencesHandler_SaveReadReset(t *testing.T) {
 	notificationPreferencesHandler(rec, httptest.NewRequest(http.MethodPut, "/api/preferences/notifications", strings.NewReader("{")))
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
+
+func TestObserveRun_RepeatedFailuresMergeUntilASuccess(t *testing.T) {
+	settings := notify.DefaultSettings()
+	settings.Repeats.Streak = false
+	s, published := notifyServer(t, settings)
+	job := func(id string) domain.Job {
+		return domain.Job{ID: id, TaskID: "bot/release", TriggerContext: &domain.TriggerContext{}}
+	}
+
+	s.observeRun(job("j1"), domain.TaskRunFailed, "tag v1 exists")
+	s.observeRun(job("j2"), domain.TaskRunFailed, "tag v1 exists")
+	require.Len(t, *published, 1, "a repeat with another run ID merges")
+	history, _ := s.notifier.History()
+	require.Len(t, history, 1)
+	assert.Equal(t, 2, history[0].Count)
+
+	s.observeRun(job("j3"), domain.TaskRunCompleted, "ok")
+	s.observeRun(job("j4"), domain.TaskRunFailed, "tag v1 exists")
+	assert.Len(t, *published, 2, "a failure after a success notifies again")
+}
+
+func TestObserveCodeLoopJob_ScheduledFailuresAreOneSource(t *testing.T) {
+	settings := notify.DefaultSettings()
+	settings.Repeats.StreakCount = 3
+	s, published := notifyServer(t, settings)
+	run := func(n int) core.JobSnapshot {
+		return core.JobSnapshot{Target: "acme/app", Number: n, Kind: core.JobKindSchedule, ScheduleID: "bot/release"}
+	}
+	for n := 1; n <= 4; n++ {
+		s.observeCodeLoopJob(run(1000+n), config.ProjectReportFailed, "Scheduled prompt failed. exit 1")
+	}
+	require.Len(t, *published, 2, "the first failure and one in-a-row notification")
+	assert.Equal(t, `Scheduled prompt "bot/release" has failed 3 times in a row`, (*published)[1].Title)
+	assert.Equal(t, "bot/release", (*published)[1].PauseTask)
+
+	s.observeCodeLoopJob(run(2000), config.ProjectReportMerged, "done")
+	s.observeCodeLoopJob(run(2001), config.ProjectReportFailed, "Scheduled prompt failed. exit 1")
+	assert.Len(t, *published, 3, "a failure after a successful run notifies again")
+}

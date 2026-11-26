@@ -37,6 +37,14 @@ type Event struct {
 	// Section is where the event came from; the type's own section when
 	// empty.
 	Section string `json:"section,omitempty"`
+	// Source names what keeps failing, such as `Task agent/name`, for a
+	// failure that can repeat. Repeats of the same failure from the same
+	// source are merged as the repeats settings say, and a run of failures
+	// in a row notifies once. Only Aviary's own event sources set it.
+	Source string `json:"-"`
+	// PauseTask is the "<agent>/<task>" a streak notification offers to
+	// pause.
+	PauseTask string `json:"-"`
 }
 
 // Notification is an event as delivered and kept in the history.
@@ -60,6 +68,9 @@ type Notification struct {
 	// Quiet marks a notification that arrived during quiet hours: it is in
 	// the history, but nothing is shown or played.
 	Quiet bool `json:"quiet,omitempty"`
+	// PauseTask is the "<agent>/<task>" the notification's Pause action
+	// pauses, set on a notification about a task failing again and again.
+	PauseTask string `json:"pauseTask,omitempty"`
 }
 
 // Outcome says what Emit did with an event.
@@ -69,7 +80,8 @@ type Outcome string
 const (
 	// Delivered events were added to the history and pushed.
 	Delivered Outcome = "delivered"
-	// Merged events repeated a recent one, whose count went up.
+	// Merged events repeated a recent one, whose count went up. Nothing
+	// was shown or played.
 	Merged Outcome = "merged"
 	// Grouped events were held back by the rate limit and are delivered
 	// together when the window ends.
@@ -83,6 +95,7 @@ const (
 	// HistoryLimit is how many notifications the history keeps.
 	HistoryLimit = 100
 	// DedupeWindow is how long a repeat of the same event merges into it.
+	// Failures with a Source use the repeats settings' window instead.
 	DedupeWindow = time.Minute
 	// RateWindow is the window the rate limit counts deliveries in.
 	RateWindow = 30 * time.Second
@@ -99,6 +112,9 @@ type Service struct {
 	sent map[string][]time.Time
 	// groups holds each type's events held back by the rate limit.
 	groups map[string][]Event
+	// streaks holds each failing source's run of failures, by type and
+	// source.
+	streaks map[string]*streak
 
 	// Settings reads the user's notification settings.
 	Settings func() (store.NotificationPreferences, error)
@@ -120,6 +136,7 @@ func New() *Service {
 	return &Service{
 		sent:      map[string][]time.Time{},
 		groups:    map[string][]Event{},
+		streaks:   map[string]*streak{},
 		Settings:  ReadSettings,
 		Now:       time.Now,
 		AfterFunc: func(d time.Duration, f func()) { time.AfterFunc(d, f) },
@@ -172,11 +189,19 @@ func (s *Service) Emit(e Event) (Notification, Outcome) {
 	}
 
 	s.mu.Lock()
+	if !test && e.Source != "" {
+		if out, outcome, ok := s.repeatLocked(e, n, settings); ok {
+			return out, outcome
+		}
+	}
 	if !test {
-		if merged, ok := s.mergeLocked(n); ok {
-			s.mu.Unlock()
-			s.changed()
-			return merged, Merged
+		// A failure with a Source merges only as repeatLocked decides.
+		if e.Source == "" {
+			if merged, ok := s.mergeLocked(n); ok {
+				s.mu.Unlock()
+				s.changed()
+				return merged, Merged
+			}
 		}
 		if !s.allowLocked(e.Type, now) {
 			first := len(s.groups[e.Type]) == 0
@@ -190,6 +215,9 @@ func (s *Service) Emit(e Event) (Notification, Outcome) {
 	}
 	n.ID = newID()
 	s.addLocked(n)
+	if st := s.streaks[streakKey(e)]; st != nil && e.Source != "" && !test {
+		st.entry = n.ID
+	}
 	s.mu.Unlock()
 	s.deliver(n, settings)
 	return n, Delivered

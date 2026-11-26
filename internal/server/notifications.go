@@ -85,7 +85,7 @@ func notifyOutcomeMessage(outcome notify.Outcome) string {
 	case notify.Grouped:
 		return "notification grouped with others sent at the same time"
 	case notify.Merged:
-		return "notification merged with a recent identical one"
+		return "notification merged with an earlier identical one"
 	}
 	return "sent as a notification"
 }
@@ -99,18 +99,29 @@ func capitalize(s string) string {
 
 // observeRun notifies about a failed run: through its Notify target when it
 // has one, otherwise as a failed workflow when it is a workflow run.
-// Successful Notify runs are notified as their output is delivered.
+// Successful Notify runs are notified as their output is delivered. Repeats
+// of the same failure are merged and a success ends the task's run of
+// failures (#1419).
 func (s *Server) observeRun(job domain.Job, status domain.TaskRunStatus, summary string) {
+	source := domain.OutputSource{Task: job.TaskID, JobID: job.ID, Workflow: job.TriggerContext != nil}
+	label := capitalize(source.Label())
+	if status == domain.TaskRunCompleted {
+		if s.notifier != nil {
+			s.notifier.Recover(label)
+		}
+		return
+	}
 	if status != domain.TaskRunFailed {
 		return
 	}
-	source := domain.OutputSource{Task: job.TaskID, JobID: job.ID, Workflow: job.TriggerContext != nil}
 	target, err := config.ParseTaskTarget(job.OutputChannel)
 	event := notify.Event{
-		Severity: notify.SeverityError,
-		Title:    capitalize(source.Label()) + " failed",
-		Body:     notify.Clip(summary, notify.MaxBodyBytes),
-		Link:     taskRunPath(source),
+		Severity:  notify.SeverityError,
+		Title:     label + " failed",
+		Body:      notify.Clip(summary, notify.MaxBodyBytes),
+		Link:      taskRunPath(source),
+		Source:    label,
+		PauseTask: job.TaskID,
 	}
 	switch {
 	case err == nil && target.Kind == config.TargetNotify:
@@ -124,21 +135,31 @@ func (s *Server) observeRun(job domain.Job, status domain.TaskRunStatus, summary
 }
 
 // observeCodeLoopJob notifies about a Code Loop job that failed, is waiting
-// on the owner, or is done.
+// on the owner, or is done. A job or scheduled prompt that keeps failing,
+// across retries or scheduled runs, is one source whose repeats are merged,
+// until it is done (#1419).
 func (s *Server) observeCodeLoopJob(job core.JobSnapshot, event, text string) {
 	e := notify.Event{Body: text, Link: s.codeLoopJobPath(job)}
-	title := fmt.Sprintf("%s#%d", firstNonEmpty(job.Repository, job.Target), job.Number)
+	subject := fmt.Sprintf("%s#%d", firstNonEmpty(job.Repository, job.Target), job.Number)
+	title := subject
 	if job.Kind == core.JobKindSchedule {
-		title = "Scheduled prompt " + strconv.Quote(job.ScheduleID)
+		// A scheduled run's Number is its fire time; the schedule is what
+		// keeps failing.
+		subject = "Scheduled prompt " + strconv.Quote(job.ScheduleID)
+		title = subject
+		e.PauseTask = job.ScheduleID
 	} else if job.Title != "" {
 		title += " " + job.Title
 	}
 	switch event {
 	case config.ProjectReportFailed:
-		e.Type, e.Severity, e.Title = notify.TypeCodeLoopFailed, notify.SeverityError, "Failed: "+title
+		e.Type, e.Severity, e.Title, e.Source = notify.TypeCodeLoopFailed, notify.SeverityError, "Failed: "+title, subject
 	case config.ProjectReportWaiting:
 		e.Type, e.Severity, e.Title = notify.TypeCodeLoopBlocked, notify.SeverityWarning, "Waiting: "+title
 	case config.ProjectReportMerged:
+		if s.notifier != nil {
+			s.notifier.Recover(subject)
+		}
 		e.Type, e.Severity, e.Title = notify.TypeCodeLoopDone, notify.SeveritySuccess, "Done: "+title
 	default:
 		return

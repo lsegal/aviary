@@ -36,6 +36,11 @@
 								<span v-if="n.body" class="line-clamp-2 block whitespace-pre-line text-xs text-gray-600 dark:text-gray-400">{{ n.body }}</span>
 							</span>
 						</button>
+						<div v-if="n.pauseTask" class="-mt-1 px-3 pb-2 pl-7">
+							<button type="button" data-testid="notification-pause" :class="pauseClass" @click="notifications.pauseTask(n)">
+								Pause {{ n.pauseTask }}
+							</button>
+						</div>
 					</li>
 				</ul>
 				<p v-else data-testid="notification-empty" class="px-3 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -99,6 +104,9 @@ const buttonClass = computed(() => {
 
 const actionClass =
 	"rounded-md px-2 py-1 text-xs text-gray-600 transition hover:bg-gray-100 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800";
+
+const pauseClass =
+	"rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800";
 
 const severityDot: Record<string, string> = {
 	info: "bg-blue-500",

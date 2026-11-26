@@ -11,6 +11,7 @@ import {
 } from "../lib/notifications";
 import router from "../router";
 import { useAuthStore } from "../stores/auth";
+import { useTaskPause } from "./useTaskPause";
 import { useToasts } from "./useToasts";
 
 // The web UI's side of notifications (#1215): the bell's history, the big
@@ -113,6 +114,26 @@ function open(n: AppNotification) {
 	dismissBanner(n.id);
 	if (!n.read) void markRead([n.id]);
 	if (n.link) void router.push(n.link);
+}
+
+/**
+ * Pauses the task n offers to pause, marks n read, and says so; resolves
+ * false when the pause failed, which useTaskPause reports.
+ */
+async function pauseTask(n: AppNotification): Promise<boolean> {
+	if (!n.pauseTask) return false;
+	const slash = n.pauseTask.indexOf("/");
+	if (slash < 0) return false;
+	const agent = n.pauseTask.slice(0, slash);
+	const name = n.pauseTask.slice(slash + 1);
+	const ok = await useTaskPause().setTaskEnabled(agent, name, false);
+	if (!ok) return false;
+	dismissBanner(n.id);
+	if (!n.read) void markRead([n.id]);
+	useToasts().show(`Paused ${n.pauseTask}`, "info", {
+		testId: "notification-paused",
+	});
+	return true;
 }
 
 function dismissBanner(id: string) {
@@ -222,6 +243,7 @@ export function useNotifications() {
 		markRead,
 		clear,
 		open,
+		pauseTask,
 		dismissBanner,
 		/** Changes some settings, here and on the server. */
 		set(change: Partial<NotificationPrefs>) {
