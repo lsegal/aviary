@@ -51,6 +51,12 @@ func TestFormatSignalMessage_Table(t *testing.T) {
 		{"emoji inside inline code", "x `🎉` y", "x 🎉 y", []string{"2:2:MONOSPACE"}},
 		{"style reaching trimmed newlines is clipped", "**hi\n\n**", "hi", []string{"0:2:BOLD"}},
 		{"leading newlines are trimmed", "\n\nplain", "plain", nil},
+		{"trailing newline keeps earlier style length", "**hi** there\n", "hi there", []string{"0:2:BOLD"}},
+		{"leading newline shifts style start", "\n**hi**", "hi", []string{"0:2:BOLD"}},
+		{"leading and trailing newlines around styles", "\n\n`a` **b**\n\n", "a b", []string{"0:1:MONOSPACE", "2:1:BOLD"}},
+		{"style starting in leading newlines is clipped", "**\n\nhi** x", "hi x", []string{"0:2:BOLD"}},
+		{"fence followed by trailing newline", "see\n```\ncode\n```\n", "see\ncode", []string{"4:4:MONOSPACE"}},
+		{"emoji with leading and trailing newlines", "\n😀 **hi**\n", "😀 hi", []string{"3:2:BOLD"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -96,13 +102,23 @@ func TestShiftSignalStyles(t *testing.T) {
 	assert.Equal(t, 0, in[0].Start, "input must not be mutated")
 }
 
-func TestTrimSignalStyles(t *testing.T) {
-	in := []string{"0:5:BOLD"}
-	assert.Equal(t, in, trimSignalStyles(in, 0))
-	assert.Equal(t, in, trimSignalStyles(in, -1))
+func TestClipSignalStyles(t *testing.T) {
+	assert.Nil(t, clipSignalStyles(nil, 1, 5))
 
-	got := trimSignalStyles([]string{"0:5:BOLD", "not-a-style", "3:2:ITALIC", "1:3:SPOILER"}, 2)
-	assert.Equal(t, []string{"0:3:BOLD", "1:1:SPOILER"}, got, "clips ends, drops emptied and malformed ranges")
+	in := []signalStyleSpan{
+		{Start: 0, Length: 5, Style: "BOLD"},          // overlaps the leading trim
+		{Start: 1, Length: 0, Style: "ITALIC"},        // empty
+		{Start: 3, Length: 2, Style: "MONOSPACE"},     // interior
+		{Start: 5, Length: 4, Style: "SPOILER"},       // overlaps the trailing trim
+		{Start: 0, Length: 2, Style: "STRIKETHROUGH"}, // only covers trimmed text
+		{Start: 8, Length: 1, Style: "ITALIC"},        // beyond the trimmed text
+	}
+	got := clipSignalStyles(in, 2, 5)
+	assert.Equal(t, []signalStyleSpan{
+		{Start: 0, Length: 3, Style: "BOLD"},
+		{Start: 1, Length: 2, Style: "MONOSPACE"},
+		{Start: 3, Length: 2, Style: "SPOILER"},
+	}, got)
 }
 
 func TestSignalCanOpenEmphasis(t *testing.T) {
