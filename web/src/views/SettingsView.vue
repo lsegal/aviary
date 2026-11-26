@@ -598,9 +598,7 @@ watch(
 );
 const saving = ref(false);
 const reverting = ref(false);
-const revertLabel = computed(() =>
-	reverting.value ? "Reverting…" : "Revert",
-);
+const revertLabel = computed(() => (reverting.value ? "Reverting…" : "Revert"));
 const reloadLabel = computed(() => (loading.value ? "Loading…" : "Reload"));
 const errorMessage = ref("");
 const okMessage = ref("");

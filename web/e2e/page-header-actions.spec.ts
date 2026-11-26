@@ -43,7 +43,8 @@ async function headerLayout(page: Page) {
 		const controls = [...actions.querySelectorAll<HTMLElement>(sel)]
 			.filter(
 				(el) =>
-					!el.parentElement?.closest(sel) && !el.closest('[aria-hidden="true"]'),
+					!el.parentElement?.closest(sel) &&
+					!el.closest('[aria-hidden="true"]'),
 			)
 			.map((el) => ({ el, box: el.getBoundingClientRect() }))
 			.filter(({ box }) => box.width > 1 && box.height > 1)
@@ -76,7 +77,8 @@ async function headerLayout(page: Page) {
 				)
 				.map((el) => el.getAttribute("data-testid") || el.tagName),
 			pageOverflow:
-				document.documentElement.scrollWidth - document.documentElement.clientWidth,
+				document.documentElement.scrollWidth -
+				document.documentElement.clientWidth,
 		};
 	});
 }
@@ -109,7 +111,9 @@ for (const width of WIDTHS) {
 			}
 			if (first) {
 				// Right-aligned, and centered with the title when beside it.
-				expect(Math.abs(layout.actionsRight - layout.rowRight)).toBeLessThanOrEqual(1);
+				expect(
+					Math.abs(layout.actionsRight - layout.rowRight),
+				).toBeLessThanOrEqual(1);
 				if (layout.besideTitle)
 					expect(
 						Math.abs(layout.actionsCenter - layout.titleCenter),
