@@ -31,7 +31,9 @@ func withoutBrowser(t *testing.T) {
 }
 
 // withFakeBrowser installs a browser launcher on PATH that records the URL it
-// was asked to open, and returns the file it records into.
+// was asked to open, and returns the file it records into. The launcher runs
+// detached, so the helper waits for it to finish before the test's TempDir
+// cleanup; otherwise a still-running launcher can race RemoveAll.
 func withFakeBrowser(t *testing.T) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -45,6 +47,10 @@ func withFakeBrowser(t *testing.T) string {
 	}
 	t.Setenv("PATH", dir)
 	t.Setenv("AVIARY_TEST_BROWSER_OUT", out)
+	// Registered after both TempDir calls, so it runs before their cleanup.
+	// The URL is the launcher's last write, so once it is non-empty the
+	// launcher no longer touches the directory.
+	t.Cleanup(func() { readOpenedURL(t, out) })
 	return out
 }
 
