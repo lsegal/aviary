@@ -29,6 +29,9 @@ type CopilotProvider struct {
 	model      string
 	httpClient *http.Client
 	baseURL    string
+	// exchangeToken trades the GitHub user token for a Copilot API token.
+	// It is a field so tests can avoid the real token exchange.
+	exchangeToken func(ctx context.Context, ghToken string) (string, time.Time, error)
 
 	mu         sync.Mutex
 	copilotTok string
@@ -39,10 +42,11 @@ type CopilotProvider struct {
 // The token is exchanged for a Copilot API token on first use.
 func NewCopilotProvider(ghToken, model string) *CopilotProvider {
 	return &CopilotProvider{
-		ghToken:    ghToken,
-		model:      model,
-		httpClient: newDebugClient(nil),
-		baseURL:    copilotBaseURL,
+		ghToken:       ghToken,
+		model:         model,
+		httpClient:    newDebugClient(nil),
+		baseURL:       copilotBaseURL,
+		exchangeToken: auth.CopilotTokenExchange,
 	}
 }
 
@@ -74,7 +78,7 @@ func (p *CopilotProvider) getToken(ctx context.Context) (string, error) {
 	if p.ghToken == "" {
 		return p.copilotTok, nil
 	}
-	tok, expiry, err := auth.CopilotTokenExchange(ctx, p.ghToken)
+	tok, expiry, err := p.exchangeToken(ctx, p.ghToken)
 	if err != nil {
 		return "", err
 	}
