@@ -416,6 +416,7 @@
 		"target"
 	],
 	"project_remove": [
+		"delete_data",
 		"runtime",
 		"target"
 	],

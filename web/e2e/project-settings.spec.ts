@@ -1283,7 +1283,18 @@ test("a failed project delete keeps the confirmation open with the error", async
 test("deleting a project offers to delete its data, checked by default", async ({
 	page,
 }) => {
-	const calls = await setup(page);
+	const calls = await setup(page, {
+		config: {
+			...CONFIG,
+			agents: [
+				CONFIG.agents[0],
+				{
+					...CONFIG.agents[1],
+					projects: [{ target: "lsegal/aviary" }, { target: "lsegal/nupp" }],
+				},
+			],
+		},
+	});
 	await page.goto("/projects/settings?agent=coder");
 	await page.getByRole("button", { name: "Delete lsegal/nupp" }).click();
 	const dialog = page.getByTestId("delete-project-dialog");
