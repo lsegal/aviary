@@ -94,7 +94,7 @@ The agent's own settings, as sections on one scrolling page. **Save Changes** sa
 
 ### Deleting data with an object
 
-Deleting an agent, a scheduled task, a workflow or a channel, or removing a Code Loop project, asks for confirmation with a **Delete session data and files** checkbox, checked by default. The dialog lists what checking it deletes, such as "1 session, 34 messages, 12 runs, 3 files", counted by [`delete_preview`](/reference/mcp/tasks-and-jobs#delete-preview).
+Deleting an agent, a scheduled task, a workflow or a channel, or removing a Code Loop project, asks for confirmation with a **Delete session data and files** checkbox, checked by default. The dialog lists what checking it deletes, such as "1 session, 34 messages, 12 runs, 3 files", counted by [`delete_preview`](/reference/mcp/tasks-and-jobs#delete-preview). Workflows have a Danger Zone too, on the Edit workflow form; see [Workflows](/guide/workflows#deleting-a-workflow).
 
 - **Checked** deletes the object with its sessions and their messages, its run history, and its media. For an agent it deletes the whole data directory: `AGENTS.md`, `MEMORY.md`, `memory/`, `notes/`, sessions and other files. For a project it deletes its job records, job transcripts and the clones no job still uses, once its jobs have stopped; a clone a job still holds is never removed.
 - **Unchecked** only removes the object from the configuration and keeps its data on disk. A task's, workflow's or channel's sessions become regular chats titled `<name> (archived)`. An agent's data directory stays, so adding an agent with the same name brings it back. A project's job records, transcripts and clones stay on disk.
