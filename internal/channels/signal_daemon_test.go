@@ -27,7 +27,7 @@ const signalDaemonHelperEnv = "AVIARY_SIGNAL_DAEMON_HELPER"
 // connections on the address after "--" and writes a log line to stdout and
 // stderr; mode "idle" does nothing. Both exit on their own after a while so a
 // leaked child never outlives the test run.
-func TestSignalDaemonHelperProcess(t *testing.T) {
+func TestSignalDaemonHelperProcess(_ *testing.T) {
 	mode := os.Getenv(signalDaemonHelperEnv)
 	if mode == "" {
 		return
@@ -42,7 +42,7 @@ func TestSignalDaemonHelperProcess(t *testing.T) {
 		}
 		ln, err := net.Listen("tcp", args[len(args)-1])
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "helper listen:", err)
+			_, _ = fmt.Fprintln(os.Stderr, "helper listen:", err)
 			os.Exit(2)
 		}
 		go func() {
@@ -54,8 +54,8 @@ func TestSignalDaemonHelperProcess(t *testing.T) {
 				conn.Close() //nolint:errcheck
 			}
 		}()
-		fmt.Fprintln(os.Stdout, "helper stdout ready")
-		fmt.Fprintln(os.Stderr, "helper stderr ready")
+		_, _ = fmt.Fprintln(os.Stdout, "helper stdout ready")
+		_, _ = fmt.Fprintln(os.Stderr, "helper stderr ready")
 	}
 	time.Sleep(30 * time.Second)
 	os.Exit(0)
@@ -80,7 +80,7 @@ func stubSignalCLI(t *testing.T, cmd func(ctx context.Context, phone, addr strin
 }
 
 // startIdleHelper starts a helper process that does nothing until killed.
-func startIdleHelper(t *testing.T, ctx context.Context) *exec.Cmd {
+func startIdleHelper(ctx context.Context, t *testing.T) *exec.Cmd {
 	t.Helper()
 	cmd := helperDaemonCommand("idle")(ctx, "", "")
 	assert.NoError(t, cmd.Start())
@@ -386,9 +386,9 @@ func TestSharedDaemon_RunRecordsAndClearsProcess(t *testing.T) {
 
 	var launches atomic.Int32
 	cmds := make(chan *exec.Cmd, 1)
-	d := &sharedDaemon{phone: "+1", launch: func(ctx context.Context, d *sharedDaemon) (string, *exec.Cmd, error) {
+	d := &sharedDaemon{phone: "+1", launch: func(ctx context.Context, _ *sharedDaemon) (string, *exec.Cmd, error) {
 		launches.Add(1)
-		cmd := startIdleHelper(t, ctx)
+		cmd := startIdleHelper(ctx, t)
 		cmds <- cmd
 		return fd.Addr(), cmd, nil
 	}}
