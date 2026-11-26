@@ -324,7 +324,9 @@ test("a project's issue discovery mode is set in its settings", async ({
 	await expect(
 		card.getByRole("radio", { name: /Inherit \(global: Watch\)/ }),
 	).toBeChecked();
-	await expect(source).toContainText("Inherited from the global setting: Watch");
+	await expect(source).toContainText(
+		"Inherited from the global setting: Watch",
+	);
 	await expect(card.getByTestId("project-mode-reset")).toHaveCount(0);
 	await card.getByRole("radio", { name: /Manual: only what I queue/ }).check();
 	await expect(source).toContainText(

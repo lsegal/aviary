@@ -120,7 +120,8 @@ onBeforeUnmount(() => {
 					<strong>Manual</strong> and Aviary works only what you queue, with no
 					issue discovery. Switch between Watch and Manual live from the header's Issue
 					discovery menu or the project's settings, or start with
-					<code>aviary watch --manual</code>.
+					<code>aviary watch --manual</code>. Make Manual the global default,
+					and any project can still override it.
 				</p>
 				<div class="pp-actions reveal">
 					<a class="pp-button" href="#install">Install Aviary</a>
