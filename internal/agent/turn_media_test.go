@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,21 +31,7 @@ func TestPromptMedia_ToolsSeeTheTurnMedia(t *testing.T) {
 		&captureProvider{}, nil,
 	)
 	media := []string{"data:image/png;base64,Zmlyc3Q=", llm.FileURL("/tmp/clip.mp4")}
-	done := make(chan struct{}, 1)
-	runner.PromptMedia(context.Background(), "file this", media, func(e StreamEvent) {
-		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
-			select {
-			case done <- struct{}{}:
-			default:
-			}
-		}
-	})
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		require.FailNow(t, "timeout")
-	}
-	runner.Wait()
+	promptAndWait(context.Background(), t, runner, "file this", media, RunOverrides{})
 	assert.Equal(t, media, seen)
 }
 

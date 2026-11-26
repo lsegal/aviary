@@ -57,7 +57,12 @@ export type PullRequestState = "" | "draft" | "open" | "merged";
 
 export interface ProjectSummary {
 	name: string;
+	/** The project's board entries in the Running state, counted as the
+	 * board's state counts count them: a schedule once however many of its
+	 * runs overlap (#1359). */
 	running: number;
+	/** Those entries, as the collapsed rail's Code Loop flyout lists them. */
+	runningJobs: RunningJob[];
 	waiting: number;
 	issues: number;
 	/** Manual mode: never searched for issues, so issues is not counted. */
@@ -67,6 +72,18 @@ export interface ProjectSummary {
 	/** Code Loop has not read the project from GitHub yet, so its counts
 	 * are not known: it was just added. */
 	loading?: boolean;
+}
+
+/** A running board entry: an issue job, or a schedule with runs in flight. */
+export interface RunningJob {
+	/** The engine's job key, `<target>#<number>`. */
+	id: string;
+	number: number;
+	/** `#<number> <title>` for an issue job, the task name for a schedule. */
+	label: string;
+	state: BoardState;
+	/** A schedule's overlapping runs in flight, shown as ×N past 1. */
+	runs: number;
 }
 
 /** One CLI provider: the models the board's jobs run on and its quota. */
@@ -695,11 +712,15 @@ export function summarizeProjects(
 ): ProjectSummary[] {
 	return status.targets.map((t) => {
 		const mine = jobs.filter((j) => j.target === t.name);
+		const runningJobs = mine
+			.filter((j) => j.state === "running")
+			.map(runningJob);
 		return {
 			name: t.name,
 			issues: t.issues,
 			...(t.manual ? { manual: true } : {}),
-			running: mine.filter((j) => isRunning(j.status)).length,
+			running: runningJobs.length,
+			runningJobs,
 			waiting: mine.filter((j) => isWaiting(j.status)).length,
 			...(t.loading ? { loading: true } : {}),
 			...(tasks === undefined
@@ -707,6 +728,27 @@ export function summarizeProjects(
 				: { scheduled: projectSchedules(tasks, t.name).length }),
 		};
 	});
+}
+
+function runningJob(j: ProjectJob): RunningJob {
+	if (!j.scheduleID)
+		return {
+			id: j.id,
+			number: j.number,
+			label: j.title ? `#${j.number} ${j.title}` : `#${j.number}`,
+			state: j.state,
+			runs: 1,
+		};
+	const inFlight = (j.schedule?.recentRuns ?? []).filter((r) =>
+		isRunning(r.status),
+	).length;
+	return {
+		id: j.id,
+		number: j.number,
+		label: j.scheduleID.slice(j.scheduleID.indexOf("/") + 1),
+		state: j.state,
+		runs: Math.max(1, inFlight),
+	};
 }
 
 /** How work reaches a project (#1307). */

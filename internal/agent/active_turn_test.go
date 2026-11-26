@@ -124,18 +124,7 @@ func TestAgentRunnerRecordsActiveTurn(t *testing.T) {
 	t.Cleanup(func() { SetActiveTurnObserver(nil) })
 
 	runner := NewAgentRunner(&domain.Agent{ID: "a_turn", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, nil, nil)
-	done := make(chan struct{}, 1)
-	runner.Prompt(t.Context(), "hello", func(e StreamEvent) {
-		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
-			done <- struct{}{}
-		}
-	})
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		require.FailNow(t, "timeout")
-	}
-	runner.Wait()
+	promptAndWait(t.Context(), t, runner, "hello", nil, RunOverrides{})
 
 	mu.Lock()
 	defer mu.Unlock()

@@ -110,7 +110,17 @@ onBeforeUnmount(() => {
 				<p class="pp-sub reveal">
 					The queue is your issue list. The scheduling rules are labels,
 					filters, and dependencies. The progress report is the thread and the
-					board. Nothing new to learn, nowhere new to look.
+					board. Nothing new to learn, nowhere new to look. Rather pick the work
+					yourself? Put a project in
+					<a :href="withBase('/guide/projects#manual-mode')">manual mode</a> and
+					Aviary works only what you queue.
+				</p>
+				<p class="pp-sub reveal">
+					Rather pick the work yourself? Switch a project to
+					<strong>Manual</strong> and Aviary works only what you queue, with no
+					issue discovery. Switch between Watch and Manual live from the header's Issue
+					discovery menu or the project's settings, or start with
+					<code>aviary watch --manual</code>.
 				</p>
 				<div class="pp-actions reveal">
 					<a class="pp-button" href="#install">Install Aviary</a>
@@ -314,6 +324,14 @@ onBeforeUnmount(() => {
 					<p class="pp-muted">
 						To keep a project watched, add it to an agent with
 						<code>aviary project add owner/repo --agent coder</code>.
+					</p>
+					<p class="pp-label">Or queue the work yourself</p>
+					<pre><code>aviary watch --manual owner/repo</code></pre>
+					<p class="pp-muted">
+						In <a :href="withBase('/guide/projects#manual-mode')">manual mode</a>
+						Aviary picks up no issues on its own. It works only what you queue
+						(fix an issue, safe-merge a pull request, answer a discussion), plus
+						the project's scheduled prompts.
 					</p>
 				</div>
 				<div>

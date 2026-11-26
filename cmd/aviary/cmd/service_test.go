@@ -143,7 +143,26 @@ func TestRunInstallServiceErrors(t *testing.T) {
 	})
 }
 
-func TestRunInstallDevServiceOptions(t *testing.T) {
+// devServices lists the development service installers, which share
+// everything but their identity and the pnpm command they run.
+var devServices = []struct {
+	run         func(*cobra.Command, []string) error
+	name        string
+	displayName string
+	description string
+	command     string
+}{
+	{
+		run: runInstallDevService, name: "aviary-dev", displayName: "Aviary (dev pnpm dev)",
+		description: "Runs `pnpm dev` for aviary (development)", command: "pnpm dev",
+	},
+	{
+		run: runInstallDevDocsService, name: "aviary-dev-docs", displayName: "Aviary (docs:dev)",
+		description: "Runs `pnpm docs:dev` for aviary (development)", command: "pnpm docs:dev",
+	},
+}
+
+func TestRunInstallDevServicesOptions(t *testing.T) {
 	current := &user.User{Username: "builder", HomeDir: filepath.Join("/srv", "builder")}
 	tests := []struct {
 		name     string
@@ -154,136 +173,87 @@ func TestRunInstallDevServiceOptions(t *testing.T) {
 		shell    string
 		home     string
 		wantExec string
-		wantArgs []string
 		wantWD   string
 		wantUser string
 	}{
 		{
 			name: "linux home path user wins over sudo user", wd: "/home/alice/aviary", usr: &user.User{Username: "root", HomeDir: "/root"},
 			goos: "linux", shell: "/bin/bash",
-			wantExec: "/bin/bash", wantArgs: []string{"-lc", "source ~/.zshrc; pnpm dev"}, wantWD: "/home/alice/aviary", wantUser: "alice",
+			wantExec: "/bin/bash", wantWD: "/home/alice/aviary", wantUser: "alice",
+		},
+		{
+			name: "unix shell", wd: "/home/alice/aviary", usr: current, goos: "linux", shell: "/bin/bash",
+			wantExec: "/bin/bash", wantWD: "/home/alice/aviary", wantUser: "alice",
 		},
 		{
 			name: "macOS users path", wd: "/Users/bob/src/aviary", usr: current, goos: "darwin",
-			wantExec: "/bin/zsh", wantArgs: []string{"-lc", "source ~/.zshrc; pnpm dev"}, wantWD: "/Users/bob/src/aviary", wantUser: "bob",
-		},
-		{
-			name: "other path keeps current user", wd: "/opt/aviary", usr: current, goos: "linux", shell: "/bin/fish",
-			wantExec: "/bin/fish", wantArgs: []string{"-lc", "source ~/.zshrc; pnpm dev"}, wantWD: "/opt/aviary", wantUser: "builder",
-		},
-		{
-			name: "no working dir falls back to user home", wd: "", usr: current, goos: "linux", shell: "/bin/sh",
-			wantExec: "/bin/sh", wantArgs: []string{"-lc", "source ~/.zshrc; pnpm dev"}, wantWD: current.HomeDir, wantUser: "builder",
-		},
-		{
-			name: "unknown user falls back to HOME", wd: "", userErr: errors.New("no user"), goos: "linux", shell: "/bin/sh", home: filepath.Join("/var", "home"),
-			wantExec: "/bin/sh", wantArgs: []string{"-lc", "source ~/.zshrc; pnpm dev"}, wantWD: filepath.Join("/var", "home"), wantUser: "",
-		},
-		{
-			name: "windows runs through cmd", wd: `C:\src\aviary`, usr: current, goos: "windows",
-			wantExec: "cmd.exe", wantArgs: []string{"/C", "pnpm dev"}, wantWD: `C:\src\aviary`, wantUser: "builder",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("SHELL", tt.shell)
-			t.Setenv("HOME", tt.home)
-			stubServiceEnv(t, tt.wd, tt.usr, tt.userErr, tt.goos)
-			fake := stubServiceManager(t, nil)
-
-			out, err := captureStdout(t, func() error { return runInstallDevService(nil, nil) })
-			require.NoError(t, err)
-			require.Len(t, fake.installed, 1)
-			assert.Equal(t, server.ServiceOptions{
-				Name:        "aviary-dev",
-				DisplayName: "Aviary (dev pnpm dev)",
-				Description: "Runs `pnpm dev` for aviary (development)",
-				Exec:        tt.wantExec,
-				Args:        tt.wantArgs,
-				WorkingDir:  tt.wantWD,
-				User:        tt.wantUser,
-			}, fake.installed[0])
-			assert.Equal(t, "Installing service: aviary-dev\nService installed and started: aviary-dev\n", out)
-		})
-	}
-}
-
-func TestRunInstallDevServiceError(t *testing.T) {
-	stubServiceEnv(t, "/opt/aviary", &user.User{Username: "builder"}, nil, "linux")
-	boom := errors.New("install failed")
-	stubServiceManager(t, boom)
-	out, err := captureStdout(t, func() error { return runInstallDevService(nil, nil) })
-	require.ErrorIs(t, err, boom)
-	assert.Equal(t, "Installing service: aviary-dev\n", out)
-}
-
-func TestRunInstallDevDocsServiceOptions(t *testing.T) {
-	current := &user.User{Username: "builder", HomeDir: filepath.Join("/srv", "builder")}
-	tests := []struct {
-		name     string
-		wd       string
-		usr      *user.User
-		userErr  error
-		goos     string
-		shell    string
-		home     string
-		wantExec string
-		wantArgs []string
-		wantWD   string
-		wantUser string
-	}{
-		{
-			name: "unix shell", wd: "/home/alice/aviary", usr: current, goos: "linux", shell: "/bin/bash",
-			wantExec: "/bin/bash", wantArgs: []string{"-lc", "source ~/.zshrc; pnpm docs:dev"}, wantWD: "/home/alice/aviary", wantUser: "builder",
+			wantExec: "/bin/zsh", wantWD: "/Users/bob/src/aviary", wantUser: "bob",
 		},
 		{
 			name: "default shell", wd: "/opt/aviary", usr: current, goos: "darwin",
-			wantExec: "/bin/zsh", wantArgs: []string{"-lc", "source ~/.zshrc; pnpm docs:dev"}, wantWD: "/opt/aviary", wantUser: "builder",
+			wantExec: "/bin/zsh", wantWD: "/opt/aviary", wantUser: "builder",
+		},
+		{
+			name: "other path keeps current user", wd: "/opt/aviary", usr: current, goos: "linux", shell: "/bin/fish",
+			wantExec: "/bin/fish", wantWD: "/opt/aviary", wantUser: "builder",
 		},
 		{
 			name: "no working dir falls back to user home", wd: "", usr: current, goos: "linux", shell: "/bin/sh",
-			wantExec: "/bin/sh", wantArgs: []string{"-lc", "source ~/.zshrc; pnpm docs:dev"}, wantWD: current.HomeDir, wantUser: "builder",
+			wantExec: "/bin/sh", wantWD: current.HomeDir, wantUser: "builder",
 		},
 		{
 			name: "unknown user falls back to HOME", wd: "", userErr: errors.New("no user"), goos: "linux", shell: "/bin/sh", home: filepath.Join("/var", "home"),
-			wantExec: "/bin/sh", wantArgs: []string{"-lc", "source ~/.zshrc; pnpm docs:dev"}, wantWD: filepath.Join("/var", "home"), wantUser: "",
+			wantExec: "/bin/sh", wantWD: filepath.Join("/var", "home"), wantUser: "",
 		},
 		{
 			name: "windows runs through cmd", wd: `C:\src\aviary`, usr: current, goos: "windows",
-			wantExec: "cmd.exe", wantArgs: []string{"/C", "pnpm docs:dev"}, wantWD: `C:\src\aviary`, wantUser: "builder",
+			wantExec: "cmd.exe", wantWD: `C:\src\aviary`, wantUser: "builder",
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("SHELL", tt.shell)
-			t.Setenv("HOME", tt.home)
-			stubServiceEnv(t, tt.wd, tt.usr, tt.userErr, tt.goos)
-			fake := stubServiceManager(t, nil)
+	for _, svc := range devServices {
+		t.Run(svc.name, func(t *testing.T) {
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Setenv("SHELL", tt.shell)
+					t.Setenv("HOME", tt.home)
+					stubServiceEnv(t, tt.wd, tt.usr, tt.userErr, tt.goos)
+					fake := stubServiceManager(t, nil)
 
-			out, err := captureStdout(t, func() error { return runInstallDevDocsService(nil, nil) })
-			require.NoError(t, err)
-			require.Len(t, fake.installed, 1)
-			assert.Equal(t, server.ServiceOptions{
-				Name:        "aviary-dev-docs",
-				DisplayName: "Aviary (docs:dev)",
-				Description: "Runs `pnpm docs:dev` for aviary (development)",
-				Exec:        tt.wantExec,
-				Args:        tt.wantArgs,
-				WorkingDir:  tt.wantWD,
-				User:        tt.wantUser,
-			}, fake.installed[0])
-			assert.Equal(t, "Installing service: aviary-dev-docs\nService installed and started: aviary-dev-docs\n", out)
+					wantArgs := []string{"-lc", "source ~/.zshrc; " + svc.command}
+					if tt.goos == "windows" {
+						wantArgs = []string{"/C", svc.command}
+					}
+
+					out, err := captureStdout(t, func() error { return svc.run(nil, nil) })
+					require.NoError(t, err)
+					require.Len(t, fake.installed, 1)
+					assert.Equal(t, server.ServiceOptions{
+						Name:        svc.name,
+						DisplayName: svc.displayName,
+						Description: svc.description,
+						Exec:        tt.wantExec,
+						Args:        wantArgs,
+						WorkingDir:  tt.wantWD,
+						User:        tt.wantUser,
+					}, fake.installed[0])
+					assert.Equal(t, "Installing service: "+svc.name+"\nService installed and started: "+svc.name+"\n", out)
+				})
+			}
 		})
 	}
 }
 
-func TestRunInstallDevDocsServiceError(t *testing.T) {
-	stubServiceEnv(t, "/opt/aviary", &user.User{Username: "builder"}, nil, "linux")
-	boom := errors.New("install failed")
-	stubServiceManager(t, boom)
-	out, err := captureStdout(t, func() error { return runInstallDevDocsService(nil, nil) })
-	require.ErrorIs(t, err, boom)
-	assert.Equal(t, "Installing service: aviary-dev-docs\n", out)
+func TestRunInstallDevServicesError(t *testing.T) {
+	for _, svc := range devServices {
+		t.Run(svc.name, func(t *testing.T) {
+			stubServiceEnv(t, "/opt/aviary", &user.User{Username: "builder"}, nil, "linux")
+			boom := errors.New("install failed")
+			stubServiceManager(t, boom)
+			out, err := captureStdout(t, func() error { return svc.run(nil, nil) })
+			require.ErrorIs(t, err, boom)
+			assert.Equal(t, "Installing service: "+svc.name+"\n", out)
+		})
+	}
 }
 
 // useStatusPIDFile points runStatus at a temp config and PID file.

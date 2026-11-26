@@ -41,6 +41,7 @@ export const projectList = computed<ProjectSummary[]>(() => {
 			name,
 			issues: 0,
 			running: 0,
+			runningJobs: [],
 			waiting: 0,
 			loading: true,
 		}));

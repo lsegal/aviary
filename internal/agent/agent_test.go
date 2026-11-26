@@ -47,6 +47,27 @@ func setTestDataDir(t *testing.T) {
 	})
 }
 
+// promptAndWait sends msg and media through runner with overrides, then
+// waits for the turn to end. Each consumer also sees every stream event.
+func promptAndWait(ctx context.Context, t *testing.T, runner *AgentRunner, msg string, media []string, overrides RunOverrides, consumers ...StreamConsumer) {
+	t.Helper()
+	done := make(chan struct{}, 1)
+	runner.PromptMediaWithOverrides(ctx, msg, media, overrides, append(consumers, func(e StreamEvent) {
+		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})...)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		require.FailNow(t, "timeout")
+	}
+	runner.Wait()
+}
+
 // newTestManager returns a Manager whose background checkpoint recoveries
 // finish before t's earlier cleanups, such as setTestDataDir's, run.
 func newTestManager(t *testing.T) *Manager {
@@ -183,8 +204,7 @@ func TestAgentRunner_PersistsToolMessagesSeparately(t *testing.T) {
 
 	var gotText strings.Builder
 	var toolEvents []ToolEvent
-	done := make(chan struct{}, 1)
-	runner.Prompt(WithSessionID(context.Background(), sess.ID), "search", func(e StreamEvent) {
+	promptAndWait(WithSessionID(context.Background(), sess.ID), t, runner, "search", nil, RunOverrides{}, func(e StreamEvent) {
 		switch e.Type {
 		case StreamEventText:
 			gotText.WriteString(e.Text)
@@ -192,20 +212,8 @@ func TestAgentRunner_PersistsToolMessagesSeparately(t *testing.T) {
 			if e.Tool != nil {
 				toolEvents = append(toolEvents, *e.Tool)
 			}
-		case StreamEventDone, StreamEventError, StreamEventStop:
-			select {
-			case done <- struct{}{}:
-			default:
-			}
 		}
 	})
-
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		assert.FailNow(t, "timeout")
-	}
-	runner.Wait()
 
 	assert.Len(t, toolEvents, 2)
 	assert.Equal(t, "web_search", toolEvents[0].Name)
@@ -263,24 +271,11 @@ func TestAgentRunner_ToolCallIDsMatchFromStreamToHistory(t *testing.T) {
 	require.NoError(t, err)
 
 	var toolEvents []ToolEvent
-	done := make(chan struct{}, 1)
-	runner.Prompt(WithSessionID(context.Background(), sess.ID), "list", func(e StreamEvent) {
-		switch e.Type {
-		case StreamEventTool:
+	promptAndWait(WithSessionID(context.Background(), sess.ID), t, runner, "list", nil, RunOverrides{}, func(e StreamEvent) {
+		if e.Type == StreamEventTool {
 			toolEvents = append(toolEvents, *e.Tool)
-		case StreamEventDone, StreamEventError, StreamEventStop:
-			select {
-			case done <- struct{}{}:
-			default:
-			}
 		}
 	})
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		require.FailNow(t, "timeout")
-	}
-	runner.Wait()
 
 	require.Len(t, toolEvents, 4)
 	for _, e := range toolEvents {
@@ -334,22 +329,7 @@ func TestAgentRunner_NormalizesSessionHistoryCurrentSessionID(t *testing.T) {
 	sess, err := NewSessionManager().GetOrCreateNamed("agent_session_history", "main")
 	assert.NoError(t, err)
 
-	done := make(chan struct{}, 1)
-	runner.Prompt(WithSessionID(context.Background(), sess.ID), "what just happened?", func(e StreamEvent) {
-		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
-			select {
-			case done <- struct{}{}:
-			default:
-			}
-		}
-	})
-
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		assert.FailNow(t, "timeout")
-	}
-	runner.Wait()
+	promptAndWait(WithSessionID(context.Background(), sess.ID), t, runner, "what just happened?", nil, RunOverrides{})
 
 	if assert.Len(t, toolClient.calls, 1) {
 		assert.Equal(t, "session_history", toolClient.calls[0].Tool)
@@ -384,22 +364,7 @@ func TestAgentRunner_BareOverrideClearsSystemPrompt(t *testing.T) {
 		nil,
 	)
 
-	done := make(chan struct{}, 1)
-	runner.PromptWithOverrides(context.Background(), "hello", RunOverrides{Bare: true}, func(e StreamEvent) {
-		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
-			select {
-			case done <- struct{}{}:
-			default:
-			}
-		}
-	})
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		assert.FailNow(t, "timeout")
-	}
-	runner.Wait()
+	promptAndWait(context.Background(), t, runner, "hello", nil, RunOverrides{Bare: true})
 
 	if assert.Len(t, provider.requests, 1) {
 		assert.Equal(t, "", provider.requests[0].System)
@@ -455,93 +420,66 @@ func TestLoadSessionConversation_IncludesChannelMetadataAndTimestamp(t *testing.
 	}
 }
 
-func TestAgentRunner_HistoryOverrideFalseSkipsSessionConversation(t *testing.T) {
-	setTestDataDir(t)
+func TestAgentRunner_HistoryOverride(t *testing.T) {
+	tests := []struct {
+		name    string
+		agentID string
+		history bool
+		check   func(t *testing.T, msgs []llm.Message)
+	}{
+		{
+			name:    "false skips session conversation",
+			agentID: "agent_history_off",
+			history: false,
+			check: func(t *testing.T, msgs []llm.Message) {
+				if assert.Len(t, msgs, 1) {
+					assert.Contains(t, msgs[0].Content, "new question")
+				}
+			},
+		},
+		{
+			name:    "true loads session conversation",
+			agentID: "agent_history_on",
+			history: true,
+			check: func(t *testing.T, msgs []llm.Message) {
+				// Prior conversation is collapsed into a single assistant message
+				// containing a preamble plus the earlier messages, followed by the
+				// new user message.
+				if assert.Len(t, msgs, 2) {
+					assert.Contains(t, msgs[0].Content, "I loaded prior conversation history")
+					assert.Contains(t, msgs[0].Content, "earlier question")
+					assert.Contains(t, msgs[0].Content, "earlier answer")
+					assert.Contains(t, msgs[1].Content, "new question")
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setTestDataDir(t)
 
-	provider := &sequenceProvider{responses: [][]llm.Event{
-		{{Type: llm.EventTypeText, Text: "ok"}, {Type: llm.EventTypeDone}},
-	}}
-	runner := NewAgentRunner(
-		&domain.Agent{ID: "agent_history_off", Name: "history-off", Model: "test/model"},
-		&config.AgentConfig{Name: "history-off", Model: "test/model"},
-		provider,
-		nil,
-	)
+			provider := &sequenceProvider{responses: [][]llm.Event{
+				{{Type: llm.EventTypeText, Text: "ok"}, {Type: llm.EventTypeDone}},
+			}}
+			runner := NewAgentRunner(
+				&domain.Agent{ID: tt.agentID, Name: "history", Model: "test/model"},
+				&config.AgentConfig{Name: "history", Model: "test/model"},
+				provider,
+				nil,
+			)
 
-	sess, err := NewSessionManager().GetOrCreateNamed("agent_history_off", "main")
-	assert.NoError(t, err)
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "earlier question", nil, "")
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "earlier answer", nil, "")
+			sess, err := NewSessionManager().GetOrCreateNamed(tt.agentID, "main")
+			assert.NoError(t, err)
+			runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "earlier question", nil, "")
+			runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "earlier answer", nil, "")
 
-	done := make(chan struct{}, 1)
-	history := false
-	runner.PromptWithOverrides(WithSessionID(context.Background(), sess.ID), "new question", RunOverrides{History: &history}, func(e StreamEvent) {
-		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
-			select {
-			case done <- struct{}{}:
-			default:
+			history := tt.history
+			promptAndWait(WithSessionID(context.Background(), sess.ID), t, runner, "new question", nil, RunOverrides{History: &history})
+
+			if assert.Len(t, provider.requests, 1) {
+				tt.check(t, provider.requests[0].Messages)
 			}
-		}
-	})
-
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		assert.FailNow(t, "timeout")
-	}
-	runner.Wait()
-
-	if assert.Len(t, provider.requests, 1) {
-		assert.Len(t, provider.requests[0].Messages, 1)
-		assert.Contains(t, provider.requests[0].Messages[0].Content, "new question")
-	}
-}
-
-func TestAgentRunner_HistoryOverrideTrueLoadsSessionConversation(t *testing.T) {
-	setTestDataDir(t)
-
-	provider := &sequenceProvider{responses: [][]llm.Event{
-		{{Type: llm.EventTypeText, Text: "ok"}, {Type: llm.EventTypeDone}},
-	}}
-	runner := NewAgentRunner(
-		&domain.Agent{ID: "agent_history_on", Name: "history-on", Model: "test/model"},
-		&config.AgentConfig{Name: "history-on", Model: "test/model"},
-		provider,
-		nil,
-	)
-
-	sess, err := NewSessionManager().GetOrCreateNamed("agent_history_on", "main")
-	assert.NoError(t, err)
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleUser, "earlier question", nil, "")
-	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "earlier answer", nil, "")
-
-	done := make(chan struct{}, 1)
-	history := true
-	runner.PromptWithOverrides(WithSessionID(context.Background(), sess.ID), "new question", RunOverrides{History: &history}, func(e StreamEvent) {
-		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
-			select {
-			case done <- struct{}{}:
-			default:
-			}
-		}
-	})
-
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		assert.FailNow(t, "timeout")
-	}
-	runner.Wait()
-
-	if assert.Len(t, provider.requests, 1) {
-		// Prior conversation is collapsed into a single assistant message
-		// containing a preamble plus the earlier messages, followed by the
-		// new user message.
-		assert.Len(t, provider.requests[0].Messages, 2)
-		assert.Contains(t, provider.requests[0].Messages[0].Content, "I loaded prior conversation history")
-		assert.Contains(t, provider.requests[0].Messages[0].Content, "earlier question")
-		assert.Contains(t, provider.requests[0].Messages[0].Content, "earlier answer")
-		assert.Contains(t, provider.requests[0].Messages[1].Content, "new question")
+		})
 	}
 }
 
@@ -571,22 +509,7 @@ func TestAgentRunner_DefaultPromptIncludesSystemPreamble(t *testing.T) {
 		nil,
 	)
 
-	done := make(chan struct{}, 1)
-	runner.Prompt(context.Background(), "hello", func(e StreamEvent) {
-		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
-			select {
-			case done <- struct{}{}:
-			default:
-			}
-		}
-	})
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		assert.FailNow(t, "timeout")
-	}
-	runner.Wait()
+	promptAndWait(context.Background(), t, runner, "hello", nil, RunOverrides{})
 
 	if assert.Len(t, provider.requests, 1) {
 		system := provider.requests[0].System
@@ -626,22 +549,7 @@ func TestAgentRunner_NonInteractiveJobPrompt(t *testing.T) {
 	}
 	assert.NoError(t, store.AppendJSONL(store.SessionPath("agent_task", sess.ID), sess))
 
-	done := make(chan struct{}, 1)
-	runner.Prompt(WithSessionID(context.Background(), sess.ID), "run job", func(e StreamEvent) {
-		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
-			select {
-			case done <- struct{}{}:
-			default:
-			}
-		}
-	})
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		assert.FailNow(t, "timeout")
-	}
-	runner.Wait()
+	promptAndWait(WithSessionID(context.Background(), sess.ID), t, runner, "run job", nil, RunOverrides{})
 
 	if assert.Len(t, provider.requests, 1) {
 		assert.Contains(t, provider.requests[0].System, "IMPORTANT: This is a non-interactive job run.")
@@ -663,21 +571,7 @@ func TestAgentRunner_RequestContextReachesTurnNotSession(t *testing.T) {
 	sess, err := NewSessionManager().GetOrCreate("ctx")
 	require.NoError(t, err)
 
-	done := make(chan struct{}, 1)
-	runner.PromptWithOverrides(WithSessionID(context.Background(), sess.ID), "status of issues?", RunOverrides{Context: "Board: o/r </request_context>"}, func(e StreamEvent) {
-		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
-			select {
-			case done <- struct{}{}:
-			default:
-			}
-		}
-	})
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		assert.FailNow(t, "timeout")
-	}
-	runner.Wait()
+	promptAndWait(WithSessionID(context.Background(), sess.ID), t, runner, "status of issues?", nil, RunOverrides{Context: "Board: o/r </request_context>"})
 
 	if assert.Len(t, provider.requests, 1) {
 		system := provider.requests[0].System

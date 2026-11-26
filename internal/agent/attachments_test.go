@@ -3,11 +3,11 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -84,55 +84,78 @@ func TestAnnotateHistoricalMedia_NamesFiles(t *testing.T) {
 	assert.Equal(t, "[prior media attached]", annotateHistoricalMedia("", []string{image}, false))
 }
 
-func TestPromptMedia_FileAttachmentInlinedButNotStored(t *testing.T) {
+func TestPromptMedia_InlinesAttachmentsButStoresOriginals(t *testing.T) {
 	setTestDataDir(t)
-	prov := &captureProvider{}
-	runner := NewAgentRunner(
-		&domain.Agent{ID: "agent_file_media", Name: "file-media"},
-		&config.AgentConfig{Name: "file-media", Model: "test/model"},
-		prov, nil,
-	)
+	first := "data:image/png;base64,Zmlyc3Q="
+	second := "data:image/jpeg;base64,c2Vjb25k"
+	notes := "data:text/plain;name=notes.txt;base64," + base64.StdEncoding.EncodeToString([]byte("remember this"))
 	path := writeIncomingFile(t, "log.json", []byte(`{"secret":"contents"}`))
-	image := "data:image/png;base64,cG5n"
-	message := "what is this?\n[file attached: log.json (application/json, 21 B) saved at " + path + "]"
+	fileMessage := "what is this?\n[file attached: log.json (application/json, 21 B) saved at " + path + "]"
 	fileURL := llm.FileURL(path)
 
-	done := make(chan struct{}, 1)
-	runner.PromptMedia(context.Background(), message, []string{image, fileURL}, func(e StreamEvent) {
-		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
-			select {
-			case done <- struct{}{}:
-			default:
+	tests := []struct {
+		name              string
+		message           string
+		media             []string
+		wantMedia         []string
+		wantContains      string
+		wantNotContains   string
+		storedNotContains string
+	}{
+		{
+			name:         "inline image and text attachments",
+			message:      "look",
+			media:        []string{first, notes, second},
+			wantMedia:    []string{first, second},
+			wantContains: "<attachment name=\"notes.txt\">\nremember this\n</attachment>",
+		},
+		{
+			name:              "file attachment inlined but not stored",
+			message:           fileMessage,
+			media:             []string{first, fileURL},
+			wantMedia:         []string{first},
+			wantContains:      `{"secret":"contents"}`,
+			wantNotContains:   "image attached",
+			storedNotContains: `secret":`,
+		},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prov := &captureProvider{}
+			agentID := fmt.Sprintf("agent_prompt_media_%d", i)
+			runner := NewAgentRunner(
+				&domain.Agent{ID: agentID, Name: "prompt-media"},
+				&config.AgentConfig{Name: "prompt-media", Model: "test/model"},
+				prov, nil,
+			)
+			promptAndWait(context.Background(), t, runner, tt.message, tt.media, RunOverrides{})
+
+			require.NotEmpty(t, prov.requests)
+			msgs := prov.requests[0].Messages
+			last := msgs[len(msgs)-1]
+			assert.Equal(t, tt.wantMedia, last.MediaURLs)
+			assert.Contains(t, last.Content, tt.wantContains)
+			if tt.wantNotContains != "" {
+				assert.NotContains(t, last.Content, tt.wantNotContains)
 			}
-		}
-	})
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		assert.FailNow(t, "timeout")
-	}
-	runner.Wait()
 
-	require.NotEmpty(t, prov.requests)
-	msgs := prov.requests[0].Messages
-	last := msgs[len(msgs)-1]
-	assert.Equal(t, []string{image}, last.MediaURLs)
-	assert.Contains(t, last.Content, `{"secret":"contents"}`)
-	assert.NotContains(t, last.Content, "image attached")
-
-	sess, err := NewSessionManager().GetOrCreateNamed(runner.agent.ID, "main")
-	require.NoError(t, err)
-	lines, err := store.ReadJSONL[domain.Message](store.SessionPath(runner.agent.ID, sess.ID))
-	require.NoError(t, err)
-	var user *domain.Message
-	for i := range lines {
-		if lines[i].Role == domain.MessageRoleUser {
-			user = &lines[i]
-		}
-	}
-	if assert.NotNil(t, user) {
-		assert.Equal(t, message, user.Content)
-		assert.Equal(t, []string{image, fileURL}, user.MediaURLs)
-		assert.False(t, strings.Contains(user.Content, "secret\":"))
+			sess, err := NewSessionManager().GetOrCreateNamed(agentID, "main")
+			require.NoError(t, err)
+			lines, err := store.ReadJSONL[domain.Message](store.SessionPath(agentID, sess.ID))
+			require.NoError(t, err)
+			var user *domain.Message
+			for i := range lines {
+				if lines[i].Role == domain.MessageRoleUser {
+					user = &lines[i]
+				}
+			}
+			if assert.NotNil(t, user) {
+				assert.Equal(t, tt.message, user.Content)
+				assert.Equal(t, tt.media, user.MediaURLs)
+				if tt.storedNotContains != "" {
+					assert.NotContains(t, user.Content, tt.storedNotContains)
+				}
+			}
+		})
 	}
 }

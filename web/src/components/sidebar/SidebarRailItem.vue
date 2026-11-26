@@ -27,11 +27,34 @@
         <!-- The open item is shaded with an accent edge rather than bold,
              which reads as unread (#1319). -->
         <router-link :to="item.to" data-testid="sidebar-rail-flyout-item" :aria-current="item.active ? 'page' : undefined"
-          class="block truncate rounded-lg border-l-2 px-2 py-1.5 text-sm transition-colors"
+          :data-running="item.badge ?? undefined"
+          class="flex min-w-0 items-center gap-2 rounded-lg border-l-2 px-2 py-1.5 text-sm transition-colors"
           :class="item.active
             ? 'border-blue-600 bg-gray-100 text-gray-950 dark:border-blue-400 dark:bg-gray-800 dark:text-white'
-            : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'"
-          @click="hide">{{ item.label }}</router-link>
+            : item.dimmed
+              ? 'border-transparent text-gray-400 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-white'
+              : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'"
+          @click="hide"><span class="min-w-0 flex-1 truncate">{{ item.label }}</span><span v-if="item.badge"
+            data-testid="sidebar-rail-flyout-count" :aria-label="runningLabel(item.badge)"
+            class="shrink-0 rounded-full bg-gray-200 px-1.5 text-xs font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">{{ item.badge }}</span></router-link>
+        <!-- A project's running jobs, under it (#1359). -->
+        <ul v-if="item.jobs?.length || item.more" :aria-label="`${item.label} running jobs`" class="mb-1 ml-3">
+          <li v-for="job in item.jobs" :key="job.key">
+            <router-link :to="job.to" data-testid="sidebar-rail-flyout-job" :data-state="job.state"
+              class="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 text-xs text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
+              @click="hide">
+              <span aria-hidden="true" class="h-1.5 w-1.5 shrink-0 rounded-full" :class="STATE_DOTS[job.state]" />
+              <span class="min-w-0 flex-1 truncate" :title="job.label">{{ job.label }}</span>
+              <span v-if="job.runs > 1" data-testid="sidebar-rail-flyout-runs" :aria-label="`${job.runs} runs`"
+                class="shrink-0 tabular-nums text-gray-500 dark:text-gray-400">×{{ job.runs }}</span>
+            </router-link>
+          </li>
+          <li v-if="item.more">
+            <router-link :to="item.more.to" data-testid="sidebar-rail-flyout-more"
+              class="block rounded-lg px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+              @click="hide">+{{ item.more.count }} more</router-link>
+          </li>
+        </ul>
       </li>
     </ul>
   </div>
@@ -45,8 +68,20 @@
 </template>
 
 <script lang="ts">
+import type { BoardState } from "../../lib/projects";
+
 // Only one icon's tooltip or flyout shows at a time.
 let closeOpen: (() => void) | null = null;
+
+/** One running job listed under a flyout item. */
+export interface RailFlyoutJob {
+	key: string;
+	label: string;
+	to: string;
+	state: BoardState;
+	/** Overlapping runs of one schedule, shown as ×N past 1. */
+	runs: number;
+}
 
 /** One sub-item in a rail icon's flyout. */
 export interface RailFlyoutItem {
@@ -54,7 +89,24 @@ export interface RailFlyoutItem {
 	label: string;
 	to: string;
 	active: boolean;
+	/** Running jobs, shown as a count beside the label when any. */
+	badge?: number;
+	/** An idle project among projects, shown dimmed. */
+	dimmed?: boolean;
+	/** The item's first running jobs, listed under it. */
+	jobs?: RailFlyoutJob[];
+	/** The running jobs past those, as a "+N more" link. */
+	more?: { count: number; to: string };
 }
+
+// Each board state's dot, as the job status pill colors it.
+const STATE_DOTS: Record<BoardState, string> = {
+	starting: "bg-orange-500 animate-pulse",
+	paused: "bg-amber-500",
+	running: "bg-blue-500 animate-pulse",
+	done: "bg-green-500",
+	failed: "bg-red-500",
+};
 </script>
 
 <script setup lang="ts">
@@ -93,9 +145,11 @@ let hideTimer: ReturnType<typeof setTimeout> | undefined;
 const hasItems = computed(() => !!props.items?.length);
 const activeChild = computed(() => !!props.items?.some((i) => i.active));
 
-const badgeLabel = computed(
-  () => `${props.badge} running ${props.badge === 1 ? "job" : "jobs"}`,
-);
+function runningLabel(n: number): string {
+  return `${n} running ${n === 1 ? "job" : "jobs"}`;
+}
+
+const badgeLabel = computed(() => runningLabel(props.badge ?? 0));
 
 function node(): HTMLElement | undefined {
   return el.value instanceof HTMLElement ? el.value : el.value?.$el;
