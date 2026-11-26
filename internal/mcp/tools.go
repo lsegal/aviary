@@ -2716,7 +2716,8 @@ func registerServerTools(s *sdkmcp.Server) {
 	})
 
 	type configSaveArgs struct {
-		Config string `json:"config"`
+		Config     string      `json:"config"`
+		DeleteData []dataOwner `json:"delete_data,omitempty" jsonschema:"Tasks and agents this save removes whose data to delete too: a task's session and run history, an agent's data directory. Every other removed task's session is kept as a regular chat, and every other removed agent's data stays on disk"`
 	}
 
 	type modelsListArgs struct {
@@ -2744,6 +2745,7 @@ func registerServerTools(s *sdkmcp.Server) {
 				return nil, struct{}{}, fmt.Errorf("validation: [%s] %s: %s", issue.Level, issue.Field, issue.Message)
 			}
 		}
+		removed := removedDataOwners(prevCfg, &cfg)
 		// Handle task files: detect tasks that were previously defined in
 		// markdown but are now removed from the incoming config and delete
 		// their files; then write any tasks marked FromFile in the incoming
@@ -2843,6 +2845,9 @@ func registerServerTools(s *sdkmcp.Server) {
 		// triggers and next fires.
 		if err := reloadTaskConfig(); err != nil {
 			return nil, struct{}{}, err
+		}
+		if err := releaseRemoved(removed, args.DeleteData); err != nil {
+			return nil, struct{}{}, fmt.Errorf("config saved, but removed objects' data was not released: %w", err)
 		}
 		return text("config saved")
 	})

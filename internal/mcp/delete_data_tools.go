@@ -59,3 +59,67 @@ func deletePreview(args deletePreviewArgs) (sessiontarget.DataCounts, error) {
 	}
 	return sessiontarget.DataCounts{}, fmt.Errorf("kind must be task, workflow, channel or agent")
 }
+
+// dataOwner names a task or agent whose data config_save deletes.
+type dataOwner struct {
+	Kind  string `json:"kind" jsonschema:"task or agent" schema:"enum=task|agent"`
+	Agent string `json:"agent,omitempty" jsonschema:"The task's agent"`
+	Name  string `json:"name" jsonschema:"The task or agent name"`
+}
+
+// removedOwner is a task or agent a config save removes, as it was before.
+type removedOwner struct {
+	dataOwner
+	agent config.AgentConfig
+}
+
+// removedDataOwners lists the tasks and agents in prev that next drops. A
+// task counts only when its agent stays, since an agent that goes takes its
+// tasks along.
+func removedDataOwners(prev, next *config.Config) []removedOwner {
+	var out []removedOwner
+	for _, pa := range prev.Agents {
+		ni := agentIndex(next, pa.Name)
+		if ni < 0 {
+			out = append(out, removedOwner{dataOwner{Kind: "agent", Name: pa.Name}, pa})
+			continue
+		}
+		kept := map[string]bool{}
+		for _, t := range next.Agents[ni].Tasks {
+			kept[t.Name] = true
+		}
+		for _, t := range pa.Tasks {
+			if t.Name != "" && !kept[t.Name] {
+				out = append(out, removedOwner{dataOwner{Kind: "task", Agent: pa.Name, Name: t.Name}, pa})
+			}
+		}
+	}
+	return out
+}
+
+// releaseRemoved disposes of the data of each removed task and agent:
+// deleting it when deleteData names it, and otherwise keeping it, with a
+// task's session kept as a regular chat.
+func releaseRemoved(removed []removedOwner, deleteData []dataOwner) error {
+	wanted := map[dataOwner]bool{}
+	for _, o := range deleteData {
+		o.Kind = strings.ToLower(strings.TrimSpace(o.Kind))
+		o.Agent, o.Name = strings.TrimSpace(o.Agent), strings.TrimSpace(o.Name)
+		if o.Kind == "agent" {
+			o.Agent = ""
+		}
+		wanted[o] = true
+	}
+	for _, r := range removed {
+		var err error
+		if r.Kind == "agent" {
+			err = sessiontarget.ReleaseAgent(r.agent, wanted[r.dataOwner])
+		} else {
+			err = sessiontarget.ReleaseTask(r.Agent, r.Name, wanted[r.dataOwner])
+		}
+		if err != nil {
+			return fmt.Errorf("%s %q: %w", r.Kind, r.Name, err)
+		}
+	}
+	return nil
+}

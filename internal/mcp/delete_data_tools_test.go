@@ -2,8 +2,10 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -114,4 +116,71 @@ func TestDeletePreviewValidation(t *testing.T) {
 	toolCallContains(t, d, "delete_preview", map[string]any{"kind": "project", "name": "x"}, "kind must be")
 	toolCallContains(t, d, "delete_preview", map[string]any{"kind": "agent", "name": "ghost"}, "not found")
 	toolCallContains(t, d, "delete_preview", map[string]any{"kind": "channel", "agent": "bot", "name": "Nope"}, "no channel named")
+}
+
+// saveWithout saves the config with change applied, deleting deleteData.
+func saveWithout(t *testing.T, d *Dispatcher, change func(*config.Config), deleteData []map[string]any) {
+	t.Helper()
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	for i := range cfg.Agents {
+		cfg.Agents[i].Model = "anthropic/claude-sonnet-5-5"
+	}
+	change(cfg)
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	args := map[string]any{"config": string(raw)}
+	if deleteData != nil {
+		args["delete_data"] = deleteData
+	}
+	out := callText(t, d, "config_save", args)
+	require.Equal(t, "config saved", out)
+}
+
+func TestConfigSaveReleasesRemovedTasks(t *testing.T) {
+	d, _ := setupDispatcherWithScheduler(t)
+	addTeamChannel(t)
+	keptRun := ranWorkflow(t, d, "be-nice")
+	goneRun := ranWorkflow(t, d, "be-gone")
+	ranWorkflow(t, d, "stays")
+
+	dropTasks := func(names ...string) func(*config.Config) {
+		return func(cfg *config.Config) {
+			var tasks []config.TaskConfig
+			for _, task := range cfg.Agents[0].Tasks {
+				if !slices.Contains(names, task.Name) {
+					tasks = append(tasks, task)
+				}
+			}
+			cfg.Agents[0].Tasks = tasks
+		}
+	}
+	saveWithout(t, d, dropTasks("be-nice"), nil)
+	saveWithout(t, d, dropTasks("be-gone"), []map[string]any{{"kind": "task", "agent": "bot", "name": "be-gone"}})
+
+	titles := chatTitles(t, d)
+	assert.Contains(t, titles, "be-nice (archived)", "a task removed without delete_data keeps its session as a chat")
+	assert.FileExists(t, keptRun)
+	assert.NotContains(t, titles, "be-gone")
+	assert.NotContains(t, titles, "be-gone (archived)")
+	assert.NoFileExists(t, goneRun)
+	assert.NotEmpty(t, store.FindSessionPath("bot", "stays"), "a kept task's session is untouched")
+	assert.NotContains(t, titles, "stays")
+}
+
+func TestConfigSaveReleasesRemovedAgents(t *testing.T) {
+	d, _ := setupDispatcherWithScheduler(t)
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", store.DataDir())
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	cfg.Agents = append(cfg.Agents, config.AgentConfig{Name: "keeper", Model: "test/x"}, config.AgentConfig{Name: "goner", Model: "test/x"})
+	require.NoError(t, config.Save("", cfg))
+	for _, name := range []string{"keeper", "goner"} {
+		require.NoError(t, os.MkdirAll(store.AgentDir(name), 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(store.AgentDir(name), "MEMORY.md"), []byte("remember"), 0o600))
+	}
+
+	saveWithout(t, d, func(cfg *config.Config) { cfg.Agents = cfg.Agents[:1] }, []map[string]any{{"kind": "agent", "name": "goner"}})
+	assert.FileExists(t, filepath.Join(store.AgentDir("keeper"), "MEMORY.md"), "an agent not listed is only deregistered")
+	assert.NoDirExists(t, store.AgentDir("goner"))
 }
