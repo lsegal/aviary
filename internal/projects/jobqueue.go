@@ -577,6 +577,14 @@ func (l *queueLoop) run(runCtx context.Context, item queuedJob) {
 		}
 		return
 	}
+	// A merge job's pull request is read back before its status is
+	// recorded, so a merge that landed before the agent died counts
+	// (issue #1426).
+	var pullRequest PullRequestWorkState
+	readPullRequest := false
+	if acquired && !errors.Is(cause, errQueuedJobPaused) {
+		pullRequest, readPullRequest = w.mergeJobPullRequest(l.ctx, item)
+	}
 	l.jobMu.Lock()
 	job := l.jobs[key]
 	status := ""
@@ -589,6 +597,9 @@ func (l *queueLoop) run(runCtx context.Context, item queuedJob) {
 		status = "removed"
 	default:
 		result := projectTaskOutcome(runErr, cause, job.Log)
+		if readPullRequest {
+			result = settleMergeJob(&job, item, pullRequest, result)
+		}
 		job.Status, job.Finished, job.Summary, job.QueuePosition = "complete", time.Now(), result.summary, 0
 		if result.err != nil {
 			job.Status = "failed"

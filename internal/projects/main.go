@@ -274,45 +274,70 @@ func (g GHCLI) OriginatingWorkState(ctx context.Context, repo string, number int
 		if err != nil {
 			return OriginatingWorkState{}, fmt.Errorf("read pull request %s#%d state for issue #%d: %w: %s", pullRepo, pullRequest.Number, number, err, strings.TrimSpace(string(output)))
 		}
-		var currentPullRequest struct {
-			State     string     `json:"state"`
-			Body      string     `json:"body"`
-			MergedAt  *time.Time `json:"merged_at"`
-			Draft     bool       `json:"draft"`
-			Additions int        `json:"additions"`
-			Deletions int        `json:"deletions"`
-			// MergeCommitSHA is the commit the merge left on the base
-			// branch once MergedAt is set.
-			MergeCommitSHA string `json:"merge_commit_sha"`
-			// Comments and ReviewComments count the conversation and the
-			// review threads, and Head is the pushed head commit.
-			Comments       int `json:"comments"`
-			ReviewComments int `json:"review_comments"`
-			Head           struct {
-				SHA string `json:"sha"`
-			} `json:"head"`
-			Base struct {
-				Ref  string `json:"ref"`
-				Repo struct {
-					DefaultBranch string `json:"default_branch"`
-				} `json:"repo"`
-			} `json:"base"`
+		current, err := decodePullRequestWorkState(output, pullRepo, pullRequest.Number)
+		if err != nil {
+			return OriginatingWorkState{}, fmt.Errorf("%w for issue #%d", err, number)
 		}
-		if err := json.Unmarshal(output, &currentPullRequest); err != nil {
-			return OriginatingWorkState{}, fmt.Errorf("decode pull request %s#%d state for issue #%d: %w", pullRepo, pullRequest.Number, number, err)
-		}
-		base := currentPullRequest.Base
-		stacked := base.Ref != "" && base.Repo.DefaultBranch != "" && base.Ref != base.Repo.DefaultBranch
-		tasksDone, tasksTotal := core.ChecklistProgress(currentPullRequest.Body)
-		var mergedAt time.Time
-		var mergeCommitSHA string
-		if currentPullRequest.MergedAt != nil {
-			mergedAt = *currentPullRequest.MergedAt
-			mergeCommitSHA = currentPullRequest.MergeCommitSHA
-		}
-		state.PullRequests = append(state.PullRequests, PullRequestWorkState{Repository: pullRepo, Number: pullRequest.Number, State: currentPullRequest.State, Merged: currentPullRequest.MergedAt != nil, MergedAt: mergedAt, Additions: currentPullRequest.Additions, Deletions: currentPullRequest.Deletions, IsDraft: currentPullRequest.Draft, Stacked: stacked, TasksDone: tasksDone, TasksTotal: tasksTotal, HeadSHA: currentPullRequest.Head.SHA, Comments: currentPullRequest.Comments + currentPullRequest.ReviewComments, MergeCommitSHA: mergeCommitSHA})
+		state.PullRequests = append(state.PullRequests, current)
 	}
 	return state, nil
+}
+
+// PullRequestStateReader reads one pull request's state by its own number, as
+// a merge job's outcome is read back once its agent exits (issue #1426).
+type PullRequestStateReader interface {
+	PullRequestState(ctx context.Context, repo string, number int) (PullRequestWorkState, error)
+}
+
+// PullRequestState reads the state of pull request number in repo.
+func (g GHCLI) PullRequestState(ctx context.Context, repo string, number int) (PullRequestWorkState, error) {
+	output, err := g.apiGETObject(ctx, g.isPublicRepo(ctx, repo), "repos/"+repo+"/pulls/"+strconv.Itoa(number))
+	if err != nil {
+		return PullRequestWorkState{}, fmt.Errorf("read pull request %s#%d state: %w: %s", repo, number, err, strings.TrimSpace(string(output)))
+	}
+	return decodePullRequestWorkState(output, repo, number)
+}
+
+// decodePullRequestWorkState decodes GitHub's pull request object for
+// pull request number in repo.
+func decodePullRequestWorkState(output []byte, repo string, number int) (PullRequestWorkState, error) {
+	var currentPullRequest struct {
+		State     string     `json:"state"`
+		Body      string     `json:"body"`
+		MergedAt  *time.Time `json:"merged_at"`
+		Draft     bool       `json:"draft"`
+		Additions int        `json:"additions"`
+		Deletions int        `json:"deletions"`
+		// MergeCommitSHA is the commit the merge left on the base
+		// branch once MergedAt is set.
+		MergeCommitSHA string `json:"merge_commit_sha"`
+		// Comments and ReviewComments count the conversation and the
+		// review threads, and Head is the pushed head commit.
+		Comments       int `json:"comments"`
+		ReviewComments int `json:"review_comments"`
+		Head           struct {
+			SHA string `json:"sha"`
+		} `json:"head"`
+		Base struct {
+			Ref  string `json:"ref"`
+			Repo struct {
+				DefaultBranch string `json:"default_branch"`
+			} `json:"repo"`
+		} `json:"base"`
+	}
+	if err := json.Unmarshal(output, &currentPullRequest); err != nil {
+		return PullRequestWorkState{}, fmt.Errorf("decode pull request %s#%d state: %w", repo, number, err)
+	}
+	base := currentPullRequest.Base
+	stacked := base.Ref != "" && base.Repo.DefaultBranch != "" && base.Ref != base.Repo.DefaultBranch
+	tasksDone, tasksTotal := core.ChecklistProgress(currentPullRequest.Body)
+	var mergedAt time.Time
+	var mergeCommitSHA string
+	if currentPullRequest.MergedAt != nil {
+		mergedAt = *currentPullRequest.MergedAt
+		mergeCommitSHA = currentPullRequest.MergeCommitSHA
+	}
+	return PullRequestWorkState{Repository: repo, Number: number, State: currentPullRequest.State, Merged: currentPullRequest.MergedAt != nil, MergedAt: mergedAt, Additions: currentPullRequest.Additions, Deletions: currentPullRequest.Deletions, IsDraft: currentPullRequest.Draft, Stacked: stacked, TasksDone: tasksDone, TasksTotal: tasksTotal, HeadSHA: currentPullRequest.Head.SHA, Comments: currentPullRequest.Comments + currentPullRequest.ReviewComments, MergeCommitSHA: mergeCommitSHA}, nil
 }
 
 // closesIssue reports whether a pull request body hosted in pullRepo closes
