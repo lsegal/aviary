@@ -139,17 +139,7 @@ func TestPromptMedia_InlinesAttachmentsButStoresOriginals(t *testing.T) {
 				assert.NotContains(t, last.Content, tt.wantNotContains)
 			}
 
-			sess, err := NewSessionManager().GetOrCreateNamed(agentID, "main")
-			require.NoError(t, err)
-			lines, err := store.ReadJSONL[domain.Message](store.SessionPath(agentID, sess.ID))
-			require.NoError(t, err)
-			var user *domain.Message
-			for i := range lines {
-				if lines[i].Role == domain.MessageRoleUser {
-					user = &lines[i]
-				}
-			}
-			if assert.NotNil(t, user) {
+			if user := lastStoredUserMessage(t, agentID); assert.NotNil(t, user) {
 				assert.Equal(t, tt.message, user.Content)
 				assert.Equal(t, tt.media, user.MediaURLs)
 				if tt.storedNotContains != "" {
@@ -158,4 +148,21 @@ func TestPromptMedia_InlinesAttachmentsButStoresOriginals(t *testing.T) {
 			}
 		})
 	}
+}
+
+// lastStoredUserMessage returns the last user message stored in the agent's
+// main session, or nil when it has none.
+func lastStoredUserMessage(t *testing.T, agentID string) *domain.Message {
+	t.Helper()
+	sess, err := NewSessionManager().GetOrCreateNamed(agentID, "main")
+	require.NoError(t, err)
+	lines, err := store.ReadJSONL[domain.Message](store.SessionPath(agentID, sess.ID))
+	require.NoError(t, err)
+	var user *domain.Message
+	for i := range lines {
+		if lines[i].Role == domain.MessageRoleUser {
+			user = &lines[i]
+		}
+	}
+	return user
 }

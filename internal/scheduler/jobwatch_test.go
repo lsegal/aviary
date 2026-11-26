@@ -73,7 +73,7 @@ func TestRunPromptWatched_AgentNeverStarts(t *testing.T) {
 	var runCtx context.Context
 	err := runPromptWatched(context.Background(), 50*time.Millisecond, func(ctx context.Context, _ agent.StreamConsumer) {
 		runCtx = ctx
-	}, func(agent.StreamEvent) {})
+	}, discardStreamEvent)
 	var stalled *jobStalledError
 	require.ErrorAs(t, err, &stalled)
 	assert.False(t, stalled.started)
@@ -85,7 +85,7 @@ func TestRunPromptWatched_AgentNeverStarts(t *testing.T) {
 func TestRunPromptWatched_HangsAfterOutput(t *testing.T) {
 	err := runPromptWatched(context.Background(), 50*time.Millisecond, func(_ context.Context, consume agent.StreamConsumer) {
 		go consume(agent.StreamEvent{Type: agent.StreamEventText, Text: "working"})
-	}, func(agent.StreamEvent) {})
+	}, discardStreamEvent)
 	var stalled *jobStalledError
 	require.ErrorAs(t, err, &stalled)
 	assert.True(t, stalled.started)
@@ -118,7 +118,9 @@ func (f *fakeIdleTimer) Reset(d time.Duration) {
 	f.resets <- struct{}{}
 }
 
-func (f *fakeIdleTimer) Stop() {}
+func (f *fakeIdleTimer) Stop() {
+	// Nothing to stop: the fake only fires when the test calls advance.
+}
 
 func (f *fakeIdleTimer) advance(d time.Duration) {
 	f.mu.Lock()
@@ -145,7 +147,7 @@ func TestRunPromptWatched_OutputKeepsRunAlive(t *testing.T) {
 			}
 			consume(agent.StreamEvent{Type: agent.StreamEventDone})
 		}()
-	}, func(agent.StreamEvent) {})
+	}, discardStreamEvent)
 	assert.NoError(t, err, "a run that keeps producing output outlives the idle timeout")
 }
 
@@ -157,7 +159,7 @@ func TestRunPromptWatched_FakeTimerFiresWhenQuiet(t *testing.T) {
 			<-timer.resets
 			timer.advance(80 * time.Millisecond)
 		}()
-	}, func(agent.StreamEvent) {})
+	}, discardStreamEvent)
 	var stalled *jobStalledError
 	require.ErrorAs(t, err, &stalled, "the same fake timer ends a run that goes quiet, so the test above is not vacuous")
 	assert.True(t, stalled.started)
@@ -166,7 +168,9 @@ func TestRunPromptWatched_FakeTimerFiresWhenQuiet(t *testing.T) {
 func TestRunPromptWatched_DisabledTimeoutWaitsForCancel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	err := runPromptWatched(ctx, 0, func(context.Context, agent.StreamConsumer) {}, func(agent.StreamEvent) {})
+	err := runPromptWatched(ctx, 0, func(context.Context, agent.StreamConsumer) {
+		// Never starts or finishes: only ctx expiry can end the run.
+	}, discardStreamEvent)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 

@@ -91,37 +91,30 @@ func renderSimpleFields(fields []simpleFormField, cursor int) string {
 	var b strings.Builder
 	for i, f := range fields {
 		prefix := "  "
-		if i == cursor {
-			prefix = tuiSelectedStyle.Render("> ")
-		}
 		label := f.label
 		if i == cursor {
+			prefix = tuiSelectedStyle.Render("> ")
 			label = tuiSelectedStyle.Render(label)
 		}
+		desc := ""
+		if f.desc != "" {
+			desc = "  " + tuiDimStyle.Render(f.desc)
+		}
 		if f.isBool {
-			value := "[off]"
-			if f.value {
-				value = "[on] "
-			}
-			if f.value {
-				value = tuiSuccessStyle.Render(value)
-			} else {
-				value = tuiDimStyle.Render(value)
-			}
-			b.WriteString(prefix + label + "  " + value)
-			if f.desc != "" {
-				b.WriteString("  " + tuiDimStyle.Render(f.desc))
-			}
-			b.WriteString("\n")
+			b.WriteString(prefix + label + "  " + simpleBoolValue(f.value) + desc + "\n")
 			continue
 		}
-		b.WriteString(prefix + label)
-		if f.desc != "" {
-			b.WriteString("  " + tuiDimStyle.Render(f.desc))
-		}
-		b.WriteString("\n    " + f.input.View() + "\n")
+		b.WriteString(prefix + label + desc + "\n    " + f.input.View() + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// simpleBoolValue renders a boolean field's on/off value.
+func simpleBoolValue(on bool) string {
+	if on {
+		return tuiSuccessStyle.Render("[on] ")
+	}
+	return tuiDimStyle.Render("[off]")
 }
 
 func (m sectionFormModel) Init() tea.Cmd { return textinput.Blink }
@@ -159,23 +152,11 @@ func (m sectionFormModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "up", "k", "shift+tab":
 		if m.cursor > 0 {
-			if !m.fields[m.cursor].isBool {
-				m.fields[m.cursor].input.Blur()
-			}
-			m.cursor--
-			if !m.fields[m.cursor].isBool {
-				m.fields[m.cursor].input.Focus()
-			}
+			m.moveFieldCursor(-1)
 		}
 	case "down", "j", "tab":
 		if m.cursor < len(m.fields)-1 {
-			if !m.fields[m.cursor].isBool {
-				m.fields[m.cursor].input.Blur()
-			}
-			m.cursor++
-			if !m.fields[m.cursor].isBool {
-				m.fields[m.cursor].input.Focus()
-			}
+			m.moveFieldCursor(1)
 		}
 	case " ":
 		if m.fields[m.cursor].isBool {
@@ -194,6 +175,17 @@ func (m sectionFormModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, nil
+}
+
+// moveFieldCursor moves the cursor by delta, moving the input focus with it.
+func (m *sectionFormModel) moveFieldCursor(delta int) {
+	if !m.fields[m.cursor].isBool {
+		m.fields[m.cursor].input.Blur()
+	}
+	m.cursor += delta
+	if !m.fields[m.cursor].isBool {
+		m.fields[m.cursor].input.Focus()
+	}
 }
 
 func (m sectionFormModel) saveCmd() tea.Cmd {

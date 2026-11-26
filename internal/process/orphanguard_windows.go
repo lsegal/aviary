@@ -134,4 +134,6 @@ func resumePrimaryThread(pid uint32) error {
 
 // releaseOrphanedProcess has nothing to do on Windows: a child that exits leaves
 // the job object on its own, and the job only kills processes still in it.
-func releaseOrphanedProcess(*exec.Cmd) {}
+func releaseOrphanedProcess(*exec.Cmd) {
+	// No bookkeeping to undo: an exited child has already left the job object.
+}

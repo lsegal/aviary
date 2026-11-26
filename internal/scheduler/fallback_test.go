@@ -52,7 +52,7 @@ func startFallbackRun(t *testing.T, now *time.Time, overlap string) *fallbackRun
 	}
 	checkout := t.TempDir()
 	s.pool.projectRunner = func(ctx context.Context, run ProjectRun) (string, error) {
-		_, err := run.RunCompiled(ctx, func(context.Context) (string, error) { return checkout, nil }, func(string, ...any) {})
+		_, err := run.RunCompiled(ctx, func(context.Context) (string, error) { return checkout, nil }, discardLogf)
 		require.Error(t, err)
 		close(r.fellBack)
 		select {

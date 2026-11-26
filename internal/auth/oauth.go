@@ -694,38 +694,57 @@ func readGHHostsToken() (*OAuthToken, error) {
 	}
 	defer f.Close() //nolint:errcheck
 
-	scanner := bufio.NewScanner(f)
+	tok, err := scanGHHostsToken(f)
+	if err != nil {
+		return nil, err
+	}
+	if tok == "" {
+		return nil, fmt.Errorf("no github.com oauth_token found in %s", path)
+	}
+	return &OAuthToken{AccessToken: tok, RefreshToken: "", ExpiresAt: time.Now().Add(10 * 365 * 24 * time.Hour).UnixMilli()}, nil
+}
+
+// scanGHHostsToken returns the oauth_token of the github.com section of a
+// gh hosts.yml, empty when there is none.
+func scanGHHostsToken(r io.Reader) (string, error) {
+	scanner := bufio.NewScanner(r)
 	inGitHubSection := false
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		raw := scanner.Text()
+		line := strings.TrimSpace(raw)
 		if line == "github.com:" {
 			inGitHubSection = true
 			continue
 		}
-		if inGitHubSection {
-			if line == "" {
-				// blank line ends section
-				inGitHubSection = false
-				continue
-			}
-			// look for `oauth_token: <token>`
-			if strings.HasPrefix(line, "oauth_token:") {
-				tok := strings.TrimSpace(strings.TrimPrefix(line, "oauth_token:"))
-				tok = strings.Trim(tok, "'\"")
-				if tok != "" {
-					return &OAuthToken{AccessToken: tok, RefreshToken: "", ExpiresAt: time.Now().Add(10 * 365 * 24 * time.Hour).UnixMilli()}, nil
-				}
-			}
-			// If we encounter a non-indented line it's probably a new top-level key.
-			if !strings.HasPrefix(scanner.Text(), " ") && !strings.HasPrefix(scanner.Text(), "\t") {
-				inGitHubSection = false
-			}
+		if !inGitHubSection {
+			continue
+		}
+		tok, stillInSection := ghHostsSectionLine(raw, line)
+		if tok != "" {
+			return tok, nil
+		}
+		inGitHubSection = stillInSection
+	}
+	return "", scanner.Err()
+}
+
+// ghHostsSectionLine reads one line inside the github.com section: the
+// token when the line is `oauth_token: <token>`, and whether the section
+// continues past it.
+func ghHostsSectionLine(raw, line string) (token string, stillInSection bool) {
+	if line == "" {
+		// blank line ends section
+		return "", false
+	}
+	// look for `oauth_token: <token>`
+	if strings.HasPrefix(line, "oauth_token:") {
+		tok := strings.TrimSpace(strings.TrimPrefix(line, "oauth_token:"))
+		if tok = strings.Trim(tok, "'\""); tok != "" {
+			return tok, true
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return nil, fmt.Errorf("no github.com oauth_token found in %s", path)
+	// If we encounter a non-indented line it's probably a new top-level key.
+	return "", strings.HasPrefix(raw, " ") || strings.HasPrefix(raw, "\t")
 }
 
 // GitHubExchange exchanges an authorization code for a GitHub OAuth token.

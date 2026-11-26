@@ -831,23 +831,37 @@ func TestRunSourceUpgrade(t *testing.T) {
 			restarts := stubRestart(t)
 
 			out, err := captureStdout(t, func() error { return runSourceUpgrade(check) })
-			if tt.wantErr != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantErr)
-				if tt.dirty {
-					assert.Contains(t, err.Error(), "updating the source checkout at "+checkout)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-			if tt.pulled {
-				assert.Contains(t, out, "Pulled 1 commit(s) into "+checkout)
-			} else {
-				assert.NotContains(t, out, "Pulled")
-			}
+			checkSourceUpgradeError(t, err, tt.wantErr, tt.dirty, checkout)
+			checkSourceUpgradePulled(t, out, tt.pulled, checkout)
 			assert.Contains(t, out, tt.want)
 			assert.Empty(t, *restarts, "a server of another kind is never restarted")
 		})
+	}
+}
+
+// checkSourceUpgradeError checks runSourceUpgrade's error: one containing
+// wantErr (and naming the checkout when dirty) when set, otherwise none.
+func checkSourceUpgradeError(t *testing.T, err error, wantErr string, dirty bool, checkout string) {
+	t.Helper()
+	if wantErr == "" {
+		require.NoError(t, err)
+		return
+	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), wantErr)
+	if dirty {
+		assert.Contains(t, err.Error(), "updating the source checkout at "+checkout)
+	}
+}
+
+// checkSourceUpgradePulled checks that out reports pulling one commit into
+// checkout when pulled, and no pull otherwise.
+func checkSourceUpgradePulled(t *testing.T, out string, pulled bool, checkout string) {
+	t.Helper()
+	if pulled {
+		assert.Contains(t, out, "Pulled 1 commit(s) into "+checkout)
+	} else {
+		assert.NotContains(t, out, "Pulled")
 	}
 }
 

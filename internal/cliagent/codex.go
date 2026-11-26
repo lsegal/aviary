@@ -128,7 +128,7 @@ func writeCodexProfile(opts Options) (string, func(), error) {
 		}
 	}
 	if home == "" || opts.SystemPrompt == "" {
-		return "", func() {}, nil
+		return "", noCleanup, nil
 	}
 	file, err := os.CreateTemp(home, clidefs.LaunchFilePrefix+"*"+codexProfileSuffix)
 	if err != nil {
@@ -155,15 +155,11 @@ func (s *codexSession) Send(ctx context.Context, turn Turn, onEvent func(Event))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var images []string
-	for _, mediaURL := range turn.MediaURLs {
-		path, err := writeTempImage(ctx, mediaURL)
-		if err != nil {
-			return Result{}, err
-		}
-		defer os.Remove(path) //nolint:errcheck
-		images = append(images, path)
+	images, removeImages, err := writeTempImages(ctx, turn.MediaURLs)
+	if err != nil {
+		return Result{}, err
 	}
+	defer removeImages()
 
 	profile, removeProfile, err := writeCodexProfile(s.opts)
 	if err != nil {
@@ -187,10 +183,27 @@ func (s *codexSession) Send(ctx context.Context, turn Turn, onEvent func(Event))
 	}
 
 	m := newCodexMapper(onEvent)
+	finished, turnErr := s.readTurn(stdout, m)
+	// A finished turn succeeds whatever the wait reports, including the
+	// process cleanup timing out after it.
+	waitErr := wait()
+	if ctx.Err() != nil {
+		return Result{}, ctx.Err()
+	}
+	if turnErr != nil {
+		return Result{}, turnErr
+	}
+	if !finished {
+		return Result{}, codexExitError(stderr.String(), waitErr)
+	}
+	return Result{Text: m.lastMessage}, nil
+}
+
+// readTurn maps each stdout line, recording the thread ID, and reports
+// whether the turn completed and the first error it reported.
+func (s *codexSession) readTurn(stdout io.Reader, m *codexMapper) (finished bool, turnErr error) {
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 0, 64*1024), 64*1024*1024)
-	var turnErr error
-	finished := false
 	for sc.Scan() {
 		done, err := m.handle(sc.Bytes())
 		if m.threadID != "" {
@@ -204,25 +217,18 @@ func (s *codexSession) Send(ctx context.Context, turn Turn, onEvent func(Event))
 		}
 	}
 	_, _ = io.Copy(io.Discard, stdout)
-	// A finished turn succeeds whatever the wait reports, including the
-	// process cleanup timing out after it.
-	waitErr := wait()
-	if ctx.Err() != nil {
-		return Result{}, ctx.Err()
+	return finished, turnErr
+}
+
+// codexExitError says why codex exited before finishing the turn.
+func codexExitError(stderr string, waitErr error) error {
+	if msg := strings.TrimSpace(stderr); msg != "" {
+		return fmt.Errorf("codex exited: %s", msg)
 	}
-	if turnErr != nil {
-		return Result{}, turnErr
+	if waitErr != nil {
+		return fmt.Errorf("codex exited: %w", waitErr)
 	}
-	if !finished {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return Result{}, fmt.Errorf("codex exited: %s", msg)
-		}
-		if waitErr != nil {
-			return Result{}, fmt.Errorf("codex exited: %w", waitErr)
-		}
-		return Result{}, errors.New("codex exited before finishing the turn")
-	}
-	return Result{Text: m.lastMessage}, nil
+	return errors.New("codex exited before finishing the turn")
 }
 
 func (s *codexSession) Close() error { return nil }
@@ -241,7 +247,7 @@ type codexMapper struct {
 
 func newCodexMapper(emit func(Event)) *codexMapper {
 	if emit == nil {
-		emit = func(Event) {}
+		emit = discardEvent
 	}
 	return &codexMapper{
 		emit:   emit,
@@ -310,40 +316,9 @@ func codexErrorMessage(msg string) string {
 // writeTempImage stores an image given as a data URL or remote URL in a temp
 // file so it can be passed to `codex exec --image`.
 func writeTempImage(ctx context.Context, mediaURL string) (string, error) {
-	var (
-		data      []byte
-		mediaType string
-	)
-	if strings.HasPrefix(mediaURL, "data:") {
-		mt, payload, err := splitDataURL(mediaURL)
-		if err != nil {
-			return "", err
-		}
-		data, err = base64.StdEncoding.DecodeString(payload)
-		if err != nil {
-			return "", fmt.Errorf("decoding image: %w", err)
-		}
-		mediaType = mt
-	} else {
-		reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, mediaURL, nil)
-		if err != nil {
-			return "", err
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return "", fmt.Errorf("fetching image: %w", err)
-		}
-		defer resp.Body.Close() //nolint:errcheck
-		if resp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("fetching image: HTTP %d", resp.StatusCode)
-		}
-		data, err = io.ReadAll(io.LimitReader(resp.Body, 32<<20))
-		if err != nil {
-			return "", fmt.Errorf("fetching image: %w", err)
-		}
-		mediaType = resp.Header.Get("Content-Type")
+	data, mediaType, err := readImage(ctx, mediaURL)
+	if err != nil {
+		return "", err
 	}
 	ext := ".png"
 	if exts, _ := mime.ExtensionsByType(strings.TrimSpace(strings.Split(mediaType, ";")[0])); len(exts) > 0 {
@@ -359,4 +334,44 @@ func writeTempImage(ctx context.Context, mediaURL string) (string, error) {
 		return "", err
 	}
 	return f.Name(), f.Close()
+}
+
+// readImage returns an image's bytes and media type, decoding a data URL or
+// fetching a remote one.
+func readImage(ctx context.Context, mediaURL string) ([]byte, string, error) {
+	if !strings.HasPrefix(mediaURL, "data:") {
+		return fetchImage(ctx, mediaURL)
+	}
+	mediaType, payload, err := splitDataURL(mediaURL)
+	if err != nil {
+		return nil, "", err
+	}
+	data, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return nil, "", fmt.Errorf("decoding image: %w", err)
+	}
+	return data, mediaType, nil
+}
+
+// fetchImage downloads a remote image, up to 32 MiB.
+func fetchImage(ctx context.Context, mediaURL string) ([]byte, string, error) {
+	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, mediaURL, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("fetching image: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("fetching image: HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+	if err != nil {
+		return nil, "", fmt.Errorf("fetching image: %w", err)
+	}
+	return data, resp.Header.Get("Content-Type"), nil
 }

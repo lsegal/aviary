@@ -54,90 +54,70 @@ func fetchLinkPreviews(text string) ([]linkPreview, func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
+	body, ok := fetchLinkPreviewHTML(ctx, u)
+	if !ok {
 		return nil, nil
+	}
+	defer body.Close() //nolint:errcheck
+
+	p := parseLinkPreviewHTML(u, io.LimitReader(body, maxLinkPreviewHTMLSize))
+	if p.Title == "" {
+		return nil, nil
+	}
+
+	p.Title = html.UnescapeString(p.Title)
+	p.Description = html.UnescapeString(p.Description)
+
+	// Resolve image URL and download to a temp file for signal-cli.
+	// p.Image becomes the local path, or empty if the download fails.
+	var cleanup func()
+	p.Image, cleanup = downloadLinkPreviewImage(ctx, u, html.UnescapeString(p.Image))
+
+	return []linkPreview{p}, cleanup
+}
+
+// fetchLinkPreviewHTML GETs pageURL and returns its body when the response is
+// HTML. The caller must close the returned body.
+func fetchLinkPreviewHTML(ctx context.Context, pageURL string) (io.ReadCloser, bool) {
+	req, err := http.NewRequestWithContext(ctx, "GET", pageURL, nil)
+	if err != nil {
+		return nil, false
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Aviary/1.0)")
 	req.Header.Set("Accept", "text/html")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		slog.Debug("signal: link preview fetch failed", "url", u, "err", err)
-		return nil, nil
+		slog.Debug("signal: link preview fetch failed", "url", pageURL, "err", err)
+		return nil, false
 	}
-	defer resp.Body.Close() //nolint:errcheck
-
 	if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
-		return nil, nil
+		resp.Body.Close() //nolint:errcheck
+		return nil, false
 	}
+	return resp.Body, true
+}
 
-	p := linkPreview{URL: u}
-	z := nethtml.NewTokenizer(io.LimitReader(resp.Body, maxLinkPreviewHTMLSize))
+// parseLinkPreviewHTML tokenizes an HTML document and collects the title,
+// description and (unresolved) image URL for a link preview.
+func parseLinkPreviewHTML(pageURL string, r io.Reader) linkPreview {
+	p := linkPreview{URL: pageURL}
+	z := nethtml.NewTokenizer(r)
 	var inTitle bool
 
 	for {
 		tt := z.Next()
 		if tt == nethtml.ErrorToken {
-			break
+			return p
 		}
 		t := z.Token()
 
 		switch tt {
 		case nethtml.StartTagToken, nethtml.SelfClosingTagToken:
-			tagName := strings.ToLower(t.Data)
-			if tagName == "title" {
+			if strings.ToLower(t.Data) == "title" {
 				inTitle = true
 			}
-			if tagName == "meta" {
-				var property, content string
-				for _, a := range t.Attr {
-					key := strings.ToLower(a.Key)
-					if key == "property" || key == "name" {
-						property = strings.ToLower(a.Val)
-					}
-					if key == "content" {
-						content = a.Val
-					}
-				}
-				switch property {
-				case "og:title", "twitter:title":
-					if p.Title == "" {
-						p.Title = strings.TrimSpace(content)
-					}
-				case "og:description", "description", "twitter:description":
-					if p.Description == "" {
-						p.Description = strings.TrimSpace(content)
-					}
-				case "og:image", "twitter:image":
-					if p.Image == "" && content != "" {
-						p.Image = content
-					}
-				}
-			}
-			if tagName == "link" {
-				var rel, href string
-				for _, a := range t.Attr {
-					key := strings.ToLower(a.Key)
-					if key == "rel" {
-						rel = strings.ToLower(a.Val)
-					}
-					if key == "href" {
-						href = a.Val
-					}
-				}
-				if (rel == "icon" || rel == "apple-touch-icon" || rel == "shortcut icon") && p.Image == "" {
-					p.Image = href
-				}
-			}
-			if tagName == "img" && p.Image == "" {
-				for _, a := range t.Attr {
-					if strings.ToLower(a.Key) == "src" {
-						p.Image = a.Val
-						break
-					}
-				}
-			}
+			p.applyTag(t)
 		case nethtml.EndTagToken:
 			if strings.ToLower(t.Data) == "title" {
 				inTitle = false
@@ -148,37 +128,97 @@ func fetchLinkPreviews(text string) ([]linkPreview, func()) {
 			}
 		}
 	}
+}
 
-	if p.Title == "" {
-		return nil, nil
-	}
-
-	p.Title = html.UnescapeString(p.Title)
-	p.Description = html.UnescapeString(p.Description)
-
-	// Resolve image URL and download to a temp file for signal-cli.
-	var cleanup func()
-	imageURL := html.UnescapeString(p.Image)
-	p.Image = "" // clear it; will be set to local path if download succeeds
-	if imageURL != "" {
-		// Resolve relative image URLs against the page URL.
-		if base, err := url.Parse(u); err == nil {
-			if rel, err := url.Parse(imageURL); err == nil {
-				imageURL = base.ResolveReference(rel).String()
+// applyTag updates p from a <meta>, <link> or <img> start tag.
+func (p *linkPreview) applyTag(t nethtml.Token) {
+	switch strings.ToLower(t.Data) {
+	case "meta":
+		var property, content string
+		for _, a := range t.Attr {
+			switch strings.ToLower(a.Key) {
+			case "property", "name":
+				property = strings.ToLower(a.Val)
+			case "content":
+				content = a.Val
 			}
 		}
-
-		if strings.HasPrefix(imageURL, "http") {
-			if path, err := downloadTempImage(ctx, imageURL); err == nil {
-				p.Image = path
-				cleanup = func() { os.Remove(path) } //nolint:errcheck
-			} else {
-				slog.Debug("signal: link preview image download failed", "url", imageURL, "err", err)
+		p.applyMeta(property, content)
+	case "link":
+		attrs := lowerKeyAttrs(t.Attr)
+		switch strings.ToLower(attrs["rel"]) {
+		case "icon", "apple-touch-icon", "shortcut icon":
+			if p.Image == "" {
+				p.Image = attrs["href"]
 			}
 		}
+	case "img":
+		if p.Image == "" {
+			p.Image = firstAttr(t.Attr, "src")
+		}
 	}
+}
 
-	return []linkPreview{p}, cleanup
+// applyMeta records a meta tag's content, keeping the first value seen for
+// each preview field.
+func (p *linkPreview) applyMeta(property, content string) {
+	switch property {
+	case "og:title", "twitter:title":
+		if p.Title == "" {
+			p.Title = strings.TrimSpace(content)
+		}
+	case "og:description", "description", "twitter:description":
+		if p.Description == "" {
+			p.Description = strings.TrimSpace(content)
+		}
+	case "og:image", "twitter:image":
+		if p.Image == "" && content != "" {
+			p.Image = content
+		}
+	}
+}
+
+// lowerKeyAttrs maps lower-cased attribute keys to values; later duplicates win.
+func lowerKeyAttrs(attrs []nethtml.Attribute) map[string]string {
+	m := make(map[string]string, len(attrs))
+	for _, a := range attrs {
+		m[strings.ToLower(a.Key)] = a.Val
+	}
+	return m
+}
+
+// firstAttr returns the value of the first attribute named key (case-insensitive).
+func firstAttr(attrs []nethtml.Attribute, key string) string {
+	for _, a := range attrs {
+		if strings.ToLower(a.Key) == key {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+// downloadLinkPreviewImage resolves imageURL against pageURL and downloads it
+// to a temp file, returning the local path and a cleanup func that removes it.
+// It returns empty values when there is no usable image.
+func downloadLinkPreviewImage(ctx context.Context, pageURL, imageURL string) (string, func()) {
+	if imageURL == "" {
+		return "", nil
+	}
+	// Resolve relative image URLs against the page URL.
+	if base, err := url.Parse(pageURL); err == nil {
+		if rel, err := url.Parse(imageURL); err == nil {
+			imageURL = base.ResolveReference(rel).String()
+		}
+	}
+	if !strings.HasPrefix(imageURL, "http") {
+		return "", nil
+	}
+	path, err := downloadTempImage(ctx, imageURL)
+	if err != nil {
+		slog.Debug("signal: link preview image download failed", "url", imageURL, "err", err)
+		return "", nil
+	}
+	return path, func() { os.Remove(path) } //nolint:errcheck
 }
 
 // downloadTempImage fetches imageURL and writes it to a temp file, returning the path.
@@ -1074,37 +1114,19 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 		return
 	}
 
-	receivedAt := time.Now().UTC()
-	if msgTimestamp > 0 {
-		receivedAt = time.UnixMilli(msgTimestamp).UTC()
-	}
-
-	// Prepare message text, replacing the object-replacement character with
-	// the agent name (fallback to the channel phone if agent name not set).
-	msgText := dataMessage.Message
-	repl := c.AgentName
-	if strings.TrimSpace(repl) == "" {
-		repl = c.phone
-	}
-	if strings.Contains(msgText, "\uFFFC") {
-		msgText = strings.ReplaceAll(msgText, "\uFFFC", repl)
-	}
+	receivedAt := signalReceivedAt(msgTimestamp)
+	msgText := c.replaceObjectChars(dataMessage.Message)
 
 	// Log all group messages before allowFrom filtering.
 	if isGroup {
-		c.handlerMu.RLock()
-		logFn := c.groupLogHandler
-		c.handlerMu.RUnlock()
-		if logFn != nil {
-			logFn(IncomingMessage{
-				Type:       "signal",
-				From:       source,
-				SenderName: c.senderName(source),
-				Channel:    channelID,
-				Text:       msgText,
-				ReceivedAt: receivedAt,
-			})
-		}
+		c.logGroupMessage(IncomingMessage{
+			Type:       "signal",
+			From:       source,
+			SenderName: c.senderName(source),
+			Channel:    channelID,
+			Text:       msgText,
+			ReceivedAt: receivedAt,
+		})
 	}
 
 	// Replies to the agent's own messages must still match an allowFrom entry's
@@ -1118,48 +1140,86 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 		return
 	}
 
-	c.handlerMu.RLock()
-	fn := c.handler
-	c.handlerMu.RUnlock()
-
-	if fn != nil {
-		im := IncomingMessage{
-			Type:          "signal",
-			From:          source,
-			SenderName:    c.senderName(source),
-			Channel:       channelID,
-			Text:          msgText,
-			Attachments:   c.signalAttachments(dataMessage.Attachments, source, channelID, isGroup),
-			ReceivedAt:    receivedAt,
-			RestrictTools: result.restrictTools,
-			DisabledTools: c.disabledTools,
-			Model:         result.model,
-			Fallbacks:     result.fallbacks,
-		}
-		if dataMessage.Quote != nil {
-			im.QuoteAuthor = dataMessage.Quote.Author
-			qtext := dataMessage.Quote.Text
-			if strings.Contains(qtext, "\uFFFC") {
-				qtext = strings.ReplaceAll(qtext, "\uFFFC", repl)
-			}
-			im.QuoteText = qtext
-		}
-		if im.Model == "" {
-			im.Model = c.model
-		}
-		if len(im.Fallbacks) == 0 {
-			im.Fallbacks = c.fallbacks
-		}
-		fn(im)
-		// Send a read receipt only after the message has been handed off.
-		// Receipts always go to the sender's phone number (source), even in groups.
-		if c.sendReadReceipts && strings.HasPrefix(source, "+") && msgTimestamp > 0 {
-			if err := c.sendReadReceipt(source, msgTimestamp); err != nil {
-				slog.Warn("signal: failed to send read receipt", "err", err)
-			}
-		}
-	} else {
+	fn := c.currentHandler()
+	if fn == nil {
 		slog.Debug("signal: no handler registered", "from", source)
+		return
+	}
+	im := IncomingMessage{
+		Type:          "signal",
+		From:          source,
+		SenderName:    c.senderName(source),
+		Channel:       channelID,
+		Text:          msgText,
+		Attachments:   c.signalAttachments(dataMessage.Attachments, source, channelID, isGroup),
+		ReceivedAt:    receivedAt,
+		RestrictTools: result.restrictTools,
+		DisabledTools: c.disabledTools,
+		Model:         result.model,
+		Fallbacks:     result.fallbacks,
+	}
+	if dataMessage.Quote != nil {
+		im.QuoteAuthor = dataMessage.Quote.Author
+		im.QuoteText = c.replaceObjectChars(dataMessage.Quote.Text)
+	}
+	c.handOff(fn, im, source, msgTimestamp)
+}
+
+// signalReceivedAt converts an envelope timestamp (ms) to a UTC time,
+// falling back to now when the envelope has none.
+func signalReceivedAt(msgTimestamp int64) time.Time {
+	if msgTimestamp > 0 {
+		return time.UnixMilli(msgTimestamp).UTC()
+	}
+	return time.Now().UTC()
+}
+
+// replaceObjectChars replaces the object-replacement character Signal uses
+// for mentions with the agent name (or the channel phone if no name is set).
+func (c *SignalChannel) replaceObjectChars(text string) string {
+	if !strings.Contains(text, "￼") {
+		return text
+	}
+	repl := c.AgentName
+	if strings.TrimSpace(repl) == "" {
+		repl = c.phone
+	}
+	return strings.ReplaceAll(text, "￼", repl)
+}
+
+// logGroupMessage forwards msg to the group log handler, if one is set.
+func (c *SignalChannel) logGroupMessage(msg IncomingMessage) {
+	c.handlerMu.RLock()
+	logFn := c.groupLogHandler
+	c.handlerMu.RUnlock()
+	if logFn != nil {
+		logFn(msg)
+	}
+}
+
+// currentHandler returns the registered message handler, or nil.
+func (c *SignalChannel) currentHandler() func(IncomingMessage) {
+	c.handlerMu.RLock()
+	defer c.handlerMu.RUnlock()
+	return c.handler
+}
+
+// handOff fills in channel-level model defaults, passes im to fn, and then
+// sends a read receipt when enabled. Receipts always go to the sender's phone
+// number (source), even in groups.
+func (c *SignalChannel) handOff(fn func(IncomingMessage), im IncomingMessage, source string, msgTimestamp int64) {
+	if im.Model == "" {
+		im.Model = c.model
+	}
+	if len(im.Fallbacks) == 0 {
+		im.Fallbacks = c.fallbacks
+	}
+	fn(im)
+	// Send a read receipt only after the message has been handed off.
+	if c.sendReadReceipts && strings.HasPrefix(source, "+") && msgTimestamp > 0 {
+		if err := c.sendReadReceipt(source, msgTimestamp); err != nil {
+			slog.Warn("signal: failed to send read receipt", "err", err)
+		}
 	}
 }
 
@@ -1350,40 +1410,21 @@ func (c *SignalChannel) dispatchReactionEnvelope(source string, msgTimestamp int
 		result.fallbacks = r.fallbacks
 	}
 
-	c.handlerMu.RLock()
-	fn := c.handler
-	c.handlerMu.RUnlock()
-
-	if fn != nil {
-		receivedAt := time.Now().UTC()
-		if msgTimestamp > 0 {
-			receivedAt = time.UnixMilli(msgTimestamp).UTC()
-		}
-		im := IncomingMessage{
-			Type:          "signal",
-			From:          source,
-			SenderName:    c.senderName(source),
-			Channel:       channelID,
-			Text:          reactionMessage.Emoji,
-			ReceivedAt:    receivedAt,
-			RestrictTools: result.restrictTools,
-			DisabledTools: c.disabledTools,
-			Model:         result.model,
-			Fallbacks:     result.fallbacks,
-		}
-		if im.Model == "" {
-			im.Model = c.model
-		}
-		if len(im.Fallbacks) == 0 {
-			im.Fallbacks = c.fallbacks
-		}
-		fn(im)
-		if c.sendReadReceipts && strings.HasPrefix(source, "+") && msgTimestamp > 0 {
-			if err := c.sendReadReceipt(source, msgTimestamp); err != nil {
-				slog.Warn("signal: failed to send read receipt", "err", err)
-			}
-		}
-	} else {
+	fn := c.currentHandler()
+	if fn == nil {
 		slog.Debug("signal: no handler registered", "from", source)
+		return
 	}
+	c.handOff(fn, IncomingMessage{
+		Type:          "signal",
+		From:          source,
+		SenderName:    c.senderName(source),
+		Channel:       channelID,
+		Text:          reactionMessage.Emoji,
+		ReceivedAt:    signalReceivedAt(msgTimestamp),
+		RestrictTools: result.restrictTools,
+		DisabledTools: c.disabledTools,
+		Model:         result.model,
+		Fallbacks:     result.fallbacks,
+	}, source, msgTimestamp)
 }

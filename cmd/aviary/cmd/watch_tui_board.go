@@ -190,33 +190,12 @@ var watchShortLabels = map[string]string{
 // right side shrinks and then drops, and the labels shorten and then drop to
 // key:count.
 func (m watchModel) filterLine() string {
-	counts := []int{len(m.items)}
-	for _, state := range watchFilters {
-		n := 0
-		for _, it := range m.items {
-			if it.inFilter(state) {
-				n++
-			}
-		}
-		counts = append(counts, n)
-	}
+	counts := m.filterCounts()
 	mode := "list"
 	if m.board {
 		mode = "board"
 	}
-	var rights []string
-	if !m.hasStatus {
-		rights = []string{"waiting for status...", ""}
-	} else {
-		s := m.status
-		slots := fmt.Sprintf("%d/%d", s.Jobs.Running, s.Concurrency)
-		rights = []string{
-			fmt.Sprintf("%s slots · %d merged 24h", slots, s.Jobs.Merged24h),
-			fmt.Sprintf("%s · %d merged", slots, s.Jobs.Merged24h),
-			slots,
-			"",
-		}
-	}
+	rights := m.filterRights()
 	var line string
 	for tier := range 3 {
 		chips := make([]string, 0, len(counts)+1)
@@ -228,20 +207,62 @@ func (m watchModel) filterLine() string {
 			chips = append(chips, m.filterChip(i, state, n, tier))
 		}
 		chips = append(chips, tuiDimStyle.Render("["+mode+"]"))
-		for _, right := range rights {
-			for _, gap := range []string{"  ", " "} {
-				line = strings.Join(chips, gap)
-				pad := m.width - lipgloss.Width(line) - lipgloss.Width(right)
-				if right == "" && pad >= 0 {
-					return line
-				}
-				if right != "" && pad >= 2 {
-					return line + strings.Repeat(" ", pad) + tuiDimStyle.Render(right)
-				}
-			}
+		var ok bool
+		if line, ok = m.fitFilterLine(chips, rights); ok {
+			return line
 		}
 	}
 	return watchTruncate(line, m.width)
+}
+
+// filterCounts is the item count of all items, then of each filter.
+func (m watchModel) filterCounts() []int {
+	counts := []int{len(m.items)}
+	for _, state := range watchFilters {
+		n := 0
+		for _, it := range m.items {
+			if it.inFilter(state) {
+				n++
+			}
+		}
+		counts = append(counts, n)
+	}
+	return counts
+}
+
+// filterRights is the filter row's right side, longest first, ending with
+// none at all.
+func (m watchModel) filterRights() []string {
+	if !m.hasStatus {
+		return []string{"waiting for status...", ""}
+	}
+	s := m.status
+	slots := fmt.Sprintf("%d/%d", s.Jobs.Running, s.Concurrency)
+	return []string{
+		fmt.Sprintf("%s slots · %d merged 24h", slots, s.Jobs.Merged24h),
+		fmt.Sprintf("%s · %d merged", slots, s.Jobs.Merged24h),
+		slots,
+		"",
+	}
+}
+
+// fitFilterLine joins chips with the widest gap and right side that fit the
+// width. When none fit it returns the last, tightest attempt and false.
+func (m watchModel) fitFilterLine(chips, rights []string) (string, bool) {
+	var line string
+	for _, right := range rights {
+		for _, gap := range []string{"  ", " "} {
+			line = strings.Join(chips, gap)
+			pad := m.width - lipgloss.Width(line) - lipgloss.Width(right)
+			if right == "" && pad >= 0 {
+				return line, true
+			}
+			if right != "" && pad >= 2 {
+				return line + strings.Repeat(" ", pad) + tuiDimStyle.Render(right), true
+			}
+		}
+	}
+	return line, false
 }
 
 // filterChip is a filter's key, label and count: the full label at tier 0,
@@ -342,24 +363,11 @@ func (m watchModel) itemTitle(it watchItem) string {
 // itemDetail is a job's agent, progress, pull request and wait reason, or
 // a scheduled prompt's next run and last result.
 func (m watchModel) itemDetail(it watchItem) string {
-	var parts []string
 	if it.scheduled() {
-		switch {
-		case it.disabled:
-			parts = append(parts, "paused")
-		case it.nextRun != "":
-			parts = append(parts, "next "+watchUntil(it.nextRun, m.now()))
-		}
-		if it.hasJob && it.job.LastRun != nil {
-			last := "last run " + it.job.LastRun.Result
-			if it.job.LastRun.Dismissed {
-				last += " (dismissed)"
-			}
-			parts = append(parts, last)
-		}
-		return strings.Join(parts, " · ")
+		return m.scheduledDetail(it)
 	}
 	job := it.job
+	var parts []string
 	if kind := watchKindLabel(job); kind != "" {
 		parts = append(parts, kind)
 	}
@@ -374,31 +382,51 @@ func (m watchModel) itemDetail(it watchItem) string {
 		parts = append(parts, fmt.Sprintf("%d/%d tasks", job.Progress.Done, job.Progress.Total))
 	}
 	if job.PullRequest > 0 {
-		pr := fmt.Sprintf("PR #%d", job.PullRequest)
-		if job.PullRequestState != "" {
-			pr += " " + job.PullRequestState
-		}
-		parts = append(parts, pr)
+		parts = append(parts, strings.TrimSuffix(fmt.Sprintf("PR #%d %s", job.PullRequest, job.PullRequestState), " "))
 	}
 	if job.WaitReason != "" {
-		wait := job.WaitReason
-		if job.WakeAt != "" {
-			if t, err := time.Parse(time.RFC3339, job.WakeAt); err == nil && t.After(m.now()) {
-				wait += " · wakes " + watchUntil(job.WakeAt, m.now())
-			}
-		}
-		parts = append(parts, wait)
+		parts = append(parts, m.waitDetail(job))
 	}
-	if job.Kind == "merge" || job.Kind == "discuss" {
-		// A finished merge or discuss job's last line says why it ended.
-		if job.Summary != "" && (job.Status == "complete" || job.Status == "failed") {
-			parts = append(parts, job.Summary)
-		}
+	// A finished merge or discuss job's last line says why it ended.
+	if (job.Kind == "merge" || job.Kind == "discuss") && job.Summary != "" && (job.Status == "complete" || job.Status == "failed") {
+		parts = append(parts, job.Summary)
 	}
 	if job.Stale {
 		parts = append(parts, "stale")
 	}
 	return strings.Join(parts, " · ")
+}
+
+// scheduledDetail is a scheduled item's next run and last result.
+func (m watchModel) scheduledDetail(it watchItem) string {
+	var parts []string
+	switch {
+	case it.disabled:
+		parts = append(parts, "paused")
+	case it.nextRun != "":
+		parts = append(parts, "next "+watchUntil(it.nextRun, m.now()))
+	}
+	if it.hasJob && it.job.LastRun != nil {
+		last := "last run " + it.job.LastRun.Result
+		if it.job.LastRun.Dismissed {
+			last += " (dismissed)"
+		}
+		parts = append(parts, last)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// waitDetail is a waiting job's reason, with when it wakes if that is still
+// ahead.
+func (m watchModel) waitDetail(job watchJob) string {
+	wait := job.WaitReason
+	if job.WakeAt == "" {
+		return wait
+	}
+	if t, err := time.Parse(time.RFC3339, job.WakeAt); err == nil && t.After(m.now()) {
+		wait += " · wakes " + watchUntil(job.WakeAt, m.now())
+	}
+	return wait
 }
 
 // watchBoardGutter is the blank cells between adjacent board columns, and
@@ -417,29 +445,7 @@ func (m watchModel) boardView(height int) []string {
 	width := max(1, (m.width-gap*(len(cols)-1))/len(cols))
 	blocks := make([][]string, len(cols))
 	for c, col := range cols {
-		// One style, so the selected column's underline never wraps
-		// already-styled text that truncation could cut mid-escape.
-		style := watchStateStyle(col.state).Bold(true).MaxWidth(width)
-		if c == m.col {
-			style = style.Underline(true)
-		}
-		lines := []string{style.Render(watchStateLabels[col.state])}
-		cursor := -1
-		if c == m.col {
-			cursor = m.cursor
-		}
-		cards := max(1, (height-1)/2)
-		start := 0
-		if cursor >= 0 {
-			start = watchScrollStart(cursor, len(col.items), cards)
-		}
-		for i := start; i < len(col.items) && len(lines)+2 <= height; i++ {
-			lines = append(lines, m.boardCard(col.items[i], i == cursor, width)...)
-		}
-		if len(col.items) == 0 {
-			lines = append(lines, tuiDimStyle.Render(watchTruncate("—", width)))
-		}
-		blocks[c] = lines
+		blocks[c] = m.boardColumn(col, c == m.col, width, height)
 	}
 	out := make([]string, 0, height)
 	for row := range height {
@@ -458,6 +464,30 @@ func (m watchModel) boardView(height int) []string {
 		out = append(out, strings.TrimRight(watchTruncate(b.String(), m.width), " "))
 	}
 	return out
+}
+
+// boardColumn is one board column's lines: its header and the cards that
+// fit height, scrolled to the cursor when the column is selected.
+func (m watchModel) boardColumn(col watchColumn, selected bool, width, height int) []string {
+	// One style, so the selected column's underline never wraps
+	// already-styled text that truncation could cut mid-escape.
+	style := watchStateStyle(col.state).Bold(true).MaxWidth(width)
+	cursor, start := -1, 0
+	if selected {
+		style = style.Underline(true)
+		cursor = m.cursor
+		if cursor >= 0 {
+			start = watchScrollStart(cursor, len(col.items), max(1, (height-1)/2))
+		}
+	}
+	lines := []string{style.Render(watchStateLabels[col.state])}
+	for i := start; i < len(col.items) && len(lines)+2 <= height; i++ {
+		lines = append(lines, m.boardCard(col.items[i], i == cursor, width)...)
+	}
+	if len(col.items) == 0 {
+		lines = append(lines, tuiDimStyle.Render(watchTruncate("—", width)))
+	}
+	return lines
 }
 
 // boardCard is an item's two board lines: its name and title, then its

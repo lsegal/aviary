@@ -16,7 +16,9 @@ func TestNotifyToolsSendThroughTheServiceAndEditSettings(t *testing.T) {
 	var published []notify.Notification
 	n := notify.New()
 	n.Publish = func(note notify.Notification) { published = append(published, note) }
-	n.AfterFunc = func(time.Duration, func()) {}
+	n.AfterFunc = func(time.Duration, func()) {
+		// Never fire delayed callbacks: the test drives notifications directly.
+	}
 	GetDeps().Notifier = n
 	ctx := context.Background()
 

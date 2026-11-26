@@ -32,7 +32,7 @@ func TestCommandRunnerRecordsJobUsage(t *testing.T) {
 		RecordUsage: func(rec domain.UsageRecord) { records = append(records, rec) },
 	}
 	session := AgentSession{ID: "session-7", Agent: "claude/opus", Resume: true}
-	if err := runner.RunSession(context.Background(), Issue{Number: 7, Target: "o/r"}, session, func(AgentSession) {}); err != nil {
+	if err := runner.RunSession(context.Background(), Issue{Number: 7, Target: "o/r"}, session, ignoreSessionUpdate); err != nil {
 		t.Fatalf("RunSession() error = %v", err)
 	}
 	if len(records) != 1 {

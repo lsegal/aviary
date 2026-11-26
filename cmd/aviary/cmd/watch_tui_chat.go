@@ -230,54 +230,73 @@ func (m watchModel) chatFetchCmd() tea.Cmd {
 			msg.err = err
 			return msg
 		}
-		var persisted []struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		}
-		if strings.TrimSpace(raw) != "" {
-			if err := json.Unmarshal([]byte(raw), &persisted); err != nil {
-				msg.err = fmt.Errorf("decode: %w", err)
-				return msg
-			}
-		}
-		slices.Reverse(persisted)
-		for _, p := range persisted {
-			switch {
-			case p.Role == "tool":
-				msg.entries = watchAddTool(msg.entries, watchParseTool(p.Content, true))
-			case p.Role == "assistant" && strings.HasPrefix(p.Content, "[tool] "):
-				msg.entries = watchAddTool(msg.entries, watchParseTool(strings.TrimPrefix(p.Content, "[tool] "), true))
-			case p.Role == "user" || p.Role == "assistant":
-				msg.entries = append(msg.entries, watchChatEntry{role: p.Role, text: p.Content})
-			}
+		if msg.entries, err = watchChatHistoryEntries(raw); err != nil {
+			msg.err = err
+			return msg
 		}
 		raw, err = m.call(m.ctx, "session_turn", map[string]any{
 			"agent":      config.ProjectsAgentName,
 			"session_id": config.ProjectsChatSession,
 		})
-		var turn struct {
-			Processing bool `json:"processing"`
-			Items      []struct {
-				Text     string         `json:"text"`
-				MediaURL string         `json:"media_url"`
-				Tool     *watchChatTool `json:"tool"`
-			} `json:"items"`
-		}
-		if err == nil && strings.TrimSpace(raw) != "" && json.Unmarshal([]byte(raw), &turn) == nil && turn.Processing {
-			msg.replying = true
-			for _, item := range turn.Items {
-				switch {
-				case item.Tool != nil:
-					msg.entries = watchAddTool(msg.entries, *item.Tool)
-				case item.MediaURL != "":
-					msg.entries = append(msg.entries, watchChatEntry{role: "assistant", text: item.MediaURL})
-				case item.Text != "":
-					msg.entries = watchAddText(msg.entries, item.Text)
-				}
-			}
+		if err == nil {
+			msg.entries, msg.replying = watchChatTurnEntries(msg.entries, raw)
 		}
 		return msg
 	}
+}
+
+// watchChatHistoryEntries turns a newest-first session_messages result into
+// transcript entries, oldest first.
+func watchChatHistoryEntries(raw string) ([]watchChatEntry, error) {
+	var persisted []struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	if strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &persisted); err != nil {
+			return nil, fmt.Errorf("decode: %w", err)
+		}
+	}
+	slices.Reverse(persisted)
+	var entries []watchChatEntry
+	for _, p := range persisted {
+		switch {
+		case p.Role == "tool":
+			entries = watchAddTool(entries, watchParseTool(p.Content, true))
+		case p.Role == "assistant" && strings.HasPrefix(p.Content, "[tool] "):
+			entries = watchAddTool(entries, watchParseTool(strings.TrimPrefix(p.Content, "[tool] "), true))
+		case p.Role == "user" || p.Role == "assistant":
+			entries = append(entries, watchChatEntry{role: p.Role, text: p.Content})
+		}
+	}
+	return entries, nil
+}
+
+// watchChatTurnEntries appends a session_turn result's items to entries when
+// a turn is running, and reports whether one is.
+func watchChatTurnEntries(entries []watchChatEntry, raw string) ([]watchChatEntry, bool) {
+	var turn struct {
+		Processing bool `json:"processing"`
+		Items      []struct {
+			Text     string         `json:"text"`
+			MediaURL string         `json:"media_url"`
+			Tool     *watchChatTool `json:"tool"`
+		} `json:"items"`
+	}
+	if strings.TrimSpace(raw) == "" || json.Unmarshal([]byte(raw), &turn) != nil || !turn.Processing {
+		return entries, false
+	}
+	for _, item := range turn.Items {
+		switch {
+		case item.Tool != nil:
+			entries = watchAddTool(entries, *item.Tool)
+		case item.MediaURL != "":
+			entries = append(entries, watchChatEntry{role: "assistant", text: item.MediaURL})
+		case item.Text != "":
+			entries = watchAddText(entries, item.Text)
+		}
+	}
+	return entries, true
 }
 
 // applyChatData takes in a read of the session, which replaces this TUI's
@@ -733,37 +752,52 @@ func (m watchModel) chatLines(width int) watchChatView {
 		if i > 0 {
 			r.lines = append(r.lines, "")
 		}
-		switch entry.role {
-		case "user":
-			header := watchChatUserStyle.Render("you")
-			switch entry.status {
-			case "sending":
-				header += tuiDimStyle.Render(" · sending…")
-			case "sent":
-				header += tuiDimStyle.Render(" · sent")
-			case "failed":
-				header += tuiErrorStyle.Render(" · not delivered")
-			}
-			r.lines = append(r.lines, header)
-			r.markdown(entry.text, "  ")
-		case "error":
-			r.wrapped("  "+tuiErrorStyle.Render("! "), "    ", tuiErrorStyle.Render(watchANSI.ReplaceAllString(entry.text, "")), false)
-		case "assistant":
-			if i == 0 || entries[i-1].role != "tool" {
-				r.lines = append(r.lines, watchChatAgentStyle.Render(config.ProjectsAgentName))
-			}
-			r.markdown(entry.text, "  ")
-		case "tool":
-			if i > 0 && entries[i-1].role != "user" {
-				// Tool calls and reply text run together under one header.
-				r.lines = r.lines[:len(r.lines)-1]
-			} else {
-				r.lines = append(r.lines, watchChatAgentStyle.Render(config.ProjectsAgentName))
-			}
-			r.tool(*entry.tool)
+		prev := ""
+		if i > 0 {
+			prev = entries[i-1].role
 		}
+		r.entry(entry, i == 0, prev)
 	}
 	return watchChatView{lines: r.lines, refs: r.refs}
+}
+
+// watchChatSendStatus is the suffix a user message's header shows for its
+// delivery status.
+func watchChatSendStatus(status string) string {
+	switch status {
+	case "sending":
+		return tuiDimStyle.Render(" · sending…")
+	case "sent":
+		return tuiDimStyle.Render(" · sent")
+	case "failed":
+		return tuiErrorStyle.Render(" · not delivered")
+	}
+	return ""
+}
+
+// entry renders one transcript entry; first marks the first entry and prev
+// is the previous entry's role.
+func (r *watchChatRenderer) entry(entry watchChatEntry, first bool, prev string) {
+	switch entry.role {
+	case "user":
+		r.lines = append(r.lines, watchChatUserStyle.Render("you")+watchChatSendStatus(entry.status))
+		r.markdown(entry.text, "  ")
+	case "error":
+		r.wrapped("  "+tuiErrorStyle.Render("! "), "    ", tuiErrorStyle.Render(watchANSI.ReplaceAllString(entry.text, "")), false)
+	case "assistant":
+		if first || prev != "tool" {
+			r.lines = append(r.lines, watchChatAgentStyle.Render(config.ProjectsAgentName))
+		}
+		r.markdown(entry.text, "  ")
+	case "tool":
+		if !first && prev != "user" {
+			// Tool calls and reply text run together under one header.
+			r.lines = r.lines[:len(r.lines)-1]
+		} else {
+			r.lines = append(r.lines, watchChatAgentStyle.Render(config.ProjectsAgentName))
+		}
+		r.tool(*entry.tool)
+	}
 }
 
 // watchChatRenderer renders chat Markdown for the terminal: bold, inline and

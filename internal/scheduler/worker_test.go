@@ -283,7 +283,7 @@ func TestWorkerPool_PrecompiledProjectTaskStoppedOrSkipped(t *testing.T) {
 			cancel()
 			runCtx = c
 		}
-		return run.RunCompiled(runCtx, func(context.Context) (string, error) { return t.TempDir(), nil }, func(string, ...any) {})
+		return run.RunCompiled(runCtx, func(context.Context) (string, error) { return t.TempDir(), nil }, discardLogf)
 	}
 	job, err := q.EnqueueWithType("alpha/stale", "project", "alpha", "Label", "", "session:ops", 1, "", "")
 	require.NoError(t, err)
@@ -384,7 +384,7 @@ func TestWorkerPool_PrecompiledProjectTaskFallsBackWhenCloneFails(t *testing.T) 
 	var reported int
 	p.scriptReporter = func(string, string, error) error { reported++; return nil }
 	p.projectRunner = func(ctx context.Context, run ProjectRun) (string, error) {
-		_, err := run.RunCompiled(ctx, func(context.Context) (string, error) { return "", errors.New("disk full") }, func(string, ...any) {})
+		_, err := run.RunCompiled(ctx, func(context.Context) (string, error) { return "", errors.New("disk full") }, discardLogf)
 		require.Error(t, err)
 		return "model summary", nil
 	}

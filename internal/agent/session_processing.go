@@ -75,21 +75,9 @@ func StopSession(agentID, sessionID string) int {
 func trackSessionRun(agentID, sessionID string, cancel context.CancelFunc) func() {
 	key := SessionRuntimeKey(agentID, sessionID)
 	if key == "" {
-		return func() {}
+		return untracked
 	}
-
-	runs.mu.Lock()
-	active := runs.bySession[key]
-	wasProcessing := len(active) > 0
-	if active == nil {
-		active = make(map[uint64]context.CancelFunc)
-		runs.bySession[key] = active
-	}
-	runs.nextID++
-	runID := runs.nextID
-	active[runID] = cancel
-	runs.mu.Unlock()
-
+	runID, wasProcessing := addSessionRun(key, cancel)
 	if !wasProcessing {
 		notifySessionProcessing(agentID, sessionID, true)
 	}
@@ -97,23 +85,50 @@ func trackSessionRun(agentID, sessionID string, cancel context.CancelFunc) func(
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			becameIdle := false
-			runs.mu.Lock()
-			if active := runs.bySession[key]; active != nil {
-				if _, ok := active[runID]; ok {
-					delete(active, runID)
-					if len(active) == 0 {
-						delete(runs.bySession, key)
-						becameIdle = true
-					}
-				}
-			}
-			runs.mu.Unlock()
-			if becameIdle {
+			if removeSessionRun(key, runID) {
 				notifySessionProcessing(agentID, sessionID, false)
 			}
 		})
 	}
+}
+
+// untracked is the release function of a run or call that was not tracked.
+func untracked() {
+	// Nothing was recorded, so there is nothing to release.
+}
+
+// addSessionRun records cancel as a run of the session at key, reporting
+// whether the session already had runs.
+func addSessionRun(key string, cancel context.CancelFunc) (runID uint64, wasProcessing bool) {
+	runs.mu.Lock()
+	defer runs.mu.Unlock()
+	active := runs.bySession[key]
+	wasProcessing = len(active) > 0
+	if active == nil {
+		active = make(map[uint64]context.CancelFunc)
+		runs.bySession[key] = active
+	}
+	runs.nextID++
+	runID = runs.nextID
+	active[runID] = cancel
+	return runID, wasProcessing
+}
+
+// removeSessionRun forgets the session's run, reporting whether the session
+// became idle by it.
+func removeSessionRun(key string, runID uint64) bool {
+	runs.mu.Lock()
+	defer runs.mu.Unlock()
+	active := runs.bySession[key]
+	if _, ok := active[runID]; !ok {
+		return false
+	}
+	delete(active, runID)
+	if len(active) > 0 {
+		return false
+	}
+	delete(runs.bySession, key)
+	return true
 }
 
 func notifySessionProcessing(agentID, sessionID string, processing bool) {

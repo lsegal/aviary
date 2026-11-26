@@ -46,56 +46,68 @@ func (t *toolTranslator) translate(events []transcript.Event) {
 	var changes []any
 	changeID := ""
 	for _, e := range events {
-		switch e.Kind {
-		case transcript.KindToolCall:
-			t.start(e.CallID, e.Name, e.Input)
-		case transcript.KindPlan:
-			// Codex's todo list is its own running plan, not a tool call.
-			if e.Name != "" {
-				t.start(e.CallID, e.Name, e.Input)
-			}
-		case transcript.KindCommand:
-			name := e.Name
-			if name == "" {
-				name = "shell"
-			}
-			args := e.Input
-			if args == nil {
-				args = map[string]any{"command": e.Command}
-			}
-			if _, ok := t.pending[e.CallID]; !ok {
-				t.start(e.CallID, name, args)
-			}
-			if e.Status == "done" {
-				t.finish(e.CallID, e.Output, e.IsError)
-			}
-		case transcript.KindFileChange:
-			if e.Name != "" {
-				// Claude's edit tools: the tool_result completes the call.
-				t.start(e.CallID, e.Name, map[string]any{"file_path": e.Path, "diff": e.Diff})
-				continue
-			}
+		if e.Kind == transcript.KindFileChange && e.Name == "" {
 			changeID = e.CallID
 			changes = append(changes, map[string]any{"path": e.Path, "kind": e.Status, "diff": e.Diff})
-		case transcript.KindToolResult:
-			if _, ok := t.pending[e.CallID]; !ok && e.Name != "" {
-				t.start(e.CallID, e.Name, e.Input)
-			}
-			t.finish(e.CallID, e.Output, e.IsError)
-		case transcript.KindUsage:
-			u := e.Usage
-			t.emit(Event{Type: EventUsage, Usage: &Usage{
-				InputTokens:      u.InputTokens,
-				OutputTokens:     u.OutputTokens,
-				CacheReadTokens:  u.CacheReadTokens,
-				CacheWriteTokens: u.CacheWriteTokens,
-				CostUSD:          u.CostUSD,
-			}})
+			continue
 		}
+		t.translateOne(e)
 	}
 	if len(changes) > 0 {
 		t.start(changeID, "file_change", map[string]any{"changes": changes})
 		t.finish(changeID, "completed", false)
+	}
+}
+
+// translateOne emits the Events for one transcript event other than a codex
+// file_change, which translate gathers into a single tool.
+func (t *toolTranslator) translateOne(e transcript.Event) {
+	switch e.Kind {
+	case transcript.KindToolCall:
+		t.start(e.CallID, e.Name, e.Input)
+	case transcript.KindPlan:
+		// Codex's todo list is its own running plan, not a tool call.
+		if e.Name != "" {
+			t.start(e.CallID, e.Name, e.Input)
+		}
+	case transcript.KindCommand:
+		t.command(e)
+	case transcript.KindFileChange:
+		// Claude's edit tools: the tool_result completes the call.
+		t.start(e.CallID, e.Name, map[string]any{"file_path": e.Path, "diff": e.Diff})
+	case transcript.KindToolResult:
+		if _, ok := t.pending[e.CallID]; !ok && e.Name != "" {
+			t.start(e.CallID, e.Name, e.Input)
+		}
+		t.finish(e.CallID, e.Output, e.IsError)
+	case transcript.KindUsage:
+		u := e.Usage
+		t.emit(Event{Type: EventUsage, Usage: &Usage{
+			InputTokens:      u.InputTokens,
+			OutputTokens:     u.OutputTokens,
+			CacheReadTokens:  u.CacheReadTokens,
+			CacheWriteTokens: u.CacheWriteTokens,
+			CostUSD:          u.CostUSD,
+		}})
+	}
+}
+
+// command starts a shell command's tool the first time it is seen and
+// finishes it once it is done.
+func (t *toolTranslator) command(e transcript.Event) {
+	name := e.Name
+	if name == "" {
+		name = "shell"
+	}
+	args := e.Input
+	if args == nil {
+		args = map[string]any{"command": e.Command}
+	}
+	if _, ok := t.pending[e.CallID]; !ok {
+		t.start(e.CallID, name, args)
+	}
+	if e.Status == "done" {
+		t.finish(e.CallID, e.Output, e.IsError)
 	}
 }
 

@@ -26,13 +26,8 @@ import (
 
 func TestWatchTargets(t *testing.T) {
 	checkout := t.TempDir()
-	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "https://github.com/aviary-test/from-origin.git"}} {
-		git := exec.Command("git", args...)
-		git.Dir = checkout
-		if out, err := git.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
+	runGitIn(t, checkout, "init", "-q")
+	runGitIn(t, checkout, "remote", "add", "origin", "https://github.com/aviary-test/from-origin.git")
 	plain := t.TempDir()
 	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(plain))
 	tests := []struct {
@@ -94,13 +89,28 @@ func TestWatchSettingsRejectsBadNumbers(t *testing.T) {
 	}
 }
 
-func TestRunWatchFailsBeforeTheSession(t *testing.T) {
+// runGitIn runs git with args in dir, failing the test if it fails.
+func runGitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	git := exec.Command("git", args...)
+	git.Dir = dir
+	if out, err := git.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// setupRunWatchFailures points the user config and data dir at a temp
+// global Aviary, and the temp dir at one holding a stale session dir left by
+// a dead watch. It returns the global dir, an unreadable config, and the
+// stale dir.
+func setupRunWatchFailures(t *testing.T) (globalDir, badConfig, stale string) {
+	t.Helper()
 	configHome := t.TempDir()
-	globalDir := writeGlobalAviary(t, configHome)
+	globalDir = writeGlobalAviary(t, configHome)
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	store.SetDataDir(globalDir)
 	t.Cleanup(func() { store.SetDataDir(dataDir) })
-	badConfig := filepath.Join(t.TempDir(), "aviary.yaml")
+	badConfig = filepath.Join(t.TempDir(), "aviary.yaml")
 	if err := os.WriteFile(badConfig, []byte("agents: [\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -108,10 +118,15 @@ func TestRunWatchFailsBeforeTheSession(t *testing.T) {
 	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
 		t.Setenv(key, tmp)
 	}
-	stale := filepath.Join(tmp, fmt.Sprintf("%s%d-abc", watchDirPrefix, deadPID(t)))
+	stale = filepath.Join(tmp, fmt.Sprintf("%s%d-abc", watchDirPrefix, deadPID(t)))
 	if err := os.MkdirAll(stale, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	return globalDir, badConfig, stale
+}
+
+func TestRunWatchFailsBeforeTheSession(t *testing.T) {
+	globalDir, badConfig, stale := setupRunWatchFailures(t)
 	oldCfgFile := cfgFile
 	t.Cleanup(func() { cfgFile = oldCfgFile })
 
@@ -155,13 +170,20 @@ func TestRunWatchFailsBeforeTheSession(t *testing.T) {
 			if out.String() != tt.out {
 				t.Errorf("output = %q, want %q", out.String(), tt.out)
 			}
-			if got := store.DataDir(); got != dataDir && got != globalDir {
-				t.Errorf("the data dir is left at %s", got)
-			}
+			checkDataDirIsOneOf(t, dataDir, globalDir)
 		})
 	}
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Errorf("the stale session dir is still there: %v", err)
+	}
+}
+
+// checkDataDirIsOneOf fails the test unless the store's data dir is one of
+// dirs.
+func checkDataDirIsOneOf(t *testing.T, dirs ...string) {
+	t.Helper()
+	if got := store.DataDir(); !slices.Contains(dirs, got) {
+		t.Errorf("the data dir is left at %s", got)
 	}
 }
 
@@ -270,40 +292,14 @@ func TestRunWatchSessionEnds(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			session := newServableWatchSession(t)
 			if tt.portTaken {
-				ln, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", session.Port))
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { _ = ln.Close() })
+				occupyLoopbackPort(t, session.Port)
 			}
 			var screen bytes.Buffer
 			setWatchTUITerminal(t, strings.NewReader(tt.keys), &screen)
 			out := &lockedBuffer{}
 			err := runWatchSession(context.Background(), out, session, []string{"o/r", "x/y"}, tt.tui, tt.webUI)
-			if tt.portTaken {
-				if want := fmt.Sprintf("listening on 127.0.0.1:%d", session.Port); err == nil || !strings.Contains(err.Error(), want) {
-					t.Errorf("error = %v, want %q", err, want)
-				}
-			} else if err != nil {
-				t.Errorf("error = %v", err)
-			}
-			got := out.String()
-			if !strings.HasSuffix(got, "Watch session ended.\n") || strings.Count(got, "Watch session ended.") != 1 {
-				t.Errorf("output does not end the session once: %q", got)
-			}
-			for _, want := range tt.wantOut {
-				if strings.Contains(want, "%d") {
-					want = fmt.Sprintf(want, session.Port)
-				}
-				if !strings.Contains(got, want) {
-					t.Errorf("output misses %q: %q", want, got)
-				}
-			}
-			for _, no := range tt.noOut {
-				if strings.Contains(got, no) {
-					t.Errorf("output has %q: %q", no, got)
-				}
-			}
+			checkWatchSessionEndError(t, err, tt.portTaken, session.Port)
+			checkWatchSessionEndOutput(t, out.String(), session.Port, tt.wantOut, tt.noOut)
 			if drew := strings.Contains(screen.String(), watchModifyOtherKeysOn); drew != tt.tui {
 				t.Errorf("TUI drawn = %v, want %v", drew, tt.tui)
 			}
@@ -311,6 +307,53 @@ func TestRunWatchSessionEnds(t *testing.T) {
 				t.Error("the session left the server in minimal mode")
 			}
 		})
+	}
+}
+
+// occupyLoopbackPort listens on port at 127.0.0.1 until the test ends.
+func occupyLoopbackPort(t *testing.T, port int) {
+	t.Helper()
+	ln, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+}
+
+// checkWatchSessionEndError checks runWatchSession's error: a listen error
+// on port when portTaken, otherwise none.
+func checkWatchSessionEndError(t *testing.T, err error, portTaken bool, port int) {
+	t.Helper()
+	if !portTaken {
+		if err != nil {
+			t.Errorf("error = %v", err)
+		}
+		return
+	}
+	if want := fmt.Sprintf("listening on 127.0.0.1:%d", port); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %v, want %q", err, want)
+	}
+}
+
+// checkWatchSessionEndOutput checks that got ends the session exactly once,
+// has every wantOut (with %d replaced by port) and none of noOut.
+func checkWatchSessionEndOutput(t *testing.T, got string, port int, wantOut, noOut []string) {
+	t.Helper()
+	if !strings.HasSuffix(got, "Watch session ended.\n") || strings.Count(got, "Watch session ended.") != 1 {
+		t.Errorf("output does not end the session once: %q", got)
+	}
+	for _, want := range wantOut {
+		if strings.Contains(want, "%d") {
+			want = fmt.Sprintf(want, port)
+		}
+		if !strings.Contains(got, want) {
+			t.Errorf("output misses %q: %q", want, got)
+		}
+	}
+	for _, no := range noOut {
+		if strings.Contains(got, no) {
+			t.Errorf("output has %q: %q", no, got)
+		}
 	}
 }
 
@@ -386,21 +429,7 @@ func TestPrintWatchLogs(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			var offsets []int
-			call := func(_ context.Context, name string, args map[string]any) (string, error) {
-				i := len(offsets)
-				offsets = append(offsets, args["log_offset"].(int))
-				if name != "project_status" || i >= len(tt.replies) {
-					return "", fmt.Errorf("unexpected call %s #%d", name, i)
-				}
-				if i == len(tt.replies)-1 {
-					cancel()
-				}
-				var err error
-				if i < len(tt.errs) {
-					err = tt.errs[i]
-				}
-				return tt.replies[i], err
-			}
+			call := scriptedProjectStatus(&offsets, tt.replies, tt.errs, cancel)
 			var out bytes.Buffer
 			printWatchLogs(ctx, &out, call)
 			if out.String() != tt.want {
@@ -410,5 +439,26 @@ func TestPrintWatchLogs(t *testing.T) {
 				t.Errorf("log offsets = %v, want %v", offsets, tt.offsets)
 			}
 		})
+	}
+}
+
+// scriptedProjectStatus returns a tool caller that answers project_status
+// with replies and errs in turn, records each call's log_offset in offsets,
+// and calls cancel on the last reply.
+func scriptedProjectStatus(offsets *[]int, replies []string, errs []error, cancel context.CancelFunc) watchToolCaller {
+	return func(_ context.Context, name string, args map[string]any) (string, error) {
+		i := len(*offsets)
+		*offsets = append(*offsets, args["log_offset"].(int))
+		if name != "project_status" || i >= len(replies) {
+			return "", fmt.Errorf("unexpected call %s #%d", name, i)
+		}
+		if i == len(replies)-1 {
+			cancel()
+		}
+		var err error
+		if i < len(errs) {
+			err = errs[i]
+		}
+		return replies[i], err
 	}
 }

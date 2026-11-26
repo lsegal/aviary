@@ -1067,7 +1067,7 @@ func TestWorkerPool_ExecutePrecompiledProjectJob(t *testing.T) {
 	var cloned bool
 	p.projectRunner = func(ctx context.Context, run ProjectRun) (string, error) {
 		if run.RunCompiled != nil {
-			out, err := run.RunCompiled(ctx, func(context.Context) (string, error) { cloned = true; return checkout, nil }, func(string, ...any) {})
+			out, err := run.RunCompiled(ctx, func(context.Context) (string, error) { cloned = true; return checkout, nil }, discardLogf)
 			if err == nil {
 				return out, nil
 			}
@@ -1224,7 +1224,7 @@ func TestScheduler_HooksReachTaskRuns(t *testing.T) {
 	checkout := t.TempDir()
 	s.SetProjectRunner(func(ctx context.Context, run ProjectRun) (string, error) {
 		record("run " + run.Project)
-		return run.RunCompiled(ctx, func(context.Context) (string, error) { return checkout, nil }, func(string, ...any) {})
+		return run.RunCompiled(ctx, func(context.Context) (string, error) { return checkout, nil }, discardLogf)
 	})
 	s.SetTaskCompiler(func(_ context.Context, agentName, taskName string) (string, error) {
 		record("compile " + agentName + "/" + taskName)

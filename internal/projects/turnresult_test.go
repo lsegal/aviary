@@ -47,7 +47,7 @@ func TestCommandRunnerSucceedsWhenOutputLingersAfterFinalResult(t *testing.T) {
 	runner := CommandRunner{Agent: "claude", ClaudeBinary: binary, Repo: "o/r", Output: &output}
 	session := AgentSession{ID: "session-7", Agent: "claude"}
 	started := time.Now()
-	if err := runner.RunSession(context.Background(), Issue{Number: 7}, session, func(AgentSession) {}); err != nil {
+	if err := runner.RunSession(context.Background(), Issue{Number: 7}, session, ignoreSessionUpdate); err != nil {
 		t.Fatalf("RunSession() error = %v, want the finished run to succeed", err)
 	}
 	if elapsed := time.Since(started); elapsed > 10*time.Second {
@@ -62,7 +62,7 @@ func TestCommandRunnerFailsReadablyWhenOutputLingersWithoutFinalResult(t *testin
 	binary := writeLingeringAgent(t, `{"type":"assistant","message":{"content":[{"type":"text","text":"still working"}]}}`)
 	runner := CommandRunner{Agent: "claude", ClaudeBinary: binary, Repo: "o/r"}
 	session := AgentSession{ID: "session-7", Agent: "claude"}
-	err := runner.RunSession(context.Background(), Issue{Number: 7}, session, func(AgentSession) {})
+	err := runner.RunSession(context.Background(), Issue{Number: 7}, session, ignoreSessionUpdate)
 	var failure *domain.RunFailure
 	if !errors.As(err, &failure) {
 		t.Fatalf("RunSession() error = %#v, want a RunFailure", err)
@@ -100,7 +100,7 @@ func TestCommandRunnerSucceedsWhenJSONLAgentLingersAfterDeclaredResult(t *testin
 	runner.Output = &output
 	session := AgentSession{ID: "ses_7", Agent: "opencode"}
 	started := time.Now()
-	if err := runner.RunSession(context.Background(), Issue{Number: 7}, session, func(AgentSession) {}); err != nil {
+	if err := runner.RunSession(context.Background(), Issue{Number: 7}, session, ignoreSessionUpdate); err != nil {
 		t.Fatalf("RunSession() error = %v, want the finished run to succeed", err)
 	}
 	if elapsed := time.Since(started); elapsed > 10*time.Second {
@@ -114,7 +114,7 @@ func TestCommandRunnerSucceedsWhenJSONLAgentLingersAfterDeclaredResult(t *testin
 func TestCommandRunnerFailsWhenJSONLAgentLingersWithoutDeclaredResult(t *testing.T) {
 	runner := lingeringOpencodeRunner(t, `{"type":"text","part":{"text":"still working"}}`+"\n"+`{"type":"step_finish","part":{"reason":"tool-calls"}}`)
 	session := AgentSession{ID: "ses_7", Agent: "opencode"}
-	err := runner.RunSession(context.Background(), Issue{Number: 7}, session, func(AgentSession) {})
+	err := runner.RunSession(context.Background(), Issue{Number: 7}, session, ignoreSessionUpdate)
 	if err == nil || !strings.Contains(err.Error(), "didn't exit cleanly: WaitDelay expired") {
 		t.Fatalf("RunSession() error = %v, want a short WaitDelay message", err)
 	}

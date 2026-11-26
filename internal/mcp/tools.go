@@ -1430,7 +1430,9 @@ func parseDuration(s string) (time.Duration, error) {
 
 func validateTaskSchedule(schedule string) error {
 	c := cronutil.New()
-	if _, err := c.AddFunc(strings.TrimSpace(schedule), func() {}); err != nil {
+	if _, err := c.AddFunc(strings.TrimSpace(schedule), func() {
+		// Parse-only validation: this cron is never started, so the job never runs.
+	}); err != nil {
 		return fmt.Errorf("invalid schedule %q: %w", schedule, err)
 	}
 	return nil

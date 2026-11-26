@@ -66,15 +66,7 @@ func TestWatchAgentModelFlags(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var warn bytes.Buffer
 			got, err := watchAgent(watchAgentFlags(t, tt.args...), &warn)
-			if tt.wantError != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.wantError) {
-					t.Fatalf("error = %v, want %q", err, tt.wantError)
-				}
-			} else if err != nil {
-				t.Fatal(err)
-			} else if got.Name != tt.want.Name || got.Model != tt.want.Model || !slices.Equal(got.Fallbacks, tt.want.Fallbacks) {
-				t.Errorf("choice = %+v, want %+v", got, tt.want)
-			}
+			checkWatchAgentChoice(t, got, err, tt.want, tt.wantError)
 			if n := strings.Count(warn.String(), "--provider is deprecated; use --model\n"); n != tt.warnings || n != strings.Count(warn.String(), "\n") {
 				t.Errorf("warnings = %q, want %d deprecation line(s)", warn.String(), tt.warnings)
 			}
@@ -82,7 +74,30 @@ func TestWatchAgentModelFlags(t *testing.T) {
 	}
 }
 
-func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
+// checkWatchAgentChoice checks watchAgent's result: an error containing
+// wantError when set, otherwise want.
+func checkWatchAgentChoice(t *testing.T, got watchAgentChoice, err error, want watchAgentChoice, wantError string) {
+	t.Helper()
+	if wantError != "" {
+		if err == nil || !strings.Contains(err.Error(), wantError) {
+			t.Fatalf("error = %v, want %q", err, wantError)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != want.Name || got.Model != want.Model || !slices.Equal(got.Fallbacks, want.Fallbacks) {
+		t.Errorf("choice = %+v, want %+v", got, want)
+	}
+}
+
+// modelFlagWatchSessions sets up a global Aviary whose coder agent falls
+// back to gemini/flash, with fake claude and codex CLIs on PATH, and returns
+// a func that starts a session watching someone/existing from it, ended when
+// the test ends.
+func modelFlagWatchSessions(t *testing.T) func(choice watchAgentChoice, mode string) (*watchSession, error) {
+	t.Helper()
 	bin := t.TempDir()
 	for _, name := range []string{"claude", "codex"} {
 		if err := os.WriteFile(filepath.Join(bin, exeName(name)), []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -100,25 +115,65 @@ func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	global.Agents[0].Fallbacks = []string{"gemini/flash"}
-
-	sessionOf := func(choice watchAgentChoice, settings config.ProjectsConfig) (*config.Config, error) {
-		t.Helper()
-		session, err := startWatchSession(t.TempDir(), global, sources, choice, []string{"someone/existing"}, "", settings)
+	return func(choice watchAgentChoice, mode string) (*watchSession, error) {
+		session, err := startWatchSession(t.TempDir(), global, sources, choice, []string{"someone/existing"}, mode, config.ProjectsConfig{})
 		t.Cleanup(func() { endWatchSession(session, io.Discard) })
+		return session, err
+	}
+}
+
+// loadSingleAgentConfig loads the session config at path, failing unless it
+// has exactly one agent.
+func loadSingleAgentConfig(t *testing.T, path string) *config.Config {
+	t.Helper()
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Agents) != 1 {
+		t.Fatalf("session agents = %+v", cfg.Agents)
+	}
+	return cfg
+}
+
+func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
+	start := modelFlagWatchSessions(t)
+	sessionOf := func(choice watchAgentChoice) (*config.Config, error) {
+		t.Helper()
+		session, err := start(choice, "")
 		if err != nil {
 			return nil, err
 		}
-		cfg, err := config.Load(session.ConfigPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(cfg.Agents) != 1 {
-			t.Fatalf("session agents = %+v", cfg.Agents)
-		}
-		return cfg, nil
+		return loadSingleAgentConfig(t, session.ConfigPath), nil
 	}
 
-	cfg, err := sessionOf(watchAgentChoice{Model: "codex:gpt-6", Fallbacks: []string{"claude/sonnet", "claude/haiku"}}, config.ProjectsConfig{})
+	checkModelFlagsOverrideJobs(t, sessionOf)
+	checkNoModelFlagsKeepAgent(t, sessionOf)
+
+	session, err := start(watchAgentChoice{}, config.ProjectModeManual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manual, err := config.Load(session.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := manual.Agents[0].Projects.Modes(); !maps.Equal(got, map[string]string{"someone/existing": config.ProjectModeManual}) {
+		t.Errorf("--manual watched manual targets %v", got)
+	}
+	if _, err := sessionOf(watchAgentChoice{Model: "nosuch/m"}); err == nil || !strings.Contains(err.Error(), `unknown provider "nosuch"`) {
+		t.Errorf("an unknown provider was accepted: %v", err)
+	}
+	if _, err := sessionOf(watchAgentChoice{Model: "claude/opus", Fallbacks: []string{"gemini/pro"}}); err == nil || !strings.Contains(err.Error(), "the gemini CLI is not installed") {
+		t.Errorf("an uninstalled CLI was accepted: %v", err)
+	}
+}
+
+// checkModelFlagsOverrideJobs checks that --model and --fallback run jobs on
+// their models without changing the session's agent.
+func checkModelFlagsOverrideJobs(t *testing.T, sessionOf func(watchAgentChoice) (*config.Config, error)) {
+	t.Helper()
+	cfg, err := sessionOf(watchAgentChoice{Model: "codex:gpt-6", Fallbacks: []string{"claude/sonnet", "claude/haiku"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +187,13 @@ func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
 	if got := config.ProjectModelSource(cfg, "coder"); got != config.ProjectModelSourceOverride {
 		t.Errorf("model source = %q", got)
 	}
-	cfg, err = sessionOf(watchAgentChoice{}, config.ProjectsConfig{})
+}
+
+// checkNoModelFlagsKeepAgent checks that a session without model flags or
+// --manual runs jobs on the agent's own models and saves no mode.
+func checkNoModelFlagsKeepAgent(t *testing.T, sessionOf func(watchAgentChoice) (*config.Config, error)) {
+	t.Helper()
+	cfg, err := sessionOf(watchAgentChoice{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,24 +202,6 @@ func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
 	}
 	if got := cfg.Agents[0].Projects[0].Mode; got != "" {
 		t.Errorf("a watch without --manual saved mode %q", got)
-	}
-	session, err := startWatchSession(t.TempDir(), global, sources, watchAgentChoice{}, []string{"someone/existing"}, config.ProjectModeManual, config.ProjectsConfig{})
-	t.Cleanup(func() { endWatchSession(session, io.Discard) })
-	if err != nil {
-		t.Fatal(err)
-	}
-	manual, err := config.Load(session.ConfigPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := manual.Agents[0].Projects.Modes(); !maps.Equal(got, map[string]string{"someone/existing": config.ProjectModeManual}) {
-		t.Errorf("--manual watched manual targets %v", got)
-	}
-	if _, err := sessionOf(watchAgentChoice{Model: "nosuch/m"}, config.ProjectsConfig{}); err == nil || !strings.Contains(err.Error(), `unknown provider "nosuch"`) {
-		t.Errorf("an unknown provider was accepted: %v", err)
-	}
-	if _, err := sessionOf(watchAgentChoice{Model: "claude/opus", Fallbacks: []string{"gemini/pro"}}, config.ProjectsConfig{}); err == nil || !strings.Contains(err.Error(), "the gemini CLI is not installed") {
-		t.Errorf("an uninstalled CLI was accepted: %v", err)
 	}
 }
 

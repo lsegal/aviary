@@ -692,18 +692,7 @@ func TestAgentRunner_WithProvider(t *testing.T) {
 func TestAgentRunner_ErrorCases(t *testing.T) {
 	t.Run("stream setup error", func(t *testing.T) {
 		runner := NewAgentRunner(&domain.Agent{ID: "a1", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, &mockProvider{err: errors.New("boom")}, nil)
-		errCh := make(chan error, 1)
-		runner.Prompt(context.Background(), "hi", func(e StreamEvent) {
-			if e.Type == StreamEventError {
-				errCh <- e.Err
-			}
-		})
-		select {
-		case err := <-errCh:
-			assert.Error(t, err)
-		case <-time.After(2 * time.Second):
-			assert.FailNow(t, "timeout")
-		}
+		assert.Error(t, awaitPromptError(context.Background(), t, runner))
 	})
 
 	t.Run("stream setup error delivers to session channel", func(t *testing.T) {
@@ -717,34 +706,13 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 			nil,
 		)
 
-		done := make(chan struct{}, 1)
-		runner.Prompt(WithSessionID(context.Background(), "sess-stream-setup-error"), "hi", func(e StreamEvent) {
-			if e.Type == StreamEventError {
-				done <- struct{}{}
-			}
-		})
-		select {
-		case <-done:
-			assert.Equal(t, "Error: boom", delivered)
-		case <-time.After(2 * time.Second):
-			assert.FailNow(t, "timeout")
-		}
+		assert.Error(t, awaitPromptError(WithSessionID(context.Background(), "sess-stream-setup-error"), t, runner))
+		assert.Equal(t, "Error: boom", delivered)
 	})
 
 	t.Run("stream event error", func(t *testing.T) {
 		runner := NewAgentRunner(&domain.Agent{ID: "a1", Model: "anthropic/test"}, &config.AgentConfig{Name: "bot"}, &mockProvider{events: []llm.Event{{Type: llm.EventTypeError, Error: errors.New("event boom")}}}, nil)
-		errCh := make(chan error, 1)
-		runner.Prompt(context.Background(), "hi", func(e StreamEvent) {
-			if e.Type == StreamEventError {
-				errCh <- e.Err
-			}
-		})
-		select {
-		case err := <-errCh:
-			assert.Error(t, err)
-		case <-time.After(2 * time.Second):
-			assert.FailNow(t, "timeout")
-		}
+		assert.Error(t, awaitPromptError(context.Background(), t, runner))
 	})
 
 	t.Run("stream event error delivers to session channel", func(t *testing.T) {
@@ -758,18 +726,8 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 			nil,
 		)
 
-		done := make(chan struct{}, 1)
-		runner.Prompt(WithSessionID(context.Background(), "sess-stream-event-error"), "hi", func(e StreamEvent) {
-			if e.Type == StreamEventError {
-				done <- struct{}{}
-			}
-		})
-		select {
-		case <-done:
-			assert.Equal(t, "Error: event boom", delivered)
-		case <-time.After(2 * time.Second):
-			assert.FailNow(t, "timeout")
-		}
+		assert.Error(t, awaitPromptError(WithSessionID(context.Background(), "sess-stream-event-error"), t, runner))
+		assert.Equal(t, "Error: event boom", delivered)
 	})
 
 	t.Run("usage records zero-token throttles", func(t *testing.T) {
@@ -785,40 +743,8 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 			nil,
 		)
 
-		errCh := make(chan error, 1)
-		runner.Prompt(WithSessionID(context.Background(), sessionID), "hi", func(e StreamEvent) {
-			if e.Type == StreamEventError {
-				errCh <- e.Err
-			}
-		})
-		select {
-		case err := <-errCh:
-			assert.ErrorContains(t, err, "429")
-		case <-time.After(2 * time.Second):
-			assert.FailNow(t, "timeout")
-		}
-
-		deadline := time.Now().Add(2 * time.Second)
-		for {
-			records, err := store.ReadJSONL[domain.UsageRecord](store.UsagePath())
-			assert.NoError(t, err)
-
-			for _, rec := range records {
-				if rec.SessionID != sessionID {
-					continue
-				}
-
-				assert.True(t, rec.HasThrottle)
-				assert.False(t, rec.HasError)
-				assert.Equal(t, 0, rec.InputTokens)
-				assert.Equal(t, 0, rec.OutputTokens)
-
-				return
-			}
-			assert.False(t, time.Now().After(deadline))
-
-			time.Sleep(10 * time.Millisecond)
-		}
+		assert.ErrorContains(t, awaitPromptError(WithSessionID(context.Background(), sessionID), t, runner), "429")
+		assertZeroTokenThrottleUsage(t, sessionID)
 	})
 
 	t.Run("usage is attributed to the workflow and its channel", func(t *testing.T) {
@@ -849,6 +775,52 @@ func TestAgentRunner_ErrorCases(t *testing.T) {
 			return false
 		}, 2*time.Second, 10*time.Millisecond)
 	})
+}
+
+// awaitPromptError prompts runner with "hi" and returns the error its turn
+// ends with, failing the test when none arrives in time.
+func awaitPromptError(ctx context.Context, t *testing.T, runner *AgentRunner) error {
+	t.Helper()
+	errCh := make(chan error, 1)
+	runner.Prompt(ctx, "hi", func(e StreamEvent) {
+		if e.Type == StreamEventError {
+			errCh <- e.Err
+		}
+	})
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(2 * time.Second):
+		assert.FailNow(t, "timeout")
+		return nil
+	}
+}
+
+// assertZeroTokenThrottleUsage waits for the session's usage record and
+// checks it records a throttle with no tokens and no error.
+func assertZeroTokenThrottleUsage(t *testing.T, sessionID string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		records, err := store.ReadJSONL[domain.UsageRecord](store.UsagePath())
+		assert.NoError(t, err)
+
+		for _, rec := range records {
+			if rec.SessionID != sessionID {
+				continue
+			}
+
+			assert.True(t, rec.HasThrottle)
+			assert.False(t, rec.HasError)
+			assert.Equal(t, 0, rec.InputTokens)
+			assert.Equal(t, 0, rec.OutputTokens)
+
+			return
+		}
+		assert.False(t, time.Now().After(deadline))
+
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func TestAgentRunner_StopAndAccessors(t *testing.T) {

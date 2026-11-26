@@ -462,17 +462,32 @@ func (q Quota) validate() error {
 		return fmt.Errorf(`field "quota.reader": %q must be %s`, q.Reader, JoinOr(quotaReaders))
 	}
 	if reader != QuotaCommand {
-		for field, set := range map[string]bool{
-			"quota.command": len(q.Command) > 0, "quota.percentUsed": q.PercentUsed != "",
-			"quota.resetAt": q.ResetAt != "", "quota.format": q.Format != "",
-			"quota.timeout": q.Timeout != "",
-		} {
-			if set {
-				return fmt.Errorf(`field %q is only meaningful when "quota.reader" is %q`, field, QuotaCommand)
-			}
-		}
-		return nil
+		return q.validateNonCommand()
 	}
+	if err := q.validateCommand(); err != nil {
+		return err
+	}
+	if err := q.validateFormat(); err != nil {
+		return err
+	}
+	return validatePositiveDuration("quota.timeout", q.Timeout)
+}
+
+// validateNonCommand rejects the command reader's fields on another reader.
+func (q Quota) validateNonCommand() error {
+	for field, set := range map[string]bool{
+		"quota.command": len(q.Command) > 0, "quota.percentUsed": q.PercentUsed != "",
+		"quota.resetAt": q.ResetAt != "", "quota.format": q.Format != "",
+		"quota.timeout": q.Timeout != "",
+	} {
+		if set {
+			return fmt.Errorf(`field %q is only meaningful when "quota.reader" is %q`, field, QuotaCommand)
+		}
+	}
+	return nil
+}
+
+func (q Quota) validateCommand() error {
 	if len(q.Command) == 0 {
 		return fmt.Errorf(`field "quota.command" is required when "quota.reader" is %q`, QuotaCommand)
 	}
@@ -481,6 +496,12 @@ func (q Quota) validate() error {
 			return fmt.Errorf(`field "quota.command" cannot contain an empty argument`)
 		}
 	}
+	return nil
+}
+
+// validateFormat checks the format's placeholders and that each one it
+// substitutes has a field to read it from.
+func (q Quota) validateFormat() error {
 	for _, match := range placeholderPattern.FindAllStringSubmatch(q.FormatTemplate(), -1) {
 		if !contains(quotaPlaceholders, match[1]) {
 			return fmt.Errorf(`field "quota.format": unknown placeholder %s; known placeholders are {%s}`, match[0], strings.Join(sorted(quotaPlaceholders), "}, {"))
@@ -492,14 +513,21 @@ func (q Quota) validate() error {
 	if q.ResetAt == "" && strings.Contains(q.FormatTemplate(), "{resetAt}") {
 		return fmt.Errorf(`field "quota.resetAt" is required when "quota.format" substitutes {resetAt}`)
 	}
-	if strings.TrimSpace(q.Timeout) != "" {
-		timeout, err := time.ParseDuration(q.Timeout)
-		if err != nil {
-			return fmt.Errorf(`field "quota.timeout": %w`, err)
-		}
-		if timeout <= 0 {
-			return fmt.Errorf(`field "quota.timeout": %q must be positive`, q.Timeout)
-		}
+	return nil
+}
+
+// validatePositiveDuration checks an optional duration field parses and is
+// positive.
+func validatePositiveDuration(field, value string) error {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil {
+		return fmt.Errorf(`field %q: %w`, field, err)
+	}
+	if timeout <= 0 {
+		return fmt.Errorf(`field %q: %q must be positive`, field, value)
 	}
 	return nil
 }
@@ -679,25 +707,31 @@ func (d Doctor) ModelsFrom(output string) []string {
 	seen := make(map[string]bool)
 	models := make([]string, 0, 16)
 	for _, candidate := range d.modelCandidates(output) {
-		model := strings.TrimSpace(candidate)
-		if expr != nil {
-			match := expr.FindStringSubmatch(model)
-			if match == nil {
-				continue
-			}
-			if len(match) > 1 {
-				model = strings.TrimSpace(match[1])
-			} else {
-				model = strings.TrimSpace(match[0])
-			}
-		}
-		if model == "" || seen[model] {
+		model, ok := matchModel(expr, candidate)
+		if !ok || model == "" || seen[model] {
 			continue
 		}
 		seen[model] = true
 		models = append(models, model)
 	}
 	return models
+}
+
+// matchModel narrows one candidate line by the model pattern, reporting false
+// when the pattern rejects it. With no pattern the trimmed line is the model.
+func matchModel(expr *regexp.Regexp, candidate string) (string, bool) {
+	model := strings.TrimSpace(candidate)
+	if expr == nil {
+		return model, true
+	}
+	match := expr.FindStringSubmatch(model)
+	if match == nil {
+		return "", false
+	}
+	if len(match) > 1 {
+		return strings.TrimSpace(match[1]), true
+	}
+	return strings.TrimSpace(match[0]), true
 }
 
 // modelCandidates is what the probe's output offers before any pattern
@@ -715,45 +749,77 @@ func (d Doctor) modelCandidates(output string) []string {
 // ignored, on the same grounds as the quota block: a probe that silently does
 // nothing looks exactly like a working one.
 func (d Doctor) validate() error {
+	checks := []func() error{
+		d.validateValues,
+		d.validateDependentFields,
+		d.validatePaths,
+		d.validatePatterns,
+		func() error { return validatePositiveDuration("doctor.timeout", d.Timeout) },
+	}
+	for _, check := range checks {
+		if err := check(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateValues rejects empty entries in the doctor's argv and model list.
+func (d Doctor) validateValues() error {
 	for field, argv := range map[string][]string{"doctor.auth": d.Auth, "doctor.models": d.Models} {
-		for _, arg := range argv {
-			if strings.TrimSpace(arg) == "" {
-				return fmt.Errorf("field %q cannot contain an empty argument", field)
-			}
+		if hasBlank(argv) {
+			return fmt.Errorf("field %q cannot contain an empty argument", field)
 		}
 	}
-	for _, model := range d.KnownModels {
-		if strings.TrimSpace(model) == "" {
-			return fmt.Errorf(`field "doctor.knownModels" cannot contain an empty value`)
-		}
+	if hasBlank(d.KnownModels) {
+		return fmt.Errorf(`field "doctor.knownModels" cannot contain an empty value`)
 	}
-	for field, declared := range map[string]bool{
+	return nil
+}
+
+// validateDependentFields rejects fields that belong to a probe the
+// definition does not declare.
+func (d Doctor) validateDependentFields() error {
+	authFields := map[string]bool{
 		"doctor.signedIn":       strings.TrimSpace(d.SignedIn) != "",
 		"doctor.signedInJSON":   strings.TrimSpace(d.SignedInJSON) != "",
 		"doctor.authDetail":     strings.TrimSpace(d.AuthDetail) != "",
 		"doctor.authDetailJSON": strings.TrimSpace(d.AuthDetailJSON) != "",
-	} {
-		if declared && len(d.Auth) == 0 {
-			return fmt.Errorf(`field %q is only meaningful alongside "doctor.auth"`, field)
-		}
+	}
+	if err := requireProbe(authFields, len(d.Auth) > 0, "doctor.auth"); err != nil {
+		return err
 	}
 	if strings.TrimSpace(d.SignedIn) != "" && strings.TrimSpace(d.SignedInJSON) != "" {
 		return fmt.Errorf(`fields "doctor.signedIn" and "doctor.signedInJSON" cannot both be set`)
 	}
-	for field, declared := range map[string]bool{
+	modelFields := map[string]bool{
 		"doctor.modelPattern": strings.TrimSpace(d.ModelPattern) != "",
 		"doctor.modelsJSON":   strings.TrimSpace(d.ModelsJSON) != "",
 		"doctor.modelsStdin":  len(d.ModelsStdin) > 0,
-	} {
-		if declared && len(d.Models) == 0 {
-			return fmt.Errorf(`field %q is only meaningful alongside "doctor.models"`, field)
+	}
+	if err := requireProbe(modelFields, len(d.Models) > 0, "doctor.models"); err != nil {
+		return err
+	}
+	if hasBlank(d.ModelsStdin) {
+		return fmt.Errorf(`field "doctor.modelsStdin" cannot contain an empty line`)
+	}
+	return nil
+}
+
+// requireProbe reports the first declared field when its probe is missing.
+func requireProbe(declared map[string]bool, hasProbe bool, probe string) error {
+	if hasProbe {
+		return nil
+	}
+	for field, set := range declared {
+		if set {
+			return fmt.Errorf(`field %q is only meaningful alongside %q`, field, probe)
 		}
 	}
-	for _, line := range d.ModelsStdin {
-		if strings.TrimSpace(line) == "" {
-			return fmt.Errorf(`field "doctor.modelsStdin" cannot contain an empty line`)
-		}
-	}
+	return nil
+}
+
+func (d Doctor) validatePaths() error {
 	for field, path := range map[string]string{"doctor.modelsJSON": d.ModelsJSON, "doctor.signedInJSON": d.SignedInJSON, "doctor.authDetailJSON": d.AuthDetailJSON} {
 		if strings.TrimSpace(path) == "" {
 			continue
@@ -762,6 +828,10 @@ func (d Doctor) validate() error {
 			return fmt.Errorf("field %q: %w", field, err)
 		}
 	}
+	return nil
+}
+
+func (d Doctor) validatePatterns() error {
 	for field, pattern := range map[string]string{"doctor.signedIn": d.SignedIn, "doctor.authDetail": d.AuthDetail, "doctor.modelPattern": d.ModelPattern} {
 		if strings.TrimSpace(pattern) == "" {
 			continue
@@ -770,16 +840,17 @@ func (d Doctor) validate() error {
 			return fmt.Errorf("field %q: %w", field, err)
 		}
 	}
-	if strings.TrimSpace(d.Timeout) != "" {
-		timeout, err := time.ParseDuration(d.Timeout)
-		if err != nil {
-			return fmt.Errorf(`field "doctor.timeout": %w`, err)
-		}
-		if timeout <= 0 {
-			return fmt.Errorf(`field "doctor.timeout": %q must be positive`, d.Timeout)
+	return nil
+}
+
+// hasBlank reports whether any value is empty or whitespace.
+func hasBlank(values []string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
 // Assign values.
@@ -885,6 +956,39 @@ var namePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // it was found in. A definition that does not validate is never registered: a
 // silently dropped agent looks exactly like a typo in --agent.
 func (d Definition) Validate() error {
+	checks := []func() error{
+		d.validateIdentity,
+		d.validateProcessMode,
+		d.validateArgs,
+		d.validatePromptStdin,
+		d.Session.validate,
+		d.validateOutput,
+		d.validateWakeup,
+		d.validateMissingSession,
+		func() error { return d.Levels.validate("levels") },
+		func() error { return d.Models.validate("models") },
+		d.validateDefaultModel,
+		d.validateApproval,
+		d.validateExtraDir,
+		d.validatePermissions,
+		d.ConfigHome.validate,
+		d.validateMCP,
+		d.validateSystemPrompt,
+		d.Quota.validate,
+		d.Doctor.validate,
+		d.validateSkillsTarget,
+		d.validateEnv,
+	}
+	for _, check := range checks {
+		if err := check(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateIdentity checks the name, binary, and minimum version.
+func (d Definition) validateIdentity() error {
 	if strings.TrimSpace(d.Name) == "" {
 		return fmt.Errorf(`field "name" is required`)
 	}
@@ -899,22 +1003,35 @@ func (d Definition) Validate() error {
 			return fmt.Errorf(`field "minVersion": %q must be a dotted version such as "0.58.0"`, d.MinVersion)
 		}
 	}
-	if d.InProcess {
-		if len(d.Args.Run) > 0 || len(d.Args.Resume) > 0 || len(d.Args.Vision) > 0 {
-			return fmt.Errorf(`field "args" is only meaningful when "inProcess" is false`)
+	return nil
+}
+
+// validateProcessMode rejects subprocess-only fields on an in-process agent
+// and requires a run template of a subprocess one.
+func (d Definition) validateProcessMode() error {
+	if !d.InProcess {
+		if len(d.Args.Run) == 0 {
+			return fmt.Errorf(`field "args.run" is required`)
 		}
-		if d.Output != (Output{}) {
-			return fmt.Errorf(`field "output" is only meaningful when "inProcess" is false`)
-		}
-		if d.PromptStdin != nil || d.Wakeup != nil || len(d.Env) > 0 || d.ConfigHome != nil || d.MinVersion != "" {
-			return fmt.Errorf(`fields "promptStdin", "wakeup", "env", "configHome", and "minVersion" are only meaningful when "inProcess" is false`)
-		}
-		if d.Session.Assign != AssignNone {
-			return fmt.Errorf(`field "session.assign" must be %q when "inProcess" is true`, AssignNone)
-		}
-	} else if len(d.Args.Run) == 0 {
-		return fmt.Errorf(`field "args.run" is required`)
+		return nil
 	}
+	if len(d.Args.Run) > 0 || len(d.Args.Resume) > 0 || len(d.Args.Vision) > 0 {
+		return fmt.Errorf(`field "args" is only meaningful when "inProcess" is false`)
+	}
+	if d.Output != (Output{}) {
+		return fmt.Errorf(`field "output" is only meaningful when "inProcess" is false`)
+	}
+	if d.PromptStdin != nil || d.Wakeup != nil || len(d.Env) > 0 || d.ConfigHome != nil || d.MinVersion != "" {
+		return fmt.Errorf(`fields "promptStdin", "wakeup", "env", "configHome", and "minVersion" are only meaningful when "inProcess" is false`)
+	}
+	if d.Session.Assign != AssignNone {
+		return fmt.Errorf(`field "session.assign" must be %q when "inProcess" is true`, AssignNone)
+	}
+	return nil
+}
+
+// validateArgs checks the argv templates.
+func (d Definition) validateArgs() error {
 	// A resume template is required of every agent aviary can hold a session
 	// ID for. An agent that declares session.assign "none" has no session to
 	// resume, so it may leave args.resume out and have a recovery re-run its
@@ -929,86 +1046,89 @@ func (d Definition) Validate() error {
 			return err
 		}
 	}
-	if d.PromptStdin != nil {
-		for _, arg := range *d.PromptStdin {
-			if placeholderPattern.MatchString(arg) {
-				return fmt.Errorf(`field "promptStdin": %q cannot contain a placeholder`, arg)
-			}
-		}
-		if !hasPromptArg(d.Args.Run) {
-			return fmt.Errorf(`field "promptStdin" needs an argument that is exactly {prompt} in "args.run"`)
+	return nil
+}
+
+// validatePromptStdin checks the stdin prompt argv against the run template.
+func (d Definition) validatePromptStdin() error {
+	if d.PromptStdin == nil {
+		return nil
+	}
+	for _, arg := range *d.PromptStdin {
+		if placeholderPattern.MatchString(arg) {
+			return fmt.Errorf(`field "promptStdin": %q cannot contain a placeholder`, arg)
 		}
 	}
-	switch d.Session.Assign {
+	if !hasPromptArg(d.Args.Run) {
+		return fmt.Errorf(`field "promptStdin" needs an argument that is exactly {prompt} in "args.run"`)
+	}
+	return nil
+}
+
+// validate reports the first thing wrong with the session block.
+func (s Session) validate() error {
+	switch s.Assign {
 	case AssignEngine, AssignNone:
-		if d.Session.Capture != "" {
+		if s.Capture != "" {
 			return fmt.Errorf(`field "session.capture" is only meaningful when "session.assign" is %q`, AssignCapture)
 		}
 	case AssignCapture:
-		if strings.TrimSpace(d.Session.Capture) == "" {
+		if strings.TrimSpace(s.Capture) == "" {
 			return fmt.Errorf(`field "session.capture" is required when "session.assign" is %q`, AssignCapture)
 		}
-		expr, err := regexp.Compile(d.Session.Capture)
+		expr, err := regexp.Compile(s.Capture)
 		if err != nil {
 			return fmt.Errorf(`field "session.capture": %w`, err)
 		}
 		if expr.NumSubexp() < 1 {
-			return fmt.Errorf(`field "session.capture": %q has no capture group for the session ID`, d.Session.Capture)
+			return fmt.Errorf(`field "session.capture": %q has no capture group for the session ID`, s.Capture)
 		}
 	default:
-		return fmt.Errorf(`field "session.assign": %q must be %q, %q, or %q`, d.Session.Assign, AssignEngine, AssignCapture, AssignNone)
+		return fmt.Errorf(`field "session.assign": %q must be %q, %q, or %q`, s.Assign, AssignEngine, AssignCapture, AssignNone)
 	}
-	if !d.InProcess {
-		if err := d.Output.validate(); err != nil {
-			return err
-		}
+	return nil
+}
+
+// validateOutput checks the output decoder of a subprocess agent.
+func (d Definition) validateOutput() error {
+	if d.InProcess {
+		return nil
 	}
-	if d.Wakeup != nil {
-		if err := d.Wakeup.validate(); err != nil {
-			return err
-		}
+	return d.Output.validate()
+}
+
+// validateWakeup checks the wakeup block when one is declared.
+func (d Definition) validateWakeup() error {
+	if d.Wakeup == nil {
+		return nil
 	}
+	return d.Wakeup.validate()
+}
+
+func (d Definition) validateMissingSession() error {
 	for _, pattern := range d.MissingSession {
 		if strings.TrimSpace(pattern) == "" {
 			return fmt.Errorf(`field "missingSession" cannot contain an empty value`)
 		}
 	}
-	if err := d.Levels.validate("levels"); err != nil {
-		return err
-	}
-	if err := d.Models.validate("models"); err != nil {
-		return err
-	}
+	return nil
+}
+
+func (d Definition) validateDefaultModel() error {
 	if model := strings.TrimSpace(d.DefaultModel); model != "" && !d.AcceptsModel(model) {
 		return fmt.Errorf(`field "defaultModel": %q is not one this agent accepts; %s`, model, d.ModelError())
 	}
-	if err := d.validateApproval(); err != nil {
-		return err
-	}
-	if err := d.validateExtraDir(); err != nil {
-		return err
-	}
-	if err := d.validatePermissions(); err != nil {
-		return err
-	}
-	if err := d.ConfigHome.validate(); err != nil {
-		return err
-	}
-	if err := d.validateMCP(); err != nil {
-		return err
-	}
-	if err := d.validateSystemPrompt(); err != nil {
-		return err
-	}
-	if err := d.Quota.validate(); err != nil {
-		return err
-	}
-	if err := d.Doctor.validate(); err != nil {
-		return err
-	}
+	return nil
+}
+
+func (d Definition) validateSkillsTarget() error {
 	if target := d.Skills.Target; target != "" && !skillsTargetPattern.MatchString(target) {
 		return fmt.Errorf(`field "skills.target": %q must be a skills.sh target id: lowercase letters, digits, and dashes`, target)
 	}
+	return nil
+}
+
+func (d Definition) validateEnv() error {
 	for key := range d.Env {
 		if strings.TrimSpace(key) == "" || strings.Contains(key, "=") {
 			return fmt.Errorf(`field "env": %q is not a usable variable name`, key)
@@ -1051,20 +1171,29 @@ func (d Definition) ReadsPromptFromStdinIn(mode Mode) bool {
 
 func validateFragments(mode string, fragments []Fragment) error {
 	for i, fragment := range fragments {
-		if condition := strings.TrimPrefix(fragment.When, "!"); condition != "" && !contains(knownConditions, condition) {
-			return fmt.Errorf(`field %q[%d].when: unknown condition %q; known conditions are %s`, mode, i, fragment.When, strings.Join(sorted(knownConditions), ", "))
+		if err := validateFragment(mode, i, fragment); err != nil {
+			return err
 		}
-		if len(fragment.Args) == 0 {
-			return fmt.Errorf(`field %q[%d].args cannot be empty`, mode, i)
-		}
-		for _, arg := range fragment.Args {
-			for _, match := range placeholderPattern.FindAllStringSubmatch(arg, -1) {
-				if !contains(knownPlaceholders, match[1]) {
-					return fmt.Errorf(`field %q[%d].args: unknown placeholder %s; known placeholders are {%s}`, mode, i, match[0], strings.Join(sorted(knownPlaceholders), "}, {"))
-				}
-				if match[1] == placeholderApproval && arg != match[0] {
-					return fmt.Errorf(`field %q[%d].args: %s must be a whole argument`, mode, i, match[0])
-				}
+	}
+	return nil
+}
+
+// validateFragment checks one fragment's condition and its arguments'
+// placeholders.
+func validateFragment(mode string, i int, fragment Fragment) error {
+	if condition := strings.TrimPrefix(fragment.When, "!"); condition != "" && !contains(knownConditions, condition) {
+		return fmt.Errorf(`field %q[%d].when: unknown condition %q; known conditions are %s`, mode, i, fragment.When, strings.Join(sorted(knownConditions), ", "))
+	}
+	if len(fragment.Args) == 0 {
+		return fmt.Errorf(`field %q[%d].args cannot be empty`, mode, i)
+	}
+	for _, arg := range fragment.Args {
+		for _, match := range placeholderPattern.FindAllStringSubmatch(arg, -1) {
+			if !contains(knownPlaceholders, match[1]) {
+				return fmt.Errorf(`field %q[%d].args: unknown placeholder %s; known placeholders are {%s}`, mode, i, match[0], strings.Join(sorted(knownPlaceholders), "}, {"))
+			}
+			if match[1] == placeholderApproval && arg != match[0] {
+				return fmt.Errorf(`field %q[%d].args: %s must be a whole argument`, mode, i, match[0])
 			}
 		}
 	}

@@ -33,32 +33,38 @@ func TestSignalDaemonHelperProcess(_ *testing.T) {
 		return
 	}
 	if mode == "listen" {
-		args := os.Args
-		for i, a := range args {
-			if a == "--" {
-				args = args[i+1:]
-				break
-			}
-		}
-		ln, err := net.Listen("tcp", args[len(args)-1])
-		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, "helper listen:", err)
-			os.Exit(2)
-		}
-		go func() {
-			for {
-				conn, err := ln.Accept()
-				if err != nil {
-					return
-				}
-				conn.Close() //nolint:errcheck
-			}
-		}()
-		_, _ = fmt.Fprintln(os.Stdout, "helper stdout ready")
-		_, _ = fmt.Fprintln(os.Stderr, "helper stderr ready")
+		runListenHelper()
 	}
 	time.Sleep(30 * time.Second)
 	os.Exit(0)
+}
+
+// runListenHelper accepts and closes TCP connections on the address after
+// "--" in the background and reports readiness on stdout and stderr.
+func runListenHelper() {
+	args := os.Args
+	for i, a := range args {
+		if a == "--" {
+			args = args[i+1:]
+			break
+		}
+	}
+	ln, err := net.Listen("tcp", args[len(args)-1])
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "helper listen:", err)
+		os.Exit(2)
+	}
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close() //nolint:errcheck
+		}
+	}()
+	_, _ = fmt.Fprintln(os.Stdout, "helper stdout ready")
+	_, _ = fmt.Fprintln(os.Stderr, "helper stderr ready")
 }
 
 // helperDaemonCommand returns a signalCLICommand replacement that re-executes

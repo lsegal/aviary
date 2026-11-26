@@ -91,7 +91,9 @@ func orphanReaperPipe() io.Writer {
 
 // guardOrphanedProcess has nothing to do before the child starts: its process
 // group only exists once it is running.
-func guardOrphanedProcess(*exec.Cmd) {}
+func guardOrphanedProcess(*exec.Cmd) {
+	// Nothing to set up yet: the child is adopted after start, once its group exists.
+}
 
 // adoptOrphanedProcess records a freshly started child's process group with the
 // reaper. Children that share aviary's own process group are skipped: they

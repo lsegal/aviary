@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -251,13 +252,7 @@ func TestWatchTUIBoardCardsAlignWithColumnHeaders(t *testing.T) {
 	m, _ = watchKey(t, m, "b")
 	m, _ = watchKey(t, m, "right")
 	lines := strings.Split(watchStrip(m.View()), "\n")
-	row := -1
-	for i, line := range lines {
-		if strings.HasPrefix(line, "Scheduled") {
-			row = i
-			break
-		}
-	}
+	row := watchBoardHeaderRow(lines)
 	if row < 0 || row+2 >= len(lines) {
 		t.Fatalf("no board header in:\n%s", strings.Join(lines, "\n"))
 	}
@@ -265,17 +260,10 @@ func TestWatchTUIBoardCardsAlignWithColumnHeaders(t *testing.T) {
 	for _, col := range []string{"Scheduled", "Starting", "Paused", "Running", "Done", "Failed"} {
 		at := len([]rune(lines[row][:strings.Index(lines[row], col)]))
 		if col == "Starting" {
-			// The selected card alone shifts right by the caret.
-			if !strings.HasPrefix(string(title[at:]), "> #1 ") || !strings.HasPrefix(string(detail[at:]), "  o/r") {
-				t.Errorf("selected card = %q / %q, want the caret before the title and the details under it", string(title[at:]), string(detail[at:]))
-			}
+			checkSelectedBoardCard(t, title, detail, at)
 			continue
 		}
-		for _, line := range [][]rune{title, detail} {
-			if at >= len(line) || line[at] == ' ' || (at > 0 && line[at-1] != ' ') {
-				t.Errorf("%s card does not start under its header:\n%s\n%s", col, string(header), string(line))
-			}
-		}
+		checkBoardCardUnderHeader(t, col, at, header, title, detail)
 	}
 
 	it, ok := m.selectedItem()
@@ -288,6 +276,37 @@ func TestWatchTUIBoardCardsAlignWithColumnHeaders(t *testing.T) {
 	}
 }
 
+// watchBoardHeaderRow returns the index of the board's column header line
+// in lines, or -1.
+func watchBoardHeaderRow(lines []string) int {
+	for i, line := range lines {
+		if strings.HasPrefix(line, "Scheduled") {
+			return i
+		}
+	}
+	return -1
+}
+
+// checkSelectedBoardCard checks that the selected card at column start at
+// shifts right by the caret, with its details under the title.
+func checkSelectedBoardCard(t *testing.T, title, detail []rune, at int) {
+	t.Helper()
+	if !strings.HasPrefix(string(title[at:]), "> #1 ") || !strings.HasPrefix(string(detail[at:]), "  o/r") {
+		t.Errorf("selected card = %q / %q, want the caret before the title and the details under it", string(title[at:]), string(detail[at:]))
+	}
+}
+
+// checkBoardCardUnderHeader checks that col's card title and detail lines
+// start exactly at the column start at.
+func checkBoardCardUnderHeader(t *testing.T, col string, at int, header, title, detail []rune) {
+	t.Helper()
+	for _, line := range [][]rune{title, detail} {
+		if at >= len(line) || line[at] == ' ' || (at > 0 && line[at-1] != ' ') {
+			t.Errorf("%s card does not start under its header:\n%s\n%s", col, string(header), string(line))
+		}
+	}
+}
+
 func TestWatchTUIBoardGutterAndSpacing(t *testing.T) {
 	cols := []string{"Scheduled", "Starting", "Paused", "Running", "Done", "Failed"}
 	for _, width := range []int{80, 120} {
@@ -296,44 +315,61 @@ func TestWatchTUIBoardGutterAndSpacing(t *testing.T) {
 		m, _ = watchKey(t, m, "b")
 		m, _ = watchKey(t, m, "right")
 		lines := strings.Split(watchStrip(m.View()), "\n")
-		filter, header := -1, -1
-		for i, line := range lines {
-			if filter < 0 && strings.Contains(line, "0 All") {
-				filter = i
-			}
-			if strings.HasPrefix(line, "Scheduled") {
-				header = i
-				break
-			}
+		header := checkBoardSpacing(t, width, lines)
+		checkLinesFitWidth(t, width, lines)
+		checkBoardColumnGutters(t, width, cols, lines[header:header+3])
+	}
+}
+
+// checkBoardSpacing checks that watchBoardSpacing blank rows separate the
+// filter row from the board header, and returns the header's row.
+func checkBoardSpacing(t *testing.T, width int, lines []string) int {
+	t.Helper()
+	filter := slices.IndexFunc(lines, func(line string) bool { return strings.Contains(line, "0 All") })
+	header := watchBoardHeaderRow(lines)
+	if filter >= 0 && header >= 0 && header < filter {
+		// The filter row must come before the board header.
+		filter = -1
+	}
+	if filter < 0 || header != filter+1+watchBoardSpacing {
+		t.Fatalf("width %d: filters at row %d, board header at %d, want %d blank rows between:\n%s", width, filter, header, watchBoardSpacing, strings.Join(lines, "\n"))
+	}
+	for _, line := range lines[filter+1 : header] {
+		if line != "" {
+			t.Errorf("width %d: row between filters and board = %q, want blank", width, line)
 		}
-		if filter < 0 || header != filter+1+watchBoardSpacing {
-			t.Fatalf("width %d: filters at row %d, board header at %d, want %d blank rows between:\n%s", width, filter, header, watchBoardSpacing, strings.Join(lines, "\n"))
+	}
+	return header
+}
+
+// checkLinesFitWidth checks that no line is wider than width runes.
+func checkLinesFitWidth(t *testing.T, width int, lines []string) {
+	t.Helper()
+	for _, line := range lines {
+		if w := len([]rune(line)); w > width {
+			t.Errorf("width %d: line is %d cells wide: %q", width, w, line)
 		}
-		for _, line := range lines[filter+1 : header] {
-			if line != "" {
-				t.Errorf("width %d: row between filters and board = %q, want blank", width, line)
-			}
+	}
+}
+
+// checkBoardColumnGutters checks that each column header in rows[0] starts
+// at its column and that every row has a blank gutter before each column
+// after the first.
+func checkBoardColumnGutters(t *testing.T, width int, cols, rows []string) {
+	t.Helper()
+	colWidth := (width - watchBoardGutter*(len(cols)-1)) / len(cols)
+	for c, col := range cols {
+		at := c * (colWidth + watchBoardGutter)
+		if got := []rune(rows[0]); !strings.HasPrefix(string(got[at:]), col) {
+			t.Errorf("width %d: %s header at %q, want column start %d", width, col, string(got[at:]), at)
 		}
-		for _, line := range lines {
-			if w := len([]rune(line)); w > width {
-				t.Errorf("width %d: line is %d cells wide: %q", width, w, line)
-			}
+		if c == 0 {
+			continue
 		}
-		colWidth := (width - watchBoardGutter*(len(cols)-1)) / len(cols)
-		rows := lines[header : header+3]
-		for c, col := range cols {
-			at := c * (colWidth + watchBoardGutter)
-			if got := []rune(rows[0]); !strings.HasPrefix(string(got[at:]), col) {
-				t.Errorf("width %d: %s header at %q, want column start %d", width, col, string(got[at:]), at)
-			}
-			if c == 0 {
-				continue
-			}
-			for _, row := range rows {
-				r := []rune(row)
-				if gutter := string(r[at-watchBoardGutter : at]); gutter != strings.Repeat(" ", watchBoardGutter) {
-					t.Errorf("width %d: gutter before %s = %q in %q", width, col, gutter, row)
-				}
+		for _, row := range rows {
+			r := []rune(row)
+			if gutter := string(r[at-watchBoardGutter : at]); gutter != strings.Repeat(" ", watchBoardGutter) {
+				t.Errorf("width %d: gutter before %s = %q in %q", width, col, gutter, row)
 			}
 		}
 	}
@@ -402,14 +438,7 @@ func TestWatchTUIHeaderKeysAt80And120(t *testing.T) {
 	for _, cols := range []int{80, 120} {
 		m := loadedWatchModel(t, newFakeWatchTools())
 		m = watchUpdate(t, m, tea.WindowSizeMsg{Width: cols, Height: 20})
-		// The selected filter is the padded, highlighted chip.
-		for _, tc := range []struct{ key, chip string }{{"4", " 4 Run"}, {"0", " 0 All 6 "}, {"6", " 6 Fail"}} {
-			key, chip := tc.key, tc.chip
-			m, _ = watchKey(t, m, key)
-			if line := watchStrip(m.filterLine()); !strings.Contains(line, chip) {
-				t.Errorf("%d cols after %s: %q lacks %q", cols, key, line, chip)
-			}
-		}
+		m = checkFilterChips(t, m, cols)
 		if m.filter != watchFailed {
 			t.Errorf("%d cols: 6 selects %q", cols, m.filter)
 		}
@@ -429,6 +458,19 @@ func TestWatchTUIHeaderKeysAt80And120(t *testing.T) {
 	}
 }
 
+// checkFilterChips presses filter keys and checks that the selected filter
+// is the padded, highlighted chip, returning the model after the last key.
+func checkFilterChips(t *testing.T, m watchModel, cols int) watchModel {
+	t.Helper()
+	for _, tc := range []struct{ key, chip string }{{"4", " 4 Run"}, {"0", " 0 All 6 "}, {"6", " 6 Fail"}} {
+		m, _ = watchKey(t, m, tc.key)
+		if line := watchStrip(m.filterLine()); !strings.Contains(line, tc.chip) {
+			t.Errorf("%d cols after %s: %q lacks %q", cols, tc.key, line, tc.chip)
+		}
+	}
+	return m
+}
+
 func TestWatchTUIHeaderShowsWebURL(t *testing.T) {
 	tools := newFakeWatchTools()
 	m := newWatchModel(context.Background(), tools.call, "o/r", "https://localhost:16677/projects")
@@ -446,19 +488,7 @@ func TestWatchTUIActionKeysCallTools(t *testing.T) {
 		{"r", "project_job_retry"},
 		{"u", "project_job_resume"},
 	} {
-		var msg tea.Msg
-		m, msg = watchKey(t, m, tc.key)
-		if msg == nil {
-			t.Fatalf("%s sent nothing; err %q", tc.key, m.errText)
-		}
-		m = watchUpdate(t, m, msg)
-		calls := tools.callsTo(tc.tool)
-		if len(calls) != 1 || calls[0].args["target"] != "o/r" || calls[0].args["number"] != 2 {
-			t.Errorf("%s calls = %+v", tc.key, calls)
-		}
-		if !strings.Contains(m.message, "sent for o/r#2") {
-			t.Errorf("message = %q", m.message)
-		}
+		m = checkActionKeyCallsTool(t, m, tools, tc.key, tc.tool)
 	}
 	// A paused job cannot pause again; the list's actions say so.
 	m, msg := watchKey(t, m, "p")
@@ -489,6 +519,25 @@ func TestWatchTUIActionKeysCallTools(t *testing.T) {
 	if msg == nil || tools.callsTo("project_job_pause")[0].args["number"] != 1 {
 		t.Errorf("pause calls = %+v", tools.callsTo("project_job_pause"))
 	}
+}
+
+// checkActionKeyCallsTool presses key on the selected o/r#2 job and checks
+// that it calls tool once for that job and reports it sent.
+func checkActionKeyCallsTool(t *testing.T, m watchModel, tools *fakeWatchTools, key, tool string) watchModel {
+	t.Helper()
+	m, msg := watchKey(t, m, key)
+	if msg == nil {
+		t.Fatalf("%s sent nothing; err %q", key, m.errText)
+	}
+	m = watchUpdate(t, m, msg)
+	calls := tools.callsTo(tool)
+	if len(calls) != 1 || calls[0].args["target"] != "o/r" || calls[0].args["number"] != 2 {
+		t.Errorf("%s calls = %+v", key, calls)
+	}
+	if !strings.Contains(m.message, "sent for o/r#2") {
+		t.Errorf("message = %q", m.message)
+	}
+	return m
 }
 
 func TestWatchTUIActionErrorShowsInStatusLine(t *testing.T) {

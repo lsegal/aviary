@@ -264,7 +264,9 @@ func (m *Manager) CloseTab(tabID string) error {
 }
 
 // Close is a no-op: Chrome and its tabs run independently of this Manager.
-func (m *Manager) Close() {}
+func (m *Manager) Close() {
+	// Intentionally empty: there is no browser process or connection to release.
+}
 
 // withTab attaches to tabID, runs fn, then disconnects (leaving the tab open).
 func (m *Manager) withTab(ctx context.Context, tabID string, fn func(*Session) error) error {
@@ -370,7 +372,7 @@ func (m *Manager) borrowSameProcessBrowser(ctx context.Context) (string, bool) {
 
 func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if _, ok := ctx.Deadline(); ok {
-		return ctx, func() {}
+		return ctx, func() { /* nothing to cancel: the caller's deadline already applies */ }
 	}
 	return context.WithTimeout(ctx, timeout)
 }

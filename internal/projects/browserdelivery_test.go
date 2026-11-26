@@ -117,7 +117,9 @@ func fakeSignInSession(t *testing.T, page *loginPage) *[]browser.Config {
 	})
 	openSignInSession = func(_ context.Context, config browser.Config) (*signInSession, error) {
 		opened = append(opened, config)
-		return &signInSession{page: page, close: func() {}}, nil
+		return &signInSession{page: page, close: func() {
+			// Nothing to release: the fake page owns no browser.
+		}}, nil
 	}
 	headedEnvironmentCheck = func() error { return nil }
 	signInPollInterval = time.Millisecond

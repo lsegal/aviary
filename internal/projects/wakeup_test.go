@@ -139,7 +139,7 @@ func TestCommandRunnerReportsAPendingWakeupWhenClaudeExits(t *testing.T) {
 	binary, _ := writeFakeAgent(t, output, 0)
 	runner := CommandRunner{Agent: "claude", ClaudeBinary: binary, Repo: "o/r"}
 	session := AgentSession{ID: "session-7", Agent: "claude", Resume: true}
-	err := runner.RunSession(context.Background(), Issue{Number: 7}, session, func(AgentSession) {})
+	err := runner.RunSession(context.Background(), Issue{Number: 7}, session, ignoreSessionUpdate)
 	var wakeup *scheduledWakeup
 	if !errors.As(err, &wakeup) {
 		t.Fatalf("RunSession() error = %v, want the scheduled wakeup", err)
@@ -384,7 +384,7 @@ func TestConfiguredCLIDeclaresItsOwnWakeupSignal(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			binary, _ := writeFakeAgent(t, tc.output, 0)
 			runner := CommandRunner{Agent: "acme", Definitions: acmeWakeupDefinition(t, binary), Repo: "o/r"}
-			err := runner.RunSession(context.Background(), Issue{Number: 7}, AgentSession{ID: "session-7", Agent: "acme", Resume: true}, func(AgentSession) {})
+			err := runner.RunSession(context.Background(), Issue{Number: 7}, AgentSession{ID: "session-7", Agent: "acme", Resume: true}, ignoreSessionUpdate)
 			var wakeup *scheduledWakeup
 			if tc.want == nil {
 				if errors.As(err, &wakeup) || err != nil {

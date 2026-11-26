@@ -154,39 +154,34 @@ func runWizard(cfg *config.Config, cfgPath string, st authpkg.Store) error {
 		if err != nil {
 			return err
 		}
-		switch selection {
-		case configureMenuGeneral:
-			if err := configureGeneralForm(cfg, cfgPath); err != nil {
-				return err
-			}
-		case configureMenuProviders:
-			if err := configureProviderMgr(st); err != nil {
-				return err
-			}
-		case configureMenuAgents:
-			if err := configureAgentMgr(cfg, cfgPath); err != nil {
-				return err
-			}
-		case configureMenuSkills:
-			if err := configureSkillMgr(cfg, cfgPath); err != nil {
-				return err
-			}
-		case configureMenuServer:
-			if err := configureServerForm(cfg, cfgPath); err != nil {
-				return err
-			}
-		case configureMenuBrowser:
-			if err := configureBrowserForm(cfg, cfgPath); err != nil {
-				return err
-			}
-		case configureMenuScheduler:
-			if err := configureSchedulerForm(cfg, cfgPath); err != nil {
-				return err
-			}
-		case configureMenuQuit:
+		if selection == configureMenuQuit {
 			return nil
 		}
+		if err := runConfigureSection(selection, cfg, cfgPath, st); err != nil {
+			return err
+		}
 	}
+}
+
+// runConfigureSection runs the form or manager for a menu selection.
+func runConfigureSection(selection configureMenuSelection, cfg *config.Config, cfgPath string, st authpkg.Store) error {
+	switch selection {
+	case configureMenuGeneral:
+		return configureGeneralForm(cfg, cfgPath)
+	case configureMenuProviders:
+		return configureProviderMgr(st)
+	case configureMenuAgents:
+		return configureAgentMgr(cfg, cfgPath)
+	case configureMenuSkills:
+		return configureSkillMgr(cfg, cfgPath)
+	case configureMenuServer:
+		return configureServerForm(cfg, cfgPath)
+	case configureMenuBrowser:
+		return configureBrowserForm(cfg, cfgPath)
+	case configureMenuScheduler:
+		return configureSchedulerForm(cfg, cfgPath)
+	}
+	return nil
 }
 
 func configureProvidersSummary(st authpkg.Store) string {

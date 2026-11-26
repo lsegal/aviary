@@ -26,4 +26,6 @@ func adoptOrphanedProcess(*exec.Cmd) error { return nil }
 
 // releaseOrphanedProcess has nothing to do on Linux: the parent-death signal is
 // a property of the child itself and needs no bookkeeping in aviary.
-func releaseOrphanedProcess(*exec.Cmd) {}
+func releaseOrphanedProcess(*exec.Cmd) {
+	// No bookkeeping to undo: PR_SET_PDEATHSIG lives on the child itself.
+}

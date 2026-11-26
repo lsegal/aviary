@@ -79,15 +79,21 @@ func TestPrintDepsStatus(t *testing.T) {
 			if !strings.HasPrefix(out, "Transcription\n") {
 				t.Fatalf("output missing header:\n%s", out)
 			}
-			for _, want := range tt.want {
-				if !strings.Contains(out, want) {
-					t.Errorf("output missing %q:\n%s", want, out)
-				}
-			}
+			checkDepsOutputHas(t, out, tt.want)
 			if got := strings.Contains(out, hint); got != tt.hint {
 				t.Errorf("install hint present = %v, want %v:\n%s", got, tt.hint, out)
 			}
 		})
+	}
+}
+
+// checkDepsOutputHas checks that out has every want.
+func checkDepsOutputHas(t *testing.T, out string, wants []string) {
+	t.Helper()
+	for _, want := range wants {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
 	}
 }
 

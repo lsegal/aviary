@@ -32,10 +32,17 @@ import (
 
 type stubChannel struct{}
 
-func (stubChannel) Start(context.Context) error              { return nil }
-func (stubChannel) Stop()                                    {}
-func (stubChannel) Send(string, string) error                { return nil }
-func (stubChannel) OnMessage(func(channels.IncomingMessage)) {}
+func (stubChannel) Start(context.Context) error { return nil }
+
+func (stubChannel) Send(string, string) error { return nil }
+
+func (stubChannel) Stop() {
+	// Nothing to stop: the stub never starts any work.
+}
+
+func (stubChannel) OnMessage(func(channels.IncomingMessage)) {
+	// The stub never receives messages, so the handler is not kept.
+}
 
 type statusStubChannel struct {
 	stubChannel
@@ -401,7 +408,7 @@ func TestApplyConfigReload_ReconcilesChannels(t *testing.T) {
 	defer cancel()
 
 	srv.runCtx = ctx
-	srv.msgFn = func(string, string, string, channels.Channel, channels.IncomingMessage) {}
+	srv.msgFn = ignoreChannelMessage
 
 	cfgWithChannel := &config.Config{
 		Agents: []config.AgentConfig{{

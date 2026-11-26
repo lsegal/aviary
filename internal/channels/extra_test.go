@@ -44,7 +44,7 @@ func TestSendOnConfiguredChannel_Success(t *testing.T) {
 	key := channelKey("bot", "signal", "+1")
 	mgr.mu.Lock()
 	mgr.channels[key] = mock
-	mgr.cancels[key] = func() {}
+	mgr.cancels[key] = noopCancel
 	mgr.startTimes[key] = time.Now()
 	mgr.sinks[key] = newLogSink()
 	mgr.mu.Unlock()
@@ -555,7 +555,7 @@ func TestRouteDelivery_AllFail(t *testing.T) {
 	key := channelKey("bot", "signal", "+1")
 	mgr.mu.Lock()
 	mgr.channels[key] = ec
-	mgr.cancels[key] = func() {}
+	mgr.cancels[key] = noopCancel
 	mgr.startTimes[key] = time.Now()
 	mgr.sinks[key] = newLogSink()
 	mgr.mu.Unlock()

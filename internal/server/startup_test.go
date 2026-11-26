@@ -40,7 +40,7 @@ func stubBootSideEffects(t *testing.T, install func(context.Context)) {
 	store.SetDataDir(t.TempDir())
 	origInstall, origSync, origCheckout := installShippedSkills, syncShippedSkills, gitCheckout
 	installShippedSkills = install
-	syncShippedSkills = func(context.Context) {}
+	syncShippedSkills = skipShippedSkills
 	gitCheckout = func() string { return "" }
 	t.Cleanup(func() {
 		installShippedSkills, syncShippedSkills, gitCheckout = origInstall, origSync, origCheckout
@@ -137,7 +137,7 @@ func TestTimeToMCPReady(t *testing.T) {
 // after the skill sync goroutine has finished, so it cannot write into the
 // data dir after the server has stopped.
 func TestShutdownWaitsForSkillSync(t *testing.T) {
-	stubBootSideEffects(t, func(context.Context) {})
+	stubBootSideEffects(t, skipShippedSkills)
 	var synced atomic.Bool
 	started := make(chan struct{})
 	syncShippedSkills = func(ctx context.Context) {
@@ -340,7 +340,7 @@ func TestListenAndServe_RestartRequests(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stubBootSideEffects(t, func(context.Context) {})
+			stubBootSideEffects(t, skipShippedSkills)
 			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 			fired := stubRestartWatchdog(t, time.Minute)
 			require.NoError(t, saferestart.WriteMarker(saferestart.Marker{Reason: "restart"}))
@@ -372,7 +372,7 @@ func TestListenAndServe_RestartRequests(t *testing.T) {
 }
 
 func TestListenAndServe_PortInUse(t *testing.T) {
-	stubBootSideEffects(t, func(context.Context) {})
+	stubBootSideEffects(t, skipShippedSkills)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	busy, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
