@@ -93,16 +93,31 @@ func TestTranscribeHandler_EmptyRecording(t *testing.T) {
 }
 
 func TestTranscribeHandler_ReportsNoSpeech(t *testing.T) {
-	useTranscriber(t, noSpeechEngine{})
-	code, resp := postRecording(t, &Server{cfg: &config.Config{}}, "webm-bytes")
-	assert.Equal(t, http.StatusOK, code)
-	assert.Equal(t, transcribeResponse{DurationMS: 9000, NoSpeech: true}, resp)
+	silent, quiet := -120.0, -20.0
+	for name, tc := range map[string]struct {
+		engine noSpeechEngine
+		want   transcribeResponse
+	}{
+		"no signal":  {noSpeechEngine{noSignal: true, peak: &silent}, transcribeResponse{DurationMS: 9000, NoSpeech: true, NoSignal: true, PeakDBFS: &silent}},
+		"no words":   {noSpeechEngine{peak: &quiet}, transcribeResponse{DurationMS: 9000, NoSpeech: true, PeakDBFS: &quiet}},
+		"unmeasured": {noSpeechEngine{}, transcribeResponse{DurationMS: 9000, NoSpeech: true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			useTranscriber(t, tc.engine)
+			code, resp := postRecording(t, &Server{cfg: &config.Config{}}, "webm-bytes")
+			assert.Equal(t, http.StatusOK, code)
+			assert.Equal(t, tc.want, resp)
+		})
+	}
 }
 
-type noSpeechEngine struct{}
+type noSpeechEngine struct {
+	noSignal bool
+	peak     *float64
+}
 
-func (noSpeechEngine) Transcribe(context.Context, string, transcribe.Options) (transcribe.Transcript, error) {
-	return transcribe.Transcript{Duration: 9 * time.Second, NoSpeech: true}, nil
+func (e noSpeechEngine) Transcribe(context.Context, string, transcribe.Options) (transcribe.Transcript, error) {
+	return transcribe.Transcript{Duration: 9 * time.Second, NoSpeech: true, NoSignal: e.noSignal, PeakDBFS: e.peak}, nil
 }
 
 func TestRecordingExt(t *testing.T) {
@@ -161,6 +176,7 @@ func TestTranscribeHandler_WebMSilenceEndToEnd(t *testing.T) {
 	code, resp := postFixture(t, "silence.webm")
 	require.Equal(t, http.StatusOK, code, resp.Error)
 	assert.True(t, resp.NoSpeech)
+	assert.True(t, resp.NoSignal)
 	assert.Empty(t, resp.Text)
 	assert.InDelta(t, 3000, resp.DurationMS, 100)
 }
@@ -183,6 +199,7 @@ func assertTestOneTwoThree(t *testing.T, body string) {
 	code, resp := postRecording(t, &Server{cfg: &config.Config{}}, body)
 	require.Equal(t, http.StatusOK, code, resp.Error)
 	assert.False(t, resp.NoSpeech)
+	assert.False(t, resp.NoSignal)
 	assert.Regexp(t, `(?i)^test (one|1), (two|2), (three|3)\.?$`, resp.Text)
 }
 

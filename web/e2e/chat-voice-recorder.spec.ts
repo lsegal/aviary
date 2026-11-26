@@ -120,3 +120,53 @@ test("requests raw capture so audio-interface input isn't processed", async ({
 		},
 	]);
 });
+
+test("records from the input chosen in the composer's input menu", async ({
+	page,
+}) => {
+	await page.addInitScript(() => {
+		const w = window as unknown as { __constraints: unknown[] };
+		w.__constraints = [];
+		const getUserMedia = navigator.mediaDevices.getUserMedia.bind(
+			navigator.mediaDevices,
+		);
+		navigator.mediaDevices.getUserMedia = (constraints) => {
+			w.__constraints.push(constraints);
+			return getUserMedia(constraints);
+		};
+	});
+	await page.route("**/api/transcribe", (route) =>
+		route.fulfill({ json: { text: "switched" } }),
+	);
+	const { composer, mic, input } = await openChat(page);
+	await mic.click();
+	const menu = composer.getByTestId("voice-device");
+	await expect(menu).toBeVisible();
+	const options = await menu
+		.locator("option")
+		.evaluateAll((els) => els.map((el) => (el as HTMLOptionElement).value));
+	expect(options.length).toBeGreaterThan(1);
+	const current = await menu.inputValue();
+	const other =
+		options.find((id) => id !== "default" && id !== current) ?? options[1];
+	await menu.selectOption(other);
+	// The recording restarts on the chosen input and still transcribes.
+	await expect(menu).toHaveValue(other);
+	await expect(composer.getByTestId("voice-recording")).toBeVisible();
+	await mic.click();
+	await expect(input).toHaveValue("switched");
+	const constraints = await page.evaluate(
+		() => (window as unknown as { __constraints: unknown[] }).__constraints,
+	);
+	expect(constraints.at(-1)).toEqual({
+		audio: {
+			echoCancellation: false,
+			noiseSuppression: false,
+			autoGainControl: false,
+			deviceId: { exact: other },
+		},
+	});
+	expect(
+		await page.evaluate(() => localStorage.getItem("aviary.voice.deviceId")),
+	).toBe(other);
+});

@@ -132,7 +132,9 @@ function levelMeter(
 		return {
 			sampleRate: audio.sampleRate,
 			read() {
-				analysers.forEach((analyser, i) => analyser.getFloatTimeDomainData(bufs[i]));
+				analysers.forEach((analyser, i) =>
+					analyser.getFloatTimeDomainData(bufs[i]),
+				);
 				const now = measureChannels(bufs);
 				now.forEach((l, i) => {
 					totals[i].peak = Math.max(totals[i].peak, l.peak);
@@ -352,8 +354,7 @@ export function useVoiceInput(options: {
 			}
 			// The server's measurement wins; the meter only decides when the
 			// server doesn't measure, and a missing meter never claims silence.
-			const silent =
-				result.noSignal ?? (peak !== null && isSilent(peak));
+			const silent = result.noSignal ?? (peak !== null && isSilent(peak));
 			error.value = silent ? silentMicMessage(label) : NO_WORDS_MESSAGE;
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);

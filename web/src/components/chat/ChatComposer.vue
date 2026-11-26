@@ -197,7 +197,8 @@ const micLevelPercent = computed(() => {
 // track reports, since the browser's default has no fixed deviceId.
 const currentDevice = computed(() => {
 	const list = voice.devices.value;
-	if (list.some((d) => d.id === voice.deviceId.value)) return voice.deviceId.value;
+	if (list.some((d) => d.id === voice.deviceId.value))
+		return voice.deviceId.value;
 	return (
 		list.find((d) => d.label === voice.deviceLabel.value && d.id !== "default")
 			?.id ??
