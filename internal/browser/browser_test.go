@@ -489,12 +489,9 @@ func TestSession_Detach(_ *testing.T) {
 	s.Detach()
 }
 
-func TestSession_TabID_NoTarget(_ *testing.T) {
-	s := makeTestSession()
-	// With no real Chrome connection the target will be nil; TabID must return "".
-	id := s.TabID()
-	// We accept either empty string or a non-empty string - just must not panic.
-	_ = id
+func TestSession_TabID_NoTarget(t *testing.T) {
+	// Without a chromedp target there is no tab to report.
+	assert.Empty(t, makeTestSession().TabID())
 }
 
 func TestSession_Run_CancelledContext(t *testing.T) {
