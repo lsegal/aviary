@@ -40,6 +40,9 @@
 			</div>
 		</template>
 		<template v-if="project || aggregate" #header-actions>
+			<!-- With a job open on a phone, the job's own actions keep the row
+				and the board's move behind "…" (#1347). -->
+			<HeaderOverflow :collapsed="jobOpen && !smUp" label="Board actions">
 			<button v-if="aggregate" type="button" data-testid="board-add-project" aria-label="Add project" title="Add project"
 				:class="HEADER_ADD_CLS" @click="openAdd">
 				<PlusIcon aria-hidden="true" class="h-5 w-5" />
@@ -73,6 +76,7 @@
 				:class="HEADER_ICON_CLS">
 				<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
 			</router-link>
+			</HeaderOverflow>
 		</template>
 		<div class="flex min-h-0 flex-1">
 			<div class="flex h-full min-w-0 flex-1 flex-col">
@@ -275,6 +279,7 @@ import StatChipRow, {
 	type StatChip,
 } from "../components/projects/StatChipRow.vue";
 import UpNextStrip from "../components/projects/UpNextStrip.vue";
+import HeaderOverflow from "../components/ui/HeaderOverflow.vue";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import {
 	JOBS_PAGE_SIZE,
@@ -699,6 +704,15 @@ function onWideChange(e: MediaQueryListEvent) {
 }
 onMounted(() => wideQuery.addEventListener("change", onWideChange));
 onUnmounted(() => wideQuery.removeEventListener("change", onWideChange));
+// Tailwind's sm breakpoint, where the board's header actions fit beside an
+// open job's (#1347).
+const smQuery = window.matchMedia("(min-width: 640px)");
+const smUp = ref(smQuery.matches);
+function onSmChange(e: MediaQueryListEvent) {
+	smUp.value = e.matches;
+}
+onMounted(() => smQuery.addEventListener("change", onSmChange));
+onUnmounted(() => smQuery.removeEventListener("change", onSmChange));
 const statsCompact = computed(() => statsChoice.value ?? !wide.value);
 
 const busyJob = ref("");

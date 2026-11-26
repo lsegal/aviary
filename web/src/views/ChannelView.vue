@@ -18,9 +18,13 @@
 			</p>
 		</template>
 		<template v-if="channel" #header-actions>
-			<AppSelect v-if="sessions.length > 1" v-model="selectedId" data-testid="channel-session-picker"
-				aria-label="Conversation" class="max-w-xs"
-				:options="sessions.map((s) => ({ value: s.id, label: sessionLabel(s) }))" />
+			<!-- The wrapper sizes the picker to its label and lets it shrink, so
+				the gear stays beside it (#1347). -->
+			<div v-if="sessions.length > 1" class="min-w-0 max-w-xs">
+				<AppSelect v-model="selectedId" data-testid="channel-session-picker"
+					aria-label="Conversation" :class="HEADER_SELECT_CLS"
+					:options="sessions.map((s) => ({ value: s.id, label: sessionLabel(s) }))" />
+			</div>
 			<router-link :to="channelSettingsPath(agent, channelName(channel))" data-testid="channel-settings-link"
 				aria-label="Channel settings" title="Channel settings" :class="HEADER_ICON_CLS">
 				<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
@@ -73,7 +77,11 @@ import {
 	channelWorkflows as channelWorkflowsOf,
 	isKnownChannelType,
 } from "../lib/channels";
-import { HEADER_ACTION_CLS, HEADER_ICON_CLS } from "../lib/headerActions";
+import {
+	HEADER_ACTION_CLS,
+	HEADER_ICON_CLS,
+	HEADER_SELECT_CLS,
+} from "../lib/headerActions";
 import { isWorkflow, useSettingsStore } from "../stores/settings";
 import ChatView from "./ChatView.vue";
 

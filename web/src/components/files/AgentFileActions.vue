@@ -2,20 +2,24 @@
 	<!-- The Files page's actions in the shared page header (#1147): Refresh,
 		Sync Templates and Save, then the preview toggle and a "..." menu that
 		renames or deletes the open file through the sidebar's dialogs. -->
-	<div data-testid="agent-file-bar" class="flex max-w-full flex-wrap items-center gap-2">
+	<div data-testid="agent-file-bar" class="flex min-w-0 max-w-full flex-nowrap items-center gap-2">
 		<transition name="save-indicator">
 			<div v-if="state.saveFlash" class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
 				<CheckCircleIcon aria-hidden="true" class="h-5 w-5" />
 				<span class="text-xs font-medium">Saved</span>
 			</div>
 		</transition>
-		<button type="button" :class="HEADER_ACTION_CLS" :disabled="state.loading" @click="settings.refreshAgentFiles(agent)">
+		<!-- On phones Refresh and Sync Templates show only their icons, so the
+			actions fit one row (#1347). -->
+		<button type="button" :class="HEADER_ACTION_CLS" :disabled="state.loading" :aria-label="refreshLabel"
+			:title="refreshLabel" @click="settings.refreshAgentFiles(agent)">
 			<ArrowPathIcon aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': state.loading }" />
-			{{ state.loading ? "Loading…" : "Refresh" }}
+			<span :class="HEADER_LABEL_CLS">{{ refreshLabel }}</span>
 		</button>
-		<button type="button" :class="HEADER_ACTION_CLS" :disabled="state.syncing" @click="settings.syncAgentTemplates(agent)">
+		<button type="button" :class="HEADER_ACTION_CLS" :disabled="state.syncing" :aria-label="syncLabel"
+			:title="syncLabel" @click="settings.syncAgentTemplates(agent)">
 			<DocumentDuplicateIcon aria-hidden="true" class="h-4 w-4" />
-			{{ state.syncing ? "Syncing…" : "Sync Templates" }}
+			<span :class="HEADER_LABEL_CLS">{{ syncLabel }}</span>
 		</button>
 		<button type="button" data-testid="agent-file-save" :class="HEADER_ACTION_CLS"
 			:disabled="!agent || !state.selectedFile || state.saving" @click="settings.saveAgentFile(agent)">
@@ -62,7 +66,11 @@ import {
 } from "radix-vue";
 import { computed, inject } from "vue";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
-import { HEADER_ACTION_CLS, HEADER_ICON_CLS } from "../../lib/headerActions";
+import {
+	HEADER_ACTION_CLS,
+	HEADER_ICON_CLS,
+	HEADER_LABEL_CLS,
+} from "../../lib/headerActions";
 import { settingsViewContextKey } from "../settings/context";
 import FilePreviewToggle from "./FilePreviewToggle.vue";
 
@@ -72,6 +80,12 @@ const settings = inject(settingsViewContextKey);
 const { open: openItemDialog } = useAgentItemDialogs();
 
 const state = computed(() => settings.getAgentFileState(props.agent));
+const refreshLabel = computed(() =>
+	state.value.loading ? "Loading…" : "Refresh",
+);
+const syncLabel = computed(() =>
+	state.value.syncing ? "Syncing…" : "Sync Templates",
+);
 const locked = computed(
 	() =>
 		!state.value.selectedFile ||
