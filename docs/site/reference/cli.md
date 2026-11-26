@@ -389,7 +389,7 @@ Manage Code Loop. Each subcommand calls the `project_*` tool of the same name wi
 ```
 aviary project status
 aviary project add <target> [--agent NAME] [--runtime] [--mode watch|manual]
-aviary project remove <target> [--runtime]
+aviary project remove <target> [--runtime] [--delete_data]
 aviary project update <target> --filter "label:bug -label:wip" | --reset_filter true | --mode watch|manual
 aviary project filter check <target> --filter FILTER
 aviary project refresh [target]
@@ -402,6 +402,8 @@ aviary project unblock [number] [--target T]
 aviary project issue comment <number> --text TEXT [--repository R]
 aviary project issue create --text TEXT [--repository R] [--model M]
 ```
+
+`project remove --delete_data` also deletes the project's job records, job transcripts and the clones no job still uses, once its jobs have stopped; without it they stay on disk.
 
 ---
 
