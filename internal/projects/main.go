@@ -2337,11 +2337,20 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 		defer func() { r.recordUsage(issue, spec, recorder, err) }()
 		defer recorder.Flush()
 	}
-	cmd.Stdout, cmd.Stderr = agentOutput, agentOutput
+	// The agent's output is drained apart from the writers above, which can
+	// stall: every job log write refreshes the Code Loop snapshot, and that
+	// reads CLI quotas by running a CLI. A stall as the agent exits would
+	// otherwise leave its final result event in the pipe for WaitDelay to
+	// discard, failing a run that finished (#1420).
+	drain := process.NewOutputDrain(agentOutput)
+	cmd.Stdout, cmd.Stderr = drain, drain
 	runErr := process.Start(cmd)
 	if runErr == nil {
 		r.Active.started(active, cmd)
 		runErr = process.Wait(cmd)
+	}
+	if err := drain.Close(); runErr == nil && err != nil {
+		runErr = err
 	}
 	if decoder != nil {
 		if err := decoder.Flush(); runErr == nil && err != nil {
