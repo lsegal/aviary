@@ -100,31 +100,45 @@ func writeTaskTable(w io.Writer, tasks []domain.ScheduledTask) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "TASK\tTRIGGER\tNEXT RUN\tLAST RESULT")
 	for _, t := range tasks {
-		trigger := t.Description
-		if trigger == "" && t.Watch != "" {
-			trigger = "watch " + t.Watch
-		}
-		if t.Schedule != "" && t.TriggerType == domain.TriggerTypeCron {
-			trigger = strings.Replace(trigger, "cron", "cron "+t.Schedule, 1)
-		}
-		next := "-"
-		if t.NextRun != nil {
-			next = t.NextRun.Local().Format("2006-01-02 15:04")
-		}
-		last := "-"
-		if n := len(t.History); n > 0 {
-			run := t.History[n-1]
-			last = fmt.Sprintf("%s %s", run.Status, run.FireTime.Local().Format("2006-01-02 15:04"))
-		}
-		if t.Project != "" {
-			trigger = t.Project + ": " + trigger
-		}
-		if !t.Enabled {
-			next = "disabled"
-		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", t.ID, trigger, next, last)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", t.ID, taskTrigger(t), taskNextRun(t), taskLastResult(t))
 	}
 	_ = tw.Flush()
+}
+
+// taskTrigger describes what fires a task, prefixed by its project.
+func taskTrigger(t domain.ScheduledTask) string {
+	trigger := t.Description
+	if trigger == "" && t.Watch != "" {
+		trigger = "watch " + t.Watch
+	}
+	if t.Schedule != "" && t.TriggerType == domain.TriggerTypeCron {
+		trigger = strings.Replace(trigger, "cron", "cron "+t.Schedule, 1)
+	}
+	if t.Project != "" {
+		trigger = t.Project + ": " + trigger
+	}
+	return trigger
+}
+
+// taskNextRun is a task's next fire in local time, or disabled.
+func taskNextRun(t domain.ScheduledTask) string {
+	if !t.Enabled {
+		return "disabled"
+	}
+	if t.NextRun == nil {
+		return "-"
+	}
+	return t.NextRun.Local().Format("2006-01-02 15:04")
+}
+
+// taskLastResult is a task's latest run status and fire time.
+func taskLastResult(t domain.ScheduledTask) string {
+	n := len(t.History)
+	if n == 0 {
+		return "-"
+	}
+	run := t.History[n-1]
+	return fmt.Sprintf("%s %s", run.Status, run.FireTime.Local().Format("2006-01-02 15:04"))
 }
 
 var taskAddCmd = &cobra.Command{

@@ -222,13 +222,7 @@ var updateSkills = func(ctx context.Context, version string) error {
 // live by forgo's hot reload where it can, and otherwise by restarting the
 // server, which the dev supervisor rebuilds from the checkout.
 func runSourceUpgrade(check update.CheckResult) error {
-	dir := ""
-	if check.Git != nil {
-		dir = check.Git.Dir
-	}
-	if dir == "" {
-		dir = update.SourceCheckout()
-	}
+	dir := sourceUpgradeDir(check)
 	srv, running := findRunningServer()
 	sameCheckout := running && srv.Problem == "" && srv.InstallType == update.InstallSource && srv.Git != nil && sameDir(srv.Git.Dir, dir)
 	hotDir, since := "", 0
@@ -249,13 +243,7 @@ func runSourceUpgrade(check update.CheckResult) error {
 		fmt.Println(update.GitPullMessage(res, update.DevReloadPlan{GoChanged: true, RestartReason: "the server is not running"}))
 	}
 	if update.IsDevBuild() {
-		if msg, stale := update.BinaryStaleness(res.Head); msg != "" {
-			fmt.Println(msg)
-			if stale {
-				fmt.Printf("Rebuild it with: %s\n", update.RebuildCommand(dir))
-			}
-		}
-		fmt.Println(releaseHint)
+		printDevBuildStaleness(res.Head, dir)
 	}
 	if err != nil {
 		return err
@@ -268,6 +256,27 @@ func runSourceUpgrade(check update.CheckResult) error {
 	}
 	fmt.Println(otherServerNote(srv.CheckResult))
 	return nil
+}
+
+// sourceUpgradeDir is the checkout to pull: the one the check found, else
+// the default source checkout.
+func sourceUpgradeDir(check update.CheckResult) string {
+	if check.Git != nil && check.Git.Dir != "" {
+		return check.Git.Dir
+	}
+	return update.SourceCheckout()
+}
+
+// printDevBuildStaleness tells a dev build how far it lags the pulled head
+// and how to rebuild it.
+func printDevBuildStaleness(head, dir string) {
+	if msg, stale := update.BinaryStaleness(head); msg != "" {
+		fmt.Println(msg)
+		if stale {
+			fmt.Printf("Rebuild it with: %s\n", update.RebuildCommand(dir))
+		}
+	}
+	fmt.Println(releaseHint)
 }
 
 // applyPulledCode makes the running dev server, from the checkout just
