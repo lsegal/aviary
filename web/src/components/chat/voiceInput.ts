@@ -1,4 +1,13 @@
 import { computed, onBeforeUnmount, ref } from "vue";
+import {
+	analyserSize,
+	type ChannelLevel,
+	dBFS,
+	isSilent,
+	measureChannels,
+	peakAcross,
+	SILENT_LEVEL,
+} from "./voiceLevel";
 
 export type VoiceState = "idle" | "recording" | "transcribing";
 
@@ -31,12 +40,11 @@ function startError(e: unknown): string {
 	return `Couldn't start recording: ${e instanceof Error ? e.message : String(e)}`;
 }
 
-/**
- * The input level, 0..1 of full scale, below which the mic counts as silent
- * (-60 dBFS, the server's floor too). Quiet speech from a low-gain audio
- * interface can peak around -50 dBFS.
- */
-const SILENT_LEVEL = 0.001;
+/** How often, in seconds, the level meter is read. */
+const METER_INTERVAL = 0.1;
+
+/** Where the chosen input device is remembered. */
+const DEVICE_KEY = "aviary.voice.deviceId";
 
 /**
  * Capture constraints for transcription. Echo cancellation, noise
@@ -49,25 +57,52 @@ export const CAPTURE_CONSTRAINTS: MediaTrackConstraints = {
 	autoGainControl: false,
 };
 
-/** Shown when the server finds no speech in a recording. */
-export const NO_SPEECH_MESSAGE =
-	"No speech detected. Check that your microphone is on, unmuted, and selected as this browser's input, then try again.";
+/** Capture constraints for an input device, or the browser's default. */
+export function captureConstraints(deviceId: string): MediaTrackConstraints {
+	return deviceId
+		? { ...CAPTURE_CONSTRAINTS, deviceId: { exact: deviceId } }
+		: CAPTURE_CONSTRAINTS;
+}
 
-/** Shown instead when the level meter never picked up any sound. */
-export const SILENT_MIC_MESSAGE =
-	"No speech detected: the microphone picked up no sound. Check that it is unmuted and selected as this browser's input (and that the browser may use it in your system's privacy settings), then try again.";
+/** Shown when the recording had sound but no words were recognized. */
+export const NO_WORDS_MESSAGE =
+	"Couldn't make out any words. Try speaking closer or longer.";
+
+/**
+ * Shown instead when the recording's peak across every channel was near
+ * zero, naming the input that was recorded since the browser may not have
+ * used the one its settings show.
+ */
+export function silentMicMessage(label: string): string {
+	const input = label ? `"${label}"` : "the microphone";
+	return `No speech detected: ${input} picked up no sound. Check that it is unmuted and is the input you meant to use (pick another from the input menu while recording), and that the browser may use it in your system's privacy settings, then try again.`;
+}
+
+/** The server's verdict on a recording. */
+export interface TranscribeResult {
+	text: string;
+	/**
+	 * Whether the server measured the recording as silent across every
+	 * channel, or undefined when it doesn't measure levels.
+	 */
+	noSignal?: boolean;
+}
 
 /**
  * Measures a stream's input level with one AnalyserNode per channel and
  * reports the loudest, so a mic on one input of a stereo audio interface
- * isn't halved by downmixing. Returns null when the browser can't analyse
- * the stream; recording still works without it.
+ * isn't halved by downmixing. Each window covers a whole poll interval at
+ * the context's rate, and every channel's peak and RMS are kept for the
+ * diagnostics. Returns null when the browser can't analyse the stream;
+ * recording still works without it.
  */
 function levelMeter(
 	stream: MediaStream,
 	channelCount: number,
 ): {
+	sampleRate: number;
 	read: () => number;
+	levels: () => ChannelLevel[];
 	close: () => void;
 } | null {
 	const Ctx =
@@ -81,25 +116,36 @@ function levelMeter(
 		const source = ctx.createMediaStreamSource(stream);
 		const splitter = ctx.createChannelSplitter(channelCount);
 		source.connect(splitter);
+		const size = analyserSize(ctx.sampleRate, METER_INTERVAL);
 		const analysers = Array.from({ length: channelCount }, (_, i) => {
 			const analyser = (ctx as AudioContext).createAnalyser();
-			analyser.fftSize = 1024;
+			analyser.fftSize = size;
 			splitter.connect(analyser, i);
 			return analyser;
 		});
 		// Started after an await, the context can begin suspended and read
 		// nothing but zeros.
 		void ctx.resume().catch(() => {});
-		const buf = new Float32Array(1024);
+		const bufs = analysers.map(() => new Float32Array(size));
+		const totals = analysers.map(() => ({ peak: 0, sum: 0, n: 0 }));
 		const audio = ctx;
 		return {
+			sampleRate: audio.sampleRate,
 			read() {
-				let peak = 0;
-				for (const analyser of analysers) {
-					analyser.getFloatTimeDomainData(buf);
-					for (const v of buf) peak = Math.max(peak, Math.abs(v));
-				}
-				return Math.min(1, peak);
+				analysers.forEach((analyser, i) => analyser.getFloatTimeDomainData(bufs[i]));
+				const now = measureChannels(bufs);
+				now.forEach((l, i) => {
+					totals[i].peak = Math.max(totals[i].peak, l.peak);
+					totals[i].sum += l.rms * l.rms;
+					totals[i].n++;
+				});
+				return peakAcross(now);
+			},
+			levels() {
+				return totals.map((t) => ({
+					peak: t.peak,
+					rms: t.n ? Math.sqrt(t.sum / t.n) : 0,
+				}));
 			},
 			close() {
 				void audio.close().catch(() => {});
@@ -116,7 +162,7 @@ function levelMeter(
  * The transcript goes to onTranscript; it is never sent on its own.
  */
 export function useVoiceInput(options: {
-	transcribe: (audio: Blob) => Promise<string>;
+	transcribe: (audio: Blob) => Promise<TranscribeResult>;
 	onTranscript: (text: string) => void;
 }) {
 	const state = ref<VoiceState>("idle");
@@ -127,6 +173,12 @@ export function useVoiceInput(options: {
 	const level = ref<number | null>(null);
 	/** Why the microphone may not be capturing sound, shown while recording. */
 	const micWarning = ref("");
+	/** The audio inputs to choose from, once the browser lists them. */
+	const devices = ref<{ id: string; label: string }[]>([]);
+	/** The chosen input's deviceId, or "" for the browser's default. */
+	const deviceId = ref(localStorage.getItem(DEVICE_KEY) ?? "");
+	/** The input being recorded, as the browser names it. */
+	const deviceLabel = ref("");
 
 	let recorder: MediaRecorder | null = null;
 	let stream: MediaStream | null = null;
@@ -163,14 +215,25 @@ export function useVoiceInput(options: {
 		if (state.value !== "idle") return;
 		try {
 			stream = await navigator.mediaDevices.getUserMedia({
-				audio: CAPTURE_CONSTRAINTS,
+				audio: captureConstraints(deviceId.value),
 			});
 		} catch (e) {
+			// A remembered input that is gone falls back to the default.
+			if (
+				deviceId.value &&
+				e instanceof DOMException &&
+				(e.name === "OverconstrainedError" || e.name === "NotFoundError")
+			) {
+				chooseDevice("");
+				return start();
+			}
 			error.value = startError(e);
 			return;
 		}
 		const track = stream.getAudioTracks?.()[0];
 		const settings = track?.getSettings?.() ?? {};
+		deviceLabel.value = track?.label ?? "";
+		void listDevices();
 		console.debug("voice: capture settings", {
 			label: track?.label,
 			deviceId: settings.deviceId,
@@ -199,6 +262,11 @@ export function useVoiceInput(options: {
 			update();
 		}
 		meter = levelMeter(stream, Math.max(1, settings.channelCount ?? 2));
+		console.debug("voice: level meter", {
+			contextSampleRate: meter?.sampleRate,
+			trackSampleRate: settings.sampleRate,
+			channels: Math.max(1, settings.channelCount ?? 2),
+		});
 		peakLevel = 0;
 		level.value = meter ? 0 : null;
 		const mimeType = recordingMimeType();
@@ -215,13 +283,14 @@ export function useVoiceInput(options: {
 		active.onstop = () => {
 			const type = active.mimeType || mimeType || "audio/webm";
 			const durationMs = Date.now() - startedAt;
-			const heardSound = !meter || peakLevel >= SILENT_LEVEL;
+			const levels = meter?.levels() ?? null;
+			const label = deviceLabel.value;
 			release();
 			if (cancelled) {
 				state.value = "idle";
 				return;
 			}
-			void finish(new Blob(chunks, { type }), durationMs, heardSound);
+			void finish(new Blob(chunks, { type }), durationMs, levels, label);
 		};
 		active.start();
 		const startedAt = Date.now();
@@ -231,6 +300,15 @@ export function useVoiceInput(options: {
 			if (meter) {
 				const now = meter.read();
 				peakLevel = Math.max(peakLevel, now);
+				// A track that has delivered nothing but zeros for a while is
+				// almost always the wrong input, not a quiet one.
+				if (
+					!micWarning.value &&
+					peakLevel === 0 &&
+					Date.now() - startedAt >= 1500
+				) {
+					micWarning.value = `${deviceLabel.value ? `"${deviceLabel.value}"` : "This input"} is sending silence. Pick another input if it's the wrong one.`;
+				}
 				// Hold peaks briefly so the meter doesn't drop to nothing
 				// between syllables.
 				level.value = Math.max(now, (level.value ?? 0) * 0.8);
@@ -239,14 +317,24 @@ export function useVoiceInput(options: {
 		state.value = "recording";
 	}
 
-	async function finish(audio: Blob, durationMs: number, heardSound: boolean) {
+	async function finish(
+		audio: Blob,
+		durationMs: number,
+		levels: ChannelLevel[] | null,
+		label: string,
+	) {
+		const peak = levels ? peakAcross(levels) : null;
 		console.debug("voice: recorded", {
 			type: audio.type,
 			bytes: audio.size,
 			durationMs,
-			peakLevel,
-			silentLevel: SILENT_LEVEL,
-			heardSound,
+			device: label,
+			channels: levels?.map((l) => ({
+				peakDBFS: dBFS(l.peak),
+				rmsDBFS: dBFS(l.rms),
+			})),
+			peakDBFS: peak === null ? null : dBFS(peak),
+			silentDBFS: dBFS(SILENT_LEVEL),
 		});
 		if (audio.size === 0) {
 			state.value = "idle";
@@ -256,14 +344,60 @@ export function useVoiceInput(options: {
 		}
 		state.value = "transcribing";
 		try {
-			const text = (await options.transcribe(audio)).trim();
-			if (text) options.onTranscript(text);
-			else error.value = heardSound ? NO_SPEECH_MESSAGE : SILENT_MIC_MESSAGE;
+			const result = await options.transcribe(audio);
+			const text = result.text.trim();
+			if (text) {
+				options.onTranscript(text);
+				return;
+			}
+			// The server's measurement wins; the meter only decides when the
+			// server doesn't measure, and a missing meter never claims silence.
+			const silent =
+				result.noSignal ?? (peak !== null && isSilent(peak));
+			error.value = silent ? silentMicMessage(label) : NO_WORDS_MESSAGE;
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
 		} finally {
 			state.value = "idle";
 		}
+	}
+
+	async function listDevices() {
+		try {
+			const all = await navigator.mediaDevices.enumerateDevices?.();
+			devices.value = (all ?? [])
+				.filter((d) => d.kind === "audioinput" && d.deviceId)
+				.map((d, i) => ({
+					id: d.deviceId,
+					label: d.label || `Microphone ${i + 1}`,
+				}));
+		} catch {
+			devices.value = [];
+		}
+	}
+
+	function chooseDevice(id: string) {
+		deviceId.value = id;
+		if (id) localStorage.setItem(DEVICE_KEY, id);
+		else localStorage.removeItem(DEVICE_KEY);
+	}
+
+	/** Records from another input, restarting a recording in progress. */
+	async function switchDevice(id: string) {
+		chooseDevice(id);
+		if (state.value !== "recording") return;
+		const done = new Promise<void>((resolve) => {
+			const active = recorder;
+			if (!active) return resolve();
+			const onstop = active.onstop;
+			active.onstop = (e) => {
+				onstop?.call(active, e);
+				resolve();
+			};
+		});
+		cancel();
+		await done;
+		await start();
 	}
 
 	function stop() {
@@ -299,6 +433,10 @@ export function useVoiceInput(options: {
 		unsupportedReason,
 		level,
 		micWarning,
+		devices,
+		deviceId,
+		deviceLabel,
+		switchDevice,
 		toggle,
 		stop,
 		cancel,
@@ -310,6 +448,8 @@ interface TranscribeResponse {
 	text?: string;
 	duration_ms?: number;
 	no_speech?: boolean;
+	no_signal?: boolean;
+	peak_dbfs?: number;
 	error?: string;
 	missing?: string[];
 	install?: string;
@@ -319,7 +459,7 @@ interface TranscribeResponse {
 export async function transcribeRecording(
 	audio: Blob,
 	token: string | null,
-): Promise<string> {
+): Promise<TranscribeResult> {
 	const headers: Record<string, string> = {
 		"Content-Type": audio.type || "audio/webm",
 	};
@@ -346,9 +486,15 @@ export async function transcribeRecording(
 		console.debug("voice: transcribed", {
 			durationMs: data.duration_ms,
 			noSpeech: data.no_speech ?? false,
+			noSignal: data.no_signal ?? false,
+			peakDBFS: data.peak_dbfs,
 			text: data.text ?? "",
 		});
-		return data.no_speech ? "" : (data.text ?? "");
+		return {
+			text: data.no_speech ? "" : (data.text ?? ""),
+			noSignal:
+				data.peak_dbfs === undefined ? undefined : (data.no_signal ?? false),
+		};
 	}
 	if (data.missing?.length) {
 		throw new Error(

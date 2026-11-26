@@ -71,11 +71,13 @@ func (l *Local) Transcribe(ctx context.Context, audioPath string, opts Options) 
 	}
 	slog.Debug("transcribe: converted audio", "component", "transcribe", "input", filepath.Base(audioPath), "input_bytes", inputSize,
 		"duration", level.Duration, "channels", level.Channels, "channel", level.Channel,
-		"peak_dbfs", roundDB(dBFS(level.Peak)), "rms_dbfs", roundDB(dBFS(level.RMS)),
+		"peak_dbfs", roundDB(dBFS(level.Peak)), "rms_dbfs", roundDB(dBFS(level.RMS)), "max_peak_dbfs", roundDB(dBFS(level.MaxPeak)),
+		"channel_peaks_dbfs", dBFSList(level.ChannelPeaks), "channel_rms_dbfs", dBFSList(level.ChannelRMS),
 		"silence_peak_dbfs", roundDB(dBFS(silencePeak)), "gain_db", roundDB(dBFS(level.Gain)))
+	peak := roundDB(dBFS(level.MaxPeak))
 	if reason := level.silent(); reason != "" {
 		slog.Debug("transcribe: no speech detected", "component", "transcribe", "reason", reason, "duration", level.Duration)
-		return Transcript{Duration: level.Duration, NoSpeech: true}, nil
+		return Transcript{Duration: level.Duration, NoSpeech: true, NoSignal: level.noSignal(), PeakDBFS: &peak}, nil
 	}
 	prefix := filepath.Join(dir, "transcript")
 	if out, err := run(ctx, st.Whisper.Path, whisperArgs(st.Model.Path, wav, prefix, opts.Language)...); err != nil {
@@ -90,12 +92,21 @@ func (l *Local) Transcribe(ctx context.Context, audioPath string, opts Options) 
 		return Transcript{}, err
 	}
 	t.Duration = level.Duration
+	t.PeakDBFS = &peak
 	slog.Debug("transcribe: whisper output", "component", "transcribe", "text", t.Text, "language", t.Language)
 	if isHallucination(t.Text) {
 		slog.Debug("transcribe: no speech detected", "component", "transcribe", "reason", "whisper returned a known silence hallucination", "text", t.Text)
-		return Transcript{Language: t.Language, Duration: t.Duration, NoSpeech: true}, nil
+		return Transcript{Language: t.Language, Duration: t.Duration, NoSpeech: true, PeakDBFS: &peak}, nil
 	}
 	return t, nil
+}
+
+func dBFSList(levels []float64) []float64 {
+	out := make([]float64, len(levels))
+	for i, l := range levels {
+		out[i] = roundDB(dBFS(l))
+	}
+	return out
 }
 
 func roundDB(db float64) float64 {

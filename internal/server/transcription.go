@@ -58,6 +58,8 @@ type transcribeResponse struct {
 	Language   string   `json:"language,omitempty"`
 	DurationMS int64    `json:"duration_ms,omitempty"`
 	NoSpeech   bool     `json:"no_speech,omitempty"`
+	NoSignal   bool     `json:"no_signal,omitempty"`
+	PeakDBFS   *float64 `json:"peak_dbfs,omitempty"`
 	Error      string   `json:"error,omitempty"`
 	Missing    []string `json:"missing,omitempty"`
 	Install    string   `json:"install,omitempty"`
@@ -122,8 +124,8 @@ func (s *Server) transcribeHandler(w http.ResponseWriter, r *http.Request) {
 		writeTranscriptionJSON(w, http.StatusInternalServerError, resp)
 		return
 	}
-	slog.Debug("server: transcribed recording", "component", "transcribe", "bytes", n, "duration", t.Duration, "no_speech", t.NoSpeech, "text", t.Text)
-	writeTranscriptionJSON(w, http.StatusOK, transcribeResponse{Text: t.Text, Language: t.Language, DurationMS: t.Duration.Milliseconds(), NoSpeech: t.NoSpeech})
+	slog.Debug("server: transcribed recording", "component", "transcribe", "bytes", n, "duration", t.Duration, "no_speech", t.NoSpeech, "no_signal", t.NoSignal, "peak_dbfs", t.PeakDBFS, "text", t.Text)
+	writeTranscriptionJSON(w, http.StatusOK, transcribeResponse{Text: t.Text, Language: t.Language, DurationMS: t.Duration.Milliseconds(), NoSpeech: t.NoSpeech, NoSignal: t.NoSignal, PeakDBFS: t.PeakDBFS})
 }
 
 // recordingExt picks the file extension ffmpeg should see for a recording,

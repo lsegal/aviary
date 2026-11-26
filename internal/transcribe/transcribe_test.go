@@ -94,6 +94,12 @@ func readWAV(t *testing.T, path string) []float64 {
 	return channels[0]
 }
 
+// peakDBFS is the PeakDBFS Local reports for a peak amplitude.
+func peakDBFS(amplitude float64) *float64 {
+	db := roundDB(dBFS(amplitude))
+	return &db
+}
+
 // tone is d of a 440 Hz sine at amplitude (0..1 of full scale).
 func tone(d time.Duration, amplitude float64) []int16 {
 	out := make([]int16, int(d*16000/time.Second))
@@ -134,7 +140,7 @@ func TestLocal_ConvertsWithFFmpegThenRunsWhisper(t *testing.T) {
 			l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, [][]int16{tone(12*time.Second, 0.5)}, helloWorldJSON)}
 			got, err := l.Transcribe(context.Background(), "/in/"+input, Options{Language: "de"})
 			require.NoError(t, err)
-			assert.Equal(t, Transcript{Text: "Hello world.", Language: "en", Duration: 12 * time.Second}, got)
+			assert.Equal(t, Transcript{Text: "Hello world.", Language: "en", Duration: 12 * time.Second, PeakDBFS: peakDBFS(0.5)}, got)
 
 			require.Len(t, calls, 2)
 			ffmpeg, whisper := calls[0], calls[1]
@@ -151,18 +157,24 @@ func TestLocal_ConvertsWithFFmpegThenRunsWhisper(t *testing.T) {
 }
 
 func TestLocal_SilentOrShortAudioIsNoSpeech(t *testing.T) {
-	for name, samples := range map[string][]int16{
-		"silent":     make([]int16, 9*16000),
-		"faint hiss": tone(9*time.Second, 0.0008),
-		"too short":  tone(300*time.Millisecond, 0.5),
-		"empty":      nil,
+	for name, tc := range map[string]struct {
+		samples  []int16
+		noSignal bool
+	}{
+		"silent":     {make([]int16, 9*16000), true},
+		"faint hiss": {tone(9*time.Second, 0.0008), true},
+		"too short":  {tone(300*time.Millisecond, 0.5), false},
+		"empty":      {nil, true},
 	} {
+		samples := tc.samples
 		t.Run(name, func(t *testing.T) {
 			var calls [][]string
 			l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, [][]int16{samples}, `{"transcription":[{"text":" you"}]}`)}
 			got, err := l.Transcribe(context.Background(), "/in/rec.webm", Options{})
 			require.NoError(t, err)
 			assert.True(t, got.NoSpeech)
+			assert.Equal(t, tc.noSignal, got.NoSignal, "only a near-zero peak is no signal")
+			require.NotNil(t, got.PeakDBFS)
 			assert.Empty(t, got.Text)
 			require.Len(t, calls, 1, "whisper-cli should not run on silence")
 		})
@@ -177,7 +189,8 @@ func TestLocal_WhisperSilenceHallucinationIsNoSpeech(t *testing.T) {
 			l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, [][]int16{tone(9*time.Second, 0.3)}, out)}
 			got, err := l.Transcribe(context.Background(), "/in/rec.webm", Options{})
 			require.NoError(t, err)
-			assert.Equal(t, Transcript{Language: "en", Duration: 9 * time.Second, NoSpeech: true}, got)
+			// Sound with no recognizable words is not a silent microphone.
+			assert.Equal(t, Transcript{Language: "en", Duration: 9 * time.Second, NoSpeech: true, PeakDBFS: peakDBFS(0.3)}, got)
 		})
 	}
 }
@@ -188,7 +201,7 @@ func TestLocal_KeepsRealSpeechAroundNonSpeechMarkers(t *testing.T) {
 	l := &Local{Model: "base.en", Resolve: readyStatus, run: fakeTools(t, &calls, [][]int16{tone(4*time.Second, 0.3)}, out)}
 	got, err := l.Transcribe(context.Background(), "/in/rec.webm", Options{})
 	require.NoError(t, err)
-	assert.Equal(t, Transcript{Text: "Thank you, see you soon.", Language: "en", Duration: 4 * time.Second}, got)
+	assert.Equal(t, Transcript{Text: "Thank you, see you soon.", Language: "en", Duration: 4 * time.Second, PeakDBFS: peakDBFS(0.3)}, got)
 }
 
 func TestLocal_TranscribesStereoWithSpeechOnOneChannel(t *testing.T) {
@@ -206,6 +219,8 @@ func TestLocal_TranscribesStereoWithSpeechOnOneChannel(t *testing.T) {
 			got, err := l.Transcribe(context.Background(), "/in/rec.webm", Options{})
 			require.NoError(t, err)
 			assert.Equal(t, "Hello world.", got.Text)
+			assert.False(t, got.NoSignal)
+			assert.Equal(t, peakDBFS(0.4), got.PeakDBFS, "the peak is measured across every channel")
 			require.Len(t, calls, 2)
 			peak, _ := measure(heard)
 			assert.InDelta(t, speechPeak, peak, 0.01, "whisper should hear the speech channel at full level")
@@ -257,6 +272,9 @@ func TestPrepareSpeech(t *testing.T) {
 	assert.InDelta(t, 0.5, level.Peak, 0.01)
 	assert.InDelta(t, 0.5/math.Sqrt2, level.RMS, 0.01)
 	assert.InDelta(t, speechPeak/0.5, level.Gain, 0.01)
+	assert.InDelta(t, 0.5, level.MaxPeak, 0.01)
+	assert.InDeltaSlice(t, []float64{0.05, 0.5}, level.ChannelPeaks, 0.01)
+	assert.InDeltaSlice(t, []float64{0.05 / math.Sqrt2, 0.5 / math.Sqrt2}, level.ChannelRMS, 0.01)
 	assert.Len(t, readWAV(t, out), 2*16000)
 
 	require.NoError(t, os.WriteFile(in, []byte("not audio"), 0o600))
@@ -271,6 +289,7 @@ func TestPrepareSpeech_SilenceWritesNothing(t *testing.T) {
 	level, err := prepareSpeech(in, out)
 	require.NoError(t, err)
 	assert.Equal(t, "recording is silent", level.silent())
+	assert.True(t, level.noSignal())
 	assert.NoFileExists(t, out)
 }
 

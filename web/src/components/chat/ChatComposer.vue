@@ -43,6 +43,12 @@
 				<span class="block h-full rounded-full bg-green-500 transition-[width] duration-100"
 					:style="{ width: `${micLevelPercent}%` }" />
 			</span>
+			<select v-if="voice.devices.value.length" data-testid="voice-device" aria-label="Microphone input"
+				title="Microphone input" :value="currentDevice"
+				class="max-w-40 truncate rounded border border-gray-200 bg-transparent px-1 py-0.5 text-xs dark:border-gray-700"
+				@change="voice.switchDevice(($event.target as HTMLSelectElement).value)">
+				<option v-for="d in voice.devices.value" :key="d.id" :value="d.id">{{ d.label }}</option>
+			</select>
 			<span v-if="voice.micWarning.value" data-testid="voice-mic-warning" role="alert"
 				class="text-amber-700 dark:text-amber-400">{{ voice.micWarning.value }}</span>
 			<button type="button"
@@ -185,6 +191,18 @@ const micLevelPercent = computed(() => {
 	return Math.max(
 		0,
 		Math.min(100, Math.round(100 + (100 / 60) * 20 * Math.log10(level))),
+	);
+});
+// The device being recorded: the chosen one, else the one whose name the
+// track reports, since the browser's default has no fixed deviceId.
+const currentDevice = computed(() => {
+	const list = voice.devices.value;
+	if (list.some((d) => d.id === voice.deviceId.value)) return voice.deviceId.value;
+	return (
+		list.find((d) => d.label === voice.deviceLabel.value && d.id !== "default")
+			?.id ??
+		list.find((d) => d.label === voice.deviceLabel.value)?.id ??
+		""
 	);
 });
 const micUnavailable = computed(() => voice.unsupportedReason.value !== "");
