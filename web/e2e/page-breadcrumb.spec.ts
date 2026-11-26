@@ -11,7 +11,7 @@ import { expectSettingsHeader } from "./helpers/settingsHeader";
 const LONG_PROJECT = "lsegal/a-repository-with-a-very-long-name-indeed";
 
 /** Mocks agent "Aviary" with channel "signal", a task and two projects. */
-async function mockAviary(page: Page, sessions: unknown[] = []) {
+async function mockAviary(page: Page, sessions: object[] = []) {
 	await setAuthToken(page);
 	await mockMCP(page, {
 		agent_list: [{ id: "Aviary", name: "Aviary", model: "x/y", state: "idle" }],
@@ -364,11 +364,13 @@ test("the rail marks the open chat without looking unread", async ({
 	// dot on the Chats icon or a bold flyout entry, which read as unread.
 	await mockAviary(page, [
 		{ id: "sess_main", agent_id: "Aviary", name: "main", created_at: "" },
-		{ id: "be-nice", agent_id: "Aviary", name: "be-nice", created_at: "" },
+		{ id: "sess_benice", agent_id: "Aviary", name: "be-nice", created_at: "" },
 	]);
-	await page.goto("/agents/Aviary/chat/be-nice");
+	await page.goto("/agents/Aviary/chat/sess_benice");
 	await page.getByTestId("sidebar-collapse").click();
-	const chats = page.getByTestId("sidebar-rail").getByTestId("sidebar-rail-chat");
+	const chats = page
+		.getByTestId("sidebar-rail")
+		.getByTestId("sidebar-rail-chat");
 	await expect(chats).toHaveAttribute("data-active-child", "true");
 	await expect(chats.getByTestId("sidebar-rail-dot")).toHaveCount(0);
 	const marker = await chats
