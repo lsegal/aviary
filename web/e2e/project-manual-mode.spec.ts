@@ -10,16 +10,24 @@ const PROJECTS = ["lsegal/aviary", "lsegal/zvidlib"];
 
 type Calls = Record<string, Record<string, unknown>[]>;
 
-async function setup(page: Page, manual: string[] = []) {
+async function setup(
+	page: Page,
+	manual: string[] = [],
+	defaultMode: "watch" | "manual" = "watch",
+) {
 	await setAuthToken(page);
 	const calls: Calls = {};
 	const record = (tool: string, args?: Record<string, unknown>) => {
 		calls[tool] ??= [];
 		calls[tool].push(args ?? {});
 	};
-	const modes: Record<string, string> = Object.fromEntries(
-		PROJECTS.map((p) => [p, manual.includes(p) ? "manual" : "watch"]),
+	// Projects named in manual carry their own manual override; the rest
+	// follow defaultMode, the global one (#1371).
+	const overrides: Record<string, string> = Object.fromEntries(
+		manual.map((p) => [p, "manual"]),
 	);
+	const modeOf = (p: string) => overrides[p] ?? defaultMode;
+	const modes = () => Object.fromEntries(PROJECTS.map((p) => [p, modeOf(p)]));
 	await mockMCP(page, {
 		agent_list: [],
 		config_get: {
@@ -36,9 +44,13 @@ async function setup(page: Page, manual: string[] = []) {
 			running: true,
 			targets: PROJECTS,
 			issue_counts: Object.fromEntries(
-				PROJECTS.filter((p) => modes[p] === "watch").map((p) => [p, 4]),
+				PROJECTS.filter((p) => modeOf(p) === "watch").map((p) => [p, 4]),
 			),
-			modes,
+			modes: modes(),
+			mode_sources: Object.fromEntries(
+				PROJECTS.map((p) => [p, overrides[p] ? "project" : "global"]),
+			),
+			default_mode: defaultMode,
 			jobs: {},
 			states: {},
 			delivery: "browser",
@@ -57,8 +69,9 @@ async function setup(page: Page, manual: string[] = []) {
 		project_update: (args?: Record<string, unknown>) => {
 			record("project_update", args);
 			const target = String(args?.target);
-			modes[target] = String(args?.mode);
-			return { target, mode: modes[target] };
+			if (args?.mode === "inherit") delete overrides[target];
+			else overrides[target] = String(args?.mode);
+			return { target, mode: modeOf(target) };
 		},
 	});
 	return calls;
@@ -102,9 +115,14 @@ test("the header menu switches a project between watch and manual", async ({
 	await expect(page.getByTestId("issue-filter")).toHaveText("assignee:@me");
 	await expect(page.getByTestId("project-manual-chip")).toHaveCount(0);
 
-	const menu = page.getByRole("button", { name: "Issue discovery: Watch" });
+	const menu = page.getByRole("button", {
+		name: "Issue discovery: Watch, inherited",
+	});
 	await menu.click();
-	await expect(page.getByTestId("project-mode-watch")).toHaveAttribute(
+	await expect(page.getByTestId("project-mode-source")).toHaveText(
+		"Inherited: Watch",
+	);
+	await expect(page.getByTestId("project-mode-inherit")).toHaveAttribute(
 		"aria-checked",
 		"true",
 	);
@@ -122,6 +140,9 @@ test("the header menu switches a project between watch and manual", async ({
 			name: "Issue discovery: Manual (no issue watching)",
 		})
 		.click();
+	await expect(page.getByTestId("project-mode-source")).toHaveText(
+		"Overridden: Manual (global: Watch)",
+	);
 	await page.getByTestId("project-mode-watch").click();
 	expect(calls.project_update.at(-1)).toEqual({
 		target: "lsegal/zvidlib",
@@ -129,4 +150,44 @@ test("the header menu switches a project between watch and manual", async ({
 	});
 	await expect(page.getByTestId("issue-filter")).toHaveText("assignee:@me");
 	await expect(page.getByTestId("project-manual-chip")).toHaveCount(0);
+});
+
+test("a project overridden to watch under a global manual mode resets to global", async ({
+	page,
+}) => {
+	const calls = await setup(page, [], "manual");
+	await board(page, "lsegal/zvidlib");
+	await expect(page.getByTestId("project-manual-chip")).toHaveText("Manual");
+
+	await page
+		.getByRole("button", {
+			name: "Issue discovery: Manual (no issue watching), inherited",
+		})
+		.click();
+	await expect(page.getByTestId("project-mode-inherit")).toContainText(
+		"Inherit (global: Manual)",
+	);
+	await expect(page.getByTestId("project-mode-reset")).toHaveCount(0);
+	await page.getByTestId("project-mode-watch").click();
+	expect(calls.project_update).toEqual([
+		{ target: "lsegal/zvidlib", mode: "watch" },
+	]);
+	await expect(page.getByTestId("project-manual-chip")).toHaveCount(0);
+	await expect(page.getByTestId("issue-filter")).toHaveText("assignee:@me");
+
+	// The other project still follows the global manual mode.
+	const sidebar = page.getByTestId("sidebar-agent-projects").first();
+	await expect(
+		sidebar
+			.getByRole("link", { name: /lsegal\/aviary/ })
+			.getByTestId("project-manual-badge"),
+	).toHaveText("manual");
+
+	await page.getByRole("button", { name: "Issue discovery: Watch" }).click();
+	await page.getByTestId("project-mode-reset").click();
+	expect(calls.project_update.at(-1)).toEqual({
+		target: "lsegal/zvidlib",
+		mode: "inherit",
+	});
+	await expect(page.getByTestId("project-manual-chip")).toHaveText("Manual");
 });

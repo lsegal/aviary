@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -150,7 +151,7 @@ func TestStartWatchSessionAppliesModelFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := manual.Agents[0].Projects.ManualTargets(); !slices.Equal(got, []string{"someone/existing"}) {
+	if got := manual.Agents[0].Projects.Modes(); !maps.Equal(got, map[string]string{"someone/existing": config.ProjectModeManual}) {
 		t.Errorf("--manual watched manual targets %v", got)
 	}
 	if _, err := sessionOf(watchAgentChoice{Model: "nosuch/m"}, config.ProjectsConfig{}); err == nil || !strings.Contains(err.Error(), `unknown provider "nosuch"`) {

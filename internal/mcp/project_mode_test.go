@@ -26,6 +26,8 @@ func TestProjectModeAddUpdateAndStatus(t *testing.T) {
 	m.Reconcile(saved)
 	status := callJSON(t, d, "project_status", map[string]any{})
 	assert.Equal(t, map[string]any{"o/a": "watch", "o/b": "manual"}, status["modes"])
+	assert.Equal(t, map[string]any{"o/a": "global", "o/b": "project"}, status["mode_sources"])
+	assert.Equal(t, "watch", status["default_mode"])
 	assert.NotContains(t, status["issue_counts"], "o/b", "a manual project has no issue count")
 
 	updated := callJSON(t, d, "project_update", map[string]any{"target": "o/a", "mode": "manual"})
@@ -38,9 +40,18 @@ func TestProjectModeAddUpdateAndStatus(t *testing.T) {
 
 	updated = callJSON(t, d, "project_update", map[string]any{"target": "o/a", "mode": "watch"})
 	assert.Equal(t, "watch", updated["mode"])
+	assert.Equal(t, "project", updated["mode_source"])
 	saved, err = config.Load("")
 	require.NoError(t, err)
-	assert.Empty(t, saved.Agents[0].Projects[0].Mode, "watch, the default, is written as no mode")
+	assert.Equal(t, "watch", saved.Agents[0].Projects[0].Mode, "watch is saved as an override")
+	assert.Equal(t, "manual", saved.Agents[0].Projects[1].Mode, "only the named project changes")
+
+	updated = callJSON(t, d, "project_update", map[string]any{"target": "o/a", "mode": "inherit"})
+	assert.Equal(t, "watch", updated["mode"])
+	assert.Equal(t, "global", updated["mode_source"])
+	saved, err = config.Load("")
+	require.NoError(t, err)
+	assert.Empty(t, saved.Agents[0].Projects[0].Mode, "inherit removes the override")
 
 	toolCallContains(t, d, "project_update", map[string]any{"target": "o/a", "mode": "sometimes"}, "unknown project mode")
 	toolCallContains(t, d, "project_add", map[string]any{"target": "o/c", "agent": "coder", "mode": "sometimes"}, "unknown project mode")
@@ -81,4 +92,53 @@ func TestProjectCheckReportsMode(t *testing.T) {
 
 	_, err = runProjectCheck(context.Background(), projectCheckArgs{Target: "users/lsegal/projects/4", Mode: "never"})
 	assert.ErrorContains(t, err, "unknown project mode")
+}
+
+// #1371: a project without its own mode follows the shared projects mode,
+// and project_check and project_status say where the mode comes from.
+func TestProjectModeFollowsGlobalDefault(t *testing.T) {
+	d, m := setupProjects(t)
+	cfg := &config.Config{
+		Agents:   []config.AgentConfig{{Name: "coder", Model: "cli/codex", Projects: config.AgentProjectsConfig{{Target: "o/a"}, {Target: "o/b", Mode: "watch"}}}},
+		Projects: config.ProjectsConfig{Mode: "manual"},
+	}
+	require.NoError(t, config.Save("", cfg))
+	m.Reconcile(cfg)
+	status := callJSON(t, d, "project_status", map[string]any{})
+	assert.Equal(t, map[string]any{"o/a": "manual", "o/b": "watch"}, status["modes"])
+	assert.Equal(t, map[string]any{"o/a": "global", "o/b": "project"}, status["mode_sources"])
+	assert.Equal(t, "manual", status["default_mode"])
+	assert.NotContains(t, status["issue_counts"], "o/a")
+
+	added := callJSON(t, d, "project_add", map[string]any{"target": "o/c", "agent": "coder"})
+	assert.Equal(t, "manual", added["mode"])
+	assert.Equal(t, "global", added["mode_source"])
+	saved, err := config.Load("")
+	require.NoError(t, err)
+	assert.Empty(t, saved.Agents[0].Projects[2].Mode, "a new project inherits by default")
+
+	updated := callJSON(t, d, "project_update", map[string]any{"target": "o/b", "mode": "inherit"})
+	assert.Equal(t, "manual", updated["mode"])
+	assert.Equal(t, "global", updated["mode_source"])
+}
+
+func TestProjectCheckReportsModeSource(t *testing.T) {
+	stubProjectCheck(t, []string{"gh"}, map[string]string{"auth status": ""})
+	projectConfig = func() (*config.Config, error) {
+		return &config.Config{
+			Agents:   []config.AgentConfig{{Name: "coder", Projects: config.AgentProjectsConfig{{Target: "o/a"}, {Target: "o/b", Mode: "watch"}}}},
+			Projects: config.ProjectsConfig{Mode: "manual"},
+		}, nil
+	}
+	for _, tc := range []struct{ target, mode, want, source string }{
+		{"o/a", "", "manual", "global"},
+		{"o/b", "", "watch", "project"},
+		{"o/b", "inherit", "manual", "global"},
+		{"o/a", "watch", "watch", "project"},
+	} {
+		res, err := runProjectCheck(context.Background(), projectCheckArgs{Target: tc.target, Mode: tc.mode})
+		require.NoError(t, err)
+		assert.Equal(t, tc.want, res.Mode, "%s %q", tc.target, tc.mode)
+		assert.Equal(t, tc.source, res.ModeSource, "%s %q", tc.target, tc.mode)
+	}
 }

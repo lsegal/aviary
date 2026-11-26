@@ -388,9 +388,9 @@ Manage Code Loop. Each subcommand calls the `project_*` tool of the same name wi
 
 ```
 aviary project status
-aviary project add <target> [--agent NAME] [--runtime] [--mode watch|manual]
+aviary project add <target> [--agent NAME] [--runtime] [--mode watch|manual|inherit]
 aviary project remove <target> [--runtime] [--delete_data]
-aviary project update <target> --filter "label:bug -label:wip" | --reset_filter true | --mode watch|manual
+aviary project update <target> --filter "label:bug -label:wip" | --reset_filter true | --mode watch|manual|inherit
 aviary project filter check <target> --filter FILTER
 aviary project refresh [target]
 aviary project job list [--target T] [--status S] [--offset N] [--limit N]

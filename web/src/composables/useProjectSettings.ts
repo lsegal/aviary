@@ -9,7 +9,7 @@ import {
 } from "../lib/projectSettings";
 import {
 	normalizeStatus,
-	type ProjectMode,
+	type ProjectModeChoice,
 	parseToolJSON,
 } from "../lib/projects";
 import {
@@ -107,8 +107,8 @@ export interface ProjectCheckOptions {
 	agent?: string;
 	/** The agent's model and fallbacks as the form holds them, unsaved. */
 	models?: string[];
-	/** The mode the form picks, watch or manual. */
-	mode?: ProjectMode;
+	/** The mode the form picks: watch, manual, or inherit the global one. */
+	mode?: ProjectModeChoice;
 }
 
 /**
@@ -173,14 +173,18 @@ export function useProjectCheck(
  */
 export function useAddProject() {
 	const { callTool } = useMCP();
-	return async (target: string, agent: string, mode: ProjectMode = "watch") => {
+	return async (
+		target: string,
+		agent: string,
+		mode: ProjectModeChoice = "inherit",
+	) => {
 		const undo = insertProject(target, agent);
 		try {
-			// Watch is the default, so only manual is passed.
+			// Inherit is the default, so only an override is passed.
 			await callTool("project_add", {
 				target,
 				agent,
-				...(mode === "manual" ? { mode } : {}),
+				...(mode === "inherit" ? {} : { mode }),
 			});
 		} catch (e) {
 			undo();

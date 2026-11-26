@@ -10,6 +10,7 @@
 // depend on the raw payload shape.
 
 import type { ApprovalMode } from "../stores/settings";
+import type { ProjectMode, ProjectModeChoice } from "./projects";
 
 export type Delivery = "browser" | "poll" | "webhook";
 
@@ -27,8 +28,9 @@ export interface ProjectEntry {
 	reports?: ProjectReportsEntry;
 	// Other per-project settings pass through untouched.
 	[key: string]: unknown;
-	/** "manual" never searches the project for issues (#1307); unset watches. */
-	mode?: "manual";
+	/** The project's own mode, overriding the shared one (#1371); unset
+	 * follows the shared mode. "manual" never searches for issues (#1307). */
+	mode?: ProjectMode;
 }
 
 /** The reports form. With enabled false nothing is saved. */
@@ -53,6 +55,8 @@ export interface ProjectsSection {
 	filter?: string[];
 	all_issues?: boolean;
 	allowed_commenters?: string[];
+	/** The mode of every project without its own; unset means watch. */
+	mode?: ProjectMode;
 	no_merge?: boolean;
 	no_changelog?: boolean;
 	approval_mode?: ApprovalMode;
@@ -81,6 +85,8 @@ export interface ProjectSettings {
 	filter: string[];
 	allIssues: boolean;
 	commenters: string[];
+	/** The mode of every project without its own. */
+	mode: ProjectMode;
 	merge: boolean;
 	changelog: boolean;
 	/** Projects' approval-mode override; empty follows the general approval mode. */
@@ -153,7 +159,7 @@ export interface JobModelsConfig {
 		projects?: AgentProjectsSection;
 	}[];
 	models?: { defaults?: { model?: string; fallbacks?: string[] } };
-	projects?: { model?: string; fallbacks?: string[] };
+	projects?: { model?: string; fallbacks?: string[]; mode?: string };
 }
 
 /**
@@ -293,6 +299,18 @@ function parseDelivery(v: string | undefined): Delivery {
 	return mode === "poll" || mode === "webhook" ? mode : DEFAULT_DELIVERY;
 }
 
+function parseMode(v: unknown): ProjectMode | undefined {
+	const mode = typeof v === "string" ? v.trim().toLowerCase() : "";
+	return mode === "watch" || mode === "manual" ? mode : undefined;
+}
+
+/** The shared mode of a config, which projects without their own follow. */
+export function globalProjectMode(
+	cfg: JobModelsConfig | null | undefined,
+): ProjectMode {
+	return parseMode(cfg?.projects?.mode) ?? "watch";
+}
+
 /** Reads the shared projects settings from their section, filling in defaults. */
 export function settingsFromSection(
 	section: ProjectsSection | undefined,
@@ -312,6 +330,7 @@ export function settingsFromSection(
 		filter: filter.length ? filter : [...DEFAULT_FILTER],
 		allIssues: s.all_issues === true,
 		commenters: strings(s.allowed_commenters),
+		mode: parseMode(s.mode) ?? "watch",
 		merge: s.no_merge !== true,
 		changelog: s.no_changelog !== true,
 		approvalMode: s.approval_mode ?? (s.yolo === true ? "full" : ""),
@@ -456,6 +475,7 @@ export function withSettings(
 	set("all_issues", true, !s.allIssues);
 	const commenters = clean(s.commenters);
 	set("allowed_commenters", commenters, !commenters.length);
+	set("mode", s.mode, s.mode !== "manual");
 	set("no_merge", true, s.merge);
 	set("no_changelog", true, s.changelog);
 	set("approval_mode", s.approvalMode, !s.approvalMode);
@@ -486,26 +506,25 @@ export function withReports(
 	});
 }
 
-/** Whether target's entry is in manual mode. */
-export function projectManual(
+/** Target's own mode override, or "inherit" when it follows the shared mode. */
+export function projectModeChoice(
 	section: AgentProjectsSection | undefined,
 	target: string,
-): boolean {
-	return (section ?? []).some(
-		(p) => sameTarget(p.target, target) && p.mode === "manual",
-	);
+): ProjectModeChoice {
+	const entry = (section ?? []).find((p) => sameTarget(p.target, target));
+	return parseMode(entry?.mode) ?? "inherit";
 }
 
-/** The projects with target's mode set; watch, the default, is written as no mode. */
+/** The projects with target's mode override set, or removed for "inherit". */
 export function withMode(
 	section: AgentProjectsSection | undefined,
 	target: string,
-	manual: boolean,
+	mode: ProjectModeChoice,
 ): AgentProjectsSection {
 	return (section ?? []).map((p) => {
 		if (!sameTarget(p.target, target)) return p;
 		const { mode: _, ...rest } = p;
-		return manual ? { ...rest, mode: "manual" as const } : rest;
+		return mode === "inherit" ? rest : { ...rest, mode };
 	});
 }
 

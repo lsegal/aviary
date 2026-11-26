@@ -31,7 +31,7 @@ var projectToolCommands = []projectToolCommand{
 	{[]string{"status"}, "project_status", "", "Show identity, projects, job counts, delivery, allowed commenters, quotas and recent log lines"},
 	{[]string{"add"}, "project_add", "target", "Watch a project, saving it to the --agent's projects in aviary.yaml unless --runtime is set"},
 	{[]string{"remove"}, "project_remove", "target", "Stop watching a project"},
-	{[]string{"update"}, "project_update", "target", "Change a project: set its own issue --filter, or --reset_filter to use the shared one"},
+	{[]string{"update"}, "project_update", "target", "Change a project: set its own issue --filter, or --reset_filter to use the shared one, or set its own --mode (watch or manual), or inherit to follow the shared mode"},
 	{[]string{"filter", "check"}, "project_filter_check", "target", "Check an issue --filter for a project and count the open issues it matches"},
 	{[]string{"refresh"}, "project_refresh", "target", "Check GitHub for work now"},
 	{[]string{"check"}, "project_check", "target", "Check what watching a project needs: GitHub access, CLI providers, skills and fork"},

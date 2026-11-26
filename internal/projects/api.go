@@ -107,15 +107,20 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 	for _, target := range settings.ManualTargets {
 		delete(counts, target)
 	}
+	modes, modeSources := m.ProjectModes(watched)
 	status := map[string]any{
 		"identity":     m.Identity(),
 		"running":      running,
 		"targets":      watched,
 		"issue_counts": counts,
-		// Each project's mode: watch, or manual for a project never
-		// searched for issues (issue #1307).
-		"modes":  projectModes(watched, settings.ManualTargets),
-		"states": boardStateCounts(snapshot.Jobs, targets),
+		// Each project's effective mode: watch, or manual for a project
+		// never searched for issues (issue #1307); where it comes from,
+		// "project" for its own override or "global" for the shared
+		// default_mode (issue #1371).
+		"modes":        modes,
+		"mode_sources": modeSources,
+		"default_mode": settings.DefaultMode,
+		"states":       boardStateCounts(snapshot.Jobs, targets),
 		"jobs": map[string]int{
 			"running":    snapshot.Running,
 			"queued":     snapshot.Queued,

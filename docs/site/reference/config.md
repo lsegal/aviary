@@ -303,6 +303,7 @@ agents:
 | --- | --- | --- | --- |
 | `[].target` | string | | `owner/repo`, a repository URL, a Project board, or a Discussions board. The agent's model and fallbacks are its jobs' provider and model defaults, in fallback order: a `<cli>/<model>` (or `cli/<cli>/<model>`) model runs jobs on that CLI provider; any other model runs them on the agent itself |
 | `[].filter` | string[] | the shared `projects.filter` | This project's own [issue filter](/guide/projects#issue-filter), replacing the shared `filter` (and `all_issues`) for it alone. Changing it applies to the running engine in place |
+| `[].mode` | string | the shared `projects.mode` | This project's own [mode](/guide/projects#manual-mode), `watch` or `manual`, overriding the shared `mode` for it alone. Leave it out to follow the shared mode. Changing it applies to the running engine in place |
 | `[].reports.agent` | string | | Aviary agent whose channels deliver this project's [reports](/guide/projects#reports); reports are off unless `agent` and `targets` are set |
 | `[].reports.targets` | string[] | | Where reports go, in a scheduled task's target form: `channel:<name>` (one of the reports agent's channels) or `session:<name>` |
 | `[].reports.events` | string[] | all | Events to report: `merged`, `failed`, `waiting` |
@@ -470,7 +471,7 @@ coding_skills:
 
 The one set of [Code Loop](/guide/projects) settings, shared by every project of every agent and edited on **Code Loop Settings** (`/projects/settings`). One engine runs every agent's projects under them: `concurrency`, for example, is how many jobs run at once in total, across every agent's projects. The projects themselves are listed under the agents that own them; see [`agents[].projects`](#agents-projects).
 
-Every field is optional and holds only a value that differs from its default. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
+Every field is optional and holds only a value that differs from its default. Changes apply to the running engine when the file changes. Changing a live setting (concurrency, allowed commenters, mode, no-merge, no-changelog, the watchdog, clone directories) updates it in place. Changing anything else restarts the engine, and running jobs are checkpointed and resume.
 
 ```yaml
 projects:
@@ -487,6 +488,7 @@ projects:
 | `filter` | string[] | `assignee:@me` | Issue search filter, for every project without its own `filter` |
 | `all_issues` | bool | `false` | Drop the issue filter and pick up every open issue |
 | `allowed_commenters` | string[] | the `gh` user | GitHub logins whose comments steer jobs |
+| `mode` | string | `watch` | [Mode](/guide/projects#manual-mode) of every project without its own `mode`: `watch` searches for issues, `manual` never does. Changing it applies to the running engine in place |
 | `approval_mode` | string | `approval.mode` | Code Loop's [approval-mode](#approval) override for the CLI runs it launches: `read-only`, `auto`, or `full` |
 | `yolo` | bool | `false` | The `full` approval mode, used when `approval_mode` is unset |
 | `no_merge` | bool | `false` | Leave finished pull requests ready for a human to merge |

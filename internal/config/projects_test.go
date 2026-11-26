@@ -1,6 +1,7 @@
 package config
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -269,9 +270,43 @@ func TestProjectMode(t *testing.T) {
 	if _, err := NormalizeProjectMode("sometimes"); err == nil || !strings.Contains(err.Error(), "use watch or manual") {
 		t.Errorf("NormalizeProjectMode accepted an unknown mode: %v", err)
 	}
-	list := AgentProjectsConfig{{Target: "acme/watched"}, {Target: "acme/manual", Mode: "manual"}, {Target: "acme/manual", Mode: "manual"}}
-	if got := list.ManualTargets(); !slices.Equal(got, []string{"acme/manual"}) {
-		t.Errorf("ManualTargets = %v", got)
+	list := AgentProjectsConfig{{Target: "acme/inherit"}, {Target: "acme/manual", Mode: "manual"}, {Target: "acme/manual", Mode: "watch"}, {Target: "acme/watch", Mode: "watch"}}
+	if got := list.Modes(); !maps.Equal(got, map[string]string{"acme/manual": "manual", "acme/watch": "watch"}) {
+		t.Errorf("Modes = %v", got)
+	}
+}
+
+// A project's own mode overrides the shared mode; no override inherits it
+// (issue #1371).
+func TestProjectModeOverride(t *testing.T) {
+	for mode, want := range map[string]string{"": "", "inherit": "", " Inherit ": "", "watch": ProjectModeWatch, "MANUAL": ProjectModeManual} {
+		if got, err := NormalizeProjectModeOverride(mode); err != nil || got != want {
+			t.Errorf("NormalizeProjectModeOverride(%q) = %q, %v; want %q", mode, got, err, want)
+		}
+	}
+	if _, err := NormalizeProjectModeOverride("sometimes"); err == nil || !strings.Contains(err.Error(), "use watch, manual or inherit") {
+		t.Errorf("NormalizeProjectModeOverride accepted an unknown mode: %v", err)
+	}
+	for _, tc := range []struct {
+		global, override, mode, source string
+	}{
+		{"", "", ProjectModeWatch, ProjectModeSourceGlobal},
+		{"manual", "", ProjectModeManual, ProjectModeSourceGlobal},
+		{"manual", "inherit", ProjectModeManual, ProjectModeSourceGlobal},
+		{"manual", "watch", ProjectModeWatch, ProjectModeSourceProject},
+		{"watch", "manual", ProjectModeManual, ProjectModeSourceProject},
+		{"bogus", "", ProjectModeWatch, ProjectModeSourceGlobal},
+	} {
+		mode, source := ProjectsConfig{Mode: tc.global}.ModeFor(tc.override)
+		if mode != tc.mode || source != tc.source {
+			t.Errorf("global %q, override %q: ModeFor = %q, %q; want %q, %q", tc.global, tc.override, mode, source, tc.mode, tc.source)
+		}
+	}
+	if (ProjectsConfig{Mode: "manual"}).IsZero() {
+		t.Error("a shared manual mode reads as empty settings")
+	}
+	if got := (ProjectsConfig{}).Override(ProjectsConfig{Mode: "manual"}).Mode; got != "manual" {
+		t.Errorf("Override dropped the mode: %q", got)
 	}
 }
 
@@ -290,7 +325,7 @@ func TestProjectModeRoundTripAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Agents[0].Projects[0].Manual() || !loaded.Agents[0].Projects[1].Manual() {
+	if loaded.Agents[0].Projects[0].Mode != "" || loaded.Agents[0].Projects[1].Mode != ProjectModeManual {
 		t.Fatalf("loaded projects = %+v", loaded.Agents[0].Projects)
 	}
 	cfg.Agents[0].Projects[0].Mode = "sometimes"
@@ -299,5 +334,12 @@ func TestProjectModeRoundTripAndValidation(t *testing.T) {
 		return issue.Field == "agents[0].projects[0].mode" && strings.Contains(issue.Message, "unknown project mode")
 	}) {
 		t.Fatalf("an unknown mode passed validation: %+v", issues)
+	}
+	cfg.Agents[0].Projects[0].Mode = ""
+	cfg.Projects.Mode = "sometimes"
+	if issues := Validate(&cfg, nil); !slices.ContainsFunc(issues, func(issue Issue) bool {
+		return issue.Field == "projects.mode" && strings.Contains(issue.Message, "unknown project mode")
+	}) {
+		t.Fatalf("an unknown shared mode passed validation: %+v", issues)
 	}
 }
