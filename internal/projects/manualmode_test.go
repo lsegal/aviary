@@ -30,6 +30,18 @@ func (s *manualSource) HydrateIssue(_ context.Context, _ string, issue *Issue) e
 	return nil
 }
 
+func (s *manualSource) hydrateCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.hydrated)
+}
+
+func (s *manualSource) setState(state string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state = state
+}
+
 func (s *manualSource) listCalls() int {
 	s.fakeSource.mu.Lock()
 	defer s.fakeSource.mu.Unlock()
@@ -141,7 +153,14 @@ func TestManualProjectRunsRequestedFixToCompletion(t *testing.T) {
 		state, err := loadWorkState(statePath)
 		return err == nil && state[7].Status == "completed"
 	})
-	waitFor(t, "the completed request to be dropped", func() bool { return len(w.fixRequests().forTarget("o/r")) == 0 })
+	// The issue is still open, so the completed job stays tracked until it
+	// closes (issue #1431).
+	time.Sleep(20 * time.Millisecond)
+	if requests := w.fixRequests().forTarget("o/r"); len(requests) != 1 {
+		t.Fatalf("a completed job with an open issue stopped being tracked: %+v", requests)
+	}
+	src.setState("closed")
+	waitFor(t, "the closed issue's request to be dropped", func() bool { return len(w.fixRequests().forTarget("o/r")) == 0 })
 	if calls := src.listCalls(); calls != 0 {
 		t.Fatalf("a manual project searched for issues %d time(s)", calls)
 	}
