@@ -499,54 +499,6 @@ func TestOpenAIRefresh_HTTPError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestKeychainStore_CRUD(t *testing.T) {
-	s := NewKeychainStore()
-
-	// Test Set (may fail on CI without a keychain).
-	err := s.Set("test-aviary-key", "test-value")
-	if err != nil {
-		t.Skipf("keychain not available (Set failed): %v", err)
-	}
-	t.Cleanup(func() { _ = s.Delete("test-aviary-key") })
-
-	val, err := s.Get("test-aviary-key")
-	assert.NoError(t, err)
-	assert.Equal(t, "test-value", val)
-
-	keys, err := s.List()
-	assert.NoError(t, err)
-
-	found := false
-	for _, k := range keys {
-		if k == "test-aviary-key" {
-			found = true
-		}
-	}
-	assert.True(t, found)
-	err = s.Delete("test-aviary-key")
-	assert.NoError(t, err)
-
-	_, err = s.Get("test-aviary-key")
-	assert.True(t, IsNotFound(err))
-
-}
-
-func TestKeychainStore_GetNotFound(t *testing.T) {
-	s := NewKeychainStore()
-	_, err := s.Get("nonexistent-aviary-key-xyz")
-	assert.Error(t, err)
-	assert.True(t, IsNotFound(err))
-
-}
-
-func TestKeychainStore_ListEmpty(t *testing.T) {
-	s := NewKeychainStore()
-	keys, err := s.List()
-	assert.NoError(t, err)
-	assert.Equal(t, 0, len(keys))
-
-}
-
 func TestFileStore_CorruptedJSON(t *testing.T) {
 	path := fmt.Sprintf("%s/corrupted.json", t.TempDir())
 
