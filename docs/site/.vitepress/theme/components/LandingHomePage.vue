@@ -680,7 +680,8 @@ onBeforeUnmount(() => {
 							Use <code>aviary watch USER/REPO</code> for a portable,
 							no-configuration, minimal Aviary Code Loop instance. It serves
 							the web UI and adds a board with prompt chat right in your
-							terminal.
+							terminal. Add <code>--manual</code> and it picks up nothing on
+							its own, working only what you queue.
 						</p>
 						<a class="landing-btn landing-btn-ghost landing-card-btn" :href="withBase('/guide/watch')">
 							Read the aviary watch docs
