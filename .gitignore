@@ -13,6 +13,7 @@
 
 # Web build output
 /web/dist/
+/web/coverage/
 /docs/site/.vitepress
 !/docs/site/.vitepress/
 !/docs/site/.vitepress/theme/
