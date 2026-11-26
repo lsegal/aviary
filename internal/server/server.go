@@ -55,6 +55,7 @@ type Server struct {
 	agents            *agent.Manager
 	sched             *scheduler.Scheduler
 	channels          *channels.Manager
+	daemonChannels    daemonChannelSource // s.channels; replaced in tests
 	brw               *browser.Manager
 	sampler           *ProcSampler
 	watcher           *config.Watcher
@@ -128,6 +129,7 @@ func New(cfg *config.Config, token string) *Server {
 	endPhase()
 
 	s.channels = channels.NewManager()
+	s.daemonChannels = s.channels
 	if s.sched != nil {
 		s.sched.SetTaskOutputDelivery(s.deliverOutput)
 		s.sched.SetWorkflowHooks(s.replyToWorkflowTrigger, workflowMessagesAfter)
