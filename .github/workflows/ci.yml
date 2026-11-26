@@ -8,9 +8,7 @@ on:
   # (#1176).
   workflow_dispatch:
 
-permissions:
-  contents: read
-  packages: write
+permissions: {}
 
 jobs:
   changes:
@@ -21,10 +19,11 @@ jobs:
     outputs:
       docker: ${{ steps.docker.outputs.changed }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         if: github.event_name == 'pull_request'
         with:
           fetch-depth: 0
+          persist-credentials: false
       # Pull requests only build the Docker image when they touch one of its
       # inputs; pushes and releases always build it (#734).
       - id: docker
@@ -52,9 +51,11 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6.1.1
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: package.json
           cache: pnpm
@@ -75,11 +76,11 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
-          persist-credentials: true
-      - uses: actions/setup-go@v6.4.0
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: go.mod
           cache: true
@@ -96,11 +97,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
-          persist-credentials: true
-      - uses: actions/setup-go@v6.4.0
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: go.mod
           cache: true
@@ -114,7 +115,7 @@ jobs:
       - name: Report Go coverage
         if: matrix.os == 'ubuntu-latest'
         run: node scripts/go-coverage.mjs coverage.out coverage.md
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: matrix.os == 'ubuntu-latest'
         with:
           name: go-coverage
@@ -142,14 +143,16 @@ jobs:
       AVIARY_CONFIG_TRANSCRIPTION_MODEL: ${{ github.workspace }}/.whisper/ggml-base.en.bin
       WHISPER_CPP_VERSION: v1.9.6
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6.4.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: go.mod
           cache: true
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - id: whisper-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .whisper-cpp
           key: whisper-cpp-${{ runner.os }}-${{ env.WHISPER_CPP_VERSION }}
@@ -163,7 +166,7 @@ jobs:
           mkdir -p .whisper-cpp
           cp "$RUNNER_TEMP/whisper.cpp/build/bin/whisper-cli" .whisper-cpp/
       - run: echo "$GITHUB_WORKSPACE/.whisper-cpp" >> "$GITHUB_PATH"
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .whisper
           key: whisper-model-ggml-base.en-v1
@@ -202,11 +205,11 @@ jobs:
             os: windows-latest
             powershell: pwsh
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
-          persist-credentials: true
-      - uses: actions/setup-node@v6
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: package.json
       - name: Prepare mocked release API (POSIX)
@@ -270,16 +273,16 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
-          persist-credentials: true
-      - uses: actions/setup-go@v6.4.0
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: go.mod
           cache: true
-      - uses: pnpm/action-setup@v6.1.1
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: package.json
           cache: pnpm
@@ -306,12 +309,12 @@ jobs:
       id-token: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
-          persist-credentials: true
-      - uses: pnpm/action-setup@v6.1.1
-      - uses: actions/setup-node@v6
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: package.json
           cache: pnpm
@@ -337,16 +340,16 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
-          persist-credentials: true
-      - uses: actions/setup-go@v6.4.0
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: go.mod
           cache: true
-      - uses: pnpm/action-setup@v6.1.1
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: package.json
           cache: pnpm
@@ -359,6 +362,9 @@ jobs:
 
   docker:
     name: Docker
+    permissions:
+      contents: read
+      packages: write
     needs:
       - changes
       - go-lint
@@ -368,8 +374,7 @@ jobs:
       - web-lint
       - web-e2e
     if: needs.changes.outputs.docker == 'true'
-    uses: ./.github/workflows/docker.yml
-    secrets: inherit
+    uses: $/.github/workflows/docker.yml
     with:
       ref: ${{ github.sha }}
       branch_name: ${{ github.event_name != 'pull_request' && github.ref_name || '' }}
