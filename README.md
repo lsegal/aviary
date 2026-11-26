@@ -5,6 +5,7 @@
 <p align="center">
   <a href="https://github.com/lsegal/aviary/releases"><img src="https://img.shields.io/github/v/release/lsegal/aviary?display_name=tag&sort=semver" alt="Release" /></a>
   <a href="https://github.com/lsegal/aviary/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/lsegal/aviary/ci.yml?branch=main&label=tests" alt="Tests" /></a>
+  <a href="https://qlty.sh/gh/lsegal/projects/aviary"><img src="https://qlty.sh/gh/lsegal/projects/aviary/coverage.svg" alt="Code Coverage" /></a>
   <a href="https://qlty.sh/gh/lsegal/projects/aviary"><img src="https://qlty.sh/gh/lsegal/projects/aviary/maintainability.svg" alt="Maintainability" /></a>
   <a href="https://github.com/lsegal/aviary/blob/main/LICENSE"><img src="https://img.shields.io/github/license/lsegal/aviary" alt="License" /></a>
 </p>

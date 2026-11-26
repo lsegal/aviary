@@ -89,8 +89,8 @@ jobs:
     name: "Test: Go (${{ matrix.os }})"
     permissions:
       contents: read
-    env:
-      QLTY_COVERAGE_TOKEN: ${{ secrets.QLTY_COVERAGE_TOKEN }}
+      # Qlty coverage uploads authenticate with OIDC (#1407).
+      id-token: write
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -120,14 +120,13 @@ jobs:
           path: |
             coverage.out
             coverage.md
-      # Sends the same profile to Qlty (#1407). The upload is skipped until the
-      # QLTY_COVERAGE_TOKEN secret exists, and on fork pull requests, which get
-      # no secrets.
+      # Sends the same profile to Qlty (#1407), authenticated with OIDC. Fork
+      # pull requests get no OIDC token, so they skip the upload.
       - name: Upload Go coverage to Qlty
-        if: matrix.os == 'ubuntu-latest' && env.QLTY_COVERAGE_TOKEN != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: matrix.os == 'ubuntu-latest' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: qltysh/qlty-action/coverage@56bee2d751c94b7bd8de22f64c9b5f398048e13f # v2.8.1
         with:
-          token: ${{ env.QLTY_COVERAGE_TOKEN }}
+          oidc: true
           files: coverage.out
           strip-prefix: github.com/lsegal/aviary
           tag: go
@@ -302,8 +301,8 @@ jobs:
     name: "Lint: Web"
     permissions:
       contents: read
-    env:
-      QLTY_COVERAGE_TOKEN: ${{ secrets.QLTY_COVERAGE_TOKEN }}
+      # Qlty coverage uploads authenticate with OIDC (#1407).
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -321,13 +320,13 @@ jobs:
       - run: pnpm test:scripts
       # Vitest unit tests for web/src, with LCOV coverage (#1377).
       - run: pnpm test:web:coverage
-      # Sends the LCOV report to Qlty (#1407), skipped until the
-      # QLTY_COVERAGE_TOKEN secret exists and on fork pull requests.
+      # Sends the LCOV report to Qlty (#1407), authenticated with OIDC. Fork
+      # pull requests get no OIDC token, so they skip the upload.
       - name: Upload web coverage to Qlty
-        if: env.QLTY_COVERAGE_TOKEN != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: qltysh/qlty-action/coverage@56bee2d751c94b7bd8de22f64c9b5f398048e13f # v2.8.1
         with:
-          token: ${{ env.QLTY_COVERAGE_TOKEN }}
+          oidc: true
           files: web/coverage/lcov.info
           tag: web
 
