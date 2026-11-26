@@ -11,15 +11,15 @@
 		</transition>
 		<!-- On phones Refresh and Sync Templates show only their icons, so the
 			actions fit one row (#1347). -->
-		<button type="button" :class="HEADER_ACTION_CLS" :disabled="state.loading" :aria-label="refreshLabel"
+		<button type="button" :class="HEADER_COLLAPSE_CLS" :disabled="state.loading" :aria-label="refreshLabel"
 			:title="refreshLabel" @click="settings.refreshAgentFiles(agent)">
-			<ArrowPathIcon aria-hidden="true" class="h-4 w-4" :class="{ 'animate-spin': state.loading }" />
-			<span :class="HEADER_LABEL_CLS">{{ refreshLabel }}</span>
+			<ArrowPathIcon aria-hidden="true" :class="[HEADER_COLLAPSE_ICON_CLS, { 'animate-spin': state.loading }]" />
+			<span :class="HEADER_COLLAPSE_LABEL_CLS">{{ refreshLabel }}</span>
 		</button>
-		<button type="button" :class="HEADER_ACTION_CLS" :disabled="state.syncing" :aria-label="syncLabel"
+		<button type="button" :class="HEADER_COLLAPSE_CLS" :disabled="state.syncing" :aria-label="syncLabel"
 			:title="syncLabel" @click="settings.syncAgentTemplates(agent)">
-			<DocumentDuplicateIcon aria-hidden="true" class="h-4 w-4" />
-			<span :class="HEADER_LABEL_CLS">{{ syncLabel }}</span>
+			<DocumentDuplicateIcon aria-hidden="true" :class="HEADER_COLLAPSE_ICON_CLS" />
+			<span :class="HEADER_COLLAPSE_LABEL_CLS">{{ syncLabel }}</span>
 		</button>
 		<button type="button" data-testid="agent-file-save" :class="HEADER_ACTION_CLS"
 			:disabled="!agent || !state.selectedFile || state.saving" @click="settings.saveAgentFile(agent)">
@@ -69,7 +69,9 @@ import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
 import {
 	HEADER_ACTION_CLS,
 	HEADER_ICON_CLS,
-	HEADER_LABEL_CLS,
+	HEADER_COLLAPSE_CLS,
+	HEADER_COLLAPSE_ICON_CLS,
+	HEADER_COLLAPSE_LABEL_CLS,
 } from "../../lib/headerActions";
 import { settingsViewContextKey } from "../settings/context";
 import FilePreviewToggle from "./FilePreviewToggle.vue";

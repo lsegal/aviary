@@ -50,10 +50,10 @@
 			<!-- A watch session's board is one agent's, so it queues when it has one project. -->
 			<QueueMenu v-if="!aggregate || targets.length === 1" :no-merge="status?.noMerge"
 				@pick="openQueue($event, project || targets[0])" />
-			<button v-if="!aggregate" type="button" data-testid="schedule-new" title="Schedule a task for this project"
-				:class="HEADER_ACTION_CLS" :disabled="!scheduleAgent" @click="onNewSchedule">
-				<CalendarDaysIcon aria-hidden="true" class="h-4 w-4" />
-				Schedule
+			<button v-if="!aggregate" type="button" data-testid="schedule-new" aria-label="Schedule task"
+				title="Schedule task" :class="HEADER_COLLAPSE_CLS" :disabled="!scheduleAgent" @click="onNewSchedule">
+				<CalendarDaysIcon aria-hidden="true" :class="HEADER_COLLAPSE_ICON_CLS" />
+				<span :class="HEADER_COLLAPSE_LABEL_CLS">Schedule</span>
 			</button>
 			<button type="button" aria-label="Check now" title="Check now" :class="HEADER_ICON_CLS"
 				:disabled="checking" @click="onCheckNow">
@@ -290,8 +290,10 @@ import {
 import { useServerStatus } from "../composables/useServerStatus";
 import { useTaskPause } from "../composables/useTaskPause";
 import {
-	HEADER_ACTION_CLS,
 	HEADER_ADD_CLS,
+	HEADER_COLLAPSE_CLS,
+	HEADER_COLLAPSE_ICON_CLS,
+	HEADER_COLLAPSE_LABEL_CLS,
 	HEADER_ICON_CLS,
 	HEADER_ICON_ON_CLS,
 } from "../lib/headerActions";

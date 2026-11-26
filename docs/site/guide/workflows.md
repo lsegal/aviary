@@ -36,6 +36,10 @@ The form is the task form, with a trigger in place of the schedule:
 
 You can also create and change workflows from chat or another MCP client with [`task_schedule`](/reference/mcp/tasks-and-jobs#task-schedule) and [`task_update`](/reference/mcp/tasks-and-jobs#task-update) using `trigger=message`, or in YAML (see [Configuration](#configuration)).
 
+### Deleting a workflow
+
+The Edit workflow form ends with a **Danger Zone** whose **Delete workflow** deletes the workflow. It only appears when editing an existing workflow. It and the **Delete** in the workflows list open the same in-app confirmation, with the **Delete session data and files** checkbox described in [Deleting data with an object](./control-panel#deleting-data-with-an-object). When the workflow has a run pending or in progress, the confirmation says so: deleting stops it, and the workflow won't run again. Confirming calls [`task_delete`](/reference/mcp/tasks-and-jobs#task-delete) and then [`task_stop`](/reference/mcp/tasks-and-jobs#task-stop); if stopping fails, the workflow is still deleted and an error toast says so. Afterwards the form goes back to the workflows list and shows a "Deleted workflow `<name>`" toast.
+
 ## Reply behavior
 
 When a message matches one or more **active** workflows, **the workflows replace the agent's own reply**:
