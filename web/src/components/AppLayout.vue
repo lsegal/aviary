@@ -38,8 +38,8 @@
              Once the links have given way, the version text truncates so
              the row never overflows. -->
         <div class="flex min-w-0 items-center [&_button]:min-h-10 [&_button]:min-w-10 [&_button]:shrink-0" data-testid="mobile-header-status">
-          <VersionIndicator v-if="!minimal" :version="version" :latest-version="latestVersion" :status="status"
-            :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
+          <VersionIndicator :version="version" :latest-version="latestVersion" :status="status"
+            :upgrade-available="upgradeAvailable && !minimal" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <NotificationBell side="bottom" />
           <ConnectionIndicator :status="status" @retry="reconnect()" />
           <SidebarGearMenu :minimal="minimal" :restart-disabled="upgrading || restartPending" :restart-pending="restartPending"
@@ -280,8 +280,8 @@
           <div v-if="versionMessage" class="mt-1 opacity-80">{{ versionMessage }}</div>
         </div>
         <div class="flex items-center gap-2 px-1" data-testid="sidebar-footer">
-          <VersionIndicator v-if="!minimal" :version="version" :latest-version="latestVersion" :status="status"
-            :upgrade-available="upgradeAvailable" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
+          <VersionIndicator :version="version" :latest-version="latestVersion" :status="status"
+            :upgrade-available="upgradeAvailable && !minimal" :disabled="upgradeDisabled" @upgrade="openUpgradeDialog()" />
           <div class="ml-auto flex shrink-0 items-center gap-1" data-testid="sidebar-footer-actions">
             <NotificationBell />
             <ConnectionIndicator :status="status" @retry="reconnect()" />
@@ -348,7 +348,7 @@
           data-testid="sidebar-rail-update" :disabled="upgradeDisabled" @click="openUpgradeDialog()">
           <ArrowUpCircleIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
-        <SidebarRailItem v-else-if="!minimal" :label="railVersionLabel" data-testid="sidebar-rail-version">
+        <SidebarRailItem v-else :label="railVersionLabel" data-testid="sidebar-rail-version">
           <TagIcon aria-hidden="true" class="h-5 w-5" />
         </SidebarRailItem>
         <NotificationBell rail />

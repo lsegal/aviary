@@ -16,6 +16,9 @@
 				<span v-if="manual" data-testid="project-manual-chip"
 					class="inline-flex shrink-0 items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
 					title="Manual mode: this project is never searched for issues; only work you queue, scheduled tasks and agent tools start jobs">Manual</span>
+				<span v-if="issueSummary" data-testid="board-issues"
+					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+					:title="issueSummary.title">{{ issueSummary.label }}</span>
 				<span v-if="status?.instanceID" data-testid="instance-id"
 					class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-200"
 					:title="`This instance signs its GitHub claims as /aviary:${status.instanceID}`">
@@ -226,13 +229,6 @@
 							</template>
 						</section>
 
-						<footer v-if="status" class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-							<span v-if="status.targets.length">
-								Targets:
-								<template v-for="(t, i) in status.targets" :key="t.name">{{ i ? ", " : "" }}{{ t.name }} ({{ issueCountLabel(t) }})</template>
-							</span>
-							<span v-if="version">Version {{ shortVersion(version) }}</span>
-						</footer>
 					</div>
 				</template>
 			</div>
@@ -288,7 +284,6 @@ import {
 	useProjectList,
 	useProjectSchedules,
 } from "../composables/useProjects";
-import { useServerStatus } from "../composables/useServerStatus";
 import { useTaskPause } from "../composables/useTaskPause";
 import {
 	HEADER_ADD_CLS,
@@ -311,7 +306,6 @@ import {
 	type BoardFilter,
 	type BoardState,
 	boardItems,
-	issueCountLabel,
 	jobStates,
 	type ProjectJob,
 	type ProjectSchedule,
@@ -321,10 +315,10 @@ import {
 	scheduleJob,
 	scheduleMatches,
 	stateLabel,
+	issueSummary as summarizeIssues,
 	summarizePrompt,
 	targetURL,
 } from "../lib/projects";
-import { shortVersion } from "../lib/version";
 import { taskSessionPath, useSettingsStore } from "../stores/settings";
 
 // A selected state chip fills with that state's color; Starting is orange.
@@ -459,7 +453,6 @@ const searching = computed(() => search.value.trim() !== "");
 const KANBAN_KEY = "aviary.projects.kanban";
 const kanban = ref(localStorage.getItem(KANBAN_KEY) === "1");
 watch(kanban, (on) => localStorage.setItem(KANBAN_KEY, on ? "1" : "0"));
-const { version } = useServerStatus();
 const {
 	status,
 	jobs,
@@ -490,6 +483,10 @@ const manual = computed(
 	() =>
 		!!filterTarget.value &&
 		!!status.value?.targets.find((t) => t.name === filterTarget.value)?.manual,
+);
+// Open issue counts for the board's projects, as a header chip (#1434).
+const issueSummary = computed(() =>
+	summarizeIssues(status.value?.targets ?? [], targets.value),
 );
 // Whether the project follows the shared mode rather than its own (#1371).
 const modeInherited = computed(

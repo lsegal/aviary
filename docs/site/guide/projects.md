@@ -80,7 +80,7 @@ projects:
 
 ## Which issues run
 
-A repository issue is picked up when it is open and matches the issue filter (`assignee:@me` by default); no label is needed. The board header shows the filter in use, such as "Issues matching `assignee:@me`", or "All open issues" when `all_issues` drops it.
+A repository issue is picked up when it is open and matches the issue filter (`assignee:@me` by default); no label is needed. The board header shows the filter in use, such as "Issues matching `assignee:@me`", or "All open issues" when `all_issues` drops it. Beside it, a chip counts the open issues that match, such as **3 open issues**; on an agent's board of several projects it totals them, and hovering it lists each project's count, with "manual" for a manual project.
 
 ### Issue filter
 
