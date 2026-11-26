@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
+import { chooseValue, expectValue, listbox } from "./helpers/select";
 import { openChat } from "./helpers/voice";
 
 /**
@@ -142,16 +143,18 @@ test("records from the input chosen in the composer's input menu", async ({
 	await mic.click();
 	const menu = composer.getByTestId("voice-device");
 	await expect(menu).toBeVisible();
-	const options = await menu
-		.locator("option")
-		.evaluateAll((els) => els.map((el) => (el as HTMLOptionElement).value));
+	await menu.click();
+	const options = await listbox(menu)
+		.getByRole("option")
+		.evaluateAll((els) => els.map((el) => el.getAttribute("data-value") ?? ""));
+	await page.keyboard.press("Escape");
 	expect(options.length).toBeGreaterThan(1);
-	const current = await menu.inputValue();
+	const current = (await menu.getAttribute("data-value")) ?? "";
 	const other =
 		options.find((id) => id !== "default" && id !== current) ?? options[1];
-	await menu.selectOption(other);
+	await chooseValue(menu, other);
 	// The recording restarts on the chosen input and still transcribes.
-	await expect(menu).toHaveValue(other);
+	await expectValue(menu, other);
 	await expect(composer.getByTestId("voice-recording")).toBeVisible();
 	await mic.click();
 	await expect(input).toHaveValue("switched");
