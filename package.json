@@ -18,6 +18,13 @@
 				"current",
 				"glibc"
 			]
+		},
+		"overrides": {
+			"adm-zip": "^0.6.1",
+			"brace-expansion@1": "^1.1.22",
+			"nanoid@5": "^5.1.16",
+			"postcss-selector-parser@6": "^6.1.6",
+			"source-map-js": "^1.2.4"
 		}
 	},
 	"scripts": {
@@ -71,7 +78,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.15",
 		"@playwright/test": "^1.65.0",
-		"@tailwindcss/typography": "^0.5.19",
+		"@tailwindcss/typography": "^0.5.20",
 		"@tailwindcss/vite": "^4.3.3",
 		"@types/node": "^26.5.1",
 		"@vitejs/plugin-vue": "^6.0.9",
@@ -85,7 +92,7 @@
 		"typescript": "^6.0.3",
 		"vite": "^8.3.3",
 		"vitest": "^5.1.2",
-		"vpr": "^1.4.5",
+		"vpr": "^1.4.6",
 		"vue-tsc": "^3.3.11"
 	}
 }

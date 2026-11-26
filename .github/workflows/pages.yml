@@ -10,10 +10,7 @@ on:
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+permissions: {}
 
 concurrency:
   group: pages
@@ -22,26 +19,34 @@ concurrency:
 jobs:
   build:
     name: Build docs site
+    permissions:
+      contents: read
+      pages: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6.1.1
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: package.json
           cache: pnpm
           cache-dependency-path: docs/pnpm-lock.yaml
-      - uses: actions/configure-pages@v6
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - run: pnpm install --frozen-lockfile
         working-directory: docs
       - run: pnpm build
         working-directory: docs
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: docs/site/.vitepress/dist
 
   deploy:
     name: Deploy to GitHub Pages
+    permissions:
+      pages: write
+      id-token: write
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -49,4 +54,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
