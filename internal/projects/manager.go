@@ -394,7 +394,9 @@ type engineSettings struct {
 	TargetFilters map[string]string `json:"-"`
 	// ManualTargets are the targets in manual mode, which are never
 	// searched for issues.
-	ManualTargets     []string             `json:"-"`
+	ManualTargets []string `json:"-"`
+	// DefaultMode is the shared mode of the projects without their own.
+	DefaultMode       string               `json:"-"`
 	AllIssues         bool                 `json:"all_issues"`
 	Approval          clidefs.ApprovalMode `json:"approval"`
 	Webhook           config.ProjectsWebhookConfig
@@ -446,6 +448,7 @@ func (m *Manager) settingsLocked() (engineSettings, error) {
 		Filter:            cfg.EffectiveFilter(),
 		TargetFilters:     m.targetFiltersLocked(targets),
 		ManualTargets:     m.manualTargetsLocked(targets),
+		DefaultMode:       cfg.EffectiveMode(),
 		AllIssues:         cfg.AllIssues,
 		Approval:          cfg.EffectiveApprovalMode(m.generalApprovalLocked()),
 		Concurrency:       cfg.EffectiveConcurrency(),
@@ -504,58 +507,65 @@ func (m *Manager) targetFiltersLocked(targets []string) map[string]string {
 	return filters
 }
 
-// manualTargetsLocked lists the targets in manual mode: a runtime watch's
-// mode, else the saved project's.
+// projectModeLocked returns target's effective mode and its source: a
+// runtime watch's override, else the saved project's, else the shared mode.
+func (m *Manager) projectModeLocked(target string, saved map[string]string, global config.ProjectsConfig) (mode, source string) {
+	override := saved[target]
+	for _, watch := range m.watches {
+		if mode, ok := watch.Modes[target]; ok && slices.Contains(watch.Targets, target) {
+			override = mode
+		}
+	}
+	return global.ModeFor(override)
+}
+
+// projectModesLocked maps every one of targets to its effective mode and to
+// that mode's source, "project" or "global".
+func (m *Manager) projectModesLocked(targets []string) (modes, sources map[string]string) {
+	saved := config.AgentProjectsConfig(m.list).Modes()
+	global := m.effectiveSettingsLocked()
+	modes = make(map[string]string, len(targets))
+	sources = make(map[string]string, len(targets))
+	for _, target := range targets {
+		modes[target], sources[target] = m.projectModeLocked(target, saved, global)
+	}
+	return modes, sources
+}
+
+// manualTargetsLocked lists the targets whose effective mode is manual.
 func (m *Manager) manualTargetsLocked(targets []string) []string {
-	saved := config.AgentProjectsConfig(m.list).ManualTargets()
+	modes, _ := m.projectModesLocked(targets)
 	var manual []string
 	for _, target := range targets {
-		on := slices.Contains(saved, target)
-		for _, watch := range m.watches {
-			if mode, ok := watch.Modes[target]; ok && slices.Contains(watch.Targets, target) {
-				on = mode == config.ProjectModeManual
-			}
-		}
-		if on {
+		if modes[target] == config.ProjectModeManual {
 			manual = append(manual, target)
 		}
 	}
 	return manual
 }
 
-// ProjectMode returns target's mode, "watch" or "manual".
-func (m *Manager) ProjectMode(target string) string {
+// ProjectMode returns target's effective mode, "watch" or "manual", and its
+// source: "project" for the project's own override, else "global".
+func (m *Manager) ProjectMode(target string) (mode, source string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if len(m.manualTargetsLocked([]string{target})) > 0 {
-		return config.ProjectModeManual
-	}
-	return config.ProjectModeWatch
+	modes, sources := m.projectModesLocked([]string{target})
+	return modes[target], sources[target]
 }
 
-// ProjectModes maps every one of targets to its mode.
-func (m *Manager) ProjectModes(targets []string) map[string]string {
+// ProjectModes maps every one of targets to its effective mode and to that
+// mode's source.
+func (m *Manager) ProjectModes(targets []string) (modes, sources map[string]string) {
 	m.mu.Lock()
-	manual := m.manualTargetsLocked(targets)
-	m.mu.Unlock()
-	return projectModes(targets, manual)
+	defer m.mu.Unlock()
+	return m.projectModesLocked(targets)
 }
 
-func projectModes(targets, manual []string) map[string]string {
-	modes := make(map[string]string, len(targets))
-	for _, target := range targets {
-		modes[target] = config.ProjectModeWatch
-		if slices.Contains(manual, target) {
-			modes[target] = config.ProjectModeManual
-		}
-	}
-	return modes
-}
-
-// SetWatchMode sets the mode of target's runtime watch. It reports whether
-// target has a runtime watch.
+// SetWatchMode sets or, with an empty mode or "inherit", clears the mode
+// override of target's runtime watch. It reports whether target has a
+// runtime watch.
 func (m *Manager) SetWatchMode(target, mode string) (bool, error) {
-	mode, err := config.NormalizeProjectMode(mode)
+	mode, err := config.NormalizeProjectModeOverride(mode)
 	if err != nil {
 		return false, err
 	}
@@ -570,7 +580,11 @@ func (m *Manager) SetWatchMode(target, mode string) (bool, error) {
 		if modes == nil {
 			modes = map[string]string{}
 		}
-		modes[target] = mode
+		if mode == "" {
+			delete(modes, target)
+		} else {
+			modes[target] = mode
+		}
 		m.watches[i].Modes = modes
 	}
 	m.mu.Unlock()

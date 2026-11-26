@@ -698,6 +698,9 @@ func (v *validator) checkProjectModels(p ProjectsConfig) {
 			v.errorf(fmt.Sprintf("projects.fallbacks[%d]", i), "%v", err)
 		}
 	}
+	if _, err := NormalizeProjectMode(p.Mode); err != nil {
+		v.errorf("projects.mode", "%v", err)
+	}
 }
 
 // checkProjects rejects a project owned by more than one agent: a project has

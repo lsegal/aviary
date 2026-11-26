@@ -43,6 +43,9 @@ type ProjectsConfig struct {
 	// AllowedCommenters are the GitHub logins whose comments steer jobs.
 	// Empty means the authenticated gh user.
 	AllowedCommenters []string `yaml:"allowed_commenters,omitempty" json:"allowed_commenters,omitempty"`
+	// Mode is the default mode of every project without its own: "watch"
+	// (the default) or "manual". See ProjectConfig.Mode.
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
 	// ApprovalMode is the Code Loop surface's approval-mode override for the
 	// CLI runs it launches. Empty follows approval.mode.
 	ApprovalMode clidefs.ApprovalMode `yaml:"approval_mode,omitempty" json:"approval_mode,omitempty"`
@@ -93,9 +96,10 @@ type ProjectConfig struct {
 	// Filter overrides the shared issue search filter for this project only,
 	// one entry per term group. Empty uses the shared filter.
 	Filter []string `yaml:"filter,omitempty" json:"filter,omitempty"`
-	// Mode is how work reaches the project: "watch" (the default) discovers
-	// issues matching the filter; "manual" never discovers or claims issues,
-	// so only queued jobs, scheduled project tasks and agent tools start work.
+	// Mode overrides the shared mode for this project only: "watch"
+	// discovers issues matching the filter; "manual" never discovers or
+	// claims issues, so only queued jobs, scheduled project tasks and agent
+	// tools start work. Empty uses the shared mode.
 	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
 	// Reports sends this project's job lifecycle events through an Aviary
 	// agent's channels. Unset means no reports.
@@ -266,6 +270,15 @@ func JoinFilter(filter []string) string {
 const (
 	ProjectModeWatch  = "watch"
 	ProjectModeManual = "manual"
+	// ProjectModeInherit clears a project's mode override, so the project
+	// follows the shared mode.
+	ProjectModeInherit = "inherit"
+)
+
+// Where a project's effective mode comes from.
+const (
+	ProjectModeSourceProject = "project"
+	ProjectModeSourceGlobal  = "global"
 )
 
 // NormalizeProjectMode returns mode as ProjectModeWatch or ProjectModeManual,
@@ -280,21 +293,53 @@ func NormalizeProjectMode(mode string) (string, error) {
 	return "", fmt.Errorf("unknown project mode %q; use %s or %s", mode, ProjectModeWatch, ProjectModeManual)
 }
 
-// Manual reports whether the project is in manual mode.
-func (p ProjectConfig) Manual() bool {
-	return strings.EqualFold(strings.TrimSpace(p.Mode), ProjectModeManual)
+// NormalizeProjectModeOverride returns a project's mode override as
+// ProjectModeWatch or ProjectModeManual, or empty for no override when mode
+// is empty or ProjectModeInherit.
+func NormalizeProjectModeOverride(mode string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", ProjectModeInherit:
+		return "", nil
+	case ProjectModeWatch:
+		return ProjectModeWatch, nil
+	case ProjectModeManual:
+		return ProjectModeManual, nil
+	}
+	return "", fmt.Errorf("unknown project mode %q; use %s, %s or %s", mode, ProjectModeWatch, ProjectModeManual, ProjectModeInherit)
 }
 
-// ManualTargets lists the projects in manual mode, in order.
-func (p AgentProjectsConfig) ManualTargets() []string {
-	var targets []string
+// EffectiveMode returns the shared mode, ProjectModeWatch or
+// ProjectModeManual.
+func (p ProjectsConfig) EffectiveMode() string {
+	if mode, err := NormalizeProjectMode(p.Mode); err == nil {
+		return mode
+	}
+	return ProjectModeWatch
+}
+
+// ModeFor returns the mode a project with override uses and where it comes
+// from: the override, else the shared mode.
+func (p ProjectsConfig) ModeFor(override string) (mode, source string) {
+	if mode, err := NormalizeProjectModeOverride(override); err == nil && mode != "" {
+		return mode, ProjectModeSourceProject
+	}
+	return p.EffectiveMode(), ProjectModeSourceGlobal
+}
+
+// Modes maps every project with its own mode override to that override.
+func (p AgentProjectsConfig) Modes() map[string]string {
+	modes := map[string]string{}
 	for _, project := range p {
 		target := strings.TrimSpace(project.Target)
-		if target != "" && project.Manual() && !slices.Contains(targets, target) {
-			targets = append(targets, target)
+		mode, err := NormalizeProjectModeOverride(project.Mode)
+		if target == "" || err != nil || mode == "" {
+			continue
+		}
+		if _, ok := modes[target]; !ok {
+			modes[target] = mode
 		}
 	}
-	return targets
+	return modes
 }
 
 // Filters maps every project with its own filter override to that override,
@@ -336,7 +381,7 @@ func (p AgentProjectsConfig) IsZero() bool {
 func (p ProjectsConfig) IsZero() bool {
 	return p.Concurrency == 0 && p.Interval == "" && p.Delivery == "" &&
 		p.ReadyState == "" && len(p.Filter) == 0 && !p.AllIssues &&
-		len(p.AllowedCommenters) == 0 &&
+		len(p.AllowedCommenters) == 0 && p.Mode == "" &&
 		p.ApprovalMode == "" && !p.Yolo && !p.NoMerge && !p.NoChangelog &&
 		p.Model == "" && len(p.Fallbacks) == 0 &&
 		p.UnblockInterval == "" && p.UnblockAgent == "" && p.UnblockModel == "" &&
@@ -364,6 +409,9 @@ func (p ProjectsConfig) Override(overlay ProjectsConfig) ProjectsConfig {
 	merged.AllIssues = merged.AllIssues || overlay.AllIssues
 	if len(overlay.AllowedCommenters) > 0 {
 		merged.AllowedCommenters = overlay.AllowedCommenters
+	}
+	if overlay.Mode != "" {
+		merged.Mode = overlay.Mode
 	}
 	if overlay.ApprovalMode != "" {
 		merged.ApprovalMode = overlay.ApprovalMode
