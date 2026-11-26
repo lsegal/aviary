@@ -8,8 +8,9 @@
       class="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-green-600 px-1 text-center text-[10px] font-semibold leading-4 text-white">{{ badge }}</span>
     <span v-else-if="dot" data-testid="sidebar-rail-dot" aria-hidden="true"
       class="absolute right-1 top-1 h-2 w-2 rounded-full" :class="dot" />
+    <!-- A bar under the icon, not a dot: a dot reads as unread (#1319). -->
     <span v-if="activeChild" data-testid="sidebar-rail-active-child" aria-hidden="true"
-      class="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
+      class="absolute bottom-0.5 left-1/2 h-0.5 w-4 -translate-x-1/2 rounded-full bg-blue-600 dark:bg-blue-400" />
   </component>
   <!-- Fixed, so the rail's scrolling list cannot clip it, but kept next to
        its icon so Tab moves from the icon into its items. -->
@@ -23,11 +24,13 @@
     </div>
     <ul :aria-label="label">
       <li v-for="item in items" :key="item.key">
+        <!-- The open item is shaded with an accent edge rather than bold,
+             which reads as unread (#1319). -->
         <router-link :to="item.to" data-testid="sidebar-rail-flyout-item" :aria-current="item.active ? 'page' : undefined"
-          class="block truncate rounded-lg px-2 py-1.5 text-sm transition-colors"
+          class="block truncate rounded-lg border-l-2 px-2 py-1.5 text-sm transition-colors"
           :class="item.active
-            ? 'bg-gray-100 font-semibold text-gray-950 dark:bg-gray-800 dark:text-white'
-            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'"
+            ? 'border-blue-600 bg-gray-100 text-gray-950 dark:border-blue-400 dark:bg-gray-800 dark:text-white'
+            : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'"
           @click="hide">{{ item.label }}</router-link>
       </li>
     </ul>
