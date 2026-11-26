@@ -132,9 +132,9 @@ function levelMeter(
 		return {
 			sampleRate: audio.sampleRate,
 			read() {
-				analysers.forEach((analyser, i) =>
-					analyser.getFloatTimeDomainData(bufs[i]),
-				);
+				analysers.forEach((analyser, i) => {
+					analyser.getFloatTimeDomainData(bufs[i]);
+				});
 				const now = measureChannels(bufs);
 				now.forEach((l, i) => {
 					totals[i].peak = Math.max(totals[i].peak, l.peak);
