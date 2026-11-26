@@ -178,7 +178,7 @@ On a finished or paused job, a mention goes to the Code Loop agent instead, as `
 
 The **Queue** menu in a project's header starts work that no poll picks up on its own:
 
-- **Safe merge PR** opens a picker of the repository's open pull requests, with each one's CI status, review decision, mergeability, author, and the job that already owns it. Picked pull requests become `merge` jobs that run `gh-safe-merge`. They merge one at a time per repository, in the order you picked them, so each one rebases and rechecks on the latest default branch. A merge that's skipped or fails shows its reason on its card.
+- **Safe merge PR** opens a picker of the repository's open pull requests, with each one's CI status, review decision, mergeability, author, and the job that already owns it. Picked pull requests become `merge` jobs that run `gh-safe-merge`. Several merge at once, up to the agent slots, starting in the order you picked them; that order is a priority, not a line where each waits for the previous merge's CI. Each job verifies its own pull request, and when another merge lands first and leaves it behind or conflicting, the job updates the branch and rechecks before merging. A merge that's skipped, fails, or ends with its pull request still open (such as a conflict the job couldn't resolve) shows its reason on its card and needs attention.
 - **Discuss** opens a picker of open Discussion threads. Picked threads become `discuss` jobs that run `gh-discuss`.
 - **Fix issue** takes issue numbers. It retries an issue's finished job, or checks GitHub now so that an issue matching the project's filter is dispatched. On a project in [manual mode](#manual-mode), the issue is dispatched whatever the filter.
 

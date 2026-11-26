@@ -63,7 +63,7 @@ type projectJobGetArgs struct {
 
 type projectJobQueueArgs struct {
 	Skill      string `json:"skill" jsonschema:"gh-safe-merge to queue pull requests for a safe merge, gh-discuss to queue Discussion threads for an answer, or gh-fix to have issues fixed"`
-	Numbers    []int  `json:"numbers" jsonschema:"Pull request, Discussion or issue numbers, in the order to run them; queued merges run one at a time per repository in this order"`
+	Numbers    []int  `json:"numbers" jsonschema:"Pull request, Discussion or issue numbers, in the order to start them; queued merges run concurrently up to the agent slots and start in this priority order"`
 	Target     string `json:"target,omitempty" jsonschema:"The project to queue on; needed only when several projects are watched"`
 	Repository string `json:"repository,omitempty" jsonschema:"OWNER/REPO the numbers live in; needed only when the project is a GitHub Project board"`
 	// Titles names the numbers on their cards before their runs read them.
@@ -339,7 +339,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_job_queue",
-		Description: "Queue Code Loop jobs on demand: pull requests for gh-safe-merge, which merge one at a time per repository in the order given, or Discussion threads for gh-discuss. Each becomes a board job with logs, transcript and pause, resume, stop and retry; queued jobs survive a restart. A number a job already owns is reported with that job and not queued twice. Safe merge is refused while no_merge is set. gh-fix retries an issue's finished job, or checks GitHub now so a matching issue is dispatched",
+		Description: "Queue Code Loop jobs on demand: pull requests for gh-safe-merge, which verify and merge concurrently up to the agent slots, starting in the order given and updating any pull request a sibling merge left behind, or Discussion threads for gh-discuss. Each becomes a board job with logs, transcript and pause, resume, stop and retry; queued jobs survive a restart. A number a job already owns is reported with that job and not queued twice. Safe merge is refused while no_merge is set. gh-fix retries an issue's finished job, or checks GitHub now so a matching issue is dispatched",
 		Annotations: mutatingTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectJobQueueArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {

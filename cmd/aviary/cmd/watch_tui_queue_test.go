@@ -47,7 +47,7 @@ func TestWatchTUISafeMergesSelectedPullRequest(t *testing.T) {
 		t.Fatalf("calls = %+v", calls)
 	}
 	m = watchUpdate(t, m, msg)
-	if !strings.Contains(m.message, "#9 queued (#1 in the merge queue)") {
+	if !strings.Contains(m.message, "#9 queued (priority #1)") {
 		t.Fatalf("message = %q", m.message)
 	}
 
@@ -106,7 +106,7 @@ func TestWatchTUIShowsQueuedJobKinds(t *testing.T) {
 	)
 	m := loadedWatchModel(t, tools)
 	view := watchStrip(m.View())
-	for _, want := range []string{"safe merge #2 in queue", "Skipped: required checks are failing"} {
+	for _, want := range []string{"safe merge queued, priority #2", "Skipped: required checks are failing"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view lacks %q:\n%s", want, view)
 		}

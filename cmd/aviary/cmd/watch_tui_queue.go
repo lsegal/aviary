@@ -149,7 +149,7 @@ func (m watchModel) applyQueue(msg watchQueueMsg) (tea.Model, tea.Cmd) {
 	for _, r := range msg.results {
 		switch {
 		case r.Queued && r.Position > 0:
-			parts = append(parts, fmt.Sprintf("#%d queued (#%d in the merge queue)", r.Number, r.Position))
+			parts = append(parts, fmt.Sprintf("#%d queued (priority #%d)", r.Number, r.Position))
 		case r.Queued:
 			parts = append(parts, fmt.Sprintf("#%d queued", r.Number))
 		case r.OwnedBy != "":
@@ -169,7 +169,7 @@ func watchKindLabel(job watchJob) string {
 	case "merge":
 		label := "safe merge"
 		if job.QueuePosition > 0 && job.Status == "queued" {
-			label += fmt.Sprintf(" #%d in queue", job.QueuePosition)
+			label += fmt.Sprintf(" queued, priority #%d", job.QueuePosition)
 		}
 		return label
 	case "discuss":

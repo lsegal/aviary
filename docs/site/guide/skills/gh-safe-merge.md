@@ -19,6 +19,10 @@ This skill works on its own, with no Aviary at all. Aviary just runs it for you.
 5. **Run CI to completion.** Every required check must pass on the final head, including its own finishing commits.
 6. **Merge, unless told not to.** The merge is the acceptance; a safe, working pull request merges with no comment.
 
+## Other Merges in Flight
+
+The skill never assumes it is the only merge on a repository. Aviary runs queued safe merges side by side, so the default branch may move while a pull request is in CI. Right before merging, the skill checks whether the pull request is now behind or conflicting. If it is, the skill updates the branch from the latest default branch, re-runs CI when branch protection or the update calls for it, and checks again. A conflict that needs a judgement about the pull request's behavior goes back to the author, and the pull request stays open and unmerged. When the repository uses GitHub's merge queue, the skill adds the pull request to the queue instead of merging it directly.
+
 ## The Safety Check Gates Everything
 
 Running untrusted code is the risk itself, so CI is never unblocked before the check passes. The check reads the description, the full diff and every commit for:

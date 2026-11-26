@@ -147,8 +147,8 @@ const scheduleTask = computed(() => {
 const waitingText = computed(() => waitText(props.job, props.now));
 
 // Pull requests queued for gh-safe-merge and threads queued for gh-discuss
-// (#1095) name their own pull request or thread, their place in the merge
-// lane while waiting, and why they ended.
+// (#1095) name their own pull request or thread, their priority while
+// waiting, and why they ended.
 const queued = computed(
 	() => props.job.kind === "merge" || props.job.kind === "discuss",
 );
@@ -165,12 +165,16 @@ const kindBadge = computed(() => {
 		};
 	return null;
 });
+// Merges run side by side (#1433): any running merge is "merging now", and
+// a waiting one shows its priority among the repository's queued merges.
 const queueText = computed(() => {
+	if (props.job.kind !== "merge") return "";
+	if (["active", "waiting", "stopping"].includes(props.job.status))
+		return "merging now";
 	const position = props.job.queuePosition;
-	if (props.job.kind !== "merge" || !position) return "";
-	return props.job.status === "queued"
-		? `#${position} in the merge queue`
-		: "merging now";
+	return props.job.status === "queued" && position
+		? `queued · priority #${position}`
+		: "";
 });
 const reason = computed(() =>
 	queued.value && (props.job.state === "done" || props.job.state === "failed")

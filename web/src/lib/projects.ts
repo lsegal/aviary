@@ -219,7 +219,7 @@ export interface ProjectJob {
 	events: JobEvent[];
 	/** The engine's job kind: issue, discussion, schedule, merge or discuss. */
 	kind: string;
-	/** A queued merge's place in its repository's serial merge lane, from 1 for the running merge; 0 otherwise. */
+	/** A waiting merge's priority among its repository's queued merges, from 1 for the next to start; 0 for running merges and other jobs. */
 	queuePosition: number;
 	/** The last line of a finished merge or discuss job, which says why it ended. */
 	summary: string;

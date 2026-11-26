@@ -73,7 +73,7 @@
 						<a v-else-if="job.number && job.repo" :href="job.issueURL || githubURL(job.repo, 'issues', job.number)"
 							target="_blank" rel="noreferrer" class="hover:underline">#{{ job.number }}</a>
 						<PullRequestLink v-if="job.pr && job.kind !== 'merge'" :job="job" />
-						<span v-if="job.kind === 'merge' && job.status === 'queued' && job.queuePosition" data-testid="kanban-queue-position">#{{ job.queuePosition }} in queue</span>
+						<span v-if="job.kind === 'merge' && job.status === 'queued' && job.queuePosition" data-testid="kanban-queue-position">queued · priority #{{ job.queuePosition }}</span>
 						<span v-if="job.startedAt" data-testid="kanban-timing" class="ml-auto tabular-nums"
 							:title="`Started ${new Date(job.startedAt).toLocaleString()}`">{{ age(job.startedAt, now) }}</span>
 					</p>
