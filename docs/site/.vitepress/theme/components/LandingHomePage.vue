@@ -590,7 +590,8 @@ onBeforeUnmount(() => {
 				<p class="landing-section-sub reveal">
 					Aviary watches your repositories and works their issues end to end
 					with the CLI providers you already use, from the first clone to the
-					green merge.
+					green merge. Or switch a project to manual mode, and it works only
+					what you queue.
 				</p>
 
 				<ol class="landing-projects-steps reveal">
@@ -679,7 +680,8 @@ onBeforeUnmount(() => {
 							Use <code>aviary watch USER/REPO</code> for a portable,
 							no-configuration, minimal Aviary Code Loop instance. It serves
 							the web UI and adds a board with prompt chat right in your
-							terminal.
+							terminal. Add <code>--manual</code> and it picks up nothing on
+							its own, working only what you queue.
 						</p>
 						<a class="landing-btn landing-btn-ghost landing-card-btn" :href="withBase('/guide/watch')">
 							Read the aviary watch docs

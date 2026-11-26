@@ -151,13 +151,10 @@ var devServices = []struct {
 	displayName string
 	description string
 	command     string
-	// pathUser reports whether the installer infers the service user from a
-	// /home/<user> or /Users/<user> working directory.
-	pathUser bool
 }{
 	{
 		run: runInstallDevService, name: "aviary-dev", displayName: "Aviary (dev pnpm dev)",
-		description: "Runs `pnpm dev` for aviary (development)", command: "pnpm dev", pathUser: true,
+		description: "Runs `pnpm dev` for aviary (development)", command: "pnpm dev",
 	},
 	{
 		run: runInstallDevDocsService, name: "aviary-dev-docs", displayName: "Aviary (docs:dev)",
@@ -178,22 +175,19 @@ func TestRunInstallDevServicesOptions(t *testing.T) {
 		wantExec string
 		wantWD   string
 		wantUser string
-		// wantPathUser, when set, replaces wantUser for services that infer
-		// the user from the working directory.
-		wantPathUser string
 	}{
 		{
 			name: "linux home path user wins over sudo user", wd: "/home/alice/aviary", usr: &user.User{Username: "root", HomeDir: "/root"},
 			goos: "linux", shell: "/bin/bash",
-			wantExec: "/bin/bash", wantWD: "/home/alice/aviary", wantUser: "root", wantPathUser: "alice",
+			wantExec: "/bin/bash", wantWD: "/home/alice/aviary", wantUser: "alice",
 		},
 		{
 			name: "unix shell", wd: "/home/alice/aviary", usr: current, goos: "linux", shell: "/bin/bash",
-			wantExec: "/bin/bash", wantWD: "/home/alice/aviary", wantUser: "builder", wantPathUser: "alice",
+			wantExec: "/bin/bash", wantWD: "/home/alice/aviary", wantUser: "alice",
 		},
 		{
 			name: "macOS users path", wd: "/Users/bob/src/aviary", usr: current, goos: "darwin",
-			wantExec: "/bin/zsh", wantWD: "/Users/bob/src/aviary", wantUser: "builder", wantPathUser: "bob",
+			wantExec: "/bin/zsh", wantWD: "/Users/bob/src/aviary", wantUser: "bob",
 		},
 		{
 			name: "default shell", wd: "/opt/aviary", usr: current, goos: "darwin",
@@ -229,10 +223,6 @@ func TestRunInstallDevServicesOptions(t *testing.T) {
 					if tt.goos == "windows" {
 						wantArgs = []string{"/C", svc.command}
 					}
-					wantUser := tt.wantUser
-					if svc.pathUser && tt.wantPathUser != "" {
-						wantUser = tt.wantPathUser
-					}
 
 					out, err := captureStdout(t, func() error { return svc.run(nil, nil) })
 					require.NoError(t, err)
@@ -244,7 +234,7 @@ func TestRunInstallDevServicesOptions(t *testing.T) {
 						Exec:        tt.wantExec,
 						Args:        wantArgs,
 						WorkingDir:  tt.wantWD,
-						User:        wantUser,
+						User:        tt.wantUser,
 					}, fake.installed[0])
 					assert.Equal(t, "Installing service: "+svc.name+"\nService installed and started: "+svc.name+"\n", out)
 				})

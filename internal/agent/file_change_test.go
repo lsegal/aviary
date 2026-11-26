@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,24 +47,11 @@ func TestAgentRunner_EmitsFileChangeEventsForEdits(t *testing.T) {
 	require.NoError(t, err)
 
 	var changes []FileChangeEvent
-	done := make(chan struct{}, 1)
-	runner.Prompt(WithSessionID(context.Background(), sess.ID), "edit", func(e StreamEvent) {
-		switch e.Type {
-		case StreamEventFile:
+	promptAndWait(WithSessionID(context.Background(), sess.ID), t, runner, "edit", nil, RunOverrides{}, func(e StreamEvent) {
+		if e.Type == StreamEventFile {
 			changes = append(changes, *e.File)
-		case StreamEventDone, StreamEventError, StreamEventStop:
-			select {
-			case done <- struct{}{}:
-			default:
-			}
 		}
 	})
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		require.FailNow(t, "timeout")
-	}
-	runner.Wait()
 
 	require.Len(t, toolClient.calls, 1)
 	require.Len(t, changes, 1)

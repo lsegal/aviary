@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
@@ -184,25 +183,6 @@ func (c *captureProvider) Stream(_ context.Context, req llm.Request) (<-chan llm
 	return ch, nil
 }
 
-func runnerDone(t *testing.T, runner *AgentRunner, msg string) {
-	t.Helper()
-	done := make(chan struct{}, 1)
-	runner.Prompt(context.Background(), msg, func(e StreamEvent) {
-		if e.Type == StreamEventDone || e.Type == StreamEventError || e.Type == StreamEventStop {
-			select {
-			case done <- struct{}{}:
-			default:
-			}
-		}
-	})
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		assert.FailNow(t, "timeout")
-	}
-	runner.Wait()
-}
-
 func TestAgentRunner_RulesInjectionEscaped(t *testing.T) {
 	SetToolClientFactory(func(_ context.Context) (ToolClient, error) {
 		return &fakeToolClient{}, nil
@@ -223,7 +203,7 @@ func TestAgentRunner_RulesInjectionEscaped(t *testing.T) {
 				prov,
 				nil,
 			)
-			runnerDone(t, runner, "hello")
+			promptAndWait(context.Background(), t, runner, "hello", nil, RunOverrides{})
 			assert.NotEqual(t, 0, len(prov.requests))
 
 			sys := prov.requests[0].System
@@ -280,7 +260,7 @@ func TestAgentRunner_ToolResultInjectionEscaped(t *testing.T) {
 		provider,
 		nil,
 	)
-	runnerDone(t, runner, "run the tool")
+	promptAndWait(context.Background(), t, runner, "run the tool", nil, RunOverrides{})
 	assert.GreaterOrEqual(t, provider.callCount(), 2)
 
 	// The second request should contain a ToolResult message with the (raw) tool output.
