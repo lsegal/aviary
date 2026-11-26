@@ -734,6 +734,97 @@ test.describe("on a phone", () => {
 		await page.getByTestId("mobile-row-action").tap();
 		await expect(page.getByRole("dialog", { name: "Add file" })).toBeVisible();
 	});
+
+	for (const width of [360, 390, 430]) {
+		test(`the second row pins + right of its scrolling tabs at ${width}px (#1403)`, async ({
+			page,
+		}) => {
+			await page.setViewportSize({ width, height: 844 });
+			const names = [
+				"aviary-find-dupe-tests",
+				"aviary-release",
+				"aviary-update-docs",
+				"improve-coverage",
+				"weekly-report",
+			];
+			await mockAgent(
+				page,
+				names.map((name) => ({ name, schedule: "0 0 * * *", prompt: "x" })),
+				FILES,
+			);
+			await page.goto("/agents/assistant/tasks?task=weekly-report");
+			const strip = page.getByTestId("mobile-sub-nav");
+			const add = page.getByTestId("mobile-row-action");
+			await expect(add).toBeVisible();
+			await expect(add).toHaveCSS("opacity", "1");
+
+			// The + sits outside the strip, flush with the row's right edge.
+			const row = page.getByTestId("mobile-sub-nav-row");
+			const rowBox = await row.boundingBox();
+			const addBox = await add.boundingBox();
+			const stripBox = await strip.boundingBox();
+			if (!rowBox || !addBox || !stripBox) throw new Error("no layout");
+			expect(
+				Math.abs(addBox.x + addBox.width - (rowBox.x + rowBox.width)),
+			).toBeLessThan(1);
+			expect(stripBox.x + stripBox.width).toBeLessThanOrEqual(addBox.x);
+			await expect(strip.getByRole("button")).toHaveCount(0);
+
+			// The strip overflows, shows no scrollbar, and the active (last)
+			// tab is scrolled into view, so the left edge fades.
+			const metrics = () =>
+				strip.evaluate((el) => ({
+					overflow: el.scrollWidth > el.clientWidth,
+					scrollLeft: el.scrollLeft,
+					scrollbar: getComputedStyle(el).scrollbarWidth,
+					mask:
+						getComputedStyle(el).maskImage ||
+						getComputedStyle(el).getPropertyValue("-webkit-mask-image"),
+				}));
+			await expect
+				.poll(async () => (await metrics()).scrollLeft)
+				.toBeGreaterThan(0);
+			let m = await metrics();
+			expect(m.overflow).toBe(true);
+			expect(m.scrollbar).toBe("none");
+			expect(m.mask).toMatch(
+				/^linear-gradient\(to right, (rgba\(0, 0, 0, 0\)|transparent)/,
+			);
+			const active = strip.locator("[data-active]");
+			await expect(active).toHaveText("weekly-report");
+			const activeBox = await active.boundingBox();
+			if (!activeBox) throw new Error("no active tab");
+			expect(activeBox.x + activeBox.width).toBeLessThanOrEqual(
+				stripBox.x + stripBox.width + 1,
+			);
+
+			// Scrolled back to the start, the right edge fades before the +
+			// and the + stays put.
+			await strip.evaluate((el) => {
+				el.scrollLeft = 0;
+			});
+			await expect
+				.poll(async () => (await metrics()).mask)
+				.toMatch(/transparent\)$|rgba\(0, 0, 0, 0\)\)$/);
+			m = await metrics();
+			expect(m.mask).toMatch(
+				/^linear-gradient\(to right, (rgb\(0, 0, 0\)|#000)/,
+			);
+			expect(await add.boundingBox()).toEqual(addBox);
+
+			// The page itself never scrolls sideways.
+			expect(
+				await page.evaluate(
+					() => document.documentElement.scrollWidth <= window.innerWidth,
+				),
+			).toBe(true);
+
+			await add.tap();
+			await expect(
+				page.getByRole("dialog", { name: "Add task" }),
+			).toBeVisible();
+		});
+	}
 });
 
 test("a scheduled prompt task can turn on precompile in its editor (#1032)", async ({

@@ -38,5 +38,19 @@ export function useScrollFade(row: Ref<HTMLElement | null | undefined>) {
 	onMounted(observe);
 	onBeforeUnmount(() => observer?.disconnect());
 
-	return { before, after, fadeStyle, measure, observe };
+	/** Scrolls the row, not the page, just enough to show its active item. */
+	function revealActive(selector = "[data-active]") {
+		const el = row.value;
+		const item = el?.querySelector<HTMLElement>(selector);
+		if (!el || !item) return;
+		const box = item.getBoundingClientRect();
+		const left = box.left - el.getBoundingClientRect().left + el.scrollLeft;
+		const right = left + box.width;
+		if (left < el.scrollLeft) el.scrollLeft = left;
+		else if (right > el.scrollLeft + el.clientWidth)
+			el.scrollLeft = right - el.clientWidth;
+		measure();
+	}
+
+	return { before, after, fadeStyle, measure, observe, revealActive };
 }

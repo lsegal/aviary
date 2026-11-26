@@ -81,8 +81,9 @@
 
     <div v-if="mobileChildren.length"
       class="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-800 dark:bg-gray-950 lg:hidden">
-      <nav data-testid="mobile-sub-nav" class="group/row scrollbar-none relative flex gap-2 overflow-x-auto pb-1" :class="mobileAdd ? 'pr-9' : ''">
+      <MobileSubNav :tabs="mobileChildren.map((c) => c.key).join('\n')" :active="mobileActiveKey">
         <router-link v-for="child in mobileChildren" :key="child.key" :to="child.to"
+          :data-active="(child.active ?? isChildActive(child)) || undefined"
           :title="child.paused ? 'Paused' : child.disabled ? 'Disabled' : undefined" :data-paused="child.paused || undefined"
           :data-disabled="child.disabled || undefined"
           :class="[mobileSubnavClass(child), 'inline-flex items-center gap-1.5', child.paused || child.disabled ? 'italic opacity-60' : '']">
@@ -91,8 +92,10 @@
             data-testid="mobile-channel-disabled" class="inline-flex text-gray-400 dark:text-gray-500"><NoSymbolIcon aria-hidden="true" class="h-3.5 w-3.5" /></span>{{ child.label }}<ProjectRunningBadge
             :running="child.running ?? 0" class="ml-1.5" />
         </router-link>
-        <SidebarRowAction v-if="mobileAdd" :label="rowAddLabel(mobileAdd.page)" data-testid="mobile-row-action" @click="openAdd(mobileAdd.page, mobileAdd.agent)" />
-      </nav>
+        <template v-if="mobileAdd" #action>
+          <SidebarRowAction inline :label="rowAddLabel(mobileAdd.page)" data-testid="mobile-row-action" @click="openAdd(mobileAdd.page, mobileAdd.agent)" />
+        </template>
+      </MobileSubNav>
     </div>
 
     <!-- While collapsed, resting the pointer on the rail peeks the full
@@ -443,6 +446,7 @@ import {
 	taskSessionPath,
 	useSettingsStore,
 } from "../stores/settings";
+import MobileSubNav from "./MobileSubNav.vue";
 import SidebarRowAction from "./SidebarRowAction.vue";
 import AutoUpdateError from "./AutoUpdateError.vue";
 import UpdateStatusBanner from "./UpdateStatusBanner.vue";
@@ -1220,6 +1224,10 @@ function pageItems(agent: string, page: string): RailFlyoutItem[] | undefined {
 	}
 	return undefined;
 }
+
+const mobileActiveKey = computed(
+	() => mobileChildren.value.find((c) => c.active ?? isChildActive(c))?.key,
+);
 
 function mobileSubnavClass(child: NavChild): string {
 	return (child.active ?? isChildActive(child))
