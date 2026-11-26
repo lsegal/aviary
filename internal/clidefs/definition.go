@@ -462,17 +462,32 @@ func (q Quota) validate() error {
 		return fmt.Errorf(`field "quota.reader": %q must be %s`, q.Reader, JoinOr(quotaReaders))
 	}
 	if reader != QuotaCommand {
-		for field, set := range map[string]bool{
-			"quota.command": len(q.Command) > 0, "quota.percentUsed": q.PercentUsed != "",
-			"quota.resetAt": q.ResetAt != "", "quota.format": q.Format != "",
-			"quota.timeout": q.Timeout != "",
-		} {
-			if set {
-				return fmt.Errorf(`field %q is only meaningful when "quota.reader" is %q`, field, QuotaCommand)
-			}
-		}
-		return nil
+		return q.validateNonCommand()
 	}
+	if err := q.validateCommand(); err != nil {
+		return err
+	}
+	if err := q.validateFormat(); err != nil {
+		return err
+	}
+	return validatePositiveDuration("quota.timeout", q.Timeout)
+}
+
+// validateNonCommand rejects the command reader's fields on another reader.
+func (q Quota) validateNonCommand() error {
+	for field, set := range map[string]bool{
+		"quota.command": len(q.Command) > 0, "quota.percentUsed": q.PercentUsed != "",
+		"quota.resetAt": q.ResetAt != "", "quota.format": q.Format != "",
+		"quota.timeout": q.Timeout != "",
+	} {
+		if set {
+			return fmt.Errorf(`field %q is only meaningful when "quota.reader" is %q`, field, QuotaCommand)
+		}
+	}
+	return nil
+}
+
+func (q Quota) validateCommand() error {
 	if len(q.Command) == 0 {
 		return fmt.Errorf(`field "quota.command" is required when "quota.reader" is %q`, QuotaCommand)
 	}
@@ -481,6 +496,12 @@ func (q Quota) validate() error {
 			return fmt.Errorf(`field "quota.command" cannot contain an empty argument`)
 		}
 	}
+	return nil
+}
+
+// validateFormat checks the format's placeholders and that each one it
+// substitutes has a field to read it from.
+func (q Quota) validateFormat() error {
 	for _, match := range placeholderPattern.FindAllStringSubmatch(q.FormatTemplate(), -1) {
 		if !contains(quotaPlaceholders, match[1]) {
 			return fmt.Errorf(`field "quota.format": unknown placeholder %s; known placeholders are {%s}`, match[0], strings.Join(sorted(quotaPlaceholders), "}, {"))
@@ -492,14 +513,21 @@ func (q Quota) validate() error {
 	if q.ResetAt == "" && strings.Contains(q.FormatTemplate(), "{resetAt}") {
 		return fmt.Errorf(`field "quota.resetAt" is required when "quota.format" substitutes {resetAt}`)
 	}
-	if strings.TrimSpace(q.Timeout) != "" {
-		timeout, err := time.ParseDuration(q.Timeout)
-		if err != nil {
-			return fmt.Errorf(`field "quota.timeout": %w`, err)
-		}
-		if timeout <= 0 {
-			return fmt.Errorf(`field "quota.timeout": %q must be positive`, q.Timeout)
-		}
+	return nil
+}
+
+// validatePositiveDuration checks an optional duration field parses and is
+// positive.
+func validatePositiveDuration(field, value string) error {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil {
+		return fmt.Errorf(`field %q: %w`, field, err)
+	}
+	if timeout <= 0 {
+		return fmt.Errorf(`field %q: %q must be positive`, field, value)
 	}
 	return nil
 }
@@ -679,25 +707,31 @@ func (d Doctor) ModelsFrom(output string) []string {
 	seen := make(map[string]bool)
 	models := make([]string, 0, 16)
 	for _, candidate := range d.modelCandidates(output) {
-		model := strings.TrimSpace(candidate)
-		if expr != nil {
-			match := expr.FindStringSubmatch(model)
-			if match == nil {
-				continue
-			}
-			if len(match) > 1 {
-				model = strings.TrimSpace(match[1])
-			} else {
-				model = strings.TrimSpace(match[0])
-			}
-		}
-		if model == "" || seen[model] {
+		model, ok := matchModel(expr, candidate)
+		if !ok || model == "" || seen[model] {
 			continue
 		}
 		seen[model] = true
 		models = append(models, model)
 	}
 	return models
+}
+
+// matchModel narrows one candidate line by the model pattern, reporting false
+// when the pattern rejects it. With no pattern the trimmed line is the model.
+func matchModel(expr *regexp.Regexp, candidate string) (string, bool) {
+	model := strings.TrimSpace(candidate)
+	if expr == nil {
+		return model, true
+	}
+	match := expr.FindStringSubmatch(model)
+	if match == nil {
+		return "", false
+	}
+	if len(match) > 1 {
+		return strings.TrimSpace(match[1]), true
+	}
+	return strings.TrimSpace(match[0]), true
 }
 
 // modelCandidates is what the probe's output offers before any pattern
@@ -715,45 +749,74 @@ func (d Doctor) modelCandidates(output string) []string {
 // ignored, on the same grounds as the quota block: a probe that silently does
 // nothing looks exactly like a working one.
 func (d Doctor) validate() error {
+	checks := []func() error{
+		d.validateValues,
+		d.validateDependentFields,
+		d.validatePaths,
+		d.validatePatterns,
+		func() error { return validatePositiveDuration("doctor.timeout", d.Timeout) },
+	}
+	for _, check := range checks {
+		if err := check(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateValues rejects empty entries in the doctor's list fields.
+func (d Doctor) validateValues() error {
 	for field, argv := range map[string][]string{"doctor.auth": d.Auth, "doctor.models": d.Models} {
-		for _, arg := range argv {
-			if strings.TrimSpace(arg) == "" {
-				return fmt.Errorf("field %q cannot contain an empty argument", field)
-			}
+		if hasBlank(argv) {
+			return fmt.Errorf("field %q cannot contain an empty argument", field)
 		}
 	}
-	for _, model := range d.KnownModels {
-		if strings.TrimSpace(model) == "" {
-			return fmt.Errorf(`field "doctor.knownModels" cannot contain an empty value`)
-		}
+	if hasBlank(d.KnownModels) {
+		return fmt.Errorf(`field "doctor.knownModels" cannot contain an empty value`)
 	}
-	for field, declared := range map[string]bool{
+	if hasBlank(d.ModelsStdin) {
+		return fmt.Errorf(`field "doctor.modelsStdin" cannot contain an empty line`)
+	}
+	return nil
+}
+
+// validateDependentFields rejects fields that belong to a probe the
+// definition does not declare.
+func (d Doctor) validateDependentFields() error {
+	authFields := map[string]bool{
 		"doctor.signedIn":       strings.TrimSpace(d.SignedIn) != "",
 		"doctor.signedInJSON":   strings.TrimSpace(d.SignedInJSON) != "",
 		"doctor.authDetail":     strings.TrimSpace(d.AuthDetail) != "",
 		"doctor.authDetailJSON": strings.TrimSpace(d.AuthDetailJSON) != "",
-	} {
-		if declared && len(d.Auth) == 0 {
-			return fmt.Errorf(`field %q is only meaningful alongside "doctor.auth"`, field)
-		}
+	}
+	if err := requireProbe(authFields, len(d.Auth) > 0, "doctor.auth"); err != nil {
+		return err
 	}
 	if strings.TrimSpace(d.SignedIn) != "" && strings.TrimSpace(d.SignedInJSON) != "" {
 		return fmt.Errorf(`fields "doctor.signedIn" and "doctor.signedInJSON" cannot both be set`)
 	}
-	for field, declared := range map[string]bool{
+	modelFields := map[string]bool{
 		"doctor.modelPattern": strings.TrimSpace(d.ModelPattern) != "",
 		"doctor.modelsJSON":   strings.TrimSpace(d.ModelsJSON) != "",
 		"doctor.modelsStdin":  len(d.ModelsStdin) > 0,
-	} {
-		if declared && len(d.Models) == 0 {
-			return fmt.Errorf(`field %q is only meaningful alongside "doctor.models"`, field)
+	}
+	return requireProbe(modelFields, len(d.Models) > 0, "doctor.models")
+}
+
+// requireProbe reports the first declared field when its probe is missing.
+func requireProbe(declared map[string]bool, hasProbe bool, probe string) error {
+	if hasProbe {
+		return nil
+	}
+	for field, set := range declared {
+		if set {
+			return fmt.Errorf(`field %q is only meaningful alongside %q`, field, probe)
 		}
 	}
-	for _, line := range d.ModelsStdin {
-		if strings.TrimSpace(line) == "" {
-			return fmt.Errorf(`field "doctor.modelsStdin" cannot contain an empty line`)
-		}
-	}
+	return nil
+}
+
+func (d Doctor) validatePaths() error {
 	for field, path := range map[string]string{"doctor.modelsJSON": d.ModelsJSON, "doctor.signedInJSON": d.SignedInJSON, "doctor.authDetailJSON": d.AuthDetailJSON} {
 		if strings.TrimSpace(path) == "" {
 			continue
@@ -762,6 +825,10 @@ func (d Doctor) validate() error {
 			return fmt.Errorf("field %q: %w", field, err)
 		}
 	}
+	return nil
+}
+
+func (d Doctor) validatePatterns() error {
 	for field, pattern := range map[string]string{"doctor.signedIn": d.SignedIn, "doctor.authDetail": d.AuthDetail, "doctor.modelPattern": d.ModelPattern} {
 		if strings.TrimSpace(pattern) == "" {
 			continue
@@ -770,16 +837,17 @@ func (d Doctor) validate() error {
 			return fmt.Errorf("field %q: %w", field, err)
 		}
 	}
-	if strings.TrimSpace(d.Timeout) != "" {
-		timeout, err := time.ParseDuration(d.Timeout)
-		if err != nil {
-			return fmt.Errorf(`field "doctor.timeout": %w`, err)
-		}
-		if timeout <= 0 {
-			return fmt.Errorf(`field "doctor.timeout": %q must be positive`, d.Timeout)
+	return nil
+}
+
+// hasBlank reports whether any value is empty or whitespace.
+func hasBlank(values []string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
 // Assign values.
