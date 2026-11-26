@@ -121,21 +121,11 @@ jobs:
           path: |
             coverage.out
             coverage.md
-      # Sends the same profile to Codecov (#1369). Fork pull requests get no
-      # secrets, so they skip the upload rather than fail it.
-      - name: Upload Go coverage to Codecov
-        if: matrix.os == 'ubuntu-latest' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage.out
-          flags: go
-          fail_ci_if_error: false
       # Sends each OS's profile to Qlty, merged server-side with the web
       # upload (4 parts). Fork pull requests get no OIDC token, so they skip.
       - name: Upload Go coverage to Qlty
         if: github.event.pull_request.head.repo.fork != true
-        uses: qltysh/qlty-action/coverage@v2
+        uses: qltysh/qlty-action/coverage@56bee2d751c94b7bd8de22f64c9b5f398048e13f # v2.8.1
         with:
           oidc: true
           files: coverage.out
@@ -331,19 +321,11 @@ jobs:
       - run: pnpm test:scripts
       # Vitest unit tests for web/src, with LCOV coverage (#1377).
       - run: pnpm test:web:coverage
-      # Fork pull requests get no secrets, so they skip the upload rather
-      # than fail it.
-      - name: Upload web coverage to Codecov
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: web/coverage/lcov.info
-          flags: web
-          fail_ci_if_error: false
+      # Merged server-side with the three Go uploads (4 parts). Fork pull
+      # requests get no OIDC token, so they skip.
       - name: Upload web coverage to Qlty
         if: github.event.pull_request.head.repo.fork != true
-        uses: qltysh/qlty-action/coverage@v2
+        uses: qltysh/qlty-action/coverage@56bee2d751c94b7bd8de22f64c9b5f398048e13f # v2.8.1
         with:
           oidc: true
           files: web/coverage/lcov.info
