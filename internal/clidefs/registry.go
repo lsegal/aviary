@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"path"
 	"sort"
 	"strings"
@@ -25,7 +26,13 @@ type Registry struct {
 // parses is a build-time mistake surfaced on the first call rather than a
 // silently missing agent.
 func Builtin() (*Registry, error) {
-	entries, err := builtinFS.ReadDir("builtin")
+	return loadBuiltin(builtinFS)
+}
+
+// loadBuiltin reads every document under fsys's builtin directory, in name
+// order, so a test can hand it documents the embedded set never contains.
+func loadBuiltin(fsys fs.FS) (*Registry, error) {
+	entries, err := fs.ReadDir(fsys, "builtin")
 	if err != nil {
 		return nil, fmt.Errorf("read built-in agent definitions: %w", err)
 	}
@@ -36,7 +43,7 @@ func Builtin() (*Registry, error) {
 	sort.Strings(names)
 	registry := &Registry{definitions: make(map[string]Definition, len(names))}
 	for _, name := range names {
-		raw, err := builtinFS.ReadFile(path.Join("builtin", name))
+		raw, err := fs.ReadFile(fsys, path.Join("builtin", name))
 		if err != nil {
 			return nil, fmt.Errorf("read built-in agent definition %s: %w", name, err)
 		}
