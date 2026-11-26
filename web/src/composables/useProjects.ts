@@ -1,5 +1,6 @@
 import { onMounted, onUnmounted, type Ref, ref, watch } from "vue";
 import {
+	BOARD_JOB_KINDS,
 	BOARD_STATES,
 	type BoardState,
 	type JobDetail,
@@ -112,7 +113,7 @@ export function useProjectBoard(
 					targets: projects,
 					// Naming every job state leaves out schedules between runs.
 					states: states.value.length ? states.value : BOARD_STATES,
-					kinds: withSchedules.value ? ["issue", "discussion"] : undefined,
+					kinds: withSchedules.value ? BOARD_JOB_KINDS : undefined,
 					query: search.value.trim() || undefined,
 					offset: all ? 0 : page.value * JOBS_PAGE_SIZE,
 					limit: all ? ALL_JOBS_LIMIT : JOBS_PAGE_SIZE,

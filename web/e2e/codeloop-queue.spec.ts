@@ -207,10 +207,17 @@ async function setup(
 			no_merge: noMerge,
 			last_check: minutesAgo(0.1),
 		},
-		// The board reads its schedules' entries apart from its jobs.
+		// The board reads its schedules' entries apart from its jobs, each
+		// limited to the kinds and states it names, as the Manager does.
 		project_job_list: (args?: Record<string, unknown>) => {
+			record("project_job_list", args);
 			const kinds = args?.kinds as string[] | undefined;
-			const jobs = kinds?.includes("schedule") ? [] : JOBS;
+			const states = args?.states as string[] | undefined;
+			const jobs = JOBS.filter(
+				(j) =>
+					(!kinds || kinds.includes(j.kind)) &&
+					(!states || states.includes(j.state)),
+			);
 			return { jobs, total: jobs.length, offset: 0, limit: 500 };
 		},
 		task_list: [SCHEDULE],
@@ -436,6 +443,61 @@ test("merge and discuss jobs show as board cards with their place and reason", a
 	).toHaveAttribute("href", `https://github.com/${TARGET}/discussions/44`);
 	await expect(discuss.getByTestId("job-agent")).toContainText("gh-discuss");
 });
+
+// The stat cards and chips count queued merge and discuss jobs, so the list
+// shows every one of them under each chip (#1423).
+for (const [board, path] of [
+	["a project board", BOARD],
+	["the root board", "/agents/coder/projects"],
+]) {
+	test(`each state chip on ${board} lists as many cards as it counts, merge and discuss jobs included`, async ({
+		page,
+	}) => {
+		await setup(page);
+		await page.goto(path);
+		const cards = page.getByTestId("job-card");
+		await expect(cards).toHaveCount(JOBS.length, { timeout: 15_000 });
+		const filter = page.getByRole("group", { name: "Job filter" });
+		for (const [state, label] of [
+			["starting", "Starting"],
+			["running", "Running"],
+			["done", "Done"],
+			["failed", "Failed"],
+		]) {
+			const chip = filter.getByRole("button", {
+				name: new RegExp(`^${label}`),
+			});
+			const count = JOBS.filter((j) => j.state === state).length;
+			await expect(chip).toHaveText(`${label}${count}`);
+			await chip.click();
+			await expect(chip).toHaveAttribute("aria-pressed", "true");
+			await expect(cards).toHaveCount(count);
+			await chip.click();
+			await expect(chip).toHaveAttribute("aria-pressed", "false");
+		}
+
+		// Starting lists the queued merge, with no agent or model yet, at its
+		// place in the queue, and the queued thread.
+		await filter.getByRole("button", { name: /^Starting/ }).click();
+		await expect(cards).toHaveCount(2);
+		await expect(
+			cards.filter({ hasText: "Bump vite" }).getByTestId("job-queue-position"),
+		).toHaveText("#2 in the merge queue");
+		await expect(
+			cards
+				.filter({ hasText: "watch a Project board" })
+				.getByTestId("job-kind"),
+		).toHaveText("Discuss");
+		await filter.getByRole("button", { name: /^Starting/ }).click();
+
+		// Running lists the merge in flight.
+		await filter.getByRole("button", { name: /^Running/ }).click();
+		await expect(cards).toHaveCount(1);
+		await expect(cards.getByTestId("job-queue-position")).toHaveText(
+			"merging now",
+		);
+	});
+}
 
 // Safe merge is queued only from the header's Queue menu, never from a card
 // (#1163): a fix job already drives its own pull request to a merge.
