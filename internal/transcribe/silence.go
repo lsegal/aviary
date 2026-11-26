@@ -31,11 +31,21 @@ const (
 // audioLevel describes the channel of a recording that is transcribed.
 type audioLevel struct {
 	Duration time.Duration
-	Peak     float64 // loudest sample, 0..1 of full scale
+	Peak     float64 // loudest sample of the transcribed channel, 0..1 of full scale
 	RMS      float64 // 0..1 of full scale
+	MaxPeak  float64 // loudest sample across every channel
 	Channels int     // channels in the recording
 	Channel  int     // the loudest channel, which is transcribed
 	Gain     float64 // amplification applied before whisper
+	// ChannelPeaks and ChannelRMS hold each channel's level, for logging.
+	ChannelPeaks []float64
+	ChannelRMS   []float64
+}
+
+// noSignal reports whether the recording's peak across every channel is
+// near zero, as opposed to sound that holds no recognizable words.
+func (l audioLevel) noSignal() bool {
+	return l.MaxPeak < silencePeak
 }
 
 // dBFS renders a 0..1 level in decibels relative to full scale.
@@ -51,7 +61,7 @@ func (l audioLevel) silent() string {
 	switch {
 	case l.Duration < minSpeechDuration:
 		return "recording is too short"
-	case l.Peak < silencePeak:
+	case l.noSignal():
 		return "recording is silent"
 	}
 	return ""
@@ -89,6 +99,9 @@ func prepareSpeech(in, out string) (audioLevel, error) {
 	var samples []float64
 	for i, ch := range channels {
 		peak, rms := measure(ch)
+		level.ChannelPeaks = append(level.ChannelPeaks, peak)
+		level.ChannelRMS = append(level.ChannelRMS, rms)
+		level.MaxPeak = max(level.MaxPeak, peak)
 		if samples == nil || rms > level.RMS {
 			samples, level.Channel, level.Peak, level.RMS = ch, i, peak, rms
 		}

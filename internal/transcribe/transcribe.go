@@ -67,6 +67,12 @@ type Transcript struct {
 	// NoSpeech is set when the audio is silent or too short, or Whisper
 	// returned only one of its stock outputs for silence. Text is empty.
 	NoSpeech bool `json:"no_speech,omitempty"`
+	// NoSignal is set with NoSpeech when the recording's peak across every
+	// channel was near zero, rather than sound with no recognizable words.
+	NoSignal bool `json:"no_signal,omitempty"`
+	// PeakDBFS is the loudest sample across every channel, when the engine
+	// measures it.
+	PeakDBFS *float64 `json:"peak_dbfs,omitempty"`
 }
 
 // Engine transcribes an audio file.

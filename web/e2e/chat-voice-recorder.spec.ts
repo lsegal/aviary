@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
+import { chooseValue, expectValue, listbox } from "./helpers/select";
 import { openChat } from "./helpers/voice";
 
 /**
@@ -119,4 +120,56 @@ test("requests raw capture so audio-interface input isn't processed", async ({
 			},
 		},
 	]);
+});
+
+test("records from the input chosen in the composer's input menu", async ({
+	page,
+}) => {
+	await page.addInitScript(() => {
+		const w = window as unknown as { __constraints: unknown[] };
+		w.__constraints = [];
+		const getUserMedia = navigator.mediaDevices.getUserMedia.bind(
+			navigator.mediaDevices,
+		);
+		navigator.mediaDevices.getUserMedia = (constraints) => {
+			w.__constraints.push(constraints);
+			return getUserMedia(constraints);
+		};
+	});
+	await page.route("**/api/transcribe", (route) =>
+		route.fulfill({ json: { text: "switched" } }),
+	);
+	const { composer, mic, input } = await openChat(page);
+	await mic.click();
+	const menu = composer.getByTestId("voice-device");
+	await expect(menu).toBeVisible();
+	await menu.click();
+	const options = await listbox(menu)
+		.getByRole("option")
+		.evaluateAll((els) => els.map((el) => el.getAttribute("data-value") ?? ""));
+	await page.keyboard.press("Escape");
+	expect(options.length).toBeGreaterThan(1);
+	const current = (await menu.getAttribute("data-value")) ?? "";
+	const other =
+		options.find((id) => id !== "default" && id !== current) ?? options[1];
+	await chooseValue(menu, other);
+	// The recording restarts on the chosen input and still transcribes.
+	await expectValue(menu, other);
+	await expect(composer.getByTestId("voice-recording")).toBeVisible();
+	await mic.click();
+	await expect(input).toHaveValue("switched");
+	const constraints = await page.evaluate(
+		() => (window as unknown as { __constraints: unknown[] }).__constraints,
+	);
+	expect(constraints.at(-1)).toEqual({
+		audio: {
+			echoCancellation: false,
+			noiseSuppression: false,
+			autoGainControl: false,
+			deviceId: { exact: other },
+		},
+	});
+	expect(
+		await page.evaluate(() => localStorage.getItem("aviary.voice.deviceId")),
+	).toBe(other);
 });

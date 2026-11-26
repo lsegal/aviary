@@ -160,18 +160,49 @@ test("Cancel discards the recording", async ({ page }) => {
 	).toBe(1);
 });
 
-test("shows no speech detected instead of inserting text", async ({ page }) => {
+test("says no words were made out when the recording had sound", async ({
+	page,
+}) => {
 	await fakeMicrophone(page);
 	await page.route("**/api/transcribe", (route) =>
-		route.fulfill({ json: { duration_ms: 9000, no_speech: true } }),
+		route.fulfill({
+			json: { duration_ms: 9000, no_speech: true, peak_dbfs: -20 },
+		}),
 	);
 	const { composer, mic, input } = await openChat(page);
 	await input.fill("Draft");
 	await mic.click();
 	await mic.click();
-	await expect(composer.getByTestId("voice-error")).toContainText(
-		"No speech detected",
+	const error = composer.getByTestId("voice-error");
+	await expect(error).toContainText(
+		"Couldn't make out any words. Try speaking closer or longer.",
 	);
+	await expect(error).not.toContainText("no sound");
+	await expect(input).toHaveValue("Draft");
+});
+
+test("says the microphone picked up no sound only for a silent recording", async ({
+	page,
+}) => {
+	await fakeMicrophone(page);
+	await page.route("**/api/transcribe", (route) =>
+		route.fulfill({
+			json: {
+				duration_ms: 9000,
+				no_speech: true,
+				no_signal: true,
+				peak_dbfs: -120,
+			},
+		}),
+	);
+	const { composer, mic, input } = await openChat(page);
+	await input.fill("Draft");
+	await mic.click();
+	await mic.click();
+	const error = composer.getByTestId("voice-error");
+	await expect(error).toContainText("No speech detected");
+	await expect(error).toContainText("picked up no sound");
+	await expect(error).not.toContainText("Couldn't make out any words");
 	await expect(input).toHaveValue("Draft");
 });
 

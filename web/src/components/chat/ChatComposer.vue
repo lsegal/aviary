@@ -43,6 +43,9 @@
 				<span class="block h-full rounded-full bg-green-500 transition-[width] duration-100"
 					:style="{ width: `${micLevelPercent}%` }" />
 			</span>
+			<AppSelect v-if="voice.devices.value.length" data-testid="voice-device" aria-label="Microphone input"
+				title="Microphone input" size="sm" class="max-w-48" :model-value="currentDevice" :options="deviceOptions"
+				@update:model-value="voice.switchDevice(String($event ?? ''))" />
 			<span v-if="voice.micWarning.value" data-testid="voice-mic-warning" role="alert"
 				class="text-amber-700 dark:text-amber-400">{{ voice.micWarning.value }}</span>
 			<button type="button"
@@ -116,6 +119,7 @@
 import { computed, nextTick, ref } from "vue";
 import { useAuthStore } from "../../stores/auth";
 import ImageLightbox from "../ui/ImageLightbox.vue";
+import { AppSelect } from "../ui/select";
 import { type ChatAttachment, readAttachment } from "./attachments";
 import ChatComposerInput from "./ChatComposerInput.vue";
 import {
@@ -185,6 +189,22 @@ const micLevelPercent = computed(() => {
 	return Math.max(
 		0,
 		Math.min(100, Math.round(100 + (100 / 60) * 20 * Math.log10(level))),
+	);
+});
+const deviceOptions = computed(() =>
+	voice.devices.value.map((d) => ({ value: d.id, label: d.label })),
+);
+// The device being recorded: the chosen one, else the one whose name the
+// track reports, since the browser's default has no fixed deviceId.
+const currentDevice = computed(() => {
+	const list = voice.devices.value;
+	if (list.some((d) => d.id === voice.deviceId.value))
+		return voice.deviceId.value;
+	return (
+		list.find((d) => d.label === voice.deviceLabel.value && d.id !== "default")
+			?.id ??
+		list.find((d) => d.label === voice.deviceLabel.value)?.id ??
+		""
 	);
 });
 const micUnavailable = computed(() => voice.unsupportedReason.value !== "");
