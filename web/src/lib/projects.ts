@@ -30,6 +30,14 @@ export const BOARD_STATES: BoardState[] = [
 ];
 
 /**
+ * The job kinds a board lists as job cards when it shows its schedules as
+ * scheduled cards apart: issue and Discussion jobs, and the pull requests and
+ * threads queued for gh-safe-merge and gh-discuss (#1095), which the stat
+ * cards and chips count too (#1423).
+ */
+export const BOARD_JOB_KINDS = ["issue", "discussion", "merge", "discuss"];
+
+/**
  * The board's filter chips: its scheduled items, then the five job states. A
  * scheduled item is an upcoming run, not a job; once it runs, its job shows
  * under its job state.
