@@ -12,15 +12,15 @@ import (
 )
 
 type deletePreviewArgs struct {
-	Kind  string `json:"kind" jsonschema:"What is being deleted: task (a scheduled task, project task or workflow, which is also accepted as workflow), channel or agent" schema:"enum=task|workflow|channel|agent"`
+	Kind  string `json:"kind" jsonschema:"What is being deleted: task (a scheduled task, project task or workflow, which is also accepted as workflow), channel, agent or project (a Code Loop project)" schema:"enum=task|workflow|channel|agent|project"`
 	Agent string `json:"agent,omitempty" jsonschema:"The owning agent; needed for a channel, and for a task given by bare name when several agents have it"`
-	Name  string `json:"name" jsonschema:"The task (or <agent>/<task>), channel or agent name"`
+	Name  string `json:"name" jsonschema:"The task (or <agent>/<task>), channel or agent name, or the project's owner/repo"`
 }
 
 func registerDeleteDataTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "delete_preview",
-		Description: "Count what deleting a task, workflow, channel or agent with delete_data=true removes: sessions, messages, run records and files. Deletes nothing",
+		Description: "Count what deleting a task, workflow, channel, agent or Code Loop project with delete_data=true removes: sessions, messages, run records and files. A project's runs are its job records, and its files are its job transcripts and clones. Deletes nothing",
 		Annotations: readOnlyTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args deletePreviewArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		counts, err := deletePreview(args)
@@ -56,8 +56,18 @@ func deletePreview(args deletePreviewArgs) (sessiontarget.DataCounts, error) {
 			}
 		}
 		return sessiontarget.DataCounts{}, fmt.Errorf("agent %q not found", args.Name)
+	case "project":
+		m, err := projectManager()
+		if err != nil {
+			return sessiontarget.DataCounts{}, err
+		}
+		data, err := m.TargetData(strings.TrimSpace(args.Name))
+		if err != nil {
+			return sessiontarget.DataCounts{}, err
+		}
+		return sessiontarget.DataCounts{Runs: data.Jobs, Files: data.Transcripts + data.Clones}, nil
 	}
-	return sessiontarget.DataCounts{}, fmt.Errorf("kind must be task, workflow, channel or agent")
+	return sessiontarget.DataCounts{}, fmt.Errorf("kind must be task, workflow, channel, agent or project")
 }
 
 // dataOwner names a task or agent whose data config_save deletes.

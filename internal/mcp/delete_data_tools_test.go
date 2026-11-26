@@ -113,7 +113,7 @@ func TestAgentDeleteData(t *testing.T) {
 
 func TestDeletePreviewValidation(t *testing.T) {
 	d, _ := setupDispatcherWithScheduler(t)
-	toolCallContains(t, d, "delete_preview", map[string]any{"kind": "project", "name": "x"}, "kind must be")
+	toolCallContains(t, d, "delete_preview", map[string]any{"kind": "space", "name": "x"}, "kind must be")
 	toolCallContains(t, d, "delete_preview", map[string]any{"kind": "agent", "name": "ghost"}, "not found")
 	toolCallContains(t, d, "delete_preview", map[string]any{"kind": "channel", "agent": "bot", "name": "Nope"}, "no channel named")
 }

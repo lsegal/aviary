@@ -108,8 +108,9 @@ type projectFilterCheckArgs struct {
 }
 
 type projectRemoveArgs struct {
-	Target  string `json:"target" jsonschema:"The project to stop watching"`
-	Runtime bool   `json:"runtime,omitempty" jsonschema:"Only stop a runtime watch, leaving aviary.yaml alone"`
+	Target     string `json:"target" jsonschema:"The project to stop watching"`
+	Runtime    bool   `json:"runtime,omitempty" jsonschema:"Only stop a runtime watch, leaving aviary.yaml alone"`
+	DeleteData bool   `json:"delete_data,omitempty" jsonschema:"Also delete the project's job records, job transcripts and the clones no job still uses, once its jobs have stopped"`
 }
 
 type projectUnblockArgs struct {
@@ -218,6 +219,15 @@ func projectManager() (*projects.Manager, error) {
 }
 
 // projectResult runs fn against the manager and returns its value as JSON.
+// removedProject is project_remove's result, starting the purge of the
+// removed project's data when deleteData asks for it.
+func removedProject(m *projects.Manager, target string, stopped []int, deleteData bool) map[string]any {
+	if deleteData {
+		m.PurgeTargetInBackground(target)
+	}
+	return map[string]any{"target": target, "removed": true, "stopped_jobs": stopped, "data_deleted": deleteData}
+}
+
 func projectResult[T any](fn func(*projects.Manager) (T, error)) (*sdkmcp.CallToolResult, struct{}, error) {
 	m, err := projectManager()
 	if err != nil {
@@ -466,7 +476,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_remove",
-		Description: "Stop watching a project, removing it from aviary.yaml and from runtime watches. Its running, waiting, queued and paused jobs stop (running ones are checkpointed first) and are listed in stopped_jobs; the repository, its issues and pull requests, and clones on disk are left alone",
+		Description: "Stop watching a project, removing it from aviary.yaml and from runtime watches. Its running, waiting, queued and paused jobs stop (running ones are checkpointed first) and are listed in stopped_jobs; the repository, its issues and pull requests, are left alone. With delete_data, its job records, job transcripts and unused clones are deleted once its jobs have stopped; otherwise they are kept",
 		Annotations: destructiveTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectRemoveArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
@@ -477,7 +487,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 				if !runtime {
 					return nil, fmt.Errorf("%s has no runtime watch", target)
 				}
-				return map[string]any{"target": target, "removed": true, "stopped_jobs": stopped}, nil
+				return removedProject(m, target, stopped, args.DeleteData), nil
 			}
 			cfg, err := config.Load("")
 			if err != nil {
@@ -501,7 +511,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 			if !saved && !runtime {
 				return nil, fmt.Errorf("%s is not watched", target)
 			}
-			return map[string]any{"target": target, "removed": true, "stopped_jobs": stopped}, nil
+			return removedProject(m, target, stopped, args.DeleteData), nil
 		})
 	})
 
