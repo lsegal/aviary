@@ -38,19 +38,11 @@ func formatSignalMessage(text string) signalFormattedText {
 	text = signalUTagRE.ReplaceAllString(text, "")
 
 	parsed, _, _ := parseSignalMarkdown(text, "")
-	out := signalFormattedText{
-		Text: strings.Trim(parsed.text, "\n"),
-	}
-	for _, span := range parsed.styles {
-		start := span.Start
-		end := span.Start + span.Length
-		if start < 0 || end > utf16Len(parsed.text) || span.Length <= 0 {
-			continue
-		}
-		out.TextStyles = append(out.TextStyles, fmt.Sprintf("%d:%d:%s", start, span.Length, span.Style))
-	}
-	if delta := utf16Len(parsed.text) - utf16Len(out.Text); delta > 0 {
-		out.TextStyles = trimSignalStyles(out.TextStyles, delta)
+	trimmed := strings.Trim(parsed.text, "\n")
+	lead := utf16Len(parsed.text) - utf16Len(strings.TrimLeft(parsed.text, "\n"))
+	out := signalFormattedText{Text: trimmed}
+	for _, span := range clipSignalStyles(parsed.styles, lead, utf16Len(trimmed)) {
+		out.TextStyles = append(out.TextStyles, fmt.Sprintf("%d:%d:%s", span.Start, span.Length, span.Style))
 	}
 	return out
 }
@@ -243,23 +235,22 @@ func shiftSignalStyles(styles []signalStyleSpan, offset int) []signalStyleSpan {
 	return out
 }
 
-func trimSignalStyles(styles []string, trimEnd int) []string {
-	if trimEnd <= 0 {
-		return styles
-	}
-	var out []string
-	for _, style := range styles {
-		var start, length int
-		var kind string
-		if _, err := fmt.Sscanf(style, "%d:%d:%s", &start, &length, &kind); err != nil {
+// clipSignalStyles maps style spans from untrimmed text onto text that had
+// lead UTF-16 units removed from its start and was then cut to length units.
+// Spans are shifted left by lead, clipped to [0, length], and dropped when
+// nothing remains.
+func clipSignalStyles(styles []signalStyleSpan, lead, length int) []signalStyleSpan {
+	var out []signalStyleSpan
+	for _, span := range styles {
+		if span.Length <= 0 {
 			continue
 		}
-		end := start + length
-		trimmedEnd := end - trimEnd
-		if trimmedEnd <= start {
+		start := max(span.Start-lead, 0)
+		end := min(span.Start+span.Length-lead, length)
+		if end <= start {
 			continue
 		}
-		out = append(out, fmt.Sprintf("%d:%d:%s", start, trimmedEnd-start, kind))
+		out = append(out, signalStyleSpan{Start: start, Length: end - start, Style: span.Style})
 	}
 	return out
 }
