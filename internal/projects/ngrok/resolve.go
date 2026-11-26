@@ -21,10 +21,11 @@ const (
 	npxPackage = "ngrok"
 )
 
+// startTimeout is how long an already-installed agent gets to report its
+// tunnel. It is a variable so tests can wait out a silent agent quickly.
+var startTimeout = 10 * time.Second
+
 const (
-	// startTimeout is how long an already-installed agent gets to report its
-	// tunnel.
-	startTimeout = 10 * time.Second
 	// npxStartTimeout covers the first npx run, which downloads the npm
 	// package and the agent binary before ngrok itself starts. Ten seconds is
 	// not enough for that on a cold cache, and a timeout there would look to
