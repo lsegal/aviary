@@ -216,6 +216,7 @@ func (p *WorkerPool) processJob(ctx context.Context, job *domain.Job) {
 	jobCtx, cancel := context.WithCancel(ctx)
 	p.registerActiveJob(job.ID, job.TaskID, job.AgentID, cancel)
 	defer p.unregisterActiveJob(job.ID)
+	defer p.queue.markRunning(job.ID)()
 
 	stopHeartbeat := make(chan struct{})
 	defer close(stopHeartbeat)
