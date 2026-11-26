@@ -26,6 +26,13 @@ const maxRecordingBytes = 50 << 20
 // newTranscriber is replaced in tests with a fake engine.
 var newTranscriber = transcribe.New
 
+// detectTranscription and installTranscription are replaced in tests so
+// nothing real is probed or installed.
+var (
+	detectTranscription  = transcribe.Detect
+	installTranscription = transcribe.Install
+)
+
 func (s *Server) transcriptionConfig() config.TranscriptionConfig {
 	if s.cfg == nil {
 		return config.TranscriptionConfig{}
@@ -185,14 +192,14 @@ func (s *Server) transcriptionHandler(w http.ResponseWriter, r *http.Request) {
 	resp := transcriptionStatus{Enabled: settings.Enabled, Engine: settings.Engine, Language: settings.Language}
 	switch r.Method {
 	case http.MethodGet:
-		resp.Status = transcribe.Detect(settings.Model)
+		resp.Status = detectTranscription(settings.Model)
 	case http.MethodPost:
 		if !transcriptionInstallMu.TryLock() {
 			writeTranscriptionJSON(w, http.StatusConflict, transcriptionStatus{Error: "an install is already running"})
 			return
 		}
 		defer transcriptionInstallMu.Unlock()
-		st, err := transcribe.Install(r.Context(), settings.Model, func(line string) {
+		st, err := installTranscription(r.Context(), settings.Model, func(line string) {
 			resp.Log = append(resp.Log, line)
 		})
 		resp.Status = st
