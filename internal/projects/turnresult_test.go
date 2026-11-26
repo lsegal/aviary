@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -129,5 +130,57 @@ func TestProjectTaskOutcomeKeepsFailureDetailsBesideSummary(t *testing.T) {
 	}
 	if result.summary != "agent failed: exit status 1" || strings.Contains(result.err.Error(), "http") {
 		t.Fatalf("outcome = %q / %q, want the short message alone", result.summary, result.err)
+	}
+}
+
+// stallingWriter takes stall to accept its first write, as a Code Loop job log
+// does while the snapshot it publishes refreshes CLI quotas.
+type stallingWriter struct {
+	stall   time.Duration
+	once    sync.Once
+	mu      sync.Mutex
+	written strings.Builder
+}
+
+func (w *stallingWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { time.Sleep(w.stall) })
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.written.Write(p)
+}
+
+func (w *stallingWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.written.String()
+}
+
+func TestCommandRunnerScheduledRunSucceedsWhenJobOutputStallsAsAgentExits(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake agent is a shell script")
+	}
+	previous := agentCommandWaitDelay
+	agentCommandWaitDelay = 200 * time.Millisecond
+	t.Cleanup(func() { agentCommandWaitDelay = previous })
+	// The agent prints a message, then its final result a moment later, and
+	// exits; the job log is still stalled on the first line well past
+	// WaitDelay, so the result is only read if the output keeps draining.
+	binary := filepath.Join(t.TempDir(), "claude")
+	script := "#!/bin/sh\ncase \"$1\" in --version) echo '9.9.9 (Claude Code)'; exit 0;; esac\n" +
+		`echo '{"type":"assistant","message":{"content":[{"type":"text","text":"main matches the release"}]}}'` + "\n" +
+		"sleep 0.2\n" +
+		`echo '{"type":"result","subtype":"success","is_error":false,"result":"No release needed"}'` + "\nexit 0\n"
+	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := CommandRunner{Agent: "claude", ClaudeBinary: binary, Repo: "o/r"}
+	jobOutput := &stallingWriter{stall: 1500 * time.Millisecond}
+	issue := Issue{Number: 7, Target: "o/r", Title: "aviary-release", Prompt: "release if main moved", ScheduleID: "aviary-release"}
+	session := AgentSession{ID: "session-7", Agent: "claude"}
+	if err := runner.RunSessionWithOutput(context.Background(), issue, session, ignoreSessionUpdate, jobOutput); err != nil {
+		t.Fatalf("RunSessionWithOutput() error = %v, want the finished scheduled run to succeed", err)
+	}
+	if !strings.Contains(jobOutput.String(), "main matches the release") {
+		t.Fatalf("job output = %q, want the agent's message", jobOutput.String())
 	}
 }
