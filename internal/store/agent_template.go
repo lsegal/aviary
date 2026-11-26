@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -324,56 +325,77 @@ func agentConfigRenameKey(agent config.AgentConfig) (string, error) {
 	return string(data), nil
 }
 
-// isTemplateOnlyDir returns true when dir contains only the standard
-// scaffold files and (at most) empty scaffold directories created by the
-// embedded agent template. Any extra files cause it to return false.
+// generatedOnlyAgentDirs are agent subdirectories Aviary creates at runtime
+// that are not part of the embedded scaffold. They count as template-only
+// while they hold nothing but an optional .gitkeep.
+var generatedOnlyAgentDirs = []string{"task_compiles"}
+
+var errNotTemplateOnly = errors.New("not template-only")
+
+// agentTemplatePaths returns every path in the embedded agent scaffold,
+// slash-separated and relative to the scaffold root, mapped to whether it is a
+// directory.
+func agentTemplatePaths() (map[string]bool, error) {
+	paths := map[string]bool{}
+	err := fs.WalkDir(templates.Agent(), ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path != "." {
+			paths[path] = d.IsDir()
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range generatedOnlyAgentDirs {
+		paths[name] = true
+	}
+	return paths, nil
+}
+
+// isTemplateOnlyDir returns true when dir contains only files and directories
+// from the embedded agent scaffold (as created by SyncAgentTemplate), plus
+// empty generated-only directories. Any extra file or directory, such as a
+// session log, causes it to return false. An empty tree returns false.
 func isTemplateOnlyDir(dir string) (bool, error) {
-	entries, err := os.ReadDir(dir)
+	allowed, err := agentTemplatePaths()
 	if err != nil {
 		return false, err
 	}
 
-	allowedFiles := map[string]struct{}{
-		"AGENTS.md": {},
-		"MEMORY.md": {},
-		"RULES.md":  {},
-	}
-	allowedDirs := map[string]struct{}{
-		"jobs":          {},
-		"sessions":      {},
-		"memory":        {},
-		"task_compiles": {},
-	}
-
 	markerFound := false
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() {
-			if _, ok := allowedDirs[name]; !ok {
-				return false, nil
-			}
-			// Ensure the scaffold dir contains only .gitkeep or is empty.
-			subs, err := os.ReadDir(filepath.Join(dir, name))
-			if err != nil {
-				return false, err
-			}
-			for _, se := range subs {
-				if se.IsDir() {
-					return false, nil
-				}
-				if se.Name() == ".gitkeep" {
-					markerFound = true
-					continue
-				}
-				// Any other file in the subdir disqualifies it as template-only.
-				return false, nil
-			}
-		} else {
-			if _, ok := allowedFiles[name]; !ok {
-				return false, nil
-			}
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		isDir, ok := allowed[rel]
+		if !ok && !d.IsDir() && d.Name() == ".gitkeep" {
+			// Placeholder files are fine in any scaffold directory.
+			isDir, ok = false, allowed[filepath.ToSlash(filepath.Dir(rel))]
+		}
+		if !ok || isDir != d.IsDir() {
+			return errNotTemplateOnly
+		}
+		if !d.IsDir() {
 			markerFound = true
 		}
+		return nil
+	})
+	if errors.Is(err, errNotTemplateOnly) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
 	}
 	return markerFound, nil
 }

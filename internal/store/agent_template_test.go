@@ -77,6 +77,13 @@ func TestIsTemplateOnlyDir(t *testing.T) {
 		{name: "unknown_dir", files: map[string]string{"RULES.md": "r", "custom/": ""}, want: false},
 		{name: "nested_dir_in_scaffold_dir", files: map[string]string{"RULES.md": "r", "sessions/nested/": ""}, want: false},
 		{name: "extra_file_in_scaffold_dir", files: map[string]string{"RULES.md": "r", "sessions/abc.jsonl": "{}"}, want: false},
+		{name: "all_scaffold_files", files: map[string]string{"TOOLS.md": "t", "notes/.gitkeep": "", "tasks/_ADD_TASKS_HERE": "", "task_compiles/.gitkeep": ""}, want: true},
+		{name: "extra_file_in_notes", files: map[string]string{"TOOLS.md": "t", "notes/todo.md": "x"}, want: false},
+		{name: "task_file_in_tasks", files: map[string]string{"TOOLS.md": "t", "tasks/daily.md": "x"}, want: false},
+		{name: "compiled_task_in_task_compiles", files: map[string]string{"TOOLS.md": "t", "task_compiles/abc.json": "{}"}, want: false},
+		{name: "scaffold_file_as_dir", files: map[string]string{"TOOLS.md/": ""}, want: false},
+		{name: "scaffold_dir_as_file", files: map[string]string{"RULES.md": "r", "notes": "x"}, want: false},
+		{name: "gitkeep_at_root", files: map[string]string{".gitkeep": ""}, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -233,6 +240,40 @@ func TestRenameMatchingAgentDirs_ReplacesTemplateOnlyTarget(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "real memory", string(content))
 	assert.NoFileExists(t, filepath.Join(newDir, "RULES.md"))
+}
+
+func TestIsTemplateOnlyDir_SyncedScaffold(t *testing.T) {
+	setupAgentTemplateDataDir(t)
+	require.NoError(t, SyncAgentTemplate("fresh"))
+
+	got, err := isTemplateOnlyDir(AgentDir("fresh"))
+	require.NoError(t, err)
+	assert.True(t, got)
+
+	writeTestFile(t, filepath.Join(AgentDir("fresh"), "sessions", "s.jsonl"), "{}")
+	got, err = isTemplateOnlyDir(AgentDir("fresh"))
+	require.NoError(t, err)
+	assert.False(t, got)
+}
+
+func TestRenameMatchingAgentDirs_ReplacesSyncedScaffoldTarget(t *testing.T) {
+	setupAgentTemplateDataDir(t)
+	oldDir := AgentDir("old")
+	newDir := AgentDir("new")
+	require.NoError(t, SyncAgentTemplate("old"))
+	writeTestFile(t, filepath.Join(oldDir, "MEMORY.md"), "real memory")
+	writeTestFile(t, filepath.Join(oldDir, "sessions", "s.jsonl"), "{}")
+	require.NoError(t, SyncAgentTemplate("new"))
+
+	prev := &config.Config{Agents: []config.AgentConfig{{Name: "old", Model: "m"}}}
+	next := &config.Config{Agents: []config.AgentConfig{{Name: "new", Model: "m"}}}
+
+	assert.NoError(t, RenameMatchingAgentDirs(prev, next))
+	assert.NoDirExists(t, oldDir)
+	content, err := os.ReadFile(filepath.Join(newDir, "MEMORY.md"))
+	require.NoError(t, err)
+	assert.Equal(t, "real memory", string(content))
+	assert.FileExists(t, filepath.Join(newDir, "sessions", "s.jsonl"))
 }
 
 func TestRenameMatchingAgentDirs_KeepsTargetWithUserData(t *testing.T) {
