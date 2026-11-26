@@ -65,11 +65,6 @@ func SyncAgentTemplate(agentID string) error {
 	})
 }
 
-// EnsureAgentTemplate is a compatibility wrapper for older callers.
-func EnsureAgentTemplate(agentID string) error {
-	return SyncAgentTemplate(agentID)
-}
-
 func mergeTemplateFile(path string, srcData, destData []byte) ([]byte, bool) {
 	if !strings.EqualFold(filepath.Ext(path), ".md") {
 		return destData, false
