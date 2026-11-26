@@ -726,7 +726,7 @@ func registerAgentTools(s *sdkmcp.Server) {
 		if args.DeleteData {
 			return text(fmt.Sprintf("agent %q deleted with its data", args.Name))
 		}
-		return text(fmt.Sprintf("agent %q deregistered; its data stays in %s", args.Name, store.AgentDir(args.Name)))
+		return text(fmt.Sprintf("agent %q removed from aviary.yaml; its data stays in %s", args.Name, store.AgentDir(args.Name)))
 	})
 }
 

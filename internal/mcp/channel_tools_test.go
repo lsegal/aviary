@@ -76,9 +76,8 @@ func TestChannelToolsLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, config.BoolOr(cfg.Agents[0].Channels[0].Enabled, true))
 
-	// Removing it with archive keeps the session as a regular chat.
-	toolCallContains(t, d, "channel_remove", map[string]any{"agent": "bot", "channel": "Ops", "sessions": "keep"}, "sessions must be archive or delete")
-	callText(t, d, "channel_remove", map[string]any{"agent": "bot", "channel": "Ops", "sessions": "archive"})
+	// Removing it without delete_data keeps the session as a regular chat.
+	callText(t, d, "channel_remove", map[string]any{"agent": "bot", "channel": "Ops"})
 	cfg, err = config.Load("")
 	require.NoError(t, err)
 	assert.Empty(t, cfg.Agents[0].Channels)

@@ -83,17 +83,17 @@ func TestCFPCovChannelCreateValidatesAndDerivesUniqueIDs(t *testing.T) {
 	toolCallContains(t, d, "channel_rename", map[string]any{"agent": "bot", "channel": "Family", "new_name": " "}, "new_name is required")
 	toolCallContains(t, d, "channel_rename", map[string]any{"agent": "bot", "channel": "Nope", "new_name": "X"}, `agent "bot" has no channel named "Nope"`)
 	toolCallContains(t, d, "channel_rename", map[string]any{"agent": "bot", "channel": "Family", "new_name": "team slack"}, `already has a channel named "team slack"`)
-	toolCallContains(t, d, "channel_remove", map[string]any{"agent": "bot", "channel": "Nope", "sessions": "delete"}, "no channel named")
+	toolCallContains(t, d, "channel_remove", map[string]any{"agent": "bot", "channel": "Nope", "delete_data": true}, "no channel named")
 	toolCallContains(t, d, "channel_sessions", map[string]any{"agent": "ghost", "channel": "Family"}, "is not configured")
 
 	// Renaming a channel to a different casing of its own name is allowed.
 	out := callText(t, d, "channel_rename", map[string]any{"agent": "bot", "channel": "family", "new_name": "FAMILY"})
 	assert.Contains(t, out, `channel "Family" renamed to "FAMILY"`)
 
-	// sessions=delete removes the channel's own session.
+	// delete_data removes the channel's own session.
 	own := callList(t, d, "channel_sessions", map[string]any{"agent": "bot", "channel": "!!!"})
 	require.Len(t, own, 1)
-	out = callText(t, d, "channel_remove", map[string]any{"agent": "bot", "channel": "!!!", "sessions": "DELETE"})
+	out = callText(t, d, "channel_remove", map[string]any{"agent": "bot", "channel": "!!!", "delete_data": true})
 	assert.Contains(t, out, `channel "!!!" removed; its sessions were deleted`)
 	a = cfpAgent(t, cfpLoadConfig(t), "bot")
 	assert.Equal(t, -1, a.ChannelByName("!!!"))
@@ -202,7 +202,7 @@ func TestCFPCovChannelRenameAndRemoveRetargetWorkflowsAndReports(t *testing.T) {
 	otherAgent := cfpAgent(t, cfg, "other")
 	assert.Equal(t, 0, otherAgent.ChannelByName("Ops"))
 
-	out = callText(t, d, "channel_remove", map[string]any{"agent": "bot", "channel": "Alerts", "sessions": "archive"})
+	out = callText(t, d, "channel_remove", map[string]any{"agent": "bot", "channel": "Alerts"})
 	assert.Contains(t, out, "its sessions were archived")
 
 	cfg = cfpLoadConfig(t)

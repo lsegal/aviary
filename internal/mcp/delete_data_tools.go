@@ -12,7 +12,7 @@ import (
 )
 
 type deletePreviewArgs struct {
-	Kind  string `json:"kind" jsonschema:"What is being deleted: task (a scheduled task, project task or workflow), channel or agent" schema:"enum=task|channel|agent"`
+	Kind  string `json:"kind" jsonschema:"What is being deleted: task (a scheduled task, project task or workflow, which is also accepted as workflow), channel or agent" schema:"enum=task|workflow|channel|agent"`
 	Agent string `json:"agent,omitempty" jsonschema:"The owning agent; needed for a channel, and for a task given by bare name when several agents have it"`
 	Name  string `json:"name" jsonschema:"The task (or <agent>/<task>), channel or agent name"`
 }
@@ -57,5 +57,5 @@ func deletePreview(args deletePreviewArgs) (sessiontarget.DataCounts, error) {
 		}
 		return sessiontarget.DataCounts{}, fmt.Errorf("agent %q not found", args.Name)
 	}
-	return sessiontarget.DataCounts{}, fmt.Errorf("kind must be task, channel or agent")
+	return sessiontarget.DataCounts{}, fmt.Errorf("kind must be task, workflow, channel or agent")
 }
