@@ -355,7 +355,9 @@ test("the Workflows tab pauses and deletes a workflow", async ({ page }) => {
 	const dialog = page.getByRole("alertdialog", {
 		name: "Delete workflow triage?",
 	});
-	await expect(dialog).toContainText("definition and its run history");
+	await expect(dialog).toContainText("deletes the workflow's definition");
+	await expect(dialog).toContainText("Delete session data and files");
+	await expect(page.getByTestId("workflow-delete-data-checkbox")).toBeChecked();
 	await expect(dialog).toContainText("can't be undone");
 	await expect(page.getByTestId("workflow-delete-runs")).toHaveCount(0);
 
@@ -369,12 +371,20 @@ test("the Workflows tab pauses and deletes a workflow", async ({ page }) => {
 	expect(calls.task_delete).toBeUndefined();
 	await expect(page.getByTestId("workflow-row")).toHaveCount(1);
 
+	// Unchecked keeps its session, as a regular chat, and its run history.
 	await page.getByTestId("workflow-delete").click();
+	await page.getByTestId("workflow-delete-data-checkbox").uncheck();
+	await expect(page.getByTestId("workflow-delete-data-summary")).toContainText(
+		"Keeps its data on disk",
+	);
 	await dialog.getByRole("button", { name: "Delete", exact: true }).click();
 	await expect(dialog).toHaveCount(0);
 	await expect(page.getByTestId("workflows-empty")).toBeVisible();
 	await expect(page.getByTestId("toast")).toHaveText("Deleted workflow triage");
-	expect(calls.task_delete?.[0]).toMatchObject({ name: "assistant/triage" });
+	expect(calls.task_delete?.[0]).toEqual({
+		name: "assistant/triage",
+		delete_data: false,
+	});
 	expect(calls.task_stop?.[0]).toMatchObject({ name: "assistant/triage" });
 	expect(dialogs).toEqual([]);
 });
@@ -420,7 +430,9 @@ test("the workflow edit form's Danger Zone deletes the workflow and returns to t
 		"log-all",
 	);
 	await expect(page.getByTestId("toast")).toHaveText("Deleted workflow triage");
-	expect(calls.task_delete).toEqual([{ name: "assistant/triage" }]);
+	expect(calls.task_delete).toEqual([
+		{ name: "assistant/triage", delete_data: true },
+	]);
 	expect(dialogs).toEqual([]);
 });
 

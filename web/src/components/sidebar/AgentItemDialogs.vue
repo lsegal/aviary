@@ -82,6 +82,8 @@
 			<span class="break-all font-medium text-gray-900 dark:text-white">{{ dialog?.name }}</span>.
 			This cannot be undone.
 		</p>
+		<DeleteDataOption v-if="dialog?.kind === 'task'" v-model="deleteData" kind="task" :agent="dialog.agent"
+			:name="deleteOpen ? `${dialog.agent}/${dialog.name}` : ''" test-id="task-delete-data" />
 	</ConfirmDialog>
 </template>
 
@@ -120,6 +122,7 @@ import {
 import TaskPromptSection from "../TaskPromptSection.vue";
 import TriggerEditor from "../TriggerEditor.vue";
 import ConfirmDialog from "../ui/ConfirmDialog.vue";
+import DeleteDataOption from "../ui/DeleteDataOption.vue";
 import SegmentedControl, {
 	type SegmentedOption,
 } from "../ui/SegmentedControl.vue";
@@ -138,6 +141,8 @@ const previewTrigger = useTriggerPreview();
 
 const busy = ref(false);
 const error = ref("");
+/** Whether deleting a task deletes its session and run history too. */
+const deleteData = ref(true);
 const form = reactive({
 	name: "",
 	trigger: taskTriggerFields({ name: "" }),
@@ -327,6 +332,7 @@ function agentTasks(agent: string): AgentTask[] {
 
 watch(dialog, (d) => {
 	error.value = "";
+	deleteData.value = true;
 	busy.value = false;
 	const task =
 		d?.kind === "task" && d.name
@@ -520,8 +526,10 @@ async function confirmDelete() {
 	const name = d.name;
 	const wasShowing = showing(d.kind, d.agent, name);
 	if (d.kind === "task") {
-		await settings.saveAgentTasks(d.agent, (tasks) =>
-			tasks.filter((t) => t.name !== name),
+		await settings.saveAgentTasks(
+			d.agent,
+			(tasks) => tasks.filter((t) => t.name !== name),
+			deleteData.value ? [{ kind: "task", agent: d.agent, name }] : [],
 		);
 	} else {
 		await files.remove(d.agent, name);

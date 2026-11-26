@@ -90,6 +90,8 @@
 		<p v-if="dependents.length" data-testid="delete-agent-dependents" class="text-amber-700 dark:text-amber-400">
 			It still has {{ dependents.join(", ") }}, which stop working with it.
 		</p>
+		<DeleteDataOption v-model="deleteData" kind="agent" :name="deleteTarget?.name ?? ''"
+			test-id="delete-agent-data" />
 	</ConfirmDialog>
 </template>
 
@@ -114,6 +116,7 @@ import { computed, inject, ref } from "vue";
 import { useMCP } from "../../composables/useMCP";
 import type { AgentEntry } from "../../stores/settings";
 import ConfirmDialog from "../ui/ConfirmDialog.vue";
+import DeleteDataOption from "../ui/DeleteDataOption.vue";
 import { settingsViewContextKey } from "./context";
 
 const settings = inject(settingsViewContextKey);
@@ -173,6 +176,7 @@ async function confirmRename() {
 
 const deleteIdx = ref<number | null>(null);
 const sessionCount = ref(0);
+const deleteData = ref(true);
 const deleteTarget = computed(() =>
 	deleteIdx.value === null ? undefined : agents.value[deleteIdx.value],
 );
@@ -199,6 +203,7 @@ async function openDelete(i: number) {
 	if (deleteBlockedReason.value) return;
 	deleteIdx.value = i;
 	sessionCount.value = 0;
+	deleteData.value = true;
 	const name = agents.value[i]?.name;
 	if (!name) return;
 	try {
@@ -214,7 +219,7 @@ async function openDelete(i: number) {
 async function confirmDelete() {
 	const i = deleteIdx.value;
 	if (i === null) return;
-	await settings.deleteAgentEntry(i);
+	await settings.deleteAgentEntry(i, deleteData.value);
 	deleteIdx.value = null;
 }
 </script>

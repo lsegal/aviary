@@ -35,7 +35,7 @@
 		</DialogPortal>
 	</DialogRoot>
 
-	<!-- Remove a channel, archiving or deleting its sessions. -->
+	<!-- Remove a channel, deleting or archiving its sessions. -->
 	<ConfirmDialog :open="dialog?.mode === 'remove'" title="Remove channel?" :action="remove" confirm-label="Remove"
 		busy-label="Removing…" test-id="channel-remove-dialog" @update:open="(v) => { if (!v) close() }">
 		<p>
@@ -43,19 +43,8 @@
 			<span class="break-all font-medium text-gray-900 dark:text-white">{{ dialog?.channel }}</span>
 			and its settings. Tasks and reports that deliver to it stop delivering.
 		</p>
-		<fieldset class="mt-4 space-y-2">
-			<legend class="text-sm font-medium text-gray-900 dark:text-white">Its chat sessions</legend>
-			<label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
-				<input v-model="sessions" type="radio" value="archive" name="channel-sessions" data-testid="channel-remove-archive"
-					class="mt-0.5 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-				<span>Archive<span class="block text-xs text-gray-500 dark:text-gray-400">Keep them, with their history, as regular chats under Chats.</span></span>
-			</label>
-			<label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
-				<input v-model="sessions" type="radio" value="delete" name="channel-sessions" data-testid="channel-remove-delete"
-					class="mt-0.5 h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800" />
-				<span>Delete<span class="block text-xs text-gray-500 dark:text-gray-400">Permanently delete them and all their messages. This cannot be undone.</span></span>
-			</label>
-		</fieldset>
+		<DeleteDataOption v-model="deleteData" kind="channel" :agent="dialog?.agent ?? ''"
+			:name="dialog?.mode === 'remove' ? (dialog.channel ?? '') : ''" test-id="channel-remove-data" />
 	</ConfirmDialog>
 </template>
 
@@ -80,6 +69,7 @@ import {
 } from "../../lib/channels";
 import { useSettingsStore } from "../../stores/settings";
 import ConfirmDialog from "../ui/ConfirmDialog.vue";
+import DeleteDataOption from "../ui/DeleteDataOption.vue";
 import { AppSelect } from "../ui/select";
 
 const { dialog, close } = useChannelDialogs();
@@ -91,13 +81,13 @@ const router = useRouter();
 const busy = ref(false);
 const error = ref("");
 const form = reactive({ name: "", type: "slack" });
-const sessions = ref<"archive" | "delete">("archive");
+const deleteData = ref(true);
 
 watch(dialog, () => {
 	error.value = "";
 	form.name = "";
 	form.type = "slack";
-	sessions.value = "archive";
+	deleteData.value = true;
 });
 
 function message(e: unknown): string {
@@ -128,7 +118,7 @@ async function remove() {
 	await callTool("channel_remove", {
 		agent: d.agent,
 		channel: d.channel,
-		sessions: sessions.value,
+		delete_data: deleteData.value,
 	});
 	await settings.fetchConfig();
 	close();

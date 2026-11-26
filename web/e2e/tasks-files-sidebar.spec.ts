@@ -47,6 +47,7 @@ async function mockAgent(
 		...extra,
 	};
 	const saved: Config[] = [];
+	const deletedData: unknown[] = [];
 	const converted: Record<string, unknown>[] = [];
 	const previews: Record<string, unknown>[] = [];
 	const taskSessions: Record<string, unknown>[] = [];
@@ -60,6 +61,7 @@ async function mockAgent(
 		config_save: (args) => {
 			config = JSON.parse(String(args?.config ?? "{}")) as Config;
 			saved.push(config);
+			deletedData.push(args?.delete_data);
 			return "ok";
 		},
 		config_task_rename: (args?: Record<string, unknown>) => {
@@ -94,6 +96,7 @@ async function mockAgent(
 							timestamp: new Date().toISOString(),
 						},
 					],
+		delete_preview: { sessions: 1, messages: 34, runs: 12, files: 3 },
 		job_list: [],
 		session_list: [
 			{
@@ -122,7 +125,7 @@ async function mockAgent(
 			return "ok";
 		},
 	});
-	return { saved, store, converted, previews, taskSessions };
+	return { saved, deletedData, store, converted, previews, taskSessions };
 }
 
 const FILES = {
@@ -475,7 +478,7 @@ test("a renamed task's session takes the new name", async ({ page }) => {
 test("the … menu opens a task's settings and deletes tasks", async ({
 	page,
 }) => {
-	const { saved } = await mockAgent(
+	const { saved, deletedData } = await mockAgent(
 		page,
 		[
 			{ name: "daily-briefing", schedule: "0 9 * * *", prompt: "Brief" },
@@ -504,19 +507,27 @@ test("the … menu opens a task's settings and deletes tasks", async ({
 	await page.getByRole("menuitem", { name: "Delete" }).click();
 	const confirm = page.getByRole("alertdialog", { name: "Delete task?" });
 	await expect(confirm).toContainText("cleanup");
-	await confirm.getByRole("button", { name: "Delete" }).click();
+	// Deleting the task's data is offered, checked, with what it removes.
+	await expect(page.getByTestId("task-delete-data-checkbox")).toBeChecked();
+	await expect(page.getByTestId("task-delete-data-summary")).toHaveText(
+		"Deletes 1 session, 34 messages, 12 runs, 3 files. This can't be undone.",
+	);
+	await confirm.getByRole("button", { name: "Delete", exact: true }).click();
 
 	await expect(taskRows(page)).toHaveText(["daily-briefing"]);
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks$/);
 	expect(saved.at(-1)?.agents[0].tasks.map((t) => t.name)).toEqual([
 		"daily-briefing",
 	]);
+	expect(deletedData.at(-1)).toEqual([
+		{ kind: "task", agent: "assistant", name: "cleanup" },
+	]);
 });
 
 test("the task editor's Danger Zone removes the open task", async ({
 	page,
 }) => {
-	const { saved } = await mockAgent(
+	const { saved, deletedData } = await mockAgent(
 		page,
 		[
 			{ name: "daily-briefing", schedule: "0 9 * * *", prompt: "Brief" },
@@ -548,7 +559,12 @@ test("the task editor's Danger Zone removes the open task", async ({
 	await expect(taskRows(page)).toHaveText(["daily-briefing", "cleanup"]);
 
 	await dangerZone.getByRole("button", { name: "Remove Task" }).click();
-	await confirm.getByRole("button", { name: "Delete" }).click();
+	// Unchecked keeps the task's session and runs; the session becomes a chat.
+	await page.getByTestId("task-delete-data-checkbox").uncheck();
+	await expect(page.getByTestId("task-delete-data-summary")).toContainText(
+		"Its sessions become regular chats",
+	);
+	await confirm.getByRole("button", { name: "Delete", exact: true }).click();
 
 	await expect(confirm).toBeHidden();
 	await expect(taskRows(page)).toHaveText(["daily-briefing"]);
@@ -556,6 +572,7 @@ test("the task editor's Danger Zone removes the open task", async ({
 	expect(saved.at(-1)?.agents[0].tasks.map((t) => t.name)).toEqual([
 		"daily-briefing",
 	]);
+	expect(deletedData.at(-1)).toBeUndefined();
 });
 
 test("the … menu renames and deletes files, and locks built-ins", async ({
