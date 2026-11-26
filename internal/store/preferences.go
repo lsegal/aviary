@@ -39,10 +39,26 @@ type NotificationPreferences struct {
 	InApp  bool `json:"inApp"`
 	// Server has a macOS server show a Notification Center notification
 	// itself when no browser is connected.
-	Server     bool                         `json:"server"`
-	Sound      NotificationSound            `json:"sound"`
-	QuietHours NotificationQuietHours       `json:"quietHours"`
-	Events     map[string]NotificationEvent `json:"events"`
+	Server     bool                   `json:"server"`
+	Sound      NotificationSound      `json:"sound"`
+	QuietHours NotificationQuietHours `json:"quietHours"`
+	// Repeats controls repeating failures (#1419); nil means the defaults.
+	Repeats *NotificationRepeats         `json:"repeats,omitempty"`
+	Events  map[string]NotificationEvent `json:"events"`
+}
+
+// NotificationRepeats controls how repeating failures of one source, such
+// as a scheduled task that fails every run, notify.
+type NotificationRepeats struct {
+	// Suppress merges repeats of the same failure into its entry, raising its
+	// count, and delivers only the first, for WindowMinutes after the last
+	// repeat.
+	Suppress      bool `json:"suppress"`
+	WindowMinutes int  `json:"windowMinutes"`
+	// Streak sends one notification once a source has failed StreakCount
+	// times in a row.
+	Streak      bool `json:"streak"`
+	StreakCount int  `json:"streakCount"`
 }
 
 // NotificationSound is how notifications sound. Sound is off by default.
