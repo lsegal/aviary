@@ -827,6 +827,28 @@ export function issueCountLabel(t: ProjectTarget): string {
 	return t.manual ? "manual" : String(t.issues);
 }
 
+/** The board header's open-issue chip (#1434): the total across the board's
+ * watched projects, with each project's count in the tooltip. Manual projects
+ * add nothing to the total; they show "manual" in the tooltip. Null when no
+ * project on the board is watched or counted yet. */
+export function issueSummary(
+	all: ProjectTarget[],
+	names: string[],
+): { label: string; title: string } | null {
+	const wanted = new Set(names.map((n) => n.toLowerCase()));
+	const shown = all.filter((t) => wanted.has(t.name.toLowerCase()));
+	const counted = shown.filter((t) => !t.manual && !t.loading);
+	if (!counted.length) return null;
+	const total = counted.reduce((sum, t) => sum + t.issues, 0);
+	return {
+		label: `${total} open ${total === 1 ? "issue" : "issues"}`,
+		title: shown
+			.filter((t) => !t.loading)
+			.map((t) => `${t.name}: ${issueCountLabel(t)}`)
+			.join("\n"),
+	};
+}
+
 export function isRunning(status: JobStatus): boolean {
 	return status === "active" || status === "stopping";
 }

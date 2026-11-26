@@ -286,14 +286,17 @@ test("a watch session keeps Settings → Display and Notifications, behind its o
 	await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
 
-test("a watch session's mobile header reads bell, connection then gear, with no version (#1315)", async ({
+test("a watch session's mobile header reads version, bell, connection then gear, with no update control (#1315, #1434)", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await mockWatchSession(page);
 	await page.goto("/agents/watch/projects");
 	const status = page.getByTestId("mobile-header-status");
-	await expect(status.getByTestId("server-version")).toHaveCount(0);
+	// The version moved here from the board's removed footer (#1434); a
+	// watch session never offers an upgrade.
+	await expect(status.getByTestId("server-version")).toHaveText("dev");
+	await expect(status.getByTestId("update-icon")).toHaveCount(0);
 	const buttons = status.getByRole("button");
 	await expect(buttons).toHaveCount(3);
 	await expect(buttons.nth(0)).toHaveAccessibleName("Notifications");

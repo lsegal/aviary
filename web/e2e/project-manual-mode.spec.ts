@@ -191,3 +191,27 @@ test("a project overridden to watch under a global manual mode resets to global"
 	});
 	await expect(page.getByTestId("project-manual-chip")).toHaveText("Manual");
 });
+
+test("the header chip carries the issue counts; there is no Targets/Version footer (#1434)", async ({
+	page,
+}) => {
+	await setup(page, ["lsegal/aviary"]);
+	await page.goto("/agents/coder/projects");
+	const chip = page.getByTestId("board-issues");
+	await expect(chip).toHaveText("4 open issues");
+	await expect(chip).toHaveAttribute(
+		"title",
+		"lsegal/aviary: manual\nlsegal/zvidlib: 4",
+	);
+	await expect(page.getByText(/Targets:/)).toHaveCount(0);
+	await expect(page.getByText(/^Version /)).toHaveCount(0);
+
+	await board(page, "lsegal/zvidlib");
+	await expect(page.getByTestId("board-issues")).toHaveText("4 open issues");
+	await expect(page.getByText(/Targets:/)).toHaveCount(0);
+
+	// A manual project has its Manual chip and no count.
+	await board(page, "lsegal/aviary");
+	await expect(page.getByTestId("project-manual-chip")).toHaveText("Manual");
+	await expect(page.getByTestId("board-issues")).toHaveCount(0);
+});
