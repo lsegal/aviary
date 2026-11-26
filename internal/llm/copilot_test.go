@@ -148,7 +148,9 @@ func TestCopilotPingNon200(t *testing.T) {
 }
 
 func TestCopilotPingTransportFailure(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		// Never reached: the server is closed before any request is made.
+	}))
 	url := srv.URL
 	srv.Close()
 
@@ -352,7 +354,9 @@ func TestCopilotStreamNon200(t *testing.T) {
 }
 
 func TestCopilotStreamTransportFailure(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		// Never reached: the server is closed before any request is made.
+	}))
 	url := srv.URL
 	srv.Close()
 

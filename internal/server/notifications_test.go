@@ -29,7 +29,9 @@ func notifyServer(t *testing.T, settings store.NotificationPreferences) (*Server
 	n := notify.New()
 	n.Settings = func() (store.NotificationPreferences, error) { return settings, nil }
 	n.Publish = func(note notify.Notification) { published = append(published, note) }
-	n.AfterFunc = func(time.Duration, func()) {}
+	n.AfterFunc = func(time.Duration, func()) {
+		// Never fire delayed callbacks: the test drives notifications directly.
+	}
 	s := &Server{cfg: &config.Config{Agents: []config.AgentConfig{{Name: "bot", Projects: []config.ProjectConfig{{Target: "acme/app"}}}}}, notifier: n}
 	return s, &published
 }

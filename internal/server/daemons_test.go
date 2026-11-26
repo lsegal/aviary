@@ -266,7 +266,7 @@ func postRestart(srv *Server, body string) *httptest.ResponseRecorder {
 
 func withRuntime(srv *Server) {
 	srv.runCtx = context.Background()
-	srv.msgFn = func(string, string, string, channels.Channel, channels.IncomingMessage) {}
+	srv.msgFn = ignoreChannelMessage
 }
 
 func TestDaemonRestartHandler_InvalidJSON(t *testing.T) {

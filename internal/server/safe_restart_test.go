@@ -83,7 +83,9 @@ func setupSafeRestart(t *testing.T, current string, check update.CheckResult) (*
 		return update.DevReloadPlan{GoChanged: true, RestartReason: "forgo hot reload is not active"}, nil
 	}
 	hotReloadWait = update.HotReloadWait{Poll: 5 * time.Millisecond, Timeout: 2 * time.Second, Answer: time.Second, Settle: 20 * time.Millisecond}
-	refreshAfterHotReload = func() {}
+	refreshAfterHotReload = func() {
+		// No running UI to refresh in this test.
+	}
 	versionCheck = func(context.Context, *http.Client) (update.CheckResult, error) { return check, nil }
 	var log []string
 	installRelease = func(_ context.Context, opts update.InstallOptions) (update.InstallResult, error) {

@@ -188,6 +188,34 @@ func (m agentMgrModel) updateEditMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m agentMgrModel) activateEditMenuItem() (tea.Model, tea.Cmd) {
+	if m.editCursor <= 6 {
+		return m.activateAgentFieldItem()
+	}
+	if m.editCursor <= 13 {
+		return m.activatePermissionsItem()
+	}
+	switch m.editCursor {
+	case 14:
+		m.mode = agentModeChannels
+		if m.channelIdx < 0 {
+			m.channelIdx = 0
+		}
+	case 15:
+		m.mode = agentModeTasks
+		if m.taskIdx < 0 {
+			m.taskIdx = 0
+		}
+	case 16:
+		return m.saveEditedAgent()
+	case 17:
+		m.mode = agentModeList
+	}
+	return m, nil
+}
+
+// activateAgentFieldItem opens the text editor for edit menu items 0-6, the
+// plain agent fields.
+func (m agentMgrModel) activateAgentFieldItem() (tea.Model, tea.Cmd) {
 	switch m.editCursor {
 	case 0:
 		return m.openTextEditor(agentFieldName, m.draft.Name, "assistant")
@@ -203,6 +231,27 @@ func (m agentMgrModel) activateEditMenuItem() (tea.Model, tea.Cmd) {
 		return m.openTextEditor(agentFieldCompactKeep, intString(m.draft.CompactKeep), "0")
 	case 6:
 		return m.openTextEditor(agentFieldRules, m.draft.Rules, "inline rules or path")
+	}
+	return m, nil
+}
+
+// activatePermissionsItem handles edit menu items 7-13, the permissions
+// fields: item 12 toggles shell interpolation, the rest open the text editor.
+func (m agentMgrModel) activatePermissionsItem() (tea.Model, tea.Cmd) {
+	if m.editCursor == 12 {
+		perms := m.ensureDraftPermissions()
+		if perms.Exec == nil {
+			perms.Exec = &config.ExecPermissionsConfig{}
+		}
+		perms.Exec.ShellInterpolate = !perms.Exec.ShellInterpolate
+		m.compactDraftPermissions()
+		return m, nil
+	}
+	perms := m.draft.Permissions
+	if perms == nil {
+		perms = &config.PermissionsConfig{}
+	}
+	switch m.editCursor {
 	case 7:
 		current := ""
 		if m.draft.Permissions != nil {
@@ -210,56 +259,27 @@ func (m agentMgrModel) activateEditMenuItem() (tea.Model, tea.Cmd) {
 		}
 		return m.openTextEditor(agentFieldPermissionsPreset, current, "standard")
 	case 8:
-		current := ""
-		if m.draft.Permissions != nil {
-			current = strings.Join(m.draft.Permissions.Tools, ", ")
-		}
-		return m.openTextEditor(agentFieldPermissions, current, "tool_a, tool_b")
+		return m.openTextEditor(agentFieldPermissions, strings.Join(perms.Tools, ", "), "tool_a, tool_b")
 	case 9:
-		current := ""
-		if m.draft.Permissions != nil {
-			current = strings.Join(m.draft.Permissions.DisabledTools, ", ")
-		}
-		return m.openTextEditor(agentFieldDisabledTools, current, "tool_a, tool_b")
+		return m.openTextEditor(agentFieldDisabledTools, strings.Join(perms.DisabledTools, ", "), "tool_a, tool_b")
 	case 10:
 		current := ""
-		if m.draft.Permissions != nil && m.draft.Permissions.Filesystem != nil {
-			current = strings.Join(m.draft.Permissions.Filesystem.AllowedPaths, ", ")
+		if perms.Filesystem != nil {
+			current = strings.Join(perms.Filesystem.AllowedPaths, ", ")
 		}
 		return m.openTextEditor(agentFieldFilesystemAllowedPaths, current, "path-a, !path-b")
 	case 11:
 		current := ""
-		if m.draft.Permissions != nil && m.draft.Permissions.Exec != nil {
-			current = strings.Join(m.draft.Permissions.Exec.AllowedCommands, ", ")
+		if perms.Exec != nil {
+			current = strings.Join(perms.Exec.AllowedCommands, ", ")
 		}
 		return m.openTextEditor(agentFieldExecAllowedCommands, current, "cmd-a, !cmd-b")
-	case 12:
-		perms := m.ensureDraftPermissions()
-		if perms.Exec == nil {
-			perms.Exec = &config.ExecPermissionsConfig{}
-		}
-		perms.Exec.ShellInterpolate = !perms.Exec.ShellInterpolate
-		m.compactDraftPermissions()
 	case 13:
 		current := ""
-		if m.draft.Permissions != nil && m.draft.Permissions.Exec != nil {
-			current = m.draft.Permissions.Exec.Shell
+		if perms.Exec != nil {
+			current = perms.Exec.Shell
 		}
 		return m.openTextEditor(agentFieldExecShell, current, "pwsh")
-	case 14:
-		m.mode = agentModeChannels
-		if m.channelIdx < 0 {
-			m.channelIdx = 0
-		}
-	case 15:
-		m.mode = agentModeTasks
-		if m.taskIdx < 0 {
-			m.taskIdx = 0
-		}
-	case 16:
-		return m.saveEditedAgent()
-	case 17:
-		m.mode = agentModeList
 	}
 	return m, nil
 }
@@ -302,6 +322,17 @@ func (m agentMgrModel) parentModeForTextTarget() agentMgrMode {
 
 func (m agentMgrModel) applyTextEdit() (tea.Model, tea.Cmd) {
 	value := strings.TrimSpace(m.textInput.Value())
+	if !m.applyAgentTextEdit(value) && !m.applyPermissionsTextEdit(value) && !m.applyChannelTextEdit(value) {
+		m.applyTaskTextEdit(value)
+	}
+	m.textInput.Blur()
+	m.mode = m.parentModeForTextTarget()
+	return m, nil
+}
+
+// applyAgentTextEdit stores value into the plain agent draft field targeted by
+// the text editor. It reports whether the target was an agent field.
+func (m *agentMgrModel) applyAgentTextEdit(value string) bool {
 	switch m.textTarget {
 	case agentFieldName:
 		m.draft.Name = value
@@ -317,24 +348,24 @@ func (m agentMgrModel) applyTextEdit() (tea.Model, tea.Cmd) {
 		m.draft.CompactKeep = parseInt(value)
 	case agentFieldRules:
 		m.draft.Rules = value
+	default:
+		return false
+	}
+	return true
+}
+
+// applyPermissionsTextEdit stores value into the agent draft permissions
+// field targeted by the text editor. It reports whether the target was a
+// permissions field.
+func (m *agentMgrModel) applyPermissionsTextEdit(value string) bool {
+	switch m.textTarget {
 	case agentFieldPermissionsPreset:
-		switch config.PermissionsPreset(value) {
-		case "", config.PermissionsPresetFull, config.PermissionsPresetStandard, config.PermissionsPresetMinimal:
-			if strings.TrimSpace(value) == "" || config.PermissionsPreset(value) == config.PermissionsPresetStandard {
-				if m.draft.Permissions != nil {
-					m.draft.Permissions.Preset = ""
-				}
-			} else {
-				m.ensureDraftPermissions().Preset = config.PermissionsPreset(value)
-			}
-			m.compactDraftPermissions()
-		}
+		m.applyPermissionsPreset(value)
+		return true
 	case agentFieldPermissions:
 		m.ensureDraftPermissions().Tools = splitCSV(value)
-		m.compactDraftPermissions()
 	case agentFieldDisabledTools:
 		m.ensureDraftPermissions().DisabledTools = splitCSV(value)
-		m.compactDraftPermissions()
 	case agentFieldFilesystemAllowedPaths:
 		allowedPaths := splitCSV(value)
 		perms := m.ensureDraftPermissions()
@@ -343,34 +374,67 @@ func (m agentMgrModel) applyTextEdit() (tea.Model, tea.Cmd) {
 		} else {
 			perms.Filesystem = &config.FilesystemPermissionsConfig{AllowedPaths: allowedPaths}
 		}
-		m.compactDraftPermissions()
 	case agentFieldExecAllowedCommands:
-		allowedCommands := splitCSV(value)
-		perms := m.ensureDraftPermissions()
-		if len(allowedCommands) == 0 {
-			if perms.Exec != nil {
-				perms.Exec.AllowedCommands = nil
-			}
-		} else {
-			if perms.Exec == nil {
-				perms.Exec = &config.ExecPermissionsConfig{}
-			}
-			perms.Exec.AllowedCommands = allowedCommands
-		}
-		m.compactDraftPermissions()
+		m.applyExecAllowedCommands(splitCSV(value))
 	case agentFieldExecShell:
-		perms := m.ensureDraftPermissions()
-		if strings.TrimSpace(value) == "" {
-			if perms.Exec != nil {
-				perms.Exec.Shell = ""
-			}
-		} else {
-			if perms.Exec == nil {
-				perms.Exec = &config.ExecPermissionsConfig{}
-			}
-			perms.Exec.Shell = value
+		m.applyExecShell(value)
+	default:
+		return false
+	}
+	m.compactDraftPermissions()
+	return true
+}
+
+// applyPermissionsPreset sets the draft's permissions preset; standard (or
+// empty) clears it. Unknown presets are ignored.
+func (m *agentMgrModel) applyPermissionsPreset(value string) {
+	switch config.PermissionsPreset(value) {
+	case "", config.PermissionsPresetFull, config.PermissionsPresetStandard, config.PermissionsPresetMinimal:
+	default:
+		return
+	}
+	if strings.TrimSpace(value) == "" || config.PermissionsPreset(value) == config.PermissionsPresetStandard {
+		if m.draft.Permissions != nil {
+			m.draft.Permissions.Preset = ""
 		}
-		m.compactDraftPermissions()
+	} else {
+		m.ensureDraftPermissions().Preset = config.PermissionsPreset(value)
+	}
+	m.compactDraftPermissions()
+}
+
+func (m *agentMgrModel) applyExecAllowedCommands(allowedCommands []string) {
+	perms := m.ensureDraftPermissions()
+	if len(allowedCommands) == 0 {
+		if perms.Exec != nil {
+			perms.Exec.AllowedCommands = nil
+		}
+		return
+	}
+	if perms.Exec == nil {
+		perms.Exec = &config.ExecPermissionsConfig{}
+	}
+	perms.Exec.AllowedCommands = allowedCommands
+}
+
+func (m *agentMgrModel) applyExecShell(value string) {
+	perms := m.ensureDraftPermissions()
+	if strings.TrimSpace(value) == "" {
+		if perms.Exec != nil {
+			perms.Exec.Shell = ""
+		}
+		return
+	}
+	if perms.Exec == nil {
+		perms.Exec = &config.ExecPermissionsConfig{}
+	}
+	perms.Exec.Shell = value
+}
+
+// applyChannelTextEdit stores value into the channel draft field targeted by
+// the text editor. It reports whether the target was a channel field.
+func (m *agentMgrModel) applyChannelTextEdit(value string) bool {
+	switch m.textTarget {
 	case chFieldType:
 		m.channel.Type = value
 	case chFieldToken:
@@ -385,6 +449,16 @@ func (m agentMgrModel) applyTextEdit() (tea.Model, tea.Cmd) {
 		m.channel.Model = value
 	case chFieldFallbacks:
 		m.channel.Fallbacks = splitCSV(value)
+	default:
+		return false
+	}
+	return true
+}
+
+// applyTaskTextEdit stores value into the task draft field targeted by the
+// text editor.
+func (m *agentMgrModel) applyTaskTextEdit(value string) {
+	switch m.textTarget {
 	case taskFieldName:
 		m.task.Name = value
 	case taskFieldType:
@@ -399,16 +473,11 @@ func (m agentMgrModel) applyTextEdit() (tea.Model, tea.Cmd) {
 		m.task.StartAt = value
 	case taskFieldWatch:
 		m.task.Watch = value
-	case taskFieldPrompt:
-		m.task.Prompt = value
-	case taskFieldScript:
+	case taskFieldPrompt, taskFieldScript:
 		m.task.Prompt = value
 	case taskFieldTarget:
 		m.task.Target = value
 	}
-	m.textInput.Blur()
-	m.mode = m.parentModeForTextTarget()
-	return m, nil
 }
 
 func (m agentMgrModel) saveEditedAgent() (tea.Model, tea.Cmd) {

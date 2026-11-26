@@ -128,7 +128,9 @@ func findBinary(display string, names ...string) Binary {
 // receives progress lines.
 func Install(ctx context.Context, model string, logf func(string)) (Status, error) {
 	if logf == nil {
-		logf = func(string) {}
+		logf = func(string) {
+			// No progress sink was given, so progress lines are dropped.
+		}
 	}
 	st := Detect(model)
 	var packages []string

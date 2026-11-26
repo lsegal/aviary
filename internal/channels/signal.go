@@ -1114,37 +1114,19 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 		return
 	}
 
-	receivedAt := time.Now().UTC()
-	if msgTimestamp > 0 {
-		receivedAt = time.UnixMilli(msgTimestamp).UTC()
-	}
-
-	// Prepare message text, replacing the object-replacement character with
-	// the agent name (fallback to the channel phone if agent name not set).
-	msgText := dataMessage.Message
-	repl := c.AgentName
-	if strings.TrimSpace(repl) == "" {
-		repl = c.phone
-	}
-	if strings.Contains(msgText, "\uFFFC") {
-		msgText = strings.ReplaceAll(msgText, "\uFFFC", repl)
-	}
+	receivedAt := signalReceivedAt(msgTimestamp)
+	msgText := c.replaceObjectChars(dataMessage.Message)
 
 	// Log all group messages before allowFrom filtering.
 	if isGroup {
-		c.handlerMu.RLock()
-		logFn := c.groupLogHandler
-		c.handlerMu.RUnlock()
-		if logFn != nil {
-			logFn(IncomingMessage{
-				Type:       "signal",
-				From:       source,
-				SenderName: c.senderName(source),
-				Channel:    channelID,
-				Text:       msgText,
-				ReceivedAt: receivedAt,
-			})
-		}
+		c.logGroupMessage(IncomingMessage{
+			Type:       "signal",
+			From:       source,
+			SenderName: c.senderName(source),
+			Channel:    channelID,
+			Text:       msgText,
+			ReceivedAt: receivedAt,
+		})
 	}
 
 	// Replies to the agent's own messages must still match an allowFrom entry's
@@ -1158,48 +1140,86 @@ func (c *SignalChannel) dispatchEnvelope(source string, msgTimestamp int64, wasM
 		return
 	}
 
-	c.handlerMu.RLock()
-	fn := c.handler
-	c.handlerMu.RUnlock()
-
-	if fn != nil {
-		im := IncomingMessage{
-			Type:          "signal",
-			From:          source,
-			SenderName:    c.senderName(source),
-			Channel:       channelID,
-			Text:          msgText,
-			Attachments:   c.signalAttachments(dataMessage.Attachments, source, channelID, isGroup),
-			ReceivedAt:    receivedAt,
-			RestrictTools: result.restrictTools,
-			DisabledTools: c.disabledTools,
-			Model:         result.model,
-			Fallbacks:     result.fallbacks,
-		}
-		if dataMessage.Quote != nil {
-			im.QuoteAuthor = dataMessage.Quote.Author
-			qtext := dataMessage.Quote.Text
-			if strings.Contains(qtext, "\uFFFC") {
-				qtext = strings.ReplaceAll(qtext, "\uFFFC", repl)
-			}
-			im.QuoteText = qtext
-		}
-		if im.Model == "" {
-			im.Model = c.model
-		}
-		if len(im.Fallbacks) == 0 {
-			im.Fallbacks = c.fallbacks
-		}
-		fn(im)
-		// Send a read receipt only after the message has been handed off.
-		// Receipts always go to the sender's phone number (source), even in groups.
-		if c.sendReadReceipts && strings.HasPrefix(source, "+") && msgTimestamp > 0 {
-			if err := c.sendReadReceipt(source, msgTimestamp); err != nil {
-				slog.Warn("signal: failed to send read receipt", "err", err)
-			}
-		}
-	} else {
+	fn := c.currentHandler()
+	if fn == nil {
 		slog.Debug("signal: no handler registered", "from", source)
+		return
+	}
+	im := IncomingMessage{
+		Type:          "signal",
+		From:          source,
+		SenderName:    c.senderName(source),
+		Channel:       channelID,
+		Text:          msgText,
+		Attachments:   c.signalAttachments(dataMessage.Attachments, source, channelID, isGroup),
+		ReceivedAt:    receivedAt,
+		RestrictTools: result.restrictTools,
+		DisabledTools: c.disabledTools,
+		Model:         result.model,
+		Fallbacks:     result.fallbacks,
+	}
+	if dataMessage.Quote != nil {
+		im.QuoteAuthor = dataMessage.Quote.Author
+		im.QuoteText = c.replaceObjectChars(dataMessage.Quote.Text)
+	}
+	c.handOff(fn, im, source, msgTimestamp)
+}
+
+// signalReceivedAt converts an envelope timestamp (ms) to a UTC time,
+// falling back to now when the envelope has none.
+func signalReceivedAt(msgTimestamp int64) time.Time {
+	if msgTimestamp > 0 {
+		return time.UnixMilli(msgTimestamp).UTC()
+	}
+	return time.Now().UTC()
+}
+
+// replaceObjectChars replaces the object-replacement character Signal uses
+// for mentions with the agent name (or the channel phone if no name is set).
+func (c *SignalChannel) replaceObjectChars(text string) string {
+	if !strings.Contains(text, "￼") {
+		return text
+	}
+	repl := c.AgentName
+	if strings.TrimSpace(repl) == "" {
+		repl = c.phone
+	}
+	return strings.ReplaceAll(text, "￼", repl)
+}
+
+// logGroupMessage forwards msg to the group log handler, if one is set.
+func (c *SignalChannel) logGroupMessage(msg IncomingMessage) {
+	c.handlerMu.RLock()
+	logFn := c.groupLogHandler
+	c.handlerMu.RUnlock()
+	if logFn != nil {
+		logFn(msg)
+	}
+}
+
+// currentHandler returns the registered message handler, or nil.
+func (c *SignalChannel) currentHandler() func(IncomingMessage) {
+	c.handlerMu.RLock()
+	defer c.handlerMu.RUnlock()
+	return c.handler
+}
+
+// handOff fills in channel-level model defaults, passes im to fn, and then
+// sends a read receipt when enabled. Receipts always go to the sender's phone
+// number (source), even in groups.
+func (c *SignalChannel) handOff(fn func(IncomingMessage), im IncomingMessage, source string, msgTimestamp int64) {
+	if im.Model == "" {
+		im.Model = c.model
+	}
+	if len(im.Fallbacks) == 0 {
+		im.Fallbacks = c.fallbacks
+	}
+	fn(im)
+	// Send a read receipt only after the message has been handed off.
+	if c.sendReadReceipts && strings.HasPrefix(source, "+") && msgTimestamp > 0 {
+		if err := c.sendReadReceipt(source, msgTimestamp); err != nil {
+			slog.Warn("signal: failed to send read receipt", "err", err)
+		}
 	}
 }
 
@@ -1390,40 +1410,21 @@ func (c *SignalChannel) dispatchReactionEnvelope(source string, msgTimestamp int
 		result.fallbacks = r.fallbacks
 	}
 
-	c.handlerMu.RLock()
-	fn := c.handler
-	c.handlerMu.RUnlock()
-
-	if fn != nil {
-		receivedAt := time.Now().UTC()
-		if msgTimestamp > 0 {
-			receivedAt = time.UnixMilli(msgTimestamp).UTC()
-		}
-		im := IncomingMessage{
-			Type:          "signal",
-			From:          source,
-			SenderName:    c.senderName(source),
-			Channel:       channelID,
-			Text:          reactionMessage.Emoji,
-			ReceivedAt:    receivedAt,
-			RestrictTools: result.restrictTools,
-			DisabledTools: c.disabledTools,
-			Model:         result.model,
-			Fallbacks:     result.fallbacks,
-		}
-		if im.Model == "" {
-			im.Model = c.model
-		}
-		if len(im.Fallbacks) == 0 {
-			im.Fallbacks = c.fallbacks
-		}
-		fn(im)
-		if c.sendReadReceipts && strings.HasPrefix(source, "+") && msgTimestamp > 0 {
-			if err := c.sendReadReceipt(source, msgTimestamp); err != nil {
-				slog.Warn("signal: failed to send read receipt", "err", err)
-			}
-		}
-	} else {
+	fn := c.currentHandler()
+	if fn == nil {
 		slog.Debug("signal: no handler registered", "from", source)
+		return
 	}
+	c.handOff(fn, IncomingMessage{
+		Type:          "signal",
+		From:          source,
+		SenderName:    c.senderName(source),
+		Channel:       channelID,
+		Text:          reactionMessage.Emoji,
+		ReceivedAt:    signalReceivedAt(msgTimestamp),
+		RestrictTools: result.restrictTools,
+		DisabledTools: c.disabledTools,
+		Model:         result.model,
+		Fallbacks:     result.fallbacks,
+	}, source, msgTimestamp)
 }

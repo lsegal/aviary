@@ -174,12 +174,66 @@ type cliTurnInput struct {
 func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 	backend, cliModel, err := cliagent.ParseModel(in.model)
 	if err != nil {
-		in.usage.HasError = true
-		in.deliverError(err)
-		in.emit(StreamEvent{Type: StreamEventError, Err: err})
+		in.fail(err)
+		return
+	}
+	opts := r.cliTurnOptions(backend, cliModel, in)
+	key := r.agent.ID + "\x00" + in.sessionID
+	if opts.Ephemeral {
+		key = newID("cli-ephemeral")
+	}
+
+	// A message that follows an unanswered turn in the same session takes
+	// that turn over, waiting for the session's own conversation rather than
+	// running beside it.
+	sendCtx, cancelSend := context.WithCancel(ctx)
+	defer cancelSend()
+	turnState := newCLITurn(cancelSend, in)
+	folding := !opts.Ephemeral && turnState.foldPrior(key)
+	if folding {
+		defer registerCLITurn(key, turnState)()
+	}
+
+	proc, resumed, err := r.acquireCLIProc(key, opts, in.tools, in.sessionID, folding)
+	if err != nil {
+		in.fail(err)
+		return
+	}
+	defer proc.mu.Unlock()
+	run := &cliTurnRun{r: r, in: in, backend: backend, opts: opts, proc: proc, resumed: resumed, state: turnState, ctx: sendCtx}
+	run.overflow = proc.overflowOf != ""
+	run.persist = !opts.Ephemeral && !run.overflow
+	if run.persist {
+		defer r.scheduleCLIIdle(proc)
+		if !folding {
+			defer registerCLITurn(key, turnState)()
+		}
+	} else {
+		defer r.dropCLIProc(proc)
+	}
+	if run.folded() {
 		return
 	}
 
+	if proc.scope != nil {
+		proc.scope.setTurn(&cliTurnState{
+			ctx: sendCtx, runner: r, emit: run.emit, client: in.toolClient,
+			sessionID: in.sessionID, usage: in.usage,
+		})
+		defer proc.scope.setTurn(nil)
+	}
+	run.send(key)
+}
+
+// fail records err as the turn's failure and reports it.
+func (in cliTurnInput) fail(err error) {
+	in.usage.HasError = true
+	in.deliverError(err)
+	in.emit(StreamEvent{Type: StreamEventError, Err: err})
+}
+
+// cliTurnOptions builds the CLI launch options for a turn of the agent.
+func (r *AgentRunner) cliTurnOptions(backend cliagent.Backend, cliModel string, in cliTurnInput) cliagent.Options {
 	workDir := r.workingDir()
 	mode := r.approvalMode()
 	builtinTools := r.cfg != nil && config.CLIBuiltinToolsAllowed(r.cfg.Permissions)
@@ -203,88 +257,104 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 		}
 		opts.RefusalNote = cliRefusalNote(backend, mode, r.agent.Name, enforce != nil)
 	}
-	key := r.agent.ID + "\x00" + in.sessionID
-	if opts.Ephemeral {
-		key = newID("cli-ephemeral")
-	}
+	return opts
+}
 
-	// A message that follows an unanswered turn in the same session takes
-	// that turn over, waiting for the session's own conversation rather than
-	// running beside it.
-	sendCtx, cancelSend := context.WithCancel(ctx)
-	defer cancelSend()
-	turnState := &cliTurn{cancel: cancelSend, messages: []string{in.message}, media: in.mediaURLs}
+// newCLITurn returns the fold state of a turn carrying in's message.
+func newCLITurn(cancel context.CancelFunc, in cliTurnInput) *cliTurn {
+	t := &cliTurn{cancel: cancel, messages: []string{in.message}, media: in.mediaURLs}
 	if in.promptMsgID != "" {
-		turnState.promptMsgIDs = []string{in.promptMsgID}
+		t.promptMsgIDs = []string{in.promptMsgID}
 	}
-	folding := false
-	if !opts.Ephemeral {
-		if prior := foldCLITurn(key); prior != nil {
-			folding = true
-			turnState.messages = append(append([]string(nil), prior.messages...), in.message)
-			turnState.media = append(append([]string(nil), prior.media...), in.mediaURLs...)
-			turnState.promptMsgIDs = append(append([]string(nil), prior.promptMsgIDs...), turnState.promptMsgIDs...)
-			defer registerCLITurn(key, turnState)()
-		}
-	}
+	return t
+}
 
-	proc, resumed, err := r.acquireCLIProc(key, opts, in.tools, in.sessionID, folding)
-	if err != nil {
-		in.usage.HasError = true
-		in.deliverError(err)
-		in.emit(StreamEvent{Type: StreamEventError, Err: err})
+// foldPrior takes over the unanswered turn running at key, carrying its
+// messages before t's own. It reports false when there is none.
+func (t *cliTurn) foldPrior(key string) bool {
+	prior := foldCLITurn(key)
+	if prior == nil {
+		return false
+	}
+	t.messages = append(append([]string(nil), prior.messages...), t.messages...)
+	t.media = append(append([]string(nil), prior.media...), t.media...)
+	t.promptMsgIDs = append(append([]string(nil), prior.promptMsgIDs...), t.promptMsgIDs...)
+	return true
+}
+
+// cliTurnRun is one CLI turn in flight on an acquired conversation.
+type cliTurnRun struct {
+	r        *AgentRunner
+	in       cliTurnInput
+	backend  cliagent.Backend
+	opts     cliagent.Options
+	proc     *cliProc
+	resumed  bool
+	overflow bool
+	persist  bool
+	state    *cliTurn
+	ctx      context.Context
+
+	message   string // the turn's messages, without prefixed context
+	inFlight  string // the in-flight tool calls block, if any
+	streamed  strings.Builder
+	sawOutput bool
+}
+
+// folded reports whether a follow-up took the turn over, ending it if so.
+func (t *cliTurnRun) folded() bool {
+	if !t.state.isFolded() {
+		return false
+	}
+	t.in.emit(StreamEvent{Type: StreamEventDone})
+	return true
+}
+
+// emit passes ev on. Only output reaches the turn's consumers once the turn
+// has answered; what a turn that was folded in produces is dropped.
+func (t *cliTurnRun) emit(ev StreamEvent) {
+	if (ev.Type == StreamEventText || ev.Type == StreamEventTool) && !t.state.answer() {
 		return
 	}
-	defer proc.mu.Unlock()
-	overflow := proc.overflowOf != ""
-	persist := !opts.Ephemeral && !overflow
-	if persist {
-		defer r.scheduleCLIIdle(proc)
-		if !folding {
-			defer registerCLITurn(key, turnState)()
-		}
-	} else {
-		defer r.dropCLIProc(proc)
-	}
-	folded := func() bool {
-		if !turnState.isFolded() {
-			return false
-		}
-		in.emit(StreamEvent{Type: StreamEventDone})
-		return true
-	}
-	if folded() {
+	t.in.emit(ev)
+}
+
+// send runs the turn on the conversation, retrying once on a fresh CLI
+// session when a resumed one fails before any output.
+func (t *cliTurnRun) send(key string) {
+	res, err := t.proc.sess.Send(t.ctx, t.buildTurn(key), t.onEvent)
+	if t.folded() {
 		return
 	}
-	// Only output reaches the turn's consumers once the turn has answered;
-	// what a turn that was folded in produces is dropped.
-	emit := func(ev StreamEvent) {
-		if (ev.Type == StreamEventText || ev.Type == StreamEventTool) && !turnState.answer() {
+	if err != nil && t.resumed && !t.sawOutput && t.ctx.Err() == nil {
+		res, err = t.restartAndSend(err)
+		if t.folded() {
 			return
 		}
-		in.emit(ev)
 	}
-
-	if proc.scope != nil {
-		proc.scope.setTurn(&cliTurnState{
-			ctx: sendCtx, runner: r, emit: emit, client: in.toolClient,
-			sessionID: in.sessionID, usage: in.usage,
-		})
-		defer proc.scope.setTurn(nil)
+	if err != nil {
+		t.fail(err)
+		return
 	}
+	t.finish(res)
+}
 
-	message := strings.Join(turnState.messages, "\n\n")
-	turn := cliagent.Turn{Text: message, MediaURLs: turnState.media}
+// buildTurn renders the turn's messages behind the context the CLI
+// conversation has not seen.
+func (t *cliTurnRun) buildTurn(key string) cliagent.Turn {
+	in := t.in
+	t.message = strings.Join(t.state.messages, "\n\n")
+	turn := cliagent.Turn{Text: t.message, MediaURLs: t.state.media}
 	var prefix []string
 	if in.memoryContext != "" {
 		prefix = append(prefix, in.memoryContext)
 	}
 	missed := ""
-	if persist {
+	if t.persist {
 		missed = takeCLIMissedTurns(key)
 	}
-	if !resumed && in.useHistory {
-		if prior := r.cliPriorConversation(in.sessionID, in.systemPrompt); prior != "" {
+	if !t.resumed && in.useHistory {
+		if prior := t.r.cliPriorConversation(in.sessionID, in.systemPrompt); prior != "" {
 			prefix = append(prefix, prior)
 		}
 	} else if missed != "" {
@@ -292,119 +362,134 @@ func (r *AgentRunner) runCLITurn(ctx context.Context, in cliTurnInput) {
 	}
 	// The tool calls other turns in the session are still running come right
 	// before the message, since the history above does not show them yet.
-	inFlight := inFlightToolCallsBlock(runningSessionToolCalls(r.agent.ID, in.sessionID), time.Now())
-	if inFlight != "" {
-		prefix = append(prefix, inFlight)
+	t.inFlight = inFlightToolCallsBlock(runningSessionToolCalls(t.r.agent.ID, in.sessionID), time.Now())
+	if t.inFlight != "" {
+		prefix = append(prefix, t.inFlight)
 	}
 	if len(prefix) > 0 {
 		turn.Text = strings.Join(prefix, "\n\n") + "\n\n" + turn.Text
 	}
+	return turn
+}
 
-	var streamed strings.Builder
-	sawOutput := false
-	onEvent := func(ev cliagent.Event) {
-		switch ev.Type {
-		case cliagent.EventText:
-			sawOutput = true
-			streamed.WriteString(ev.Text)
-			emit(StreamEvent{Type: StreamEventText, Text: ev.Text})
-		case cliagent.EventSession:
-			if persist {
-				r.saveCLISessionID(in.sessionID, backend, ev.SessionID)
-			}
-		case cliagent.EventToolStart:
-			sawOutput = true
-			in.usage.ToolCalls++
-			emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args}})
-			if r.IsVerbose() {
-				emit(StreamEvent{Type: StreamEventStatus, Text: verboseStatusText(ev.Tool.Name, ev.Tool.Args)})
-			}
-		case cliagent.EventToolResult:
-			emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{
-				ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error, Done: true,
-			}})
-			rec, _ := json.Marshal(toolEventRecord{ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error})
-			r.appendSessionMessage(in.sessionID, domain.MessageRoleTool, string(rec), nil, "")
-		case cliagent.EventUsage:
-			in.usage.InputTokens += ev.Usage.InputTokens
-			in.usage.OutputTokens += ev.Usage.OutputTokens
-			in.usage.CacheReadTokens += ev.Usage.CacheReadTokens
-			in.usage.CacheWriteTokens += ev.Usage.CacheWriteTokens
-			in.usage.CostUSD += ev.Usage.CostUSD
+// onEvent maps one CLI event onto stream events, history and usage.
+func (t *cliTurnRun) onEvent(ev cliagent.Event) {
+	in := t.in
+	switch ev.Type {
+	case cliagent.EventText:
+		t.sawOutput = true
+		t.streamed.WriteString(ev.Text)
+		t.emit(StreamEvent{Type: StreamEventText, Text: ev.Text})
+	case cliagent.EventSession:
+		if t.persist {
+			t.r.saveCLISessionID(in.sessionID, t.backend, ev.SessionID)
 		}
+	case cliagent.EventToolStart:
+		t.sawOutput = true
+		in.usage.ToolCalls++
+		t.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args}})
+		if t.r.IsVerbose() {
+			t.emit(StreamEvent{Type: StreamEventStatus, Text: verboseStatusText(ev.Tool.Name, ev.Tool.Args)})
+		}
+	case cliagent.EventToolResult:
+		t.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{
+			ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error, Done: true,
+		}})
+		rec, _ := json.Marshal(toolEventRecord{ID: ev.Tool.ID, Name: ev.Tool.Name, Args: ev.Tool.Args, Result: ev.Tool.Result, Error: ev.Tool.Error})
+		t.r.appendSessionMessage(in.sessionID, domain.MessageRoleTool, string(rec), nil, "")
+	case cliagent.EventUsage:
+		in.usage.InputTokens += ev.Usage.InputTokens
+		in.usage.OutputTokens += ev.Usage.OutputTokens
+		in.usage.CacheReadTokens += ev.Usage.CacheReadTokens
+		in.usage.CacheWriteTokens += ev.Usage.CacheWriteTokens
+		in.usage.CostUSD += ev.Usage.CostUSD
 	}
+}
 
-	res, err := proc.sess.Send(sendCtx, turn, onEvent)
-	if folded() {
+// restartAndSend replaces a resumed CLI session that failed with resumeErr
+// by a fresh one seeded with Aviary's history, and sends the turn again. The
+// stored CLI session may be gone (deleted, expired, or from another machine).
+func (t *cliTurnRun) restartAndSend(resumeErr error) (cliagent.Result, error) {
+	in := t.in
+	slog.Warn("agent: CLI resume failed; starting a new CLI session", "agent", t.r.agent.Name, "err", resumeErr)
+	t.r.saveCLISessionID(in.sessionID, t.backend, "")
+	_ = t.proc.sess.Close()
+	t.opts.ResumeID = ""
+	t.opts.NewSessionID = newUUID()
+	t.opts.MCPURL, t.opts.MCPToken = t.proc.sessOptsMCP()
+	var err error
+	if t.proc.sess, err = newCLISession(t.opts); err != nil {
+		return cliagent.Result{}, err
+	}
+	retry := cliagent.Turn{Text: t.message, MediaURLs: t.state.media}
+	if t.inFlight != "" {
+		retry.Text = t.inFlight + "\n\n" + retry.Text
+	}
+	if prior := t.r.cliPriorConversation(in.sessionID, in.systemPrompt); prior != "" {
+		retry.Text = prior + "\n\n" + retry.Text
+	}
+	if in.memoryContext != "" {
+		retry.Text = in.memoryContext + "\n\n" + retry.Text
+	}
+	return t.proc.sess.Send(t.ctx, retry, t.onEvent)
+}
+
+// fail ends the turn on a send error, as a stop when it was cancelled.
+func (t *cliTurnRun) fail(err error) {
+	if errors.Is(err, context.Canceled) || t.ctx.Err() != nil {
+		t.in.emit(StreamEvent{Type: StreamEventStop})
 		return
 	}
-	if err != nil && resumed && !sawOutput && sendCtx.Err() == nil {
-		// The stored CLI session may be gone (deleted, expired, or from
-		// another machine). Start a fresh one seeded with Aviary's history.
-		slog.Warn("agent: CLI resume failed; starting a new CLI session", "agent", r.agent.Name, "err", err)
-		r.saveCLISessionID(in.sessionID, backend, "")
-		_ = proc.sess.Close()
-		opts.ResumeID = ""
-		opts.NewSessionID = newUUID()
-		opts.MCPURL, opts.MCPToken = proc.sessOptsMCP()
-		if proc.sess, err = newCLISession(opts); err == nil {
-			retry := cliagent.Turn{Text: message, MediaURLs: turnState.media}
-			if inFlight != "" {
-				retry.Text = inFlight + "\n\n" + retry.Text
-			}
-			if prior := r.cliPriorConversation(in.sessionID, in.systemPrompt); prior != "" {
-				retry.Text = prior + "\n\n" + retry.Text
-			}
-			if in.memoryContext != "" {
-				retry.Text = in.memoryContext + "\n\n" + retry.Text
-			}
-			res, err = proc.sess.Send(sendCtx, retry, onEvent)
-		}
-		if folded() {
-			return
-		}
-	}
-	if err != nil {
-		if errors.Is(err, context.Canceled) || sendCtx.Err() != nil {
-			in.emit(StreamEvent{Type: StreamEventStop})
-			return
-		}
-		markUsageFailure(in.usage, err)
-		slog.Error("agent: CLI turn failed", "agent", r.agent.Name, "model", in.model, "err", err)
-		in.deliverError(err)
-		in.emit(StreamEvent{Type: StreamEventError, Err: err})
-		return
-	}
+	markUsageFailure(t.in.usage, err)
+	slog.Error("agent: CLI turn failed", "agent", t.r.agent.Name, "model", t.in.model, "err", err)
+	t.in.deliverError(err)
+	t.in.emit(StreamEvent{Type: StreamEventError, Err: err})
+}
 
-	if !turnState.answer() {
+// finish delivers the turn's answer and records it in the session.
+func (t *cliTurnRun) finish(res cliagent.Result) {
+	in := t.in
+	if !t.state.answer() {
 		in.emit(StreamEvent{Type: StreamEventDone})
 		return
 	}
 	answer := strings.TrimSpace(res.Text)
 	if answer == "" {
-		answer = strings.TrimSpace(streamed.String())
+		answer = strings.TrimSpace(t.streamed.String())
 	}
-	if answer != "" && streamed.Len() == 0 {
+	if answer != "" && t.streamed.Len() == 0 {
 		in.emit(StreamEvent{Type: StreamEventText, Text: answer})
 	}
-	var assistantMsgID string
-	if answer != "" {
-		assistantMsgID = r.appendSessionMessage(in.sessionID, domain.MessageRoleAssistant, answer, nil, in.model)
-		if overflow {
-			noteCLIMissedTurn(proc.overflowOf, message, answer)
-		}
+	t.markResponded(t.recordAnswer(answer))
+	slog.Info("agent: prompt done", "agent", t.r.agent.Name, "model", in.model)
+	in.deliver(answer)
+	in.emit(StreamEvent{Type: StreamEventDone})
+}
+
+// recordAnswer appends a non-empty answer to the session history, returning
+// its message ID.
+func (t *cliTurnRun) recordAnswer(answer string) string {
+	if answer == "" {
+		return ""
 	}
-	for _, promptMsgID := range turnState.promptMsgIDs {
+	id := t.r.appendSessionMessage(t.in.sessionID, domain.MessageRoleAssistant, answer, nil, t.in.model)
+	if t.overflow {
+		noteCLIMissedTurn(t.proc.overflowOf, t.message, answer)
+	}
+	return id
+}
+
+// markResponded marks every message the turn carries as answered by
+// assistantMsgID, minting one when the turn produced no answer message.
+func (t *cliTurnRun) markResponded(assistantMsgID string) {
+	for _, promptMsgID := range t.state.promptMsgIDs {
 		if assistantMsgID == "" {
 			assistantMsgID = newID("resp")
 		}
-		if err := MarkMessageResponded(r.agent.ID, in.sessionID, promptMsgID, assistantMsgID); err != nil {
-			slog.Warn("agent: failed to mark message responded", "session", in.sessionID, "err", err)
+		if err := MarkMessageResponded(t.r.agent.ID, t.in.sessionID, promptMsgID, assistantMsgID); err != nil {
+			slog.Warn("agent: failed to mark message responded", "session", t.in.sessionID, "err", err)
 		}
 	}
-	slog.Info("agent: prompt done", "agent", r.agent.Name, "model", in.model)
-	in.deliver(answer)
-	in.emit(StreamEvent{Type: StreamEventDone})
 }
 
 // sessOptsMCP returns the MCP endpoint and token bound to the proc.
