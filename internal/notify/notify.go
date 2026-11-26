@@ -195,10 +195,13 @@ func (s *Service) Emit(e Event) (Notification, Outcome) {
 		}
 	}
 	if !test {
-		if merged, ok := s.mergeLocked(n); ok {
-			s.mu.Unlock()
-			s.changed()
-			return merged, Merged
+		// A failure with a Source merges only as repeatLocked decides.
+		if e.Source == "" {
+			if merged, ok := s.mergeLocked(n); ok {
+				s.mu.Unlock()
+				s.changed()
+				return merged, Merged
+			}
 		}
 		if !s.allowLocked(e.Type, now) {
 			first := len(s.groups[e.Type]) == 0
