@@ -114,6 +114,8 @@ func TestStatusCountsBoardStatesLikeTheFilters(t *testing.T) {
 		{Number: 5, Target: "o/r", Status: "paused", Kind: core.JobKindIssue},
 		{Number: 6, Target: "o/r", Status: "complete", Kind: core.JobKindIssue},
 		{Number: 7, Target: "x/y", Status: "failed", Kind: core.JobKindIssue},
+		// A failed run dispatched again waits rather than failing (#1424).
+		{Number: 8, Target: "o/r", Status: "failed", Kind: core.JobKindIssue, Retrying: true, WaitReason: "dispatched again on the next poll"},
 	}})
 	for _, targets := range [][]string{nil, {"o/r"}, {"x/y"}, {"o/r", "x/y"}} {
 		states := m.Status(t.Context(), 0, targets)["states"].(map[string]int)
@@ -126,7 +128,7 @@ func TestStatusCountsBoardStatesLikeTheFilters(t *testing.T) {
 			}
 		}
 	}
-	want := map[string]int{core.BoardStarting: 2, core.BoardPaused: 2, core.BoardRunning: 1, core.BoardDone: 1, core.BoardFailed: 0}
+	want := map[string]int{core.BoardStarting: 2, core.BoardPaused: 3, core.BoardRunning: 1, core.BoardDone: 1, core.BoardFailed: 0}
 	if got := m.Status(t.Context(), 0, []string{"o/r"})["states"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("o/r states = %v, want %v", got, want)
 	}

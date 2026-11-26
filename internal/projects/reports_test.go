@@ -89,6 +89,31 @@ func TestReporterReportsFailedAndWaitingJobs(t *testing.T) {
 	}
 }
 
+// A failed run Code Loop dispatches again is not Failed, so it reports
+// nothing until a poll finds the failure terminal (issue #1424).
+func TestReporterReportsFailedOnlyWhenTerminal(t *testing.T) {
+	r, sent := testReporter(reportsConfig(&config.ProjectReportsConfig{Agent: "bot", Targets: []string{"session:projects"}}))
+	r.observe(core.Snapshot{Jobs: []core.JobSnapshot{reportJob("active")}})
+
+	retrying := reportJob("failed")
+	retrying.Retrying = true
+	retrying.WaitReason = "its last run ended with an error (signal: killed); Code Loop dispatches it again on the next poll"
+	retrying.Log = "signal: killed\n"
+	r.observe(core.Snapshot{Jobs: []core.JobSnapshot{retrying}})
+	r.observe(core.Snapshot{Jobs: []core.JobSnapshot{reportJob("active")}})
+	if len(*sent) != 0 {
+		t.Fatalf("a failed run that is dispatched again sent reports: %+v", *sent)
+	}
+
+	failed := reportJob("failed")
+	failed.Log = "signal: killed\n"
+	r.observe(core.Snapshot{Jobs: []core.JobSnapshot{failed}})
+	want := "acme/app#7 \"Fix login\" failed. signal: killed\nhttps://github.com/acme/app/issues/7"
+	if len(*sent) != 1 || (*sent)[0].text != want {
+		t.Fatalf("sent %+v, want one report %q", *sent, want)
+	}
+}
+
 func TestReporterSendsNothingWhenReportsAreOff(t *testing.T) {
 	for name, reports := range map[string]*config.ProjectReportsConfig{
 		"unset":      nil,

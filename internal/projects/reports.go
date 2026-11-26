@@ -79,7 +79,7 @@ func (r *reporter) observe(snapshot core.Snapshot) {
 	defer r.mu.Unlock()
 	for _, job := range snapshot.Jobs {
 		key := reportJobKey(job)
-		event := reportEvent(job.Status)
+		event := reportEvent(job)
 		previous, seen := r.events[key]
 		r.events[key] = event
 		if !seen || event == "" || event == previous {
@@ -112,13 +112,18 @@ func reportJobKey(job core.JobSnapshot) string {
 	return job.Target + "|" + job.Repository + "#" + strconv.Itoa(job.Number) + "|" + job.Kind + "|" + job.ScheduleID
 }
 
-// reportEvent maps a job status to the report event it raises, or "" for a
-// status that raises none.
-func reportEvent(status string) string {
-	switch status {
+// reportEvent maps a job's status to the report event it raises, or "" for a
+// status that raises none. Only a job that is Failed under the board's
+// definition raises the failed event (issue #1424): a failed run Code Loop
+// dispatches again raises nothing until a poll finds it terminal.
+func reportEvent(job core.JobSnapshot) string {
+	switch job.Status {
 	case "complete":
 		return config.ProjectReportMerged
 	case "failed":
+		if !job.Failed() {
+			return ""
+		}
 		return config.ProjectReportFailed
 	case "waiting", "paused":
 		return config.ProjectReportWaiting
