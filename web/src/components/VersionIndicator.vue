@@ -5,7 +5,7 @@
          (#1405). Dev builds have no release, so they stay plain text. -->
     <a v-if="releaseURL" data-testid="server-version" :href="releaseURL" target="_blank" rel="noopener noreferrer"
       :title="`Release notes for ${display}`" :aria-label="`Release notes for ${display}`"
-      class="truncate rounded-sm font-mono text-xs text-gray-600 no-underline focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-gray-400">{{ display }}</a>
+      class="truncate rounded-sm font-mono text-xs text-gray-600 no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-gray-400">{{ display }}</a>
     <span v-else data-testid="server-version" :title="`Version ${display}`"
       class="truncate font-mono text-xs text-gray-600 dark:text-gray-400">{{ display }}</span>
     <button v-if="upgradeAvailable" type="button" data-testid="update-icon" :aria-label="updateLabel"

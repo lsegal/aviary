@@ -296,3 +296,76 @@ test("mobile header fits a 320px phone with an update pending (#1317)", async ({
 		),
 	).toBe(0);
 });
+
+const labelStyle = ["color", "text-decoration-line", "font-family", "font-size"];
+
+async function versionLabelStyle(page: Page, version: string) {
+	await page.routeWebSocket(/\/api\/ws/, (ws) => {
+		ws.send(JSON.stringify({ type: "health", ok: true, version, goos: "darwin" }));
+	});
+	await mockServer(page);
+	await page.goto("/system/overview");
+	const label = page.getByTestId("sidebar-footer").getByTestId("server-version");
+	await expect(label).toHaveText(version);
+	const style = () =>
+		label.evaluate(
+			(el, props) => {
+				const s = getComputedStyle(el);
+				return props.map((p) => s.getPropertyValue(p));
+			},
+			labelStyle,
+		);
+	const plain = await style();
+	await label.hover();
+	return { label, plain, hovered: await style() };
+}
+
+test("a release build's version label links to its release notes with no visual change (#1405)", async ({
+	page,
+	browser,
+}) => {
+	const { label, plain, hovered } = await versionLabelStyle(page, "v0.7.56");
+	await expect(label).toHaveJSProperty("tagName", "A");
+	await expect(label).toHaveAttribute(
+		"href",
+		"https://github.com/lsegal/aviary/releases/tag/v0.7.56",
+	);
+	await expect(label).toHaveAttribute("target", "_blank");
+	await expect(label).toHaveAttribute("rel", "noopener noreferrer");
+	await expect(label).toHaveAttribute("title", "Release notes for v0.7.56");
+	await expect(label).toHaveAccessibleName("Release notes for v0.7.56");
+	expect(hovered).toEqual(plain);
+
+	// The same label in a dev build: plain text, not a link, styled the same.
+	const devContext = await browser.newContext(test.info().project.use);
+	const devPage = await devContext.newPage();
+	await setAuthToken(devPage);
+	const dev = await versionLabelStyle(devPage, "dev");
+	await expect(dev.label).toHaveJSProperty("tagName", "SPAN");
+	await expect(dev.label).not.toHaveAttribute("href", /.*/);
+	expect(plain).toEqual(dev.plain);
+	await devContext.close();
+
+	// Keyboard focus shows a ring: tab back onto it from the bell.
+	await expect(label).toHaveCSS("outline-style", "none");
+	await page
+		.getByTestId("sidebar-footer")
+		.getByRole("button", { name: "Notifications" })
+		.focus();
+	await page.keyboard.press("Shift+Tab");
+	await expect(label).toBeFocused();
+	await expect(label).toHaveCSS("outline-style", "solid");
+	await expect(label).not.toHaveCSS("outline-width", "0px");
+});
+
+test("dev and SHA builds keep the version label as plain text (#1405)", async ({
+	page,
+}) => {
+	await connectHealthy(page);
+	await mockServer(page);
+	await page.goto("/system/overview");
+	const label = page.getByTestId("sidebar-footer").getByTestId("server-version");
+	await expect(label).toHaveText("31ee10e");
+	await expect(label).toHaveJSProperty("tagName", "SPAN");
+	await expect(page.locator('a[href*="/releases/tag/"]')).toHaveCount(0);
+});
