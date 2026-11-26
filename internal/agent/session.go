@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"fmt"
 	"log/slog"
 	"os"
@@ -227,74 +228,9 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 			continue
 		}
-		path := filepath.Join(sessDir, e.Name())
-		lines, err := store.ReadJSONL[map[string]any](path)
-		if err != nil || len(lines) == 0 {
-			continue
+		if s := listedSession(agentID, filepath.Join(sessDir, e.Name())); s != nil {
+			sessions = append(sessions, s)
 		}
-		// A file whose first record is not a header (no created_at) still
-		// holds messages, for example when a message was appended before the
-		// header was written. List it with its ID from the file name and its
-		// first message time as created_at.
-		header, records := lines[0], lines[1:]
-		if _, ok := header["created_at"]; !ok {
-			header, records = map[string]any{}, lines
-		}
-		var created, updated time.Time
-		var sessType domain.SessionType
-		if v, ok := header["created_at"]; ok {
-			if s, ok := v.(string); ok {
-				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-					created = t
-				}
-			}
-		}
-		if v, ok := header["updated_at"]; ok {
-			if s, ok := v.(string); ok {
-				if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-					updated = t
-				}
-			}
-		}
-		if v, ok := header["type"]; ok {
-			if s, ok := v.(string); ok {
-				sessType = domain.SessionType(s)
-			}
-		}
-		if created.IsZero() {
-			created = firstRecordAt(records)
-		}
-		if created.IsZero() {
-			continue
-		}
-		fname := strings.TrimSuffix(e.Name(), ".jsonl")
-		name := fname
-		id := fname
-		if v, ok := header["name"]; ok {
-			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-				name = strings.TrimSpace(s)
-			}
-		}
-		if v, ok := header["id"]; ok {
-			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-				id = strings.TrimSpace(s)
-			}
-		}
-		if sessType == "" {
-			sessType = sessionTypeFor(agentID, name)
-		}
-		meta, _ := store.ReadSessionMeta(store.SessionMetaPath(agentID, id))
-		s := &domain.Session{
-			ID:            id,
-			AgentID:       agentID,
-			Name:          name,
-			Type:          sessType,
-			Title:         meta.Title,
-			LastMessageAt: latest(meta.LastMessageAt, lastMessageAt(records)),
-			CreatedAt:     created,
-			UpdatedAt:     updated,
-		}
-		sessions = append(sessions, s)
 	}
 
 	sort.Slice(sessions, func(i, j int) bool {
@@ -307,6 +243,66 @@ func (m *SessionManager) List(agentID string) ([]*domain.Session, error) {
 		return sessions[i].CreatedAt.Before(sessions[j].CreatedAt)
 	})
 	return sessions, nil
+}
+
+// listedSession reads the session stored at path for List, or returns nil
+// when the file is unreadable, empty, or has no creation time.
+func listedSession(agentID, path string) *domain.Session {
+	lines, err := store.ReadJSONL[map[string]any](path)
+	if err != nil || len(lines) == 0 {
+		return nil
+	}
+	// A file whose first record is not a header (no created_at) still
+	// holds messages, for example when a message was appended before the
+	// header was written. List it with its ID from the file name and its
+	// first message time as created_at.
+	header, records := lines[0], lines[1:]
+	if _, ok := header["created_at"]; !ok {
+		header, records = map[string]any{}, lines
+	}
+	created := headerTime(header, "created_at")
+	if created.IsZero() {
+		created = firstRecordAt(records)
+	}
+	if created.IsZero() {
+		return nil
+	}
+	fname := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	name := cmp.Or(headerTrimmed(header, "name"), fname)
+	id := cmp.Or(headerTrimmed(header, "id"), fname)
+	sessType, _ := header["type"].(string)
+	if sessType == "" {
+		sessType = string(sessionTypeFor(agentID, name))
+	}
+	meta, _ := store.ReadSessionMeta(store.SessionMetaPath(agentID, id))
+	return &domain.Session{
+		ID:            id,
+		AgentID:       agentID,
+		Name:          name,
+		Type:          domain.SessionType(sessType),
+		Title:         meta.Title,
+		LastMessageAt: latest(meta.LastMessageAt, lastMessageAt(records)),
+		CreatedAt:     created,
+		UpdatedAt:     headerTime(header, "updated_at"),
+	}
+}
+
+// headerTime parses the RFC 3339 time at key in a session header, or returns
+// the zero time when it is missing or malformed.
+func headerTime(header map[string]any, key string) time.Time {
+	s, _ := header[key].(string)
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+// headerTrimmed returns the trimmed string at key in a session header, or ""
+// when it is missing or not a string.
+func headerTrimmed(header map[string]any, key string) string {
+	s, _ := header[key].(string)
+	return strings.TrimSpace(s)
 }
 
 // sessionHeader returns the session's header record, or nil when its file
@@ -436,20 +432,7 @@ func (m *SessionManager) relocate(agentID, sessionID, id, name string, typ domai
 	if err != nil {
 		return nil, fmt.Errorf("moving session %q: %w", sessionID, err)
 	}
-	now := time.Now()
-	header := map[string]any{"created_at": now.Format(time.RFC3339Nano)}
-	if len(lines) > 0 {
-		if _, ok := lines[0]["created_at"]; ok {
-			header, lines = lines[0], lines[1:]
-		}
-	}
-	header["id"] = id
-	header["name"] = name
-	if typ != "" {
-		header["type"] = string(typ)
-	}
-	header["updated_at"] = now.Format(time.RFC3339Nano)
-	if err := store.RewriteJSONL(store.SessionPath(agentID, id), append([]map[string]any{header}, lines...)); err != nil {
+	if err := store.RewriteJSONL(store.SessionPath(agentID, id), relocatedLines(lines, id, name, typ, time.Now())); err != nil {
 		return nil, fmt.Errorf("moving session %q: %w", sessionID, err)
 	}
 	meta, _ := store.ReadSessionMeta(store.SessionMetaPath(agentID, sessionID))
@@ -462,11 +445,8 @@ func (m *SessionManager) relocate(agentID, sessionID, id, name string, typ domai
 		return nil, fmt.Errorf("moving session %q: %w", sessionID, err)
 	}
 	if keepChannels {
-		if cfg, err := store.ReadSessionChannels(agentID, sessionID); err == nil && len(cfg.Channels) > 0 {
-			cfg.SessionID = id
-			if err := store.WriteSessionChannels(cfg); err != nil {
-				return nil, fmt.Errorf("moving session %q: %w", sessionID, err)
-			}
+		if err := moveSessionChannels(agentID, sessionID, id); err != nil {
+			return nil, fmt.Errorf("moving session %q: %w", sessionID, err)
 		}
 	}
 	if err := m.Delete(agentID, sessionID); err != nil {
@@ -474,6 +454,39 @@ func (m *SessionManager) relocate(agentID, sessionID, id, name string, typ domai
 	}
 	ClearSessionDelivery(agentID, sessionID)
 	notifySessionMessage(agentID, id, "")
+	return m.find(agentID, id)
+}
+
+// relocatedLines returns a session's records under a header carrying the new
+// id, name and, when set, type. A session without a header gets one created
+// now.
+func relocatedLines(lines []map[string]any, id, name string, typ domain.SessionType, now time.Time) []map[string]any {
+	header := map[string]any{"created_at": now.Format(time.RFC3339Nano)}
+	if h := sessionHeader(lines); h != nil {
+		header, lines = h, lines[1:]
+	}
+	header["id"] = id
+	header["name"] = name
+	if typ != "" {
+		header["type"] = string(typ)
+	}
+	header["updated_at"] = now.Format(time.RFC3339Nano)
+	return append([]map[string]any{header}, lines...)
+}
+
+// moveSessionChannels carries a session's channel delivery sidecar over to
+// the session id. A session without channels has nothing to move.
+func moveSessionChannels(agentID, sessionID, id string) error {
+	cfg, err := store.ReadSessionChannels(agentID, sessionID)
+	if err != nil || len(cfg.Channels) == 0 {
+		return nil
+	}
+	cfg.SessionID = id
+	return store.WriteSessionChannels(cfg)
+}
+
+// find returns the agent's listed session with the given id.
+func (m *SessionManager) find(agentID, id string) (*domain.Session, error) {
 	sessions, err := m.List(agentID)
 	if err != nil {
 		return nil, err

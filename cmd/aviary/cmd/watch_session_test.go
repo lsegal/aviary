@@ -296,18 +296,7 @@ func TestStartWatchSessionIsolatesConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Agents) != 1 || cfg.Agents[0].Name != watchAgentName || len(cfg.Agents[0].Projects) != 1 || cfg.Agents[0].Projects[0].Target != "aviary-test/repo" {
-		t.Errorf("session agents = %+v", cfg.Agents)
-	}
-	if !cfg.Server.DisableTokenAuth || !cfg.Server.NoTLS || cfg.Server.Port == 0 {
-		t.Errorf("session server = %+v", cfg.Server)
-	}
-	if cfg.Projects.Concurrency != 5 {
-		t.Errorf("concurrency = %d, want the flag's 5", cfg.Projects.Concurrency)
-	}
-	if cfg.Browser.ProfileDir != filepath.Join(globalDir, "browser") {
-		t.Errorf("browser profile = %q, want the shared %s", cfg.Browser.ProfileDir, filepath.Join(globalDir, "browser"))
-	}
+	checkIsolatedSessionConfig(t, cfg, globalDir)
 	// Writing through Aviary's default paths lands in the session.
 	if err := config.Save("", cfg); err != nil {
 		t.Fatal(err)
@@ -327,6 +316,25 @@ func TestStartWatchSessionIsolatesConfig(t *testing.T) {
 	}
 	if got := snapshotDir(t, globalDir); fmt.Sprint(got) != fmt.Sprint(before) {
 		t.Errorf("the global config dir changed:\nbefore %v\nafter  %v", before, got)
+	}
+}
+
+// checkIsolatedSessionConfig checks the session config watches
+// aviary-test/repo with the watch agent on an open loopback server, the
+// --concurrency flag's 5, and the browser profile shared from globalDir.
+func checkIsolatedSessionConfig(t *testing.T, cfg *config.Config, globalDir string) {
+	t.Helper()
+	if len(cfg.Agents) != 1 || cfg.Agents[0].Name != watchAgentName || len(cfg.Agents[0].Projects) != 1 || cfg.Agents[0].Projects[0].Target != "aviary-test/repo" {
+		t.Errorf("session agents = %+v", cfg.Agents)
+	}
+	if !cfg.Server.DisableTokenAuth || !cfg.Server.NoTLS || cfg.Server.Port == 0 {
+		t.Errorf("session server = %+v", cfg.Server)
+	}
+	if cfg.Projects.Concurrency != 5 {
+		t.Errorf("concurrency = %d, want the flag's 5", cfg.Projects.Concurrency)
+	}
+	if cfg.Browser.ProfileDir != filepath.Join(globalDir, "browser") {
+		t.Errorf("browser profile = %q, want the shared %s", cfg.Browser.ProfileDir, filepath.Join(globalDir, "browser"))
 	}
 }
 
@@ -389,13 +397,7 @@ func startWatchProcess(t *testing.T, args ...string) *watchProcess {
 		}
 	}
 	p := &watchProcess{out: &lockedBuffer{}, tmp: tmp, globalDir: writeGlobalAviary(t, configHome)}
-	// Keep the default port taken on the IPv6 loopback only, as a dual-stack
-	// server holds it, so the session has to fall back.
-	if ln, err := net.Listen("tcp6", "[::1]:16677"); err == nil {
-		t.Cleanup(func() { _ = ln.Close() })
-	} else if ln, err := net.Listen("tcp4", "127.0.0.1:16677"); err == nil {
-		t.Cleanup(func() { _ = ln.Close() })
-	}
+	holdDefaultWatchPort(t)
 	p.before = snapshotDir(t, p.globalDir)
 	all := append([]string{"watch", "aviary-test/watch-isolation", "--delivery", "poll", "--interval", "1h"}, args...)
 	p.cmd = exec.Command(os.Args[0], "-test.run=^TestWatchHelperProcess$")
@@ -419,27 +421,50 @@ func startWatchProcess(t *testing.T, args ...string) *watchProcess {
 	t.Cleanup(func() { _ = p.cmd.Process.Kill() })
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		if p.sessionDir == "" {
-			matches, _ := filepath.Glob(filepath.Join(tmp, watchDirPrefix+strconv.Itoa(p.cmd.Process.Pid)+"-*"))
-			if len(matches) == 1 {
-				p.sessionDir = matches[0]
-			}
-		}
-		if p.sessionDir != "" && p.port == 0 {
-			if cfg, err := config.Load(filepath.Join(p.sessionDir, "aviary.yaml")); err == nil && cfg.Server.Port != 0 {
-				p.port = cfg.Server.Port
-			}
-		}
-		if p.port != 0 {
-			if resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/health", p.port)); err == nil {
-				_ = resp.Body.Close()
-				return p
-			}
+		if p.serving() {
+			return p
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("watch session did not start; output:\n%s", p.out)
 	return nil
+}
+
+// holdDefaultWatchPort keeps the default port taken on the IPv6 loopback
+// only (or the IPv4 one without IPv6), as a dual-stack server holds it, so
+// the session has to fall back.
+func holdDefaultWatchPort(t *testing.T) {
+	t.Helper()
+	if ln, err := net.Listen("tcp6", "[::1]:16677"); err == nil {
+		t.Cleanup(func() { _ = ln.Close() })
+	} else if ln, err := net.Listen("tcp4", "127.0.0.1:16677"); err == nil {
+		t.Cleanup(func() { _ = ln.Close() })
+	}
+}
+
+// serving finds the process's session dir and port as they appear, and
+// reports whether its server answers health checks yet.
+func (p *watchProcess) serving() bool {
+	if p.sessionDir == "" {
+		matches, _ := filepath.Glob(filepath.Join(p.tmp, watchDirPrefix+strconv.Itoa(p.cmd.Process.Pid)+"-*"))
+		if len(matches) == 1 {
+			p.sessionDir = matches[0]
+		}
+	}
+	if p.sessionDir != "" && p.port == 0 {
+		if cfg, err := config.Load(filepath.Join(p.sessionDir, "aviary.yaml")); err == nil && cfg.Server.Port != 0 {
+			p.port = cfg.Server.Port
+		}
+	}
+	if p.port == 0 {
+		return false
+	}
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/health", p.port))
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return true
 }
 
 // stop signals the process and checks it ended its session cleanly. SIGINT

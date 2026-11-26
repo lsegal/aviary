@@ -53,20 +53,27 @@ func TestBuiltinApprovalTranslations(t *testing.T) {
 		if !ok {
 			t.Fatalf("Lookup(%q) missing", name)
 		}
-		for mode, args := range modes {
-			if got := definition.ApprovalArgs(mode); !reflect.DeepEqual(got, args) {
-				t.Errorf("%s %s = %q, want %q", name, mode, got, args)
-			}
+		checkApprovalTranslation(t, name, definition, modes)
+	}
+}
+
+// checkApprovalTranslation checks a definition's approval arguments for each
+// mode, and that every template that runs the agent renders the read-only
+// translation.
+func checkApprovalTranslation(t *testing.T, name string, definition Definition, modes map[ApprovalMode][]string) {
+	t.Helper()
+	for mode, args := range modes {
+		if got := definition.ApprovalArgs(mode); !reflect.DeepEqual(got, args) {
+			t.Errorf("%s %s = %q, want %q", name, mode, got, args)
 		}
-		// Every template that runs the agent renders the translation.
-		for _, mode := range []Mode{ModeRun, ModeResume, ModeVision} {
-			if !definition.Supports(mode) {
-				continue
-			}
-			argv := strings.Join(definition.Render(mode, Values{Prompt: "p", Session: "s", Image: "i", Approval: ApprovalReadOnly}), " ")
-			if !strings.Contains(argv, strings.Join(modes[ApprovalReadOnly], " ")) {
-				t.Errorf("%s %s argv %q does not render its read-only flags", name, mode, argv)
-			}
+	}
+	for _, mode := range []Mode{ModeRun, ModeResume, ModeVision} {
+		if !definition.Supports(mode) {
+			continue
+		}
+		argv := strings.Join(definition.Render(mode, Values{Prompt: "p", Session: "s", Image: "i", Approval: ApprovalReadOnly}), " ")
+		if !strings.Contains(argv, strings.Join(modes[ApprovalReadOnly], " ")) {
+			t.Errorf("%s %s argv %q does not render its read-only flags", name, mode, argv)
 		}
 	}
 }

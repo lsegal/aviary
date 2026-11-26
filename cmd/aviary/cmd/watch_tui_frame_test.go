@@ -169,46 +169,65 @@ func watchLandingView(t *testing.T, cols, rows int) string {
 // watchFrameFromANSI splits a rendered view into rows of styled spans.
 func watchFrameFromANSI(view string, cols int) watchFrame {
 	frame := watchFrame{Cols: cols}
-	var cur watchFrameSpan
+	var b watchFrameRowBuilder
 	for _, line := range strings.Split(view, "\n") {
-		row := []watchFrameSpan{}
-		var text strings.Builder
-		flush := func() {
-			if text.Len() == 0 {
-				return
-			}
-			span := cur
-			span.Text = text.String()
-			if n := len(row); n > 0 && row[n-1].FG == span.FG && row[n-1].Bold == span.Bold && row[n-1].Underline == span.Underline && row[n-1].Reverse == span.Reverse {
-				row[n-1].Text += span.Text
-			} else {
-				row = append(row, span)
-			}
-			text.Reset()
-		}
-		for i := 0; i < len(line); {
-			if line[i] != 0x1b {
-				text.WriteByte(line[i])
-				i++
-				continue
-			}
-			loc := watchANSI.FindStringIndex(line[i:])
-			if loc == nil || loc[0] != 0 {
-				i++
-				continue
-			}
-			seq := line[i : i+loc[1]]
-			i += loc[1]
-			if !strings.HasPrefix(seq, "\x1b[") || !strings.HasSuffix(seq, "m") {
-				continue
-			}
-			flush()
-			cur = watchApplySGR(cur, strings.Split(seq[2:len(seq)-1], ";"))
-		}
-		flush()
-		frame.Rows = append(frame.Rows, row)
+		frame.Rows = append(frame.Rows, b.row(line))
 	}
 	return frame
+}
+
+// watchFrameRowBuilder turns rendered lines into styled spans, carrying the
+// current style from one line to the next as a terminal does.
+type watchFrameRowBuilder struct {
+	cur   watchFrameSpan
+	spans []watchFrameSpan
+	text  strings.Builder
+}
+
+// row returns line's spans, merging neighbors of the same style.
+func (b *watchFrameRowBuilder) row(line string) []watchFrameSpan {
+	b.spans = []watchFrameSpan{}
+	for i := 0; i < len(line); {
+		if line[i] != 0x1b {
+			b.text.WriteByte(line[i])
+			i++
+			continue
+		}
+		loc := watchANSI.FindStringIndex(line[i:])
+		if loc == nil || loc[0] != 0 {
+			i++
+			continue
+		}
+		seq := line[i : i+loc[1]]
+		i += loc[1]
+		if !strings.HasPrefix(seq, "\x1b[") || !strings.HasSuffix(seq, "m") {
+			continue
+		}
+		b.flush()
+		b.cur = watchApplySGR(b.cur, strings.Split(seq[2:len(seq)-1], ";"))
+	}
+	b.flush()
+	return b.spans
+}
+
+// flush ends the pending text as a span in the current style.
+func (b *watchFrameRowBuilder) flush() {
+	if b.text.Len() == 0 {
+		return
+	}
+	span := b.cur
+	span.Text = b.text.String()
+	b.text.Reset()
+	if n := len(b.spans); n > 0 && watchFrameSameStyle(b.spans[n-1], span) {
+		b.spans[n-1].Text += span.Text
+		return
+	}
+	b.spans = append(b.spans, span)
+}
+
+// watchFrameSameStyle reports whether two spans are styled alike.
+func watchFrameSameStyle(a, b watchFrameSpan) bool {
+	return a.FG == b.FG && a.Bold == b.Bold && a.Underline == b.Underline && a.Reverse == b.Reverse
 }
 
 // watchApplySGR applies one SGR sequence's parameters to a span's style.

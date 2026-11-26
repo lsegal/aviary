@@ -764,7 +764,7 @@ func (d Doctor) validate() error {
 	return nil
 }
 
-// validateValues rejects empty entries in the doctor's list fields.
+// validateValues rejects empty entries in the doctor's argv and model list.
 func (d Doctor) validateValues() error {
 	for field, argv := range map[string][]string{"doctor.auth": d.Auth, "doctor.models": d.Models} {
 		if hasBlank(argv) {
@@ -773,9 +773,6 @@ func (d Doctor) validateValues() error {
 	}
 	if hasBlank(d.KnownModels) {
 		return fmt.Errorf(`field "doctor.knownModels" cannot contain an empty value`)
-	}
-	if hasBlank(d.ModelsStdin) {
-		return fmt.Errorf(`field "doctor.modelsStdin" cannot contain an empty line`)
 	}
 	return nil
 }
@@ -800,7 +797,13 @@ func (d Doctor) validateDependentFields() error {
 		"doctor.modelsJSON":   strings.TrimSpace(d.ModelsJSON) != "",
 		"doctor.modelsStdin":  len(d.ModelsStdin) > 0,
 	}
-	return requireProbe(modelFields, len(d.Models) > 0, "doctor.models")
+	if err := requireProbe(modelFields, len(d.Models) > 0, "doctor.models"); err != nil {
+		return err
+	}
+	if hasBlank(d.ModelsStdin) {
+		return fmt.Errorf(`field "doctor.modelsStdin" cannot contain an empty line`)
+	}
+	return nil
 }
 
 // requireProbe reports the first declared field when its probe is missing.

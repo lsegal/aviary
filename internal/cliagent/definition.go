@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -83,42 +82,16 @@ func (s *definitionSession) Send(ctx context.Context, turn Turn, onEvent func(Ev
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if onEvent == nil {
-		onEvent = func(Event) {}
+		onEvent = discardEvent
 	}
 	name := string(s.opts.Backend)
+	mode, session, assigned := s.turnSession()
 
-	mode, session := clidefs.ModeResume, s.sessionID
-	assigned := ""
-	if session == "" {
-		mode = clidefs.ModeRun
-		if s.definition.AssignsSessionID() && !s.opts.Ephemeral {
-			assigned = s.opts.NewSessionID
-			if assigned == "" {
-				assigned = randomUUID()
-			}
-			session = assigned
-		}
+	text, removeImages, err := s.turnText(ctx, turn, mode)
+	if err != nil {
+		return Result{}, err
 	}
-
-	text := turn.Text
-	var images []string
-	for _, mediaURL := range turn.MediaURLs {
-		path, err := writeTempImage(ctx, mediaURL)
-		if err != nil {
-			return Result{}, err
-		}
-		defer os.Remove(path) //nolint:errcheck
-		images = append(images, path)
-	}
-	if len(images) > 0 {
-		text = strings.TrimSpace(text + "\n\nAttached images: " + strings.Join(images, ", "))
-	}
-	if mode == clidefs.ModeRun && s.opts.SystemPrompt != "" && !s.definition.TakesSystemPrompt() {
-		text = "<system_instructions>\n" + s.opts.SystemPrompt + "\n</system_instructions>\n\n" + text
-	}
-	if strings.TrimSpace(text) == "" {
-		text = " "
-	}
+	defer removeImages()
 
 	extra, env, cleanup, err := s.wiring()
 	if err != nil {
@@ -144,11 +117,69 @@ func (s *definitionSession) Send(ctx context.Context, turn Turn, onEvent func(Ev
 	}
 
 	m := newDefinitionMapper(s.definition, s.aviaryToolPrefix(), onEvent)
+	output := &tailBuffer{max: 4096}
+	finished := s.readTurn(stdout, m, capture, output)
+	waitErr := wait()
+	if ctx.Err() != nil {
+		return Result{}, ctx.Err()
+	}
+	if process.CleanupTimedOut(waitErr) && finished {
+		// The turn ended with its final result and the CLI exited
+		// successfully; only something it started kept the output open.
+		slog.Warn("cliagent: turn finished but its process cleanup timed out", "cli", name)
+		waitErr = nil
+	}
+	if err := s.turnError(name, mode, waitErr, m.messages, stderr.String(), output.String()); err != nil {
+		return Result{}, err
+	}
+	s.recordSession(capture, assigned, onEvent)
+	return Result{Text: m.lastMessage}, nil
+}
+
+// turnSession picks the mode and session ID for the next turn: a resume of
+// the stored session, or a run that assigns a fresh ID when the definition
+// has Aviary assign them. assigned is the ID this turn assigned, if any.
+func (s *definitionSession) turnSession() (mode clidefs.Mode, session, assigned string) {
+	if s.sessionID != "" {
+		return clidefs.ModeResume, s.sessionID, ""
+	}
+	if s.definition.AssignsSessionID() && !s.opts.Ephemeral {
+		assigned = s.opts.NewSessionID
+		if assigned == "" {
+			assigned = randomUUID()
+		}
+	}
+	return clidefs.ModeRun, assigned, assigned
+}
+
+// turnText is the prompt one turn sends: the turn's text naming its images,
+// which are written to temp files the returned cleanup removes, and the
+// system prompt opening a first turn when the definition has no other way to
+// take it.
+func (s *definitionSession) turnText(ctx context.Context, turn Turn, mode clidefs.Mode) (string, func(), error) {
+	images, cleanup, err := writeTempImages(ctx, turn.MediaURLs)
+	if err != nil {
+		return "", nil, err
+	}
+	text := turn.Text
+	if len(images) > 0 {
+		text = strings.TrimSpace(text + "\n\nAttached images: " + strings.Join(images, ", "))
+	}
+	if mode == clidefs.ModeRun && s.opts.SystemPrompt != "" && !s.definition.TakesSystemPrompt() {
+		text = "<system_instructions>\n" + s.opts.SystemPrompt + "\n</system_instructions>\n\n" + text
+	}
+	if strings.TrimSpace(text) == "" {
+		text = " "
+	}
+	return text, cleanup, nil
+}
+
+// readTurn feeds each stdout line to the mapper and session capture, keeping
+// the tail of the output, and reports whether the turn ended in success.
+func (s *definitionSession) readTurn(stdout io.Reader, m *definitionMapper, capture *sessionCapture, output *tailBuffer) bool {
 	finished := false
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 0, 64*1024), 64*1024*1024)
-	var output tailBuffer
-	output.max = 4096
 	for sc.Scan() {
 		line := sc.Bytes()
 		capture.line(line)
@@ -161,30 +192,33 @@ func (s *definitionSession) Send(ctx context.Context, turn Turn, onEvent func(Ev
 	}
 	_, _ = io.Copy(io.Discard, stdout)
 	m.flush()
-	waitErr := wait()
-	if ctx.Err() != nil {
-		return Result{}, ctx.Err()
+	return finished
+}
+
+// turnError reports why a turn failed: the CLI exited with an error, or a
+// resume produced no messages and said its session is gone.
+func (s *definitionSession) turnError(name string, mode clidefs.Mode, waitErr error, messages int, stderr, output string) error {
+	resumeLost := mode == clidefs.ModeResume && messages == 0 && s.missingSession(stderr+output)
+	if waitErr == nil && !resumeLost {
+		return nil
 	}
-	if process.CleanupTimedOut(waitErr) && finished {
-		// The turn ended with its final result and the CLI exited
-		// successfully; only something it started kept the output open.
-		slog.Warn("cliagent: turn finished but its process cleanup timed out", "cli", name)
-		waitErr = nil
+	msg := strings.TrimSpace(stderr)
+	if msg == "" && messages == 0 {
+		msg = strings.TrimSpace(output)
 	}
-	if waitErr != nil || (mode == clidefs.ModeResume && m.messages == 0 && s.missingSession(stderr.String()+output.String())) {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" && m.messages == 0 {
-			msg = strings.TrimSpace(output.String())
-		}
-		switch {
-		case msg != "":
-			return Result{}, fmt.Errorf("%s exited: %s", name, msg)
-		case waitErr != nil:
-			return Result{}, fmt.Errorf("%s exited: %w", name, waitErr)
-		default:
-			return Result{}, fmt.Errorf("%s exited without resuming its session", name)
-		}
+	switch {
+	case msg != "":
+		return fmt.Errorf("%s exited: %s", name, msg)
+	case waitErr != nil:
+		return fmt.Errorf("%s exited: %w", name, waitErr)
+	default:
+		return fmt.Errorf("%s exited without resuming its session", name)
 	}
+}
+
+// recordSession stores the session ID the CLI reported, or the one this turn
+// assigned, announcing it when it changed.
+func (s *definitionSession) recordSession(capture *sessionCapture, assigned string, onEvent func(Event)) {
 	id := capture.captured()
 	if id == "" {
 		id = assigned
@@ -193,7 +227,6 @@ func (s *definitionSession) Send(ctx context.Context, turn Turn, onEvent func(Ev
 		s.sessionID = id
 		onEvent(Event{Type: EventSession, SessionID: id})
 	}
-	return Result{Text: m.lastMessage}, nil
 }
 
 // servesMCP reports whether this session hands the CLI Aviary's MCP server.
@@ -225,50 +258,71 @@ func (s *definitionSession) wiring() (args, env []string, cleanup func(), err er
 		}
 	}()
 	if s.servesMCP() {
-		values := clidefs.MCPValues{
-			Name:     MCPServerName,
-			URL:      s.opts.MCPURL,
-			TokenEnv: mcpTokenEnv,
-			AuthEnv:  mcpAuthEnv,
-			Timeout:  MCPToolTimeout,
+		mcpArgs, mcpEnv, err := s.mcpWiring(&cleanups)
+		if err != nil {
+			return nil, nil, nil, err
 		}
-		if ext, ok := s.definition.MCPAllowFileExtension(); ok {
-			path, remove, err := writeTempFile("aviary-mcp-allow-*"+ext, s.definition.MCPAllowFile(values))
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("writing the MCP allow file: %w", err)
-			}
-			cleanups = append(cleanups, remove)
-			values.AllowFile = path
-		}
-		if s.definition.MCPWritesFile() {
-			data, err := s.definition.MCPFile(values)
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("rendering the MCP settings file: %w", err)
-			}
-			path, remove, err := writeTempFile("aviary-mcp-*.json", data)
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("writing the MCP settings file: %w", err)
-			}
-			cleanups = append(cleanups, remove)
-			values.File = path
-		}
-		args = append(args, s.definition.MCPArgs(values)...)
-		env = append(env, s.definition.MCPEnv(values)...)
+		args = append(args, mcpArgs...)
+		env = append(env, mcpEnv...)
 	}
 	if s.opts.SystemPrompt != "" && s.definition.TakesSystemPrompt() {
-		values := clidefs.SystemPromptValues{Prompt: s.opts.SystemPrompt}
-		if s.definition.SystemPromptWritesFile() {
-			path, remove, err := writeSystemPromptFile(s.opts.SystemPrompt)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-			cleanups = append(cleanups, remove)
-			values.File = path
+		promptArgs, promptEnv, err := s.systemPromptWiring(&cleanups)
+		if err != nil {
+			return nil, nil, nil, err
 		}
-		args = append(args, s.definition.SystemPromptArgs(values)...)
-		env = append(env, s.definition.SystemPromptEnv(values)...)
+		args = append(args, promptArgs...)
+		env = append(env, promptEnv...)
 	}
 	return args, env, cleanup, nil
+}
+
+// mcpWiring renders the MCP arguments and environment, writing the allow and
+// settings files the definition names and adding their removal to cleanups.
+func (s *definitionSession) mcpWiring(cleanups *[]func()) (args, env []string, err error) {
+	values := clidefs.MCPValues{
+		Name:     MCPServerName,
+		URL:      s.opts.MCPURL,
+		TokenEnv: mcpTokenEnv,
+		AuthEnv:  mcpAuthEnv,
+		Timeout:  MCPToolTimeout,
+	}
+	if ext, ok := s.definition.MCPAllowFileExtension(); ok {
+		path, remove, err := writeTempFile("aviary-mcp-allow-*"+ext, s.definition.MCPAllowFile(values))
+		if err != nil {
+			return nil, nil, fmt.Errorf("writing the MCP allow file: %w", err)
+		}
+		*cleanups = append(*cleanups, remove)
+		values.AllowFile = path
+	}
+	if s.definition.MCPWritesFile() {
+		data, err := s.definition.MCPFile(values)
+		if err != nil {
+			return nil, nil, fmt.Errorf("rendering the MCP settings file: %w", err)
+		}
+		path, remove, err := writeTempFile("aviary-mcp-*.json", data)
+		if err != nil {
+			return nil, nil, fmt.Errorf("writing the MCP settings file: %w", err)
+		}
+		*cleanups = append(*cleanups, remove)
+		values.File = path
+	}
+	return s.definition.MCPArgs(values), s.definition.MCPEnv(values), nil
+}
+
+// systemPromptWiring renders the system prompt arguments and environment,
+// writing the prompt file when the definition names one and adding its
+// removal to cleanups.
+func (s *definitionSession) systemPromptWiring(cleanups *[]func()) (args, env []string, err error) {
+	values := clidefs.SystemPromptValues{Prompt: s.opts.SystemPrompt}
+	if s.definition.SystemPromptWritesFile() {
+		path, remove, err := writeSystemPromptFile(s.opts.SystemPrompt)
+		if err != nil {
+			return nil, nil, err
+		}
+		*cleanups = append(*cleanups, remove)
+		values.File = path
+	}
+	return s.definition.SystemPromptArgs(values), s.definition.SystemPromptEnv(values), nil
 }
 
 // missingSession reports whether output says the CLI no longer holds the

@@ -137,7 +137,7 @@ func cliEnv(opts Options) []string {
 // empty prompt writes nothing.
 func writeSystemPromptFile(prompt string) (string, func(), error) {
 	if prompt == "" {
-		return "", func() {}, nil
+		return "", noCleanup, nil
 	}
 	path, cleanup, err := writeTempFile("aviary-system-prompt-*.md", []byte(prompt))
 	if err != nil {
@@ -289,19 +289,7 @@ func (s *claudeSession) Send(ctx context.Context, turn Turn, onEvent func(Event)
 	}
 	msg = append(msg, '\n')
 
-	// A process kept between turns can die while idle (a crash, the system
-	// reaping it). That is only discovered here, so heal it within the turn:
-	// start a new process resuming the session and deliver the turn to it.
-	reused := s.proc != nil
-	if reused && s.proc.exited() {
-		s.discard()
-		reused = false
-	}
-	p, err := s.deliver(msg)
-	if err != nil && reused {
-		p, err = s.deliver(msg)
-		reused = false
-	}
+	p, reused, err := s.deliverHealing(msg)
 	if err != nil {
 		return Result{}, err
 	}
@@ -319,29 +307,63 @@ func (s *claudeSession) Send(ctx context.Context, turn Turn, onEvent func(Event)
 			return Result{}, ctx.Err()
 		case line, ok := <-p.lines:
 			if !ok {
-				s.proc = nil
-				if reused && !gotLine {
-					// The idle process died just as the turn reached it,
-					// before answering; deliver the turn to a new one.
-					p.kill()
-					if p, err = s.deliver(msg); err != nil {
-						return Result{}, err
-					}
-					reused = false
-					continue
+				if p, err = s.redeliverAfterExit(p, msg, reused && !gotLine); err != nil {
+					return Result{}, err
 				}
-				return Result{}, p.exitError()
+				reused = false
+				continue
 			}
 			gotLine = true
-			res, done, err := m.handle(line)
-			if m.sessionID != "" {
-				s.sessionID = m.sessionID
-			}
-			if done || err != nil {
+			if res, done, err := s.handleLine(m, line); done {
 				return res, err
 			}
 		}
 	}
+}
+
+// handleLine maps one line of the turn's output, recording the session ID it
+// reports. done is set once the turn's result arrives or the line fails it.
+func (s *claudeSession) handleLine(m *claudeMapper, line []byte) (Result, bool, error) {
+	res, done, err := m.handle(line)
+	if m.sessionID != "" {
+		s.sessionID = m.sessionID
+	}
+	return res, done || err != nil, err
+}
+
+// deliverHealing delivers the turn, healing a process kept between turns
+// that died while idle (a crash, the system reaping it). That is only
+// discovered here, so heal it within the turn: start a new process resuming
+// the session and deliver the turn to it. reused reports whether the turn
+// went to a process kept from an earlier turn.
+func (s *claudeSession) deliverHealing(msg []byte) (p *claudeProc, reused bool, err error) {
+	reused = s.proc != nil
+	if reused && s.proc.exited() {
+		s.discard()
+		reused = false
+	}
+	p, err = s.deliver(msg)
+	if err != nil && reused {
+		p, err = s.deliver(msg)
+		reused = false
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return p, reused, nil
+}
+
+// redeliverAfterExit handles the process's output ending mid-turn. When an
+// idle process died just as the turn reached it, before answering, the turn
+// is delivered to a new one; otherwise the process's exit is the turn's
+// error.
+func (s *claudeSession) redeliverAfterExit(p *claudeProc, msg []byte, retry bool) (*claudeProc, error) {
+	s.proc = nil
+	if !retry {
+		return nil, p.exitError()
+	}
+	p.kill()
+	return s.deliver(msg)
 }
 
 func (s *claudeSession) Close() error {
@@ -417,7 +439,7 @@ type claudeMapper struct {
 
 func newClaudeMapper(emit func(Event)) *claudeMapper {
 	if emit == nil {
-		emit = func(Event) {}
+		emit = discardEvent
 	}
 	return &claudeMapper{
 		emit:   emit,
@@ -439,19 +461,7 @@ func (m *claudeMapper) handle(line []byte) (Result, bool, error) {
 		m.emit(Event{Type: EventSession, SessionID: id})
 	}
 	if stringField(ev, "type") == "stream_event" {
-		inner := mapField(ev, "event")
-		switch stringField(inner, "type") {
-		case "message_start":
-			m.streamed = false
-		case "content_block_delta":
-			delta := mapField(inner, "delta")
-			if stringField(delta, "type") == "text_delta" {
-				if text := stringField(delta, "text"); text != "" {
-					m.streamed = true
-					m.emit(Event{Type: EventText, Text: text})
-				}
-			}
-		}
+		m.handleStreamEvent(mapField(ev, "event"))
 		return Result{}, false, nil
 	}
 	events := m.stream.Map(line)
@@ -462,13 +472,37 @@ func (m *claudeMapper) handle(line []byte) (Result, bool, error) {
 	}
 	m.tools.translate(events)
 	if stringField(ev, "type") == "result" {
-		text := stringField(ev, "result")
-		if isErr, _ := ev["is_error"].(bool); isErr || (stringField(ev, "subtype") != "" && stringField(ev, "subtype") != "success") {
-			return Result{}, true, claudeResultError(ev, text)
-		}
-		return Result{Text: text}, true, nil
+		return claudeResult(ev)
 	}
 	return Result{}, false, nil
+}
+
+// handleStreamEvent emits the text deltas of a partial-message stream event,
+// noting that the current message streamed so it is not emitted again whole.
+func (m *claudeMapper) handleStreamEvent(inner map[string]any) {
+	switch stringField(inner, "type") {
+	case "message_start":
+		m.streamed = false
+	case "content_block_delta":
+		delta := mapField(inner, "delta")
+		if stringField(delta, "type") != "text_delta" {
+			return
+		}
+		if text := stringField(delta, "text"); text != "" {
+			m.streamed = true
+			m.emit(Event{Type: EventText, Text: text})
+		}
+	}
+}
+
+// claudeResult reads the turn's outcome from its result event.
+func claudeResult(ev map[string]any) (Result, bool, error) {
+	text := stringField(ev, "result")
+	subtype := stringField(ev, "subtype")
+	if isErr, _ := ev["is_error"].(bool); isErr || (subtype != "" && subtype != "success") {
+		return Result{}, true, claudeResultError(ev, text)
+	}
+	return Result{Text: text}, true, nil
 }
 
 func claudeResultError(ev map[string]any, text string) error {

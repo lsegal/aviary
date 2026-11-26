@@ -23,26 +23,34 @@ func TestBuiltinAgentsAskTheirCLIForModels(t *testing.T) {
 		if !ok {
 			t.Fatalf("registry has no definition for %q", name)
 		}
-		if len(definition.Doctor.KnownModels) > 0 {
-			want, ok := known[name]
-			if !ok {
-				t.Errorf("built-in %q hardcodes doctor.knownModels", name)
-				continue
-			}
-			if name == "claude" && len(definition.Doctor.Models) > 0 {
-				t.Errorf("built-in %q hardcodes doctor.knownModels despite having a model probe", name)
-			}
-			if got := strings.Join(definition.Doctor.KnownModels, ","); got != want {
-				t.Errorf("%s known models = %q, want %q", name, got, want)
-			}
-			continue
+		checkBuiltinModelSource(t, name, definition, known)
+	}
+}
+
+// checkBuiltinModelSource checks one built-in either hardcodes the known
+// models expected of it, probes its CLI or declares an allow-list, or says
+// why it cannot.
+func checkBuiltinModelSource(t *testing.T, name string, definition Definition, known map[string]string) {
+	t.Helper()
+	if len(definition.Doctor.KnownModels) > 0 {
+		want, ok := known[name]
+		if !ok {
+			t.Errorf("built-in %q hardcodes doctor.knownModels", name)
+			return
 		}
-		if len(definition.Doctor.Models) > 0 || definition.Models.Declared() {
-			continue
+		if name == "claude" && len(definition.Doctor.Models) > 0 {
+			t.Errorf("built-in %q hardcodes doctor.knownModels despite having a model probe", name)
 		}
-		if strings.TrimSpace(definition.Doctor.ModelsNote) == "" {
-			t.Errorf("built-in %q neither probes its CLI for models nor says why it cannot", name)
+		if got := strings.Join(definition.Doctor.KnownModels, ","); got != want {
+			t.Errorf("%s known models = %q, want %q", name, got, want)
 		}
+		return
+	}
+	if len(definition.Doctor.Models) > 0 || definition.Models.Declared() {
+		return
+	}
+	if strings.TrimSpace(definition.Doctor.ModelsNote) == "" {
+		t.Errorf("built-in %q neither probes its CLI for models nor says why it cannot", name)
 	}
 }
 

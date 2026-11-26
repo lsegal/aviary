@@ -82,6 +82,18 @@ func (c *ConfigHome) validate() error {
 	if strings.TrimSpace(c.Default) == "" {
 		return fmt.Errorf(`field "configHome.default" is required`)
 	}
+	if err := c.validatePrivate(); err != nil {
+		return err
+	}
+	if c.StorageEnv != "" && (strings.TrimSpace(c.StorageEnv) != c.StorageEnv || strings.Contains(c.StorageEnv, "=")) {
+		return fmt.Errorf(`field "configHome.storageEnv": %q is not a usable variable name`, c.StorageEnv)
+	}
+	return c.validateTrust()
+}
+
+// validatePrivate checks the Private file names and the Outside paths that
+// relocate them.
+func (c *ConfigHome) validatePrivate() error {
 	if len(c.Private) == 0 {
 		return fmt.Errorf(`field "configHome.private" must name at least one file`)
 	}
@@ -98,16 +110,19 @@ func (c *ConfigHome) validate() error {
 			return fmt.Errorf(`field "configHome.outside.%s" is empty`, name)
 		}
 	}
-	if c.StorageEnv != "" && (strings.TrimSpace(c.StorageEnv) != c.StorageEnv || strings.Contains(c.StorageEnv, "=")) {
-		return fmt.Errorf(`field "configHome.storageEnv": %q is not a usable variable name`, c.StorageEnv)
+	return nil
+}
+
+func (c *ConfigHome) validateTrust() error {
+	t := c.Trust
+	if t == nil {
+		return nil
 	}
-	if t := c.Trust; t != nil {
-		if !slices.Contains(c.Private, t.File) {
-			return fmt.Errorf(`field "configHome.trust.file": %q is not one of "configHome.private"`, t.File)
-		}
-		if !slices.Contains(t.Path, "{dir}") {
-			return fmt.Errorf(`field "configHome.trust.path" must contain "{dir}"`)
-		}
+	if !slices.Contains(c.Private, t.File) {
+		return fmt.Errorf(`field "configHome.trust.file": %q is not one of "configHome.private"`, t.File)
+	}
+	if !slices.Contains(t.Path, "{dir}") {
+		return fmt.Errorf(`field "configHome.trust.path" must contain "{dir}"`)
 	}
 	return nil
 }
@@ -228,44 +243,73 @@ func (c ConfigHome) overlay(base string, fill func(src, dst string) error, works
 	for _, name := range c.Private {
 		private[name] = true
 	}
-	existing, err := os.ReadDir(dir)
-	if err != nil {
+	if err := reclaimOverlayEntries(dir, home, private); err != nil {
 		return "", err
-	}
-	for _, entry := range existing {
-		name := entry.Name()
-		path, target := filepath.Join(dir, name), filepath.Join(home, name)
-		if private[name] || strings.HasPrefix(name, ".aviary-") || strings.HasPrefix(name, LaunchFilePrefix) {
-			continue
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			if _, err := os.Lstat(target); errors.Is(err, os.ErrNotExist) {
-				_ = os.Remove(path) // the user removed it
-			}
-			continue
-		}
-		if _, err := os.Lstat(target); errors.Is(err, os.ErrNotExist) {
-			_ = os.Rename(path, target)
-		}
 	}
 	entries, err := os.ReadDir(home)
 	if err != nil {
 		return "", err
 	}
-	for _, name := range c.Private {
-		src, err := c.source(home, name)
-		if err != nil {
-			return "", fmt.Errorf("preparing the %s overlay: %w", c.Env, err)
-		}
-		if err := fill(src, filepath.Join(dir, name)); err != nil {
-			return "", fmt.Errorf("preparing the %s overlay: %w", c.Env, err)
-		}
+	if err := c.fillPrivate(dir, home, fill); err != nil {
+		return "", fmt.Errorf("preparing the %s overlay: %w", c.Env, err)
 	}
 	if c.Trust != nil {
 		if err := c.Trust.record(dir, workspaces); err != nil {
 			return "", fmt.Errorf("trusting the workspace in the %s overlay: %w", c.Env, err)
 		}
 	}
+	if err := linkHomeEntries(dir, home, entries, private); err != nil {
+		return "", fmt.Errorf("preparing the %s overlay: %w", c.Env, err)
+	}
+	return dir, nil
+}
+
+// reclaimOverlayEntries tidies what earlier launches left in the overlay:
+// a link whose target the user removed is dropped, and an entry the CLI
+// created in the overlay itself is moved into home when home has none of the
+// same name. Private copies and aviary's own files stay put.
+func reclaimOverlayEntries(dir, home string, private map[string]bool) error {
+	existing, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range existing {
+		name := entry.Name()
+		if private[name] || strings.HasPrefix(name, ".aviary-") || strings.HasPrefix(name, LaunchFilePrefix) {
+			continue
+		}
+		path, target := filepath.Join(dir, name), filepath.Join(home, name)
+		_, statErr := os.Lstat(target)
+		missing := errors.Is(statErr, os.ErrNotExist)
+		switch {
+		case entry.Type()&os.ModeSymlink != 0:
+			if missing {
+				_ = os.Remove(path) // the user removed it
+			}
+		case missing:
+			_ = os.Rename(path, target)
+		}
+	}
+	return nil
+}
+
+// fillPrivate writes each Private file into the overlay from its source.
+func (c ConfigHome) fillPrivate(dir, home string, fill func(src, dst string) error) error {
+	for _, name := range c.Private {
+		src, err := c.source(home, name)
+		if err != nil {
+			return err
+		}
+		if err := fill(src, filepath.Join(dir, name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// linkHomeEntries links every non-private entry of home into the overlay
+// that the overlay does not already have.
+func linkHomeEntries(dir, home string, entries []os.DirEntry, private map[string]bool) error {
 	for _, entry := range entries {
 		name := entry.Name()
 		if private[name] {
@@ -276,16 +320,38 @@ func (c ConfigHome) overlay(base string, fill func(src, dst string) error, works
 			continue // linked already, or the CLI's own when both have one
 		}
 		if err := os.Symlink(filepath.Join(home, name), path); err != nil && !errors.Is(err, os.ErrExist) {
-			return "", fmt.Errorf("preparing the %s overlay: %w", c.Env, err)
+			return err
 		}
 	}
-	return dir, nil
+	return nil
 }
 
 // record marks the workspaces, and those an earlier launch trusted that still
 // exist, as trusted in the overlay's copy of t.File.
 func (t WorkspaceTrust) record(overlay string, workspaces []string) error {
-	listPath := filepath.Join(overlay, trustedFile)
+	trusted, err := updateTrustedList(filepath.Join(overlay, trustedFile), workspaces)
+	if err != nil || len(trusted) == 0 {
+		return err
+	}
+	path := filepath.Join(overlay, t.File)
+	settings, err := t.readSettings(path)
+	if err != nil {
+		return err
+	}
+	for _, key := range trusted {
+		setPath(settings, t.Path, key)
+	}
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeReplacing(path, data)
+}
+
+// updateTrustedList adds the workspaces to the list at listPath, drops
+// entries that are no longer directories, and writes it back, removing the
+// file when nothing is left. It returns the updated list.
+func updateTrustedList(listPath string, workspaces []string) ([]string, error) {
 	var trusted []string
 	if data, err := os.ReadFile(listPath); err == nil {
 		_ = json.Unmarshal(data, &trusted)
@@ -301,39 +367,36 @@ func (t WorkspaceTrust) record(overlay string, workspaces []string) error {
 	trusted = slices.Compact(trusted)
 	if len(trusted) == 0 {
 		if err := os.Remove(listPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
+			return nil, err
 		}
-		return nil
+		return nil, nil
 	}
 	list, err := json.Marshal(trusted)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := writeReplacing(listPath, list); err != nil {
-		return err
+		return nil, err
 	}
+	return trusted, nil
+}
 
-	path := filepath.Join(overlay, t.File)
+// readSettings decodes the overlay's copy of t.File, empty when it is
+// missing or blank.
+func (t WorkspaceTrust) readSettings(path string) (map[string]any, error) {
 	settings := map[string]any{}
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+		return nil, err
 	}
 	if len(bytes.TrimSpace(data)) > 0 {
 		decoder := json.NewDecoder(bytes.NewReader(data))
 		decoder.UseNumber()
 		if err := decoder.Decode(&settings); err != nil {
-			return fmt.Errorf("reading %s: %w", t.File, err)
+			return nil, fmt.Errorf("reading %s: %w", t.File, err)
 		}
 	}
-	for _, key := range trusted {
-		setPath(settings, t.Path, key)
-	}
-	data, err = json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writeReplacing(path, data)
+	return settings, nil
 }
 
 // workspaceKeys spells workspace the ways a CLI may key it: its absolute

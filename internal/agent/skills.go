@@ -26,33 +26,47 @@ func DiscoverSkills(dir string) ([]Skill, error) {
 			return nil // skip unreadable dirs
 		}
 		if info.IsDir() {
-			if strings.HasPrefix(info.Name(), ".") && path != dir {
-				return filepath.SkipDir
-			}
-			return nil
+			return skipHiddenDir(dir, path, info)
 		}
 		if !strings.EqualFold(info.Name(), "SKILL.md") {
 			return nil
 		}
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			slog.Warn("skills: could not read", "path", path, "err", readErr)
-			return nil
+		if skill, ok := readSkill(path); ok {
+			skills = append(skills, skill)
 		}
-		name := filepath.Base(filepath.Dir(path))
-		if name == "." || name == string(os.PathSeparator) {
-			name = "default"
-		}
-		skill, parseErr := parseSkillFile(name, data)
-		if parseErr != nil {
-			slog.Warn("skills: could not parse frontmatter", "path", path, "err", parseErr)
-			skill = Skill{Name: name, Content: string(data)}
-		}
-		skills = append(skills, skill)
-		slog.Info("skill discovered", "name", name, "path", path)
 		return nil
 	})
 	return skills, err
+}
+
+// skipHiddenDir skips walking a dot directory below root.
+func skipHiddenDir(root, path string, info os.FileInfo) error {
+	if strings.HasPrefix(info.Name(), ".") && path != root {
+		return filepath.SkipDir
+	}
+	return nil
+}
+
+// readSkill reads the SKILL.md at path, named after its directory unless its
+// frontmatter names it. A file whose frontmatter does not parse is used
+// whole. It reports false when the file cannot be read.
+func readSkill(path string) (Skill, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		slog.Warn("skills: could not read", "path", path, "err", err)
+		return Skill{}, false
+	}
+	name := filepath.Base(filepath.Dir(path))
+	if name == "." || name == string(os.PathSeparator) {
+		name = "default"
+	}
+	skill, err := parseSkillFile(name, data)
+	if err != nil {
+		slog.Warn("skills: could not parse frontmatter", "path", path, "err", err)
+		skill = Skill{Name: name, Content: string(data)}
+	}
+	slog.Info("skill discovered", "name", name, "path", path)
+	return skill, true
 }
 
 type skillFrontmatter struct {

@@ -39,7 +39,7 @@ var sessionToolCalls = struct {
 // the returned function is called.
 func trackSessionToolCall(agentID, sessionID string, call sessionToolCall) func() {
 	if sessionID == "" {
-		return func() {}
+		return untracked
 	}
 	key := agentID + "\x00" + sessionID
 	sessionToolCalls.mu.Lock()

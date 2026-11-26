@@ -52,144 +52,99 @@ type signalParseResult struct {
 	styles []signalStyleSpan
 }
 
+// signalPairedMarkers are the symmetric two-character Markdown delimiters and
+// the Signal style each one maps to.
+var signalPairedMarkers = []struct{ marker, style string }{
+	{"**", "BOLD"},
+	{"__", "BOLD"},
+	{"~~", "STRIKETHROUGH"},
+	{"||", "SPOILER"},
+}
+
 func parseSignalMarkdown(input, stop string) (signalParseResult, int, bool) {
-	var out strings.Builder
-	var styles []signalStyleSpan
+	var p signalMarkdownParser
 	i := 0
-
-	appendText := func(s string) {
-		out.WriteString(s)
-	}
-
 	for i < len(input) {
 		if stop != "" && strings.HasPrefix(input[i:], stop) {
-			return signalParseResult{text: out.String(), styles: styles}, i + len(stop), true
+			return p.result(), i + len(stop), true
 		}
+		i = p.step(input, i)
+	}
+	return p.result(), i, stop == ""
+}
 
-		switch {
-		case strings.HasPrefix(input[i:], "```"):
-			content, consumed, ok := parseSignalFence(input[i:])
-			if !ok {
-				appendText("```")
-				i += 3
-				continue
-			}
-			start := utf16Len(out.String())
-			appendText(content)
-			length := utf16Len(content)
-			if length > 0 {
-				styles = append(styles, signalStyleSpan{Start: start, Length: length, Style: "MONOSPACE"})
-			}
-			i += consumed
-		case strings.HasPrefix(input[i:], "**"):
-			if inner, consumed, ok := parseSignalMarkdown(input[i+2:], "**"); ok {
-				start := utf16Len(out.String())
-				appendText(inner.text)
-				styles = append(styles, shiftSignalStyles(inner.styles, start)...)
-				if l := utf16Len(inner.text); l > 0 {
-					styles = append(styles, signalStyleSpan{Start: start, Length: l, Style: "BOLD"})
-				}
-				i += consumed + 2
-				continue
-			}
-			appendText("**")
-			i += 2
-		case strings.HasPrefix(input[i:], "__"):
-			if inner, consumed, ok := parseSignalMarkdown(input[i+2:], "__"); ok {
-				start := utf16Len(out.String())
-				appendText(inner.text)
-				styles = append(styles, shiftSignalStyles(inner.styles, start)...)
-				if l := utf16Len(inner.text); l > 0 {
-					styles = append(styles, signalStyleSpan{Start: start, Length: l, Style: "BOLD"})
-				}
-				i += consumed + 2
-				continue
-			}
-			appendText("__")
-			i += 2
-		case strings.HasPrefix(input[i:], "~~"):
-			if inner, consumed, ok := parseSignalMarkdown(input[i+2:], "~~"); ok {
-				start := utf16Len(out.String())
-				appendText(inner.text)
-				styles = append(styles, shiftSignalStyles(inner.styles, start)...)
-				if l := utf16Len(inner.text); l > 0 {
-					styles = append(styles, signalStyleSpan{Start: start, Length: l, Style: "STRIKETHROUGH"})
-				}
-				i += consumed + 2
-				continue
-			}
-			appendText("~~")
-			i += 2
-		case strings.HasPrefix(input[i:], "||"):
-			if inner, consumed, ok := parseSignalMarkdown(input[i+2:], "||"); ok {
-				start := utf16Len(out.String())
-				appendText(inner.text)
-				styles = append(styles, shiftSignalStyles(inner.styles, start)...)
-				if l := utf16Len(inner.text); l > 0 {
-					styles = append(styles, signalStyleSpan{Start: start, Length: l, Style: "SPOILER"})
-				}
-				i += consumed + 2
-				continue
-			}
-			appendText("||")
-			i += 2
-		case input[i] == '`':
-			content, consumed, ok := parseSignalInlineCode(input[i:])
-			if !ok {
-				appendText("`")
-				i++
-				continue
-			}
-			start := utf16Len(out.String())
-			appendText(content)
-			if l := utf16Len(content); l > 0 {
-				styles = append(styles, signalStyleSpan{Start: start, Length: l, Style: "MONOSPACE"})
-			}
-			i += consumed
-		case input[i] == '*':
-			if !signalCanOpenEmphasis(input, i, 1) {
-				appendText("*")
-				i++
-				continue
-			}
-			if inner, consumed, ok := parseSignalMarkdown(input[i+1:], "*"); ok {
-				start := utf16Len(out.String())
-				appendText(inner.text)
-				styles = append(styles, shiftSignalStyles(inner.styles, start)...)
-				if l := utf16Len(inner.text); l > 0 {
-					styles = append(styles, signalStyleSpan{Start: start, Length: l, Style: "ITALIC"})
-				}
-				i += consumed + 1
-				continue
-			}
-			appendText("*")
-			i++
-		case input[i] == '_':
-			if !signalCanOpenEmphasis(input, i, 1) {
-				appendText("_")
-				i++
-				continue
-			}
-			if inner, consumed, ok := parseSignalMarkdown(input[i+1:], "_"); ok {
-				start := utf16Len(out.String())
-				appendText(inner.text)
-				styles = append(styles, shiftSignalStyles(inner.styles, start)...)
-				if l := utf16Len(inner.text); l > 0 {
-					styles = append(styles, signalStyleSpan{Start: start, Length: l, Style: "ITALIC"})
-				}
-				i += consumed + 1
-				continue
-			}
-			appendText("_")
-			i++
-		default:
-			_, size := utf8.DecodeRuneInString(input[i:])
-			appendText(input[i : i+size])
-			i += size
+// signalMarkdownParser accumulates plain text and style spans for one nesting
+// level of parseSignalMarkdown.
+type signalMarkdownParser struct {
+	out    strings.Builder
+	styles []signalStyleSpan
+}
+
+func (p *signalMarkdownParser) result() signalParseResult {
+	return signalParseResult{text: p.out.String(), styles: p.styles}
+}
+
+// step consumes the token at input[i] and returns the index after it.
+func (p *signalMarkdownParser) step(input string, i int) int {
+	rest := input[i:]
+	if strings.HasPrefix(rest, "```") {
+		return i + p.code(rest, "```", parseSignalFence)
+	}
+	for _, m := range signalPairedMarkers {
+		if strings.HasPrefix(rest, m.marker) {
+			return i + p.delimited(input[i+len(m.marker):], m.marker, m.style)
 		}
 	}
+	switch input[i] {
+	case '`':
+		return i + p.code(rest, "`", parseSignalInlineCode)
+	case '*', '_':
+		marker := input[i : i+1]
+		if !signalCanOpenEmphasis(input, i, 1) {
+			p.out.WriteString(marker)
+			return i + 1
+		}
+		return i + p.delimited(input[i+1:], marker, "ITALIC")
+	}
+	_, size := utf8.DecodeRuneInString(rest)
+	p.out.WriteString(rest[:size])
+	return i + size
+}
 
-	return signalParseResult{text: out.String(), styles: styles}, i, stop == ""
+// delimited parses nested Markdown after an opening marker up to its matching
+// close and emits it with style. Unmatched markers are kept as literal text.
+// It returns the bytes consumed, including the opening marker.
+func (p *signalMarkdownParser) delimited(after, marker, style string) int {
+	inner, consumed, ok := parseSignalMarkdown(after, marker)
+	if !ok {
+		p.out.WriteString(marker)
+		return len(marker)
+	}
+	p.emit(inner.text, inner.styles, style)
+	return len(marker) + consumed
+}
+
+// code emits a monospace span parsed by parse, or the literal marker when the
+// span is not closed. It returns the bytes consumed.
+func (p *signalMarkdownParser) code(rest, marker string, parse func(string) (string, int, bool)) int {
+	content, consumed, ok := parse(rest)
+	if !ok {
+		p.out.WriteString(marker)
+		return len(marker)
+	}
+	p.emit(content, nil, "MONOSPACE")
+	return consumed
+}
+
+// emit appends text, its inner style spans (shifted to the current offset)
+// and a span of style covering all of text when it is non-empty.
+func (p *signalMarkdownParser) emit(text string, inner []signalStyleSpan, style string) {
+	start := utf16Len(p.out.String())
+	p.out.WriteString(text)
+	p.styles = append(p.styles, shiftSignalStyles(inner, start)...)
+	if l := utf16Len(text); l > 0 {
+		p.styles = append(p.styles, signalStyleSpan{Start: start, Length: l, Style: style})
+	}
 }
 
 func parseSignalInlineCode(input string) (string, int, bool) {

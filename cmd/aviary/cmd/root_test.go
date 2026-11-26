@@ -17,28 +17,8 @@ func TestResolvedServerURLReachesServer(t *testing.T) {
 	t.Setenv("AVIARY_CONFIG_SERVER_NO_TLS", "")
 	for _, noTLS := range []bool{false, true} {
 		t.Run(fmt.Sprintf("no_tls=%v", noTLS), func(t *testing.T) {
-			srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusNoContent)
-			}))
-			if noTLS {
-				srv.Start()
-			} else {
-				srv.StartTLS()
-			}
-			t.Cleanup(srv.Close)
-			_, port, err := net.SplitHostPort(srv.Listener.Addr().String())
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			cfgPath := filepath.Join(t.TempDir(), "aviary.yaml")
-			body := fmt.Sprintf("server:\n  port: %s\n  no_tls: %v\n", port, noTLS)
-			if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			prevCfg, prevServer := cfgFile, serverURL
-			cfgFile, serverURL = cfgPath, ""
-			t.Cleanup(func() { cfgFile, serverURL = prevCfg, prevServer })
+			port := startNoContentServer(t, noTLS)
+			useLocalServerConfig(t, port, noTLS)
 
 			scheme := "https"
 			if noTLS {
@@ -59,6 +39,40 @@ func TestResolvedServerURLReachesServer(t *testing.T) {
 			}
 		})
 	}
+}
+
+// startNoContentServer starts a server answering 204 over HTTP when noTLS,
+// otherwise HTTPS, until the test ends, and returns its port.
+func startNoContentServer(t *testing.T, noTLS bool) string {
+	t.Helper()
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	if noTLS {
+		srv.Start()
+	} else {
+		srv.StartTLS()
+	}
+	t.Cleanup(srv.Close)
+	_, port, err := net.SplitHostPort(srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return port
+}
+
+// useLocalServerConfig points the CLI at a config serving on port with
+// no_tls set to noTLS, and clears --server, until the test ends.
+func useLocalServerConfig(t *testing.T, port string, noTLS bool) {
+	t.Helper()
+	cfgPath := filepath.Join(t.TempDir(), "aviary.yaml")
+	body := fmt.Sprintf("server:\n  port: %s\n  no_tls: %v\n", port, noTLS)
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prevCfg, prevServer := cfgFile, serverURL
+	cfgFile, serverURL = cfgPath, ""
+	t.Cleanup(func() { cfgFile, serverURL = prevCfg, prevServer })
 }
 
 func TestResolvedServerURLPrefersFlag(t *testing.T) {

@@ -271,12 +271,32 @@ func watchBuildItems(jobs []watchJob, tasks []watchTask, upcoming []watchUpcomin
 		}
 		return strings.Compare(b.job.Started, a.job.Started)
 	})
+	scheduled := watchScheduledTaskItems(tasks, watchNextRuns(upcoming), entries, targets)
+	for _, entry := range entries {
+		it := watchItem{key: watchJobKey(entry), job: entry, hasJob: true, state: watchScheduled, scheduleState: watchScheduleState(entry), name: entry.ScheduleID, project: entry.Target}
+		if entry.NextRun != nil {
+			it.nextRun, it.disabled = entry.NextRun.At, entry.NextRun.Paused
+		}
+		scheduled = append(scheduled, it)
+	}
+	slices.SortFunc(scheduled, watchCompareScheduled)
+	return append(scheduled, items...)
+}
+
+// watchNextRuns maps each task ID to its first upcoming fire.
+func watchNextRuns(upcoming []watchUpcoming) map[string]string {
 	next := map[string]string{}
 	for _, u := range upcoming {
 		if _, ok := next[u.TaskID]; !ok {
 			next[u.TaskID] = u.At
 		}
 	}
+	return next
+}
+
+// watchScheduledTaskItems builds one scheduled item per project task of the
+// watched targets, taking its schedule entry out of entries.
+func watchScheduledTaskItems(tasks []watchTask, next map[string]string, entries map[string]watchJob, targets []string) []watchItem {
 	var scheduled []watchItem
 	for _, task := range tasks {
 		if task.Type != "project" || (len(targets) > 0 && !slices.Contains(targets, task.Project)) {
@@ -293,28 +313,22 @@ func watchBuildItems(jobs []watchJob, tasks []watchTask, upcoming []watchUpcomin
 		}
 		scheduled = append(scheduled, it)
 	}
-	for _, entry := range entries {
-		it := watchItem{key: watchJobKey(entry), job: entry, hasJob: true, state: watchScheduled, scheduleState: watchScheduleState(entry), name: entry.ScheduleID, project: entry.Target}
-		if entry.NextRun != nil {
-			it.nextRun, it.disabled = entry.NextRun.At, entry.NextRun.Paused
-		}
-		scheduled = append(scheduled, it)
+	return scheduled
+}
+
+// watchCompareScheduled orders scheduled items soonest first, then by name;
+// ones with no next run last.
+func watchCompareScheduled(a, b watchItem) int {
+	switch {
+	case a.nextRun == "" && b.nextRun != "":
+		return 1
+	case a.nextRun != "" && b.nextRun == "":
+		return -1
 	}
-	// Scheduled items come soonest first, then by name; ones with no next
-	// run last.
-	slices.SortFunc(scheduled, func(a, b watchItem) int {
-		switch {
-		case a.nextRun == "" && b.nextRun != "":
-			return 1
-		case a.nextRun != "" && b.nextRun == "":
-			return -1
-		}
-		if c := strings.Compare(a.nextRun, b.nextRun); c != 0 {
-			return c
-		}
-		return strings.Compare(a.name, b.name)
-	})
-	return append(scheduled, items...)
+	if c := strings.Compare(a.nextRun, b.nextRun); c != 0 {
+		return c
+	}
+	return strings.Compare(a.name, b.name)
 }
 
 // watchScheduleState is a schedule entry's state: scheduled between runs,
@@ -494,43 +508,35 @@ func (m watchModel) fetchCmd() tea.Cmd {
 	}
 	return func() tea.Msg {
 		msg := watchDataMsg{fromOffset: offset, outputKey: outputKey}
-		fail := func(tool string, err error) {
-			msg.errs = append(msg.errs, tool+": "+err.Error())
+		// fetch calls tool and records its error, reporting whether it worked.
+		fetch := func(tool string, args map[string]any, out any) bool {
+			if err := m.callJSON(tool, args, out); err != nil {
+				msg.errs = append(msg.errs, tool+": "+err.Error())
+				return false
+			}
+			return true
 		}
 		var status watchStatus
-		if err := m.callJSON("project_status", map[string]any{"log_offset": offset}, &status); err != nil {
-			fail("project_status", err)
-		} else {
+		if fetch("project_status", map[string]any{"log_offset": offset}, &status) {
 			msg.status = &status
 		}
 		var list struct {
 			Jobs []watchJob `json:"jobs"`
 		}
-		if err := m.callJSON("project_job_list", map[string]any{"limit": watchJobLimit}, &list); err != nil {
-			fail("project_job_list", err)
-		} else {
+		if fetch("project_job_list", map[string]any{"limit": watchJobLimit}, &list) {
 			msg.jobs, msg.jobsOK = list.Jobs, true
 		}
-		if err := m.callJSON("task_list", map[string]any{}, &msg.tasks); err != nil {
-			fail("task_list", err)
-		} else {
-			msg.tasksOK = true
+		msg.tasksOK = fetch("task_list", map[string]any{}, &msg.tasks)
+		msg.upcomingOK = fetch("task_upcoming", map[string]any{"limit": 50, "per_task": 1}, &msg.upcoming)
+		if outputKey == "" {
+			return msg
 		}
-		if err := m.callJSON("task_upcoming", map[string]any{"limit": 50, "per_task": 1}, &msg.upcoming); err != nil {
-			fail("task_upcoming", err)
-		} else {
-			msg.upcomingOK = true
+		var detail struct {
+			Scrollback string `json:"scrollback"`
 		}
-		if outputKey != "" {
-			var detail struct {
-				Scrollback string `json:"scrollback"`
-			}
-			args := map[string]any{"target": target, "number": number, "lines": watchOutputLines, "events": 1}
-			if err := m.callJSON("project_job_get", args, &detail); err != nil {
-				fail("project_job_get", err)
-			} else {
-				msg.output, msg.outputOK = watchSplitLines(detail.Scrollback), true
-			}
+		args := map[string]any{"target": target, "number": number, "lines": watchOutputLines, "events": 1}
+		if fetch("project_job_get", args, &detail) {
+			msg.output, msg.outputOK = watchSplitLines(detail.Scrollback), true
 		}
 		return msg
 	}
@@ -648,44 +654,109 @@ func (m watchModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key == "ctrl+c" {
 		return m, tea.Quit
 	}
+	if next, cmd, handled := m.updateOverlayKey(msg, key); handled {
+		return next, cmd
+	}
+	if m.chat.open {
+		if next, cmd, handled := m.updateChatKey(msg, key); handled {
+			return next, cmd
+		}
+	}
+	if next, cmd, handled := m.updateBoardNavKey(key); handled {
+		return next, cmd
+	}
+	return m.updateBoardKey(key)
+}
+
+// updateOverlayKey handles a key while a stop confirmation, the queue input
+// or the help is up. It reports whether one of them took the key.
+func (m watchModel) updateOverlayKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd, bool) {
 	if m.confirm != nil {
 		pending := *m.confirm
 		m.confirm = nil
 		if key == "y" || key == "Y" {
-			return m, m.actionCmd(pending.tool, pending.verb, pending.item)
+			return m, m.actionCmd(pending.tool, pending.verb, pending.item), true
 		}
 		m.message = pending.verb + " cancelled"
-		return m, nil
+		return m, nil, true
 	}
 	if m.queueInput != nil {
-		return m.updateQueueInput(msg)
+		next, cmd := m.updateQueueInput(msg)
+		return next, cmd, true
 	}
 	if m.showHelp {
 		// Any key closes the help; q still quits.
 		m.showHelp = false
 		if key == "q" {
-			return m, tea.Quit
+			return m, tea.Quit, true
 		}
-		return m, nil
+		return m, nil, true
 	}
-	if m.chat.open {
-		switch m.chat.focus {
-		case watchFocusInput:
-			return m.updateChatInput(msg)
-		case watchFocusTranscript:
-			if next, cmd, ok := m.updateChatTranscript(key); ok {
-				return next, cmd
-			}
-		}
-		if m.updateChatLayout(key) {
-			return m, nil
-		}
-		if (m.chat.full || m.chat.focus == watchFocusTranscript) && key != "c" && key != "q" && key != "?" {
-			// Board keys act only from the board: the full-screen
-			// chat hides it, and the transcript has the focus.
-			return m, nil
+	return m, nil, false
+}
+
+// updateChatKey handles a key while the chat is open. It reports whether the
+// chat took the key, so it does not reach the board.
+func (m watchModel) updateChatKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cmd, bool) {
+	switch m.chat.focus {
+	case watchFocusInput:
+		next, cmd := m.updateChatInput(msg)
+		return next, cmd, true
+	case watchFocusTranscript:
+		if next, cmd, ok := m.updateChatTranscript(key); ok {
+			return next, cmd, true
 		}
 	}
+	if m.updateChatLayout(key) {
+		return m, nil, true
+	}
+	if (m.chat.full || m.chat.focus == watchFocusTranscript) && key != "c" && key != "q" && key != "?" {
+		// Board keys act only from the board: the full-screen
+		// chat hides it, and the transcript has the focus.
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+// updateBoardNavKey handles the board's cursor, filter and log scroll keys.
+// It reports whether key was one of them.
+func (m watchModel) updateBoardNavKey(key string) (tea.Model, tea.Cmd, bool) {
+	switch key {
+	case "0", "1", "2", "3", "4", "5", "6":
+		n := int(key[0] - '0')
+		if n == 0 {
+			m.setFilter("")
+		} else {
+			m.setFilter(watchFilters[n-1])
+		}
+	case "f":
+		m.setFilter(watchCycleFilter(m.filter, 1))
+	case "F":
+		m.setFilter(watchCycleFilter(m.filter, -1))
+	case "up", "k":
+		m.moveCursor(-1)
+	case "down", "j":
+		m.moveCursor(1)
+	case "home", "g":
+		m.moveCursor(-len(m.items))
+	case "end", "G":
+		m.moveCursor(len(m.items))
+	case "left", "shift+tab":
+		m.moveColumn(-1)
+	case "right", "tab":
+		m.moveColumn(1)
+	case "pgup":
+		m.logScroll = min(m.logScroll+max(1, m.logPaneHeight()-1), max(0, len(m.logs)-1))
+	case "pgdown":
+		m.logScroll = max(0, m.logScroll-max(1, m.logPaneHeight()-1))
+	default:
+		return m, nil, false
+	}
+	return m, nil, true
+}
+
+// updateBoardKey handles the board's view toggles and job action keys.
+func (m watchModel) updateBoardKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "q":
 		return m, tea.Quit
@@ -716,33 +787,6 @@ func (m watchModel) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.syncOutputKey()
 			return m.refresh()
 		}
-	case "0", "1", "2", "3", "4", "5", "6":
-		n := int(key[0] - '0')
-		if n == 0 {
-			m.setFilter("")
-		} else {
-			m.setFilter(watchFilters[n-1])
-		}
-	case "f":
-		m.setFilter(watchCycleFilter(m.filter, 1))
-	case "F":
-		m.setFilter(watchCycleFilter(m.filter, -1))
-	case "up", "k":
-		m.moveCursor(-1)
-	case "down", "j":
-		m.moveCursor(1)
-	case "home", "g":
-		m.moveCursor(-len(m.items))
-	case "end", "G":
-		m.moveCursor(len(m.items))
-	case "left", "shift+tab":
-		m.moveColumn(-1)
-	case "right", "tab":
-		m.moveColumn(1)
-	case "pgup":
-		m.logScroll = min(m.logScroll+max(1, m.logPaneHeight()-1), max(0, len(m.logs)-1))
-	case "pgdown":
-		m.logScroll = max(0, m.logScroll-max(1, m.logPaneHeight()-1))
 	default:
 		for _, action := range watchActions {
 			if key == action.key {
@@ -894,32 +938,35 @@ func (m *watchModel) syncOutputKey() {
 // view changed, in the board's columns when it moved between them, and
 // otherwise keeps the cursor in range.
 func (m *watchModel) restoreSelection() {
-	if m.selected != "" {
-		if m.board {
-			for c, col := range m.columns() {
-				for i, it := range col.items {
-					if it.key == m.selected {
-						m.col, m.cursor = c, i
-						m.syncOutputKey()
-						return
-					}
-				}
-			}
-		} else {
-			for i, it := range m.visibleItems() {
-				if it.key == m.selected {
-					m.cursor = i
-					m.syncOutputKey()
-					return
-				}
-			}
-		}
+	if m.selected != "" && m.findSelected() {
+		m.syncOutputKey()
+		return
 	}
 	if m.board {
 		m.col = max(0, min(m.col, len(m.columns())-1))
 	}
 	m.cursor = max(0, min(m.cursor, len(m.currentItems())-1))
 	m.remember()
+}
+
+// findSelected moves the cursor onto the remembered item, in the board's
+// columns or the list, and reports whether it is still shown.
+func (m *watchModel) findSelected() bool {
+	if !m.board {
+		i := slices.IndexFunc(m.visibleItems(), func(it watchItem) bool { return it.key == m.selected })
+		if i < 0 {
+			return false
+		}
+		m.cursor = i
+		return true
+	}
+	for c, col := range m.columns() {
+		if i := slices.IndexFunc(col.items, func(it watchItem) bool { return it.key == m.selected }); i >= 0 {
+			m.col, m.cursor = c, i
+			return true
+		}
+	}
+	return false
 }
 
 // watchANSI matches terminal escape sequences, which would break the

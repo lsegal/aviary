@@ -56,8 +56,14 @@ func checkAllowedWithOptions(
 	wasMentioned bool,
 	ignoreMentionRules bool,
 ) allowResult {
-	if len(entries) == 0 {
-		return allowResult{}
+	r := allowRequest{
+		from:               from,
+		channelID:          channelID,
+		text:               text,
+		botUserID:          botUserID,
+		isGroup:            isGroup,
+		wasMentioned:       wasMentioned,
+		ignoreMentionRules: ignoreMentionRules,
 	}
 	for _, entry := range entries {
 		if !config.BoolOr(entry.Enabled, true) {
@@ -69,65 +75,56 @@ func checkAllowedWithOptions(
 			return allowResult{}
 		}
 		for _, id := range splitFrom(entry.From) {
-			if isGroup {
-				// Step 1: the sender must match this entry's From list.
-				if id != "*" && id != from {
-					continue
-				}
-				// Step 2: the group/channel must be explicitly allowed.
-				if !matchesAllowedGroup(entry.AllowedGroups, channelID) {
-					continue
-				}
-				if ignoreMentionRules {
-					return allowResult{
-						allowed:       true,
-						restrictTools: entry.RestrictTools,
-						model:         entry.Model,
-						fallbacks:     entry.Fallbacks,
-					}
-				}
-				// Step 3: optional mention filtering.
-				// If no mention filter is configured, all messages pass through.
-				if len(entry.MentionPrefixes) == 0 && !entry.RespondToMentions {
-					return allowResult{
-						allowed:       true,
-						restrictTools: entry.RestrictTools,
-						model:         entry.Model,
-						fallbacks:     entry.Fallbacks,
-					}
-				}
-				if matchesMentionPrefixes(text, entry.MentionPrefixes) ||
-					(entry.RespondToMentions && (wasMentioned || isDirectMention(text, botUserID))) {
-					return allowResult{
-						allowed:       true,
-						restrictTools: entry.RestrictTools,
-						model:         entry.Model,
-						fallbacks:     entry.Fallbacks,
-					}
-				}
-			} else {
-				// Direct message: match sender ID only.
-				if id == "*" || id == from {
-					// When mentionPrefixGroupOnly=false, mention filters also gate DMs.
-					if !config.BoolOr(entry.MentionPrefixGroupOnly, true) && !ignoreMentionRules {
-						if len(entry.MentionPrefixes) > 0 || entry.RespondToMentions {
-							if !matchesMentionPrefixes(text, entry.MentionPrefixes) &&
-								(!entry.RespondToMentions || (!wasMentioned && !isDirectMention(text, botUserID))) {
-								continue
-							}
-						}
-					}
-					return allowResult{
-						allowed:       true,
-						restrictTools: entry.RestrictTools,
-						model:         entry.Model,
-						fallbacks:     entry.Fallbacks,
-					}
+			if r.idAllows(entry, id) {
+				return allowResult{
+					allowed:       true,
+					restrictTools: entry.RestrictTools,
+					model:         entry.Model,
+					fallbacks:     entry.Fallbacks,
 				}
 			}
 		}
 	}
 	return allowResult{}
+}
+
+// allowRequest is the incoming message context checked against allowFrom entries.
+type allowRequest struct {
+	from, channelID, text, botUserID string
+	isGroup                          bool
+	wasMentioned                     bool
+	ignoreMentionRules               bool
+}
+
+// idAllows reports whether entry's sender id (one element of its From list)
+// admits the message.
+func (r allowRequest) idAllows(entry config.AllowFromEntry, id string) bool {
+	// The sender must match this entry's From list.
+	if id != "*" && id != r.from {
+		return false
+	}
+	if r.isGroup {
+		// The group/channel must be explicitly allowed. Mention filtering is
+		// optional: with no filter configured, all messages pass through.
+		if !matchesAllowedGroup(entry.AllowedGroups, r.channelID) {
+			return false
+		}
+		return r.ignoreMentionRules || !hasMentionFilter(entry) || r.mentionMatches(entry)
+	}
+	// Direct message: when mentionPrefixGroupOnly=false, mention filters also gate DMs.
+	gated := !config.BoolOr(entry.MentionPrefixGroupOnly, true) && !r.ignoreMentionRules && hasMentionFilter(entry)
+	return !gated || r.mentionMatches(entry)
+}
+
+// mentionMatches reports whether the message satisfies entry's mention filter.
+func (r allowRequest) mentionMatches(entry config.AllowFromEntry) bool {
+	return matchesMentionPrefixes(r.text, entry.MentionPrefixes) ||
+		(entry.RespondToMentions && (r.wasMentioned || isDirectMention(r.text, r.botUserID)))
+}
+
+// hasMentionFilter reports whether entry configures any mention filtering.
+func hasMentionFilter(entry config.AllowFromEntry) bool {
+	return len(entry.MentionPrefixes) > 0 || entry.RespondToMentions
 }
 
 // splitFrom splits a comma-separated IDs string into individual trimmed IDs.

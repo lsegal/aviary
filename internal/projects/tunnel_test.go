@@ -29,12 +29,13 @@ func (c *endpointConfigurer) ConfigureWebhook(_ context.Context, _, endpoint, _ 
 }
 
 func newTestSupervisor(tunnel *fakeTunnel, gh webhookConfigurer, logs *[]string) *tunnelSupervisor {
+	discardReconcilerLog := func(string, ...interface{}) {
+		// Reconciler logs are not asserted on; the supervisor's logf captures what matters.
+	}
 	return &tunnelSupervisor{
 		tunnel:      tunnel,
 		webhookPath: "/webhook",
-		reconciler:  newWebhookReconciler(gh, []string{"o/r"}, tunnel.url+"/webhook", "", func(string, ...interface{}) {
-			// Reconciler logs are not asserted on; the supervisor's logf captures what matters.
-		}),
+		reconciler:  newWebhookReconciler(gh, []string{"o/r"}, tunnel.url+"/webhook", "", discardReconcilerLog),
 		logf:        func(format string, v ...interface{}) { *logs = append(*logs, fmt.Sprintf(format, v...)) },
 	}
 }

@@ -513,40 +513,10 @@ func (r *AgentRunner) acquireCLIProc(key string, opts cliagent.Options, tools []
 
 	var proc *cliProc
 	for proc == nil {
-		cliProcs.mu.Lock()
-		cur := cliProcs.m[key]
-		switch {
-		case cur == nil || cur.fingerprint != fp:
-			proc = &cliProc{key: key, fingerprint: fp, backend: opts.Backend}
-			proc.mu.Lock()
-			cliProcs.m[key] = proc
-			cliProcs.mu.Unlock()
-			if cur != nil {
-				cur.mu.Lock() // wait for any turn still running on it
-				cur.close()
-				cur.mu.Unlock()
-			}
-		case cur.mu.TryLock():
-			proc = cur
-			cliProcs.mu.Unlock()
-		case !wait && cliProcs.overflow[key] < cliMaxConcurrentTurns-1:
-			proc = &cliProc{key: key + "\x00" + newID("overflow"), fingerprint: fp, backend: opts.Backend, overflowOf: key, counted: true}
-			proc.mu.Lock()
-			cliProcs.overflow[key]++
-			cliProcs.m[proc.key] = proc
-			cliProcs.mu.Unlock()
+		var overflow bool
+		proc, overflow = claimCLIProc(key, fp, opts.Backend, wait)
+		if overflow {
 			opts.Ephemeral = true
-		default:
-			cliProcs.mu.Unlock()
-			cur.mu.Lock()
-			cliProcs.mu.Lock()
-			current := cliProcs.m[key] == cur && !cur.closed
-			cliProcs.mu.Unlock()
-			if current {
-				proc = cur
-			} else {
-				cur.mu.Unlock()
-			}
 		}
 	}
 
@@ -556,23 +526,73 @@ func (r *AgentRunner) acquireCLIProc(key string, opts cliagent.Options, tools []
 	if proc.sess != nil {
 		return proc, true, nil
 	}
+	resumed, err := r.startCLIProc(proc, opts, tools, sessionID)
+	if err != nil {
+		r.abandonCLIProc(proc)
+		return nil, false, err
+	}
+	return proc, resumed, nil
+}
 
+// claimCLIProc makes one attempt at locking a conversation for key: a new
+// one when there is none or its fingerprint changed, the current one when it
+// is free, or an overflow one (reported by overflow) when it is busy and wait
+// is unset. Otherwise it waits for the current one and returns nil when that
+// was replaced or closed meanwhile, for the caller to try again.
+func claimCLIProc(key, fp string, backend cliagent.Backend, wait bool) (proc *cliProc, overflow bool) {
+	cliProcs.mu.Lock()
+	cur := cliProcs.m[key]
+	switch {
+	case cur == nil || cur.fingerprint != fp:
+		proc = &cliProc{key: key, fingerprint: fp, backend: backend}
+		proc.mu.Lock()
+		cliProcs.m[key] = proc
+		cliProcs.mu.Unlock()
+		if cur != nil {
+			cur.mu.Lock() // wait for any turn still running on it
+			cur.close()
+			cur.mu.Unlock()
+		}
+		return proc, false
+	case cur.mu.TryLock():
+		cliProcs.mu.Unlock()
+		return cur, false
+	case !wait && cliProcs.overflow[key] < cliMaxConcurrentTurns-1:
+		proc = &cliProc{key: key + "\x00" + newID("overflow"), fingerprint: fp, backend: backend, overflowOf: key, counted: true}
+		proc.mu.Lock()
+		cliProcs.overflow[key]++
+		cliProcs.m[proc.key] = proc
+		cliProcs.mu.Unlock()
+		return proc, true
+	}
+	cliProcs.mu.Unlock()
+	cur.mu.Lock()
+	cliProcs.mu.Lock()
+	current := cliProcs.m[key] == cur && !cur.closed
+	cliProcs.mu.Unlock()
+	if !current {
+		cur.mu.Unlock()
+		return nil, false
+	}
+	return cur, false
+}
+
+// startCLIProc opens the CLI session of a new conversation, binding its
+// Aviary tools and resuming the session's stored CLI session when there is
+// one. resumed reports whether it did.
+func (r *AgentRunner) startCLIProc(proc *cliProc, opts cliagent.Options, tools []ToolInfo, sessionID string) (resumed bool, err error) {
 	if len(tools) > 0 && opts.Backend.ServesAviaryTools() {
 		url, err := cliMCPURL()
 		if err != nil {
-			r.abandonCLIProc(proc)
-			return nil, false, err
+			return false, err
 		}
 		scope, err := newCLIToolScope(tools)
 		if err != nil {
-			r.abandonCLIProc(proc)
-			return nil, false, err
+			return false, err
 		}
 		proc.scope = scope
 		opts.MCPURL, opts.MCPToken = url, scope.token
 	}
-
-	resumed := false
 	if !opts.Ephemeral {
 		if id := r.loadCLISessionID(sessionID, opts.Backend); id != "" {
 			opts.ResumeID = id
@@ -583,11 +603,10 @@ func (r *AgentRunner) acquireCLIProc(key string, opts cliagent.Options, tools []
 	}
 	sess, err := newCLISession(opts)
 	if err != nil {
-		r.abandonCLIProc(proc)
-		return nil, false, err
+		return false, err
 	}
 	proc.sess = sess
-	return proc, resumed, nil
+	return resumed, nil
 }
 
 // unregisterCLIProc removes p from the registry and from its conversation's

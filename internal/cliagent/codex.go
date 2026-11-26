@@ -128,7 +128,7 @@ func writeCodexProfile(opts Options) (string, func(), error) {
 		}
 	}
 	if home == "" || opts.SystemPrompt == "" {
-		return "", func() {}, nil
+		return "", noCleanup, nil
 	}
 	file, err := os.CreateTemp(home, clidefs.LaunchFilePrefix+"*"+codexProfileSuffix)
 	if err != nil {
@@ -241,7 +241,7 @@ type codexMapper struct {
 
 func newCodexMapper(emit func(Event)) *codexMapper {
 	if emit == nil {
-		emit = func(Event) {}
+		emit = discardEvent
 	}
 	return &codexMapper{
 		emit:   emit,

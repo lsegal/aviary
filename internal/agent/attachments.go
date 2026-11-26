@@ -44,27 +44,41 @@ func resolveFileAttachments(message string, mediaURLs []string, isCLI bool) (str
 		contentType := attachmentContentType(path)
 		switch {
 		case llm.IsTextMediaType(contentType):
-			block, err := inlineTextAttachment(path)
-			if err != nil {
-				continue
-			}
-			if b.Len() > 0 {
-				b.WriteString("\n\n")
-			}
-			b.WriteString(block)
+			appendTextAttachment(&b, path)
 		case contentType == "application/pdf" && !isCLI:
-			info, err := os.Stat(path)
-			if err != nil || info.Size() > maxDocumentAttachmentBytes {
-				continue
+			if dataURL, ok := pdfAttachmentURL(path); ok {
+				media = append(media, dataURL)
 			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				continue
-			}
-			media = append(media, "data:application/pdf;name="+url.PathEscape(attachmentDisplayName(path))+";base64,"+base64.StdEncoding.EncodeToString(data))
 		}
 	}
 	return b.String(), media
+}
+
+// appendTextAttachment appends the text file at path to b as an
+// <attachment> block, or nothing when it cannot be read.
+func appendTextAttachment(b *strings.Builder, path string) {
+	block, err := inlineTextAttachment(path)
+	if err != nil {
+		return
+	}
+	if b.Len() > 0 {
+		b.WriteString("\n\n")
+	}
+	b.WriteString(block)
+}
+
+// pdfAttachmentURL returns the PDF at path as a document data URL. It
+// reports false when the file is unreadable or too large.
+func pdfAttachmentURL(path string) (string, bool) {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() > maxDocumentAttachmentBytes {
+		return "", false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	return "data:application/pdf;name=" + url.PathEscape(attachmentDisplayName(path)) + ";base64," + base64.StdEncoding.EncodeToString(data), true
 }
 
 func insideMediaDir(path string) bool {

@@ -36,27 +36,8 @@ func synthesizeToolExamples(tool ToolInfo) []map[string]any {
 	if len(props) == 0 {
 		return nil
 	}
-	requiredNames := []string{}
-	requiredSet := map[string]struct{}{}
-	switch req := schema["required"].(type) {
-	case []any:
-		for _, item := range req {
-			if s, ok := item.(string); ok && s != "" {
-				requiredNames = append(requiredNames, s)
-				requiredSet[s] = struct{}{}
-			}
-		}
-	case []string:
-		for _, item := range req {
-			if item != "" {
-				requiredNames = append(requiredNames, item)
-				requiredSet[item] = struct{}{}
-			}
-		}
-	}
-
 	example := map[string]any{}
-	for _, name := range requiredNames {
+	for _, name := range schemaRequired(schema) {
 		raw, ok := props[name]
 		if !ok {
 			continue
@@ -65,24 +46,51 @@ func synthesizeToolExamples(tool ToolInfo) []map[string]any {
 		example[name] = exampleValue(tool.Name, name, prop)
 	}
 	if len(example) == 0 {
-		propertyNames := make([]string, 0, len(props))
-		for name := range props {
-			propertyNames = append(propertyNames, name)
-		}
-		sort.Strings(propertyNames)
-		for _, name := range propertyNames {
-			raw := props[name]
-			prop, _ := raw.(map[string]any)
-			example[name] = exampleValue(tool.Name, name, prop)
-			if len(example) >= 2 {
-				break
-			}
-		}
+		example = optionalExample(tool.Name, props)
 	}
 	if len(example) == 0 {
 		return nil
 	}
 	return []map[string]any{example}
+}
+
+// schemaRequired returns the non-empty names in a JSON schema's required list.
+func schemaRequired(schema map[string]any) []string {
+	names := []string{}
+	switch req := schema["required"].(type) {
+	case []any:
+		for _, item := range req {
+			if s, ok := item.(string); ok && s != "" {
+				names = append(names, s)
+			}
+		}
+	case []string:
+		for _, item := range req {
+			if item != "" {
+				names = append(names, item)
+			}
+		}
+	}
+	return names
+}
+
+// optionalExample fills in up to two properties, in name order, for a tool
+// with no required ones.
+func optionalExample(toolName string, props map[string]any) map[string]any {
+	propertyNames := make([]string, 0, len(props))
+	for name := range props {
+		propertyNames = append(propertyNames, name)
+	}
+	sort.Strings(propertyNames)
+	example := map[string]any{}
+	for _, name := range propertyNames {
+		prop, _ := props[name].(map[string]any)
+		example[name] = exampleValue(toolName, name, prop)
+		if len(example) >= 2 {
+			break
+		}
+	}
+	return example
 }
 
 func schemaMap(schema any) map[string]any {

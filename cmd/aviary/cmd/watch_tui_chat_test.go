@@ -122,25 +122,8 @@ func TestWatchTUIChatSendsAndStreamsAReply(t *testing.T) {
 			midStream = append(midStream, watchStrip(strings.Join(m.chatLines(m.width).lines, "\n")))
 		}
 	})
-	if len(stream.args) != 1 {
-		t.Fatalf("agent_run calls = %d", len(stream.args))
-	}
-	args := stream.args[0]
-	if args["name"] != config.ProjectsAgentName || args["session"] != config.ProjectsChatSession || args["include_tool_progress"] != true || args["project"] != "o/r" || args["message"] != "what is running?" {
-		t.Errorf("agent_run args = %v", args)
-	}
-	if len(midStream) == 0 || !strings.Contains(midStream[0], "Job") {
-		t.Fatalf("the reply did not stream: %q", midStream)
-	}
-	last := midStream[len(midStream)-1]
-	for _, want := range []string{"you", "what is running?", "▸ project_job_get number=3 target=o/r ✓", "#3 is running."} {
-		if !strings.Contains(last, want) {
-			t.Errorf("streamed transcript lacks %q:\n%s", want, last)
-		}
-	}
-	if strings.Contains(last, "result ok") {
-		t.Errorf("tool calls are not collapsed by default:\n%s", last)
-	}
+	checkChatAgentRun(t, stream, "what is running?")
+	checkStreamedChatReply(t, midStream)
 	// Once the turn ends the transcript is the session as the server saved
 	// it.
 	if m.chat.streaming() || len(m.chat.turns) != 0 || len(tools.callsTo("session_messages")) < 2 {
@@ -155,6 +138,38 @@ func TestWatchTUIChatSendsAndStreamsAReply(t *testing.T) {
 	m, _ = watchKey(t, m, "e")
 	if got := watchStrip(strings.Join(m.chatLines(m.width).lines, "\n")); !strings.Contains(got, "▾ project_job_get") || !strings.Contains(got, "result ok") {
 		t.Errorf("expanded tool call:\n%s", got)
+	}
+}
+
+// checkChatAgentRun checks that the chat ran the Code Loop agent once, in
+// its chat session for o/r with tool progress, with message.
+func checkChatAgentRun(t *testing.T, stream *fakeChatStream, message string) {
+	t.Helper()
+	if len(stream.args) != 1 {
+		t.Fatalf("agent_run calls = %d", len(stream.args))
+	}
+	args := stream.args[0]
+	if args["name"] != config.ProjectsAgentName || args["session"] != config.ProjectsChatSession || args["include_tool_progress"] != true || args["project"] != "o/r" || args["message"] != message {
+		t.Errorf("agent_run args = %v", args)
+	}
+}
+
+// checkStreamedChatReply checks the transcripts seen while the reply
+// streamed: it starts with the first chunk and ends with the question, the
+// collapsed tool call and the answer.
+func checkStreamedChatReply(t *testing.T, midStream []string) {
+	t.Helper()
+	if len(midStream) == 0 || !strings.Contains(midStream[0], "Job") {
+		t.Fatalf("the reply did not stream: %q", midStream)
+	}
+	last := midStream[len(midStream)-1]
+	for _, want := range []string{"you", "what is running?", "▸ project_job_get number=3 target=o/r ✓", "#3 is running."} {
+		if !strings.Contains(last, want) {
+			t.Errorf("streamed transcript lacks %q:\n%s", want, last)
+		}
+	}
+	if strings.Contains(last, "result ok") {
+		t.Errorf("tool calls are not collapsed by default:\n%s", last)
 	}
 }
 
@@ -371,19 +386,7 @@ func TestWatchTUIChatResizeKeepsTheLayout(t *testing.T) {
 	}
 	check := func(label string, m watchModel) {
 		t.Helper()
-		lines := strings.Split(m.View(), "\n")
-		if len(lines) != m.height {
-			t.Errorf("%s %dx%d: %d lines", label, m.width, m.height, len(lines))
-		}
-		for _, line := range lines {
-			if w := lipgloss.Width(line); w > m.width {
-				t.Errorf("%s %dx%d: line %d wide: %q", label, m.width, m.height, w, watchStrip(line))
-				break
-			}
-		}
-		if m.height >= 12 && !m.chat.full && !strings.Contains(lines[0], "aviary watch") {
-			t.Errorf("%s %dx%d: header gone", label, m.width, m.height)
-		}
+		checkWatchViewFits(t, label, m)
 	}
 	for _, size := range [][2]int{{160, 40}, {80, 24}, {60, 12}, {40, 8}, {200, 60}, {30, 6}} {
 		m = watchUpdate(t, m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
@@ -403,6 +406,25 @@ func TestWatchTUIChatResizeKeepsTheLayout(t *testing.T) {
 		if view := watchStrip(strings.Join(m.chatPane(m.chatPaneHeight()), "\n")); size[1] >= 12 && !strings.Contains(view, "answer 19") {
 			t.Errorf("%dx%d: chat lost its bottom:\n%s", size[0], size[1], view)
 		}
+	}
+}
+
+// checkWatchViewFits checks that m's view fills its height, no line is wider
+// than it, and the header shows unless the chat is full or the window short.
+func checkWatchViewFits(t *testing.T, label string, m watchModel) {
+	t.Helper()
+	lines := strings.Split(m.View(), "\n")
+	if len(lines) != m.height {
+		t.Errorf("%s %dx%d: %d lines", label, m.width, m.height, len(lines))
+	}
+	for _, line := range lines {
+		if w := lipgloss.Width(line); w > m.width {
+			t.Errorf("%s %dx%d: line %d wide: %q", label, m.width, m.height, w, watchStrip(line))
+			break
+		}
+	}
+	if m.height >= 12 && !m.chat.full && !strings.Contains(lines[0], "aviary watch") {
+		t.Errorf("%s %dx%d: header gone", label, m.width, m.height)
 	}
 }
 
@@ -436,15 +458,7 @@ func (watchChatModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	last := ""
 	for _, m := range req.Messages {
 		if m.Role == "user" {
-			if s, ok := m.Content.(string); ok {
-				last = s
-			} else if parts, ok := m.Content.([]any); ok {
-				for _, p := range parts {
-					if part, ok := p.(map[string]any); ok && part["type"] == "text" {
-						last = fmt.Sprint(part["text"])
-					}
-				}
-			}
+			last = watchChatContentText(m.Content, last)
 		}
 	}
 	// The question follows the server's "<user> " envelope.
@@ -464,6 +478,22 @@ func (watchChatModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "stop"}},
 	})
 	_, _ = fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", data)
+}
+
+// watchChatContentText returns a message content's text: the string itself,
+// or the last text part of a parts list. It returns prev for content with
+// no text.
+func watchChatContentText(content any, prev string) string {
+	if s, ok := content.(string); ok {
+		return s
+	}
+	parts, _ := content.([]any)
+	for _, p := range parts {
+		if part, ok := p.(map[string]any); ok && part["type"] == "text" {
+			prev = fmt.Sprint(part["text"])
+		}
+	}
+	return prev
 }
 
 // TestWatchTUIChatSharesTheWebSession runs the Code Loop agent in-process
@@ -681,18 +711,13 @@ func TestWatchTUIChatSendsWhileAReplyStreams(t *testing.T) {
 	if got := strings.Join(g.sent, ","); got != "first,second,third" {
 		t.Fatalf("agent_run messages = %q", got)
 	}
-	got := watchChatTranscript(m)
-	for _, want := range []string{"you · sending…\n  first\n\ncode-loop\n  first: one", "you · sending…\n  second\n\ncode-loop\n  second: one", "you · sending…\n  third"} {
-		if !strings.Contains(strings.ReplaceAll(got, config.ProjectsAgentName, "code-loop"), want) {
-			t.Errorf("transcript lacks %q:\n%s", want, got)
-		}
-	}
+	checkChatTranscriptHas(t, watchChatTranscript(m), "you · sending…\n  first\n\ncode-loop\n  first: one", "you · sending…\n  second\n\ncode-loop\n  second: one", "you · sending…\n  third")
 	// The first reply keeps streaming after the later sends.
 	m, cmd = watchChatFinish(t, m, g, waitFirst, "first", nil)
 	if cmd != nil || !m.chat.streaming() {
 		t.Fatal("the session was read back while sends were still running")
 	}
-	got = watchChatTranscript(m)
+	got := watchChatTranscript(m)
 	if !strings.Contains(got, "first: one two") || !strings.Contains(got, "you · sent\n  first") {
 		t.Errorf("finished first turn:\n%s", got)
 	}
@@ -716,12 +741,7 @@ func TestWatchTUIChatSendsWhileAReplyStreams(t *testing.T) {
 		t.Fatalf("pending sends survived the read:\n%s", got)
 	}
 	want := []string{"first", "first: one two", "second", "second: one two", "third", "third: one two"}
-	var seen []string
-	for _, line := range strings.Split(got, "\n") {
-		if strings.HasPrefix(line, "  ") {
-			seen = append(seen, strings.TrimSpace(line))
-		}
-	}
+	seen := watchChatTranscriptMessages(got)
 	if strings.Join(seen, "|") != strings.Join(want, "|") {
 		t.Errorf("transcript messages = %q, want %q", seen, want)
 	}
@@ -731,6 +751,29 @@ func TestWatchTUIChatSendsWhileAReplyStreams(t *testing.T) {
 	if got := m.chat.input.Value(); got != "second" {
 		t.Errorf("second ↑ = %q", got)
 	}
+}
+
+// checkChatTranscriptHas checks that got, with the agent named code-loop,
+// has every want.
+func checkChatTranscriptHas(t *testing.T, got string, wants ...string) {
+	t.Helper()
+	for _, want := range wants {
+		if !strings.Contains(strings.ReplaceAll(got, config.ProjectsAgentName, "code-loop"), want) {
+			t.Errorf("transcript lacks %q:\n%s", want, got)
+		}
+	}
+}
+
+// watchChatTranscriptMessages returns the indented message lines of a
+// transcript, trimmed.
+func watchChatTranscriptMessages(transcript string) []string {
+	var seen []string
+	for _, line := range strings.Split(transcript, "\n") {
+		if strings.HasPrefix(line, "  ") {
+			seen = append(seen, strings.TrimSpace(line))
+		}
+	}
+	return seen
 }
 
 func TestWatchTUIChatShowsAFailedSendInPlace(t *testing.T) {

@@ -311,7 +311,28 @@ func (c *SlackChannel) Start(ctx context.Context) error {
 	c.cancel = cancel
 	c.logf("slack: starting socket mode session")
 
-	// Fetch the bot's own user ID so we can detect direct @mentions in groups.
+	c.loadIdentity(ctx)
+
+	// Events are acked as they arrive and handled in order on a separate
+	// goroutine, so slow handling (API lookups, file downloads) never delays
+	// the ack of a later event into a Slack retry.
+	work := make(chan func(), slackEventQueueSize)
+	go runSlackEventWork(ctx, work)
+	go c.pumpSocketEvents(ctx, work)
+
+	err := c.sm.RunContext(ctx)
+	if ctx.Err() == nil {
+		c.logf("slack: socket mode exited with error: %v", err)
+	} else {
+		c.logf("slack: socket mode stopped")
+	}
+	return err
+}
+
+// loadIdentity fetches the bot's own user ID (so direct @mentions in groups
+// can be detected) and the users/channels name cache. Failures are logged and
+// only disable the features that depend on them.
+func (c *SlackChannel) loadIdentity(ctx context.Context) {
 	if resp, err := c.client.AuthTestContext(ctx); err == nil {
 		c.botUserID = resp.UserID
 		c.logf("slack: auth ok user_id=%s team=%s", resp.UserID, strings.TrimSpace(resp.Team))
@@ -325,49 +346,50 @@ func (c *SlackChannel) Start(ctx context.Context) error {
 	} else {
 		c.logf("slack: identity cache ready")
 	}
+}
 
-	// Events are acked as they arrive and handled in order on a separate
-	// goroutine, so slow handling (API lookups, file downloads) never delays
-	// the ack of a later event into a Slack retry.
-	work := make(chan func(), slackEventQueueSize)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case fn := <-work:
-				fn()
-			}
+// runSlackEventWork runs queued event handlers in order until ctx is done.
+func runSlackEventWork(ctx context.Context, work <-chan func()) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case fn := <-work:
+			fn()
 		}
-	}()
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case evt, ok := <-c.sm.Events:
-				if !ok {
-					c.logf("slack: event stream closed")
-					return
-				}
-				if fn := c.dispatch(evt); fn != nil {
-					select {
-					case work <- fn:
-					case <-ctx.Done():
-						return
-					}
-				}
-			}
-		}
-	}()
-
-	err := c.sm.RunContext(ctx)
-	if ctx.Err() == nil {
-		c.logf("slack: socket mode exited with error: %v", err)
-	} else {
-		c.logf("slack: socket mode stopped")
 	}
-	return err
+}
+
+// pumpSocketEvents acks Socket Mode events and queues their handlers on work
+// until ctx is done or the event stream closes.
+func (c *SlackChannel) pumpSocketEvents(ctx context.Context, work chan<- func()) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case evt, ok := <-c.sm.Events:
+			if !ok {
+				c.logf("slack: event stream closed")
+				return
+			}
+			if !enqueueSlackWork(ctx, work, c.dispatch(evt)) {
+				return
+			}
+		}
+	}
+}
+
+// enqueueSlackWork queues fn (if non-nil) and reports false when ctx ended first.
+func enqueueSlackWork(ctx context.Context, work chan<- func(), fn func()) bool {
+	if fn == nil {
+		return true
+	}
+	select {
+	case work <- fn:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // Stop disconnects from Slack.
@@ -436,13 +458,95 @@ func (c *SlackChannel) handleEventsAPI(req *socketmode.Request, eventsAPI slacke
 }
 
 func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
-	if event == nil {
+	event, ok := c.normalizeMessageEvent(event)
+	if !ok {
 		return
+	}
+	m := extractSlackMessage(event)
+	if c.ignoreSlackMessage(m) {
+		return
+	}
+
+	// Slack DM channels start with 'D'; everything else is a group/channel.
+	isGroup := !strings.HasPrefix(m.channelID, "D")
+
+	if c.seenMessage(m.channelID, m.from, m.rawTimestamp, m.clientMsgID, m.text) {
+		c.logf("slack: dropped duplicate message channel=%s ts=%s client_msg_id=%s", m.channelID, m.rawTimestamp, m.clientMsgID)
+		return
+	}
+	isThreadReply := strings.TrimSpace(m.threadTS) != "" && strings.TrimSpace(m.rawTimestamp) != "" && m.threadTS != m.rawTimestamp
+	receivedAt := time.Now().UTC()
+	if ts, ok := parseSlackTimestamp(m.rawTimestamp); ok {
+		receivedAt = ts
+	}
+	enrichedText := c.enrichSlackMessageText(context.Background(), m.text, m.channelID, m.rawTimestamp, m.threadTS, m.attachments)
+
+	// Log all group messages before allowFrom filtering.
+	if isGroup {
+		c.logGroupMessage(IncomingMessage{
+			Type:          "slack",
+			From:          m.from,
+			SenderName:    c.displayNameForUser(m.from),
+			Channel:       m.channelID,
+			ThreadTS:      m.threadTS,
+			IsThreadReply: isThreadReply,
+			Text:          enrichedText,
+			ReceivedAt:    receivedAt,
+		})
+	}
+
+	result := checkAllowed(c.allowedEntries(), m.from, m.channelID, m.text, isGroup, c.botUserID, false)
+	if !result.allowed && isThreadReply {
+		result = checkAllowedReplyContinuation(c.allowedEntries(), m.from, m.channelID, isGroup)
+	}
+	if !result.allowed {
+		c.logf("slack: ignored message from=%s channel=%s", m.from, m.channelID)
+		return
+	}
+
+	c.handlerMu.RLock()
+	fn := c.handler
+	c.handlerMu.RUnlock()
+	if fn == nil {
+		c.logf("slack: no message handler registered for from=%s", m.from)
+		slog.Debug("slack: no handler registered", "from", m.from)
+		return
+	}
+	im := IncomingMessage{
+		Type:          "slack",
+		From:          m.from,
+		SenderName:    c.displayNameForUser(m.from),
+		Channel:       m.channelID,
+		ThreadTS:      m.threadTS,
+		IsThreadReply: isThreadReply,
+		Text:          enrichedText,
+		Attachments:   c.slackAttachments(m.files),
+		ReceivedAt:    receivedAt,
+		RestrictTools: result.restrictTools,
+		DisabledTools: c.disabledTools,
+		Model:         result.model,
+		Fallbacks:     result.fallbacks,
+	}
+	// Apply channel-level overrides if entry-level ones are absent.
+	if im.Model == "" {
+		im.Model = c.model
+	}
+	if len(im.Fallbacks) == 0 {
+		im.Fallbacks = c.fallbacks
+	}
+	fn(im)
+}
+
+// normalizeMessageEvent resolves message_replied events to the reply they
+// announce and reports false for events that should not start a run.
+func (c *SlackChannel) normalizeMessageEvent(event *slackevents.MessageEvent) (*slackevents.MessageEvent, bool) {
+	if event == nil {
+		return nil, false
 	}
 	if event.SubType == slack.MsgSubTypeMessageReplied {
 		normalized, ok := c.normalizeMessageRepliedEvent(context.Background(), event)
 		if !ok {
-			return
+			return nil, false
 		}
 		event = normalized
 	}
@@ -450,132 +554,84 @@ func (c *SlackChannel) handleMessageEvent(event *slackevents.MessageEvent) {
 		// Slack also emits message_changed when a thread's reply count changes.
 		// Only a content edit should start another agent run.
 		if event.PreviousMessage != nil && event.PreviousMessage.Text == event.Message.Text {
-			return
+			return nil, false
 		}
 		if event.PreviousMessage == nil && event.Message.Edited == nil {
-			return
+			return nil, false
 		}
 	}
+	return event, true
+}
 
-	channelID := event.Channel
-	from := event.User
-	text := event.Text
-	botID := event.BotID
-	clientMsgID := event.ClientMsgID
-	var files []slack.File
-	var attachments []slack.Attachment
+// slackMessage holds the fields of a message event, taken from the edited
+// message where an edit overrides them.
+type slackMessage struct {
+	channelID, from, text, botID, clientMsgID string
+	rawTimestamp, threadTS                    string
+	files                                     []slack.File
+	attachments                               []slack.Attachment
+}
+
+func extractSlackMessage(event *slackevents.MessageEvent) slackMessage {
+	m := slackMessage{
+		channelID:    event.Channel,
+		from:         event.User,
+		text:         event.Text,
+		botID:        event.BotID,
+		clientMsgID:  event.ClientMsgID,
+		rawTimestamp: event.TimeStamp,
+		threadTS:     strings.TrimSpace(event.ThreadTimeStamp),
+	}
+	if event.Message != nil {
+		m.files = event.Message.Files
+		m.attachments = event.Message.Attachments
+	}
 	isEdited := event.IsEdited() || (event.SubType == "message_changed" && event.Message != nil)
 	if isEdited && event.Message != nil {
-		if event.Message.Channel != "" {
-			channelID = event.Message.Channel
+		edited := event.Message
+		m.channelID = orDefault(edited.Channel, m.channelID)
+		m.from = orDefault(edited.User, m.from)
+		m.text = orDefault(edited.Text, m.text)
+		m.botID = orDefault(edited.BotID, m.botID)
+		m.clientMsgID = orDefault(edited.ClientMsgID, m.clientMsgID)
+		m.rawTimestamp = orDefault(edited.Timestamp, m.rawTimestamp)
+		if edited.ThreadTimestamp != "" {
+			m.threadTS = strings.TrimSpace(edited.ThreadTimestamp)
 		}
-		if event.Message.User != "" {
-			from = event.Message.User
-		}
-		if event.Message.Text != "" {
-			text = event.Message.Text
-		}
-		if event.Message.BotID != "" {
-			botID = event.Message.BotID
-		}
-		if event.Message.ClientMsgID != "" {
-			clientMsgID = event.Message.ClientMsgID
-		}
-		files = event.Message.Files
-		attachments = event.Message.Attachments
-	} else if event.Message != nil {
-		files = event.Message.Files
-		attachments = event.Message.Attachments
 	}
-	if botID != "" || (c.botUserID != "" && from == c.botUserID) ||
-		(strings.TrimSpace(text) == "" && len(files) == 0 && len(attachments) == 0) || from == "" || channelID == "" {
-		return
+	if m.threadTS == "" {
+		m.threadTS = m.rawTimestamp
 	}
+	return m
+}
 
-	// Slack DM channels start with 'D'; everything else is a group/channel.
-	isGroup := !strings.HasPrefix(channelID, "D")
+// orDefault returns v, or def when v is empty.
+func orDefault(v, def string) string {
+	if v != "" {
+		return v
+	}
+	return def
+}
 
-	receivedAt := time.Now().UTC()
-	rawTimestamp := event.TimeStamp
-	threadTS := strings.TrimSpace(event.ThreadTimeStamp)
-	if isEdited && event.Message != nil && event.Message.Timestamp != "" {
-		rawTimestamp = event.Message.Timestamp
+// ignoreSlackMessage reports whether m is from a bot (including this one),
+// has no content, or lacks a sender or channel.
+func (c *SlackChannel) ignoreSlackMessage(m slackMessage) bool {
+	if m.botID != "" || (c.botUserID != "" && m.from == c.botUserID) {
+		return true
 	}
-	if isEdited && event.Message != nil && event.Message.ThreadTimestamp != "" {
-		threadTS = strings.TrimSpace(event.Message.ThreadTimestamp)
+	if strings.TrimSpace(m.text) == "" && len(m.files) == 0 && len(m.attachments) == 0 {
+		return true
 	}
-	if threadTS == "" {
-		threadTS = rawTimestamp
-	}
-	if c.seenMessage(channelID, from, rawTimestamp, clientMsgID, text) {
-		c.logf("slack: dropped duplicate message channel=%s ts=%s client_msg_id=%s", channelID, rawTimestamp, clientMsgID)
-		return
-	}
-	isThreadReply := strings.TrimSpace(threadTS) != "" && strings.TrimSpace(rawTimestamp) != "" && threadTS != rawTimestamp
-	if ts, ok := parseSlackTimestamp(rawTimestamp); ok {
-		receivedAt = ts
-	}
-	enrichedText := c.enrichSlackMessageText(context.Background(), text, channelID, rawTimestamp, threadTS, attachments)
+	return m.from == "" || m.channelID == ""
+}
 
-	// Log all group messages before allowFrom filtering.
-	if isGroup {
-		c.handlerMu.RLock()
-		logFn := c.groupLogHandler
-		c.handlerMu.RUnlock()
-		if logFn != nil {
-			logFn(IncomingMessage{
-				Type:          "slack",
-				From:          from,
-				SenderName:    c.displayNameForUser(from),
-				Channel:       channelID,
-				ThreadTS:      threadTS,
-				IsThreadReply: isThreadReply,
-				Text:          enrichedText,
-				ReceivedAt:    receivedAt,
-			})
-		}
-	}
-
-	result := checkAllowed(c.allowedEntries(), from, channelID, text, isGroup, c.botUserID, false)
-	if !result.allowed && isThreadReply {
-		result = checkAllowedReplyContinuation(c.allowedEntries(), from, channelID, isGroup)
-	}
-	if !result.allowed {
-		c.logf("slack: ignored message from=%s channel=%s", from, channelID)
-		return
-	}
-
+// logGroupMessage forwards msg to the group log handler, if one is set.
+func (c *SlackChannel) logGroupMessage(msg IncomingMessage) {
 	c.handlerMu.RLock()
-	fn := c.handler
+	logFn := c.groupLogHandler
 	c.handlerMu.RUnlock()
-
-	if fn != nil {
-		im := IncomingMessage{
-			Type:          "slack",
-			From:          from,
-			SenderName:    c.displayNameForUser(from),
-			Channel:       channelID,
-			ThreadTS:      threadTS,
-			IsThreadReply: isThreadReply,
-			Text:          enrichedText,
-			Attachments:   c.slackAttachments(files),
-			ReceivedAt:    receivedAt,
-			RestrictTools: result.restrictTools,
-			DisabledTools: c.disabledTools,
-			Model:         result.model,
-			Fallbacks:     result.fallbacks,
-		}
-		// Apply channel-level overrides if entry-level ones are absent.
-		if im.Model == "" {
-			im.Model = c.model
-		}
-		if len(im.Fallbacks) == 0 {
-			im.Fallbacks = c.fallbacks
-		}
-		fn(im)
-	} else {
-		c.logf("slack: no message handler registered for from=%s", from)
-		slog.Debug("slack: no handler registered", "from", from)
+	if logFn != nil {
+		logFn(msg)
 	}
 }
 
@@ -1005,58 +1061,8 @@ func (c *SlackChannel) refreshIdentityCache(ctx context.Context) error {
 		return fmt.Errorf("conversations.list: %w", err)
 	}
 
-	userAliases := map[string]string{}
-	userNames := map[string]string{}
-	for _, user := range users {
-		if strings.TrimSpace(user.ID) == "" || user.Deleted {
-			continue
-		}
-		userNames[user.ID] = firstNonEmpty(
-			strings.TrimSpace(user.Profile.DisplayName),
-			strings.TrimSpace(user.RealName),
-			strings.TrimSpace(user.Name),
-			user.ID,
-		)
-		for _, alias := range []string{
-			user.ID,
-			user.Name,
-			"@" + user.Name,
-			user.Profile.DisplayName,
-			"@" + user.Profile.DisplayName,
-			user.Profile.DisplayNameNormalized,
-			"@" + user.Profile.DisplayNameNormalized,
-			user.RealName,
-			user.Profile.RealNameNormalized,
-		} {
-			if normalized := normalizeSlackAlias(alias); normalized != "" {
-				userAliases[normalized] = user.ID
-			}
-		}
-	}
-
-	channelAliases := map[string]string{}
-	channelNames := map[string]string{}
-	for _, channel := range conversations {
-		if strings.TrimSpace(channel.ID) == "" {
-			continue
-		}
-		channelNames[channel.ID] = firstNonEmpty(
-			strings.TrimSpace(channel.Name),
-			strings.TrimSpace(channel.NameNormalized),
-			channel.ID,
-		)
-		for _, alias := range []string{
-			channel.ID,
-			channel.Name,
-			"#" + channel.Name,
-			channel.NameNormalized,
-			"#" + channel.NameNormalized,
-		} {
-			if normalized := normalizeSlackAlias(alias); normalized != "" {
-				channelAliases[normalized] = channel.ID
-			}
-		}
-	}
+	userAliases, userNames := slackUserIdentities(users)
+	channelAliases, channelNames := slackChannelIdentities(conversations)
 
 	c.identityMu.Lock()
 	c.userAliases = userAliases
@@ -1066,6 +1072,70 @@ func (c *SlackChannel) refreshIdentityCache(ctx context.Context) error {
 	c.resolvedAllowFrom = c.resolveAllowEntries(c.allowFrom)
 	c.identityMu.Unlock()
 	return nil
+}
+
+// slackUserIdentities builds the normalized alias -> user ID map and the
+// user ID -> display name map for active users.
+func slackUserIdentities(users []slack.User) (aliases, names map[string]string) {
+	aliases = map[string]string{}
+	names = map[string]string{}
+	for _, user := range users {
+		if strings.TrimSpace(user.ID) == "" || user.Deleted {
+			continue
+		}
+		names[user.ID] = firstNonEmpty(
+			strings.TrimSpace(user.Profile.DisplayName),
+			strings.TrimSpace(user.RealName),
+			strings.TrimSpace(user.Name),
+			user.ID,
+		)
+		addSlackAliases(aliases, user.ID,
+			user.ID,
+			user.Name,
+			"@"+user.Name,
+			user.Profile.DisplayName,
+			"@"+user.Profile.DisplayName,
+			user.Profile.DisplayNameNormalized,
+			"@"+user.Profile.DisplayNameNormalized,
+			user.RealName,
+			user.Profile.RealNameNormalized,
+		)
+	}
+	return aliases, names
+}
+
+// slackChannelIdentities builds the normalized alias -> channel ID map and the
+// channel ID -> name map.
+func slackChannelIdentities(conversations []slack.Channel) (aliases, names map[string]string) {
+	aliases = map[string]string{}
+	names = map[string]string{}
+	for _, channel := range conversations {
+		if strings.TrimSpace(channel.ID) == "" {
+			continue
+		}
+		names[channel.ID] = firstNonEmpty(
+			strings.TrimSpace(channel.Name),
+			strings.TrimSpace(channel.NameNormalized),
+			channel.ID,
+		)
+		addSlackAliases(aliases, channel.ID,
+			channel.ID,
+			channel.Name,
+			"#"+channel.Name,
+			channel.NameNormalized,
+			"#"+channel.NameNormalized,
+		)
+	}
+	return aliases, names
+}
+
+// addSlackAliases maps each non-empty normalized alias to id.
+func addSlackAliases(dst map[string]string, id string, aliases ...string) {
+	for _, alias := range aliases {
+		if normalized := normalizeSlackAlias(alias); normalized != "" {
+			dst[normalized] = id
+		}
+	}
 }
 
 func normalizeSlackAlias(value string) string {
