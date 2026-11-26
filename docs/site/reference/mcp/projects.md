@@ -137,7 +137,9 @@ Check an issue filter for a project without saving it: its syntax (balanced quot
 
 Stop watching a project, removing it from the agent that owns it. Running jobs are checkpointed first, in the background: the call returns once the project is no longer watched, and the server sends a `project-removed` event on the `/api/ws` stream.
 
-**Arguments:** `target`, and `runtime` (optional) to stop only a runtime watch.
+**Arguments:** `target`; `runtime` (optional) to stop only a runtime watch; and `delete_data` (optional) to also delete the project's job records, job transcripts and the clones no job still uses, once its jobs have stopped. Without `delete_data` they are kept. A clone a job still holds, or one being handed to a job, is never removed. [`delete_preview`](/reference/mcp/tasks-and-jobs#delete-preview) with `kind: "project"` counts what `delete_data` deletes.
+
+**Returns:** `{ "target", "removed", "stopped_jobs", "data_deleted" }`. `stopped_jobs` lists the jobs it stopped, and `data_deleted` is whether `delete_data` was set.
 
 ## project_clone_list, project_clone_clear
 
