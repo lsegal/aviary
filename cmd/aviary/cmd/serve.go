@@ -171,15 +171,8 @@ func configServerRunning(path string) (bool, int, error) {
 // runStart is the former command implementation from start.go.
 func runStart(_ *cobra.Command, _ []string) error {
 	trace := startup.Begin()
-	// Check if already running.
-	running, pid, err := configServerRunning(cfgFile)
-	if err != nil {
-		return fmt.Errorf("checking server status: %w", err)
-	}
-	// A stored PID equal to our own is stale: a container whose config dir
-	// outlives it runs the next server under the same PID, usually 1.
-	if running && pid != os.Getpid() {
-		return fmt.Errorf("aviary is already running (PID %d)", pid)
+	if err := checkNotAlreadyRunning(); err != nil {
+		return err
 	}
 
 	// Ensure data directories exist.
@@ -193,34 +186,13 @@ func runStart(_ *cobra.Command, _ []string) error {
 	}
 	cfgFile = resolvedCfgPath
 
-	// Load config (including file-based tasks from agents' tasks/ directories).
-	endPhase := trace.Phase("config load")
-	cfg, err := config.Load(resolvedCfgPath)
-	endPhase()
+	cfg, err := loadStartConfig(trace, resolvedCfgPath)
 	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	}
-
-	// Validate config — fail fast on any errors, print all issues before starting.
-	endPhase = trace.Phase("config validate")
-	st := authStore()
-	issues := config.Validate(cfg, func(k string) (string, error) { return st.Get(k) })
-	endPhase()
-	if len(issues) != 0 {
-		nerrs := 0
-		for _, issue := range issues {
-			fmt.Fprintf(os.Stderr, "[%s] %s: %s\n", issue.Level, issue.Field, issue.Message)
-			if issue.Level == config.LevelError {
-				nerrs++
-			}
-		}
-		if nerrs > 0 {
-			return fmt.Errorf("%d configuration error(s) found — run 'aviary doctor' for full details", nerrs)
-		}
+		return err
 	}
 
 	// Load or generate auth token.
-	endPhase = trace.Phase("auth token load")
+	endPhase := trace.Phase("auth token load")
 	tok, isNew, err := server.LoadOrGenerateToken()
 	endPhase()
 	if err != nil {
@@ -245,18 +217,8 @@ func runStart(_ *cobra.Command, _ []string) error {
 
 	logging.EnableConsole()
 
-	// Handle SIGINT/SIGTERM for graceful shutdown.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
-	go func() {
-		select {
-		case <-sigCh:
-			_, _ = fmt.Fprintln(os.Stdout, "\nShutting down...")
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
+	stopSignals := cancelOnSignal(ctx, cancel)
+	defer stopSignals()
 
 	if traceStartup {
 		traced := make(chan struct{})
@@ -270,7 +232,70 @@ func runStart(_ *cobra.Command, _ []string) error {
 		}()
 	}
 
-	// Start server; restart when config changes require it.
+	return serveUntilDone(ctx, cfg, tok, resolvedCfgPath)
+}
+
+// checkNotAlreadyRunning fails when another server for the config is running.
+func checkNotAlreadyRunning() error {
+	running, pid, err := configServerRunning(cfgFile)
+	if err != nil {
+		return fmt.Errorf("checking server status: %w", err)
+	}
+	// A stored PID equal to our own is stale: a container whose config dir
+	// outlives it runs the next server under the same PID, usually 1.
+	if running && pid != os.Getpid() {
+		return fmt.Errorf("aviary is already running (PID %d)", pid)
+	}
+	return nil
+}
+
+// loadStartConfig loads the config (including file-based tasks from agents'
+// tasks/ directories) and validates it, printing every issue and failing
+// fast on any error.
+func loadStartConfig(trace *startup.Trace, path string) (*config.Config, error) {
+	endPhase := trace.Phase("config load")
+	cfg, err := config.Load(path)
+	endPhase()
+	if err != nil {
+		return nil, fmt.Errorf("loading config: %w", err)
+	}
+
+	endPhase = trace.Phase("config validate")
+	st := authStore()
+	issues := config.Validate(cfg, func(k string) (string, error) { return st.Get(k) })
+	endPhase()
+	nerrs := 0
+	for _, issue := range issues {
+		fmt.Fprintf(os.Stderr, "[%s] %s: %s\n", issue.Level, issue.Field, issue.Message)
+		if issue.Level == config.LevelError {
+			nerrs++
+		}
+	}
+	if nerrs > 0 {
+		return nil, fmt.Errorf("%d configuration error(s) found — run 'aviary doctor' for full details", nerrs)
+	}
+	return cfg, nil
+}
+
+// cancelOnSignal cancels ctx on SIGINT/SIGTERM for a graceful shutdown. The
+// returned func stops listening for the signals.
+func cancelOnSignal(ctx context.Context, cancel context.CancelFunc) func() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		select {
+		case <-sigCh:
+			_, _ = fmt.Fprintln(os.Stdout, "\nShutting down...")
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return func() { signal.Stop(sigCh) }
+}
+
+// serveUntilDone runs the server, restarting it when config changes require
+// it and re-executing the binary when an upgrade does.
+func serveUntilDone(ctx context.Context, cfg *config.Config, tok, cfgPath string) error {
 	for {
 		srv := newServer(cfg, tok)
 		err := srv.ListenAndServe(ctx)
@@ -278,30 +303,34 @@ func runStart(_ *cobra.Command, _ []string) error {
 			return shutdownErr(err)
 		}
 		if errors.Is(err, server.ErrReexecRequired) {
-			// Release the PID file first: the new process checks it on start.
-			_ = server.RemovePID()
-			if update.RequestRebuild() {
-				// scripts/dev-go.mjs rebuilds from the checkout and runs it.
-				slog.Info("server: restarting through the dev supervisor")
-				return nil
-			}
-			slog.Info("server: restarting")
-			return reexec(srv.ReexecPath(), os.Args[1:], os.Environ())
+			return restartProcess(srv.ReexecPath())
 		}
-		if errors.Is(err, server.ErrRestartRequired) {
-			trace = startup.Begin()
-			endPhase = trace.Phase("config load")
-			var loadErr error
-			cfg, loadErr = config.Load(resolvedCfgPath)
-			endPhase()
-			if loadErr != nil {
-				return fmt.Errorf("reloading config: %w", loadErr)
-			}
-			slog.Info("server: restarting with new config")
-			continue
+		if !errors.Is(err, server.ErrRestartRequired) {
+			return err
 		}
-		return err
+		endPhase := startup.Begin().Phase("config load")
+		var loadErr error
+		cfg, loadErr = config.Load(cfgPath)
+		endPhase()
+		if loadErr != nil {
+			return fmt.Errorf("reloading config: %w", loadErr)
+		}
+		slog.Info("server: restarting with new config")
 	}
+}
+
+// restartProcess hands the server over to a new process: through the dev
+// supervisor when it rebuilds, else by re-executing path.
+func restartProcess(path string) error {
+	// Release the PID file first: the new process checks it on start.
+	_ = server.RemovePID()
+	if update.RequestRebuild() {
+		// scripts/dev-go.mjs rebuilds from the checkout and runs it.
+		slog.Info("server: restarting through the dev supervisor")
+		return nil
+	}
+	slog.Info("server: restarting")
+	return reexec(path, os.Args[1:], os.Environ())
 }
 
 // printStartupTrace prints the boot's per-phase trace once every subsystem

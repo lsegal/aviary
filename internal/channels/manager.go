@@ -95,63 +95,58 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 		agentFallbacks := config.EffectiveAgentFallbacks(ac, cfg.Models)
 		for _, cc := range ac.Channels {
 			key := channelKey(ac.Name, cc.Type, cc.ID)
-			if config.BoolOr(cc.Enabled, true) {
-				desired[key] = struct{}{}
-				spec := channelSpec{
-					agentName:      ac.Name,
-					channelConfig:  cc,
-					metadata:       channelMetadata(state, key),
-					agentModel:     agentModel,
-					agentFallbacks: append([]string{}, agentFallbacks...),
-				}
-				existingSpec, exists := m.specs[key]
-				m.specs[key] = spec
-				if cc.Type == "slack" {
-					connKey := slackConnectionKey(cc)
-					desiredSlack[connKey] = append(desiredSlack[connKey], spec)
-					continue
-				}
-				if exists && reflect.DeepEqual(existingSpec, spec) && m.channels[key] != nil {
-					continue // already running with the desired config
-				}
-			} else {
-				delete(m.specs, key)
-			}
-
 			if !config.BoolOr(cc.Enabled, true) {
+				delete(m.specs, key)
 				continue
 			}
-
-			if cc.Type == "slack" {
-				continue
-			}
-
-			if _, exists := m.channels[key]; exists {
-				m.stopChannelLocked(key)
-			}
-
-			if err := m.startChannelLocked(ctx, key, channelSpec{
+			desired[key] = struct{}{}
+			spec := channelSpec{
 				agentName:      ac.Name,
 				channelConfig:  cc,
 				metadata:       channelMetadata(state, key),
 				agentModel:     agentModel,
 				agentFallbacks: append([]string{}, agentFallbacks...),
-			}, msgFn); err != nil {
-				slog.Warn("channel start failed", "key", key, "err", err)
 			}
+			if cc.Type == "slack" {
+				// Slack channels sharing a connection are started together below.
+				m.specs[key] = spec
+				connKey := slackConnectionKey(cc)
+				desiredSlack[connKey] = append(desiredSlack[connKey], spec)
+				continue
+			}
+			m.reconcileChannelLocked(ctx, key, spec, msgFn)
 		}
 	}
 
+	m.reconcileSharedSlackLocked(ctx, desiredSlack, msgFn)
+	m.stopRemovedChannelsLocked(desired)
+}
+
+// reconcileChannelLocked records spec for key and (re)starts the channel
+// unless it is already running with the same spec.
+func (m *Manager) reconcileChannelLocked(ctx context.Context, key string, spec channelSpec, msgFn func(agentName, channelType, configuredID string, ch Channel, msg IncomingMessage)) {
+	existingSpec, exists := m.specs[key]
+	m.specs[key] = spec
+	if exists && reflect.DeepEqual(existingSpec, spec) && m.channels[key] != nil {
+		return // already running with the desired config
+	}
+	if _, running := m.channels[key]; running {
+		m.stopChannelLocked(key)
+	}
+	startSpec := spec
+	startSpec.agentFallbacks = append([]string{}, spec.agentFallbacks...)
+	if err := m.startChannelLocked(ctx, key, startSpec, msgFn); err != nil {
+		slog.Warn("channel start failed", "key", key, "err", err)
+	}
+}
+
+// reconcileSharedSlackLocked starts, restarts or keeps each desired shared
+// Slack connection and stops connections no longer in config.
+func (m *Manager) reconcileSharedSlackLocked(ctx context.Context, desiredSlack map[string][]channelSpec, msgFn func(agentName, channelType, configuredID string, ch Channel, msg IncomingMessage)) {
 	for connKey, specs := range desiredSlack {
 		existing := m.slack[connKey]
 		if existing != nil && reflect.DeepEqual(existing.specs, specs) {
-			for _, spec := range specs {
-				key := channelKey(spec.agentName, spec.channelConfig.Type, spec.channelConfig.ID)
-				m.channels[key] = existing.ch
-				m.sinks[key] = existing.sink
-				m.startTimes[key] = existing.started
-				m.slackAlias[key] = connKey
-			}
+			m.aliasSharedSlackLocked(connKey, existing, specs)
 			continue
 		}
 		if existing != nil {
@@ -168,22 +163,39 @@ func (m *Manager) Reconcile(ctx context.Context, cfg *config.Config, msgFn func(
 			slog.Info("channel stopped", "key", connKey)
 		}
 	}
+}
 
-	// Stop channels no longer in config.
+// aliasSharedSlackLocked points each spec's channel key at the already
+// running shared Slack connection.
+func (m *Manager) aliasSharedSlackLocked(connKey string, shared *sharedSlackChannel, specs []channelSpec) {
+	for _, spec := range specs {
+		key := channelKey(spec.agentName, spec.channelConfig.Type, spec.channelConfig.ID)
+		m.channels[key] = shared.ch
+		m.sinks[key] = shared.sink
+		m.startTimes[key] = shared.started
+		m.slackAlias[key] = connKey
+	}
+}
+
+// stopRemovedChannelsLocked stops channels whose keys are no longer desired.
+// Keys aliasing a shared Slack connection are only forgotten; the connection
+// itself is managed by reconcileSharedSlackLocked.
+func (m *Manager) stopRemovedChannelsLocked(desired map[string]struct{}) {
 	for key := range m.channels {
-		if _, ok := desired[key]; !ok {
-			if _, isSlackAlias := m.slackAlias[key]; isSlackAlias {
-				delete(m.channels, key)
-				delete(m.sinks, key)
-				delete(m.startTimes, key)
-				delete(m.errors, key)
-				delete(m.slackAlias, key)
-				continue
-			}
-			m.stopChannelLocked(key)
-			delete(m.specs, key)
-			slog.Info("channel stopped", "key", key)
+		if _, ok := desired[key]; ok {
+			continue
 		}
+		if _, isSlackAlias := m.slackAlias[key]; isSlackAlias {
+			delete(m.channels, key)
+			delete(m.sinks, key)
+			delete(m.startTimes, key)
+			delete(m.errors, key)
+			delete(m.slackAlias, key)
+			continue
+		}
+		m.stopChannelLocked(key)
+		delete(m.specs, key)
+		slog.Info("channel stopped", "key", key)
 	}
 }
 
@@ -288,22 +300,10 @@ func (m *Manager) startChannelLocked(ctx context.Context, key string, spec chann
 
 	// Write non-triggering group messages directly to the agent session so
 	// they appear as conversation context alongside agent-triggered turns.
-	if gcl, ok := ch.(GroupChatLogger); ok {
-		if spec.channelConfig.EffectiveGroupChatHistory() > 0 {
-			agentID := agentName
-			gcl.OnGroupChatMessage(func(msg IncomingMessage) {
-				sessionName := msg.Type + ":" + msg.Channel
-				sess, err := agent.NewSessionManager().GetOrCreateNamed(agentID, sessionName)
-				if err != nil || sess == nil {
-					slog.Warn("channel: failed to get session for chat history", "err", err)
-					return
-				}
-				sender := domain.NewMessageSender(msg.From, msg.SenderName, false)
-				if err := agent.AppendMessageToSessionWithSender(agentID, sess.ID, domain.MessageRoleUser, strings.TrimSpace(msg.Text), sender); err != nil {
-					slog.Warn("channel: failed to log group chat message", "err", err)
-				}
-			})
-		}
+	if gcl, ok := ch.(GroupChatLogger); ok && spec.channelConfig.EffectiveGroupChatHistory() > 0 {
+		gcl.OnGroupChatMessage(func(msg IncomingMessage) {
+			logGroupChatToSession(agentName, msg.Type+":"+msg.Channel, msg)
+		})
 	}
 
 	ch.OnMessage(func(msg IncomingMessage) {
@@ -319,14 +319,7 @@ func (m *Manager) startChannelLocked(ctx context.Context, key string, spec chann
 	m.startTimes[key] = time.Now()
 	delete(m.errors, key)
 
-	go func(k string, c Channel) {
-		if err := c.Start(cctx); err != nil && cctx.Err() == nil {
-			slog.Warn("channel error", "key", k, "err", err)
-			m.mu.Lock()
-			m.errors[k] = err.Error()
-			m.mu.Unlock()
-		}
-	}(key, ch)
+	go m.runChannel(cctx, key, ch)
 
 	slog.Info("channel started", "key", key, "type", spec.channelConfig.Type)
 	return nil
@@ -336,14 +329,9 @@ func (m *Manager) startSharedSlackLocked(ctx context.Context, connKey string, sp
 	if len(specs) == 0 {
 		return nil
 	}
-	resolvedSpecs := make([]channelSpec, 0, len(specs))
-	for _, spec := range specs {
-		resolvedConfig, err := resolveChannelAuthRefs(spec.channelConfig)
-		if err != nil {
-			return fmt.Errorf("resolve channel auth refs: %w", err)
-		}
-		spec.channelConfig = resolvedConfig
-		resolvedSpecs = append(resolvedSpecs, spec)
+	resolvedSpecs, err := resolveSpecsAuthRefs(specs)
+	if err != nil {
+		return err
 	}
 
 	base := resolvedSpecs[0].channelConfig
@@ -354,43 +342,11 @@ func (m *Manager) startSharedSlackLocked(ctx context.Context, connKey string, sp
 	sink := newLogSink()
 	ch.SetLogSink(sink)
 
-	if len(resolvedSpecs) > 0 {
-		ch.OnGroupChatMessage(func(msg IncomingMessage) {
-			for _, spec := range resolvedSpecs {
-				if spec.channelConfig.EffectiveGroupChatHistory() <= 0 {
-					continue
-				}
-				if !matchesAnyAllowedGroup(ch.resolvedEntriesForRouting(spec.channelConfig.AllowFrom), msg.Channel) {
-					continue
-				}
-				if !shouldProcessIncomingMessage(spec.metadata, msg) {
-					continue
-				}
-				sessionName := channelSessionName(spec.channelConfig, msg)
-				sess, err := agent.NewSessionManager().GetOrCreateNamed(spec.agentName, sessionName)
-				if err != nil || sess == nil {
-					slog.Warn("channel: failed to get session for chat history", "err", err)
-					continue
-				}
-				sender := domain.NewMessageSender(msg.From, msg.SenderName, false)
-				if err := agent.AppendMessageToSessionWithSender(spec.agentName, sess.ID, domain.MessageRoleUser, strings.TrimSpace(msg.Text), sender); err != nil {
-					slog.Warn("channel: failed to log group chat message", "err", err)
-				}
-			}
-		})
-	}
-
+	ch.OnGroupChatMessage(func(msg IncomingMessage) {
+		logSharedSlackGroupChat(ch, resolvedSpecs, msg)
+	})
 	ch.OnMessage(func(msg IncomingMessage) {
-		for _, spec := range resolvedSpecs {
-			if !shouldProcessIncomingMessage(spec.metadata, msg) {
-				continue
-			}
-			routed, ok := routedSlackMessage(ch, spec, msg)
-			if !ok {
-				continue
-			}
-			msgFn(spec.agentName, spec.channelConfig.Type, spec.channelConfig.ID, ch, routed)
-		}
+		routeSharedSlackMessage(ch, resolvedSpecs, msg, msgFn)
 	})
 
 	cctx, cancel := context.WithCancel(ctx)
@@ -414,22 +370,99 @@ func (m *Manager) startSharedSlackLocked(ctx context.Context, connKey string, sp
 	}
 	m.slack[connKey] = shared
 
-	go func(c *sharedSlackChannel) {
-		if err := c.ch.Start(cctx); cctx.Err() == nil {
-			slog.Warn("channel error", "key", connKey, "err", err)
-			m.mu.Lock()
-			c.err = err.Error()
-			for _, key := range c.keys {
-				m.errors[key] = err.Error()
-			}
-			m.mu.Unlock()
-		}
-	}(shared)
+	go m.runSharedSlack(cctx, shared)
 
 	for _, key := range shared.keys {
 		slog.Info("channel started", "key", key, "type", "slack")
 	}
 	return nil
+}
+
+// runChannel runs c until ctx ends, recording an unexpected error under key.
+func (m *Manager) runChannel(ctx context.Context, key string, c Channel) {
+	if err := c.Start(ctx); err != nil && ctx.Err() == nil {
+		slog.Warn("channel error", "key", key, "err", err)
+		m.mu.Lock()
+		m.errors[key] = err.Error()
+		m.mu.Unlock()
+	}
+}
+
+// runSharedSlack runs a shared Slack connection until ctx ends, recording an
+// unexpected exit under every channel key using it.
+func (m *Manager) runSharedSlack(ctx context.Context, c *sharedSlackChannel) {
+	err := c.ch.Start(ctx)
+	if ctx.Err() != nil {
+		return
+	}
+	slog.Warn("channel error", "key", c.connKey, "err", err)
+	m.mu.Lock()
+	c.err = err.Error()
+	for _, key := range c.keys {
+		m.errors[key] = err.Error()
+	}
+	m.mu.Unlock()
+}
+
+// resolveSpecsAuthRefs returns copies of specs with auth references in their
+// channel configs resolved.
+func resolveSpecsAuthRefs(specs []channelSpec) ([]channelSpec, error) {
+	resolved := make([]channelSpec, 0, len(specs))
+	for _, spec := range specs {
+		resolvedConfig, err := resolveChannelAuthRefs(spec.channelConfig)
+		if err != nil {
+			return nil, fmt.Errorf("resolve channel auth refs: %w", err)
+		}
+		spec.channelConfig = resolvedConfig
+		resolved = append(resolved, spec)
+	}
+	return resolved, nil
+}
+
+// logSharedSlackGroupChat records a non-triggering group message in the
+// session of every spec that keeps group chat history for that channel.
+func logSharedSlackGroupChat(ch *SlackChannel, specs []channelSpec, msg IncomingMessage) {
+	for _, spec := range specs {
+		if spec.channelConfig.EffectiveGroupChatHistory() <= 0 {
+			continue
+		}
+		if !matchesAnyAllowedGroup(ch.resolvedEntriesForRouting(spec.channelConfig.AllowFrom), msg.Channel) {
+			continue
+		}
+		if !shouldProcessIncomingMessage(spec.metadata, msg) {
+			continue
+		}
+		logGroupChatToSession(spec.agentName, channelSessionName(spec.channelConfig, msg), msg)
+	}
+}
+
+// routeSharedSlackMessage delivers msg to msgFn once for every spec that
+// accepts it.
+func routeSharedSlackMessage(ch *SlackChannel, specs []channelSpec, msg IncomingMessage, msgFn func(agentName, channelType, configuredID string, ch Channel, msg IncomingMessage)) {
+	for _, spec := range specs {
+		if !shouldProcessIncomingMessage(spec.metadata, msg) {
+			continue
+		}
+		routed, ok := routedSlackMessage(ch, spec, msg)
+		if !ok {
+			continue
+		}
+		msgFn(spec.agentName, spec.channelConfig.Type, spec.channelConfig.ID, ch, routed)
+	}
+}
+
+// logGroupChatToSession appends msg as a user message to the agent's named
+// session, creating the session if needed.
+func logGroupChatToSession(agentName, sessionName string, msg IncomingMessage) {
+	sess, err := agent.NewSessionManager().GetOrCreateNamed(agentName, sessionName)
+	if err != nil || sess == nil {
+		slog.Warn("channel: failed to get session for chat history", "err", err)
+		return
+	}
+	sender := domain.NewMessageSender(msg.From, msg.SenderName, false)
+	if err := agent.AppendMessageToSessionWithSender(agentName, sess.ID, domain.MessageRoleUser, strings.TrimSpace(msg.Text), sender); err != nil {
+		slog.Warn("channel: failed to log group chat message", "err", err)
+	}
 }
 
 func routedSlackMessage(ch *SlackChannel, spec channelSpec, msg IncomingMessage) (IncomingMessage, bool) {

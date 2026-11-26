@@ -17,7 +17,7 @@ func TestSessionDeliveryConcurrentRegistrationAndDispatch(_ *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < iterations; i++ {
-				RegisterSessionDelivery("concurrent-agent", "concurrent-text", "signal", fmt.Sprintf("%d-%d", worker, i%16), func(string) {})
+				RegisterSessionDelivery("concurrent-agent", "concurrent-text", "signal", fmt.Sprintf("%d-%d", worker, i%16), func(string) { /* the race is the subject; deliveries are discarded */ })
 			}
 		}()
 		go func() {
@@ -41,7 +41,7 @@ func TestSessionMediaDeliveryConcurrentRegistrationAndDispatch(_ *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < iterations; i++ {
-				RegisterSessionMediaDelivery("concurrent-agent", "concurrent-media", "slack", fmt.Sprintf("%d-%d", worker, i%16), func(string, string) {})
+				RegisterSessionMediaDelivery("concurrent-agent", "concurrent-media", "slack", fmt.Sprintf("%d-%d", worker, i%16), func(string, string) { /* the race is the subject; deliveries are discarded */ })
 			}
 		}()
 		go func() {

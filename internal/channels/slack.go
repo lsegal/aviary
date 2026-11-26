@@ -232,7 +232,7 @@ func (c *SlackChannel) SetAssistantProcessing(channel, threadTS, initiatorUserID
 func (c *SlackChannel) RegisterRunStop(channel, threadTS string, stop func()) func() {
 	key := slackRunKey(channel, threadTS)
 	if key == "" || stop == nil {
-		return func() {}
+		return func() { /* nothing was registered, so there is nothing to unregister */ }
 	}
 	c.runStopsMu.Lock()
 	if c.runStops == nil {

@@ -239,40 +239,9 @@ func (m providerMgrModel) View() string {
 	b.WriteString("\n")
 	switch m.mode {
 	case "":
-		for i, p := range tuiProviders {
-			state := "not connected"
-			if p.requiresBase && strings.TrimSpace(m.currentBaseURI(p.id)) != "" {
-				state = "endpoint"
-				if _, err := m.store.Get(p.apiKey); err == nil {
-					state = "endpoint + api key"
-				}
-			} else if _, err := m.store.Get(p.oauthKey); err == nil {
-				state = "oauth"
-			} else if _, err := m.store.Get(p.apiKey); err == nil {
-				state = "api key"
-			}
-			name := fmtPadRight(p.name, 12)
-			if i == m.cursor {
-				name = tuiSelectedStyle.Render(name)
-			}
-			b.WriteString(tuiCursor(i == m.cursor) + " " + name + "  " + state + "\n")
-		}
-		b.WriteString("\n" + tuiHelpStyle.Render("Enter configure · ↑/↓ navigate · Esc/q quit"))
+		m.writeProviderList(&b)
 	case "method":
-		opts := []string{"API key", "OAuth"}
-		b.WriteString(tuiLabelStyle.Render("Connect "+tuiProviders[m.cursor].name) + "\n\n")
-		limit := 1
-		if !tuiProviders[m.cursor].supportsOAuth {
-			limit = 0
-		}
-		for i := 0; i <= limit; i++ {
-			line := opts[i]
-			if i == m.method {
-				line = tuiSelectedStyle.Render(line)
-			}
-			b.WriteString(tuiCursor(i == m.method) + " " + line + "\n")
-		}
-		b.WriteString("\n" + tuiHelpStyle.Render("Enter select · Esc back"))
+		m.writeMethodPicker(&b)
 	case "apikey":
 		b.WriteString(tuiLabelStyle.Render(tuiProviders[m.cursor].name+" API Key") + "\n\n")
 		b.WriteString(m.keyInput.View())
@@ -299,6 +268,55 @@ func (m providerMgrModel) View() string {
 		b.WriteString("\n" + tuiErrorStyle.Render(m.err))
 	}
 	return b.String()
+}
+
+// writeProviderList writes each provider with its connection state.
+func (m providerMgrModel) writeProviderList(b *strings.Builder) {
+	for i, p := range tuiProviders {
+		name := fmtPadRight(p.name, 12)
+		if i == m.cursor {
+			name = tuiSelectedStyle.Render(name)
+		}
+		b.WriteString(tuiCursor(i == m.cursor) + " " + name + "  " + m.providerState(p) + "\n")
+	}
+	b.WriteString("\n" + tuiHelpStyle.Render("Enter configure · ↑/↓ navigate · Esc/q quit"))
+}
+
+// providerState describes how a provider is connected: by endpoint for ones
+// that need a base URI, else by OAuth or API key.
+func (m providerMgrModel) providerState(p providerOption) string {
+	if p.requiresBase && strings.TrimSpace(m.currentBaseURI(p.id)) != "" {
+		if _, err := m.store.Get(p.apiKey); err == nil {
+			return "endpoint + api key"
+		}
+		return "endpoint"
+	}
+	if _, err := m.store.Get(p.oauthKey); err == nil {
+		return "oauth"
+	}
+	if _, err := m.store.Get(p.apiKey); err == nil {
+		return "api key"
+	}
+	return "not connected"
+}
+
+// writeMethodPicker writes the API key / OAuth choice for the selected
+// provider, offering OAuth only where it is supported.
+func (m providerMgrModel) writeMethodPicker(b *strings.Builder) {
+	opts := []string{"API key", "OAuth"}
+	b.WriteString(tuiLabelStyle.Render("Connect "+tuiProviders[m.cursor].name) + "\n\n")
+	limit := 1
+	if !tuiProviders[m.cursor].supportsOAuth {
+		limit = 0
+	}
+	for i := 0; i <= limit; i++ {
+		line := opts[i]
+		if i == m.method {
+			line = tuiSelectedStyle.Render(line)
+		}
+		b.WriteString(tuiCursor(i == m.method) + " " + line + "\n")
+	}
+	b.WriteString("\n" + tuiHelpStyle.Render("Enter select · Esc back"))
 }
 
 func runProviderMgr(st authpkg.Store) error {

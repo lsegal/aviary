@@ -1017,6 +1017,22 @@ func closedSignalAddr(t *testing.T) string {
 	return addr
 }
 
+// callSignalRPC runs call against a fake daemon at addr, asserts it succeeds
+// with exactly one request, and returns that request.
+func callSignalRPC(t *testing.T, call func(addr string) error) (map[string]any, bool) {
+	t.Helper()
+	fd := newFakeDaemon(t)
+	defer fd.Close()
+
+	assert.NoError(t, call(fd.Addr()))
+
+	reqs := fd.Requests()
+	if !assert.Len(t, reqs, 1) {
+		return nil, false
+	}
+	return reqs[0], true
+}
+
 func TestSignalChannel_RPCMethods(t *testing.T) {
 	const (
 		direct  = "+15550001111"
@@ -1091,18 +1107,13 @@ func TestSignalChannel_RPCMethods(t *testing.T) {
 			})
 
 			t.Run("success direct", func(t *testing.T) {
-				fd := newFakeDaemon(t)
-				defer fd.Close()
-
-				assert.NoError(t, tt.call(newChannel(fd.Addr()), direct))
-
-				reqs := fd.Requests()
-				if !assert.Len(t, reqs, 1) {
+				req, ok := callSignalRPC(t, func(addr string) error { return tt.call(newChannel(addr), direct) })
+				if !ok {
 					return
 				}
-				assert.Equal(t, "2.0", reqs[0]["jsonrpc"])
-				assert.Equal(t, tt.rpcMethod, reqs[0]["method"])
-				params, _ := reqs[0]["params"].(map[string]any)
+				assert.Equal(t, "2.0", req["jsonrpc"])
+				assert.Equal(t, tt.rpcMethod, req["method"])
+				params, _ := req["params"].(map[string]any)
 				if tt.groups {
 					assert.Equal(t, []any{direct}, params["recipient"])
 				} else {
@@ -1118,17 +1129,12 @@ func TestSignalChannel_RPCMethods(t *testing.T) {
 				return
 			}
 			t.Run("success group", func(t *testing.T) {
-				fd := newFakeDaemon(t)
-				defer fd.Close()
-
-				assert.NoError(t, tt.call(newChannel(fd.Addr()), groupID))
-
-				reqs := fd.Requests()
-				if !assert.Len(t, reqs, 1) {
+				req, ok := callSignalRPC(t, func(addr string) error { return tt.call(newChannel(addr), groupID) })
+				if !ok {
 					return
 				}
-				assert.Equal(t, tt.rpcMethod, reqs[0]["method"])
-				params, _ := reqs[0]["params"].(map[string]any)
+				assert.Equal(t, tt.rpcMethod, req["method"])
+				params, _ := req["params"].(map[string]any)
 				assert.Equal(t, groupID, params["groupId"])
 				assert.NotContains(t, params, "recipient")
 			})

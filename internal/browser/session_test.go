@@ -97,35 +97,46 @@ func newFakeCDP(t *testing.T, fail map[string]string) *fakeCDP {
 			return
 		}
 		defer func() { _ = conn.Close() }()
-		for {
-			var msg struct {
-				ID        int64           `json:"id"`
-				SessionID string          `json:"sessionId,omitempty"`
-				Method    string          `json:"method"`
-				Params    json.RawMessage `json:"params"`
-			}
-			if err := conn.ReadJSON(&msg); err != nil {
-				return
-			}
-			f.mu.Lock()
-			f.calls = append(f.calls, fakeCDPCall{Method: msg.Method, Params: msg.Params})
-			f.mu.Unlock()
-			reply := map[string]any{"id": msg.ID}
-			if msg.SessionID != "" {
-				reply["sessionId"] = msg.SessionID
-			}
-			if errMsg, ok := f.fail[msg.Method]; ok {
-				reply["error"] = map[string]any{"code": -32000, "message": errMsg}
-			} else {
-				reply["result"] = fakeCDPResult(msg.Method)
-			}
-			if err := conn.WriteJSON(reply); err != nil {
-				return
-			}
-		}
+		f.serve(conn)
 	}))
 	t.Cleanup(f.server.Close)
 	return f
+}
+
+// serve records and answers each CDP command on conn until it closes.
+func (f *fakeCDP) serve(conn *websocket.Conn) {
+	for {
+		var msg struct {
+			ID        int64           `json:"id"`
+			SessionID string          `json:"sessionId,omitempty"`
+			Method    string          `json:"method"`
+			Params    json.RawMessage `json:"params"`
+		}
+		if err := conn.ReadJSON(&msg); err != nil {
+			return
+		}
+		f.mu.Lock()
+		f.calls = append(f.calls, fakeCDPCall{Method: msg.Method, Params: msg.Params})
+		f.mu.Unlock()
+		if err := conn.WriteJSON(f.reply(msg.ID, msg.SessionID, msg.Method)); err != nil {
+			return
+		}
+	}
+}
+
+// reply answers one command, with the error fail names for its method or
+// its canned result.
+func (f *fakeCDP) reply(id int64, sessionID, method string) map[string]any {
+	reply := map[string]any{"id": id}
+	if sessionID != "" {
+		reply["sessionId"] = sessionID
+	}
+	if errMsg, ok := f.fail[method]; ok {
+		reply["error"] = map[string]any{"code": -32000, "message": errMsg}
+	} else {
+		reply["result"] = fakeCDPResult(method)
+	}
+	return reply
 }
 
 func fakeCDPResult(method string) any {

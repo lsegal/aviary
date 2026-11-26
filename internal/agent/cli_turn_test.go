@@ -542,25 +542,32 @@ func TestCLITurn_FullModeEnforcesNarrowedRules(t *testing.T) {
 				assert.Nil(t, opts.CommandHook)
 				return
 			}
-			if tc.hooked {
-				// claude's dontAsk mode still runs read-only commands no
-				// allow rule covers, so a hook checks every shell call (#595).
-				require.NotNil(t, opts.CommandHook)
-				assert.Equal(t, "agent_cli_full", opts.CommandHook.Agent)
-				assert.Equal(t, tc.commands, opts.CommandHook.Rules)
-				assert.NotEmpty(t, opts.CommandHook.Executable)
-			} else {
-				assert.Nil(t, opts.CommandHook, "rules allowing every command need no hook")
-			}
-			assert.Equal(t, enforce, opts.Approval)
-			assert.Contains(t, opts.RefusalNote, "Refused by Aviary")
-			assert.Contains(t, opts.RefusalNote, `agent "agent_cli_full"'s Allowed Exec Commands or Filesystem Allowed Paths`)
-			for _, command := range tc.commands {
-				if command != "*" && !strings.HasPrefix(command, "!") {
-					assert.Contains(t, opts.Permissions, "Bash("+command+")", "an allowed command still runs without asking")
-				}
-			}
+			assertEnforcedCLIRules(t, opts, enforce, tc.commands, tc.hooked)
 		})
+	}
+}
+
+// assertEnforcedCLIRules checks that the agent_cli_full turn's options make
+// the CLI refuse what its narrowed rules leave out.
+func assertEnforcedCLIRules(t *testing.T, opts cliagent.Options, enforce, commands []string, hooked bool) {
+	t.Helper()
+	if hooked {
+		// claude's dontAsk mode still runs read-only commands no
+		// allow rule covers, so a hook checks every shell call (#595).
+		require.NotNil(t, opts.CommandHook)
+		assert.Equal(t, "agent_cli_full", opts.CommandHook.Agent)
+		assert.Equal(t, commands, opts.CommandHook.Rules)
+		assert.NotEmpty(t, opts.CommandHook.Executable)
+	} else {
+		assert.Nil(t, opts.CommandHook, "rules allowing every command need no hook")
+	}
+	assert.Equal(t, enforce, opts.Approval)
+	assert.Contains(t, opts.RefusalNote, "Refused by Aviary")
+	assert.Contains(t, opts.RefusalNote, `agent "agent_cli_full"'s Allowed Exec Commands or Filesystem Allowed Paths`)
+	for _, command := range commands {
+		if command != "*" && !strings.HasPrefix(command, "!") {
+			assert.Contains(t, opts.Permissions, "Bash("+command+")", "an allowed command still runs without asking")
+		}
 	}
 }
 
@@ -911,7 +918,7 @@ func TestCLIProcLifecycleHelpers(t *testing.T) {
 	assert.Empty(t, url, "a conversation without tools has no MCP endpoint")
 	assert.Empty(t, token)
 
-	turn := &cliTurn{cancel: func() {}}
+	turn := &cliTurn{cancel: func() { /* nothing to cancel: the turn never sends */ }}
 	unregister := registerCLITurn("agent_idle\x00s", turn)
 	defer unregister()
 	require.Same(t, turn, foldCLITurn("agent_idle\x00s"))

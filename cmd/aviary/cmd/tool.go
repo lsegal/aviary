@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -106,46 +107,70 @@ func parseToolInvocationArgs(tool internalmcp.ToolInfo, rawArgs []string) (map[s
 		}
 
 		name, inlineValue := splitFlagToken(arg)
+		var consumedNext bool
+		var err error
 		if name == "args" {
-			if inlineValue == nil {
-				i++
-				if i >= len(rawArgs) {
-					return nil, fmt.Errorf("--args requires a JSON object value")
-				}
-				inlineValue = &rawArgs[i]
-			}
-			argsPayload, err := parseToolArgs(*inlineValue)
-			if err != nil {
-				return nil, err
-			}
-			for key, value := range argsPayload {
-				payload[key] = value
-			}
-			continue
+			consumedNext, err = mergeToolArgsFlag(payload, inlineValue, rawArgs, i)
+		} else {
+			consumedNext, err = setToolFieldFlag(payload, tool.Name, fields, name, inlineValue, rawArgs, i)
 		}
-
-		field, ok := fields[name]
-		if !ok {
-			return nil, fmt.Errorf("unknown flag --%s for tool %q", name, tool.Name)
-		}
-
-		value, consumedNext, err := parseToolFieldArg(field, inlineValue, rawArgs, i)
 		if err != nil {
 			return nil, err
 		}
 		if consumedNext {
 			i++
 		}
-		payload[name] = value
 	}
 
+	if err := checkRequiredToolFields(tool, payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+// checkRequiredToolFields fails on the first required field payload lacks.
+func checkRequiredToolFields(tool internalmcp.ToolInfo, payload map[string]any) error {
 	for _, field := range sortedToolFields(tool) {
 		if field.Required && payload[field.Name] == nil {
-			return nil, fmt.Errorf("--%s is required", field.Name)
+			return fmt.Errorf("--%s is required", field.Name)
 		}
 	}
+	return nil
+}
 
-	return payload, nil
+// mergeToolArgsFlag merges the JSON object of the --args flag at rawArgs[i]
+// into payload, reading it from the next argument when not given inline. It
+// reports whether it consumed the next argument.
+func mergeToolArgsFlag(payload map[string]any, inlineValue *string, rawArgs []string, i int) (bool, error) {
+	consumedNext := false
+	if inlineValue == nil {
+		if i+1 >= len(rawArgs) {
+			return false, fmt.Errorf("--args requires a JSON object value")
+		}
+		inlineValue = &rawArgs[i+1]
+		consumedNext = true
+	}
+	argsPayload, err := parseToolArgs(*inlineValue)
+	if err != nil {
+		return false, err
+	}
+	maps.Copy(payload, argsPayload)
+	return consumedNext, nil
+}
+
+// setToolFieldFlag parses the value of the schema field flag --name at
+// rawArgs[i] into payload. It reports whether it consumed the next argument.
+func setToolFieldFlag(payload map[string]any, toolName string, fields map[string]toolField, name string, inlineValue *string, rawArgs []string, i int) (bool, error) {
+	field, ok := fields[name]
+	if !ok {
+		return false, fmt.Errorf("unknown flag --%s for tool %q", name, toolName)
+	}
+	value, consumedNext, err := parseToolFieldArg(field, inlineValue, rawArgs, i)
+	if err != nil {
+		return false, err
+	}
+	payload[name] = value
+	return consumedNext, nil
 }
 
 type toolField struct {
@@ -351,57 +376,30 @@ func lookupTool(ctx context.Context, name string) (internalmcp.ToolInfo, error) 
 	return internalmcp.ToolInfo{}, fmt.Errorf("tool %q is not available", name)
 }
 
+// toolHelpIntro is the text writeToolHelp prints ahead of the tool catalog.
+var toolHelpIntro = []string{
+	"Run any MCP tool by name using schema-driven flags. Use --args for unsupported or complex payloads.",
+	"",
+	"Usage:",
+	"  aviary tool <name> --field value [--field value ...]",
+	"  aviary tool <name> --args '{\"key\":\"value\"}'",
+	"  aviary tool list",
+	"",
+	"Notes:",
+	"  Arrays use comma-separated values, for example --command gmail,list.",
+	"  Boolean flags can be passed as --flag or --flag=false.",
+	"",
+	"Available Tools:",
+}
+
 func writeToolHelp(ctx context.Context, out io.Writer) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	_, err := fmt.Fprintln(out, "Run any MCP tool by name using schema-driven flags. Use --args for unsupported or complex payloads.")
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(out)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(out, "Usage:")
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(out, "  aviary tool <name> --field value [--field value ...]")
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(out, "  aviary tool <name> --args '{\"key\":\"value\"}'")
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(out, "  aviary tool list")
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(out)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(out, "Notes:")
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(out, "  Arrays use comma-separated values, for example --command gmail,list.")
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(out, "  Boolean flags can be passed as --flag or --flag=false.")
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(out)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(out, "Available Tools:")
-	if err != nil {
-		return err
+	for _, line := range toolHelpIntro {
+		if _, err := fmt.Fprintln(out, line); err != nil {
+			return err
+		}
 	}
 	if err := writeToolCatalog(ctx, out); err != nil {
 		_, writeErr := fmt.Fprintf(out, "  unavailable: %v\n", err)
@@ -417,24 +415,32 @@ func writeSingleToolHelp(out io.Writer, tool internalmcp.ToolInfo) error {
 	if err != nil {
 		return err
 	}
-	desc := strings.TrimSpace(tool.Description)
-	if desc != "" {
+	if desc := strings.TrimSpace(tool.Description); desc != "" {
 		_, err = fmt.Fprintf(out, "  %s\n\n", desc)
-		if err != nil {
-			return err
-		}
 	} else {
 		_, err = fmt.Fprintln(out)
-		if err != nil {
-			return err
-		}
 	}
-
-	_, err = fmt.Fprintf(out, "Usage:\n  aviary tool %s", tool.Name)
 	if err != nil {
 		return err
 	}
-	for _, field := range sortedToolFields(tool) {
+
+	fields := sortedToolFields(tool)
+	if err := writeToolUsage(out, tool.Name, fields); err != nil {
+		return err
+	}
+	if len(fields) == 0 {
+		_, err = fmt.Fprintln(out, "\nThis tool does not declare any input flags.")
+		return err
+	}
+	return writeToolFlags(out, fields)
+}
+
+// writeToolUsage writes a tool's usage line with a placeholder per field.
+func writeToolUsage(out io.Writer, name string, fields []toolField) error {
+	if _, err := fmt.Fprintf(out, "Usage:\n  aviary tool %s", name); err != nil {
+		return err
+	}
+	for _, field := range fields {
 		placeholder := "<value>"
 		switch field.Type {
 		case "boolean":
@@ -442,28 +448,22 @@ func writeSingleToolHelp(out io.Writer, tool internalmcp.ToolInfo) error {
 		case "array":
 			placeholder = "<a,b,c>"
 		}
+		format := " [--%s %s]"
 		if field.Required {
-			_, err = fmt.Fprintf(out, " --%s %s", field.Name, placeholder)
-		} else {
-			_, err = fmt.Fprintf(out, " [--%s %s]", field.Name, placeholder)
+			format = " --%s %s"
 		}
-		if err != nil {
+		if _, err := fmt.Fprintf(out, format, field.Name, placeholder); err != nil {
 			return err
 		}
 	}
-	_, err = fmt.Fprintln(out, " [--args '{...}']")
-	if err != nil {
-		return err
-	}
+	_, err := fmt.Fprintln(out, " [--args '{...}']")
+	return err
+}
 
-	fields := sortedToolFields(tool)
-	if len(fields) == 0 {
-		_, err = fmt.Fprintln(out, "\nThis tool does not declare any input flags.")
-		return err
-	}
-
-	_, err = fmt.Fprintln(out, "\nFlags:")
-	if err != nil {
+// writeToolFlags writes the Flags section: each field's type, whether it is
+// required, and its description.
+func writeToolFlags(out io.Writer, fields []toolField) error {
+	if _, err := fmt.Fprintln(out, "\nFlags:"); err != nil {
 		return err
 	}
 	for _, field := range fields {

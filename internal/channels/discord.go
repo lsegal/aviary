@@ -250,26 +250,18 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 		receivedAt = msg.Timestamp.UTC()
 	}
 	wasMentioned := discordMentionsUser(msg.Mentions, botUserID)
-	senderName := strings.TrimSpace(msg.Author.GlobalName)
-	if senderName == "" {
-		senderName = strings.TrimSpace(msg.Author.Username)
-	}
+	senderName := firstNonEmpty(msg.Author.GlobalName, msg.Author.Username)
 
 	// Log all group messages before allowFrom filtering.
 	if isGroup {
-		c.handlerMu.RLock()
-		logFn := c.groupLogHandler
-		c.handlerMu.RUnlock()
-		if logFn != nil {
-			logFn(IncomingMessage{
-				Type:       "discord",
-				From:       msg.Author.ID,
-				SenderName: senderName,
-				Channel:    msg.ChannelID,
-				Text:       msg.Content,
-				ReceivedAt: receivedAt,
-			})
-		}
+		c.logGroupMessage(IncomingMessage{
+			Type:       "discord",
+			From:       msg.Author.ID,
+			SenderName: senderName,
+			Channel:    msg.ChannelID,
+			Text:       msg.Content,
+			ReceivedAt: receivedAt,
+		})
 	}
 
 	result := checkAllowed(c.allowFrom, msg.Author.ID, msg.ChannelID, msg.Content, isGroup, botUserID, wasMentioned)
@@ -307,6 +299,16 @@ func (c *DiscordChannel) handleMessage(msg *discordgo.Message, botUserID string)
 		slog.Debug("discord: no handler registered", "from", msg.Author.ID)
 	}
 	return true
+}
+
+// logGroupMessage forwards msg to the group log handler, if one is set.
+func (c *DiscordChannel) logGroupMessage(msg IncomingMessage) {
+	c.handlerMu.RLock()
+	logFn := c.groupLogHandler
+	c.handlerMu.RUnlock()
+	if logFn != nil {
+		logFn(msg)
+	}
 }
 
 func discordAttachments(attachments []*discordgo.MessageAttachment) []Attachment {

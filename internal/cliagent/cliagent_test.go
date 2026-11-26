@@ -68,22 +68,9 @@ func fakeLinger() {
 // PID, and the text it received.
 func fakeClaude() {
 	args := os.Args[1:]
-	session := "new-session"
-	if i := slices.Index(args, "--resume"); i >= 0 {
-		session = args[i+1]
-	} else if i := slices.Index(args, "--session-id"); i >= 0 {
-		session = args[i+1]
-	}
+	session := fakeClaudeSession(args)
 	skip := slices.Contains(args, "--dangerously-skip-permissions")
-	system := ""
-	if i := slices.Index(args, "--system-prompt-file"); i >= 0 {
-		data, err := os.ReadFile(args[i+1])
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(2)
-		}
-		system = string(data)
-	}
+	system := fakeClaudeSystemPrompt(args)
 	out := json.NewEncoder(os.Stdout)
 	_ = out.Encode(map[string]any{"type": "system", "subtype": "init", "session_id": session})
 	sc := bufio.NewScanner(os.Stdin)
@@ -95,22 +82,7 @@ func fakeClaude() {
 			os.Exit(1) // dies as the next turn reaches it, without answering
 		}
 		turn++
-		var msg struct {
-			Message struct {
-				Content []map[string]any `json:"content"`
-			} `json:"message"`
-		}
-		_ = json.Unmarshal(sc.Bytes(), &msg)
-		var text string
-		images := 0
-		for _, b := range msg.Message.Content {
-			switch b["type"] {
-			case "text":
-				text, _ = b["text"].(string)
-			case "image":
-				images++
-			}
-		}
+		text, images := fakeClaudeMessage(sc.Bytes())
 		if text == "sleep" {
 			time.Sleep(time.Minute)
 		}
@@ -125,18 +97,69 @@ func fakeClaude() {
 			os.Exit(3)
 		}
 		reply := fmt.Sprintf("turn=%d pid=%d images=%d token=%s skip=%t text=%s", turn, os.Getpid(), images, os.Getenv(mcpTokenEnv), skip, text)
-		_ = out.Encode(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_start"}})
-		_ = out.Encode(map[string]any{"type": "stream_event", "event": map[string]any{
-			"type": "content_block_delta", "delta": map[string]any{"type": "text_delta", "text": reply},
-		}})
-		_ = out.Encode(map[string]any{"type": "assistant", "message": map[string]any{
-			"content": []any{map[string]any{"type": "text", "text": reply}},
-		}})
-		_ = out.Encode(map[string]any{
-			"type": "result", "subtype": "success", "result": reply, "session_id": session,
-			"usage": map[string]any{"input_tokens": 3, "output_tokens": 5}, "total_cost_usd": 0.25,
-		})
+		fakeClaudeReply(out, session, reply)
 	}
+}
+
+// fakeClaudeSession is the session ID the fake resumes or was assigned.
+func fakeClaudeSession(args []string) string {
+	if i := slices.Index(args, "--resume"); i >= 0 {
+		return args[i+1]
+	}
+	if i := slices.Index(args, "--session-id"); i >= 0 {
+		return args[i+1]
+	}
+	return "new-session"
+}
+
+// fakeClaudeSystemPrompt reads the --system-prompt-file the fake was given.
+func fakeClaudeSystemPrompt(args []string) string {
+	i := slices.Index(args, "--system-prompt-file")
+	if i < 0 {
+		return ""
+	}
+	data, err := os.ReadFile(args[i+1])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	return string(data)
+}
+
+// fakeClaudeMessage reads a stream-json user message's text and counts its
+// images.
+func fakeClaudeMessage(line []byte) (text string, images int) {
+	var msg struct {
+		Message struct {
+			Content []map[string]any `json:"content"`
+		} `json:"message"`
+	}
+	_ = json.Unmarshal(line, &msg)
+	for _, b := range msg.Message.Content {
+		switch b["type"] {
+		case "text":
+			text, _ = b["text"].(string)
+		case "image":
+			images++
+		}
+	}
+	return text, images
+}
+
+// fakeClaudeReply streams reply as one assistant message and the turn's
+// result.
+func fakeClaudeReply(out *json.Encoder, session, reply string) {
+	_ = out.Encode(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_start"}})
+	_ = out.Encode(map[string]any{"type": "stream_event", "event": map[string]any{
+		"type": "content_block_delta", "delta": map[string]any{"type": "text_delta", "text": reply},
+	}})
+	_ = out.Encode(map[string]any{"type": "assistant", "message": map[string]any{
+		"content": []any{map[string]any{"type": "text", "text": reply}},
+	}})
+	_ = out.Encode(map[string]any{
+		"type": "result", "subtype": "success", "result": reply, "session_id": session,
+		"usage": map[string]any{"input_tokens": 3, "output_tokens": 5}, "total_cost_usd": 0.25,
+	})
 }
 
 // fakeCodex reports the thread it resumed and echoes the prompt.

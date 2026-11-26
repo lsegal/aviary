@@ -52,98 +52,10 @@ func testGeminiChatServesAviaryTools(t *testing.T, binary string, builtinTools b
 	written := filepath.Join(workDir, "written.txt")
 
 	const token = "scoped-token-e2e"
-	var mu sync.Mutex
-	var calls []string
-	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "aviary"}, nil)
-	sdkmcp.AddTool(server, &sdkmcp.Tool{Name: "echo", Description: "Echoes its text."},
-		func(_ context.Context, _ *sdkmcp.CallToolRequest, in struct {
-			Text string `json:"text"`
-		}) (*sdkmcp.CallToolResult, struct{}, error) {
-			mu.Lock()
-			calls = append(calls, in.Text)
-			mu.Unlock()
-			return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "echoed " + in.Text}}}, struct{}{}, nil
-		})
-	mcpHandler := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return server },
-		&sdkmcp.StreamableHTTPOptions{Stateless: true})
-	mcpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		mcpHandler.ServeHTTP(w, r)
-	}))
+	state := &geminiE2EState{}
+	mcpServer := state.mcpServer(token)
 	defer mcpServer.Close()
-
-	var systemInstructions []string
-	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		var req struct {
-			Contents []struct {
-				Parts []map[string]any `json:"parts"`
-			} `json:"contents"`
-			SystemInstruction struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"systemInstruction"`
-			GenerationConfig struct {
-				ResponseMimeType string `json:"responseMimeType"`
-			} `json:"generationConfig"`
-			Tools []struct {
-				FunctionDeclarations []struct {
-					Name string `json:"name"`
-				} `json:"functionDeclarations"`
-			} `json:"tools"`
-		}
-		_ = json.Unmarshal(body, &req)
-		if !strings.Contains(r.URL.Path, ":streamGenerateContent") {
-			// countTokens and other side calls.
-			_, _ = w.Write([]byte(`{"totalTokens":1}`))
-			return
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		respond := func(parts ...map[string]any) {
-			chunk, _ := json.Marshal(map[string]any{
-				"candidates":    []any{map[string]any{"content": map[string]any{"role": "model", "parts": parts}, "finishReason": "STOP"}},
-				"usageMetadata": map[string]any{"promptTokenCount": 3, "candidatesTokenCount": 2, "totalTokenCount": 5},
-			})
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
-		}
-		if req.GenerationConfig.ResponseMimeType == "application/json" {
-			// Routing and classifier calls want any JSON.
-			respond(map[string]any{"text": `{"reasoning":"simple","model_choice":"flash","complexity_score":1}`})
-			return
-		}
-		var system []string
-		for _, part := range req.SystemInstruction.Parts {
-			system = append(system, part.Text)
-		}
-		mu.Lock()
-		systemInstructions = append(systemInstructions, strings.Join(system, ""))
-		mu.Unlock()
-		answered := map[string]bool{}
-		for _, content := range req.Contents {
-			for _, part := range content.Parts {
-				if response, ok := part["functionResponse"].(map[string]any); ok {
-					name, _ := response["name"].(string)
-					answered[name] = true
-				}
-			}
-		}
-		// In read-only mode the model first tries gemini's own write and
-		// shell tools, which plan mode must refuse.
-		switch {
-		case !builtinTools && len(answered) == 0:
-			respond(map[string]any{"functionCall": map[string]any{"name": "write_file", "args": map[string]any{"file_path": written, "content": "x"}}})
-		case !builtinTools && len(answered) == 1:
-			respond(map[string]any{"functionCall": map[string]any{"name": "run_shell_command", "args": map[string]any{"command": "touch " + written}}})
-		case answered["mcp_aviary_echo"]:
-			respond(map[string]any{"text": "all done"})
-		default:
-			respond(map[string]any{"functionCall": map[string]any{"name": "mcp_aviary_echo", "args": map[string]any{"text": "hi"}}})
-		}
-	}))
+	model := state.modelServer(builtinTools, written)
 	defer model.Close()
 
 	home := t.TempDir()
@@ -182,15 +94,140 @@ func testGeminiChatServesAviaryTools(t *testing.T, binary string, builtinTools b
 	require.NoError(t, err)
 	assert.Equal(t, "all done", result.Text)
 
-	mu.Lock()
-	defer mu.Unlock()
-	assert.Equal(t, []string{"hi"}, calls, "gemini called Aviary's tool through the registered server with the token")
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	assert.Equal(t, []string{"hi"}, state.calls, "gemini called Aviary's tool through the registered server with the token")
 	assert.NoFileExists(t, written, "gemini's own write and shell tools stay refused in read-only mode")
-	require.NotEmpty(t, systemInstructions)
-	assert.Equal(t, "You are the e2e stand-in agent.", strings.TrimSpace(systemInstructions[0]), "the system prompt replaces gemini's own")
+	require.NotEmpty(t, state.systemInstructions)
+	assert.Equal(t, "You are the e2e stand-in agent.", strings.TrimSpace(state.systemInstructions[0]), "the system prompt replaces gemini's own")
 	for _, event := range events {
 		if event.Type == EventToolStart {
 			assert.NotEqual(t, "mcp_aviary_echo", event.Tool.Name, "Aviary's MCP boundary reports its own tools")
 		}
 	}
+}
+
+// geminiE2EState records what the stand-in MCP endpoint and model saw.
+type geminiE2EState struct {
+	mu                 sync.Mutex
+	calls              []string
+	systemInstructions []string
+}
+
+// mcpServer stands in for Aviary's scoped MCP endpoint: one echo tool,
+// reachable only with token.
+func (st *geminiE2EState) mcpServer(token string) *httptest.Server {
+	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "aviary"}, nil)
+	sdkmcp.AddTool(server, &sdkmcp.Tool{Name: "echo", Description: "Echoes its text."},
+		func(_ context.Context, _ *sdkmcp.CallToolRequest, in struct {
+			Text string `json:"text"`
+		}) (*sdkmcp.CallToolResult, struct{}, error) {
+			st.mu.Lock()
+			st.calls = append(st.calls, in.Text)
+			st.mu.Unlock()
+			return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "echoed " + in.Text}}}, struct{}{}, nil
+		})
+	mcpHandler := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return server },
+		&sdkmcp.StreamableHTTPOptions{Stateless: true})
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		mcpHandler.ServeHTTP(w, r)
+	}))
+}
+
+// geminiE2ERequest is the part of a generateContent request the stand-in
+// model reads.
+type geminiE2ERequest struct {
+	Contents []struct {
+		Parts []map[string]any `json:"parts"`
+	} `json:"contents"`
+	SystemInstruction struct {
+		Parts []struct {
+			Text string `json:"text"`
+		} `json:"parts"`
+	} `json:"systemInstruction"`
+	GenerationConfig struct {
+		ResponseMimeType string `json:"responseMimeType"`
+	} `json:"generationConfig"`
+	Tools []struct {
+		FunctionDeclarations []struct {
+			Name string `json:"name"`
+		} `json:"functionDeclarations"`
+	} `json:"tools"`
+}
+
+// systemText joins the request's system instruction parts.
+func (req geminiE2ERequest) systemText() string {
+	var system []string
+	for _, part := range req.SystemInstruction.Parts {
+		system = append(system, part.Text)
+	}
+	return strings.Join(system, "")
+}
+
+// answered names the functions the request carries responses for.
+func (req geminiE2ERequest) answered() map[string]bool {
+	answered := map[string]bool{}
+	for _, content := range req.Contents {
+		for _, part := range content.Parts {
+			if response, ok := part["functionResponse"].(map[string]any); ok {
+				name, _ := response["name"].(string)
+				answered[name] = true
+			}
+		}
+	}
+	return answered
+}
+
+// modelServer stands in for the Gemini API, calling Aviary's echo tool and
+// then answering "all done".
+func (st *geminiE2EState) modelServer(builtinTools bool, written string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req geminiE2ERequest
+		_ = json.Unmarshal(body, &req)
+		if !strings.Contains(r.URL.Path, ":streamGenerateContent") {
+			// countTokens and other side calls.
+			_, _ = w.Write([]byte(`{"totalTokens":1}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		if req.GenerationConfig.ResponseMimeType == "application/json" {
+			// Routing and classifier calls want any JSON.
+			geminiE2ERespond(w, map[string]any{"text": `{"reasoning":"simple","model_choice":"flash","complexity_score":1}`})
+			return
+		}
+		st.mu.Lock()
+		st.systemInstructions = append(st.systemInstructions, req.systemText())
+		st.mu.Unlock()
+		geminiE2ERespond(w, geminiE2EReply(builtinTools, req.answered(), written))
+	}))
+}
+
+// geminiE2EReply is the stand-in model's next part. In read-only mode the
+// model first tries gemini's own write and shell tools, which plan mode must
+// refuse.
+func geminiE2EReply(builtinTools bool, answered map[string]bool, written string) map[string]any {
+	switch {
+	case !builtinTools && len(answered) == 0:
+		return map[string]any{"functionCall": map[string]any{"name": "write_file", "args": map[string]any{"file_path": written, "content": "x"}}}
+	case !builtinTools && len(answered) == 1:
+		return map[string]any{"functionCall": map[string]any{"name": "run_shell_command", "args": map[string]any{"command": "touch " + written}}}
+	case answered["mcp_aviary_echo"]:
+		return map[string]any{"text": "all done"}
+	default:
+		return map[string]any{"functionCall": map[string]any{"name": "mcp_aviary_echo", "args": map[string]any{"text": "hi"}}}
+	}
+}
+
+// geminiE2ERespond writes one streamed candidate made of parts.
+func geminiE2ERespond(w http.ResponseWriter, parts ...map[string]any) {
+	chunk, _ := json.Marshal(map[string]any{
+		"candidates":    []any{map[string]any{"content": map[string]any{"role": "model", "parts": parts}, "finishReason": "STOP"}},
+		"usageMetadata": map[string]any{"promptTokenCount": 3, "candidatesTokenCount": 2, "totalTokenCount": 5},
+	})
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
 }

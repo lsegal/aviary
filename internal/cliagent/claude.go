@@ -296,6 +296,13 @@ func (s *claudeSession) Send(ctx context.Context, turn Turn, onEvent func(Event)
 
 	m := newClaudeMapper(onEvent)
 	m.tools.refusalNote = s.opts.RefusalNote
+	return s.readTurn(ctx, p, msg, reused, m)
+}
+
+// readTurn maps the process's output until the turn's result arrives,
+// delivering the turn again when a reused process exits before answering.
+func (s *claudeSession) readTurn(ctx context.Context, p *claudeProc, msg []byte, reused bool, m *claudeMapper) (Result, error) {
+	var err error
 	gotLine := false
 	for {
 		select {

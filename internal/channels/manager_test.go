@@ -119,7 +119,7 @@ func TestManager_List(t *testing.T) {
 
 	mgr.mu.Lock()
 	mgr.channels[key] = mock
-	mgr.cancels[key] = func() {}
+	mgr.cancels[key] = noopCancel
 	mgr.startTimes[key] = now
 	mgr.sinks[key] = newLogSink()
 	mgr.mu.Unlock()
@@ -202,7 +202,7 @@ func TestManager_RouteDelivery_Success(t *testing.T) {
 
 	mgr.mu.Lock()
 	mgr.channels[key] = mock
-	mgr.cancels[key] = func() {}
+	mgr.cancels[key] = noopCancel
 	mgr.startTimes[key] = time.Now()
 	mgr.sinks[key] = newLogSink()
 	mgr.mu.Unlock()
@@ -227,7 +227,7 @@ func TestManager_RouteDelivery_WrongType(t *testing.T) {
 	key := "agent1/slack/0"
 	mgr.mu.Lock()
 	mgr.channels[key] = mock
-	mgr.cancels[key] = func() {}
+	mgr.cancels[key] = noopCancel
 	mgr.startTimes[key] = time.Now()
 	mgr.sinks[key] = newLogSink()
 	mgr.mu.Unlock()
@@ -287,10 +287,10 @@ func TestManager_Reconcile_RemovesChannel(t *testing.T) {
 	}
 	cfg2 := &config.Config{Agents: []config.AgentConfig{{Name: "bot"}}} // no channels
 
-	mgr.Reconcile(ctx, cfg1, func(_ string, _, _ string, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg1, noopMsgFn)
 	assert.Equal(t, 1, len(mgr.List()))
 
-	mgr.Reconcile(ctx, cfg2, func(_ string, _, _ string, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg2, noopMsgFn)
 	assert.Equal(t, 0, len(mgr.List()))
 
 }
@@ -312,7 +312,7 @@ func TestManager_Reconcile_DisabledChannelNotStarted(t *testing.T) {
 		}},
 	}
 
-	mgr.Reconcile(ctx, cfg, func(_ string, _, _ string, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg, noopMsgFn)
 	assert.Empty(t, mgr.List())
 }
 
@@ -340,7 +340,7 @@ func TestManager_Reconcile_RestartsWhenChannelConfigChanges(t *testing.T) {
 		}},
 	}
 
-	mgr.Reconcile(ctx, cfg1, func(_ string, _, _ string, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg1, noopMsgFn)
 	key := channelKey("bot", "signal", "")
 
 	mgr.mu.Lock()
@@ -349,7 +349,7 @@ func TestManager_Reconcile_RestartsWhenChannelConfigChanges(t *testing.T) {
 	mgr.mu.Unlock()
 
 	time.Sleep(10 * time.Millisecond)
-	mgr.Reconcile(ctx, cfg2, func(_ string, _, _ string, _ Channel, _ IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg2, noopMsgFn)
 
 	mgr.mu.Lock()
 	second := mgr.channels[key]
@@ -465,7 +465,7 @@ func TestDiscordChannel_Constructor(t *testing.T) {
 
 func TestDiscordChannel_OnMessage(t *testing.T) {
 	ch := NewDiscordChannel("t", nil, "m", nil)
-	ch.OnMessage(func(IncomingMessage) {})
+	ch.OnMessage(ignoreIncoming)
 	ch.handlerMu.RLock()
 	fn := ch.handler
 	ch.handlerMu.RUnlock()
@@ -682,7 +682,7 @@ func TestSlackChannel_Constructor(t *testing.T) {
 
 func TestSlackChannel_OnMessage(t *testing.T) {
 	ch := NewSlackChannel("xapp-token", "xoxb-token", nil, "m", nil)
-	ch.OnMessage(func(IncomingMessage) {})
+	ch.OnMessage(ignoreIncoming)
 	ch.handlerMu.RLock()
 	fn := ch.handler
 	ch.handlerMu.RUnlock()
@@ -1244,7 +1244,7 @@ func TestManager_ReconcileSharesSlackConnection(t *testing.T) {
 	}}
 
 	mgr := NewManager()
-	mgr.Reconcile(ctx, cfg, func(string, string, string, Channel, IncomingMessage) {})
+	mgr.Reconcile(ctx, cfg, noopMsgFn)
 
 	assert.Len(t, mgr.slack, 1)
 	assert.Len(t, mgr.channels, 2)
@@ -1401,7 +1401,22 @@ func waitChannelError(t *testing.T, mgr *Manager, key string) string {
 	return ""
 }
 
-func noopMsgFn(string, string, string, Channel, IncomingMessage) {}
+// noopMsgFn is a Reconcile message callback for tests that never inspect
+// routed messages.
+func noopMsgFn(string, string, string, Channel, IncomingMessage) {
+	// Messages are intentionally discarded.
+}
+
+// noopCancel stands in for a channel's context.CancelFunc in tests that seed
+// Manager state directly; there is no context to cancel.
+func noopCancel() {
+	// Nothing to cancel.
+}
+
+// ignoreIncoming is an OnMessage handler for tests that only need one registered.
+func ignoreIncoming(IncomingMessage) {
+	// Messages are intentionally discarded.
+}
 
 func slackAgent(name, groups string) config.AgentConfig {
 	return config.AgentConfig{Name: name, Channels: []config.ChannelConfig{{
