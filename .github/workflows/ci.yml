@@ -89,6 +89,7 @@ jobs:
     name: "Test: Go (${{ matrix.os }})"
     permissions:
       contents: read
+      id-token: write
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -105,8 +106,10 @@ jobs:
           cache: true
       # Linux also runs the race detector so data races fail CI (#632), and
       # records statement coverage in the same run so it costs no extra test
-      # pass (#1217).
-      - run: go test ${{ matrix.os == 'ubuntu-latest' && '-race -coverprofile=coverage.out -covermode=atomic' || '' }} ./...
+      # pass (#1217). macOS and Windows record coverage too, so Qlty sees
+      # their platform-specific files; the space-separated flag keeps
+      # PowerShell from splitting "coverage.out" at the dot.
+      - run: go test ${{ matrix.os == 'ubuntu-latest' && '-race -covermode=atomic' || '' }} -coverprofile coverage.out ./...
       # Writes the total and per-package coverage to the job summary.
       - name: Report Go coverage
         if: matrix.os == 'ubuntu-latest'
@@ -128,6 +131,17 @@ jobs:
           files: coverage.out
           flags: go
           fail_ci_if_error: false
+      # Sends each OS's profile to Qlty, merged server-side with the web
+      # upload (4 parts). Fork pull requests get no OIDC token, so they skip.
+      - name: Upload Go coverage to Qlty
+        if: github.event.pull_request.head.repo.fork != true
+        uses: qltysh/qlty-action/coverage@v2
+        with:
+          oidc: true
+          files: coverage.out
+          format: coverprofile
+          strip-prefix: github.com/lsegal/aviary
+          total-parts-count: 4
 
   transcription-e2e:
     name: "Test: Transcription E2E"
@@ -299,6 +313,7 @@ jobs:
     name: "Lint: Web"
     permissions:
       contents: read
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -326,6 +341,13 @@ jobs:
           files: web/coverage/lcov.info
           flags: web
           fail_ci_if_error: false
+      - name: Upload web coverage to Qlty
+        if: github.event.pull_request.head.repo.fork != true
+        uses: qltysh/qlty-action/coverage@v2
+        with:
+          oidc: true
+          files: web/coverage/lcov.info
+          total-parts-count: 4
 
   web-e2e:
     name: "Test: Web E2E"
