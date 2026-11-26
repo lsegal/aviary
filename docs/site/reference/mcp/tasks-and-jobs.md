@@ -123,7 +123,7 @@ Count what deleting a task, workflow, channel or agent, or removing a Code Loop 
 
 **Arguments:** `kind` (required; `task`, `workflow`, `channel`, `agent` or `project`), `name` (required; the task, which may be `agent/task`, the channel or agent name, or the project's `owner/repo`), `agent` (the channel's agent, or the task's agent when its name is ambiguous).
 
-**Returns:** `{ "sessions", "messages", "runs", "files" }`. For a project, `runs` counts its job records and `files` its job transcripts plus clones.
+**Returns:** `{ "sessions", "messages", "runs", "files" }`. For a project, `runs` counts its job records and `files` its job transcripts plus its clones.
 
 ---
 
