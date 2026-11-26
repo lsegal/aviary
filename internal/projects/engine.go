@@ -5180,7 +5180,8 @@ func loadScopedWorkState(path string, targets []string) (map[string]workState, e
 		return nil, err
 	}
 	for key, value := range raw {
-		if !ownsWorkKey(targets, key) {
+		separator := strings.LastIndexByte(key, '#')
+		if separator <= 0 || (len(targets) > 0 && !slices.Contains(targets, key[:separator])) {
 			continue
 		}
 		var state workState
@@ -5220,13 +5221,13 @@ func saveScopedWorkState(path string, state map[string]workState, targets []stri
 			return err
 		}
 		for key, value := range raw {
-			if isScopedWorkKey(key) && !ownsWorkKey(targets, key) {
+			if target := workKeyTarget(key); target != "" && !slices.Contains(targets, target) {
 				merged[key] = value
 			}
 		}
 	}
 	for key, work := range state {
-		if !isScopedWorkKey(key) {
+		if workKeyTarget(key) == "" {
 			return fmt.Errorf("invalid scoped state key %q", key)
 		}
 		value, err := json.Marshal(work)
@@ -5238,26 +5239,14 @@ func saveScopedWorkState(path string, state map[string]workState, targets []stri
 	return store.WriteJSON(path, merged)
 }
 
-// isScopedWorkKey reports whether key names a job as <owner>/<repo>#N.
-func isScopedWorkKey(key string) bool {
-	separator := strings.LastIndexByte(key, '#')
-	if separator <= 0 {
-		return false
+// workKeyTarget is the project a work state key belongs to, or "" when key
+// is not a <target>#<job> key.
+func workKeyTarget(key string) string {
+	target, _, _ := strings.Cut(key, "#")
+	if target == key {
+		return ""
 	}
-	_, err := strconv.Atoi(key[separator+1:])
-	return err == nil
-}
-
-// ownsWorkKey reports whether key names a job of one of targets, or of any
-// project when targets is empty.
-func ownsWorkKey(targets []string, key string) bool {
-	if !isScopedWorkKey(key) {
-		return false
-	}
-	if len(targets) == 0 {
-		return true
-	}
-	return slices.Contains(targets, key[:strings.LastIndexByte(key, '#')])
+	return target
 }
 
 // stacksProbeTTL is how long a repository's stacked pull request setting is

@@ -144,7 +144,7 @@ func purgeTargetWorkState(path, target string) (int, error) {
 	}
 	removed := 0
 	for key := range raw {
-		if isTargetJob(key, target) {
+		if workKeyTarget(key) == target {
 			delete(raw, key)
 			removed++
 		}

@@ -20,7 +20,7 @@ func loadWorkState(path string) (map[int]workState, error) {
 	for key, work := range scoped {
 		number, err := strconv.Atoi(key[strings.LastIndexByte(key, '#')+1:])
 		if err != nil {
-			return nil, err
+			continue
 		}
 		result[number] = work
 	}
@@ -29,9 +29,14 @@ func loadWorkState(path string) (map[int]workState, error) {
 
 // saveWorkState writes state as testWorkTarget's job records.
 func saveWorkState(path string, state map[int]workState) error {
+	return saveTargetWorkState(path, testWorkTarget, state)
+}
+
+// saveTargetWorkState writes state as target's job records.
+func saveTargetWorkState(path, target string, state map[int]workState) error {
 	scoped := make(map[string]workState, len(state))
 	for number, work := range state {
-		scoped[testWorkTarget+"#"+strconv.Itoa(number)] = work
+		scoped[target+"#"+strconv.Itoa(number)] = work
 	}
 	return saveScopedWorkState(path, scoped, nil)
 }
