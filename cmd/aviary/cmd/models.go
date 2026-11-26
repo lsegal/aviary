@@ -18,6 +18,13 @@ import (
 
 var modelsProvider string
 
+// dynamicModelsContext bounds a dynamic provider's model listing request.
+var dynamicModelsContext = defaultDynamicModelsContext
+
+func defaultDynamicModelsContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 5*time.Second)
+}
+
 var modelsCmd = &cobra.Command{
 	Use:   "models",
 	Short: "Inspect supported provider/model pairs",
@@ -122,7 +129,7 @@ func listDynamicModels(provider string, allowDefault bool) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := dynamicModelsContext()
 	defer cancel()
 	var names []string
 	switch p := providerInst.(type) {
