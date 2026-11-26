@@ -34,21 +34,7 @@ export interface MobileNavItem {
 const props = defineProps<{ items: MobileNavItem[] }>();
 
 const row = ref<HTMLElement | null>(null);
-const { fadeStyle, measure, observe } = useScrollFade(row);
-
-/** Scrolls the row, not the page, just enough to show the active pill. */
-function revealActive() {
-	const el = row.value;
-	const pill = el?.querySelector<HTMLElement>("[data-active]");
-	if (!el || !pill) return;
-	const box = pill.getBoundingClientRect();
-	const left = box.left - el.getBoundingClientRect().left + el.scrollLeft;
-	const right = left + box.width;
-	if (left < el.scrollLeft) el.scrollLeft = left;
-	else if (right > el.scrollLeft + el.clientWidth)
-		el.scrollLeft = right - el.clientWidth;
-	measure();
-}
+const { fadeStyle, measure, observe, revealActive } = useScrollFade(row);
 
 onMounted(revealActive);
 const activeKey = computed(() => props.items.find((i) => i.active)?.key);
