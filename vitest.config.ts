@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 
 // Unit tests for the web app (#1377). Playwright covers the app end to end
 // under web/e2e; these test web/src modules directly and report their
-// coverage to Qlty under the web tag.
+// coverage to Qlty.
 export default defineConfig({
 	plugins: [vue()],
 	test: {

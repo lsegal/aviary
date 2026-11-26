@@ -89,7 +89,6 @@ jobs:
     name: "Test: Go (${{ matrix.os }})"
     permissions:
       contents: read
-      # Qlty coverage uploads authenticate with OIDC (#1407).
       id-token: write
     runs-on: ${{ matrix.os }}
     strategy:
@@ -107,8 +106,10 @@ jobs:
           cache: true
       # Linux also runs the race detector so data races fail CI (#632), and
       # records statement coverage in the same run so it costs no extra test
-      # pass (#1217).
-      - run: go test ${{ matrix.os == 'ubuntu-latest' && '-race -coverprofile=coverage.out -covermode=atomic' || '' }} ./...
+      # pass (#1217). macOS and Windows record coverage too, so Qlty sees
+      # their platform-specific files; the space-separated flag keeps
+      # PowerShell from splitting "coverage.out" at the dot.
+      - run: go test ${{ matrix.os == 'ubuntu-latest' && '-race -covermode=atomic' || '' }} -coverprofile coverage.out ./...
       # Writes the total and per-package coverage to the job summary.
       - name: Report Go coverage
         if: matrix.os == 'ubuntu-latest'
@@ -120,16 +121,17 @@ jobs:
           path: |
             coverage.out
             coverage.md
-      # Sends the same profile to Qlty (#1407), authenticated with OIDC. Fork
-      # pull requests get no OIDC token, so they skip the upload.
+      # Sends each OS's profile to Qlty, merged server-side with the web
+      # upload (4 parts). Fork pull requests get no OIDC token, so they skip.
       - name: Upload Go coverage to Qlty
-        if: matrix.os == 'ubuntu-latest' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: github.event.pull_request.head.repo.fork != true
         uses: qltysh/qlty-action/coverage@56bee2d751c94b7bd8de22f64c9b5f398048e13f # v2.8.1
         with:
           oidc: true
           files: coverage.out
+          format: coverprofile
           strip-prefix: github.com/lsegal/aviary
-          tag: go
+          total-parts-count: 4
 
   transcription-e2e:
     name: "Test: Transcription E2E"
@@ -301,7 +303,6 @@ jobs:
     name: "Lint: Web"
     permissions:
       contents: read
-      # Qlty coverage uploads authenticate with OIDC (#1407).
       id-token: write
     runs-on: ubuntu-latest
     steps:
@@ -320,15 +321,15 @@ jobs:
       - run: pnpm test:scripts
       # Vitest unit tests for web/src, with LCOV coverage (#1377).
       - run: pnpm test:web:coverage
-      # Sends the LCOV report to Qlty (#1407), authenticated with OIDC. Fork
-      # pull requests get no OIDC token, so they skip the upload.
+      # Merged server-side with the three Go uploads (4 parts). Fork pull
+      # requests get no OIDC token, so they skip.
       - name: Upload web coverage to Qlty
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event.pull_request.head.repo.fork != true
         uses: qltysh/qlty-action/coverage@56bee2d751c94b7bd8de22f64c9b5f398048e13f # v2.8.1
         with:
           oidc: true
           files: web/coverage/lcov.info
-          tag: web
+          total-parts-count: 4
 
   web-e2e:
     name: "Test: Web E2E"
