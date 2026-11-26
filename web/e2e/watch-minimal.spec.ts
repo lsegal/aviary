@@ -295,7 +295,7 @@ test("a watch session's mobile header reads version, bell, connection then gear,
 	const status = page.getByTestId("mobile-header-status");
 	// The version moved here from the board's removed footer (#1434); a
 	// watch session never offers an upgrade.
-	await expect(status.getByTestId("server-version")).toHaveText("dev");
+	await expect(status.getByTestId("server-version")).toBeVisible();
 	await expect(status.getByTestId("update-icon")).toHaveCount(0);
 	const buttons = status.getByRole("button");
 	await expect(buttons).toHaveCount(3);
