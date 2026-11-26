@@ -68,10 +68,10 @@ import { computed, inject } from "vue";
 import { useAgentItemDialogs } from "../../composables/useAgentItemDialogs";
 import {
 	HEADER_ACTION_CLS,
-	HEADER_ICON_CLS,
 	HEADER_COLLAPSE_CLS,
 	HEADER_COLLAPSE_ICON_CLS,
 	HEADER_COLLAPSE_LABEL_CLS,
+	HEADER_ICON_CLS,
 } from "../../lib/headerActions";
 import { settingsViewContextKey } from "../settings/context";
 import FilePreviewToggle from "./FilePreviewToggle.vue";
