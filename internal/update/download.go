@@ -32,7 +32,12 @@ var (
 )
 
 func defaultRenameAttempts() int {
-	if runtime.GOOS == "windows" {
+	return renameAttemptsFor(runtime.GOOS)
+}
+
+// renameAttemptsFor returns how many times a binary swap is tried on goos.
+func renameAttemptsFor(goos string) int {
+	if goos == "windows" {
 		return 20
 	}
 	return 1
