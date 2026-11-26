@@ -590,7 +590,8 @@ onBeforeUnmount(() => {
 				<p class="landing-section-sub reveal">
 					Aviary watches your repositories and works their issues end to end
 					with the CLI providers you already use, from the first clone to the
-					green merge.
+					green merge. Or switch a project to manual mode, and it works only
+					what you queue.
 				</p>
 
 				<ol class="landing-projects-steps reveal">

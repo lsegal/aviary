@@ -112,6 +112,14 @@ onBeforeUnmount(() => {
 					filters, and dependencies. The progress report is the thread and the
 					board. Nothing new to learn, nowhere new to look.
 				</p>
+				<p class="pp-sub reveal">
+					Rather pick the work yourself? Switch a project to
+					<strong>Manual</strong> and Aviary stops looking for issues: it works
+					only what you queue from the board's header and the project's
+					scheduled prompts. Switch between Watch and Manual at any time from
+					the header's Issue discovery menu or the project's settings, or start
+					with <code>aviary watch --manual</code>.
+				</p>
 				<div class="pp-actions reveal">
 					<a class="pp-button" href="#install">Install Aviary</a>
 					<code class="pp-command">aviary watch owner/repo</code>
