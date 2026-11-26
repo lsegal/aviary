@@ -263,7 +263,7 @@ function toggle(c: QueueCandidate) {
 function resultText(r: QueueResult) {
 	if (r.queued)
 		return r.position
-			? `queued, #${r.position} in the merge lane`
+			? `queued, priority #${r.position}`
 			: r.reason || "queued";
 	if (r.ownedBy) return `already owned by job ${r.ownedBy}; not queued again`;
 	return r.reason;

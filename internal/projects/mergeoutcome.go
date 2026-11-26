@@ -9,7 +9,7 @@ import (
 )
 
 // mergeOutcomeTimeout bounds reading a merge job's pull request back once its
-// agent exits, so a slow GitHub cannot hold its merge lane.
+// agent exits, so a slow GitHub cannot hold its slot.
 const mergeOutcomeTimeout = 30 * time.Second
 
 // mergeJobPullRequest reads back the pull request a merge job worked on, so

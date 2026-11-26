@@ -49,8 +49,24 @@ const JOBS = [
 		repository: TARGET,
 		issue_url: `https://github.com/${TARGET}/pull/1201`,
 		pull_request: 1201,
-		queue_position: 1,
 		started: minutesAgo(3),
+		actions: queuedActions("active"),
+	},
+	// Safe merges run side by side (#1433), so two are merging at once.
+	{
+		key: `${TARGET}#1203`,
+		target: TARGET,
+		number: 1203,
+		title: "Cache the board snapshot",
+		status: "active",
+		state: "running",
+		kind: "merge",
+		agent: "claude",
+		model: "opus",
+		repository: TARGET,
+		issue_url: `https://github.com/${TARGET}/pull/1203`,
+		pull_request: 1203,
+		started: minutesAgo(2),
 		actions: queuedActions("active"),
 	},
 	{
@@ -64,7 +80,7 @@ const JOBS = [
 		repository: TARGET,
 		issue_url: `https://github.com/${TARGET}/pull/1207`,
 		pull_request: 1207,
-		queue_position: 2,
+		queue_position: 1,
 		started: minutesAgo(1),
 		actions: queuedActions("queued"),
 		retry_unavailable: "Already queued",
@@ -192,9 +208,9 @@ async function setup(
 			running: true,
 			targets: [TARGET],
 			issue_counts: { [TARGET]: 3 },
-			states: { starting: 2, paused: 0, running: 1, done: 1, failed: 1 },
+			states: { starting: 2, paused: 0, running: 2, done: 1, failed: 1 },
 			jobs: {
-				running: 1,
+				running: 2,
 				queued: 2,
 				paused: 0,
 				completed: 1,
@@ -395,7 +411,7 @@ test("the safe-merge picker lists open PRs and queues the picked ones in order",
 			titles: { "1210": "Fix typo in README", "1212": "Speed up the job list" },
 		});
 	await expect(dialog.getByTestId("queue-results")).toContainText(
-		"#1212: queued, #3 in the merge lane",
+		"#1212: queued, priority #3",
 	);
 });
 
@@ -422,7 +438,7 @@ test("merge and discuss jobs show as board cards with their place and reason", a
 
 	const queued = page.getByTestId("job-card").filter({ hasText: "Bump vite" });
 	await expect(queued.getByTestId("job-queue-position")).toHaveText(
-		"#2 in the merge queue",
+		"queued · priority #1",
 	);
 	await expect(queued.getByRole("button", { name: "Retry" })).toBeDisabled();
 
@@ -482,7 +498,7 @@ for (const [board, path] of [
 		await expect(cards).toHaveCount(2);
 		await expect(
 			cards.filter({ hasText: "Bump vite" }).getByTestId("job-queue-position"),
-		).toHaveText("#2 in the merge queue");
+		).toHaveText("queued · priority #1");
 		await expect(
 			cards
 				.filter({ hasText: "watch a Project board" })
@@ -490,12 +506,13 @@ for (const [board, path] of [
 		).toHaveText("Discuss");
 		await filter.getByRole("button", { name: /^Starting/ }).click();
 
-		// Running lists the merge in flight.
+		// Running lists both merges in flight, each merging now (#1433).
 		await filter.getByRole("button", { name: /^Running/ }).click();
-		await expect(cards).toHaveCount(1);
-		await expect(cards.getByTestId("job-queue-position")).toHaveText(
+		await expect(cards).toHaveCount(2);
+		await expect(cards.getByTestId("job-queue-position")).toHaveText([
 			"merging now",
-		);
+			"merging now",
+		]);
 	});
 }
 
