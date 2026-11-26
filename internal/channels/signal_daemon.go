@@ -201,6 +201,16 @@ func (d *sharedDaemon) launchDaemon(ctx context.Context) (string, *exec.Cmd, err
 // subprocess.
 type launchDaemonFuncType func(ctx context.Context, d *sharedDaemon) (string, *exec.Cmd, error)
 
+// signalCLICommand builds the managed signal-cli daemon command. Tests replace
+// it so defaultLaunchDaemon never spawns the real binary.
+var signalCLICommand = func(ctx context.Context, phone, addr string) *exec.Cmd {
+	return exec.CommandContext(ctx, "signal-cli", "--account", phone, "daemon", "--tcp", addr)
+}
+
+// daemonReadyTimeout bounds how long defaultLaunchDaemon waits for signal-cli
+// to accept TCP connections.
+var daemonReadyTimeout = 30 * time.Second
+
 // defaultLaunchDaemon contains the original implementation for starting the
 // `signal-cli` subprocess and waiting for it to accept TCP connections.
 func defaultLaunchDaemon(ctx context.Context, d *sharedDaemon) (string, *exec.Cmd, error) {
@@ -211,7 +221,7 @@ func defaultLaunchDaemon(ctx context.Context, d *sharedDaemon) (string, *exec.Cm
 	addr := ln.Addr().String()
 	ln.Close() //nolint:errcheck
 
-	cmd := exec.CommandContext(ctx, "signal-cli", "--account", d.phone, "daemon", "--tcp", addr)
+	cmd := signalCLICommand(ctx, d.phone, addr)
 
 	pr, pw, pipeErr := os.Pipe()
 	if pipeErr == nil {
@@ -232,7 +242,7 @@ func defaultLaunchDaemon(ctx context.Context, d *sharedDaemon) (string, *exec.Cm
 	}
 	slog.Info("signal: started managed daemon", "addr", addr, "phone", d.phone, "pid", cmd.Process.Pid)
 
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(daemonReadyTimeout)
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
@@ -250,7 +260,7 @@ func defaultLaunchDaemon(ctx context.Context, d *sharedDaemon) (string, *exec.Cm
 
 	cmd.Process.Kill() //nolint:errcheck
 	cmd.Wait()         //nolint:errcheck
-	return "", nil, fmt.Errorf("daemon did not become ready within 30s")
+	return "", nil, fmt.Errorf("daemon did not become ready within %s", daemonReadyTimeout)
 }
 
 // runLoop reconnects to the daemon address until ctx is done.
