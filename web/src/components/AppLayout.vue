@@ -434,7 +434,7 @@ import { AGENT_PAGE_ICONS, pageIdentity } from "../lib/pageIdentity";
 import { useCrumbSwitcher } from "../composables/useCrumbSwitcher";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
-import { type ProjectSummary, projectPath } from "../lib/projects";
+import { jobPath, type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
 import { chatDisplayName, useChatSessionsStore } from "../stores/chatSessions";
 import {
@@ -1152,12 +1152,43 @@ function flyoutItems(children: NavChild[]): RailFlyoutItem[] {
 	}));
 }
 
+// How many running jobs the Code Loop flyout lists under each project.
+const FLYOUT_JOBS = 3;
+
+// The Code Loop flyout's projects, running ones first, each with its count
+// and its first running jobs; idle ones dimmed (#1359).
+function projectItems(agent: string): RailFlyoutItem[] {
+	const owned = ownedProjects(agent);
+	const sorted = [
+		...owned.filter((p) => p.running > 0),
+		...owned.filter((p) => p.running === 0),
+	];
+	return sorted.map((p) => {
+		const [item] = flyoutItems([projectChild(agent, p)]);
+		const extra = p.runningJobs.length - FLYOUT_JOBS;
+		return {
+			...item,
+			badge: p.running,
+			dimmed: p.running === 0 && !item.active,
+			jobs: p.runningJobs.slice(0, FLYOUT_JOBS).map((j) => ({
+				key: j.id,
+				label: j.label,
+				to: jobPath(agent, p.name, j.number),
+				state: j.state,
+				runs: j.runs,
+			})),
+			...(extra > 0
+				? { more: { count: extra, to: `${item.to}?state=running` } }
+				: {}),
+		};
+	});
+}
+
 // A collapsed rail icon's sub-items, listed in its flyout: an agent page's
 // projects, channels, tasks or loaded chats.
 function pageItems(agent: string, page: string): RailFlyoutItem[] | undefined {
 	const config = settingsStore.config?.agents.find((a) => a.name === agent);
-	if (page === "projects")
-		return flyoutItems(ownedProjects(agent).map((p) => projectChild(agent, p)));
+	if (page === "projects") return projectItems(agent);
 	if (page === "channels")
 		return flyoutItems(
 			(config?.channels ?? []).map((c) => ({
