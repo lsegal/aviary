@@ -1033,20 +1033,80 @@ func callSignalRPC(t *testing.T, call func(addr string) error) (map[string]any, 
 	return reqs[0], true
 }
 
+const (
+	signalRPCDirect  = "+15550001111"
+	signalRPCGroupID = "Z2lkPQ=="
+)
+
+// signalRPCCase describes one SignalChannel method that issues a daemon RPC.
+type signalRPCCase struct {
+	name      string
+	rpcMethod string
+	call      func(ch *SignalChannel, target string) error
+	// groups reports whether the method accepts a group ID target.
+	groups bool
+	// wantParams are extra params the request must carry.
+	wantParams map[string]any
+}
+
+func newSignalRPCChannel(addr string) *SignalChannel {
+	return NewSignalChannel("+1", addr, nil, false, false, false, false, "m", nil)
+}
+
+func (tt signalRPCCase) run(t *testing.T) {
+	t.Run("no daemon address", func(t *testing.T) {
+		assert.ErrorContains(t, tt.call(newSignalRPCChannel(""), signalRPCDirect), "daemon not ready")
+	})
+
+	t.Run("dial error", func(t *testing.T) {
+		assert.ErrorContains(t, tt.call(newSignalRPCChannel(closedSignalAddr(t)), signalRPCDirect), "dial")
+	})
+
+	t.Run("closed without response", func(t *testing.T) {
+		err := tt.call(newSignalRPCChannel(newSignalNoResponseServer(t)), signalRPCDirect)
+		assert.ErrorContains(t, err, "read response")
+	})
+
+	t.Run("success direct", tt.checkDirect)
+
+	if !tt.groups {
+		return
+	}
+	t.Run("success group", tt.checkGroup)
+}
+
+func (tt signalRPCCase) checkDirect(t *testing.T) {
+	req, ok := callSignalRPC(t, func(addr string) error { return tt.call(newSignalRPCChannel(addr), signalRPCDirect) })
+	if !ok {
+		return
+	}
+	assert.Equal(t, "2.0", req["jsonrpc"])
+	assert.Equal(t, tt.rpcMethod, req["method"])
+	params, _ := req["params"].(map[string]any)
+	if tt.groups {
+		assert.Equal(t, []any{signalRPCDirect}, params["recipient"])
+	} else {
+		assert.Equal(t, signalRPCDirect, params["recipient"])
+	}
+	assert.NotContains(t, params, "groupId")
+	for k, v := range tt.wantParams {
+		assert.Equal(t, v, params[k], k)
+	}
+}
+
+func (tt signalRPCCase) checkGroup(t *testing.T) {
+	req, ok := callSignalRPC(t, func(addr string) error { return tt.call(newSignalRPCChannel(addr), signalRPCGroupID) })
+	if !ok {
+		return
+	}
+	assert.Equal(t, tt.rpcMethod, req["method"])
+	params, _ := req["params"].(map[string]any)
+	assert.Equal(t, signalRPCGroupID, params["groupId"])
+	assert.NotContains(t, params, "recipient")
+}
+
 func TestSignalChannel_RPCMethods(t *testing.T) {
-	const (
-		direct  = "+15550001111"
-		groupID = "Z2lkPQ=="
-	)
-	tests := []struct {
-		name      string
-		rpcMethod string
-		call      func(ch *SignalChannel, target string) error
-		// groups reports whether the method accepts a group ID target.
-		groups bool
-		// wantParams are extra params the request must carry.
-		wantParams map[string]any
-	}{
+	tests := []signalRPCCase{
 		{
 			name:       "Send",
 			rpcMethod:  "send",
@@ -1087,58 +1147,8 @@ func TestSignalChannel_RPCMethods(t *testing.T) {
 		},
 	}
 
-	newChannel := func(addr string) *SignalChannel {
-		return NewSignalChannel("+1", addr, nil, false, false, false, false, "m", nil)
-	}
-
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Run("no daemon address", func(t *testing.T) {
-				assert.ErrorContains(t, tt.call(newChannel(""), direct), "daemon not ready")
-			})
-
-			t.Run("dial error", func(t *testing.T) {
-				assert.ErrorContains(t, tt.call(newChannel(closedSignalAddr(t)), direct), "dial")
-			})
-
-			t.Run("closed without response", func(t *testing.T) {
-				err := tt.call(newChannel(newSignalNoResponseServer(t)), direct)
-				assert.ErrorContains(t, err, "read response")
-			})
-
-			t.Run("success direct", func(t *testing.T) {
-				req, ok := callSignalRPC(t, func(addr string) error { return tt.call(newChannel(addr), direct) })
-				if !ok {
-					return
-				}
-				assert.Equal(t, "2.0", req["jsonrpc"])
-				assert.Equal(t, tt.rpcMethod, req["method"])
-				params, _ := req["params"].(map[string]any)
-				if tt.groups {
-					assert.Equal(t, []any{direct}, params["recipient"])
-				} else {
-					assert.Equal(t, direct, params["recipient"])
-				}
-				assert.NotContains(t, params, "groupId")
-				for k, v := range tt.wantParams {
-					assert.Equal(t, v, params[k], k)
-				}
-			})
-
-			if !tt.groups {
-				return
-			}
-			t.Run("success group", func(t *testing.T) {
-				req, ok := callSignalRPC(t, func(addr string) error { return tt.call(newChannel(addr), groupID) })
-				if !ok {
-					return
-				}
-				assert.Equal(t, tt.rpcMethod, req["method"])
-				params, _ := req["params"].(map[string]any)
-				assert.Equal(t, groupID, params["groupId"])
-				assert.NotContains(t, params, "recipient")
-			})
-		})
+		t.Run(tt.name, tt.run)
 	}
 }
 
