@@ -43,6 +43,20 @@ Each can be turned off, given another style, or given its own sound. The **Notif
 
 A burst of events, such as many jobs failing together, doesn't arrive one by one: the same event repeated within a minute counts up on one notification, and after three notifications of one type within 30 seconds the rest arrive together as a single notification that lists them.
 
+## Repeated failures
+
+A scheduled task, workflow or Code Loop job that keeps failing doesn't notify on every run. The first failure notifies as usual; after that, the same failure again only raises the count on its entry in the bell and moves it to the top, such as "×7 · 2m", with no new banner, toast, system notification or sound. Failures count as the same when their error text matches once run IDs, hashes, numbers, times and durations are ignored.
+
+A failure notifies again when:
+
+- the task, workflow or job succeeded in between,
+- the error text changed, or
+- the suppress window has passed since the last repeat (6 hours by default).
+
+After 5 failures in a row of the same source, one more notification says so, such as "Task bot/release has failed 5 times in a row". For a scheduled task or workflow, its **Pause** button, in the banner and in the bell, pauses it. This notification is sent once per run of failures.
+
+Change both under **Repeated failures** in Settings → Notifications: turn suppression off to be notified of every failure, pick the suppress window, and turn off the in-a-row notification or change how many failures it takes.
+
 ## Sound
 
 Sound is **off** by default. Turn it on to pick a sound (chime, bell, ping, pop, marimba or alert, synthesized in the browser, so nothing is downloaded) and a volume; **Play** previews it. Each event type can use the default sound, its own, or none.

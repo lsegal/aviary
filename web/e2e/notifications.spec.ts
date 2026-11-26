@@ -1,5 +1,5 @@
 import { expect, type Page, test, type WebSocketRoute } from "@playwright/test";
-import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
 
 // Notifications (#1215): pushed over /api/ws, shown as a banner, a toast or
 // a system notification with a sound, kept in the bell, and controlled from
@@ -21,6 +21,7 @@ interface Note {
 	delivery: "big" | "small" | "system";
 	sound?: string;
 	quiet?: boolean;
+	pauseTask?: string;
 }
 
 let seq = 0;
@@ -48,7 +49,11 @@ function note(over: Partial<Note> = {}): Note {
  */
 async function setup(
 	page: Page,
-	options: { history?: Note[]; prefs?: Record<string, unknown> } = {},
+	options: {
+		history?: Note[];
+		prefs?: Record<string, unknown>;
+		tools?: ToolFixtures;
+	} = {},
 ) {
 	await setAuthToken(page);
 	await mockMCP(page, {
@@ -61,6 +66,7 @@ async function setup(
 		config_get: {
 			agents: [{ name: "assistant", model: "x/y", fallbacks: [] }],
 		},
+		...options.tools,
 	});
 	const state = {
 		history: [...(options.history ?? [])],
@@ -480,4 +486,84 @@ test("quiet notifications reach the bell only", async ({ page }) => {
 	await server.push(note({ title: "At night", quiet: true, delivery: "big" }));
 	await expect(page.getByTestId("notification-unread").first()).toHaveText("1");
 	await expect(page.getByTestId("notification-banner")).toHaveCount(0);
+});
+
+test("repeated failures are suppressed by default and configurable", async ({
+	page,
+}) => {
+	const { state } = await setup(page);
+	await page.goto("/system/notifications");
+	const repeats = page.getByTestId("notifications-repeats");
+	await expect(
+		repeats.getByTestId("notifications-repeat-suppress"),
+	).toHaveAttribute("aria-checked", "true");
+	await expect(repeats.getByTestId("notifications-streak")).toHaveAttribute(
+		"aria-checked",
+		"true",
+	);
+	await expect(
+		repeats.getByTestId("notifications-repeat-window"),
+	).toHaveAttribute("data-value", "360");
+	await expect(
+		repeats.getByTestId("notifications-streak-count"),
+	).toHaveAttribute("data-value", "5");
+
+	await repeats.getByTestId("notifications-repeat-window").click();
+	await page.getByRole("option", { name: "1 hour" }).click();
+	await expect
+		.poll(
+			() =>
+				(state.puts.at(-1)?.repeats as { windowMinutes?: number })
+					?.windowMinutes,
+		)
+		.toBe(60);
+	await repeats.getByTestId("notifications-streak").click();
+	await expect
+		.poll(() => (state.puts.at(-1)?.repeats as { streak?: boolean })?.streak)
+		.toBe(false);
+	await expect(
+		repeats.getByTestId("notifications-streak-count"),
+	).toBeDisabled();
+});
+
+test("a task failing many times in a row offers Pause in its banner and the bell", async ({
+	page,
+}) => {
+	const paused: Record<string, unknown>[] = [];
+	const server = await setup(page, {
+		tools: {
+			task_update: (args: Record<string, unknown>) => {
+				paused.push(args);
+				return { ok: true };
+			},
+		},
+	});
+	await page.goto("/system/overview");
+	await server.push(
+		note({
+			title: 'Scheduled prompt "assistant/release" has failed 5 times in a row',
+			delivery: "big",
+			pauseTask: "assistant/release",
+		}),
+	);
+	const banner = page.getByTestId("notification-banner");
+	await banner.getByTestId("notification-banner-pause").click();
+	await expect
+		.poll(() => paused)
+		.toEqual([{ name: "assistant/release", enabled: false }]);
+	await expect(banner).toHaveCount(0);
+	await expect(page.getByTestId("notification-paused")).toContainText(
+		"Paused assistant/release",
+	);
+
+	const bell = page
+		.getByTestId("sidebar-footer")
+		.getByTestId("notification-bell");
+	await bell.click();
+	const center = page.getByTestId("notification-center");
+	await expect(center.getByTestId("notification-pause")).toHaveText(
+		"Pause assistant/release",
+	);
+	await center.getByTestId("notification-pause").click();
+	await expect.poll(() => paused.length).toBe(2);
 });
