@@ -11,7 +11,7 @@ import { expectSettingsHeader } from "./helpers/settingsHeader";
 const LONG_PROJECT = "lsegal/a-repository-with-a-very-long-name-indeed";
 
 /** Mocks agent "Aviary" with channel "signal", a task and two projects. */
-async function mockAviary(page: Page) {
+async function mockAviary(page: Page, sessions: object[] = []) {
 	await setAuthToken(page);
 	await mockMCP(page, {
 		agent_list: [{ id: "Aviary", name: "Aviary", model: "x/y", state: "idle" }],
@@ -32,7 +32,7 @@ async function mockAviary(page: Page) {
 		job_list: [],
 		job_query: [],
 		task_list: [],
-		session_list: [],
+		session_list: sessions,
 		session_messages: [],
 		channel_sessions: [],
 		project_status: {
@@ -355,6 +355,37 @@ test("on a phone the breadcrumb collapses to the parent and the page (#1147)", a
 	}));
 	expect(row.overflow).toBeLessThanOrEqual(0);
 	expect(row.actions ?? 0).toBeGreaterThanOrEqual(row.title ?? 0);
+});
+
+test("the rail marks the open chat without looking unread", async ({
+	page,
+}) => {
+	// The chats from #1319's report: the open be-nice chat must not show a
+	// dot on the Chats icon or a bold flyout entry, which read as unread.
+	await mockAviary(page, [
+		{ id: "sess_main", agent_id: "Aviary", name: "main", created_at: "" },
+		{ id: "sess_benice", agent_id: "Aviary", name: "be-nice", created_at: "" },
+	]);
+	await page.goto("/agents/Aviary/chat/sess_benice");
+	await page.getByTestId("sidebar-collapse").click();
+	const chats = page
+		.getByTestId("sidebar-rail")
+		.getByTestId("sidebar-rail-chat");
+	await expect(chats).toHaveAttribute("data-active-child", "true");
+	await expect(chats.getByTestId("sidebar-rail-dot")).toHaveCount(0);
+	const marker = await chats
+		.getByTestId("sidebar-rail-active-child")
+		.boundingBox();
+	expect(marker?.width).toBeGreaterThan((marker?.height ?? 0) * 2);
+
+	await chats.hover();
+	const flyout = page.getByTestId("sidebar-rail-flyout");
+	const open = flyout.getByRole("link", { name: "be-nice" });
+	await expect(open).toHaveAttribute("aria-current", "page");
+	const weights = await flyout
+		.getByTestId("sidebar-rail-flyout-item")
+		.evaluateAll((els) => els.map((el) => getComputedStyle(el).fontWeight));
+	expect(weights).toEqual(["400", "400"]);
 });
 
 test("collapsed rail icons list their items in a flyout on hover and focus", async ({
