@@ -340,15 +340,7 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 	}
 	defer server.RemovePID() //nolint:errcheck
 
-	server.SetMinimalMode(true)
-	server.SetWebUIEnabled(webUI)
-	defer server.SetMinimalMode(false)
-	defer server.SetWebUIEnabled(true)
-	if webUI && !tui {
-		if problem := server.WebAssetsProblem(); problem != "" {
-			_, _ = fmt.Fprintf(out, "warning: %s\n", problem)
-		}
-	}
+	defer enterWatchServerMode(out, tui, webUI)()
 
 	removePortFile, err := writeWatchPortFile(session.Port)
 	if err != nil {
@@ -389,29 +381,60 @@ func runWatchSession(ctx context.Context, out io.Writer, session *watchSession, 
 	defer closeCalls()
 
 	if tui {
-		tuiDone := make(chan error, 1)
-		go func() { tuiDone <- runWatchTUI(ctx, call, stream, title, webURL) }()
-		select {
-		case err = <-tuiDone:
-			cancel()
-			if serveErr := <-served; err == nil {
-				err = serveErr
-			}
-		case err = <-served:
-			cancel()
-			<-tuiDone
-		}
+		err = waitWatchTUI(cancel, served, func() error { return runWatchTUI(ctx, call, stream, title, webURL) })
 	} else {
-		logsDone := make(chan struct{})
-		go func() {
-			printWatchLogs(ctx, out, call)
-			close(logsDone)
-		}()
-		err = <-served
-		cancel()
-		<-logsDone
+		err = waitWatchLogs(ctx, cancel, served, out, call)
 	}
 	_, _ = fmt.Fprintln(out, "Watch session ended.")
+	return err
+}
+
+// enterWatchServerMode puts the server in the watch session's minimal mode,
+// warning when the web UI it serves without the TUI has no assets. The
+// returned func restores the default modes.
+func enterWatchServerMode(out io.Writer, tui, webUI bool) func() {
+	server.SetMinimalMode(true)
+	server.SetWebUIEnabled(webUI)
+	if webUI && !tui {
+		if problem := server.WebAssetsProblem(); problem != "" {
+			_, _ = fmt.Fprintf(out, "warning: %s\n", problem)
+		}
+	}
+	return func() {
+		server.SetWebUIEnabled(true)
+		server.SetMinimalMode(false)
+	}
+}
+
+// waitWatchTUI runs the TUI until it quits or the server stops, then stops
+// the other and returns the first error.
+func waitWatchTUI(cancel context.CancelFunc, served <-chan error, runTUI func() error) error {
+	tuiDone := make(chan error, 1)
+	go func() { tuiDone <- runTUI() }()
+	select {
+	case err := <-tuiDone:
+		cancel()
+		if serveErr := <-served; err == nil {
+			err = serveErr
+		}
+		return err
+	case err := <-served:
+		cancel()
+		<-tuiDone
+		return err
+	}
+}
+
+// waitWatchLogs prints the server's logs until it stops.
+func waitWatchLogs(ctx context.Context, cancel context.CancelFunc, served <-chan error, out io.Writer, call watchToolCaller) error {
+	logsDone := make(chan struct{})
+	go func() {
+		printWatchLogs(ctx, out, call)
+		close(logsDone)
+	}()
+	err := <-served
+	cancel()
+	<-logsDone
 	return err
 }
 
@@ -432,7 +455,7 @@ const (
 func writeWatchPortFile(port int) (func(), error) {
 	path := os.Getenv(watchPortFileEnv)
 	if path == "" {
-		return func() {}, nil
+		return func() { /* no port file was written, so none to remove */ }, nil
 	}
 	if err := os.WriteFile(path, []byte(strconv.Itoa(port)+"\n"), 0o600); err != nil {
 		return nil, fmt.Errorf("writing %s: %w", watchPortFileEnv, err)

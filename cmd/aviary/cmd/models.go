@@ -55,7 +55,8 @@ func init() {
 
 func runModelsList(w io.Writer, provider string) error {
 	provider = strings.TrimSpace(provider)
-	if provider != "" && provider != "vllm" && provider != "ollama" && !models.HasProvider(provider) {
+	dynamic := provider == "vllm" || provider == "ollama"
+	if provider != "" && !dynamic && !models.HasProvider(provider) {
 		supported := append(models.Providers(), "vllm", "ollama")
 		return fmt.Errorf("unknown provider %q; supported providers: %s", provider, strings.Join(supported, ", "))
 	}
@@ -64,43 +65,60 @@ func runModelsList(w io.Writer, provider string) error {
 	if _, err := fmt.Fprintln(tw, "MODEL\tINPUT\tOUTPUT\tTYPE"); err != nil {
 		return err
 	}
-	if provider != "vllm" && provider != "ollama" {
-		for _, model := range models.EntriesByProvider(provider) {
-			modelType := "text only"
-			if model.SupportsImageInput {
-				modelType = ""
-			}
-			if _, err := fmt.Fprintf(
-				tw,
-				"%s\t%s\t%s\t%s\n",
-				model.ID,
-				formatTokenCount(model.InputTokens),
-				formatTokenCount(model.OutputTokens),
-				modelType,
-			); err != nil {
-				return err
-			}
+	if !dynamic {
+		if err := writeCatalogModels(tw, provider); err != nil {
+			return err
 		}
 	}
 	dynamicProviders := []string{}
-	switch provider {
-	case "":
+	switch {
+	case provider == "":
 		dynamicProviders = []string{"vllm", "ollama"}
-	case "vllm", "ollama":
+	case dynamic:
 		dynamicProviders = []string{provider}
 	}
 	for _, dynamicProvider := range dynamicProviders {
-		dynamicModels, err := listDynamicModels(dynamicProvider, provider != "")
-		if err != nil {
+		if err := writeDynamicModels(tw, dynamicProvider, provider != ""); err != nil {
 			return err
-		}
-		for _, modelID := range dynamicModels {
-			if _, err := fmt.Fprintf(tw, "%s\t-\t-\t\n", modelID); err != nil {
-				return err
-			}
 		}
 	}
 	return tw.Flush()
+}
+
+// writeCatalogModels writes a row per built-in catalog model of provider, or
+// of every provider when it is empty.
+func writeCatalogModels(w io.Writer, provider string) error {
+	for _, model := range models.EntriesByProvider(provider) {
+		modelType := "text only"
+		if model.SupportsImageInput {
+			modelType = ""
+		}
+		if _, err := fmt.Fprintf(
+			w,
+			"%s\t%s\t%s\t%s\n",
+			model.ID,
+			formatTokenCount(model.InputTokens),
+			formatTokenCount(model.OutputTokens),
+			modelType,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeDynamicModels writes a row per model a vLLM or Ollama endpoint lists.
+func writeDynamicModels(w io.Writer, provider string, allowDefault bool) error {
+	dynamicModels, err := listDynamicModels(provider, allowDefault)
+	if err != nil {
+		return err
+	}
+	for _, modelID := range dynamicModels {
+		if _, err := fmt.Fprintf(w, "%s\t-\t-\t\n", modelID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func listDynamicModels(provider string, allowDefault bool) ([]string, error) {

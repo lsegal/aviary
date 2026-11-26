@@ -9,7 +9,9 @@ import (
 
 // prepareWatchProcess sets up a helper process before it starts so the
 // test can interrupt it.
-func prepareWatchProcess(*exec.Cmd) {}
+func prepareWatchProcess(*exec.Cmd) {
+	// Nothing to set up: os.Interrupt reaches the process directly on Unix.
+}
 
 // interruptWatchProcess sends a helper process the Ctrl+C a user would.
 func interruptWatchProcess(cmd *exec.Cmd) error {

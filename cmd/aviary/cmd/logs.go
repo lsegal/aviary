@@ -69,13 +69,11 @@ func printTail(w io.Writer, path string, lines int) error {
 }
 
 func followFile(cmd *cobra.Command, path string) error {
-	var offset int64
+	tail := &logTail{path: path, out: cmd.OutOrStdout()}
 	if st, err := os.Stat(path); err == nil {
-		offset = st.Size()
+		tail.offset = st.Size()
 	}
 
-	out := cmd.OutOrStdout()
-	var remainder string
 	ticker := time.NewTicker(logsFollowInterval)
 	defer ticker.Stop()
 
@@ -84,45 +82,66 @@ func followFile(cmd *cobra.Command, path string) error {
 		case <-cmd.Context().Done():
 			return nil
 		case <-ticker.C:
-			f, err := os.Open(path)
-			if err != nil {
-				continue
-			}
-			st, err := f.Stat()
-			if err != nil {
-				_ = f.Close()
-				continue
-			}
-			if st.Size() < offset {
-				offset = 0
-				remainder = ""
-			}
-			if st.Size() == offset {
-				_ = f.Close()
-				continue
-			}
-			if _, err := f.Seek(offset, io.SeekStart); err != nil {
-				_ = f.Close()
-				continue
-			}
-			chunk, err := io.ReadAll(f)
-			_ = f.Close()
-			if err != nil || len(chunk) == 0 {
-				continue
-			}
-			offset += int64(len(chunk))
-
-			text := remainder + string(chunk)
-			parts := strings.Split(text, "\n")
-			remainder = parts[len(parts)-1]
-			for _, part := range parts[:len(parts)-1] {
-				part = strings.TrimSpace(part)
-				if part != "" {
-					_, _ = fmt.Fprintln(out, part)
-				}
-			}
+			tail.poll()
 		}
 	}
+}
+
+// logTail follows a log file from an offset, writing each complete,
+// non-blank line it finds to out.
+type logTail struct {
+	path      string
+	out       io.Writer
+	offset    int64
+	remainder string
+}
+
+// poll writes the lines appended since the last poll, starting over when the
+// file shrank. Read errors are skipped until the next poll.
+func (t *logTail) poll() {
+	chunk := t.readNew()
+	if len(chunk) == 0 {
+		return
+	}
+	t.offset += int64(len(chunk))
+
+	parts := strings.Split(t.remainder+string(chunk), "\n")
+	t.remainder = parts[len(parts)-1]
+	for _, part := range parts[:len(parts)-1] {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			_, _ = fmt.Fprintln(t.out, part)
+		}
+	}
+}
+
+// readNew reads the bytes past the offset, resetting the offset and the
+// partial line when the file was truncated.
+func (t *logTail) readNew() []byte {
+	f, err := os.Open(t.path)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil {
+		return nil
+	}
+	if st.Size() < t.offset {
+		t.offset = 0
+		t.remainder = ""
+	}
+	if st.Size() == t.offset {
+		return nil
+	}
+	if _, err := f.Seek(t.offset, io.SeekStart); err != nil {
+		return nil
+	}
+	chunk, err := io.ReadAll(f)
+	if err != nil {
+		return nil
+	}
+	return chunk
 }
 
 func init() {
