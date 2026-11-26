@@ -5165,46 +5165,8 @@ func saveState(path string, seen map[int]bool) error {
 	return store.WriteJSON(path, seen)
 }
 
-func loadWorkState(path string) (map[int]workState, error) {
-	result := make(map[int]workState)
-	if path == "" {
-		return result, nil
-	}
-	raw, err := store.ReadJSON[map[string]json.RawMessage](path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return result, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	for key, value := range raw {
-		var number int
-		if _, err := fmt.Sscanf(key, "%d", &number); err != nil {
-			return nil, fmt.Errorf("decode state issue %q: %w", key, err)
-		}
-		var legacy bool
-		if json.Unmarshal(value, &legacy) == nil {
-			if legacy {
-				result[number] = workState{Status: "completed"}
-			}
-			continue
-		}
-		var state workState
-		if err := json.Unmarshal(value, &state); err != nil {
-			return nil, fmt.Errorf("decode state issue %q: %w", key, err)
-		}
-		result[number] = state
-	}
-	return result, nil
-}
-
-func saveWorkState(path string, state map[int]workState) error {
-	if path == "" {
-		return nil
-	}
-	return store.WriteJSON(path, state)
-}
-
+// loadScopedWorkState reads the work state at path, keeping only the
+// records of targets' jobs, or every record when targets is empty.
 func loadScopedWorkState(path string, targets []string) (map[string]workState, error) {
 	result := make(map[string]workState)
 	if path == "" {
@@ -5217,59 +5179,85 @@ func loadScopedWorkState(path string, targets []string) (map[string]workState, e
 	if err != nil {
 		return nil, err
 	}
-	watched := make(map[string]bool, len(targets))
-	for _, target := range targets {
-		watched[target] = true
-	}
 	for key, value := range raw {
+		if !ownsWorkKey(targets, key) {
+			continue
+		}
 		var state workState
 		if json.Unmarshal(value, &state) != nil {
 			var legacy bool
 			if err := json.Unmarshal(value, &legacy); err != nil {
 				return nil, fmt.Errorf("decode state issue %q: %w", key, err)
 			}
-			if legacy {
-				state = workState{Status: "completed"}
-			} else {
+			if !legacy {
 				continue
 			}
+			state = workState{Status: "completed"}
 		}
-		if _, err := strconv.Atoi(key); err == nil {
-			if len(targets) > 0 {
-				result[targets[0]+"#"+key] = state
-			}
-		} else {
-			separator := strings.LastIndexByte(key, '#')
-			if len(watched) > 0 && (separator <= 0 || !watched[key[:separator]]) {
-				continue
-			}
-			result[key] = state
-		}
+		result[key] = state
 	}
 	return result, nil
 }
 
+// workStateMu serializes rewrites of a work state file, so a save that keeps
+// other projects' records cannot bring back records a purge just removed.
+var workStateMu sync.Mutex
+
+// saveScopedWorkState replaces targets' job records in the work state at path
+// with state. Records of projects not in targets stay as they are, so a
+// project that is no longer watched keeps its history until its data is
+// deleted. With no targets, state holds every record and replaces the file.
 func saveScopedWorkState(path string, state map[string]workState, targets []string) error {
 	if path == "" {
 		return nil
 	}
-	var value interface{} = state
-	if len(targets) == 1 {
-		legacy := make(map[int]workState, len(state))
-		prefix := targets[0] + "#"
-		for key, work := range state {
-			if strings.HasPrefix(key, prefix) {
-				number, err := strconv.Atoi(strings.TrimPrefix(key, prefix))
-				if err == nil {
-					legacy[number] = work
-					continue
-				}
-				return fmt.Errorf("invalid scoped state key %q", key)
+	workStateMu.Lock()
+	defer workStateMu.Unlock()
+	merged := make(map[string]json.RawMessage, len(state))
+	if len(targets) > 0 {
+		raw, err := store.ReadJSON[map[string]json.RawMessage](path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		for key, value := range raw {
+			if isScopedWorkKey(key) && !ownsWorkKey(targets, key) {
+				merged[key] = value
 			}
 		}
-		value = legacy
 	}
-	return store.WriteJSON(path, value)
+	for key, work := range state {
+		if !isScopedWorkKey(key) {
+			return fmt.Errorf("invalid scoped state key %q", key)
+		}
+		value, err := json.Marshal(work)
+		if err != nil {
+			return err
+		}
+		merged[key] = value
+	}
+	return store.WriteJSON(path, merged)
+}
+
+// isScopedWorkKey reports whether key names a job as <owner>/<repo>#N.
+func isScopedWorkKey(key string) bool {
+	separator := strings.LastIndexByte(key, '#')
+	if separator <= 0 {
+		return false
+	}
+	_, err := strconv.Atoi(key[separator+1:])
+	return err == nil
+}
+
+// ownsWorkKey reports whether key names a job of one of targets, or of any
+// project when targets is empty.
+func ownsWorkKey(targets []string, key string) bool {
+	if !isScopedWorkKey(key) {
+		return false
+	}
+	if len(targets) == 0 {
+		return true
+	}
+	return slices.Contains(targets, key[:strings.LastIndexByte(key, '#')])
 }
 
 // stacksProbeTTL is how long a repository's stacked pull request setting is

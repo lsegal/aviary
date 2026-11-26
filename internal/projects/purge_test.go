@@ -128,22 +128,15 @@ func TestPurgeNeverRemovesALeasedOrLiveClone(t *testing.T) {
 	}
 }
 
-func TestPurgeTargetWorkStateBareKeys(t *testing.T) {
+func TestPurgeTargetWorkStateKeepsOtherProjects(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
-	write := func() {
-		if err := os.WriteFile(path, []byte(`{"1":{"status":"paused"},"o/r#2":{"status":"completed"},"o/s#3":{"status":"completed"}}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.WriteFile(path, []byte(`{"o/r#1":{"status":"paused"},"o/r#2":{"status":"completed"},"o/s#3":{"status":"completed"}}`), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	write()
-	if n, err := purgeTargetWorkState(path, "o/r", false); err != nil || n != 1 {
-		t.Fatalf("purge with a project left = %d, %v; want 1", n, err)
+	if n, err := purgeTargetWorkState(path, "o/r"); err != nil || n != 2 {
+		t.Fatalf("purge = %d, %v; want 2", n, err)
 	}
-	if raw, _ := store.ReadJSON[map[string]json.RawMessage](path); len(raw) != 2 || raw["1"] == nil {
-		t.Fatalf("state = %v, want the bare key kept for the remaining project", raw)
-	}
-	write()
-	if n, err := purgeTargetWorkState(path, "o/r", true); err != nil || n != 2 {
-		t.Fatalf("purge with no project left = %d, %v; want 2", n, err)
+	if raw, _ := store.ReadJSON[map[string]json.RawMessage](path); len(raw) != 1 || raw["o/s#3"] == nil {
+		t.Fatalf("state = %v, want only o/s#3", raw)
 	}
 }
