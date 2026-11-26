@@ -11,6 +11,9 @@ coverage:
 
 ignore:
   - "web/dist"
+  - "web/coverage"
+  - "web/e2e"
+  - "**/*.test.ts"
   - "node_modules"
   - "docs"
   - "**/*_test.go"

@@ -153,6 +153,8 @@ web/
 
 ```shell
 pnpm test:go          # Go unit tests
+pnpm test:web         # Vitest unit tests for web/src (*.test.ts)
+pnpm test:web:coverage # the same, writing web/coverage/lcov.info
 pnpm test:e2e         # Playwright e2e tests (reuses running dev server)
 pnpm test:e2e:ui      # Playwright with interactive UI
 pnpm test             # lint + Go tests + e2e (full CI suite)
@@ -202,7 +204,7 @@ The server is usually already running during development (`pnpm dev` starts it).
 ## Making Changes
 
 - **Go changes:** `pnpm test:go` after every change; `pnpm lint:go` to check style
-- **Web changes:** `pnpm lint:fix` to auto-format; `pnpm test:e2e` to verify UI behavior
+- **Web changes:** `pnpm lint:fix` to auto-format; `pnpm test:web` for unit tests; `pnpm test:e2e` to verify UI behavior
 - **Config schema changes:** update `internal/config/config.go` and any relevant stores in `web/src/stores/`
 
 ## Submitting a Pull Request
@@ -223,7 +225,7 @@ The server is usually already running during development (`pnpm dev` starts it).
    pnpm test      # lint + Go tests + e2e (mirrors CI exactly)
    ```
 
-   CI runs Go tests on Linux, macOS, and Windows, plus Go lint, web lint, and Playwright e2e tests. Fix any failures before opening the PR.
+   CI runs Go tests on Linux, macOS, and Windows, plus Go lint, web lint and unit tests, and Playwright e2e tests. Fix any failures before opening the PR.
 
 4. **Write focused commits** — keep commits small and on-topic. Use a descriptive subject line (`feat:`, `fix:`, `refactor:`, etc.).
 
