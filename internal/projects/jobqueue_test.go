@@ -119,39 +119,86 @@ func queueAction(t *testing.T, w *Engine, action string, number int) error {
 	return w.handleJobAction(ctx, core.JobAction{Action: action, Target: "o/r", Number: number})
 }
 
-func TestQueuedMergesRunSeriallyInOrder(t *testing.T) {
+// Queued merges on one repository verify and merge side by side, up to the
+// engine's job slots, starting in queue order; none waits for an earlier
+// merge to finish (issue #1433).
+func TestQueuedMergesRunConcurrentlyUpToSlots(t *testing.T) {
 	runner := newQueueRunner()
 	w, _ := startQueueEngine(t, runner, t.TempDir(), 3)
 
-	outcomes := queueJob(t, w, SkillSafeMerge, 1201, 1207)
-	if len(outcomes) != 2 || !outcomes[0].Queued || !outcomes[1].Queued {
+	outcomes := queueJob(t, w, SkillSafeMerge, 1201, 1202, 1203, 1204, 1205)
+	if len(outcomes) != 5 {
 		t.Fatalf("outcomes = %+v", outcomes)
 	}
-	first := waitStarted(t, runner)
-	if first.Number != 1201 || first.Skill != SkillSafeMerge || first.Repository != "o/r" {
-		t.Fatalf("first run = %+v", first)
+	for _, outcome := range outcomes {
+		if !outcome.Queued {
+			t.Fatalf("outcome = %+v", outcome)
+		}
 	}
-	queued := waitJob(t, w, 1207, func(j JobSnapshot) bool { return j.Status == "queued" })
-	if queued.Kind != core.JobKindMerge || queued.QueuePosition != 2 || queued.PullRequest != 1207 {
-		t.Fatalf("second merge = %+v", queued)
+	started := map[int]bool{}
+	for range 3 {
+		issue := waitStarted(t, runner)
+		if issue.Skill != SkillSafeMerge || issue.Repository != "o/r" {
+			t.Fatalf("run = %+v", issue)
+		}
+		started[issue.Number] = true
 	}
-	// Free slots do not start the second merge while the first runs.
+	if !started[1201] || !started[1202] || !started[1203] {
+		t.Fatalf("started %v, want the first three merges", started)
+	}
+	for _, number := range []int{1201, 1202, 1203} {
+		waitJob(t, w, number, func(j JobSnapshot) bool { return j.Status == "active" && j.QueuePosition == 0 })
+	}
+	fourth := waitJob(t, w, 1204, func(j JobSnapshot) bool { return j.Status == "queued" && j.QueuePosition == 1 })
+	if fourth.Kind != core.JobKindMerge || fourth.PullRequest != 1204 {
+		t.Fatalf("fourth merge = %+v", fourth)
+	}
+	waitJob(t, w, 1205, func(j JobSnapshot) bool { return j.Status == "queued" && j.QueuePosition == 2 })
+	// The slots bound how many run at once.
 	select {
 	case issue := <-runner.started:
-		t.Fatalf("#%d started beside the running merge", issue.Number)
+		t.Fatalf("#%d started past the job slots", issue.Number)
 	case <-time.After(100 * time.Millisecond):
 	}
+	// A freed slot starts the next merge in queue order.
 	runner.finish <- nil
-	second := waitStarted(t, runner)
-	if second.Number != 1207 {
-		t.Fatalf("second run = %+v", second)
+	if issue := waitStarted(t, runner); issue.Number != 1204 {
+		t.Fatalf("next run = #%d, want #1204", issue.Number)
 	}
-	done := waitJob(t, w, 1201, func(j JobSnapshot) bool { return j.Status == "complete" })
-	if done.Summary != "Merged the pull request" || done.QueuePosition != 0 {
-		t.Fatalf("finished merge = %+v", done)
+	waitJob(t, w, 1205, func(j JobSnapshot) bool { return j.Status == "queued" && j.QueuePosition == 1 })
+	runner.finish <- nil
+	if issue := waitStarted(t, runner); issue.Number != 1205 {
+		t.Fatalf("next run = #%d, want #1205", issue.Number)
+	}
+	for range 3 {
+		runner.finish <- nil
+	}
+	for _, number := range []int{1201, 1202, 1203, 1204, 1205} {
+		done := waitJob(t, w, number, func(j JobSnapshot) bool { return j.Status == "complete" })
+		if done.Summary != "Merged the pull request" || done.QueuePosition != 0 {
+			t.Fatalf("finished merge = %+v", done)
+		}
+	}
+}
+
+// Raising the job slots starts more of a repository's queued merges at once.
+func TestRaisingConcurrencyStartsMoreQueuedMerges(t *testing.T) {
+	runner := newQueueRunner()
+	w, _ := startQueueEngine(t, runner, t.TempDir(), 1)
+	queueJob(t, w, SkillSafeMerge, 1, 2)
+	waitStarted(t, runner)
+	waitJob(t, w, 2, func(j JobSnapshot) bool { return j.Status == "queued" && j.QueuePosition == 1 })
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	two := 2
+	if _, err := w.ApplySettings(ctx, SettingsUpdate{Concurrency: &two}); err != nil {
+		t.Fatal(err)
+	}
+	if issue := waitStarted(t, runner); issue.Number != 2 {
+		t.Fatalf("started #%d, want #2", issue.Number)
 	}
 	runner.finish <- nil
-	waitJob(t, w, 1207, func(j JobSnapshot) bool { return j.Status == "complete" })
+	runner.finish <- nil
 }
 
 func TestQueuedDiscussionsRunInParallel(t *testing.T) {
@@ -272,13 +319,13 @@ func TestPausedMergeKeepsItsPlaceAndStopRemovesQueued(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitJob(t, w, 2, func(j JobSnapshot) bool { return j.Status == "paused" && j.QueuePosition == 0 })
-	waitJob(t, w, 3, func(j JobSnapshot) bool { return j.QueuePosition == 2 })
+	waitJob(t, w, 3, func(j JobSnapshot) bool { return j.QueuePosition == 1 })
 	// Resumed, it is back in front of #3, which was queued after it.
 	if err := queueAction(t, w, "retry", 2); err != nil {
 		t.Fatal(err)
 	}
-	waitJob(t, w, 2, func(j JobSnapshot) bool { return j.Status == "queued" && j.QueuePosition == 2 })
-	waitJob(t, w, 3, func(j JobSnapshot) bool { return j.QueuePosition == 3 })
+	waitJob(t, w, 2, func(j JobSnapshot) bool { return j.Status == "queued" && j.QueuePosition == 1 })
+	waitJob(t, w, 3, func(j JobSnapshot) bool { return j.QueuePosition == 2 })
 	runner.finish <- nil
 	if issue := waitStarted(t, runner); issue.Number != 2 {
 		t.Fatalf("#%d ran after #1, want #2", issue.Number)
@@ -327,7 +374,7 @@ func TestQueuedJobsSurviveARestart(t *testing.T) {
 	if issue := waitStarted(t, restarted); issue.Number != 10 || issue.Skill != SkillSafeMerge {
 		t.Fatalf("after the restart #%d (%s) ran first, want #10", issue.Number, issue.Skill)
 	}
-	waitJob(t, w, 11, func(j JobSnapshot) bool { return j.Status == "queued" && j.QueuePosition == 2 })
+	waitJob(t, w, 11, func(j JobSnapshot) bool { return j.Status == "queued" && j.QueuePosition == 1 })
 	restarted.finish <- nil
 	waitStarted(t, restarted)
 	restarted.finish <- nil

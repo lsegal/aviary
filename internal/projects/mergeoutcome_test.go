@@ -67,6 +67,29 @@ func TestMergeJobWhosePullRequestDidNotMergeStillFails(t *testing.T) {
 	}
 }
 
+// A merge job whose agent exits cleanly but leaves its pull request open,
+// such as after a conflict it could not resolve once another merge landed
+// first, fails so its card needs attention instead of reporting success
+// (issue #1433).
+func TestMergeJobLeavingItsPullRequestOpenNeedsAttention(t *testing.T) {
+	runner := newQueueRunner()
+	source := pullRequestSource{fakeSource: &fakeSource{batches: [][]Issue{{}}}, state: PullRequestWorkState{State: "open"}}
+	w, _ := startQueueEngineWith(t, runner, t.TempDir(), 1, source)
+	queueJob(t, w, SkillSafeMerge, 12)
+	waitStarted(t, runner)
+	runner.finish <- nil
+	job := waitJob(t, w, 12, func(j JobSnapshot) bool { return j.Status == "complete" || j.Status == "failed" })
+	if job.Status != "failed" || job.BoardState() != core.BoardFailed {
+		t.Fatalf("job = %q (%s); want failed", job.Status, job.Summary)
+	}
+	if !strings.HasPrefix(job.Summary, "pull request #12 is still open and was not merged") {
+		t.Fatalf("summary = %q", job.Summary)
+	}
+	if actions := core.JobActionsFor(job); !actions.Retry {
+		t.Fatalf("actions = %+v; want retry", actions)
+	}
+}
+
 func TestSettleMergeJob(t *testing.T) {
 	item := queuedJob{Skill: SkillSafeMerge, Target: "o/r", Repository: "o/r", Number: 4}
 	merged := PullRequestWorkState{Repository: "o/r", Number: 4, State: "closed", Merged: true}
@@ -81,6 +104,8 @@ func TestSettleMergeJob(t *testing.T) {
 		{"merged after an unclean exit", merged, projectTaskResult{summary: "boom", err: fmt.Errorf("boom")}, false, "pull request #4 merged; the agent exited uncleanly after finishing: boom"},
 		{"merged before the owner stopped it", merged, projectTaskOutcome(nil, errWorkStoppedFromWebUI, ""), false, "pull request #4 merged; the run was stopped after it finished: stopped by the owner"},
 		{"unmerged failure stays failed", PullRequestWorkState{Repository: "o/r", Number: 4, State: "open"}, projectTaskResult{summary: "boom", err: fmt.Errorf("boom")}, true, "boom"},
+		{"clean run leaving it open needs attention", PullRequestWorkState{Repository: "o/r", Number: 4, State: "open"}, projectTaskResult{summary: "Conflict in go.mod I could not resolve"}, true, "pull request #4 is still open and was not merged: Conflict in go.mod I could not resolve"},
+		{"clean run that closed it stays as it was", PullRequestWorkState{Repository: "o/r", Number: 4, State: "closed"}, projectTaskResult{summary: "Closed as malicious"}, false, "Closed as malicious"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var job JobSnapshot
@@ -88,7 +113,8 @@ func TestSettleMergeJob(t *testing.T) {
 			if (got.err != nil) != test.failed || got.summary != test.summary {
 				t.Fatalf("settleMergeJob = %q, err %v; want %q, failed %v", got.summary, got.err, test.summary, test.failed)
 			}
-			if job.PullRequest != 4 {
+			// A closed, unmerged pull request is no longer the card's.
+			if open := test.pullRequest.Merged || test.pullRequest.State == "open"; open && job.PullRequest != 4 {
 				t.Fatalf("job pull request = %d", job.PullRequest)
 			}
 		})

@@ -2406,7 +2406,7 @@ func (w *Engine) Run(ctx context.Context) error {
 	// runDiscussion runs a Discussion thread's agent as a board job.
 	var runDiscussion func(ctx context.Context, issue Issue) error
 	// queue runs the merge and discuss jobs queued on demand (issue #1095).
-	queue := &queueLoop{w: w, ctx: ctx, sem: sem, wg: &wg, tasks: &tasks, jobMu: &jobMu, jobs: jobs, workMu: &workMu, cancellations: cancellations, runExits: runExits, publish: publish, workFinished: workFinished, wake: make(chan struct{}, 1), lanes: map[string]string{}}
+	queue := &queueLoop{w: w, ctx: ctx, sem: sem, wg: &wg, tasks: &tasks, jobMu: &jobMu, jobs: jobs, workMu: &workMu, cancellations: cancellations, runExits: runExits, publish: publish, workFinished: workFinished, wake: make(chan struct{}, 1), lanes: map[string]map[string]bool{}}
 	// acquireDispatchSlot waits for a free slot for the queued job key, as
 	// acquireSlot does, while also answering job actions, so the owner can
 	// pause the queued job or stop a running one to free its slot (issue
@@ -2418,6 +2418,8 @@ func (w *Engine) Run(ctx context.Context) error {
 				return false, nil
 			case request := <-w.settingsRequestsChan():
 				request.done <- w.applySettingsRequest(request.update, sem)
+				// More slots let more queued merges start.
+				queue.nudge()
 			case request := <-w.projectTaskRequests():
 				startScheduled(request)
 			case request := <-w.queueRequestsChan():
@@ -4483,6 +4485,8 @@ func (w *Engine) Run(ctx context.Context) error {
 		select {
 		case request := <-w.settingsRequestsChan():
 			request.done <- w.applySettingsRequest(request.update, sem)
+			// More slots let more queued merges start.
+			queue.nudge()
 		case request := <-w.jobActionRequests():
 			serveJobAction(request, false)
 		case <-slotFreed:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -34,9 +35,19 @@ func (w *Engine) mergeJobPullRequest(ctx context.Context, item queuedJob) (PullR
 // its PR state and stepper follow GitHub, and lets a merged pull request
 // outrank the agent's exit: a run whose agent died or exited uncleanly after
 // the merge landed is complete, with a note saying so, rather than failed. A
+// run that exited cleanly but left its pull request open and unmerged, such
+// as one stopped by a conflict it could not resolve after another merge
+// landed first (issue #1433), fails so its card asks for attention. Any other
 // pull request that did not merge leaves the outcome as it was.
 func settleMergeJob(job *JobSnapshot, item queuedJob, pullRequest PullRequestWorkState, result projectTaskResult) projectTaskResult {
 	job.SetPullRequest(OriginatingWorkState{PullRequests: []PullRequestWorkState{pullRequest}}, item.Repository)
+	if !pullRequest.Merged && result.err == nil && strings.EqualFold(pullRequest.State, "open") {
+		reason := fmt.Sprintf("pull request #%d is still open and was not merged", item.Number)
+		if result.summary != "" {
+			reason += ": " + result.summary
+		}
+		return projectTaskResult{summary: reason, err: errors.New(reason)}
+	}
 	if !pullRequest.Merged || result.err == nil {
 		return result
 	}
