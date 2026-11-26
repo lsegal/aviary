@@ -84,7 +84,7 @@ func (m *Manager) purgeTarget(target string) error {
 	if engine != nil && slices.Contains(engine.Targets, target) {
 		return fmt.Errorf("the engine still runs %s's jobs", target)
 	}
-	jobs, err := purgeTargetWorkState(m.statePath(), target, len(settings.Targets) == 0)
+	jobs, err := purgeTargetWorkState(m.statePath(), target)
 	if err != nil {
 		return err
 	}
@@ -128,13 +128,13 @@ func cloneOfTarget(rec cloneRecord, target string) bool {
 }
 
 // purgeTargetWorkState removes target's job records from the work state at
-// path, leaving every other record as it is. A state file written while
-// target was the only project keys its jobs by bare issue number; those go
-// too once no project is watched, and otherwise belong to the remaining one.
-func purgeTargetWorkState(path, target string, noneWatched bool) (int, error) {
+// path, leaving every other record as it is.
+func purgeTargetWorkState(path, target string) (int, error) {
 	if path == "" {
 		return 0, nil
 	}
+	workStateMu.Lock()
+	defer workStateMu.Unlock()
 	raw, err := store.ReadJSON[map[string]json.RawMessage](path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return 0, nil
@@ -144,8 +144,7 @@ func purgeTargetWorkState(path, target string, noneWatched bool) (int, error) {
 	}
 	removed := 0
 	for key := range raw {
-		_, bare := strconv.Atoi(key)
-		if isTargetJob(key, target) || (noneWatched && bare == nil) {
+		if workKeyTarget(key) == target {
 			delete(raw, key)
 			removed++
 		}

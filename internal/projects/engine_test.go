@@ -25,6 +25,7 @@ import (
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/projects/core"
+	"github.com/lsegal/aviary/internal/store"
 )
 
 type fakeSource struct {
@@ -1232,11 +1233,11 @@ func TestEngineTreatsPreexistingUnseenIssuesAsNew(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	seen, err := loadState(filepath.Join(dir, "state"))
+	seen, err := loadWorkState(filepath.Join(dir, "state"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !seen[1] || len(r.got) != 1 || r.got[0] != 1 {
+	if _, ok := seen[1]; !ok || len(r.got) != 1 || r.got[0] != 1 {
 		t.Fatalf("pre-existing unseen issue was not handled: seen=%v got=%v", seen, r.got)
 	}
 }
@@ -1486,7 +1487,7 @@ func TestEngineResetsFailedWorkOnStart(t *testing.T) {
 func TestEngineResetsFailedProjectWorkOnStart(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
-	if err := saveWorkState(statePath, map[int]workState{7: {Status: "failed"}}); err != nil {
+	if err := saveTargetWorkState(statePath, "https://github.com/o/r/projects/3", map[int]workState{7: {Status: "failed"}}); err != nil {
 		t.Fatal(err)
 	}
 	status := &fakeIssueStatuser{}
@@ -1599,7 +1600,7 @@ func TestEngineStandsDownOnStrandedProjectItemStillOwned(t *testing.T) {
 func TestEngineIgnoresMissingProjectIssueWhenResettingFailedWork(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
-	if err := saveWorkState(statePath, map[int]workState{7: {Status: "failed"}}); err != nil {
+	if err := saveTargetWorkState(statePath, "https://github.com/o/r/projects/3", map[int]workState{7: {Status: "failed"}}); err != nil {
 		t.Fatal(err)
 	}
 	status := &fakeIssueStatuser{err: errProjectIssueNotFound}
@@ -1617,7 +1618,7 @@ func TestEngineIgnoresMissingProjectIssueWhenResettingFailedWork(t *testing.T) {
 func TestEngineKeepsWatchingWhenProjectResetFails(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
-	if err := saveWorkState(statePath, map[int]workState{7: {Status: "failed"}}); err != nil {
+	if err := saveTargetWorkState(statePath, "https://github.com/o/r/projects/3", map[int]workState{7: {Status: "failed"}}); err != nil {
 		t.Fatal(err)
 	}
 	status := &fakeIssueStatuser{err: errors.New("list project items: exit status 1")}
@@ -2337,7 +2338,7 @@ func TestEngineReclaimsFailedPersistedSession(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	want := workState{Status: "failed", SessionID: "session-167", Agent: "codex", CheckoutDirectory: dir}
-	if err := saveWorkState(statePath, map[int]workState{167: want}); err != nil {
+	if err := saveTargetWorkState(statePath, "lsegal/aviary", map[int]workState{167: want}); err != nil {
 		t.Fatal(err)
 	}
 	runner := &fakeSessionRunner{agent: "claude", sessions: make(chan AgentSession, 1)}
@@ -2439,9 +2440,76 @@ func TestScopedWorkStateIgnoresUnwatchedTargets(t *testing.T) {
 	if err := saveScopedWorkState(path, got, []string{"o/current"}); err != nil {
 		t.Fatal(err)
 	}
-	legacy, err := loadWorkState(path)
-	if err != nil || legacy[7].SessionID != "current" || len(legacy) != 1 {
-		t.Fatalf("legacy state error=%v value=%v", err, legacy)
+	raw, err := store.ReadJSON[map[string]workState](path)
+	want = map[string]workState{
+		"o/current#7": {Status: "completed", SessionID: "current"},
+		"o/old#9":     {Status: "failed", SessionID: "old"},
+	}
+	if err != nil || !reflect.DeepEqual(raw, want) {
+		t.Fatalf("saved state error=%v value=%v, want %v", err, raw, want)
+	}
+}
+
+// An engine restarted without a removed project keeps that project's job
+// records when it saves its own.
+func TestEngineRestartKeepsRemovedProjectsRecords(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	removed := workState{Status: "completed", SessionID: "kept", Agent: "codex"}
+	if err := saveScopedWorkState(statePath, map[string]workState{"o/removed#7": removed}, []string{"o/removed", "o/s"}); err != nil {
+		t.Fatal(err)
+	}
+	src := &fakeSource{batches: [][]Issue{{{Number: 8, Repository: "o/s", Target: "o/s"}}}}
+	r := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
+	w := &Engine{Targets: []string{"o/s"}, Interval: time.Hour, Concurrency: 1, StatePath: statePath, Issues: src, Runner: r}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+	select {
+	case <-r.dispatched:
+	case <-time.After(5 * time.Second):
+		t.Fatal("o/s#8 was not dispatched")
+	}
+	close(r.release)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	raw, err := store.ReadJSON[map[string]workState](statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["o/s#8"]; !ok {
+		t.Fatalf("state = %v, want o/s#8 saved", raw)
+	}
+	if !reflect.DeepEqual(raw["o/removed#7"], removed) {
+		t.Fatalf("o/removed#7 = %+v, want %+v kept", raw["o/removed#7"], removed)
+	}
+	for key := range raw {
+		if workKeyTarget(key) == "" {
+			t.Fatalf("state has bare key %q", key)
+		}
+	}
+}
+
+func TestScopedWorkStateDropsBareKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte(`{"7":{"status":"completed"},"o/other#3":{"status":"failed"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadScopedWorkState(path, []string{"o/current"})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("loaded %v, %v; want no records", got, err)
+	}
+	if err := saveScopedWorkState(path, map[string]workState{"o/current#8": {Status: "active"}}, []string{"o/current"}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := store.ReadJSON[map[string]workState](path)
+	want := map[string]workState{
+		"o/current#8": {Status: "active"},
+		"o/other#3":   {Status: "failed"},
+	}
+	if err != nil || !reflect.DeepEqual(raw, want) {
+		t.Fatalf("saved state error=%v value=%v, want %v", err, raw, want)
 	}
 }
 
