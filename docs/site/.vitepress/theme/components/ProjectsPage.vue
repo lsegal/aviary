@@ -114,11 +114,10 @@ onBeforeUnmount(() => {
 				</p>
 				<p class="pp-sub reveal">
 					Rather pick the work yourself? Switch a project to
-					<strong>Manual</strong> and Aviary stops looking for issues: it works
-					only what you queue from the board's header and the project's
-					scheduled prompts. Switch between Watch and Manual at any time from
-					the header's Issue discovery menu or the project's settings, or start
-					with <code>aviary watch --manual</code>.
+					<strong>Manual</strong> and Aviary works only what you queue, with no
+					issue discovery. Switch between Watch and Manual live from the header's Issue
+					discovery menu or the project's settings, or start with
+					<code>aviary watch --manual</code>.
 				</p>
 				<div class="pp-actions reveal">
 					<a class="pp-button" href="#install">Install Aviary</a>
