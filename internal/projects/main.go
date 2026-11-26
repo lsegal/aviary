@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/clidefs"
+	"github.com/lsegal/aviary/internal/clidoctor"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/process"
@@ -2357,10 +2358,17 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 		detector = &missingSessionDetector{output: agentOutput, patterns: definition.MissingSessionPatterns()}
 		agentOutput = detector
 	}
+	// exitErr is how the agent's process ended, once it has.
+	var exitErr error
 	if recorder := r.transcriptRecorder(issue, definition.Output.TranscriptFormat()); recorder != nil {
 		agentOutput = io.MultiWriter(recorder, agentOutput)
 		defer func() { r.recordUsage(issue, spec, recorder, err) }()
-		defer recorder.Flush()
+		// Once the process is gone, nothing it started is still running: any
+		// call it left open is closed as interrupted (issue #1426).
+		defer func() {
+			recorder.Flush()
+			recorder.Exited(exitErr != nil, exitReason(exitErr))
+		}()
 	}
 	cmd.Stdout, cmd.Stderr = agentOutput, agentOutput
 	runErr := process.Start(cmd)
@@ -2390,6 +2398,7 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 		slog.Warn("projects: agent finished but its process cleanup timed out", "issue", issue.Number, "target", issue.Target)
 		runErr = nil
 	}
+	exitErr = runErr
 	if runErr == nil {
 		// In print mode the process exits when the turn ends, so a wakeup the
 		// agent scheduled would never fire. It is handed to the run loop
@@ -2408,6 +2417,18 @@ func (r CommandRunner) runOnce(ctx context.Context, issue Issue, session AgentSe
 		return false, r.agentFailure(issue, args, outputTail.Tail(), runErr)
 	}
 	return false, nil
+}
+
+// exitReason describes how a failed agent process ended for the transcript's
+// "agent process exited" line, or "" when it exited cleanly.
+func exitReason(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case process.CleanupTimedOut(err):
+		return "it did not exit cleanly (WaitDelay expired)"
+	}
+	return truncate(clidoctor.FirstLine(err.Error()), 200)
 }
 
 // agentFailure reports a failed agent run as a short message, with the last

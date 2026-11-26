@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"runtime"
 	"testing"
+
+	"github.com/lsegal/aviary/internal/process"
 )
 
 var launchChromeWithModeFn = launchChromeWithMode
@@ -75,7 +77,7 @@ func launchChromeWithMode(m *Manager, headless bool) error {
 	cmd := exec.Command(chromePath, LaunchArgs(m.userDataDir(), m.cdpPort, headless)...)
 	detachProcess(cmd) // platform-specific: ensures Chrome outlives this process
 
-	if err := cmd.Start(); err != nil {
+	if _, err := process.StartDetached(cmd); err != nil {
 		return fmt.Errorf("starting Chrome (%s): %w", chromePath, err)
 	}
 	return nil

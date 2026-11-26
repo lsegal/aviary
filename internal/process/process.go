@@ -174,6 +174,24 @@ func Start(cmd *exec.Cmd) error {
 	return nil
 }
 
+// StartDetached starts cmd, a child meant to run on its own rather than as
+// an owned subprocess, such as a browser or an "open" helper, and waits for it
+// in the background. Nothing else waits for such a child, and one that exits
+// while aviary runs would otherwise stay a <defunct> zombie under the server
+// until aviary exits (issue #1426). The returned channel closes once it has
+// been reaped.
+func StartDetached(cmd *exec.Cmd) (<-chan struct{}, error) {
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	reaped := make(chan struct{})
+	go func() {
+		defer close(reaped)
+		_ = cmd.Wait()
+	}()
+	return reaped, nil
+}
+
 // Wait waits for a tracked child and stops tracking it.
 //
 // A child that exits while something it started still holds its output pipes
