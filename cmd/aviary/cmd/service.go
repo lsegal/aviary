@@ -147,37 +147,34 @@ func runUninstallService(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func runInstallDevService(_ *cobra.Command, _ []string) error {
-	wd, _ := serviceGetwd()
-	// Determine user's home and shell. Prefer the user inferred from the
-	// project working directory (e.g. /home/USER/...) so running under sudo
-	// doesn't force the service to run as root.
-	usr, err := serviceCurrentUser()
-	home := os.Getenv("HOME")
-	username := ""
-	if err == nil {
+// devServiceUser returns the user and home directory a development service
+// should run as. It prefers the user inferred from the project working
+// directory (e.g. /home/USER/...) so running under sudo doesn't force the
+// service to run as root.
+func devServiceUser(wd string) (username, home string) {
+	home = os.Getenv("HOME")
+	if usr, err := serviceCurrentUser(); err == nil {
 		if usr.HomeDir != "" {
 			home = usr.HomeDir
 		}
 		username = usr.Username
 	}
-	// Try to infer user from the project path (wd) when possible.
-	if wd != "" {
-		// Linux: /home/<user>/..., macOS: /Users/<user>/...
-		if strings.HasPrefix(wd, "/home/") {
-			parts := strings.SplitN(strings.TrimPrefix(wd, "/home/"), "/", 2)
-			if len(parts) > 0 && parts[0] != "" {
-				username = parts[0]
-				home = filepath.Join("/home", username)
-			}
-		} else if strings.HasPrefix(wd, "/Users/") {
-			parts := strings.SplitN(strings.TrimPrefix(wd, "/Users/"), "/", 2)
-			if len(parts) > 0 && parts[0] != "" {
-				username = parts[0]
-				home = filepath.Join("/Users", username)
-			}
+	// Linux: /home/<user>/..., macOS: /Users/<user>/...
+	for _, root := range []string{"/home", "/Users"} {
+		rest, ok := strings.CutPrefix(wd, root+"/")
+		if !ok {
+			continue
+		}
+		if name, _, _ := strings.Cut(rest, "/"); name != "" {
+			return name, filepath.Join(root, name)
 		}
 	}
+	return username, home
+}
+
+func runInstallDevService(_ *cobra.Command, _ []string) error {
+	wd, _ := serviceGetwd()
+	username, home := devServiceUser(wd)
 
 	var execPath string
 	var args []string
@@ -228,15 +225,7 @@ func runUninstallDevService(_ *cobra.Command, _ []string) error {
 
 func runInstallDevDocsService(_ *cobra.Command, _ []string) error {
 	wd, _ := serviceGetwd()
-	usr, err := serviceCurrentUser()
-	home := os.Getenv("HOME")
-	username := ""
-	if err == nil {
-		if usr.HomeDir != "" {
-			home = usr.HomeDir
-		}
-		username = usr.Username
-	}
+	username, home := devServiceUser(wd)
 
 	var execPath string
 	var args []string
