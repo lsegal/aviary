@@ -28,10 +28,9 @@ func startManualTrackingRun(t *testing.T, mode string) *manualTrackingRun {
 	src := newManualSource()
 	src.fakeClosureSource.state = OriginatingWorkState{IssueState: "open", PullRequests: []PullRequestWorkState{{Number: 8, State: "open"}}}
 	run := &manualTrackingRun{
-		src: src, runner: &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 8)},
+		src: src, runner: &fakeRunner{allow: make(chan struct{}), dispatched: make(chan int, 8)},
 		comments: newFakeCommentClient(), mentions: newFakeMentionSource(),
 	}
-	close(run.runner.release)
 	logs := &syncBuffer{}
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -72,12 +71,18 @@ func (r *manualTrackingRun) awaitDispatch(t *testing.T, number int, why string) 
 	}
 }
 
-// awaitStatus waits for number's work to reach status.
-func (r *manualTrackingRun) awaitStatus(t *testing.T, number int, status string) {
+// finishRun lets the dispatched run of number end, under whatever pull
+// request state the test set before calling it, and waits for its work to
+// be recorded as status.
+func (r *manualTrackingRun) finishRun(t *testing.T, number int, status string) {
 	t.Helper()
-	waitFor(t, "the job to be "+status, func() bool {
+	r.runner.allow <- struct{}{}
+	waitFor(t, "the run to end "+status, func() bool {
+		r.runner.mu.Lock()
+		running := r.runner.active
+		r.runner.mu.Unlock()
 		state, err := loadWorkState(r.w.StatePath)
-		return err == nil && state[number].Status == status
+		return running == 0 && err == nil && state[number].Status == status
 	})
 }
 
@@ -112,7 +117,7 @@ func TestManualProjectTracksQueuedJobsInEveryDeliveryMode(t *testing.T) {
 				t.Fatal(err)
 			}
 			run.awaitDispatch(t, 7, "a hand-queued fix")
-			run.awaitStatus(t, 7, "paused")
+			run.finishRun(t, 7, "paused")
 
 			// The run left its pull request open, so the job waits on it,
 			// still tracked, and the matching #99 is never claimed, not even
@@ -135,7 +140,7 @@ func TestManualProjectTracksQueuedJobsInEveryDeliveryMode(t *testing.T) {
 				run.mentions.add("o/r", RecentComment{ID: 42, Number: 7, Body: body, Author: "lsegal", UpdatedAt: time.Now()})
 			}
 			run.awaitDispatch(t, 7, "an allowed commenter's mention")
-			run.awaitStatus(t, 7, "paused")
+			run.finishRun(t, 7, "paused")
 
 			// Its pull request closing without a merge restarts the work.
 			run.src.fakeClosureSource.mu.Lock()
@@ -152,7 +157,7 @@ func TestManualProjectTracksQueuedJobsInEveryDeliveryMode(t *testing.T) {
 			if mode == "webhook" {
 				run.events <- WebhookEvent{Kind: "issues", Action: "closed", Repository: "o/r", IssueNumber: 7}
 			}
-			run.awaitStatus(t, 7, "completed")
+			run.finishRun(t, 7, "completed")
 			waitFor(t, "the merged issue to stop being tracked", func() bool { return len(run.w.fixRequests().forTarget("o/r")) == 0 })
 			if calls := run.src.listCalls(); calls != 0 {
 				t.Fatalf("a manual project searched for issues %d time(s)", calls)
