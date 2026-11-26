@@ -861,122 +861,113 @@ func baStartBrowserLogin(t *testing.T, d *Dispatcher, tool string) map[string]an
 	return start
 }
 
-func TestBrowserAuthGeminiLoginRoundTrip(t *testing.T) {
-	baRequirePortFree(t, auth.GeminiCallbackPort)
-	d, st := baSetupAuth(t)
-	var exchanged url.Values
-	baFakeHTTP(t, func(r *http.Request) *http.Response {
-		if r.URL.Host != "oauth2.googleapis.com" {
-			return nil
-		}
-		body, _ := io.ReadAll(r.Body)
-		exchanged, _ = url.ParseQuery(string(body))
-		return baJSONResponse(http.StatusOK, `{"access_token":"gem-access","refresh_token":"gem-refresh","expires_in":3600}`)
-	})
-
-	start := baStartBrowserLogin(t, d, "auth_login_gemini")
-	assert.Equal(t, fmt.Sprintf("http://localhost:%d", auth.GeminiCallbackPort), start["callback_url"])
-	baHitCallback(t, start["callback_url"].(string)+"/", start["url"].(string), url.Values{"code": {"gem-code"}})
-
-	out, err := d.CallTool(context.Background(), "auth_login_gemini_complete", map[string]any{})
-	require.NoError(t, err)
-	assert.Contains(t, out, "Gemini OAuth login successful")
-	assert.Equal(t, "gem-code", exchanged.Get("code"))
-	stored, err := st.Get("gemini:oauth")
-	require.NoError(t, err)
-	assert.Contains(t, stored, "gem-access")
-
-	// The flow is consumed: completing again has nothing pending.
-	assert.Contains(t, baCallErr(t, d, "auth_login_gemini_complete", map[string]any{}), "no pending Gemini login")
+// baBrowserLoginProviders lists the providers whose login runs through a
+// local OAuth callback listener on a fixed port.
+var baBrowserLoginProviders = []struct {
+	name         string
+	tool         string
+	port         int
+	host         string // token endpoint host
+	callbackURL  string // callback_url reported when the login starts
+	callbackPath string // path the browser is redirected to, appended to callbackURL
+	storeKey     string
+	successMsg   string
+	errPrefix    string
+	noPendingMsg string
+}{
+	{
+		name:         "Gemini",
+		tool:         "auth_login_gemini",
+		port:         auth.GeminiCallbackPort,
+		host:         "oauth2.googleapis.com",
+		callbackURL:  fmt.Sprintf("http://localhost:%d", auth.GeminiCallbackPort),
+		callbackPath: "/",
+		storeKey:     "gemini:oauth",
+		successMsg:   "Gemini OAuth login successful",
+		errPrefix:    "gemini login",
+		noPendingMsg: "no pending Gemini login",
+	},
+	{
+		name:         "OpenAI",
+		tool:         "auth_login_openai",
+		port:         auth.OpenAICallbackPort,
+		host:         "auth.openai.com",
+		callbackURL:  fmt.Sprintf("http://localhost:%d/auth/callback", auth.OpenAICallbackPort),
+		storeKey:     "openai:oauth",
+		successMsg:   "OpenAI OAuth login successful",
+		errPrefix:    "OpenAI login",
+		noPendingMsg: "no pending OpenAI login",
+	},
 }
 
-func TestBrowserAuthGeminiLoginFailures(t *testing.T) {
-	baRequirePortFree(t, auth.GeminiCallbackPort)
-	d, st := baSetupAuth(t)
-	baFakeHTTP(t, func(r *http.Request) *http.Response {
-		if r.URL.Host != "oauth2.googleapis.com" {
-			return nil
-		}
-		return baJSONResponse(http.StatusOK, `{"access_token":"gem-access","expires_in":60}`)
-	})
+// Subtests run sequentially because each provider binds a fixed callback port.
+func TestBrowserAuthLoginRoundTrip(t *testing.T) {
+	for _, p := range baBrowserLoginProviders {
+		t.Run(p.name, func(t *testing.T) {
+			baRequirePortFree(t, p.port)
+			d, st := baSetupAuth(t)
+			var exchanged url.Values
+			baFakeHTTP(t, func(r *http.Request) *http.Response {
+				if r.URL.Host != p.host {
+					return nil
+				}
+				body, _ := io.ReadAll(r.Body)
+				exchanged, _ = url.ParseQuery(string(body))
+				return baJSONResponse(http.StatusOK, `{"access_token":"test-access","refresh_token":"test-refresh","expires_in":3600}`)
+			})
 
-	// The provider redirects back with an error.
-	start := baStartBrowserLogin(t, d, "auth_login_gemini")
-	baHitCallback(t, start["callback_url"].(string)+"/", start["url"].(string), url.Values{"error": {"access_denied"}})
-	got := baCallErr(t, d, "auth_login_gemini_complete", map[string]any{})
-	assert.Contains(t, got, "gemini login")
-	assert.Contains(t, got, "access_denied")
+			start := baStartBrowserLogin(t, d, p.tool)
+			assert.Equal(t, p.callbackURL, start["callback_url"])
+			baHitCallback(t, start["callback_url"].(string)+p.callbackPath, start["url"].(string), url.Values{"code": {"test-code"}})
 
-	// The exchange succeeds but the token cannot be stored.
-	start = baStartBrowserLogin(t, d, "auth_login_gemini")
-	baBreakStore(t, st)
-	baHitCallback(t, start["callback_url"].(string)+"/", start["url"].(string), url.Values{"code": {"c"}})
-	baAssertStoreBlocked(t, baCallErr(t, d, "auth_login_gemini_complete", map[string]any{}))
+			out, err := d.CallTool(context.Background(), p.tool+"_complete", map[string]any{})
+			require.NoError(t, err)
+			assert.Contains(t, out, p.successMsg)
+			assert.Equal(t, "test-code", exchanged.Get("code"))
+			stored, err := st.Get(p.storeKey)
+			require.NoError(t, err)
+			assert.Contains(t, stored, "test-access")
 
-	// The callback port is already taken, so the login cannot start.
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", auth.GeminiCallbackPort))
-	require.NoError(t, err)
-	defer ln.Close() //nolint:errcheck
-	got = baCallErr(t, d, "auth_login_gemini", map[string]any{})
-	assert.Contains(t, got, "gemini login")
-	assert.Contains(t, got, strconv.Itoa(auth.GeminiCallbackPort))
+			// The flow is consumed: completing again has nothing pending.
+			assert.Contains(t, baCallErr(t, d, p.tool+"_complete", map[string]any{}), p.noPendingMsg)
+		})
+	}
 }
 
-func TestBrowserAuthOpenAILoginRoundTrip(t *testing.T) {
-	baRequirePortFree(t, auth.OpenAICallbackPort)
-	d, st := baSetupAuth(t)
-	var exchanged url.Values
-	baFakeHTTP(t, func(r *http.Request) *http.Response {
-		if r.URL.Host != "auth.openai.com" {
-			return nil
-		}
-		body, _ := io.ReadAll(r.Body)
-		exchanged, _ = url.ParseQuery(string(body))
-		return baJSONResponse(http.StatusOK, `{"access_token":"oai-access","refresh_token":"oai-refresh","expires_in":3600}`)
-	})
+func TestBrowserAuthLoginFailures(t *testing.T) {
+	for _, p := range baBrowserLoginProviders {
+		t.Run(p.name, func(t *testing.T) {
+			baRequirePortFree(t, p.port)
+			d, st := baSetupAuth(t)
+			baFakeHTTP(t, func(r *http.Request) *http.Response {
+				if r.URL.Host != p.host {
+					return nil
+				}
+				return baJSONResponse(http.StatusOK, `{"access_token":"test-access","expires_in":60}`)
+			})
 
-	start := baStartBrowserLogin(t, d, "auth_login_openai")
-	assert.Equal(t, fmt.Sprintf("http://localhost:%d/auth/callback", auth.OpenAICallbackPort), start["callback_url"])
-	baHitCallback(t, start["callback_url"].(string), start["url"].(string), url.Values{"code": {"oai-code"}})
+			// The provider redirects back with an error.
+			start := baStartBrowserLogin(t, d, p.tool)
+			baHitCallback(t, start["callback_url"].(string)+p.callbackPath, start["url"].(string), url.Values{"error": {"access_denied"}})
+			got := baCallErr(t, d, p.tool+"_complete", map[string]any{})
+			assert.Contains(t, got, p.errPrefix)
+			assert.Contains(t, got, "access_denied")
 
-	out, err := d.CallTool(context.Background(), "auth_login_openai_complete", map[string]any{})
-	require.NoError(t, err)
-	assert.Contains(t, out, "OpenAI OAuth login successful")
-	assert.Equal(t, "oai-code", exchanged.Get("code"))
-	stored, err := st.Get("openai:oauth")
-	require.NoError(t, err)
-	assert.Contains(t, stored, "oai-access")
+			// The exchange succeeds but the token cannot be stored.
+			start = baStartBrowserLogin(t, d, p.tool)
+			baBreakStore(t, st)
+			baHitCallback(t, start["callback_url"].(string)+p.callbackPath, start["url"].(string), url.Values{"code": {"c"}})
+			baAssertStoreBlocked(t, baCallErr(t, d, p.tool+"_complete", map[string]any{}))
 
-	assert.Contains(t, baCallErr(t, d, "auth_login_openai_complete", map[string]any{}), "no pending OpenAI login")
-}
-
-func TestBrowserAuthOpenAILoginFailures(t *testing.T) {
-	baRequirePortFree(t, auth.OpenAICallbackPort)
-	d, st := baSetupAuth(t)
-	baFakeHTTP(t, func(r *http.Request) *http.Response {
-		if r.URL.Host != "auth.openai.com" {
-			return nil
-		}
-		return baJSONResponse(http.StatusOK, `{"access_token":"oai","expires_in":60}`)
-	})
-
-	start := baStartBrowserLogin(t, d, "auth_login_openai")
-	baHitCallback(t, start["callback_url"].(string), start["url"].(string), url.Values{"error": {"denied_by_user"}})
-	got := baCallErr(t, d, "auth_login_openai_complete", map[string]any{})
-	assert.Contains(t, got, "OpenAI login")
-	assert.Contains(t, got, "denied_by_user")
-
-	start = baStartBrowserLogin(t, d, "auth_login_openai")
-	baBreakStore(t, st)
-	baHitCallback(t, start["callback_url"].(string), start["url"].(string), url.Values{"code": {"c"}})
-	baAssertStoreBlocked(t, baCallErr(t, d, "auth_login_openai_complete", map[string]any{}))
-
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", auth.OpenAICallbackPort))
-	require.NoError(t, err)
-	defer ln.Close() //nolint:errcheck
-	got = baCallErr(t, d, "auth_login_openai", map[string]any{})
-	assert.Contains(t, got, "OpenAI login")
-	assert.Contains(t, got, strconv.Itoa(auth.OpenAICallbackPort))
+			// The callback port is already taken, so the login cannot start.
+			ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p.port))
+			require.NoError(t, err)
+			defer ln.Close() //nolint:errcheck
+			got = baCallErr(t, d, p.tool, map[string]any{})
+			assert.Contains(t, got, p.errPrefix)
+			assert.Contains(t, got, strconv.Itoa(p.port))
+		})
+	}
 }
 
 // baCopilotServer fakes GitHub's device-code and token endpoints.
