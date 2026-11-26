@@ -43,7 +43,7 @@ type oneShotPrompt struct {
 // their scrollback, so it never travels in argv when the agent can read stdin,
 // and travels through a file in dir when it is too large for argv otherwise.
 func newOneShotPrompt(definition clidefs.Definition, values clidefs.Values, dir string) (oneShotPrompt, error) {
-	call := oneShotPrompt{Values: values, cleanup: func() {}}
+	call := oneShotPrompt{Values: values, cleanup: noPromptFileCleanup}
 	call.Values.OneShot = true
 	call.Values.NoCheckout = true
 	if definition.ReadsPromptFromStdin() {
@@ -63,7 +63,7 @@ func newOneShotPrompt(definition clidefs.Definition, values clidefs.Values, dir 
 // prompt, which has no bound: one too large for argv goes on stdin when the
 // mode's template can take it there, and through a file in dir otherwise.
 func newRunPrompt(definition clidefs.Definition, mode clidefs.Mode, values clidefs.Values, dir string) (oneShotPrompt, error) {
-	call := oneShotPrompt{Values: values, cleanup: func() {}}
+	call := oneShotPrompt{Values: values, cleanup: noPromptFileCleanup}
 	if len(values.Prompt) <= oneShotArgvPromptLimit {
 		return call, nil
 	}
@@ -73,6 +73,12 @@ func newRunPrompt(definition clidefs.Definition, mode clidefs.Mode, values clide
 		return call, nil
 	}
 	return call.writePromptFile(dir)
+}
+
+// noPromptFileCleanup is the cleanup for a prompt that travels in argv or on
+// stdin: no prompt file was written, so there is nothing to remove.
+func noPromptFileCleanup() {
+	// Intentionally empty: only writePromptFile creates something to clean up.
 }
 
 // writePromptFile writes the prompt to a file in dir and replaces it with a

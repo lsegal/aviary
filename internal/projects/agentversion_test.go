@@ -108,7 +108,7 @@ func TestDispatchStopsBelowMinimumVersion(t *testing.T) {
 	}
 	stubAgentVersion(t, "0.2.2", nil)
 	runner := CommandRunner{Agent: "gemini", Definitions: registry, Repo: "o/r"}
-	err = runner.RunSession(context.Background(), Issue{Number: 535, Target: "o/r"}, AgentSession{Agent: "gemini", ID: "session-1"}, func(AgentSession) {})
+	err = runner.RunSession(context.Background(), Issue{Number: 535, Target: "o/r"}, AgentSession{Agent: "gemini", ID: "session-1"}, ignoreSessionUpdate)
 	if err == nil {
 		t.Fatal("dispatch succeeded, want it to fail on the version")
 	}
@@ -136,7 +136,7 @@ func TestDispatchRefusesProjectsGatedAgent(t *testing.T) {
 		t.Fatalf("register agy: %v", err)
 	}
 	runner := CommandRunner{Agent: "agy", Definitions: registry, Repo: "o/r"}
-	err = runner.RunSession(context.Background(), Issue{Number: 391, Target: "o/r"}, AgentSession{Agent: "agy"}, func(AgentSession) {})
+	err = runner.RunSession(context.Background(), Issue{Number: 391, Target: "o/r"}, AgentSession{Agent: "agy"}, ignoreSessionUpdate)
 	if err == nil {
 		t.Fatal("dispatch succeeded, want agy to be refused")
 	}
@@ -167,7 +167,7 @@ func TestDispatchProceedsAtMinimumVersion(t *testing.T) {
 	}
 	stubAgentVersion(t, "0.58.0", nil)
 	runner := CommandRunner{Agent: "gemini", Definitions: registry, Repo: "o/r"}
-	if err := runner.RunSession(context.Background(), Issue{Number: 535, Target: "o/r"}, AgentSession{Agent: "gemini", ID: "session-1"}, func(AgentSession) {}); err != nil {
+	if err := runner.RunSession(context.Background(), Issue{Number: 535, Target: "o/r"}, AgentSession{Agent: "gemini", ID: "session-1"}, ignoreSessionUpdate); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 	if invocations := fakeAgentInvocationRecords(t, record); len(invocations) != 1 {
@@ -193,7 +193,7 @@ func TestDispatchWarnsOnUnreadableVersion(t *testing.T) {
 	stubAgentVersion(t, "unknown build", nil)
 	runner := CommandRunner{Agent: "gemini", Definitions: registry, Repo: "o/r"}
 	var output strings.Builder
-	if err := runner.RunSessionWithOutput(context.Background(), Issue{Number: 535, Target: "o/r"}, AgentSession{Agent: "gemini"}, func(AgentSession) {}, &output); err != nil {
+	if err := runner.RunSessionWithOutput(context.Background(), Issue{Number: 535, Target: "o/r"}, AgentSession{Agent: "gemini"}, ignoreSessionUpdate, &output); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 	if !strings.Contains(output.String(), "0.58.0") {

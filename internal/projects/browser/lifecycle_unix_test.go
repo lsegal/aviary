@@ -9,7 +9,9 @@ import (
 
 // prepareLifecycleAviary has nothing to do on Unix: the stand-in can be
 // signalled directly.
-func prepareLifecycleAviary(*exec.Cmd) {}
+func prepareLifecycleAviary(*exec.Cmd) {
+	// No process-group setup needed: SIGTERM reaches the child directly.
+}
 
 // signalLifecycleAviary sends the stand-in the signal a service manager stops
 // Aviary with.

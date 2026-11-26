@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -93,7 +94,60 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		cfgPath = config.DefaultPath()
 	}
 
-	// ── System information ────────────────────────────────────────────────────
+	wd, cfg, err := writeDoctorSystemInfo(cfgPath)
+	if err != nil {
+		return err
+	}
+
+	// ── Config file ───────────────────────────────────────────────────────────
+	_, _ = fmt.Fprintln(os.Stdout)
+	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+		_, _ = fmt.Fprintln(os.Stdout, "[WARN] config: file not found; using built-in defaults")
+		_, _ = fmt.Fprintln(os.Stdout, "       Run 'aviary configure' to create one.")
+		_, _ = fmt.Fprintln(os.Stdout)
+	}
+
+	writeDoctorAgents(cfg, wd)
+
+	st := authStore()
+	nerrs, nwarns := writeDoctorValidation(cfg, st.Get)
+	orphanErrs, orphanWarns := writeDoctorOrphans(cfg)
+	nerrs += orphanErrs
+	nwarns += orphanWarns
+	nerrs += writeDoctorModelCredentials(cfg, st.Get)
+
+	// The CLI registry drives both the CLI backends probe and the
+	// Code Loop agents gates, so the doctor reports from the same definitions
+	// System → Providers & Auth and the Code Loop doctor read.
+	registry, registryErr := clidefs.FromConfig(cfg.Models.CLIDefinitions)
+	if registryErr == nil {
+		nerrs += writeDoctorCLIBackends(cfg, registry)
+	}
+	nerrs += writeDoctorCodeLoopAgents(registry, registryErr)
+	nerrs += writeDoctorBrowserProfile(cfg)
+
+	_, _ = fmt.Fprintf(os.Stdout, "\n%d error(s), %d warning(s)\n", nerrs, nwarns)
+	if !doctorDisableVersion {
+		if err := maybeRunDoctorVersionCheck(); err != nil {
+			return err
+		}
+	}
+	if nerrs > 0 {
+		os.Exit(1)
+	}
+	return nil
+}
+
+// writeDoctorSection prints a blank line followed by an underlined heading.
+func writeDoctorSection(title, underline string) {
+	_, _ = fmt.Fprintln(os.Stdout)
+	_, _ = fmt.Fprintln(os.Stdout, title)
+	_, _ = fmt.Fprintln(os.Stdout, underline)
+}
+
+// writeDoctorSystemInfo prints the system information block and returns the
+// working directory and the loaded config.
+func writeDoctorSystemInfo(cfgPath string) (string, *config.Config, error) {
 	_, _ = fmt.Fprintln(os.Stdout, "System information")
 	_, _ = fmt.Fprintln(os.Stdout, "──────────────────")
 	_, _ = fmt.Fprintf(os.Stdout, "  Aviary version : %s\n", buildinfo.Version)
@@ -108,54 +162,40 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		return fmt.Errorf("parsing config: %w", err)
+		return wd, nil, fmt.Errorf("parsing config: %w", err)
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "  Server         : %s\n", doctorServerStatus(cfgPath, cfg.Server.Port))
 	if boot := doctorBootSummary(cfgPath); boot != "" {
 		_, _ = fmt.Fprintf(os.Stdout, "  Startup        : %s\n", boot)
 	}
+	return wd, cfg, nil
+}
 
-	// ── Config file ───────────────────────────────────────────────────────────
-	_, _ = fmt.Fprintln(os.Stdout)
-	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
-		_, _ = fmt.Fprintln(os.Stdout, "[WARN] config: file not found; using built-in defaults")
-		_, _ = fmt.Fprintln(os.Stdout, "       Run 'aviary configure' to create one.")
-		_, _ = fmt.Fprintln(os.Stdout)
-	}
-
-	// ── Configured agents ─────────────────────────────────────────────────────
+// writeDoctorAgents lists the configured agents with their effective model,
+// permission preset and working directory.
+func writeDoctorAgents(cfg *config.Config, wd string) {
 	_, _ = fmt.Fprintln(os.Stdout, "Configured agents")
 	_, _ = fmt.Fprintln(os.Stdout, "─────────────────")
 	if len(cfg.Agents) == 0 {
 		_, _ = fmt.Fprintln(os.Stdout, "  (none)")
 	}
 	for _, a := range cfg.Agents {
-		model := a.Model
-		if model == "" {
-			model = "(default)"
-		}
+		model := cmp.Or(a.Model, "(default)")
 		perm := "standard"
 		if a.Permissions != nil && a.Permissions.Preset != "" {
 			perm = string(a.Permissions.Preset)
 		}
-		wdir := a.WorkingDir
-		if wdir == "" {
-			wdir = wd
-		}
+		wdir := cmp.Or(a.WorkingDir, wd)
 		_, _ = fmt.Fprintf(os.Stdout, "  %-20s model=%-30s permissions=%s  dir=%s\n",
 			a.Name, model, perm, wdir)
 	}
+}
 
-	// ── Validation ────────────────────────────────────────────────────────────
-	_, _ = fmt.Fprintln(os.Stdout)
-	_, _ = fmt.Fprintln(os.Stdout, "Validation")
-	_, _ = fmt.Fprintln(os.Stdout, "──────────")
-	st := authStore()
-	issues := config.Validate(cfg, func(key string) (string, error) {
-		return st.Get(key)
-	})
-
-	nerrs, nwarns := 0, 0
+// writeDoctorValidation prints config validation issues and returns the
+// error and warning counts.
+func writeDoctorValidation(cfg *config.Config, getSecret func(string) (string, error)) (nerrs, nwarns int) {
+	writeDoctorSection("Validation", "──────────")
+	issues := config.Validate(cfg, getSecret)
 	for _, issue := range issues {
 		_, _ = fmt.Fprintf(os.Stdout, "  [%s] %s: %s\n", issue.Level, issue.Field, issue.Message)
 		if issue.Level == config.LevelError {
@@ -167,30 +207,34 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	if len(issues) == 0 {
 		_, _ = fmt.Fprintln(os.Stdout, "  (no issues)")
 	}
+	return nerrs, nwarns
+}
 
-	// ── Orphaned sessions ────────────────────────────────────────────────────
-	_, _ = fmt.Fprintln(os.Stdout)
-	_, _ = fmt.Fprintln(os.Stdout, "Orphaned sessions")
-	_, _ = fmt.Fprintln(os.Stdout, "─────────────────")
-	if orphans, orphanErr := writeOrphanedSessions(os.Stdout, cfg, doctorFix); orphanErr != nil {
-		_, _ = fmt.Fprintf(os.Stdout, "  [ERROR] %v\n", orphanErr)
-		nerrs++
-	} else {
-		nwarns += orphans
+// writeDoctorOrphans prints orphaned sessions and returns the error and
+// warning counts.
+func writeDoctorOrphans(cfg *config.Config) (nerrs, nwarns int) {
+	writeDoctorSection("Orphaned sessions", "─────────────────")
+	orphans, err := writeOrphanedSessions(os.Stdout, cfg, doctorFix)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stdout, "  [ERROR] %v\n", err)
+		return 1, 0
 	}
+	return 0, orphans
+}
 
-	// ── Model credentials ────────────────────────────────────────────────────
-	_, _ = fmt.Fprintln(os.Stdout)
-	_, _ = fmt.Fprintln(os.Stdout, "Model credentials")
-	_, _ = fmt.Fprintln(os.Stdout, "─────────────────")
+// writeDoctorModelCredentials pings each configured provider model and
+// returns how many failed.
+func writeDoctorModelCredentials(cfg *config.Config, getSecret func(string) (string, error)) int {
+	writeDoctorSection("Model credentials", "─────────────────")
 	factory := llm.NewFactory(func(ref string) (string, error) {
 		key := strings.TrimPrefix(ref, "auth:")
-		return st.Get(key)
+		return getSecret(key)
 	})
 	providerModels := config.UniqueProviderModels(cfg)
 	if len(providerModels) == 0 {
 		_, _ = fmt.Fprintln(os.Stdout, "  (no models configured)")
 	}
+	nerrs := 0
 	for provider, model := range providerModels {
 		_, _ = fmt.Fprintf(os.Stdout, "  %-12s ", provider)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -203,48 +247,50 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 			_, _ = fmt.Fprintln(os.Stdout, "[OK]")
 		}
 	}
+	return nerrs
+}
 
-	// The CLI registry drives both the CLI backends probe and the
-	// Code Loop agents gates, so the doctor reports from the same definitions
-	// System → Providers & Auth and the Code Loop doctor read.
-	registry, registryErr := clidefs.FromConfig(cfg.Models.CLIDefinitions)
-
-	// ── CLI backends ─────────────────────────────────────────────────────────
-	if backends := config.CLIBackends(cfg); len(backends) > 0 && registryErr == nil {
-		_, _ = fmt.Fprintln(os.Stdout)
-		_, _ = fmt.Fprintln(os.Stdout, "CLI backends")
-		_, _ = fmt.Fprintln(os.Stdout, "────────────")
-		doctor := clidoctor.New(registry)
-		for _, b := range backends {
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			ok, line := describeCLIBackend(doctor.Probe(ctx, string(b)))
-			cancel()
-			level := "OK"
-			if !ok {
-				level = "ERROR"
-				nerrs++
-			}
-			_, _ = fmt.Fprintf(os.Stdout, "  %-12s [%s] %s\n", b, level, line)
-		}
+// writeDoctorCLIBackends probes each configured CLI backend and returns how
+// many failed. It prints nothing when no CLI backends are configured.
+func writeDoctorCLIBackends(cfg *config.Config, registry *clidefs.Registry) int {
+	backends := config.CLIBackends(cfg)
+	if len(backends) == 0 {
+		return 0
 	}
+	writeDoctorSection("CLI backends", "────────────")
+	doctor := clidoctor.New(registry)
+	nerrs := 0
+	for _, b := range backends {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ok, line := describeCLIBackend(doctor.Probe(ctx, string(b)))
+		cancel()
+		level := "OK"
+		if !ok {
+			level = "ERROR"
+			nerrs++
+		}
+		_, _ = fmt.Fprintf(os.Stdout, "  %-12s [%s] %s\n", b, level, line)
+	}
+	return nerrs
+}
 
-	// ── Code Loop agents ──────────────────────────────────────────────────────
-	// Agents gated out of Code Loop dispatch are listed with the reason, so a
-	// job that fails to start on one is explained before it is dispatched.
-	_, _ = fmt.Fprintln(os.Stdout)
-	_, _ = fmt.Fprintln(os.Stdout, "Code Loop agents")
-	_, _ = fmt.Fprintln(os.Stdout, "───────────────")
+// writeDoctorCodeLoopAgents lists agents gated out of Code Loop dispatch with
+// the reason, so a job that fails to start on one is explained before it is
+// dispatched. It returns 1 when the CLI registry could not be built.
+func writeDoctorCodeLoopAgents(registry *clidefs.Registry, registryErr error) int {
+	writeDoctorSection("Code Loop agents", "───────────────")
 	if registryErr != nil {
 		_, _ = fmt.Fprintf(os.Stdout, "  [ERROR] %v\n", registryErr)
-		nerrs++
-	} else {
-		writeProjectsAgentGates(os.Stdout, registry)
+		return 1
 	}
+	writeProjectsAgentGates(os.Stdout, registry)
+	return 0
+}
 
-	// ── Browser profile ───────────────────────────────────────────────────────
-	_, _ = fmt.Fprintln(os.Stdout)
-	_, _ = fmt.Fprintln(os.Stdout, "Browser profile")
-	_, _ = fmt.Fprintln(os.Stdout, "───────────────")
+// writeDoctorBrowserProfile reports the browser profile directory status and
+// returns 1 when it could not be inspected.
+func writeDoctorBrowserProfile(cfg *config.Config) int {
+	writeDoctorSection("Browser profile", "───────────────")
 	profile := strings.TrimSpace(cfg.Browser.ProfileDir)
 	if profile == "" {
 		profile = browser.DefaultProfileDir()
@@ -253,21 +299,10 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	status, statusErr := browser.InspectProfile(profile)
 	if statusErr != nil {
 		_, _ = fmt.Fprintf(os.Stdout, "  [ERROR] %v\n", statusErr)
-		nerrs++
-	} else {
-		_, _ = fmt.Fprintf(os.Stdout, "  %s\n", describeBrowserProfile(status))
+		return 1
 	}
-
-	_, _ = fmt.Fprintf(os.Stdout, "\n%d error(s), %d warning(s)\n", nerrs, nwarns)
-	if !doctorDisableVersion {
-		if err := maybeRunDoctorVersionCheck(); err != nil {
-			return err
-		}
-	}
-	if nerrs > 0 {
-		os.Exit(1)
-	}
-	return nil
+	_, _ = fmt.Fprintf(os.Stdout, "  %s\n", describeBrowserProfile(status))
+	return 0
 }
 
 // writeOrphanedSessions lists the task and channel sessions whose owner was

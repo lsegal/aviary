@@ -557,7 +557,9 @@ func TestManagerAppliesLiveSettingsWithoutARestart(t *testing.T) {
 	t.Cleanup(m.Shutdown)
 	stubEngineIO(t, m)
 	m.SetMentionRouter(func(context.Context, string) error { routed.Store(true); return nil })
-	m.SetUsageRecorder(func(domain.UsageRecord) {})
+	m.SetUsageRecorder(func(domain.UsageRecord) {
+		// Usage is irrelevant here; a recorder only needs to be installed.
+	})
 	m.Reconcile(ownedBy(config.ProjectsConfig{Delivery: DeliveryPoll, Concurrency: 1}, "o/r"))
 	engine := m.engine()
 	if engine == nil {

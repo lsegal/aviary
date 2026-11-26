@@ -289,7 +289,7 @@ func capturedSessionID(updates []AgentSession) string {
 func (c agentContract) checkResume(t *testing.T) {
 	runner, record := c.runner(t, fakeAgentRun{Stdout: c.Stdout})
 	session := AgentSession{ID: c.SessionID, Agent: c.Definition.Name, Resume: true}
-	if err := runner.RunSession(context.Background(), c.issue(), session, func(AgentSession) {}); err != nil {
+	if err := runner.RunSession(context.Background(), c.issue(), session, ignoreSessionUpdate); err != nil {
 		t.Fatalf("resume: %v", err)
 	}
 	invocations := fakeAgentInvocationRecords(t, record)
@@ -307,7 +307,7 @@ func (c agentContract) checkResume(t *testing.T) {
 func (c agentContract) checkResumeRestart(t *testing.T) {
 	runner, record := c.runner(t, fakeAgentRun{Stdout: c.Stdout, MissingOn: invocation(0), MissingText: c.MissingText})
 	session := AgentSession{ID: c.SessionID, Agent: c.Definition.Name, Resume: true}
-	if err := runner.RunSession(context.Background(), c.issue(), session, func(AgentSession) {}); err != nil {
+	if err := runner.RunSession(context.Background(), c.issue(), session, ignoreSessionUpdate); err != nil {
 		t.Fatalf("a resumed session the agent no longer holds should restart the work, got %v", err)
 	}
 	invocations := fakeAgentInvocationRecords(t, record)
@@ -411,7 +411,7 @@ func TestClaudeJobTrustsItsFreshClone(t *testing.T) {
 	require.NoError(t, err)
 	runner := CommandRunner{Agent: definition.Name, Definitions: registry, Repo: "o/r", Approval: clidefs.ApprovalFull}
 	session := AgentSession{ID: "session-7", Agent: definition.Name, Resume: true, CheckoutDirectory: clone}
-	require.NoError(t, runner.RunSession(context.Background(), Issue{Number: 7, Target: "o/r"}, session, func(AgentSession) {}))
+	require.NoError(t, runner.RunSession(context.Background(), Issue{Number: 7, Target: "o/r"}, session, ignoreSessionUpdate))
 
 	invocations := fakeAgentInvocationRecords(t, record)
 	require.Len(t, invocations, 1)
@@ -650,7 +650,7 @@ func TestGeminiResumeFailureMessagesRestartTheWork(t *testing.T) {
 func TestAgentDefinitionRunFailureIsReported(t *testing.T) {
 	contract := agentContract{Definition: builtinDefinition(t, "codex"), Repo: "o/r", Number: 7}
 	runner, record := contract.runner(t, fakeAgentRun{FailOn: invocation(0)})
-	err := runner.RunSession(context.Background(), contract.issue(), AgentSession{Agent: "codex"}, func(AgentSession) {})
+	err := runner.RunSession(context.Background(), contract.issue(), AgentSession{Agent: "codex"}, ignoreSessionUpdate)
 	if err == nil {
 		t.Fatal("a failing agent run was reported as a success")
 	}
@@ -756,7 +756,7 @@ func TestJSONLAgentDoesNotRestartOnAnOrdinaryFailure(t *testing.T) {
 		MissingOn: invocation(0), MissingText: "error: model overloaded, try again",
 	})
 	session := AgentSession{Agent: definition.Name, Resume: true}
-	if err := runner.RunSession(context.Background(), contract.issue(), session, func(AgentSession) {}); err == nil {
+	if err := runner.RunSession(context.Background(), contract.issue(), session, ignoreSessionUpdate); err == nil {
 		t.Fatal("an ordinary agent failure was treated as a missing session")
 	}
 	if got := fakeAgentInvocationRecords(t, record); len(got) != 1 {

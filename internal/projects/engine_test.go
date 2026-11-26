@@ -177,7 +177,9 @@ func (r *snapshotReporter) Snapshot(snapshot EngineSnapshot) {
 	r.snapshots = append(r.snapshots, snapshot)
 }
 
-func (r *snapshotReporter) Log(string) {}
+func (r *snapshotReporter) Log(string) {
+	// Log lines are ignored: tests assert only on recorded snapshots.
+}
 
 type fakeIssueStatuser struct {
 	mu       sync.Mutex
@@ -1948,7 +1950,7 @@ func TestCommandRunnerRestartsClaudeWhenResumedSessionIsMissing(t *testing.T) {
 	binary, log := writeFakeAgent(t, `{"type":"result","is_error":true,"result":"No conversation found with session ID: session-7"}`, 1)
 	runner := CommandRunner{Agent: "claude", ClaudeBinary: binary, Repo: "o/r"}
 	session := AgentSession{ID: "session-7", Agent: "claude", Resume: true}
-	if err := runner.RunSession(context.Background(), Issue{Number: 7}, session, func(AgentSession) {}); err != nil {
+	if err := runner.RunSession(context.Background(), Issue{Number: 7}, session, ignoreSessionUpdate); err != nil {
 		t.Fatalf("missing session should restart the work, got %v", err)
 	}
 	got := fakeAgentInvocations(t, log)
@@ -1972,7 +1974,7 @@ func TestCommandRunnerRestartsCodexWithoutTheMissingSessionID(t *testing.T) {
 	binary, log := writeFakeAgent(t, "Error: session not found", 1)
 	runner := CommandRunner{Agent: "codex", CodexBinary: binary, Repo: "o/r"}
 	session := AgentSession{ID: "session-7", Agent: "codex", Resume: true}
-	if err := runner.RunSession(context.Background(), Issue{Number: 7}, session, func(AgentSession) {}); err != nil {
+	if err := runner.RunSession(context.Background(), Issue{Number: 7}, session, ignoreSessionUpdate); err != nil {
 		t.Fatalf("missing session should restart the work, got %v", err)
 	}
 	got := fakeAgentInvocations(t, log)
@@ -1993,7 +1995,7 @@ func TestCommandRunnerRunsOutsideAmbientWorkingDirectory(t *testing.T) {
 	binary, log := writeFakeAgent(t, "", 0)
 	runner := CommandRunner{Agent: "codex", CodexBinary: binary, Repo: "o/r"}
 	session := AgentSession{ID: "session-7", Agent: "codex"}
-	if err := runner.RunSession(context.Background(), Issue{Number: 7, Target: "o/r"}, session, func(AgentSession) {}); err != nil {
+	if err := runner.RunSession(context.Background(), Issue{Number: 7, Target: "o/r"}, session, ignoreSessionUpdate); err != nil {
 		t.Fatalf("RunSession() error = %v", err)
 	}
 	got := fakeAgentInvocations(t, log)
@@ -2017,7 +2019,7 @@ func TestCommandRunnerDisablesClaudeBackgroundWaitCeiling(t *testing.T) {
 	binary, log := writeFakeAgent(t, "", 0)
 	runner := CommandRunner{Agent: "claude", ClaudeBinary: binary, Repo: "o/r"}
 	session := AgentSession{ID: "session-7", Agent: "claude"}
-	if err := runner.RunSession(context.Background(), Issue{Number: 7}, session, func(AgentSession) {}); err != nil {
+	if err := runner.RunSession(context.Background(), Issue{Number: 7}, session, ignoreSessionUpdate); err != nil {
 		t.Fatalf("RunSession() error = %v", err)
 	}
 	got := fakeAgentInvocations(t, log)
@@ -2034,7 +2036,7 @@ func TestCommandRunnerLeavesCodexBackgroundWaitCeilingUnset(t *testing.T) {
 	binary, log := writeFakeAgent(t, "", 0)
 	runner := CommandRunner{Agent: "codex", CodexBinary: binary, Repo: "o/r"}
 	session := AgentSession{ID: "session-7", Agent: "codex"}
-	if err := runner.RunSession(context.Background(), Issue{Number: 7}, session, func(AgentSession) {}); err != nil {
+	if err := runner.RunSession(context.Background(), Issue{Number: 7}, session, ignoreSessionUpdate); err != nil {
 		t.Fatalf("RunSession() error = %v", err)
 	}
 	got := fakeAgentInvocations(t, log)
@@ -2047,7 +2049,7 @@ func TestCommandRunnerReportsResumeFailuresThatAreNotMissingSessions(t *testing.
 	binary, log := writeFakeAgent(t, "boom: the agent crashed", 3)
 	runner := CommandRunner{Agent: "claude", ClaudeBinary: binary, Repo: "o/r"}
 	session := AgentSession{ID: "session-7", Agent: "claude", Resume: true}
-	err := runner.RunSession(context.Background(), Issue{Number: 7}, session, func(AgentSession) {})
+	err := runner.RunSession(context.Background(), Issue{Number: 7}, session, ignoreSessionUpdate)
 	var failure *domain.RunFailure
 	if !errors.As(err, &failure) || failure.BugReportURL == "" {
 		t.Fatalf("unrelated resume failure = %v, want a reported agent failure", err)

@@ -54,90 +54,70 @@ func fetchLinkPreviews(text string) ([]linkPreview, func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
+	body, ok := fetchLinkPreviewHTML(ctx, u)
+	if !ok {
 		return nil, nil
+	}
+	defer body.Close() //nolint:errcheck
+
+	p := parseLinkPreviewHTML(u, io.LimitReader(body, maxLinkPreviewHTMLSize))
+	if p.Title == "" {
+		return nil, nil
+	}
+
+	p.Title = html.UnescapeString(p.Title)
+	p.Description = html.UnescapeString(p.Description)
+
+	// Resolve image URL and download to a temp file for signal-cli.
+	// p.Image becomes the local path, or empty if the download fails.
+	var cleanup func()
+	p.Image, cleanup = downloadLinkPreviewImage(ctx, u, html.UnescapeString(p.Image))
+
+	return []linkPreview{p}, cleanup
+}
+
+// fetchLinkPreviewHTML GETs pageURL and returns its body when the response is
+// HTML. The caller must close the returned body.
+func fetchLinkPreviewHTML(ctx context.Context, pageURL string) (io.ReadCloser, bool) {
+	req, err := http.NewRequestWithContext(ctx, "GET", pageURL, nil)
+	if err != nil {
+		return nil, false
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Aviary/1.0)")
 	req.Header.Set("Accept", "text/html")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		slog.Debug("signal: link preview fetch failed", "url", u, "err", err)
-		return nil, nil
+		slog.Debug("signal: link preview fetch failed", "url", pageURL, "err", err)
+		return nil, false
 	}
-	defer resp.Body.Close() //nolint:errcheck
-
 	if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
-		return nil, nil
+		resp.Body.Close() //nolint:errcheck
+		return nil, false
 	}
+	return resp.Body, true
+}
 
-	p := linkPreview{URL: u}
-	z := nethtml.NewTokenizer(io.LimitReader(resp.Body, maxLinkPreviewHTMLSize))
+// parseLinkPreviewHTML tokenizes an HTML document and collects the title,
+// description and (unresolved) image URL for a link preview.
+func parseLinkPreviewHTML(pageURL string, r io.Reader) linkPreview {
+	p := linkPreview{URL: pageURL}
+	z := nethtml.NewTokenizer(r)
 	var inTitle bool
 
 	for {
 		tt := z.Next()
 		if tt == nethtml.ErrorToken {
-			break
+			return p
 		}
 		t := z.Token()
 
 		switch tt {
 		case nethtml.StartTagToken, nethtml.SelfClosingTagToken:
-			tagName := strings.ToLower(t.Data)
-			if tagName == "title" {
+			if strings.ToLower(t.Data) == "title" {
 				inTitle = true
 			}
-			if tagName == "meta" {
-				var property, content string
-				for _, a := range t.Attr {
-					key := strings.ToLower(a.Key)
-					if key == "property" || key == "name" {
-						property = strings.ToLower(a.Val)
-					}
-					if key == "content" {
-						content = a.Val
-					}
-				}
-				switch property {
-				case "og:title", "twitter:title":
-					if p.Title == "" {
-						p.Title = strings.TrimSpace(content)
-					}
-				case "og:description", "description", "twitter:description":
-					if p.Description == "" {
-						p.Description = strings.TrimSpace(content)
-					}
-				case "og:image", "twitter:image":
-					if p.Image == "" && content != "" {
-						p.Image = content
-					}
-				}
-			}
-			if tagName == "link" {
-				var rel, href string
-				for _, a := range t.Attr {
-					key := strings.ToLower(a.Key)
-					if key == "rel" {
-						rel = strings.ToLower(a.Val)
-					}
-					if key == "href" {
-						href = a.Val
-					}
-				}
-				if (rel == "icon" || rel == "apple-touch-icon" || rel == "shortcut icon") && p.Image == "" {
-					p.Image = href
-				}
-			}
-			if tagName == "img" && p.Image == "" {
-				for _, a := range t.Attr {
-					if strings.ToLower(a.Key) == "src" {
-						p.Image = a.Val
-						break
-					}
-				}
-			}
+			p.applyTag(t)
 		case nethtml.EndTagToken:
 			if strings.ToLower(t.Data) == "title" {
 				inTitle = false
@@ -148,37 +128,97 @@ func fetchLinkPreviews(text string) ([]linkPreview, func()) {
 			}
 		}
 	}
+}
 
-	if p.Title == "" {
-		return nil, nil
-	}
-
-	p.Title = html.UnescapeString(p.Title)
-	p.Description = html.UnescapeString(p.Description)
-
-	// Resolve image URL and download to a temp file for signal-cli.
-	var cleanup func()
-	imageURL := html.UnescapeString(p.Image)
-	p.Image = "" // clear it; will be set to local path if download succeeds
-	if imageURL != "" {
-		// Resolve relative image URLs against the page URL.
-		if base, err := url.Parse(u); err == nil {
-			if rel, err := url.Parse(imageURL); err == nil {
-				imageURL = base.ResolveReference(rel).String()
+// applyTag updates p from a <meta>, <link> or <img> start tag.
+func (p *linkPreview) applyTag(t nethtml.Token) {
+	switch strings.ToLower(t.Data) {
+	case "meta":
+		var property, content string
+		for _, a := range t.Attr {
+			switch strings.ToLower(a.Key) {
+			case "property", "name":
+				property = strings.ToLower(a.Val)
+			case "content":
+				content = a.Val
 			}
 		}
-
-		if strings.HasPrefix(imageURL, "http") {
-			if path, err := downloadTempImage(ctx, imageURL); err == nil {
-				p.Image = path
-				cleanup = func() { os.Remove(path) } //nolint:errcheck
-			} else {
-				slog.Debug("signal: link preview image download failed", "url", imageURL, "err", err)
+		p.applyMeta(property, content)
+	case "link":
+		attrs := lowerKeyAttrs(t.Attr)
+		switch strings.ToLower(attrs["rel"]) {
+		case "icon", "apple-touch-icon", "shortcut icon":
+			if p.Image == "" {
+				p.Image = attrs["href"]
 			}
 		}
+	case "img":
+		if p.Image == "" {
+			p.Image = firstAttr(t.Attr, "src")
+		}
 	}
+}
 
-	return []linkPreview{p}, cleanup
+// applyMeta records a meta tag's content, keeping the first value seen for
+// each preview field.
+func (p *linkPreview) applyMeta(property, content string) {
+	switch property {
+	case "og:title", "twitter:title":
+		if p.Title == "" {
+			p.Title = strings.TrimSpace(content)
+		}
+	case "og:description", "description", "twitter:description":
+		if p.Description == "" {
+			p.Description = strings.TrimSpace(content)
+		}
+	case "og:image", "twitter:image":
+		if p.Image == "" && content != "" {
+			p.Image = content
+		}
+	}
+}
+
+// lowerKeyAttrs maps lower-cased attribute keys to values; later duplicates win.
+func lowerKeyAttrs(attrs []nethtml.Attribute) map[string]string {
+	m := make(map[string]string, len(attrs))
+	for _, a := range attrs {
+		m[strings.ToLower(a.Key)] = a.Val
+	}
+	return m
+}
+
+// firstAttr returns the value of the first attribute named key (case-insensitive).
+func firstAttr(attrs []nethtml.Attribute, key string) string {
+	for _, a := range attrs {
+		if strings.ToLower(a.Key) == key {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+// downloadLinkPreviewImage resolves imageURL against pageURL and downloads it
+// to a temp file, returning the local path and a cleanup func that removes it.
+// It returns empty values when there is no usable image.
+func downloadLinkPreviewImage(ctx context.Context, pageURL, imageURL string) (string, func()) {
+	if imageURL == "" {
+		return "", nil
+	}
+	// Resolve relative image URLs against the page URL.
+	if base, err := url.Parse(pageURL); err == nil {
+		if rel, err := url.Parse(imageURL); err == nil {
+			imageURL = base.ResolveReference(rel).String()
+		}
+	}
+	if !strings.HasPrefix(imageURL, "http") {
+		return "", nil
+	}
+	path, err := downloadTempImage(ctx, imageURL)
+	if err != nil {
+		slog.Debug("signal: link preview image download failed", "url", imageURL, "err", err)
+		return "", nil
+	}
+	return path, func() { os.Remove(path) } //nolint:errcheck
 }
 
 // downloadTempImage fetches imageURL and writes it to a temp file, returning the path.
