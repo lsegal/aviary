@@ -297,24 +297,30 @@ test("mobile header fits a 320px phone with an update pending (#1317)", async ({
 	).toBe(0);
 });
 
-const labelStyle = ["color", "text-decoration-line", "font-family", "font-size"];
+const labelStyle = [
+	"color",
+	"text-decoration-line",
+	"font-family",
+	"font-size",
+];
 
 async function versionLabelStyle(page: Page, version: string) {
 	await page.routeWebSocket(/\/api\/ws/, (ws) => {
-		ws.send(JSON.stringify({ type: "health", ok: true, version, goos: "darwin" }));
+		ws.send(
+			JSON.stringify({ type: "health", ok: true, version, goos: "darwin" }),
+		);
 	});
 	await mockServer(page);
 	await page.goto("/system/overview");
-	const label = page.getByTestId("sidebar-footer").getByTestId("server-version");
+	const label = page
+		.getByTestId("sidebar-footer")
+		.getByTestId("server-version");
 	await expect(label).toHaveText(version);
 	const style = () =>
-		label.evaluate(
-			(el, props) => {
-				const s = getComputedStyle(el);
-				return props.map((p) => s.getPropertyValue(p));
-			},
-			labelStyle,
-		);
+		label.evaluate((el, props) => {
+			const s = getComputedStyle(el);
+			return props.map((p) => s.getPropertyValue(p));
+		}, labelStyle);
 	const plain = await style();
 	await label.hover();
 	return { label, plain, hovered: await style() };
@@ -364,7 +370,9 @@ test("dev and SHA builds keep the version label as plain text (#1405)", async ({
 	await connectHealthy(page);
 	await mockServer(page);
 	await page.goto("/system/overview");
-	const label = page.getByTestId("sidebar-footer").getByTestId("server-version");
+	const label = page
+		.getByTestId("sidebar-footer")
+		.getByTestId("server-version");
 	await expect(label).toHaveText("31ee10e");
 	await expect(label).toHaveJSProperty("tagName", "SPAN");
 	await expect(page.locator('a[href*="/releases/tag/"]')).toHaveCount(0);

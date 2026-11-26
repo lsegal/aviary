@@ -170,7 +170,11 @@ test("settings pages fit a phone at the largest text size (#1093)", async ({
 	});
 	// The header's links give way rather than run under its status icons.
 	const status = await page.getByTestId("mobile-header-status").boundingBox();
-	for (const link of await page.locator("header a[aria-label]").all()) {
+	// The status group's own version link (#1405) is not one of those links.
+	const links = page.locator(
+		'header a[aria-label]:not([data-testid="mobile-header-status"] a)',
+	);
+	for (const link of await links.all()) {
 		const box = await link.boundingBox();
 		if (!box || !(await link.isVisible())) continue;
 		const clipped = await link.evaluate((el) => {
