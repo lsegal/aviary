@@ -464,7 +464,9 @@ for (const [board, path] of [
 			["done", "Done"],
 			["failed", "Failed"],
 		]) {
-			const chip = filter.getByRole("button", { name: new RegExp(`^${label}`) });
+			const chip = filter.getByRole("button", {
+				name: new RegExp(`^${label}`),
+			});
 			const count = JOBS.filter((j) => j.state === state).length;
 			await expect(chip).toHaveText(`${label}${count}`);
 			await chip.click();
@@ -479,12 +481,12 @@ for (const [board, path] of [
 		await filter.getByRole("button", { name: /^Starting/ }).click();
 		await expect(cards).toHaveCount(2);
 		await expect(
-			cards
-				.filter({ hasText: "Bump vite" })
-				.getByTestId("job-queue-position"),
+			cards.filter({ hasText: "Bump vite" }).getByTestId("job-queue-position"),
 		).toHaveText("#2 in the merge queue");
 		await expect(
-			cards.filter({ hasText: "watch a Project board" }).getByTestId("job-kind"),
+			cards
+				.filter({ hasText: "watch a Project board" })
+				.getByTestId("job-kind"),
 		).toHaveText("Discuss");
 		await filter.getByRole("button", { name: /^Starting/ }).click();
 

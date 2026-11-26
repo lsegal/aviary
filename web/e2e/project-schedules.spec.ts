@@ -1330,7 +1330,7 @@ test.describe("the agent board's scheduled items (#1107)", () => {
 		expect(calls.project_job_list).toContainEqual(
 			expect.objectContaining({
 				targets: ["lsegal/aviary", "lsegal/zvidlib"],
-				kinds: ["issue", "discussion"],
+				kinds: ["issue", "discussion", "merge", "discuss"],
 			}),
 		);
 		expect(calls.project_job_list).toContainEqual(
@@ -1770,7 +1770,9 @@ test.describe("one card per scheduled task (#977)", () => {
 		await expect(card.getByTestId("scheduled-strip")).toHaveText("✓✖⚠✓");
 		// The project's jobs are read apart from its schedules' entries.
 		expect(calls.project_job_list).toContainEqual(
-			expect.objectContaining({ kinds: ["issue", "discussion"] }),
+			expect.objectContaining({
+				kinds: ["issue", "discussion", "merge", "discuss"],
+			}),
 		);
 
 		// Done shows neither the schedule nor its runs.
