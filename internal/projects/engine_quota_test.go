@@ -73,7 +73,7 @@ func TestPublishShowsCachedQuotaReadings(t *testing.T) {
 	reporter := &snapshotReporter{}
 	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: 1,
-		Issues: &fakeSource{}, Runner: fakeOutputRunner{}, UI: reporter,
+		Issues: &fakeSource{batches: [][]Issue{{}}}, Runner: fakeOutputRunner{}, UI: reporter,
 		Quota: func(context.Context) map[string]string {
 			return map[string]string{"codex": "week 50% left"}
 		},
