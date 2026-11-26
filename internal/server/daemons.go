@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -8,7 +9,17 @@ import (
 	"os"
 	"runtime"
 	"time"
+
+	"github.com/lsegal/aviary/internal/channels"
 )
+
+// daemonChannelSource is the part of *channels.Manager the daemon handlers
+// use, so tests can substitute managed daemons without real subprocesses.
+type daemonChannelSource interface {
+	List() []channels.ChannelStatus
+	SubscribeLogs(key string) (history []string, live <-chan string, unsub func(), ok bool)
+	Restart(ctx context.Context, key string, msgFn func(agentName, channelType, configuredID string, ch channels.Channel, msg channels.IncomingMessage)) error
+}
 
 // serverStartTime records when the aviary process started (package-load time).
 var serverStartTime = time.Now()
@@ -63,7 +74,7 @@ func (s *Server) daemonsHandler(w http.ResponseWriter, _ *http.Request) {
 
 	seenPIDs := map[int]bool{}
 	seenManaged := map[string]bool{} // dedup managed channels with PID==0 by type+id
-	for _, cs := range s.channels.List() {
+	for _, cs := range s.daemonChannels.List() {
 		d := DaemonStatus{
 			Name:       cs.Key,
 			Type:       cs.Type,
@@ -133,7 +144,7 @@ func (s *Server) daemonLogsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	history, live, unsub, ok := s.channels.SubscribeLogs(key)
+	history, live, unsub, ok := s.daemonChannels.SubscribeLogs(key)
 	if !ok {
 		http.Error(w, "daemon not found", http.StatusNotFound)
 		return
@@ -212,7 +223,7 @@ func (s *Server) daemonRestartHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var restartable bool
-	for _, cs := range s.channels.List() {
+	for _, cs := range s.daemonChannels.List() {
 		if cs.Key == req.Key {
 			restartable = cs.Daemon != nil && !cs.Daemon.External
 			break
@@ -223,7 +234,7 @@ func (s *Server) daemonRestartHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.channels.Restart(s.runCtx, req.Key, s.msgFn); err != nil {
+	if err := s.daemonChannels.Restart(s.runCtx, req.Key, s.msgFn); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
