@@ -358,7 +358,10 @@
       </div>
     </nav>
 
-    <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <!-- With the shared header the column scrolls by the title row's height,
+         so only the breadcrumb bar stays pinned (#1437). -->
+    <main ref="mainEl" data-testid="page-main" class="flex min-h-0 min-w-0 flex-1 flex-col"
+      :class="headerCrumbs.length ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'">
       <SettingsPageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back" :title-link="titleLink"
         :switcher="leafSwitcher" :identity="pageIdentity(route.path)">
         <template v-if="$slots['header-icon']" #icon><slot name="header-icon" /></template>
@@ -366,8 +369,10 @@
         <template v-if="$slots['header-actions']" #actions><slot name="header-actions" /></template>
         <template v-if="$slots.header" #default><slot name="header" /></template>
       </SettingsPageHeader>
-      <!-- The page fills what the header leaves. -->
-      <div class="flex min-h-0 flex-1 flex-col">
+      <!-- The page fills what the breadcrumb bar leaves. -->
+      <div data-testid="page-body" class="flex flex-col"
+        :class="headerCrumbs.length && pageHeight !== null ? 'shrink-0 overflow-hidden' : 'min-h-0 flex-1'"
+        :style="headerCrumbs.length && pageHeight !== null ? { height: `${pageHeight}px` } : undefined">
         <slot />
       </div>
     </main>
@@ -413,6 +418,7 @@ import {
 } from "vue";
 import { type RouteLocationRaw, useRoute, useRouter } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
+import { useScrollAwayHeader } from "../composables/useScrollAwayHeader";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useChannelDialogs } from "../composables/useChannelDialogs";
 import { channelName, channelPath } from "../lib/channels";
@@ -1140,6 +1146,13 @@ const headerCrumbs = computed((): SettingsCrumb[] => {
 		...props.trail.crumbs,
 	];
 });
+// Only the header's breadcrumb bar stays pinned; its title row scrolls
+// away with the page (#1437).
+const mainEl = ref<HTMLElement | null>(null);
+const { pageHeight } = useScrollAwayHeader(
+	mainEl,
+	computed(() => headerCrumbs.value.length > 0),
+);
 // The leaf's switcher between its sibling projects, tasks, channels or
 // files (#1063).
 const leafSwitcher = useCrumbSwitcher(

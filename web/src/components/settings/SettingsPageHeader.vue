@@ -1,8 +1,10 @@
 <template>
 	<div data-testid="settings-header" class="shrink-0 bg-white dark:bg-gray-950">
 		<!-- The breadcrumb bar: back to the parent page, then the trail. -->
+		<!-- Only this bar stays pinned while the page scrolls; the title row
+			slides under it (#1437). -->
 		<div data-testid="settings-crumb-bar"
-			class="flex min-w-0 items-center gap-1 border-b border-gray-200 px-2 py-1.5 sm:px-4 dark:border-gray-800">
+			class="sticky top-0 z-20 flex min-w-0 items-center gap-1 border-b bg-white dark:bg-gray-950 border-gray-200 px-2 py-1.5 sm:px-4 dark:border-gray-800">
 			<router-link v-if="parent" :to="parent.to" data-testid="settings-back" :aria-label="`Back to ${parent.label}`"
 				:title="`Back to ${parent.label}`" :class="BACK_CLS">
 				<ArrowLeftIcon aria-hidden="true" class="h-4 w-4 shrink-0" />
