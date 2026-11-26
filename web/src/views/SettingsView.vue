@@ -181,6 +181,9 @@
 				class="font-medium text-gray-900 dark:text-white">{{ removeAgentTarget !== null ? (draft?.agents[removeAgentTarget]?.name || 'this agent') : '' }}</span>
 			from the configuration. This cannot be undone.
 		</p>
+		<DeleteDataOption v-model="removeAgentData" kind="agent"
+			:name="removeAgentOpen && removeAgentTarget !== null ? (draft?.agents[removeAgentTarget]?.name ?? '') : ''"
+			test-id="remove-agent-data" />
 	</ConfirmDialog>
 
 	<ConfirmDialog v-model:open="removeTargetOpen"
@@ -308,6 +311,7 @@ import SettingsProvidersTab from "../components/settings/SettingsProvidersTab.vu
 import SettingsSessionsTab from "../components/settings/SettingsSessionsTab.vue";
 import SettingsSkillsTab from "../components/settings/SettingsSkillsTab.vue";
 import ConfirmDialog from "../components/ui/ConfirmDialog.vue";
+import DeleteDataOption from "../components/ui/DeleteDataOption.vue";
 import { Skeleton } from "../components/ui/skeleton";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useAgentNav } from "../composables/useAgentNav";
@@ -330,6 +334,7 @@ import {
 	channelTarget,
 	channelTargetName,
 } from "../lib/channels";
+import type { DataOwner } from "../lib/deleteData";
 import { HEADER_ACTION_CLS } from "../lib/headerActions";
 import { projectTargets } from "../lib/projectSettings";
 import { projectPath } from "../lib/projects";
@@ -2292,17 +2297,21 @@ function addAgent() {
 
 const removeAgentTarget = ref<number | null>(null);
 const removeAgentOpen = ref(false);
+const removeAgentData = ref(true);
 
 function removeAgent(index: number) {
 	removeAgentTarget.value = index;
+	removeAgentData.value = true;
 	removeAgentOpen.value = true;
 }
 
-function confirmRemoveAgent() {
+// Removing an agent saves straight away, so deleting its data happens with
+// it; an agent that was never saved only leaves the draft.
+async function confirmRemoveAgent() {
 	const index = removeAgentTarget.value;
 	if (index === null) return;
+	await deleteAgentEntry(index, removeAgentData.value);
 	removeAgentTarget.value = null;
-	draft.value.agents.splice(index, 1);
 	if (!draft.value.agents.length) {
 		void router.replace("/agents");
 		return;
@@ -2325,12 +2334,13 @@ function confirmRemoveAgent() {
 async function saveAgentListChange(
 	name: string,
 	change: (agents: AgentEntry[], idx: number) => void,
+	deleteData: DataOwner[] = [],
 ) {
 	const saved = JSON.parse(lastSavedSnapshot.value) as AppConfig;
 	const idx = name ? saved.agents.findIndex((a) => a.name === name) : -1;
 	if (idx < 0) return;
 	change(saved.agents, idx);
-	await store.saveConfig(saved);
+	await store.saveConfig(saved, deleteData);
 	lastSavedSnapshot.value = JSON.stringify(saved);
 }
 
@@ -2343,12 +2353,17 @@ async function renameAgentEntry(index: number, name: string) {
 	entry.name = name;
 }
 
-async function deleteAgentEntry(index: number) {
+/** Deletes an agent, and its data directory when deleteData is set. */
+async function deleteAgentEntry(index: number, deleteData = false) {
 	const entry = draft.value.agents[index];
 	if (!entry) return;
-	await saveAgentListChange(entry.name, (agents, idx) => {
-		agents.splice(idx, 1);
-	});
+	await saveAgentListChange(
+		entry.name,
+		(agents, idx) => {
+			agents.splice(idx, 1);
+		},
+		deleteData && entry.name ? [{ kind: "agent", name: entry.name }] : [],
+	);
 	draft.value.agents.splice(index, 1);
 }
 

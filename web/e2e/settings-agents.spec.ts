@@ -8,7 +8,11 @@ interface MockConfig {
 
 // config_get answers from the last saved config, so saves show on reload.
 async function mockConfig(page: Page, initial: MockConfig) {
-	const state = { config: initial, saves: [] as MockConfig[] };
+	const state = {
+		config: initial,
+		saves: [] as MockConfig[],
+		deleteData: [] as unknown[],
+	};
 	await setAuthToken(page);
 	await mockMCP(page, {
 		agent_list: [],
@@ -22,6 +26,7 @@ async function mockConfig(page: Page, initial: MockConfig) {
 		config_save: (args) => {
 			state.config = JSON.parse(String(args?.config ?? "{}"));
 			state.saves.push(state.config);
+			if (args?.delete_data) state.deleteData.push(args.delete_data);
 			return "saved";
 		},
 	});
@@ -189,6 +194,8 @@ test("Delete confirms with the agent's dependents before deleting", async ({
 
 	await row.getByTestId("settings-agent-menu").click();
 	await page.getByTestId("settings-agent-delete").click();
+	// Deleting the agent's data is offered, checked by default.
+	await expect(page.getByTestId("delete-agent-data-checkbox")).toBeChecked();
 	await page.getByTestId("delete-agent-dialog-confirm").click();
 	await expect(dialog).toHaveCount(0);
 	await expect(
@@ -196,6 +203,7 @@ test("Delete confirms with the agent's dependents before deleting", async ({
 	).toHaveText(["helper"]);
 	expect(state.saves).toHaveLength(1);
 	expect(state.saves[0].agents.map((a) => a.name)).toEqual(["helper"]);
+	expect(state.deleteData).toEqual([[{ kind: "agent", name: "assistant" }]]);
 
 	// The last agent can't be deleted, and the menu says why.
 	await page.getByTestId("settings-agent-menu").click();

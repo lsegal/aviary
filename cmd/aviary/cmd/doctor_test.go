@@ -12,9 +12,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/clidoctor"
+	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/startup"
 	"github.com/lsegal/aviary/internal/store"
 )
@@ -136,4 +138,35 @@ func TestDescribeBrowserProfile(t *testing.T) {
 	assert.Contains(t, reclaimed, "cleared a stale lock record")
 
 	assert.Equal(t, "[OK] lock free; Aviary's browser is running on it", describeBrowserProfile(browser.ProfileStatus{ChromeRunning: true}))
+}
+
+func TestWriteOrphanedSessions(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", "")
+	require.NoError(t, store.EnsureDirs())
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot"}}}
+	// The be-nice workflow was deleted but its session was left behind.
+	_, err := agent.EnsureTaskSession("bot", "be-nice")
+	require.NoError(t, err)
+
+	var out strings.Builder
+	left, err := writeOrphanedSessions(&out, cfg, false)
+	require.NoError(t, err)
+	assert.Equal(t, 1, left)
+	assert.Contains(t, out.String(), "[WARN] bot/be-nice")
+	assert.Contains(t, out.String(), "aviary doctor --fix")
+	assert.NotEmpty(t, store.FindSessionPath("bot", "be-nice"), "without --fix nothing changes")
+
+	out.Reset()
+	left, err = writeOrphanedSessions(&out, cfg, true)
+	require.NoError(t, err)
+	assert.Equal(t, 0, left)
+	assert.Contains(t, out.String(), `[FIXED] bot/be-nice: archived as "be-nice (archived)"`)
+	assert.Empty(t, store.FindSessionPath("bot", "be-nice"))
+
+	out.Reset()
+	left, err = writeOrphanedSessions(&out, cfg, false)
+	require.NoError(t, err)
+	assert.Equal(t, 0, left)
+	assert.Equal(t, "  (none)\n", out.String())
 }

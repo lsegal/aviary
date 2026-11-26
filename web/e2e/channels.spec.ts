@@ -316,20 +316,22 @@ test("… Rename, Settings and Delete act on a channel", async ({ page }) => {
 	await expect(page).toHaveURL(/\/agents\/assistant\/channels\/Ops%20Slack$/);
 	await expect(page.getByTestId("settings-title")).toHaveText("Ops Slack");
 
-	// Delete confirms and asks what to do with the sessions.
+	// Delete confirms and offers to delete the sessions, checked by default.
 	await menu("Ops Slack", "Delete");
 	const confirm = page.getByTestId("channel-remove-dialog");
 	await expect(confirm).toContainText("Remove channel?");
-	await expect(confirm.getByTestId("channel-remove-archive")).toBeChecked();
+	await expect(
+		confirm.getByTestId("channel-remove-data-checkbox"),
+	).toBeChecked();
 	await confirm.getByRole("button", { name: "Cancel" }).click();
 	await expect(confirm).toHaveCount(0);
 	expect(calls.channel_remove).toBeUndefined();
 
 	await menu("Ops Slack", "Delete");
-	await confirm.getByTestId("channel-remove-delete").check();
+	await confirm.getByTestId("channel-remove-data-checkbox").uncheck();
 	await confirm.getByRole("button", { name: "Remove" }).click();
 	expect(calls.channel_remove).toEqual([
-		{ agent: "assistant", channel: "Ops Slack", sessions: "delete" },
+		{ agent: "assistant", channel: "Ops Slack", delete_data: false },
 	]);
 	await expect(page).toHaveURL(/\/agents\/assistant\/channels$/);
 	await expect(page.getByTestId("channel-row")).toHaveText(["Phone"]);

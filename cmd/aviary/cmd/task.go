@@ -201,10 +201,11 @@ var taskUpdateCmd = &cobra.Command{
 var taskRmCmd = &cobra.Command{
 	Use:     "rm <name>",
 	Aliases: []string{"remove", "delete"},
-	Short:   "Delete a scheduled task and its run history",
+	Short:   "Delete a scheduled task; --delete-data also deletes its session and run history",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		out, err := dispatcher.CallTool(cmd.Context(), "task_delete", map[string]any{"name": args[0]})
+		deleteData, _ := cmd.Flags().GetBool("delete-data")
+		out, err := dispatcher.CallTool(cmd.Context(), "task_delete", map[string]any{"name": args[0], "delete_data": deleteData})
 		if err != nil {
 			return err
 		}
@@ -343,6 +344,8 @@ func init() {
 	taskUpdateCmd.Flags().Bool("enabled", true, "enable or disable the task")
 	taskUpdateCmd.Flags().String("project", "", "watched project of a project task")
 	taskUpdateCmd.Flags().String("model", "", "model override for a project task (empty: the project agent's model)")
+
+	taskRmCmd.Flags().Bool("delete-data", false, "also delete the task's session and run history; without it its session becomes a regular chat")
 
 	addTaskTriggerFlags(taskPreviewCmd)
 	taskPreviewCmd.Flags().Int("count", 3, "number of fires to show (at most 20)")

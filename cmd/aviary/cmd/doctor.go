@@ -20,6 +20,7 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/server"
+	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/startup"
 	"github.com/lsegal/aviary/internal/store"
 	"github.com/lsegal/aviary/internal/update"
@@ -33,11 +34,15 @@ var doctorCmd = &cobra.Command{
 credentials exist in the auth store. Prints system environment information
 suitable for pasting into a bug report.
 
+Also lists orphaned sessions: task and channel sessions whose task, workflow
+or channel was deleted. --fix archives them as regular chats.
+
 Exits with status 1 if any errors are found.`,
 	RunE: runDoctor,
 }
 
 func init() {
+	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "Archive orphaned sessions as regular chats")
 	doctorCmd.Flags().BoolVar(&doctorDisableVersion, "disable-version-check", false, "Skip the GitHub release version check and upgrade prompt")
 	rootCmd.AddCommand(doctorCmd)
 }
@@ -163,6 +168,17 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		_, _ = fmt.Fprintln(os.Stdout, "  (no issues)")
 	}
 
+	// ── Orphaned sessions ────────────────────────────────────────────────────
+	_, _ = fmt.Fprintln(os.Stdout)
+	_, _ = fmt.Fprintln(os.Stdout, "Orphaned sessions")
+	_, _ = fmt.Fprintln(os.Stdout, "─────────────────")
+	if orphans, orphanErr := writeOrphanedSessions(os.Stdout, cfg, doctorFix); orphanErr != nil {
+		_, _ = fmt.Fprintf(os.Stdout, "  [ERROR] %v\n", orphanErr)
+		nerrs++
+	} else {
+		nwarns += orphans
+	}
+
 	// ── Model credentials ────────────────────────────────────────────────────
 	_, _ = fmt.Fprintln(os.Stdout)
 	_, _ = fmt.Fprintln(os.Stdout, "Model credentials")
@@ -252,6 +268,38 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		os.Exit(1)
 	}
 	return nil
+}
+
+// writeOrphanedSessions lists the task and channel sessions whose owner was
+// deleted, which would otherwise show in Chats as if it still existed, and
+// archives them as regular chats when fix is set. It returns how many it
+// left in place.
+func writeOrphanedSessions(w io.Writer, cfg *config.Config, fix bool) (int, error) {
+	orphans, err := sessiontarget.FindOrphans(cfg)
+	if err != nil {
+		return 0, err
+	}
+	if len(orphans) == 0 {
+		_, _ = fmt.Fprintln(w, "  (none)")
+		return 0, nil
+	}
+	if fix {
+		if err := sessiontarget.ReleaseOrphans(orphans, false); err != nil {
+			return 0, err
+		}
+	}
+	for _, o := range orphans {
+		if fix {
+			_, _ = fmt.Fprintf(w, "  [FIXED] %s/%s: archived as %q\n", o.Agent, o.Title, o.Title+" (archived)")
+		} else {
+			_, _ = fmt.Fprintf(w, "  [WARN] %s/%s: its task, workflow or channel no longer exists\n", o.Agent, o.Title)
+		}
+	}
+	if fix {
+		return 0, nil
+	}
+	_, _ = fmt.Fprintln(w, "  Run 'aviary doctor --fix' to archive them as regular chats.")
+	return len(orphans), nil
 }
 
 // describeCLIBackend renders one CLI backend's probe for the doctor. A

@@ -5,6 +5,7 @@
 		"name"
 	],
 	"agent_delete": [
+		"delete_data",
 		"name"
 	],
 	"agent_file_delete": [
@@ -161,7 +162,7 @@
 	"channel_remove": [
 		"agent",
 		"channel",
-		"sessions"
+		"delete_data"
 	],
 	"channel_rename": [
 		"agent",
@@ -190,7 +191,8 @@
 	"config_get": [],
 	"config_restore_latest_backup": [],
 	"config_save": [
-		"config"
+		"config",
+		"delete_data"
 	],
 	"config_task_convert_to_script": [
 		"agent",
@@ -206,6 +208,11 @@
 		"task"
 	],
 	"config_validate": [],
+	"delete_preview": [
+		"agent",
+		"kind",
+		"name"
+	],
 	"exec": [
 		"command",
 		"cwd"
@@ -440,6 +447,7 @@
 	],
 	"project_task_delete": [
 		"confirm",
+		"delete_data",
 		"name",
 		"project"
 	],
@@ -588,6 +596,7 @@
 	],
 	"task_delete": [
 		"agent",
+		"delete_data",
 		"name"
 	],
 	"task_list": [],

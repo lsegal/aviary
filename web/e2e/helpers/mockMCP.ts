@@ -11,6 +11,7 @@ export interface AgentFileArgs {
 
 export interface ConfigSaveArgs {
 	config?: string;
+	delete_data?: { kind: string; agent?: string; name: string }[];
 }
 
 export interface TaskRunArgs {

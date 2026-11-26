@@ -16,7 +16,7 @@ Each agent's **Channels** section lists its channels:
 
 - **+** on the **Channels** row adds a channel: give it a name and a type. It starts disabled, its settings open next, and its own chat session is created right away.
 - Clicking a channel opens its conversation in the normal chat UI: the channel's own session first, plus any conversations the channel received from other chats. The gear in the header opens the channel's settings, the only place a channel is edited.
-- A channel's **…** menu offers **Edit** (its settings), **Rename** and **Remove**. Renaming keeps its session and history, and tasks and reports that deliver to it follow the new name. Removing asks whether to **archive** its sessions, keeping them with their history as regular chats under **Chats**, or **delete** them.
+- A channel's **…** menu offers **Edit** (its settings), **Rename** and **Remove**. Renaming keeps its session and history, and tasks and reports that deliver to it follow the new name. Removing offers **Delete session data and files**, checked by default, which deletes its sessions with their messages and media; unchecked keeps them with their history as regular chats under **Chats**.
 
 Channel sessions live under their channel, not under **Chats**.
 

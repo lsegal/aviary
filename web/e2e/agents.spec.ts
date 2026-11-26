@@ -1346,6 +1346,11 @@ test("Remove Agent sits in the danger zone and asks for confirmation", async ({
 		.click();
 	const dialog = page.getByRole("alertdialog");
 	await expect(dialog).toContainText("Remove agent?");
+	await expect(page.getByTestId("remove-agent-data-checkbox")).toBeChecked();
+	await page.getByTestId("remove-agent-data-checkbox").uncheck();
+	await expect(page.getByTestId("remove-agent-data-summary")).toContainText(
+		"Only removes the agent from the configuration",
+	);
 	await dialog.getByRole("button", { name: "Cancel" }).click();
 	await expect(dialog).toHaveCount(0);
 	await expect(page.getByTestId("settings-title")).toHaveText("Agent Settings");

@@ -82,7 +82,7 @@ Browse and edit root-level markdown files in the agent's data directory (RULES.m
 
 ### Channels (`/agents/<agent>/channels`)
 
-The agent's Slack, Discord and Signal channels, listed in the sidebar below **Code Loop**. **+** adds a channel and creates its session. Clicking a channel opens its conversation (`/agents/<agent>/channels/<name>`) in the chat UI; the header's gear opens its settings (`/agents/<agent>/channels/<name>/settings`): connection, deliver-to conversation, model, tools and `allow_from` rules. Slack channels can also validate the bot token and browse visible workspace channels. A channel's **…** menu offers **Enable** or **Disable**, **Rename** (keeping its session), **Settings** and **Delete**, which archives or deletes its sessions. A new channel starts disabled until its connection settings are filled in. Disabled channels are greyed out with a disabled marker in the sidebar and the narrow-screen row, and listed after the enabled ones. The old `/agents/<agent>/settings/channels` address redirects here.
+The agent's Slack, Discord and Signal channels, listed in the sidebar below **Code Loop**. **+** adds a channel and creates its session. Clicking a channel opens its conversation (`/agents/<agent>/channels/<name>`) in the chat UI; the header's gear opens its settings (`/agents/<agent>/channels/<name>/settings`): connection, deliver-to conversation, model, tools and `allow_from` rules. Slack channels can also validate the bot token and browse visible workspace channels. A channel's **…** menu offers **Enable** or **Disable**, **Rename** (keeping its session), **Settings** and **Delete**, which deletes its sessions or keeps them as regular chats (see [Deleting data with an object](#deleting-data-with-an-object)). A new channel starts disabled until its connection settings are filled in. Disabled channels are greyed out with a disabled marker in the sidebar and the narrow-screen row, and listed after the enabled ones. The old `/agents/<agent>/settings/channels` address redirects here.
 
 ### Agent Settings (`/agents/<agent>/settings`)
 
@@ -91,6 +91,15 @@ The agent's own settings, as sections on one scrolling page. **Save Changes** sa
 - **General** — name, model, fallbacks, working directory, and verbose mode.
 - **Permissions** (`/agents/<agent>/settings/permissions`) — preset selector, tool allow/blocklist, filesystem paths, and exec rules.
 - **Danger Zone** — **Remove Agent** deletes the agent, after a confirmation.
+
+### Deleting data with an object
+
+Deleting an agent, a scheduled task, a workflow or a channel asks for confirmation with a **Delete session data and files** checkbox, checked by default. The dialog lists what checking it deletes, such as "1 session, 34 messages, 12 runs, 3 files", counted by [`delete_preview`](/reference/mcp/tasks-and-jobs#delete-preview).
+
+- **Checked** deletes the object with its sessions and their messages, its run history, and its media. For an agent it deletes the whole data directory: `AGENTS.md`, `MEMORY.md`, `memory/`, `notes/`, sessions and other files.
+- **Unchecked** only removes the object from the configuration and keeps its data on disk. A task's, workflow's or channel's sessions become regular chats titled `<name> (archived)`. An agent's data directory stays, so adding an agent with the same name brings it back.
+
+Either way, no session of the deleted object stays in **Chats** as if it still existed. Sessions left behind by deletes from earlier versions are listed by `aviary doctor`, and `aviary doctor --fix` archives them.
 
 ---
 

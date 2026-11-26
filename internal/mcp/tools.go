@@ -188,6 +188,11 @@ type agentNameArgs struct {
 	Name string `json:"name"`
 }
 
+type agentDeleteArgs struct {
+	Name       string `json:"name"`
+	DeleteData bool   `json:"delete_data,omitempty" jsonschema:"Also delete the agent's data directory and task files. Leave out to only deregister it from aviary.yaml"`
+}
+
 type agentStopArgs struct {
 	Name      string `json:"name"`
 	SessionID string `json:"session_id,omitempty"`
@@ -689,23 +694,23 @@ func registerAgentTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "agent_delete",
-		Description: "Remove an agent from the configuration",
-	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		Description: "Remove an agent from the configuration. delete_data=true also deletes its data directory: AGENTS.md, MEMORY.md, memory/, notes/, sessions, run history, task files and other files. Without it the agent is only deregistered and its data stays on disk, so adding an agent with the same name brings it back",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args agentDeleteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		d := GetDeps()
 		cfg, err := config.Load("")
 		if err != nil {
 			return nil, struct{}{}, err
 		}
 		newAgents := cfg.Agents[:0]
-		found := false
+		var removed *config.AgentConfig
 		for _, ac := range cfg.Agents {
 			if ac.Name == args.Name {
-				found = true
+				removed = &ac
 				continue
 			}
 			newAgents = append(newAgents, ac)
 		}
-		if !found {
+		if removed == nil {
 			return nil, struct{}{}, fmt.Errorf("agent %q not found", args.Name)
 		}
 		cfg.Agents = newAgents
@@ -715,7 +720,13 @@ func registerAgentTools(s *sdkmcp.Server) {
 		if d.Agents != nil {
 			d.Agents.Reconcile(cfg)
 		}
-		return text(fmt.Sprintf("agent %q deleted", args.Name))
+		if err := sessiontarget.ReleaseAgent(*removed, args.DeleteData); err != nil {
+			return nil, struct{}{}, fmt.Errorf("agent %q deregistered, but its data was not deleted: %w", args.Name, err)
+		}
+		if args.DeleteData {
+			return text(fmt.Sprintf("agent %q deleted with its data", args.Name))
+		}
+		return text(fmt.Sprintf("agent %q removed from aviary.yaml; its data stays in %s", args.Name, store.AgentDir(args.Name)))
 	})
 }
 
@@ -1340,6 +1351,7 @@ func (a taskTriggerArgs) fields(cronExpr string) schedule.Fields {
 
 func registerTaskTools(s *sdkmcp.Server) {
 	registerTaskManageTools(s)
+	registerDeleteDataTools(s)
 	registerTaskAnalyzeTool(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_list",
@@ -2704,7 +2716,8 @@ func registerServerTools(s *sdkmcp.Server) {
 	})
 
 	type configSaveArgs struct {
-		Config string `json:"config"`
+		Config     string      `json:"config"`
+		DeleteData []dataOwner `json:"delete_data,omitempty" jsonschema:"Tasks and agents this save removes whose data to delete too: a task's session and run history, an agent's data directory. Every other removed task's session is kept as a regular chat, and every other removed agent's data stays on disk"`
 	}
 
 	type modelsListArgs struct {
@@ -2732,6 +2745,7 @@ func registerServerTools(s *sdkmcp.Server) {
 				return nil, struct{}{}, fmt.Errorf("validation: [%s] %s: %s", issue.Level, issue.Field, issue.Message)
 			}
 		}
+		removed := removedDataOwners(prevCfg, &cfg)
 		// Handle task files: detect tasks that were previously defined in
 		// markdown but are now removed from the incoming config and delete
 		// their files; then write any tasks marked FromFile in the incoming
@@ -2831,6 +2845,9 @@ func registerServerTools(s *sdkmcp.Server) {
 		// triggers and next fires.
 		if err := reloadTaskConfig(); err != nil {
 			return nil, struct{}{}, err
+		}
+		if err := releaseRemoved(removed, args.DeleteData); err != nil {
+			return nil, struct{}{}, fmt.Errorf("config saved, but removed objects' data was not released: %w", err)
 		}
 		return text("config saved")
 	})

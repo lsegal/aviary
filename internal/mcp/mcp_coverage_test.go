@@ -244,7 +244,7 @@ func TestAgentAdd_Update_Delete(t *testing.T) {
 	// agent_delete known agent
 	out, err = d.CallTool(context.Background(), "agent_delete", map[string]any{"name": "newbot"})
 	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "deleted"))
+	assert.True(t, strings.Contains(out, "removed from aviary.yaml"))
 
 }
 

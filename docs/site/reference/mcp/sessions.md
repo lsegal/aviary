@@ -263,4 +263,4 @@ Remove a channel. Task and report targets that pick it by name are cleared.
 | --- | --- | --- | --- |
 | `agent` | string | yes | Agent name |
 | `channel` | string | yes | Channel name |
-| `sessions` | string | yes | `"archive"` keeps its sessions, with their history, as regular chats; `"delete"` removes them |
+| `delete_data` | boolean | no | `true` deletes its sessions with their messages and media; without it they are kept, with their history, as regular chats |

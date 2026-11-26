@@ -98,7 +98,7 @@ func TestReleaseChannelArchive(t *testing.T) {
 	require.NoError(t, agent.AppendMessageToSessionWithSender("bot", own.ID, domain.MessageRoleUser, "keep me", nil))
 	conversation(t, "bot", "slack:C9", store.SessionChannel{Type: "slack", ConfiguredID: "ws", ID: "C9"})
 
-	require.NoError(t, ReleaseChannel(a, 0, ReleaseArchive))
+	require.NoError(t, ReleaseChannel(a, 0, false))
 
 	assert.Empty(t, store.FindSessionPath("bot", own.ID), "the channel session moved")
 	all, err := agent.NewSessionManager().List("bot")
@@ -126,10 +126,9 @@ func TestReleaseChannelDelete(t *testing.T) {
 	require.NoError(t, err)
 	conv := conversation(t, "bot", "slack:C9", store.SessionChannel{Type: "slack", ConfiguredID: "ws", ID: "C9"})
 
-	require.NoError(t, ReleaseChannel(a, 0, ReleaseDelete))
+	require.NoError(t, ReleaseChannel(a, 0, true))
 	assert.Empty(t, store.FindSessionPath("bot", own.ID))
 	assert.Empty(t, store.FindSessionPath("bot", conv.ID))
-	assert.Error(t, ReleaseChannel(a, 0, "shred"))
 }
 
 func TestRekeyChannelsFollowsIDChange(t *testing.T) {

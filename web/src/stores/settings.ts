@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import type { RouteLocationNormalizedLoaded } from "vue-router";
 import { useMCP } from "../composables/useMCP";
+import type { DataOwner } from "../lib/deleteData";
 import type {
 	AgentProjectsSection,
 	ProjectsSection,
@@ -367,11 +368,21 @@ export const useSettingsStore = defineStore("settings", () => {
 		}
 	}
 
-	async function saveConfig(updated: AppConfig): Promise<void> {
+	/**
+	 * Saves updated. Tasks and agents it removes keep their data unless
+	 * deleteData names them.
+	 */
+	async function saveConfig(
+		updated: AppConfig,
+		deleteData: DataOwner[] = [],
+	): Promise<void> {
 		saving.value = true;
 		error.value = null;
 		try {
-			await callTool("config_save", { config: JSON.stringify(updated) });
+			await callTool("config_save", {
+				config: JSON.stringify(updated),
+				...(deleteData.length ? { delete_data: deleteData } : {}),
+			});
 			config.value = updated;
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
@@ -385,6 +396,7 @@ export const useSettingsStore = defineStore("settings", () => {
 	async function saveAgentTasks(
 		agent: string,
 		update: (tasks: AgentTask[]) => AgentTask[],
+		deleteData: DataOwner[] = [],
 	): Promise<void> {
 		if (!config.value) await fetchConfig();
 		if (!config.value) throw new Error("Settings are not loaded.");
@@ -392,7 +404,7 @@ export const useSettingsStore = defineStore("settings", () => {
 		const entry = next.agents.find((a) => a.name === agent);
 		if (!entry) throw new Error(`Agent ${agent} not found.`);
 		entry.tasks = update(entry.tasks ?? []);
-		await saveConfig(next);
+		await saveConfig(next, deleteData);
 	}
 
 	/** Renames a task, moving its file when it has one. */

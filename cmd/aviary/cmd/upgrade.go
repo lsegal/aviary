@@ -26,6 +26,7 @@ var (
 	upgradeRelease       bool
 	upgradeVerbose       bool
 	doctorDisableVersion bool
+	doctorFix            bool
 )
 
 var upgradeCmd = &cobra.Command{

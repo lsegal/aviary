@@ -145,17 +145,18 @@ Update fields of an existing agent's configuration.
 
 ## agent_delete
 
-Remove an agent from the configuration. The agent's data directory is not deleted.
+Remove an agent from the configuration. Without `delete_data` the agent is only deregistered: its data directory stays, so adding an agent with the same name brings it back.
 
 **Arguments:**
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | Agent name to remove |
+| `delete_data` | boolean | no | `true` also deletes the agent's data directory: `AGENTS.md`, `MEMORY.md`, `memory/`, `notes/`, sessions, run history, task files and other files |
 
 **Returns:** Text confirmation.
 
-**Side effects:** Removes agent entry from `aviary.yaml`.
+**Side effects:** Removes agent entry from `aviary.yaml`, and with `delete_data` its data directory.
 
 ---
 

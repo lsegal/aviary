@@ -136,7 +136,7 @@ func TestChannelRemoveDeletesItsWorkflows(t *testing.T) {
 	require.Len(t, cfg.Agents[0].Tasks, 1)
 	assert.Equal(t, "Ops", cfg.Agents[0].Tasks[0].Channel, "the workflow follows the rename")
 
-	_, err = d.CallTool(ctx, "channel_remove", map[string]any{"agent": "bot", "channel": "Ops", "sessions": "delete"})
+	_, err = d.CallTool(ctx, "channel_remove", map[string]any{"agent": "bot", "channel": "Ops", "delete_data": true})
 	require.NoError(t, err)
 	cfg, err = config.Load("")
 	require.NoError(t, err)

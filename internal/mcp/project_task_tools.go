@@ -33,9 +33,10 @@ type projectTaskNameArgs struct {
 }
 
 type projectTaskDeleteArgs struct {
-	Name    string `json:"name" jsonschema:"The task's name, or <agent>/<task> as project_task_list returns it in id"`
-	Project string `json:"project,omitempty" jsonschema:"The task's watched project; needed only when tasks of several projects share the name"`
-	Confirm bool   `json:"confirm,omitempty" jsonschema:"Delete it. Leave out first: the call then only reports what deleting removes, so you can ask the user to confirm"`
+	Name       string `json:"name" jsonschema:"The task's name, or <agent>/<task> as project_task_list returns it in id"`
+	Project    string `json:"project,omitempty" jsonschema:"The task's watched project; needed only when tasks of several projects share the name"`
+	Confirm    bool   `json:"confirm,omitempty" jsonschema:"Delete it. Leave out first: the call then only reports what deleting removes, so you can ask the user to confirm"`
+	DeleteData bool   `json:"delete_data,omitempty" jsonschema:"Also delete the task's session, with its messages and media, and its run history. Leave out to keep them on disk; its session becomes a regular chat"`
 }
 
 // projectTaskTriggerArgs are a project task's schedule fields, as
@@ -570,7 +571,7 @@ func registerProjectTaskTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_task_delete",
-		Description: "Delete a watched project's scheduled task through task_delete: its definition and its run history. Without confirm it deletes nothing and returns what would be removed, to show the user before asking them to confirm; call it again with confirm=true only after they do. A task defined in aviary.yaml is refused, as task_delete refuses it. A run already in flight is not stopped",
+		Description: "Delete a watched project's scheduled task through task_delete: its definition, and with delete_data=true its session and run history too. Without confirm it deletes nothing and returns what would be removed, to show the user before asking them to confirm; call it again with confirm=true only after they do. A task defined in aviary.yaml is refused, as task_delete refuses it. A run already in flight is not stopped",
 		Annotations: destructiveTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectTaskDeleteArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
@@ -583,7 +584,10 @@ func registerProjectTaskTools(s *sdkmcp.Server) {
 			if sched, ok := scheduledTask(t.id()); ok {
 				runs = len(sched.History)
 			}
-			removes := fmt.Sprintf("the scheduled task %s on %s (%s), its definition in %s, and its run history of %d runs", t.task.Name, t.task.Project, t.id(), source["path"], runs)
+			removes := fmt.Sprintf("the scheduled task %s on %s (%s) and its definition in %s; its session and run history of %d runs are kept", t.task.Name, t.task.Project, t.id(), source["path"], runs)
+			if args.DeleteData {
+				removes = fmt.Sprintf("the scheduled task %s on %s (%s), its definition in %s, its session, and its run history of %d runs", t.task.Name, t.task.Project, t.id(), source["path"], runs)
+			}
 			if !args.Confirm {
 				return map[string]any{
 					"deleted":               false,
@@ -592,7 +596,7 @@ func registerProjectTaskTools(s *sdkmcp.Server) {
 					"task":                  projectTaskEntry(t, false),
 				}, nil
 			}
-			out, _, err := deleteTask(context.Background(), nil, taskDeleteArgs{Name: t.task.Name, Agent: t.agent.Name})
+			out, _, err := deleteTask(context.Background(), nil, taskDeleteArgs{Name: t.task.Name, Agent: t.agent.Name, DeleteData: args.DeleteData})
 			if err != nil {
 				return nil, err
 			}

@@ -96,6 +96,7 @@ var minimalTools = map[string]bool{
 	"task_stop":          true,
 	"task_update":        true,
 	"task_delete":        true,
+	"delete_preview":     true,
 	"task_schedule":      true,
 	"task_preview":       true,
 	"task_session":       true,
