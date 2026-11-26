@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 )
@@ -298,6 +299,9 @@ type Recorder struct {
 	usage  Usage
 	tools  int
 	calls  map[string]bool
+	// open holds the tool calls and commands the stream started but has not
+	// finished yet, in the order they started, so Exited can close them.
+	open []Event
 }
 
 // Write records p as raw output and maps every line it completes.
@@ -345,6 +349,7 @@ func (r *Recorder) Flush() {
 // r.mu must be held.
 func (r *Recorder) add(events []Event) {
 	for _, event := range events {
+		r.track(event)
 		switch {
 		case event.Kind == KindUsage && event.Usage != nil:
 			r.usage.InputTokens += event.Usage.InputTokens
@@ -365,6 +370,61 @@ func (r *Recorder) add(events []Event) {
 			}
 		}
 	}
+	r.log.Add(events...)
+}
+
+// track notes a tool call or running command the stream opened, and forgets
+// it once its result or completion arrives. r.mu must be held.
+func (r *Recorder) track(event Event) {
+	if event.CallID == "" {
+		return
+	}
+	switch {
+	case event.Kind == KindToolCall, event.Kind == KindCommand && event.Status == "running":
+		for _, open := range r.open {
+			if open.CallID == event.CallID {
+				return
+			}
+		}
+		r.open = append(r.open, event)
+	case event.Kind == KindToolResult, event.Kind == KindCommand:
+		r.open = slices.DeleteFunc(r.open, func(open Event) bool { return open.CallID == event.CallID })
+	}
+}
+
+// InterruptedStatus is the Status of a command the agent's process exited
+// in the middle of.
+const InterruptedStatus = "interrupted"
+
+// Exited records that the agent's process is gone. Every tool call and
+// command still open is closed as interrupted rather than left running
+// forever, and when any was open or the process failed, a system event says
+// the process exited, with reason when it is not empty (issue #1426).
+func (r *Recorder) Exited(failed bool, reason string) {
+	if r == nil || r.log == nil {
+		return
+	}
+	r.mu.Lock()
+	open := r.open
+	r.open = nil
+	r.mu.Unlock()
+	if len(open) == 0 && !failed {
+		return
+	}
+	const note = "interrupted: the agent process exited before this call finished"
+	events := make([]Event, 0, len(open)+1)
+	for _, call := range open {
+		if call.Kind == KindCommand {
+			events = append(events, Event{Kind: KindCommand, CallID: call.CallID, Command: call.Command, Status: InterruptedStatus, IsError: true, Output: note})
+			continue
+		}
+		events = append(events, Event{Kind: KindToolResult, CallID: call.CallID, IsError: true, Output: note})
+	}
+	text := "agent process exited"
+	if reason != "" {
+		text += ": " + reason
+	}
+	events = append(events, Event{Kind: KindSystem, Text: text})
 	r.log.Add(events...)
 }
 

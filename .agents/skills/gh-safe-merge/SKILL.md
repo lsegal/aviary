@@ -105,4 +105,4 @@ Lead with the outcome: merged, closed as malicious, handed back to the author, h
 
 ## Clean up the clone
 
-Remove the clone and any temporary files when the run ends. When the run is blocked, leave the clone and report its location.
+Remove the clone and any temporary files when the run ends, except a clone Aviary owns (a `Clone directory:` or `Reuse clone:` line in the invocation), which Aviary removes or hands to its next job itself. Never delete an Aviary-owned clone, and never delete the directory the run is working in: removing the agent's own working directory while its shell still runs there can keep the process from exiting cleanly. When the run is blocked, leave the clone and report its location.

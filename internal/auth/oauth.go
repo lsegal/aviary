@@ -21,6 +21,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lsegal/aviary/internal/process"
 )
 
 // Anthropic OAuth constants for the claude.ai consumer OAuth flow (Pro/Max plans).
@@ -1214,7 +1216,8 @@ func OpenBrowser(rawURL string) error {
 	default:
 		cmd = exec.Command("xdg-open", rawURL)
 	}
-	return cmd.Start()
+	_, err := process.StartDetached(cmd)
+	return err
 }
 
 // splitOnce splits s on the first occurrence of sep, returning (before, after, true).

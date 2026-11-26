@@ -45,10 +45,16 @@ func (r *queueRunner) RunWithOutput(ctx context.Context, issue Issue, output io.
 // state under dir, and returns a function that stops it.
 func startQueueEngine(t *testing.T, runner *queueRunner, dir string, concurrency int) (*Engine, func()) {
 	t.Helper()
+	return startQueueEngineWith(t, runner, dir, concurrency, &fakeSource{batches: [][]Issue{{}}})
+}
+
+// startQueueEngineWith is startQueueEngine reading issues from source.
+func startQueueEngineWith(t *testing.T, runner *queueRunner, dir string, concurrency int, source IssueSource) (*Engine, func()) {
+	t.Helper()
 	w := &Engine{
 		Repo: "o/r", Interval: time.Hour, Concurrency: concurrency,
 		StatePath: filepath.Join(dir, "state.json"),
-		Issues:    &fakeSource{batches: [][]Issue{{}}},
+		Issues:    source,
 		Runner:    runner, UI: &snapshotReporter{},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
