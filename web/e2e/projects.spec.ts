@@ -384,7 +384,9 @@ test("an agent's Code Loop in the sidebar list its projects with live counts", a
 	// coder is the only agent, so its pages, Code Loop among them, are
 	// the sidebar's top level (#538).
 	const row = page.getByTestId("sidebar-row-projects");
-	await expect(row.getByTestId("project-running-badge")).toHaveText("2");
+	// Counted as the board's Running state counts: #221, with no clone yet,
+	// is Starting (#1359).
+	await expect(row.getByTestId("project-running-badge")).toHaveText("1");
 	await expect(
 		page.getByTestId("sidebar-nav").getByRole("link", { name: /^Code Loop/ }),
 	).toHaveAttribute("href", "/agents/coder/projects");
@@ -395,9 +397,9 @@ test("an agent's Code Loop in the sidebar list its projects with live counts", a
 	// (#636).
 	const aviary = projects.getByRole("link", { name: /lsegal\/aviary/ });
 	const badge = aviary.getByTestId("project-running-badge");
-	await expect(badge).toHaveText("2");
-	await expect(badge).toHaveAttribute("aria-label", "2 running jobs");
-	await expect(badge).toHaveAttribute("title", "2 running jobs");
+	await expect(badge).toHaveText("1");
+	await expect(badge).toHaveAttribute("aria-label", "1 running job");
+	await expect(badge).toHaveAttribute("title", "1 running job");
 	await expect(badge).toHaveClass(/\bbg-gray-200\b/);
 	await expect(aviary).not.toContainText("running");
 	// An idle project shows nothing beside its name.
@@ -447,8 +449,8 @@ test('the Code Loop running badge is gray and the Add project "+" sits beside it
 	await page.goto("/system/overview");
 	const row = page.getByTestId("sidebar-row-projects");
 	const badge = row.getByTestId("project-running-badge");
-	await expect(badge).toHaveText("2");
-	await expect(badge).toHaveAttribute("aria-label", "2 running jobs");
+	await expect(badge).toHaveText("1");
+	await expect(badge).toHaveAttribute("aria-label", "1 running job");
 	await expect(badge).toHaveClass(/\bbg-gray-200\b/);
 	await expect(row.getByTestId("agent-running-badge")).toHaveCount(0);
 
