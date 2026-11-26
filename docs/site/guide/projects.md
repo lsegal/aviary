@@ -96,14 +96,17 @@ A project in manual mode is never searched for issues: Code Loop makes no issue 
 
 The board header shows a **Manual** chip and reads "Manual: no issue watching · checked 5s ago" in place of the issue filter, which can't be edited while the project is manual. The sidebar and `project_status` show "manual" in place of an issue count (`modes` maps each project to `watch` or `manual`).
 
-Pick the mode when you add a project (**Watch issues** or **Manual: only what I queue**), and change it later from the eye button in the project's header, the project's **Issue discovery** card in its settings, [`project_update`](/reference/mcp/projects#project-update) with `mode`, or `aviary project update <target> --mode manual`. In `aviary.yaml` it is `mode: manual` on the project's entry; leaving `mode` out keeps watch mode. A change applies without a restart: switching to manual stops the searches at once and keeps every job, and switching back to watch checks the project for issues right away. [`aviary watch --manual`](./watch) starts a session's targets in manual mode.
+The global **Issue discovery** setting on **Code Loop Settings** (`mode` in the shared `projects:` settings, `watch` by default) is the mode of every project without its own. Each project can override it: pick **Inherit (global: Watch)**, **Watch issues** or **Manual: only what I queue** when you add the project, and change it later from the eye button in the project's header, the project's **Issue discovery** card in its settings, [`project_update`](/reference/mcp/projects#project-update) with `mode`, or `aviary project update <target> --mode manual`. Both places say whether the project's mode is inherited or overridden, and **Reset to global** (or `mode: inherit`) removes the override. In `aviary.yaml` an override is `mode: watch` or `mode: manual` on the project's entry; leaving `mode` out follows the shared mode. A change applies without a restart and touches no other project: switching to manual stops the searches at once and keeps every job, and switching back to watch checks for issues right away. Changing the global mode moves every project without an override, and none with one. [`aviary watch --manual`](./watch) starts a session's targets in manual mode. `project_status` reports where each project's mode comes from in `mode_sources` (`project` or `global`) and the global mode in `default_mode`; `project_check` reports `mode` and `mode_source`.
 
 ```yaml
+projects:
+  mode: manual          # every project without its own mode
 agents:
   - name: coder
     projects:
       - target: owner/repo
-        mode: manual
+        mode: watch     # this project keeps watching
+      - target: owner/other   # follows projects.mode
 ```
 
 ## CLI providers
