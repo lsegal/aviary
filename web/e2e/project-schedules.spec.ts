@@ -905,7 +905,7 @@ test("the header Schedule button creates a project scheduled task through the sh
 	const calls = await setup(page);
 	await page.goto("/system/watches/lsegal%2Faviary");
 	await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
-	await page.getByRole("button", { name: "Schedule", exact: true }).click();
+	await page.getByRole("button", { name: "Schedule task" }).click();
 
 	const dialog = page.getByRole("dialog", {
 		name: "Add project scheduled task",
@@ -1123,7 +1123,7 @@ test("new schedule on an owned project runs under the project's agent without as
 }) => {
 	const calls = await setup(page, { owner: "reviewer" });
 	await page.goto("/agents/reviewer/projects/lsegal%2Faviary");
-	await page.getByRole("button", { name: "Schedule", exact: true }).click();
+	await page.getByRole("button", { name: "Schedule task" }).click();
 
 	const dialog = page.getByRole("dialog", {
 		name: "Add project scheduled task",

@@ -16,3 +16,18 @@ export const HEADER_ADD_CLS =
 /** An icon-only toggle that is on, such as an open chat panel. */
 export const HEADER_ICON_ON_CLS =
 	"inline-flex shrink-0 items-center justify-center rounded-lg border border-blue-600 bg-blue-50 p-1.5 text-blue-700 dark:border-blue-500 dark:bg-blue-950/50 dark:text-blue-300";
+
+// A labeled action that collapses to an icon-only button below the `sm`
+// breakpoint (#1374), so a phone header fits like its icon-only neighbors.
+// Put the icon in HEADER_COLLAPSE_ICON_CLS, the label in a
+// HEADER_COLLAPSE_LABEL_CLS span, and give the button an aria-label and title.
+
+/** A labeled action that is icon-only on phones, such as "Schedule". */
+export const HEADER_COLLAPSE_CLS =
+	"inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-gray-200 p-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:px-2.5 sm:py-1 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800";
+
+/** The icon of a HEADER_COLLAPSE_CLS action: icon-button sized on phones. */
+export const HEADER_COLLAPSE_ICON_CLS = "h-5 w-5 sm:h-4 sm:w-4";
+
+/** The label of a HEADER_COLLAPSE_CLS action: hidden on phones. */
+export const HEADER_COLLAPSE_LABEL_CLS = "hidden sm:inline";

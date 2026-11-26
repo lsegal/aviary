@@ -3644,3 +3644,46 @@ test("at 390px the Code Loop header wraps and the top nav hides its scrollbar (#
 			.toMatch(/rgba\(0, 0, 0, 0\)\)$/);
 	}
 });
+
+for (const [label, width] of [
+	["mobile", 360],
+	["mobile", 390],
+	["mobile", 430],
+	["desktop", 1280],
+] as const) {
+	test(`the Schedule button is icon-only on phones and labeled on desktop at ${width}px (#1374)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 844 });
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		const schedule = page.getByTestId("schedule-new");
+		await expect(schedule).toBeVisible();
+		await expect(schedule).toHaveAccessibleName("Schedule task");
+		await expect(schedule).toHaveAttribute("title", "Schedule task");
+		const text = schedule.getByText("Schedule", { exact: true });
+		const check = page.getByRole("button", { name: "Check now" });
+		const s = await schedule.boundingBox();
+		const c = await check.boundingBox();
+		if (label === "mobile") {
+			// The same square as the icon-only Check now beside it.
+			await expect(text).toBeHidden();
+			expect(Math.abs((s?.width ?? 0) - (c?.width ?? 0))).toBeLessThanOrEqual(
+				1,
+			);
+			expect(Math.abs((s?.height ?? 0) - (c?.height ?? 0))).toBeLessThanOrEqual(
+				1,
+			);
+			// Nothing scrolls sideways (#997, #1209).
+			expect(
+				await page.evaluate(
+					() => document.documentElement.scrollWidth <= window.innerWidth,
+				),
+			).toBe(true);
+			expect((s?.x ?? 0) + (s?.width ?? 0)).toBeLessThanOrEqual(width);
+		} else {
+			await expect(text).toBeVisible();
+			expect(s?.width ?? 0).toBeGreaterThan((c?.width ?? 0) + 20);
+		}
+	});
+}
