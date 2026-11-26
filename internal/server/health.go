@@ -124,6 +124,12 @@ var wsUpgrader = websocket.Upgrader{
 	WriteBufferSize: 256,
 }
 
+// wsHeartbeatInterval is how often wsHandler resends the health event.
+var wsHeartbeatInterval = 30 * time.Second
+
+// wsActiveTurns lists the running turns replayed to a newly connected client.
+var wsActiveTurns = agent.ActiveTurns
+
 // healthHandler handles GET /api/health.
 // Public — no authentication required. Returns current version and status.
 func healthHandler(authDisabled func() bool, minimal bool) http.HandlerFunc {
@@ -184,7 +190,7 @@ func wsHandler(token string, authDisabled func() bool) http.HandlerFunc {
 			return
 		}
 		// A client connecting mid-turn restores each running turn's state.
-		for _, turn := range agent.ActiveTurns() {
+		for _, turn := range wsActiveTurns() {
 			if err := wsWriteJSON(conn, sessionTurnEvent(turn)); err != nil {
 				return
 			}
@@ -201,7 +207,7 @@ func wsHandler(token string, authDisabled func() bool) http.HandlerFunc {
 			}
 		}()
 
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(wsHeartbeatInterval)
 		defer ticker.Stop()
 
 		for {
