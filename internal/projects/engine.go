@@ -2467,18 +2467,22 @@ func (w *Engine) Run(ctx context.Context) error {
 				continue
 			}
 			if w.Manual.Has(target) {
-				// A manual project is never searched; the issues asked to
-				// be fixed on demand are read back one by one instead.
+				// A manual project is never searched; only discovery is
+				// off. Its tracked issues, the ones asked to be fixed and
+				// every unfinished job, are read back one by one instead
+				// and handled like listed ones (issue #1431).
 				if issueHydrator != nil {
 					workMu.Lock()
-					status := make(map[string]string, len(work))
+					var unfinished []string
 					for key, state := range work {
-						if _, running := active[key]; !running {
-							status[key] = state.Status
+						if state.Status != "completed" && strings.HasPrefix(key, target+"#") {
+							unfinished = append(unfinished, key)
 						}
 					}
 					workMu.Unlock()
-					issues = append(issues, w.requestedFixIssues(ctx, issueHydrator, target, status)...)
+					slices.Sort(unfinished)
+					w.adoptTrackedWork(target, unfinished)
+					issues = append(issues, w.requestedFixIssues(ctx, issueHydrator, target)...)
 				}
 				jobMu.Lock()
 				delete(issueCounts, target)
@@ -2513,10 +2517,11 @@ func (w *Engine) Run(ctx context.Context) error {
 			}
 		}
 		// Without webhooks nothing delivers an issue_comment, so direct
-		// mentions are found by scanning each repository's recent comments
-		//.
+		// mentions are found by scanning each repository's recent comments.
+		// A manual project's repository is scanned only for the issues it
+		// tracks, which issues already holds (issue #1431).
 		if !w.UseWebhooks && w.Mentions != nil {
-			w.scanDirectMentions(ctx, mentions, mentionScanRepos(w.watchedTargets(targets), w.watchedIssues(issues)), observed, directMentions)
+			w.scanDirectMentions(ctx, mentions, mentionScanRepos(w.watchedTargets(targets), issues), observed, directMentions)
 		} else if w.Mentions != nil {
 			w.scanLinkedPullRequests(ctx, mentions, webhookRepos, observed, directMentions)
 		}

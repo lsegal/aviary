@@ -13,10 +13,12 @@ import (
 	"github.com/lsegal/aviary/internal/store"
 )
 
-// fixRequest is an issue asked to be fixed on a manual-mode project (issue
-// #1307). Manual projects are never searched, so the poll reads each
-// requested issue back by number instead, and dispatches it as if a search
-// had listed it.
+// fixRequest is an issue a manual-mode project tracks (issues #1307 and
+// #1431). Manual projects are never searched, so the poll reads each tracked
+// issue back by number instead, and handles it as if a search had listed it:
+// it is dispatched, woken, followed to its pull request's merge, and
+// restarted when that pull request is rejected, exactly as on a watched
+// project. A request lasts until its issue closes.
 type fixRequest struct {
 	Target      string    `json:"target"`
 	Repository  string    `json:"repository"`
@@ -127,26 +129,23 @@ func (w *Engine) RequestFix(target, repository string, number int) error {
 	return nil
 }
 
-// requestedFixIssues reads back target's requested issues for the poll. A
-// request is dropped once its issue closes or its work completes; status
-// holds the work state of every issue not running right now.
-func (w *Engine) requestedFixIssues(ctx context.Context, hydrator IssueHydrator, target string, status map[string]string) []Issue {
+// requestedFixIssues reads back target's tracked issues for the poll. A
+// request is dropped only once its issue closes: a completed run whose pull
+// request still waits to merge stays tracked, so the merge, a rejection or an
+// allowed commenter's comment is still seen.
+func (w *Engine) requestedFixIssues(ctx context.Context, hydrator IssueHydrator, target string) []Issue {
 	var issues []Issue
 	for _, request := range w.fixRequests().forTarget(target) {
 		key := request.key()
-		if status[key] == "completed" {
-			_ = w.fixRequests().remove(key)
-			continue
-		}
 		issue := Issue{Number: request.Number, Target: target, Repository: request.Repository}
 		if err := hydrator.HydrateIssue(ctx, issue.Repository, &issue); err != nil {
 			if ctx.Err() == nil {
-				w.logChanged("fix-request-"+key, err.Error(), "issue #%d requested fix could not read the issue: %v", request.Number, err)
+				w.logChanged("fix-request-"+key, err.Error(), "issue #%d tracked issue could not be read: %v", request.Number, err)
 			}
 			continue
 		}
 		if issue.State == "closed" {
-			w.logf("issue #%d is closed; dropping its requested fix", request.Number)
+			w.logf("issue #%d is closed; no longer tracking it", request.Number)
 			_ = w.fixRequests().remove(key)
 			continue
 		}
@@ -160,12 +159,25 @@ func (w *Engine) requestedFixIssues(ctx context.Context, hydrator IssueHydrator,
 	return issues
 }
 
+// adoptTrackedWork tracks every unfinished job of a manual-mode target that
+// has no request yet, such as work already in flight when the project was
+// switched to manual, so switching modes never strands a job (issue #1431).
+// keys are target's work keys whose status is not completed.
+func (w *Engine) adoptTrackedWork(target string, keys []string) {
+	requests := w.fixRequests()
+	for _, key := range keys {
+		parsed, number, ok := parseIssueWorkKey(key)
+		repository := issueRepository(target, Issue{})
+		if !ok || parsed != target || repository == "" {
+			continue
+		}
+		if err := requests.add(fixRequest{Target: target, Repository: repository, Number: number, RequestedAt: time.Now()}); err != nil {
+			w.logChanged("fix-request-"+key, err.Error(), "issue #%d could not be tracked: %v", number, err)
+		}
+	}
+}
+
 // watchedTargets drops the manual-mode targets from targets.
 func (w *Engine) watchedTargets(targets []string) []string {
 	return slices.DeleteFunc(slices.Clone(targets), w.Manual.Has)
-}
-
-// watchedIssues drops the issues of manual-mode targets from issues.
-func (w *Engine) watchedIssues(issues []Issue) []Issue {
-	return slices.DeleteFunc(slices.Clone(issues), func(issue Issue) bool { return w.Manual.Has(issue.Target) })
 }
