@@ -307,7 +307,11 @@ type Engine struct {
 	// selector offers a config-defined agent without a code change. A nil
 	// registry falls back to the run's own.
 	Registry *clidefs.Registry
-	Quota    func(context.Context) map[string]string
+	// Quota reads every agent's quota. It can run CLI subprocesses, so the
+	// engine calls it only from its own refresh goroutine and publishes the
+	// cached readings.
+	Quota  func(context.Context) map[string]string
+	quotas engineQuotas
 	// Identity names this instance in cooperative handoff comments. It is
 	// generated once at startup and never persisted.
 	Identity Identity
@@ -2354,10 +2358,7 @@ func (w *Engine) Run(ctx context.Context) error {
 		polled := lastPoll
 		watched := targets
 		jobMu.Unlock()
-		var quotas map[string]string
-		if w.Quota != nil {
-			quotas = w.Quota(ctx)
-		}
+		quotas := w.cachedQuotas()
 		online := w.UseWebhooks
 		if online && w.WebhookOnline != nil {
 			online = w.WebhookOnline()
@@ -2368,6 +2369,9 @@ func (w *Engine) Run(ctx context.Context) error {
 		}
 		w.published.Store(&snapshot)
 		w.UI.Snapshot(snapshot)
+	}
+	if w.UI != nil {
+		go w.refreshQuotasEvery(reapCtx, publish)
 	}
 	pollNumber := 0
 	// observed records the "repo#number" keys returned by the most recent
