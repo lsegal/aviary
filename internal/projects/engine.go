@@ -2884,6 +2884,11 @@ func (w *Engine) Run(ctx context.Context) error {
 				}
 			}
 			workMu.Unlock()
+			// The poll no longer lists this failed work, so nothing
+			// dispatches it again: its failure is terminal now.
+			if settleRetryingJobs(jobs, &jobMu, failedKeys) {
+				publish()
+			}
 			for _, key := range failedKeys {
 				target, number, ok := parseIssueWorkKey(key)
 				if !ok || !slices.Contains(targets, target) || isDiscussionTarget(target) {
@@ -3586,6 +3591,14 @@ func (w *Engine) Run(ctx context.Context) error {
 					job := jobs[key]
 					job.Status = "failed"
 					job.Log += domain.FailureDetail(runErr)
+					// The next poll dispatches failed work again, so the run's
+					// error does not fail the job yet (issue #1424). Losing the
+					// issue to another instance does end it here.
+					job.Retrying = !errors.Is(runErr, errWorkClaimedByOther)
+					job.WaitReason = ""
+					if job.Retrying {
+						job.WaitReason = retryingReason(runErr)
+					}
 					jobs[key] = job
 					jobMu.Unlock()
 					w.jobEvents(key, transcript.Event{Kind: transcript.KindSystem, Text: "failed: " + clidoctor.FirstLine(runErr.Error()), IsError: true})
@@ -4958,6 +4971,31 @@ func (w *Engine) logWebhookEvent(event WebhookEvent) {
 	default:
 		w.logf("webhook %s received", event.Kind)
 	}
+}
+
+// retryingReason is what a failed issue run that Code Loop dispatches again
+// waits on, as the board shows it.
+func retryingReason(runErr error) string {
+	return fmt.Sprintf("its last run ended with an error (%s); Code Loop dispatches it again on the next poll", truncate(clidoctor.FirstLine(runErr.Error()), 200))
+}
+
+// settleRetryingJobs makes the jobs of failed work under keys terminal, for a
+// poll that no longer lists that work and so dispatches none of it again
+// (issue #1424). It reports whether any job changed.
+func settleRetryingJobs(jobs map[string]JobSnapshot, mu *sync.Mutex, keys []string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	changed := false
+	for _, key := range keys {
+		job, ok := jobs[key]
+		if !ok || !job.Retrying {
+			continue
+		}
+		job.Retrying, job.WaitReason = false, ""
+		jobs[key] = job
+		changed = true
+	}
+	return changed
 }
 
 func (w *Engine) resetFailedWork(ctx context.Context, work map[string]workState) error {

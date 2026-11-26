@@ -32,6 +32,10 @@ func TestJobSnapshotBoardState(t *testing.T) {
 		{name: "paused", job: JobSnapshot{Status: "paused", Kind: JobKindIssue}, want: BoardPaused},
 		{name: "complete", job: JobSnapshot{Status: "complete", Kind: JobKindIssue}, want: BoardDone},
 		{name: "failed", job: JobSnapshot{Status: "failed", Kind: JobKindIssue}, want: BoardFailed},
+		// Failed is terminal and unrecoverable only (issue #1424).
+		{name: "running with failing CI", job: JobSnapshot{Status: "active", Kind: JobKindIssue, CheckoutDirectory: "/tmp/clone", PullRequest: 12, PullRequestState: PullRequestOpen}, want: BoardRunning},
+		{name: "keepalive backoff", job: JobSnapshot{Status: "waiting", Kind: JobKindIssue, WaitReason: "continuing session in 2m"}, want: BoardPaused},
+		{name: "failed run dispatched again", job: JobSnapshot{Status: "failed", Kind: JobKindIssue, Retrying: true, WaitReason: "dispatched again on the next poll"}, want: BoardPaused},
 		{name: "stopping", job: JobSnapshot{Status: "stopping", Kind: JobKindIssue}, want: BoardRunning},
 		{name: "unknown", job: JobSnapshot{Status: "mystery"}, want: BoardRunning},
 	}
@@ -41,6 +45,23 @@ func TestJobSnapshotBoardState(t *testing.T) {
 				t.Fatalf("BoardState() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestJobSnapshotFailedIsTerminalOnly(t *testing.T) {
+	for _, job := range []JobSnapshot{
+		{Status: "active", Kind: JobKindIssue, CheckoutDirectory: "/tmp/clone", PullRequest: 12},
+		{Status: "waiting", Kind: JobKindIssue},
+		{Status: "queued", Kind: JobKindIssue},
+		{Status: "paused", Kind: JobKindIssue},
+		{Status: "failed", Kind: JobKindIssue, Retrying: true},
+	} {
+		if job.Failed() {
+			t.Errorf("%+v is Failed, but it can still continue", job)
+		}
+	}
+	if job := (JobSnapshot{Status: "failed", Kind: JobKindIssue}); !job.Failed() {
+		t.Errorf("%+v is not Failed, but nothing continues it", job)
 	}
 }
 

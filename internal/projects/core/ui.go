@@ -70,6 +70,12 @@ type JobSnapshot struct {
 	Summary   string
 	Fallback  bool
 	Dismissed bool
+	// Retrying marks an issue's job whose run ended with an error while
+	// Code Loop still dispatches its work again, so Status "failed" is not
+	// terminal yet: the board shows it waiting, with WaitReason saying why,
+	// until a run picks it up or a poll finds nothing left to retry
+	// (issue #1424).
+	Retrying bool
 }
 
 // Job kinds.
@@ -120,6 +126,11 @@ var BoardStates = []string{BoardStarting, BoardPaused, BoardRunning, BoardDone, 
 // issue's run whose agent has not reported its clone yet, are starting; a job
 // waiting out a wakeup is paused alongside paused work, with WaitReason saying
 // why.
+//
+// Failed means terminal and unrecoverable only: the job cannot continue on
+// its own (issue #1424). A failed run Code Loop is about to dispatch again
+// waits in the paused state instead, and failing CI never fails a job,
+// because the engine never derives a job's status from its checks.
 func (j JobSnapshot) BoardState() string {
 	switch j.Status {
 	case "queued":
@@ -134,9 +145,18 @@ func (j JobSnapshot) BoardState() string {
 	case "complete":
 		return BoardDone
 	case "failed":
+		if j.Retrying {
+			return BoardPaused
+		}
 		return BoardFailed
 	}
 	return BoardRunning
+}
+
+// Failed reports whether the job is Failed under the board's definition:
+// terminal, with nothing left that continues it (issue #1424).
+func (j JobSnapshot) Failed() bool {
+	return j.BoardState() == BoardFailed
 }
 
 // HasProgress reports whether the job has a plan checklist to measure its

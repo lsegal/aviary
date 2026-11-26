@@ -572,6 +572,10 @@ func explainJob(job core.JobSnapshot, snapshot core.Snapshot) string {
 		return fmt.Sprintf("It is queued for an agent slot; %d of %d slots are running.", snapshot.Running, snapshot.Concurrency)
 	case "stopping":
 		return "It was stopped and Code Loop is waiting for its agent to exit."
+	case "failed":
+		if job.Retrying {
+			return "It is not failed: " + job.WaitReason + ". project_job_retry requeues it now."
+		}
 	}
 	if job.WaitReason != "" {
 		return fmt.Sprintf("Its status is %s: %s.", job.Status, job.WaitReason)
