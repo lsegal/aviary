@@ -253,3 +253,36 @@ func TestJobMatchesTask(t *testing.T) {
 		assert.Equal(t, tc.want, jobMatchesTask(tc.job, tc.task), "%s matches %s", tc.job, tc.task)
 	}
 }
+
+func TestJobQueue_ClaimRenewsLapsedLeaseOfRunningJob(t *testing.T) {
+	setupSchedulerDataDir(t)
+	q := NewJobQueue()
+	stale := time.Now().Add(-2 * lockTimeout)
+	job := putJob(t, domain.Job{Status: domain.JobStatusInProgress, MaxRetries: 1, Attempts: 1, LockedAt: &stale})
+	done := q.markRunning(job.ID)
+
+	// A worker here is still running the job, so its lapsed lease (the host
+	// slept past the heartbeat) neither fails nor re-claims it (#1413).
+	claimed, err := q.Claim()
+	require.NoError(t, err)
+	assert.Nil(t, claimed)
+	saved := readJob(t, job.ID)
+	assert.Equal(t, domain.JobStatusInProgress, saved.Status)
+	assert.Empty(t, saved.Error)
+	require.NotNil(t, saved.LockedAt)
+	assert.True(t, saved.LockedAt.After(stale))
+
+	// Once no worker runs it, a lapsed lease means the run was abandoned,
+	// and the error says so.
+	done()
+	old := time.Now().Add(-2 * lockTimeout)
+	saved.LockedAt = &old
+	require.NoError(t, store.WriteJSON(store.JobPath(saved.AgentID, saved.ID), &saved))
+	claimed, err = q.Claim()
+	require.NoError(t, err)
+	assert.Nil(t, claimed)
+	saved = readJob(t, job.ID)
+	assert.Equal(t, domain.JobStatusFailed, saved.Status)
+	assert.Equal(t, abandonedError, saved.Error)
+	assert.Contains(t, saved.Error, "run abandoned")
+}

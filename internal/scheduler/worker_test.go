@@ -475,3 +475,38 @@ func TestWorkerPool_VanishedWorkflowJobIsNotResurrected(t *testing.T) {
 	assert.Equal(t, 1, asked)
 	assert.Empty(t, store.FindJobPath(job.ID))
 }
+
+func TestWorkerPool_LongProjectRunOutlivesLapsedLease(t *testing.T) {
+	setupSchedulerDataDir(t)
+	p, q := newAlphaPool(t, config.TaskConfig{Name: "security", Type: "project", Project: "o/r", Prompt: "Batch issues"})
+	started, release := make(chan struct{}), make(chan struct{})
+	p.projectRunner = func(context.Context, ProjectRun) (string, error) {
+		close(started)
+		<-release
+		return "Filed one issue", nil
+	}
+
+	job, err := q.StartImmediateWithType("alpha/security", "project", "alpha", "Batch issues", "", "", "", "")
+	require.NoError(t, err)
+	done := make(chan struct{})
+	go func() { defer close(done); p.processJob(context.Background(), job) }()
+	<-started
+
+	// The host pauses past the lease window while the run keeps going: the
+	// queue must leave the run in progress rather than fail it (#1413).
+	saved := readJob(t, job.ID)
+	stale := time.Now().Add(-2 * lockTimeout)
+	saved.LockedAt = &stale
+	require.NoError(t, store.WriteJSON(store.JobPath(saved.AgentID, saved.ID), &saved))
+	claimed, err := q.Claim()
+	require.NoError(t, err)
+	assert.Nil(t, claimed)
+	assert.Equal(t, domain.JobStatusInProgress, readJob(t, job.ID).Status)
+
+	close(release)
+	<-done
+	saved = readJob(t, job.ID)
+	assert.Equal(t, domain.JobStatusCompleted, saved.Status)
+	assert.Empty(t, saved.Error)
+	assert.Equal(t, "Filed one issue", saved.Output)
+}

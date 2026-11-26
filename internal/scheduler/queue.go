@@ -45,10 +45,34 @@ func newID(prefix string) string {
 // Each job is stored as a JSON file under ~/.config/aviary/jobs/.
 type JobQueue struct {
 	mu sync.Mutex
+	// running holds the jobs a worker in this process is executing. Their
+	// lease is never treated as stale, because a lease only goes stale
+	// here when the host was paused (sleep, heavy load) between heartbeats,
+	// not because the run died (#1413).
+	running map[string]int
 }
 
 // NewJobQueue creates a JobQueue.
-func NewJobQueue() *JobQueue { return &JobQueue{} }
+func NewJobQueue() *JobQueue { return &JobQueue{running: map[string]int{}} }
+
+// abandonedError is the error of a job whose lease went stale with no worker
+// in this process running it and no attempts left.
+var abandonedError = fmt.Sprintf("run abandoned: its worker stopped renewing the lease for over %s and no attempts remain", lockTimeout)
+
+// markRunning records that a worker in this process is executing id. The
+// returned func undoes it once the run ends.
+func (q *JobQueue) markRunning(id string) func() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.running[id]++
+	return func() {
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		if q.running[id]--; q.running[id] <= 0 {
+			delete(q.running, id)
+		}
+	}
+}
 
 func (q *JobQueue) newJob(taskID, taskType, agentID, prompt, script, outputChannel string, status domain.JobStatus, maxRetries int, scheduledFor *time.Time, replyAgentID, replySessionID string) *domain.Job {
 	if maxRetries <= 0 {
@@ -173,7 +197,17 @@ func (q *JobQueue) Claim() (*domain.Job, error) {
 		case j.Status == domain.JobStatusPending:
 			// Ready to claim.
 		case j.Status == domain.JobStatusInProgress && j.LockedAt != nil && now.Sub(*j.LockedAt) > lockTimeout:
-			// Stale lock — recover it.
+			if q.running[j.ID] > 0 {
+				// Still running here; the heartbeat just missed its window.
+				j.LockedAt = &now
+				j.UpdatedAt = now
+				if err := store.WriteJSON(store.JobPath(j.AgentID, j.ID), j); err != nil {
+					return nil, fmt.Errorf("renewing lease of running job %s: %w", j.ID, err)
+				}
+				slog.Info("renewed lapsed lease of a running job", "id", j.ID)
+				continue
+			}
+			// Stale lock with no worker running it — recover it.
 			slog.Warn("recovering stale job", "id", j.ID)
 		default:
 			continue
@@ -185,10 +219,12 @@ func (q *JobQueue) Claim() (*domain.Job, error) {
 			continue
 		}
 		if j.Attempts >= j.MaxRetries {
-			j.Status = domain.JobStatusFailed
-			if j.Error == "" {
+			if j.Status == domain.JobStatusInProgress {
+				j.Error = abandonedError
+			} else if j.Error == "" {
 				j.Error = "no attempts remain"
 			}
+			j.Status = domain.JobStatusFailed
 			j.LockedAt = nil
 			j.NextRetryAt = nil
 			j.UpdatedAt = now
