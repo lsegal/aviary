@@ -63,16 +63,20 @@ watch(
 	{ immediate: true },
 );
 
-const covers = computed(() =>
-	props.kind === "agent"
-		? "Its AGENTS.md, MEMORY.md, memory, notes, chat sessions, run logs, media and other files."
-		: "Its chat history and sessions, run logs, and media.",
-);
+const covers = computed(() => {
+	if (props.kind === "agent")
+		return "Its AGENTS.md, MEMORY.md, memory, notes, chat sessions, run logs, media and other files.";
+	if (props.kind === "project")
+		return "Its job records, job transcripts, and the clones no job still uses.";
+	return "Its chat history and sessions, run logs, and media.";
+});
 
 const summary = computed(() => {
 	if (!checked.value) {
 		if (props.kind === "agent")
 			return "Only removes the agent from the configuration. Its data stays on disk, so adding an agent with the same name brings it back.";
+		if (props.kind === "project")
+			return "Keeps its job records, transcripts and clones on disk.";
 		return "Keeps its data on disk. Its sessions become regular chats, marked archived.";
 	}
 	if (!counts.value) return "Deletes its data too. This can't be undone.";

@@ -150,6 +150,10 @@ async function setup(
 			record("project_job_list", args);
 			return { jobs: opts.jobs ?? [], total: opts.jobs?.length ?? 0 };
 		},
+		delete_preview: (args?: Args) => {
+			record("delete_preview", args);
+			return { sessions: 0, messages: 0, runs: 12, files: 5 };
+		},
 		project_remove: (args?: Args) => {
 			record("project_remove", args);
 			if (opts.removeError) throw new Error(opts.removeError);
@@ -1213,7 +1217,9 @@ test("a project row's ✕ deletes that project after a confirmation naming it an
 	await page.getByRole("button", { name: "Delete lsegal/nupp" }).click();
 	const dialog = page.getByRole("alertdialog");
 	await expect(dialog.getByRole("heading")).toHaveText("Delete lsegal/nupp?");
-	await expect(dialog).toContainText("clones on disk are not touched");
+	await expect(dialog).toContainText(
+		"its issues and pull requests are not touched",
+	);
 	await expect(dialog.getByTestId("delete-jobs")).toContainText(
 		"2 jobs are still in flight (#12, #14). Deleting stops them",
 	);
@@ -1234,7 +1240,9 @@ test("a project row's ✕ deletes that project after a confirmation naming it an
 		"data-target",
 		"lsegal/aviary",
 	);
-	expect(calls.project_remove).toEqual([{ target: "lsegal/nupp" }]);
+	expect(calls.project_remove).toEqual([
+		{ target: "lsegal/nupp", delete_data: true },
+	]);
 	// The removal goes through project_remove alone, never a config rewrite.
 	expect(calls.config_save).toBeUndefined();
 });
@@ -1264,10 +1272,60 @@ test("a failed project delete keeps the confirmation open with the error", async
 	);
 	await expect(dialog).toBeVisible();
 	await expect(page.getByTestId("agent-project")).toHaveCount(2);
-	expect(calls.project_remove).toEqual([{ target: "lsegal/nupp" }]);
+	expect(calls.project_remove).toEqual([
+		{ target: "lsegal/nupp", delete_data: true },
+	]);
 
 	await dialog.getByRole("button", { name: "Cancel" }).click();
 	await expect(dialog).toBeHidden();
+});
+
+test("deleting a project offers to delete its data, checked by default", async ({
+	page,
+}) => {
+	const calls = await setup(page, {
+		config: {
+			...CONFIG,
+			agents: [
+				CONFIG.agents[0],
+				{
+					...CONFIG.agents[1],
+					projects: [{ target: "lsegal/aviary" }, { target: "lsegal/nupp" }],
+				},
+			],
+		},
+	});
+	await page.goto("/projects/settings?agent=coder");
+	await page.getByRole("button", { name: "Delete lsegal/nupp" }).click();
+	const dialog = page.getByTestId("delete-project-dialog");
+	const option = dialog.getByTestId("delete-project-data");
+	await expect(option).toContainText("Delete session data and files");
+	await expect(option).toContainText(
+		"Its job records, job transcripts, and the clones no job still uses.",
+	);
+	const checkbox = option.getByTestId("delete-project-data-checkbox");
+	await expect(checkbox).toBeChecked();
+	await expect(option.getByTestId("delete-project-data-summary")).toHaveText(
+		"Deletes 12 runs, 5 files. This can't be undone.",
+	);
+	expect(calls.delete_preview?.at(-1)).toMatchObject({
+		kind: "project",
+		name: "lsegal/nupp",
+	});
+
+	await checkbox.uncheck();
+	await expect(option.getByTestId("delete-project-data-summary")).toHaveText(
+		"Keeps its job records, transcripts and clones on disk.",
+	);
+	await dialog.getByRole("button", { name: "Delete project" }).click();
+	await expect(dialog).toBeHidden();
+	expect(calls.project_remove).toEqual([
+		{ target: "lsegal/nupp", delete_data: false },
+	]);
+
+	// The next delete starts checked again.
+	await page.getByRole("button", { name: "Delete lsegal/aviary" }).click();
+	await expect(checkbox).toBeChecked();
 });
 
 test("a project being added has nothing to delete", async ({ page }) => {

@@ -8,7 +8,7 @@ export interface DataCounts {
 }
 
 /** The kinds of object whose delete offers to delete their data. */
-export type DataOwnerKind = "task" | "channel" | "agent";
+export type DataOwnerKind = "task" | "channel" | "agent" | "project";
 
 /** A task or agent whose data config_save deletes with it. */
 export interface DataOwner {
