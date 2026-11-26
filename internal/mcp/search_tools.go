@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/lsegal/aviary/internal/auth"
-	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/config"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -27,6 +26,23 @@ type searchResult struct {
 	Title       string `json:"title"`
 	URL         string `json:"url"`
 	Description string `json:"description"`
+}
+
+// searchBrowser is the subset of *browser.Manager that browserSearch uses.
+type searchBrowser interface {
+	Open(ctx context.Context, url string) (string, error)
+	Navigate(ctx context.Context, tabID, url string) error
+	EvalJS(ctx context.Context, tabID, expr string) (string, error)
+	CloseTab(tabID string) error
+}
+
+// webSearchBrowser returns the browser web_search falls back to, or nil when
+// none is configured. Tests replace it with a fake.
+var webSearchBrowser = func() searchBrowser {
+	if d := GetDeps(); d.Browser != nil {
+		return d.Browser
+	}
+	return nil
 }
 
 func registerSearchTools(s *sdkmcp.Server) {
@@ -67,13 +83,13 @@ func registerSearchTools(s *sdkmcp.Server) {
 		}
 
 		// Fall back to browser-based DuckDuckGo search.
-		d := GetDeps()
-		if d.Browser == nil {
+		br := webSearchBrowser()
+		if br == nil {
 			return nil, struct{}{}, fmt.Errorf(
 				"no search backend available: configure search.web.brave_api_key with an auth reference " +
 					"(for example auth:brave_api_key), or ensure the browser is configured")
 		}
-		results, err := browserSearch(ctx, d.Browser, args.Query, count)
+		results, err := browserSearch(ctx, br, args.Query, count)
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("browser search: %w", err)
 		}
@@ -152,7 +168,7 @@ func braveSearch(ctx context.Context, apiKey, query string, count int) ([]search
 
 // browserSearch navigates to Google in a new browser tab, extracts organic
 // search results via JavaScript, then closes the tab.
-func browserSearch(ctx context.Context, br *browser.Manager, query string, count int) ([]searchResult, error) {
+func browserSearch(ctx context.Context, br searchBrowser, query string, count int) ([]searchResult, error) {
 	searchURL := "https://www.google.com/search?q=" + url.QueryEscape(query)
 
 	// Allow more time for page load + JS evaluation.
