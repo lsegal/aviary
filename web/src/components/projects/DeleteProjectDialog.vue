@@ -3,20 +3,22 @@
 		busy-label="Deleting…" test-id="delete-project-dialog" @update:open="(v) => { if (!v) emit('close') }">
 		<p>
 			Aviary stops watching <b class="font-mono font-medium text-gray-900 dark:text-white">{{ target }}</b>
-			and removes it from aviary.yaml. The repository, its issues and pull requests, and the clones on disk are not touched.
+			and removes it from aviary.yaml. The repository, its issues and pull requests are not touched.
 		</p>
 		<p v-if="inFlight.length" data-testid="delete-jobs" class="text-amber-700 dark:text-amber-400">
 			{{ inFlight.length }} {{ inFlight.length === 1 ? "job is" : "jobs are" }} still in flight
 			({{ inFlight.map((n) => `#${n}`).join(", ") }}). Deleting stops {{ inFlight.length === 1 ? "it" : "them" }}:
 			running work is checkpointed and pushed first, and nothing resumes.
 		</p>
+		<DeleteDataOption v-model="deleteData" kind="project" :name="target" test-id="delete-project-data" />
 	</ConfirmDialog>
 </template>
 
 <script setup lang="ts">
-import { toRef, watch } from "vue";
+import { ref, toRef, watch } from "vue";
 import { useRemoveProject } from "../../composables/useProjectSettings";
 import ConfirmDialog from "../ui/ConfirmDialog.vue";
+import DeleteDataOption from "../ui/DeleteDataOption.vue";
 
 /** The project to delete; the dialog is open while it is set. */
 const props = defineProps<{ target: string }>();
@@ -25,6 +27,7 @@ const emit = defineEmits<{
 	close: [];
 }>();
 
+const deleteData = ref(true);
 const { inFlight, loadInFlight, remove } = useRemoveProject(
 	toRef(props, "target"),
 );
@@ -33,6 +36,7 @@ watch(
 	() => props.target,
 	async (target) => {
 		if (!target) return;
+		deleteData.value = true;
 		try {
 			await loadInFlight();
 		} catch {
@@ -44,7 +48,7 @@ watch(
 
 async function confirm() {
 	const target = props.target;
-	const stopped = await remove();
+	const stopped = await remove(deleteData.value);
 	emit("deleted", target, stopped);
 }
 </script>

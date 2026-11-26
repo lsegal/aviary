@@ -212,10 +212,13 @@ export function useRemoveProject(target: Ref<string>) {
 			.map((j) => Number(j.number));
 	}
 
-	async function remove(): Promise<number[]> {
+	async function remove(deleteData: boolean): Promise<number[]> {
 		const removed = target.value;
 		const res = parseToolJSON(
-			await callTool("project_remove", { target: removed }),
+			await callTool("project_remove", {
+				target: removed,
+				delete_data: deleteData,
+			}),
 		) as { stopped_jobs?: number[] } | null;
 		dropProject(removed);
 		void refreshProjectList();
