@@ -1,80 +1,11 @@
-import { expect, type Page, test } from "@playwright/test";
-import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, test } from "@playwright/test";
+import { mockAviary, PAGES } from "./helpers/pageHeaderPages";
 import { expectSettingsHeader } from "./helpers/settingsHeader";
 
 // Every routed page shows the one shared page header (#1147): the Scheduled
 // Tasks task page's header from before #1067, a breadcrumb bar with an arrow
 // back to the parent, then a title row with the section's icon tile, the
 // title and the page's actions. No page keeps a header of its own.
-
-/** Mocks agent "Aviary" with a channel, a task, a file and a project. */
-async function mockAviary(page: Page) {
-	await setAuthToken(page);
-	await mockMCP(page, {
-		agent_list: [{ id: "Aviary", name: "Aviary", model: "x/y", state: "idle" }],
-		config_get: {
-			agents: [
-				{
-					name: "Aviary",
-					model: "x/y",
-					channels: [{ type: "signal", id: "signal", deliver_to: "+1" }],
-					tasks: [{ name: "release-aviary", every: "1h", prompt: "release" }],
-					projects: [{ target: "o/r" }],
-				},
-			],
-		},
-		config_validate: [],
-		auth_list: [],
-		tool_list: [],
-		job_list: [],
-		job_query: [],
-		task_list: [],
-		session_list: [],
-		session_messages: [],
-		channel_sessions: [],
-		agent_file_list: ["AGENTS.md"],
-		agent_file_read: "Agent rules",
-		project_status: {
-			states: { starting: 0, paused: 0, running: 0, done: 0, failed: 0 },
-			targets: ["o/r"],
-		},
-		project_job_list: { jobs: [], total: 0, offset: 0, limit: 50 },
-	});
-}
-
-const A = "/agents/Aviary";
-
-/** Every routed page, with its title and whether it has a parent. */
-const PAGES: Array<{ url: string; title: string; back?: false }> = [
-	{ url: "/system/overview", title: "Overview", back: false },
-	{ url: "/system/usage", title: "Usage" },
-	{ url: "/system/tools", title: "Tools" },
-	{ url: "/system/skills", title: "Skills" },
-	{ url: "/system/sessions", title: "Sessions" },
-	{ url: "/system/models", title: "Models" },
-	{ url: "/system/logs", title: "Logs" },
-	{ url: "/system/daemons", title: "Daemons" },
-	{ url: "/system/settings", title: "Settings" },
-	{ url: "/system/providers", title: "Settings" },
-	{ url: "/system/display", title: "Settings" },
-	{ url: "/system/watches/w%2Fx", title: "Watch: w/x" },
-	{ url: "/system/watches/w%2Fx/jobs/5", title: "#5" },
-	{ url: "/projects/settings", title: "Settings" },
-	{ url: `${A}/chat`, title: "Chats", back: false },
-	{ url: `${A}/projects`, title: "Code Loop" },
-	{ url: `${A}/projects/o%2Fr`, title: "o/r" },
-	{ url: `${A}/projects/o%2Fr/jobs/1013`, title: "#1013" },
-	{ url: `${A}/channels`, title: "Channels" },
-	{ url: `${A}/channels/signal`, title: "signal" },
-	{ url: `${A}/channels/signal/settings`, title: "Settings" },
-	{ url: `${A}/tasks`, title: "Scheduled Tasks" },
-	{ url: `${A}/tasks?task=release-aviary`, title: "Settings" },
-	{ url: `${A}/tasks/release-aviary`, title: "release-aviary" },
-	{ url: `${A}/tasks/release-aviary/runs/job_1`, title: "run job_1" },
-	{ url: `${A}/files?file=AGENTS.md`, title: "AGENTS.md" },
-	{ url: `${A}/settings`, title: "Agent Settings" },
-	{ url: `${A}/settings/permissions`, title: "Permissions" },
-];
 
 // Test IDs of the headers pages drew before #1147.
 const OLD_HEADERS = [

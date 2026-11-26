@@ -37,7 +37,7 @@
 						@click="run(stop)"><StopIcon aria-hidden="true" class="h-5 w-5" /></button>
 				</template>
 				<router-link :to="boardPath" data-testid="job-detail-close" aria-label="Close details" title="Close details"
-					class="inline-flex shrink-0 items-center justify-center rounded-full p-[7px] text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"><XMarkIcon aria-hidden="true" class="h-5 w-5" /></router-link>
+					class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"><XMarkIcon aria-hidden="true" class="h-5 w-5" /></router-link>
 				<span aria-hidden="true" class="h-5 w-px shrink-0 bg-gray-200 dark:bg-gray-700" />
 			</div>
 		</Teleport>

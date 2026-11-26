@@ -24,12 +24,14 @@
 				New task
 			</button>
 			<template v-if="!tasksRoot && activeTab !== 'display' && activeTab !== 'notifications'">
-			<button v-if="revertAvailable" type="button" :class="HEADER_ACTION_CLS"
-				:disabled="loading || saving || reverting"
-				@click="revertToLatestBackup"><ArrowUturnLeftIcon aria-hidden="true" class="h-4 w-4" />{{ reverting ? "Reverting…" : "Revert" }}</button>
-			<button type="button" :class="HEADER_ACTION_CLS"
-				:disabled="loading || saving || reverting"
-				@click="loadConfig"><ArrowPathIcon aria-hidden="true" class="h-4 w-4" />{{ loading ? "Loading…" : "Reload" }}</button>
+			<!-- On phones Revert and Reload show only their icons, so the
+				actions fit one row (#1347). -->
+			<button v-if="revertAvailable" type="button" :class="HEADER_COLLAPSE_CLS"
+				:disabled="loading || saving || reverting" :aria-label="revertLabel" :title="revertLabel"
+				@click="revertToLatestBackup"><ArrowUturnLeftIcon aria-hidden="true" :class="HEADER_COLLAPSE_ICON_CLS" /><span :class="HEADER_COLLAPSE_LABEL_CLS">{{ revertLabel }}</span></button>
+			<button type="button" :class="HEADER_COLLAPSE_CLS"
+				:disabled="loading || saving || reverting" :aria-label="reloadLabel" :title="reloadLabel"
+				@click="loadConfig"><ArrowPathIcon aria-hidden="true" :class="HEADER_COLLAPSE_ICON_CLS" /><span :class="HEADER_COLLAPSE_LABEL_CLS">{{ reloadLabel }}</span></button>
 			<button type="button" :class="HEADER_ACTION_CLS"
 				:disabled="saving || reverting" @click="saveAll()"><ArrowDownTrayIcon aria-hidden="true" class="h-4 w-4" />{{ saving ? "Saving…" : "Save Changes" }}</button>
 			</template>
@@ -335,7 +337,12 @@ import {
 	channelTargetName,
 } from "../lib/channels";
 import type { DataOwner } from "../lib/deleteData";
-import { HEADER_ACTION_CLS } from "../lib/headerActions";
+import {
+	HEADER_ACTION_CLS,
+	HEADER_COLLAPSE_CLS,
+	HEADER_COLLAPSE_ICON_CLS,
+	HEADER_COLLAPSE_LABEL_CLS,
+} from "../lib/headerActions";
 import { projectTargets } from "../lib/projectSettings";
 import { projectPath } from "../lib/projects";
 import { SETTINGS_TABS } from "../lib/systemNav";
@@ -596,6 +603,8 @@ watch(
 );
 const saving = ref(false);
 const reverting = ref(false);
+const revertLabel = computed(() => (reverting.value ? "Reverting…" : "Revert"));
+const reloadLabel = computed(() => (loading.value ? "Loading…" : "Reload"));
 const errorMessage = ref("");
 const okMessage = ref("");
 const slackWorkspaceBrowsers = ref<

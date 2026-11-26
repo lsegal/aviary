@@ -62,7 +62,10 @@
 					</div>
 				</div>
 			</div>
-			<div data-testid="settings-actions" class="ml-auto flex max-w-full flex-wrap items-center gap-2">
+			<!-- The actions keep to one row (#1347): when they don't fit beside
+				the title they move under it, and a select truncates its label
+				before anything wraps. -->
+			<div data-testid="settings-actions" class="ml-auto flex min-w-0 max-w-full flex-nowrap items-center justify-end gap-2">
 				<div id="page-header-actions" class="contents" />
 				<slot name="actions" />
 			</div>
