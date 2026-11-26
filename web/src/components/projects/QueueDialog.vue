@@ -92,7 +92,7 @@
 							class="field-input mt-1" @keydown.enter.prevent="submit" />
 					</label>
 					<p v-if="skill === 'gh-safe-merge'" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-						Merges run one at a time in the order picked, each against the latest default branch.
+						Merges run side by side up to the agent slots, starting in the order picked; each updates and rechecks its branch if another merge lands first.
 					</p>
 				</template>
 
@@ -263,7 +263,7 @@ function toggle(c: QueueCandidate) {
 function resultText(r: QueueResult) {
 	if (r.queued)
 		return r.position
-			? `queued, #${r.position} in the merge lane`
+			? `queued, priority #${r.position}`
 			: r.reason || "queued";
 	if (r.ownedBy) return `already owned by job ${r.ownedBy}; not queued again`;
 	return r.reason;

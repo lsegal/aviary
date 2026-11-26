@@ -33,8 +33,9 @@ var ErrNoMergeQueue = errors.New("safe merge is turned off: the Code Loop no_mer
 var errQueuedJobPaused = errors.New("queued job paused by the owner")
 
 // queuedJob is one merge or discuss job waiting in, or running from, the
-// persisted job queue. The queue's order is the order jobs were queued in,
-// which is the order each repository's merges run in.
+// persisted job queue. The queue's order is the order jobs were queued in.
+// For merges it is a priority hint: merges start in that order as slots free
+// up, but none waits for an earlier merge to finish (issue #1433).
 type queuedJob struct {
 	Skill      string    `json:"skill"`
 	Target     string    `json:"target"`
@@ -256,9 +257,10 @@ func (w *Engine) QueueJobs(ctx context.Context, request QueueRequest) ([]QueueOu
 
 // queueLoop runs the queued jobs of one Run of the engine. Its serve, action,
 // restore and dispatch methods run on the Run loop's goroutine, so every
-// wg.Add happens there; each job's run is its own goroutine. Merges run one
-// at a time per repository, in queue order, so each starts from the latest
-// default branch; discuss jobs run as soon as a slot is free.
+// wg.Add happens there; each job's run is its own goroutine. Merges start in
+// queue order, several at once per repository up to the engine's job slots,
+// and each one verifies its own pull request, updating it when another merge
+// lands first; discuss jobs run as soon as a slot is free.
 type queueLoop struct {
 	w             *Engine
 	ctx           context.Context
@@ -274,9 +276,10 @@ type queueLoop struct {
 	workFinished  chan struct{}
 	// wake asks the Run loop to dispatch the next merges.
 	wake chan struct{}
-	// laneMu guards lanes, the key of the merge each repository is running.
+	// laneMu guards lanes, the keys of the merges each repository has
+	// started.
 	laneMu sync.Mutex
-	lanes  map[string]string
+	lanes  map[string]map[string]bool
 }
 
 func (l *queueLoop) nudge() {
@@ -409,10 +412,12 @@ func (l *queueLoop) restore() {
 	l.dispatch()
 }
 
-// dispatch starts the next merge of every repository not running one, and
-// numbers each queued merge's place in its repository's lane.
+// dispatch starts queued merges in queue order, up to mergeLimit per
+// repository, and numbers each waiting merge's place in its repository's
+// queue.
 func (l *queueLoop) dispatch() {
 	items := l.w.jobQueue().list()
+	limit := l.mergeLimit()
 	l.laneMu.Lock()
 	var next []queuedJob
 	for _, item := range items {
@@ -420,7 +425,8 @@ func (l *queueLoop) dispatch() {
 			continue
 		}
 		repository := strings.ToLower(item.Repository)
-		if _, busy := l.lanes[repository]; busy {
+		lane := l.lanes[repository]
+		if lane[item.key()] || len(lane) >= limit {
 			continue
 		}
 		l.jobMu.Lock()
@@ -429,32 +435,40 @@ func (l *queueLoop) dispatch() {
 		if !queued {
 			continue
 		}
-		l.lanes[repository] = item.key()
+		if lane == nil {
+			lane = map[string]bool{}
+			l.lanes[repository] = lane
+		}
+		lane[item.key()] = true
 		next = append(next, item)
 	}
-	running := make(map[string]bool, len(l.lanes))
-	for _, key := range l.lanes {
-		running[key] = true
-	}
 	l.laneMu.Unlock()
-	// A lane's running merge is first in it, and its queued merges follow
-	// in queue order.
 	l.jobMu.Lock()
+	numberQueuedMerges(l.jobs, items)
+	l.jobMu.Unlock()
+	for _, item := range next {
+		l.start(item)
+	}
+	l.publish()
+}
+
+// mergeLimit is how many merges one repository may have started at once: the
+// engine's job slots, so a busy repository's merges verify side by side.
+func (l *queueLoop) mergeLimit() int {
+	l.sem.mu.Lock()
+	defer l.sem.mu.Unlock()
+	return max(l.sem.limit, 1)
+}
+
+// numberQueuedMerges gives each merge still waiting for a slot its place among
+// its repository's waiting merges, from 1 in queue order, and clears it on
+// every other merge, so running merges show as merging now.
+func numberQueuedMerges(jobs map[string]JobSnapshot, items []queuedJob) {
 	positions := map[string]int{}
 	for _, item := range items {
 		key := item.key()
-		job, ok := l.jobs[key]
-		if !ok || item.kind() != core.JobKindMerge || !running[key] {
-			continue
-		}
-		positions[strings.ToLower(item.Repository)] = 1
-		job.QueuePosition = 1
-		l.jobs[key] = job
-	}
-	for _, item := range items {
-		key := item.key()
-		job, ok := l.jobs[key]
-		if !ok || item.kind() != core.JobKindMerge || running[key] {
+		job, ok := jobs[key]
+		if !ok || item.kind() != core.JobKindMerge {
 			continue
 		}
 		job.QueuePosition = 0
@@ -463,13 +477,8 @@ func (l *queueLoop) dispatch() {
 			positions[repository]++
 			job.QueuePosition = positions[repository]
 		}
-		l.jobs[key] = job
+		jobs[key] = job
 	}
-	l.jobMu.Unlock()
-	for _, item := range next {
-		l.start(item)
-	}
-	l.publish()
 }
 
 // start runs item's agent once a slot is free.
@@ -493,8 +502,10 @@ func (l *queueLoop) start(item queuedJob) {
 		close(exited)
 		if item.kind() == core.JobKindMerge {
 			l.laneMu.Lock()
-			if l.lanes[strings.ToLower(item.Repository)] == key {
-				delete(l.lanes, strings.ToLower(item.Repository))
+			repository := strings.ToLower(item.Repository)
+			delete(l.lanes[repository], key)
+			if len(l.lanes[repository]) == 0 {
+				delete(l.lanes, repository)
 			}
 			l.laneMu.Unlock()
 			l.nudge()
@@ -531,9 +542,13 @@ func (l *queueLoop) run(runCtx context.Context, item queuedJob) {
 		l.jobMu.Lock()
 		job := l.jobs[key]
 		job.Status, job.SessionID, job.Agent, job.Model, job.Effort = "active", session.ID, spec.Name, spec.Model, spec.Level
-		job.Started, job.Finished = time.Now(), time.Time{}
+		job.Started, job.Finished, job.QueuePosition = time.Now(), time.Time{}, 0
 		l.jobs[key] = job
 		l.jobMu.Unlock()
+		if item.kind() == core.JobKindMerge {
+			// The merges still waiting move up a place.
+			l.nudge()
+		}
 		w.jobSystem(key, item.Skill+" started on "+session.Agent)
 		l.publish()
 		issue := Issue{Number: item.Number, Target: item.Target, Repository: item.Repository, Title: item.Title, Skill: item.Skill}

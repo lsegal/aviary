@@ -103,7 +103,7 @@ A comment that mentions `@/aviary:<ID>`, or the `@login` of the `gh` user Aviary
 
 ### Queueing pull requests and threads
 
-The board's **Queue** menu hands open pull requests to `gh-safe-merge`, which merges them one at a time in the order picked, and Discussion threads to `gh-discuss`. Each becomes a job card with the usual controls. See [Queueing jobs on demand](./projects#queueing-jobs-on-demand).
+The board's **Queue** menu hands open pull requests to `gh-safe-merge`, which verifies and merges several at once (up to the agent slots), starting them in the order picked, and Discussion threads to `gh-discuss`. Each becomes a job card with the usual controls. See [Queueing jobs on demand](./projects#queueing-jobs-on-demand).
 
 ### Prompt chat
 

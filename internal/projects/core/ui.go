@@ -59,8 +59,10 @@ type JobSnapshot struct {
 	// fired from.
 	Kind       string
 	ScheduleID string
-	// QueuePosition is a queued merge job's place in the project's serial
-	// merge lane, from 1 for the next to run, and 0 for every other job.
+	// QueuePosition is a merge job's priority among its repository's merges
+	// still waiting for a slot, from 1 for the next to start, and 0 for
+	// running merges and every other job. Merges run concurrently, so it
+	// orders their starts, not their finishes.
 	QueuePosition int
 	// Finished is when a scheduled run ended, Summary its one-line result,
 	// and Fallback whether its precompiled script failed so the model ran

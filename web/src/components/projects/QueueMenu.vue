@@ -67,7 +67,7 @@ const options = computed(() => [
 		disabled: props.noMerge,
 		title: props.noMerge
 			? "Safe merge is off: the project's no_merge setting leaves pull requests for a human to merge"
-			: "Queue pull requests for gh-safe-merge; they merge one at a time in the order picked",
+			: "Queue pull requests for gh-safe-merge; they verify and merge side by side, starting in the order picked",
 	},
 	{
 		skill: "gh-discuss" as const,
