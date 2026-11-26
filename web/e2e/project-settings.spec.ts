@@ -288,8 +288,14 @@ test("a project can be added in manual mode", async ({ page }) => {
 	await page.goto("/agents/coder/projects/lsegal%2Faviary?add=1");
 	const dialog = page.getByRole("dialog", { name: "Watch a repository" });
 	await dialog.getByLabel("Repository or project board").fill("lsegal/zvidlib");
-	const watch = dialog.getByRole("radio", { name: /Watch issues/ });
-	await expect(watch).toBeChecked();
+	// A new project inherits the global mode unless it picks its own (#1371).
+	const inherit = dialog.getByRole("radio", {
+		name: /Inherit \(global: Watch\)/,
+	});
+	await expect(inherit).toBeChecked();
+	await expect(dialog.locator("footer code")).toHaveText(
+		"aviary project add lsegal/zvidlib --agent coder",
+	);
 	await dialog
 		.getByRole("radio", { name: /Manual: only what I queue/ })
 		.check();
@@ -314,8 +320,16 @@ test("a project's issue discovery mode is set in its settings", async ({
 	const calls = await setup(page);
 	await page.goto("/projects/settings?agent=coder");
 	const card = page.getByTestId("agent-project-mode");
-	await expect(card.getByRole("radio", { name: /Watch issues/ })).toBeChecked();
+	const source = card.getByTestId("project-mode-source");
+	await expect(
+		card.getByRole("radio", { name: /Inherit \(global: Watch\)/ }),
+	).toBeChecked();
+	await expect(source).toContainText("Inherited from the global setting: Watch");
+	await expect(card.getByTestId("project-mode-reset")).toHaveCount(0);
 	await card.getByRole("radio", { name: /Manual: only what I queue/ }).check();
+	await expect(source).toContainText(
+		"Overridden for this project: Manual (global: Watch)",
+	);
 	await expect(page.getByTestId("agent-project-yaml")).toContainText(
 		"mode: manual",
 	);
@@ -323,9 +337,39 @@ test("a project's issue discovery mode is set in its settings", async ({
 	await expect.poll(() => calls.config_save?.length).toBe(1);
 	expect(savedProjects(calls, "coder")[0].mode).toBe("manual");
 
+	// Watch is an override of its own, saved as such.
 	await card.getByRole("radio", { name: /Watch issues/ }).check();
 	await saveChanges(page);
 	await expect.poll(() => calls.config_save?.length).toBe(2);
+	expect(savedProjects(calls, "coder")[0].mode).toBe("watch");
+
+	// Reset to global removes the override.
+	await card.getByTestId("project-mode-reset").click();
+	await expect(source).toContainText("Inherited from the global setting");
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(3);
+	expect(savedProjects(calls, "coder")[0]).not.toHaveProperty("mode");
+});
+
+test("the global issue discovery mode is the default projects inherit", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/projects/settings?agent=coder");
+	const global = page
+		.getByTestId("project-default-mode")
+		.locator('[data-field="mode"]');
+	await expect(page.getByTestId("project-default-mode")).toContainText(
+		"Each project can override it",
+	);
+	await chooseValue(global, "manual");
+	const card = page.getByTestId("agent-project-mode");
+	await expect(
+		card.getByRole("radio", { name: /Inherit \(global: Manual\)/ }),
+	).toBeChecked();
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(1);
+	expect(savedConfig(calls).projects?.mode).toBe("manual");
 	expect(savedProjects(calls, "coder")[0]).not.toHaveProperty("mode");
 });
 

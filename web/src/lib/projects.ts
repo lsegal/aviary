@@ -82,6 +82,9 @@ export interface ProjectTarget {
 	issues: number;
 	/** Manual mode: never searched for issues, so issues is not counted. */
 	manual?: boolean;
+	/** Where the mode comes from: the project's own override, or the shared
+	 * default (#1371). */
+	modeSource?: ProjectModeSource;
 	/** Not read from GitHub yet, so issues is not known. */
 	loading?: boolean;
 }
@@ -111,6 +114,8 @@ export interface ProjectStatus {
 	allowedCommenters: string[];
 	/** no_merge leaves pull requests for a human, so safe merge is off. */
 	noMerge: boolean;
+	/** The shared mode every project without its own follows (#1371). */
+	defaultMode: ProjectMode;
 	slotsUsed: number;
 	slotsTotal: number;
 	/** The jobs in each board state, counted as the board's filters count them. */
@@ -635,6 +640,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 	const jobs = obj(raw.jobs);
 	const counts = obj(raw.issue_counts);
 	const modes = obj(raw.modes);
+	const modeSources = obj(raw.mode_sources);
 	const states = obj(raw.states);
 	const loading = arr(raw.loading_targets).map(str);
 	return {
@@ -655,6 +661,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		customFilters: arr(raw.custom_filters).map(str).filter(Boolean),
 		allowedCommenters: arr(raw.allowed_commenters).map(str).filter(Boolean),
 		noMerge: raw.no_merge === true,
+		defaultMode: raw.default_mode === "manual" ? "manual" : "watch",
 		slotsUsed: num(jobs.running),
 		slotsTotal: num(raw.concurrency),
 		states: Object.fromEntries(
@@ -666,6 +673,11 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 			name: str(t),
 			issues: num(counts[str(t)]),
 			...(modes[str(t)] === "manual" ? { manual: true } : {}),
+			...(modeSources[str(t)] === "project"
+				? { modeSource: "project" as const }
+				: modeSources[str(t)] === "global"
+					? { modeSource: "global" as const }
+					: {}),
 			...(loading.includes(str(t)) ? { loading: true } : {}),
 		})),
 		clis: arr(raw.clis)
@@ -711,6 +723,36 @@ export function summarizeProjects(
 
 /** How work reaches a project (#1307). */
 export type ProjectMode = "watch" | "manual";
+
+/** Where a project's mode comes from (#1371). */
+export type ProjectModeSource = "project" | "global";
+
+/** A project's mode choice: its own override, or inherit the shared mode. */
+export type ProjectModeChoice = ProjectMode | "inherit";
+
+/** The label of a mode, as "Inherit (global: Watch)" shows it. */
+export function projectModeName(mode: ProjectMode): string {
+	return mode === "manual" ? "Manual" : "Watch";
+}
+
+/**
+ * The mode choices of one project: inherit the shared mode, named in its
+ * label, then the overrides of PROJECT_MODES.
+ */
+export function projectModeChoices(defaultMode: ProjectMode): {
+	value: ProjectModeChoice;
+	label: string;
+	hint: string;
+}[] {
+	return [
+		{
+			value: "inherit",
+			label: `Inherit (global: ${projectModeName(defaultMode)})`,
+			hint: "Follow the global Code Loop setting",
+		},
+		...PROJECT_MODES,
+	];
+}
 
 /** The project modes, as the add-project flow and the header menu offer them. */
 export const PROJECT_MODES: {

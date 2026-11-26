@@ -60,17 +60,27 @@
 
 		<section v-if="selected" :class="CARD" data-testid="agent-project-mode">
 			<h3 :class="CARD_HEAD">Issue discovery <span :class="CARD_NOTE">How work reaches {{ selected }}</span></h3>
-			<div class="grid gap-2 p-4 sm:grid-cols-2">
-				<label v-for="option in PROJECT_MODES" :key="option.value" :data-testid="`project-mode-option-${option.value}`"
-					class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm"
-					:class="selectedMode === option.value ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/40' : 'border-gray-300 dark:border-gray-700'">
-					<input type="radio" name="project-mode" data-field="mode" :value="option.value" class="mt-0.5"
-						:checked="selectedMode === option.value" @change="store(withMode(section, selected, option.value === 'manual'))" />
-					<span class="flex flex-col">
-						<span class="font-medium text-gray-900 dark:text-white">{{ option.label }}</span>
-						<span class="text-xs text-gray-500 dark:text-gray-400">{{ option.hint }}</span>
-					</span>
-				</label>
+			<div class="space-y-2 p-4">
+				<div class="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400" data-testid="project-mode-source">
+					<template v-if="selectedMode === 'inherit'">Inherited from the global setting: {{ projectModeName(globalMode) }}</template>
+					<template v-else>
+						Overridden for this project: {{ projectModeName(selectedMode) }} (global: {{ projectModeName(globalMode) }})
+						<button type="button" data-testid="project-mode-reset" class="text-blue-600 hover:underline dark:text-blue-400"
+							@click="store(withMode(section, selected, 'inherit'))">Reset to global</button>
+					</template>
+				</div>
+				<div class="grid gap-2 sm:grid-cols-3">
+					<label v-for="option in projectModeChoices(globalMode)" :key="option.value" :data-testid="`project-mode-option-${option.value}`"
+						class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm"
+						:class="selectedMode === option.value ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/40' : 'border-gray-300 dark:border-gray-700'">
+						<input type="radio" name="project-mode" data-field="mode" :value="option.value" class="mt-0.5"
+							:checked="selectedMode === option.value" @change="store(withMode(section, selected, option.value))" />
+						<span class="flex flex-col">
+							<span class="font-medium text-gray-900 dark:text-white">{{ option.label }}</span>
+							<span class="text-xs text-gray-500 dark:text-gray-400">{{ option.hint }}</span>
+						</span>
+					</label>
+				</div>
 			</div>
 		</section>
 
@@ -147,13 +157,14 @@ import { channelName, channelTarget } from "../../lib/channels";
 import {
 	type AgentProjectsSection,
 	agentProjectsYAML,
+	globalProjectMode,
 	isListed,
 	type JobModelsConfig,
 	jobModelOverride,
 	jobModels,
 	joinReportTarget,
 	type ProjectReports,
-	projectManual,
+	projectModeChoice,
 	projectOwner,
 	projectTargets,
 	REPORT_EVENTS,
@@ -165,7 +176,11 @@ import {
 	withProject,
 	withReports,
 } from "../../lib/projectSettings";
-import { PROJECT_MODES, projectPath } from "../../lib/projects";
+import {
+	projectModeChoices,
+	projectModeName,
+	projectPath,
+} from "../../lib/projects";
 import { type AgentEntry, useSettingsStore } from "../../stores/settings";
 import DeleteProjectDialog from "../projects/DeleteProjectDialog.vue";
 import SessionSelect from "../SessionSelect.vue";
@@ -323,10 +338,12 @@ const models = computed(() =>
 	jobModels(props.agent.name, props.config, cliNames.value),
 );
 
-// The selected project's mode (#1307), written straight to its entry.
+// The selected project's mode override (#1307), written straight to its
+// entry, or "inherit" to follow the shared mode (#1371).
 const selectedMode = computed(() =>
-	projectManual(section.value, selected.value) ? "manual" : "watch",
+	projectModeChoice(section.value, selected.value),
 );
+const globalMode = computed(() => globalProjectMode(props.config));
 
 // ── Reports ─────────────────────────────────────────────────────────────────
 

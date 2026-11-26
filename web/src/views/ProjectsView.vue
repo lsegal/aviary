@@ -68,7 +68,8 @@
 				@click="chatOpen = !chatOpen">
 				<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
-			<ProjectModeMenu v-if="filterTarget" :target="filterTarget" :manual="manual" @changed="refresh" />
+			<ProjectModeMenu v-if="filterTarget" :target="filterTarget" :manual="manual"
+				:inherited="modeInherited" :default-mode="status?.defaultMode ?? 'watch'" @changed="refresh" />
 			<router-link :to="settingsPath" data-testid="project-settings-link" aria-label="Settings" title="Settings"
 				:class="HEADER_ICON_CLS">
 				<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
@@ -482,6 +483,12 @@ const manual = computed(
 	() =>
 		!!filterTarget.value &&
 		!!status.value?.targets.find((t) => t.name === filterTarget.value)?.manual,
+);
+// Whether the project follows the shared mode rather than its own (#1371).
+const modeInherited = computed(
+	() =>
+		status.value?.targets.find((t) => t.name === filterTarget.value)
+			?.modeSource !== "project",
 );
 const {
 	schedules,

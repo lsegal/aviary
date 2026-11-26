@@ -13,8 +13,11 @@
 				<DropdownMenuLabel class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
 					Issue discovery
 				</DropdownMenuLabel>
-				<DropdownMenuRadioGroup :model-value="manual ? 'manual' : 'watch'" @update:model-value="pick">
-					<DropdownMenuRadioItem v-for="option in PROJECT_MODES" :key="option.value" :value="option.value"
+				<p data-testid="project-mode-source" class="px-3 pb-1 text-xs text-gray-500 dark:text-gray-400">
+					{{ inherited ? `Inherited: ${current}` : `Overridden: ${current} (global: ${projectModeName(defaultMode)})` }}
+				</p>
+				<DropdownMenuRadioGroup :model-value="choice" @update:model-value="pick">
+					<DropdownMenuRadioItem v-for="option in projectModeChoices(defaultMode)" :key="option.value" :value="option.value"
 						:data-testid="`project-mode-${option.value}`" :class="itemClass">
 						<span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
 							<DropdownMenuItemIndicator>
@@ -27,6 +30,13 @@
 						</span>
 					</DropdownMenuRadioItem>
 				</DropdownMenuRadioGroup>
+				<template v-if="!inherited">
+					<DropdownMenuSeparator class="my-1 h-px bg-gray-200 dark:bg-gray-700" />
+					<DropdownMenuItem data-testid="project-mode-reset" :class="itemClass" @select="pick('inherit')">
+						<ArrowUturnLeftIcon aria-hidden="true" class="mt-0.5 h-4 w-4 shrink-0" />
+						Reset to global
+					</DropdownMenuItem>
+				</template>
 				<p v-if="error" data-testid="project-mode-error" class="px-3 py-1.5 text-xs text-red-600 dark:text-red-400">{{ error }}</p>
 			</DropdownMenuContent>
 		</DropdownMenuPortal>
@@ -36,46 +46,67 @@
 <script setup lang="ts">
 // The project header's issue discovery menu (#1307): Watch picks up issues
 // matching the filter, Manual never searches for issues, so only work queued
-// on demand, scheduled project tasks and agent tools start jobs. A change
-// applies at once through project_update.
+// on demand, scheduled project tasks and agent tools start jobs. Inherit
+// drops the project's own mode so it follows the global one (#1371). A
+// change applies at once through project_update, to this project only.
 
+import ArrowUturnLeftIcon from "@heroicons/vue/16/solid/ArrowUturnLeftIcon";
 import CheckIcon from "@heroicons/vue/16/solid/CheckIcon";
 import EyeIcon from "@heroicons/vue/24/outline/EyeIcon";
 import EyeSlashIcon from "@heroicons/vue/24/outline/EyeSlashIcon";
 import {
 	DropdownMenuContent,
+	DropdownMenuItem,
 	DropdownMenuItemIndicator,
 	DropdownMenuLabel,
 	DropdownMenuPortal,
 	DropdownMenuRadioGroup,
 	DropdownMenuRadioItem,
 	DropdownMenuRoot,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "radix-vue";
 import { computed, ref } from "vue";
 import { useMCP } from "../../composables/useMCP";
 import { HEADER_ICON_CLS } from "../../lib/headerActions";
-import { PROJECT_MODES, type ProjectMode } from "../../lib/projects";
+import {
+	type ProjectMode,
+	type ProjectModeChoice,
+	projectModeChoices,
+	projectModeName,
+} from "../../lib/projects";
 
-const props = defineProps<{ target: string; manual: boolean }>();
-const emit = defineEmits<{ changed: [mode: ProjectMode] }>();
+// manual is the effective mode; inherited says it comes from defaultMode,
+// the global one, rather than the project's own override.
+const props = defineProps<{
+	target: string;
+	manual: boolean;
+	inherited: boolean;
+	defaultMode: ProjectMode;
+}>();
+const emit = defineEmits<{ changed: [mode: ProjectModeChoice] }>();
 
 const { callTool } = useMCP();
 const saving = ref(false);
 const error = ref("");
 
-const label = computed(() =>
-	props.manual
-		? "Issue discovery: Manual (no issue watching)"
-		: "Issue discovery: Watch",
+const current = computed(() =>
+	projectModeName(props.manual ? "manual" : "watch"),
+);
+const choice = computed<ProjectModeChoice>(() =>
+	props.inherited ? "inherit" : props.manual ? "manual" : "watch",
+);
+const label = computed(
+	() =>
+		`Issue discovery: ${current.value}${props.manual ? " (no issue watching)" : ""}${props.inherited ? ", inherited" : ""}`,
 );
 
 const itemClass =
 	"flex cursor-pointer items-start gap-2 rounded-lg px-3 py-2 text-sm text-gray-700 outline-none data-[highlighted]:bg-gray-100 dark:text-gray-200 dark:data-[highlighted]:bg-gray-800";
 
 async function pick(value: string) {
-	const mode = value as ProjectMode;
-	if ((mode === "manual") === props.manual) return;
+	const mode = value as ProjectModeChoice;
+	if (mode === choice.value) return;
 	saving.value = true;
 	error.value = "";
 	try {

@@ -44,6 +44,13 @@
 						:options="DELIVERY_OPTIONS.map((d) => ({ value: d.key, label: d.label }))" />
 				</label>
 			</div>
+			<label class="block max-w-md" data-testid="project-default-mode">
+				<span :class="LABEL">Issue discovery <DefaultTag :on="isDefault('mode')" /></span>
+				<AppSelect v-model="form.mode" data-field="mode" class="mt-1"
+					:options="PROJECT_MODES.map((m) => ({ value: m.value, label: m.label }))" />
+				<span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">The global default. Each project can
+					override it in its own settings above or from its board's issue discovery menu.</span>
+			</label>
 			<label class="block">
 				<span :class="LABEL">Who can steer jobs through comments</span>
 				<input v-model="commentersText" type="text" placeholder="Only you (the signed-in gh user)" :class="[INPUT, 'font-mono']"
@@ -189,6 +196,7 @@ import {
 	settingsFromSection,
 	withSettings,
 } from "../../lib/projectSettings";
+import { PROJECT_MODES } from "../../lib/projects";
 import type { AppConfig } from "../../stores/settings";
 import ModelSelector from "../ModelSelector.vue";
 import { AppSelect } from "../ui/select";
