@@ -14,6 +14,7 @@ import (
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/schedule"
 	"github.com/lsegal/aviary/internal/scheduler"
+	"github.com/lsegal/aviary/internal/sessiontarget"
 )
 
 // taskSessionArgs names the task whose session task_session returns.
@@ -61,8 +62,9 @@ type taskUpdateArgs struct {
 }
 
 type taskDeleteArgs struct {
-	Name  string `json:"name"`
-	Agent string `json:"agent,omitempty"`
+	Name       string `json:"name"`
+	Agent      string `json:"agent,omitempty"`
+	DeleteData bool   `json:"delete_data,omitempty" jsonschema:"Also delete its data: its sessions with their messages and media, and its run history. Leave out to keep the data on disk; its sessions become regular chats"`
 }
 
 type taskPreviewArgs struct {
@@ -104,7 +106,7 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_delete",
-		Description: "Delete a scheduled task definition and its run history. name may be <agent>/<task> or a task name (add agent to disambiguate). Running jobs are not stopped; use task_stop for that.",
+		Description: "Delete a scheduled task or workflow definition. delete_data=true also deletes its session, with its messages and media, and its run history; without it they stay on disk and its session becomes a regular chat titled \"<task> (archived)\". name may be <agent>/<task> or a task name (add agent to disambiguate). Running jobs are not stopped; use task_stop for that.",
 	}, deleteTask)
 
 	addTool(s, &sdkmcp.Tool{
@@ -380,7 +382,13 @@ func deleteTask(_ context.Context, _ *sdkmcp.CallToolRequest, args taskDeleteArg
 	if d := GetDeps(); d != nil && d.Scheduler != nil {
 		d.Scheduler.Forget(agentCfg.Name + "/" + task.Name)
 	}
-	return text(fmt.Sprintf("Task %q deleted from agent %q.", task.Name, agentCfg.Name))
+	if err := sessiontarget.ReleaseTask(agentCfg.Name, task.Name, args.DeleteData); err != nil {
+		return nil, struct{}{}, fmt.Errorf("task %q deleted, but its data was not released: %w", task.Name, err)
+	}
+	if args.DeleteData {
+		return text(fmt.Sprintf("Task %q deleted from agent %q with its session and run history.", task.Name, agentCfg.Name))
+	}
+	return text(fmt.Sprintf("Task %q deleted from agent %q; its session was kept as a regular chat and its run history stays on disk.", task.Name, agentCfg.Name))
 }
 
 // previewTask is task_preview's result, which project task tools preview

@@ -42,9 +42,9 @@ type channelUpdateArgs struct {
 }
 
 type channelRemoveArgs struct {
-	Agent    string `json:"agent"`
-	Channel  string `json:"channel"`
-	Sessions string `json:"sessions" schema:"enum=archive|delete"`
+	Agent      string `json:"agent"`
+	Channel    string `json:"channel"`
+	DeleteData bool   `json:"delete_data,omitempty" jsonschema:"Also delete the channel's sessions with their messages and media. Leave out to keep them as regular chats"`
 }
 
 // channelSessionDTO is one of a channel's sessions, in session_list's shape.
@@ -193,18 +193,14 @@ func registerChannelTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "channel_remove",
-		Description: "Remove a channel from an agent. sessions=archive keeps its sessions as regular chats; sessions=delete removes them with their messages. Delivery targets that pick it by name are cleared.",
+		Description: "Remove a channel from an agent. delete_data=true deletes its sessions with their messages and media; without it they are kept as regular chats. Delivery targets that pick it by name are cleared.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args channelRemoveArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		slog.Info("mcp: tool call", "component", "channels", "tool", "channel_remove", "agent", args.Agent, "channel", args.Channel, "sessions", args.Sessions)
-		mode := strings.ToLower(strings.TrimSpace(args.Sessions))
-		if mode != sessiontarget.ReleaseArchive && mode != sessiontarget.ReleaseDelete {
-			return nil, struct{}{}, fmt.Errorf("sessions must be archive or delete")
-		}
+		slog.Info("mcp: tool call", "component", "channels", "tool", "channel_remove", "agent", args.Agent, "channel", args.Channel, "delete_data", args.DeleteData)
 		cfg, a, idx, err := loadChannel(args.Agent, args.Channel)
 		if err != nil {
 			return nil, struct{}{}, err
 		}
-		if err := sessiontarget.ReleaseChannel(a, idx, mode); err != nil {
+		if err := sessiontarget.ReleaseChannel(a, idx, args.DeleteData); err != nil {
 			return nil, struct{}{}, err
 		}
 		prev := cloneChannels(cfg)
@@ -216,7 +212,7 @@ func registerChannelTools(s *sdkmcp.Server) {
 			return nil, struct{}{}, err
 		}
 		verb := "archived"
-		if mode == sessiontarget.ReleaseDelete {
+		if args.DeleteData {
 			verb = "deleted"
 		}
 		return text(fmt.Sprintf("channel %q removed; its sessions were %s", name, verb))

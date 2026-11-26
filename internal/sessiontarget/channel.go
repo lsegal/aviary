@@ -12,12 +12,6 @@ import (
 	"github.com/lsegal/aviary/internal/store"
 )
 
-// Ways to dispose of a removed channel's sessions.
-const (
-	ReleaseArchive = "archive"
-	ReleaseDelete  = "delete"
-)
-
 // EnsureChannel creates the channel's own session when it has none yet and
 // points the session's delivery at the channel's DeliverTo conversation. It is
 // safe to call on every config load.
@@ -107,24 +101,19 @@ func ChannelSessions(a config.AgentConfig, idx int) ([]*domain.Session, error) {
 }
 
 // ReleaseChannel disposes of the sessions of a.Channels[idx], which is being
-// removed: archive keeps each one as a regular chat titled after the channel,
-// and delete removes it with its messages.
-func ReleaseChannel(a config.AgentConfig, idx int, mode string) error {
-	if mode != ReleaseArchive && mode != ReleaseDelete {
-		return fmt.Errorf("unknown session disposal %q; use %q or %q", mode, ReleaseArchive, ReleaseDelete)
-	}
+// removed: deleteData removes each one with its messages and media, and
+// otherwise each is kept as a regular chat titled after the channel.
+func ReleaseChannel(a config.AgentConfig, idx int, deleteData bool) error {
 	sessions, err := ChannelSessions(a, idx)
 	if err != nil {
 		return err
 	}
 	name := a.Channels[idx].EffectiveName()
-	sm := agent.NewSessionManager()
 	for _, sess := range sessions {
-		if mode == ReleaseDelete {
-			if err := sm.Delete(a.Name, sess.ID); err != nil {
+		if deleteData {
+			if err := deleteSession(a.Name, sess); err != nil {
 				return err
 			}
-			agent.ClearSessionDelivery(a.Name, sess.ID)
 			continue
 		}
 		title := name
@@ -135,7 +124,7 @@ func ReleaseChannel(a config.AgentConfig, idx int, mode string) error {
 			}
 			title = name + ": " + label
 		}
-		if _, err := sm.Archive(a.Name, sess.ID, title+" (archived)"); err != nil {
+		if err := archiveSession(a.Name, sess, title); err != nil {
 			return err
 		}
 	}
