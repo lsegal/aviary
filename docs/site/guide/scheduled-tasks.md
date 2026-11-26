@@ -192,7 +192,7 @@ A running job streams its output, a line at a time, into the **Live Output** pan
 | `task_update` | `aviary task update <name> --at 10:00` | Change fields; an empty value clears one, `enabled=false` pauses |
 | `task_preview` | `aviary task preview [<name>] [--every 15m]` | Next fires of a saved task or unsaved trigger (default 3) |
 | `task_run` | `aviary task run <name>` | Run now, ignoring the overlap policy |
-| `task_delete` | `aviary task rm <name>` | Delete a task file and its history |
+| `task_delete` | `aviary task rm <name>` | Delete a task file; `delete_data` (`--delete-data`) also deletes its session and run history |
 | `task_session` | | The task's session, which every run shares, titled with the task's name |
 
 | `task_upcoming` | | Next fires across enabled tasks (default 5, at most 3 per task), optionally for one project |

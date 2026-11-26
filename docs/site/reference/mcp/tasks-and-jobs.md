@@ -111,9 +111,19 @@ Change fields of an existing task. Only the fields passed change; an empty strin
 
 ## task_delete
 
-Delete a task definition and its run history. Running jobs keep running; use `task_stop` for those. Tasks defined inline in `aviary.yaml` must be removed there.
+Delete a scheduled task or workflow definition. With `delete_data: true` its session, with its messages and media, and its run history are deleted too. Without it they stay on disk, and its session becomes a regular chat titled `<task> (archived)`, so it never lingers in Chats as if the task still existed. Running jobs keep running; use `task_stop` for those. Tasks defined inline in `aviary.yaml` must be removed there.
 
-**Arguments:** `name` (required), `agent`.
+**Arguments:** `name` (required), `agent`, `delete_data`.
+
+---
+
+## delete_preview
+
+Count what deleting a task, workflow, channel or agent with `delete_data: true` removes. It deletes nothing. The web UI's delete confirmations show these counts.
+
+**Arguments:** `kind` (required; `task`, `workflow`, `channel` or `agent`), `name` (required; the task, which may be `agent/task`, or the channel or agent name), `agent` (the channel's agent, or the task's agent when its name is ambiguous).
+
+**Returns:** `{ "sessions", "messages", "runs", "files" }`.
 
 ---
 

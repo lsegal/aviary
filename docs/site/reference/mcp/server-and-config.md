@@ -124,6 +124,7 @@ Save an updated configuration. The full config object must be provided as a JSON
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `config` | string | yes | Full JSON-encoded `Config` object |
+| `delete_data` | array | no | Tasks and agents this save removes whose data to delete too, as `{ "kind": "task", "agent", "name" }` or `{ "kind": "agent", "name" }` |
 
 **Returns:** Text confirmation.
 
@@ -133,6 +134,7 @@ Save an updated configuration. The full config object must be provided as a JSON
 - Writes the new `aviary.yaml`.
 - Creates agent data directories for any new agents.
 - Updates channel metadata and session targets.
+- Releases the data of removed tasks and agents. A removed task named in `delete_data` loses its session and run history; any other removed task's session becomes a regular chat titled `<task> (archived)`. A removed agent named in `delete_data` loses its data directory; any other removed agent's data stays on disk.
 
 **Note:** Fields that change the server port or TLS settings take effect only after a server restart.
 

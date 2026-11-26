@@ -187,7 +187,7 @@ A task is named by `name`, or `<agent>/<task>` as `id` gives it. `project` is ne
 - **`project_task_update`**: changes only the fields passed, as `task_update` does; an empty string clears one. `new_name` renames the task, `new_project` moves it to another watched project of the same agent, and `enabled` pauses or resumes it. The result's `edit` says how it was saved: a task file is edited directly; a task defined in `aviary.yaml` is saved to a task file that replaces that definition.
 - **`project_task_pause`**, **`project_task_resume`**: stop or restart its fires. A run already in flight keeps going; pause it with `project_job_pause`.
 - **`project_task_run`**: fires it now, as `task_run` does.
-- **`project_task_delete`**: without `confirm`, deletes nothing and returns `removes`, a description of what goes, including its run history, to show before asking for confirmation. With `confirm: true` it deletes the task and its history through `task_delete`, which refuses a task defined in `aviary.yaml`.
+- **`project_task_delete`**: without `confirm`, deletes nothing and returns `removes`, a description of what goes, including its run history, to show before asking for confirmation. With `confirm: true` it deletes the task through `task_delete`, which refuses a task defined in `aviary.yaml`. Pass `delete_data: true` to delete its session and run history as well; otherwise they are kept and its session becomes a regular chat.
 
 ## project_issue_backfill_media
 
