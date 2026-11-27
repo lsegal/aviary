@@ -170,6 +170,12 @@ func TestFileContentType(t *testing.T) {
 		{"png extension", writeAttachmentBytes(t, dir, "shot.png", nil), "image/png"},
 		{"upper-case extension", writeAttachmentBytes(t, dir, "SHOT.JPG", nil), "image/jpeg"},
 		{"extension wins over content", writeAttachmentBytes(t, dir, "clip.mp4", png), "video/mp4"},
+		{"webm is video on every OS", writeAttachmentBytes(t, dir, "clip.webm", nil), "video/webm"},
+		{"mov extension", writeAttachmentBytes(t, dir, "clip.MOV", nil), "video/quicktime"},
+		{"jpeg extension", writeAttachmentBytes(t, dir, "shot.jpeg", nil), "image/jpeg"},
+		{"gif extension", writeAttachmentBytes(t, dir, "frame.gif", nil), "image/gif"},
+		{"webp extension", writeAttachmentBytes(t, dir, "shot.webp", nil), "image/webp"},
+		{"svg extension", writeAttachmentBytes(t, dir, "icon.svg", nil), "image/svg+xml"},
 		{"no extension sniffs png", writeAttachmentBytes(t, dir, "screenshot", png), "image/png"},
 		{"unknown extension sniffs gif", writeAttachmentBytes(t, dir, "frame.aviaryunknown", gif), "image/gif"},
 		{"no extension text drops parameters", writeAttachmentBytes(t, dir, "notes", []byte("hello world")), "text/plain"},
@@ -194,6 +200,11 @@ func TestCheckAttachment(t *testing.T) {
 	video := writeAttachment(t, dir, "clip.mp4", maxImageAttachmentBytes+1)
 	if path, err := checkAttachment(video); err != nil || path != video {
 		t.Errorf("a video over the image limit: %q, %v", path, err)
+	}
+	// WebM is a video on every OS, though some MIME databases call it audio.
+	webm := writeAttachment(t, dir, "recording.webm", maxImageAttachmentBytes+1)
+	if path, err := checkAttachment(webm); err != nil || path != webm {
+		t.Errorf("a WebM over the image limit: %q, %v", path, err)
 	}
 	// A relative path resolves against the working directory.
 	t.Chdir(dir)
