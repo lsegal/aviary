@@ -2277,7 +2277,9 @@ test.describe("a running scheduled card keeps its size (#1157)", () => {
 				for (const name of actions) {
 					await expect(footer.getByRole("button", { name })).toBeVisible();
 				}
-				await expect(release.getByRole("button", { name: "More actions" })).toHaveCount(0);
+				await expect(
+					release.getByRole("button", { name: "More actions" }),
+				).toHaveCount(0);
 				await expect(release.getByTestId("scheduled-more")).toHaveCount(0);
 				const tops = await footerButtonTops(footer);
 				// One row: Run now, Pause, Duplicate and the gear, always last.
@@ -2288,8 +2290,12 @@ test.describe("a running scheduled card keeps its size (#1157)", () => {
 				expect(footerBox.x + footerBox.width).toBeLessThanOrEqual(
 					cardBox.x + cardBox.width + 1,
 				);
-				const gear = (await footer.getByRole("button", { name: "Task settings" }).boundingBox())!;
-				expect(gear.x + gear.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+				const gear = (await footer
+					.getByRole("button", { name: "Task settings" })
+					.boundingBox())!;
+				expect(gear.x + gear.width).toBeLessThanOrEqual(
+					cardBox.x + cardBox.width,
+				);
 			};
 			await check();
 
