@@ -1105,7 +1105,8 @@ export function normalizeUpcoming(v: unknown): UpcomingRun[] {
 		const raw = obj(u);
 		const run = { id: str(raw.task_id), name: str(raw.name), at: str(raw.at) };
 		const prev = runs.get(run.id);
-		if (!prev || Date.parse(run.at) < Date.parse(prev.at)) runs.set(run.id, run);
+		if (!prev || Date.parse(run.at) < Date.parse(prev.at))
+			runs.set(run.id, run);
 	}
 	return [...runs.values()].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
