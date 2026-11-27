@@ -244,7 +244,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
-import type BoardStateFilter from "../components/projects/BoardStateFilter.vue";
+import BoardStateFilter from "../components/projects/BoardStateFilter.vue";
 import ClearJobsMenu from "../components/projects/ClearJobsMenu.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import IssueFilterEditor from "../components/projects/IssueFilterEditor.vue";
@@ -367,7 +367,7 @@ function setStates(next: BoardFilter[]) {
 }
 // The toolbar's layout follows its own width (#1490).
 const toolbar = ref<HTMLElement | null>(null);
-const stateFilter = ref<InstanceType<typeof BoardStateFilter> | null>(null);
+const stateFilter = ref<{ naturalWidth: number } | null>(null);
 const kanbanButton = ref<HTMLElement | null>(null);
 const toolbarCount = ref<HTMLElement | null>(null);
 const { stacked: toolbarStacked, collapsed: filtersCollapsed } =
