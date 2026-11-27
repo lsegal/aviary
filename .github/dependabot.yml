@@ -6,6 +6,13 @@ updates:
       default-days: 14
     schedule:
       interval: weekly
+    ignore:
+      # chromedp 0.23 reworked its API (generic Action, no ByQuery or
+      # DialContext); internal/browser needs porting before taking it.
+      - dependency-name: github.com/chromedp/chromedp
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: github.com/chromedp/cdproto
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
     groups:
       all:
         patterns:
