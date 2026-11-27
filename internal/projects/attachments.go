@@ -29,6 +29,21 @@ var githubVideoTypes = map[string]bool{"video/mp4": true, "video/quicktime": tru
 // githubImageTypes are the image types GitHub accepts as attachments.
 var githubImageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true, "image/svg+xml": true}
 
+// attachmentTypes maps the extensions of the files GitHub accepts to their
+// types. It is fixed rather than read from the host MIME database, which
+// differs by OS: macOS maps .webm to audio/webm, for one.
+var attachmentTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+	".svg":  "image/svg+xml",
+	".mp4":  "video/mp4",
+	".mov":  "video/quicktime",
+	".webm": "video/webm",
+}
+
 // checkAttachments returns the absolute paths of files, deduplicated, or an
 // error naming every file GitHub would not take and why, so a filing never
 // drops one silently.
@@ -92,6 +107,9 @@ func checkAttachment(file string) (string, error) {
 // fileContentType is path's MIME type from its extension, or sniffed from its
 // first bytes.
 func fileContentType(path string) string {
+	if contentType, ok := attachmentTypes[strings.ToLower(filepath.Ext(path))]; ok {
+		return contentType
+	}
 	if contentType := llm.ContentTypeFromName(path); contentType != "" {
 		return contentType
 	}
