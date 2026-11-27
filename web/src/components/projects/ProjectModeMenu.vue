@@ -76,9 +76,7 @@ const { callTool } = useMCP();
 const saving = ref(false);
 const error = ref("");
 
-const choice = computed<ProjectMode>(() =>
-	props.manual ? "manual" : "watch",
-);
+const choice = computed<ProjectMode>(() => (props.manual ? "manual" : "watch"));
 const label = computed(() =>
 	props.manual
 		? "Issue discovery: Manual (no issue watching)"
