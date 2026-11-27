@@ -161,11 +161,8 @@ func normalizeWatchDirs(dirs []string) []string {
 }
 
 func addWatchRoots(fw *fsnotify.Watcher, watched map[string]struct{}, dir string) error {
-	parent := filepath.Dir(dir)
-	if parent == "" {
-		parent = "."
-	}
-	if err := addWatchDir(fw, watched, parent); err != nil {
+	// filepath.Dir never returns "", so the parent is always a usable path.
+	if err := addWatchDir(fw, watched, filepath.Dir(dir)); err != nil {
 		return err
 	}
 	return addWatchTree(fw, watched, dir)
