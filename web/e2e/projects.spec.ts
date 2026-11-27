@@ -1,5 +1,9 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { openBoardInfo, openInstanceTag } from "./helpers/boardHeader";
+import {
+	expectHeaderRightAligned,
+	openBoardInfo,
+	openInstanceTag,
+} from "./helpers/boardHeader";
 import { boundingBoxOf } from "./helpers/box";
 import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
 
@@ -3648,8 +3652,8 @@ test("at 390px the Code Loop header is one chip row and the top nav hides its sc
 	const mid = (b: (typeof boxes)[number]) => (b?.y ?? 0) + (b?.height ?? 0) / 2;
 	for (const b of boxes)
 		expect(Math.abs(mid(b) - mid(boxes[0]))).toBeLessThan(4);
-	// The row starts at the page's edge padding, with no icon tile before it.
-	expect(boxes[0]?.x).toBeLessThanOrEqual(17);
+	// The chips line up on the right with the toolbar (#1572).
+	await expectHeaderRightAligned(page, "board-info");
 
 	// Nothing in the header is wider than the screen, so nothing scrolls.
 	const header = await page.getByTestId("settings-header").evaluate((root) => ({
@@ -3748,94 +3752,78 @@ for (const [label, width] of [
 	});
 }
 
-test("only the breadcrumb bar stays pinned while the Code Loop board scrolls (#1437)", async ({
+// The compact Code Loop header is slim enough to stay pinned whole under
+// the breadcrumb bar, so its chips and toolbar stay in reach (#1572).
+for (const path of [
+	"/agents/coder/projects",
+	"/agents/coder/projects/lsegal%2Faviary",
+]) {
+	test(`the compact header stays pinned under the breadcrumb while ${path} scrolls (#1572)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width: 390, height: 700 });
+		await setup(page);
+		await page.goto(path);
+		const crumbs = page.getByTestId("settings-crumb-bar");
+		const titleRow = page.getByTestId("settings-title-row");
+		const body = page.getByTestId("page-body");
+		await expect(page.getByTestId("delivery-status")).toHaveText("live");
+		const content = page.getByRole("region", { name: "Job counts" });
+		await expect(content).toBeVisible();
+		const bar = await crumbs.boundingBox();
+		const row = await titleRow.boundingBox();
+		if (!bar || !row) throw new Error("no header");
+		// The header sits right under the breadcrumb bar, and the two stay
+		// slim: about two rows of controls.
+		expect(row.y).toBeCloseTo(bar.y + bar.height, 0);
+		expect(row.y + row.height - bar.y).toBeLessThanOrEqual(130);
+		const top = async (l: Locator) => (await l.boundingBox())?.y ?? 0;
+		const contentBefore = await top(content);
+		expect(await top(body)).toBeCloseTo(row.y + row.height, 0);
+
+		// Scrolling the board moves only the board.
+		await content.hover();
+		for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 100);
+		await expect
+			.poll(async () => contentBefore - (await top(content)))
+			.toBeGreaterThan(30);
+		expect(await top(crumbs)).toBeCloseTo(bar.y, 0);
+		expect(await top(titleRow)).toBeCloseTo(row.y, 0);
+		expect(await top(body)).toBeCloseTo(row.y + row.height, 0);
+		await expect(page.getByTestId("board-more-menu")).toBeInViewport();
+		await expect(page.getByTestId("delivery-status")).toBeInViewport();
+
+		// A wheel over the header itself doesn't move it either.
+		await crumbs.hover();
+		for (let i = 0; i < 4; i++) await page.mouse.wheel(0, 100);
+		await page.waitForTimeout(100);
+		expect(await top(titleRow)).toBeCloseTo(row.y, 0);
+	});
+}
+
+test("a job's full header still slides away under the breadcrumb bar (#1437)", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 390, height: 700 });
 	await setup(page);
-	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
 	const crumbs = page.getByTestId("settings-crumb-bar");
 	const titleRow = page.getByTestId("settings-title-row");
-	const body = page.getByTestId("page-body");
-	await expect(page.getByTestId("delivery-status")).toHaveText("live");
-	const content = page.getByRole("region", { name: "Job counts" });
-	await expect(content).toBeVisible();
+	await expect(page.getByTestId("job-detail-title")).toBeVisible();
 	const bar = await crumbs.boundingBox();
 	const row = await titleRow.boundingBox();
 	if (!bar || !row) throw new Error("no header");
-	const barBottom = bar.y + bar.height;
-	const top = async (l: typeof body) => (await l.boundingBox())?.y ?? 0;
-	const contentBefore = await top(content);
-	expect(await top(body)).toBeCloseTo(row.y + row.height, 0);
-
-	// A small scroll moves the content and the title row together.
-	await content.hover();
-	await page.mouse.wheel(0, 30);
-	await expect
-		.poll(async () => contentBefore - (await top(content)))
-		.toBeCloseTo(30, 0);
-	expect(await top(titleRow)).toBeCloseTo(row.y - 30, 0);
-	expect(await top(crumbs)).toBeCloseTo(bar.y, 0);
-
-	// Scrolled further, the title row is gone under the breadcrumb bar, which
-	// stays, and the page fills what the bar leaves.
+	await crumbs.hover();
 	for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 100);
-	await expect.poll(() => top(body)).toBeCloseTo(barBottom, 0);
-	expect(await top(crumbs)).toBeCloseTo(bar.y, 0);
-	const hidden = await titleRow.boundingBox();
-	expect((hidden?.y ?? 0) + (hidden?.height ?? 0)).toBeCloseTo(barBottom, 0);
-	expect(
-		await page.evaluate(
-			([x, y]) =>
-				!!document
-					.elementFromPoint(x, y)
-					?.closest('[data-testid="settings-crumb-bar"]'),
-			[bar.x + 4, barBottom - 2],
-		),
-	).toBe(true);
-
-	// One flick back up past the board's top brings the header back.
-	for (let i = 0; i < 12; i++) await page.mouse.wheel(0, -100);
-	await expect.poll(() => top(titleRow)).toBeCloseTo(row.y, 0);
-	expect(await top(body)).toBeCloseTo(row.y + row.height, 0);
-});
-
-test("the page's own scrolls and focus leave the Code Loop header shown (#1437)", async ({
-	page,
-}) => {
-	await page.setViewportSize({ width: 390, height: 700 });
-	await setup(page);
-	await page.goto("/agents/coder/projects/lsegal%2Faviary");
-	const titleRow = page.getByTestId("settings-title-row");
-	await expect(page.getByTestId("delivery-status")).toHaveText("live");
-	const row = await titleRow.boundingBox();
-	// A scroll the page makes itself, such as following new output, doesn't
-	// hide the header.
-	const scrolled = await page.getByTestId("page-body").evaluate((el) => {
-		const area = [...el.querySelectorAll<HTMLElement>("*")].find(
-			(e) =>
-				e.scrollHeight > e.clientHeight + 1 &&
-				["auto", "scroll"].includes(getComputedStyle(e).overflowY),
-		);
-		if (!area) return false;
-		area.scrollTop = 200;
-		return true;
-	});
-	expect(scrolled).toBe(true);
-	await page.waitForTimeout(100);
-	expect((await titleRow.boundingBox())?.y).toBeCloseTo(row?.y ?? 0, 0);
-
-	// Hidden by a scroll, the title row comes back when a key reaches its actions.
-	await page.getByTestId("settings-crumb-bar").hover();
-	for (let i = 0; i < 4; i++) await page.mouse.wheel(0, 100);
 	await expect
 		.poll(async () => (await titleRow.boundingBox())?.y)
-		.toBeLessThan((row?.y ?? 0) - 10);
-	// On a phone Logs is in the "…" menu (#1488); Prompt chat stays a button.
-	await page.getByRole("button", { name: "Prompt chat" }).focus();
+		.toBeLessThan(row.y - 10);
+	expect((await crumbs.boundingBox())?.y).toBeCloseTo(bar.y, 0);
+	// Tabbing to one of its actions brings the row back.
+	await titleRow.getByRole("button").first().focus();
 	await expect
 		.poll(async () => (await titleRow.boundingBox())?.y)
-		.toBeCloseTo(row?.y ?? 0, 0);
+		.toBeCloseTo(row.y, 0);
 });
 
 // The filter row keeps search usable at every width: the state filters
@@ -4101,6 +4089,8 @@ for (const width of [360, 390, 430]) {
 		// The toolbar follows on the next row at most.
 		const more = await page.getByTestId("board-more-menu").boundingBox();
 		expect(more?.y ?? 0).toBeLessThan((row[0]?.y ?? 0) + 60);
+		// The chips line up on the right with the toolbar (#1572).
+		await expectHeaderRightAligned(page, "board-info");
 		const wide = await page
 			.getByTestId("settings-header")
 			.evaluate((root) =>
