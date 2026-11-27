@@ -510,25 +510,18 @@ func (p *OpenAIProvider) userContentParts(m Message) []openai.ChatCompletionCont
 // assistant messages directly after it into one chat message, joining their
 // text and collecting their tool calls. It returns the message and the index
 // of the last message it consumed.
-//
-// A following assistant message without a tool call leaves the current tool
-// call in place, so it is collected again on the next pass.
 func openAIAssistantTurn(msgs []Message, i int) (openai.ChatCompletionMessageParamUnion, int) {
-	m := msgs[i]
-	assistantText := m.Content
+	assistantText := msgs[i].Content
 	toolCalls := make([]openai.ChatCompletionMessageToolCallParam, 0, 1)
-	for {
-		if m.ToolCall != nil {
-			toolCalls = append(toolCalls, openAIToolCallParam(m.ToolCall, i))
-		}
-		if i+1 >= len(msgs) || msgs[i+1].Role != RoleAssistant {
-			break
-		}
+	if call := msgs[i].ToolCall; call != nil {
+		toolCalls = append(toolCalls, openAIToolCallParam(call, i))
+	}
+	for i+1 < len(msgs) && msgs[i+1].Role == RoleAssistant {
 		i++
 		next := msgs[i]
 		assistantText = appendLine(assistantText, next.Content)
 		if next.ToolCall != nil {
-			m = next
+			toolCalls = append(toolCalls, openAIToolCallParam(next.ToolCall, i))
 		}
 	}
 	if len(toolCalls) == 0 {
