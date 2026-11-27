@@ -1091,7 +1091,30 @@ export function projectSchedules(
 export interface UpcomingRun {
 	id: string;
 	name: string;
+	project: string;
 	at: string;
+}
+
+/**
+ * How far ahead the "Up next" strip looks: it lists only fires due within
+ * this window, so it shows what is about to run rather than the whole day.
+ */
+export const UP_NEXT_WINDOW_MS = 5 * 60_000;
+
+/**
+ * The runs the "Up next" strip shows at now: those due after now and within
+ * windowMs of it. Checked against a ticking clock, a run joins the strip as it
+ * enters the window and leaves once its time passes, between polls.
+ */
+export function upNextRuns(
+	runs: UpcomingRun[],
+	now: number,
+	windowMs = UP_NEXT_WINDOW_MS,
+): UpcomingRun[] {
+	return runs.filter((r) => {
+		const t = Date.parse(r.at);
+		return t > now && t - now <= windowMs;
+	});
 }
 
 /**
@@ -1103,7 +1126,12 @@ export function normalizeUpcoming(v: unknown): UpcomingRun[] {
 	const runs = new Map<string, UpcomingRun>();
 	for (const u of arr(v)) {
 		const raw = obj(u);
-		const run = { id: str(raw.task_id), name: str(raw.name), at: str(raw.at) };
+		const run = {
+			id: str(raw.task_id),
+			name: str(raw.name),
+			project: str(raw.project),
+			at: str(raw.at),
+		};
 		const prev = runs.get(run.id);
 		if (!prev || Date.parse(run.at) < Date.parse(prev.at))
 			runs.set(run.id, run);

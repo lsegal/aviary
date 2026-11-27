@@ -347,8 +347,25 @@ async function setup(
 	return calls;
 }
 
+// A task's next fires, each task listed as task_upcoming lists it.
+const upcomingRun = (
+	name: string,
+	minutes: number,
+	project = "lsegal/aviary",
+) => ({
+	task_id: `assistant/${name}`,
+	name,
+	project,
+	at: minutesFromNow(minutes),
+});
+
 test("a project board shows the up next strip", async ({ page }) => {
-	const calls = await setup(page);
+	const calls = await setup(page, {
+		upcoming: [
+			upcomingRun("nightly-triage", 3),
+			upcomingRun("nightly-triage", 3 + 1440),
+		],
+	});
 	await page.goto("/system/watches/lsegal%2Faviary");
 
 	const strip = page.getByTestId("up-next");
@@ -359,13 +376,45 @@ test("a project board shows the up next strip", async ({ page }) => {
 	);
 	expect(calls.task_upcoming?.[0]).toEqual({
 		project: "lsegal/aviary",
-		limit: 5,
+		limit: 50,
 		per_task: 1,
 	});
 
 	// A run in the strip opens its task's page, as its card does.
 	await strip.getByTestId("up-next-run").first().click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/nightly-triage$/);
+});
+
+test("up next lists only runs due within five minutes, as time passes (#1577)", async ({
+	page,
+}) => {
+	await page.clock.install();
+	await setup(page, {
+		upcoming: [upcomingRun("soon", 3), upcomingRun("later", 10)],
+	});
+	await page.goto("/system/watches/lsegal%2Faviary");
+
+	const chips = page.getByTestId("up-next").getByTestId("up-next-run");
+	await expect(chips).toHaveText([/soon/]);
+
+	// Six minutes on, the 10-minute run is within the window and the 3-minute
+	// one has fired, with no reload.
+	await page.clock.fastForward("06:00");
+	await expect(chips).toHaveText([/later/]);
+
+	// Once the later run fires too, nothing is due and the strip goes.
+	await page.clock.fastForward("05:00");
+	await expect(page.getByTestId("up-next")).toHaveCount(0);
+});
+
+test("up next is hidden on a phone when nothing is due within five minutes (#1577)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 375, height: 812 });
+	await setup(page, { upcoming: [upcomingRun("later", 10)] });
+	await page.goto("/system/watches/lsegal%2Faviary");
+	await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
+	await expect(page.getByTestId("up-next")).toHaveCount(0);
 });
 
 // Fires of a task every 30 seconds, every minute, and nightly, interleaved
@@ -377,7 +426,7 @@ const FREQUENT_UPCOMING = [
 	["assistant/every-minute", "every-minute", 1.8],
 	["assistant/every-30s", "every-30s", 1.5],
 	["assistant/every-minute", "every-minute", 2.8],
-	["assistant/nightly-triage", "nightly-triage", 42],
+	["assistant/nightly-triage", "nightly-triage", 4],
 ].map(([task_id, name, m]) => ({
 	task_id,
 	name,
@@ -408,7 +457,7 @@ test("up next stays one row on a phone (#1574)", async ({ page }) => {
 					task_id: `assistant/${name}`,
 					name,
 					project: "lsegal/aviary",
-					at: minutesFromNow(60 + i),
+					at: minutesFromNow(3.2 + i / 5),
 				}),
 			),
 		],
@@ -1413,6 +1462,28 @@ const AGENT_BOARD = {
 		},
 	},
 };
+
+test("the agent board shows its projects' runs due within five minutes in up next (#1577)", async ({
+	page,
+}) => {
+	const calls = await setup(page, {
+		...AGENT_BOARD,
+		upcoming: [
+			upcomingRun("zvid-bench", 2, "lsegal/zvidlib"),
+			upcomingRun("nightly-triage", 4),
+			upcomingRun("elsewhere", 1, "someone/else"),
+			upcomingRun("weekly-deps", 30),
+		],
+	});
+	await page.goto("/agents/coder/projects");
+
+	const chips = page.getByTestId("up-next").getByTestId("up-next-run");
+	// Only the board's projects' runs, and only those due within the window.
+	await expect(chips).toHaveText([/zvid-bench/, /nightly-triage/]);
+	await expect(chips.first()).toHaveAttribute("title", /^lsegal\/zvidlib · /);
+	// A board of several projects asks for every task's runs.
+	expect(calls.task_upcoming?.[0]).toEqual({ limit: 50, per_task: 1 });
+});
 
 test.describe("the agent board's scheduled items (#1107)", () => {
 	test("shows every project's schedules as one card each, with its project", async ({
