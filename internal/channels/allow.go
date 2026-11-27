@@ -33,7 +33,14 @@ func checkAllowed(
 	botUserID string,
 	wasMentioned bool,
 ) allowResult {
-	return checkAllowedWithOptions(entries, from, channelID, text, isGroup, botUserID, wasMentioned, false)
+	return allowRequest{
+		from:         from,
+		channelID:    channelID,
+		text:         text,
+		botUserID:    botUserID,
+		isGroup:      isGroup,
+		wasMentioned: wasMentioned,
+	}.check(entries)
 }
 
 // checkAllowedReplyContinuation applies allowFrom rules for message replies.
@@ -45,33 +52,23 @@ func checkAllowedReplyContinuation(
 	from, channelID string,
 	isGroup bool,
 ) allowResult {
-	return checkAllowedWithOptions(entries, from, channelID, "", isGroup, "", false, true)
-}
-
-func checkAllowedWithOptions(
-	entries []config.AllowFromEntry,
-	from, channelID, text string,
-	isGroup bool,
-	botUserID string,
-	wasMentioned bool,
-	ignoreMentionRules bool,
-) allowResult {
-	r := allowRequest{
+	return allowRequest{
 		from:               from,
 		channelID:          channelID,
-		text:               text,
-		botUserID:          botUserID,
 		isGroup:            isGroup,
-		wasMentioned:       wasMentioned,
-		ignoreMentionRules: ignoreMentionRules,
-	}
+		ignoreMentionRules: true,
+	}.check(entries)
+}
+
+// check applies entries' allowFrom rules to the message r describes.
+func (r allowRequest) check(entries []config.AllowFromEntry) allowResult {
 	for _, entry := range entries {
 		if !config.BoolOr(entry.Enabled, true) {
 			continue
 		}
 		// ExcludePrefixes is a global denylist: drop the message if any pattern
 		// matches, regardless of whether it is a DM or group message.
-		if matchesMentionPrefixes(text, entry.ExcludePrefixes) {
+		if matchesMentionPrefixes(r.text, entry.ExcludePrefixes) {
 			return allowResult{}
 		}
 		for _, id := range splitFrom(entry.From) {

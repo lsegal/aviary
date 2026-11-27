@@ -172,45 +172,20 @@ func devServiceUser(wd string) (username, home string) {
 	return username, home
 }
 
+// devPnpmService describes a development service that runs a pnpm script
+// from the project working directory.
+type devPnpmService struct {
+	name        string
+	displayName string
+	script      string
+}
+
 func runInstallDevService(_ *cobra.Command, _ []string) error {
-	wd, _ := serviceGetwd()
-	username, home := devServiceUser(wd)
-
-	var execPath string
-	var args []string
-	if wd == "" {
-		wd = home
-	}
-	if serviceGOOS == "windows" {
-		execPath = "cmd.exe"
-		args = []string{"/C", "pnpm dev"}
-	} else {
-		// Use the user's shell to run the pnpm command in the project directory.
-		shell := os.Getenv("SHELL")
-		if shell == "" {
-			shell = "/bin/zsh"
-		}
-		execPath = shell
-		// Inline-source the user's ~/.zshrc and run pnpm dev (use tilde form).
-		cmd := "source ~/.zshrc; pnpm dev"
-		args = []string{"-lc", cmd}
-	}
-
-	opts := server.ServiceOptions{
-		Name:        "aviary-dev",
-		DisplayName: "Aviary (dev pnpm dev)",
-		Description: "Runs `pnpm dev` for aviary (development)",
-		Exec:        execPath,
-		Args:        args,
-		WorkingDir:  wd,
-		User:        username,
-	}
-	fmt.Printf("Installing service: %s\n", opts.Name)
-	if err := installService(opts); err != nil {
-		return err
-	}
-	fmt.Printf("Service installed and started: %s\n", opts.Name)
-	return nil
+	return installDevPnpmService(devPnpmService{
+		name:        "aviary-dev",
+		displayName: "Aviary (dev pnpm dev)",
+		script:      "dev",
+	})
 }
 
 func runUninstallDevService(_ *cobra.Command, _ []string) error {
@@ -224,6 +199,16 @@ func runUninstallDevService(_ *cobra.Command, _ []string) error {
 }
 
 func runInstallDevDocsService(_ *cobra.Command, _ []string) error {
+	return installDevPnpmService(devPnpmService{
+		name:        "aviary-dev-docs",
+		displayName: "Aviary (docs:dev)",
+		script:      "docs:dev",
+	})
+}
+
+// installDevPnpmService installs and starts a service that runs `pnpm
+// <script>` in the project directory as the inferred development user.
+func installDevPnpmService(svc devPnpmService) error {
 	wd, _ := serviceGetwd()
 	username, home := devServiceUser(wd)
 
@@ -232,25 +217,25 @@ func runInstallDevDocsService(_ *cobra.Command, _ []string) error {
 	if wd == "" {
 		wd = home
 	}
+	pnpmCmd := "pnpm " + svc.script
 	if serviceGOOS == "windows" {
 		execPath = "cmd.exe"
-		args = []string{"/C", "pnpm docs:dev"}
+		args = []string{"/C", pnpmCmd}
 	} else {
-		// Use the user's shell to run the pnpm docs dev command in the project directory.
+		// Use the user's shell to run the pnpm command in the project directory.
 		shell := os.Getenv("SHELL")
 		if shell == "" {
 			shell = "/bin/zsh"
 		}
 		execPath = shell
-		// Inline-source the user's ~/.zshrc and run pnpm docs:dev (use tilde form).
-		cmd := "source ~/.zshrc; pnpm docs:dev"
-		args = []string{"-lc", cmd}
+		// Inline-source the user's ~/.zshrc and run the pnpm script (use tilde form).
+		args = []string{"-lc", "source ~/.zshrc; " + pnpmCmd}
 	}
 
 	opts := server.ServiceOptions{
-		Name:        "aviary-dev-docs",
-		DisplayName: "Aviary (docs:dev)",
-		Description: "Runs `pnpm docs:dev` for aviary (development)",
+		Name:        svc.name,
+		DisplayName: svc.displayName,
+		Description: "Runs `" + pnpmCmd + "` for aviary (development)",
 		Exec:        execPath,
 		Args:        args,
 		WorkingDir:  wd,

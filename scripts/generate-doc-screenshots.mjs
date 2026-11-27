@@ -866,7 +866,9 @@ const compileDetail = {
 		"events = calendar_events_today()\nmail = email_inbox_list(unread_only=true)\nprint(render_morning_brief(events, mail))",
 };
 
-function taskRun(n, task, status, daysAgo, hour, seconds, extra = {}) {
+// A scheduled run of one of the assistant's tasks, created daysAgo at hour
+// and taking seconds; any other fields are added to the job as given.
+function taskRun({ n, task, status, daysAgo, hour, seconds, ...extra }) {
 	const created = new Date(iso(daysAgo, hour));
 	return {
 		id: `job_${String(n).padStart(8, "0")}`,
@@ -885,22 +887,23 @@ function taskRun(n, task, status, daysAgo, hour, seconds, extra = {}) {
 
 const jobsFixtures = {
 	job_query: [
-		taskRun(12, "calendar-prep", "in_progress", 0, 8, 30),
-		taskRun(11, "daily-inbox-triage", "completed", 0, 7, 41),
-		taskRun(10, "calendar-prep", "completed", 1, 8, 52),
-		taskRun(9, "daily-inbox-triage", "completed", 1, 7, 38),
-		taskRun(8, "calendar-prep", "failed", 2, 8, 95, {
+		taskRun({ n: 12, task: "calendar-prep", status: "in_progress", daysAgo: 0, hour: 8, seconds: 30 }),
+		taskRun({ n: 11, task: "daily-inbox-triage", status: "completed", daysAgo: 0, hour: 7, seconds: 41 }),
+		taskRun({ n: 10, task: "calendar-prep", status: "completed", daysAgo: 1, hour: 8, seconds: 52 }),
+		taskRun({ n: 9, task: "daily-inbox-triage", status: "completed", daysAgo: 1, hour: 7, seconds: 38 }),
+		taskRun({
+			n: 8, task: "calendar-prep", status: "failed", daysAgo: 2, hour: 8, seconds: 95,
 			error: "calendar_events_today: provider returned 503",
 		}),
-		taskRun(7, "daily-inbox-triage", "completed", 2, 7, 44),
-		taskRun(6, "calendar-prep", "completed", 3, 8, 47),
-		taskRun(5, "daily-inbox-triage", "completed", 3, 7, 36),
-		taskRun(4, "weekly-review", "completed", 4, 16, 120),
-		taskRun(15, "daily-inbox-triage", "completed", 4, 7, 39),
-		taskRun(14, "calendar-prep", "completed", 4, 8, 51),
-		taskRun(13, "calendar-prep", "completed", 5, 8, 46),
-		taskRun(3, "daily-inbox-triage", "completed", 6, 7, 40),
-		taskRun(2, "calendar-prep", "completed", 6, 8, 49),
+		taskRun({ n: 7, task: "daily-inbox-triage", status: "completed", daysAgo: 2, hour: 7, seconds: 44 }),
+		taskRun({ n: 6, task: "calendar-prep", status: "completed", daysAgo: 3, hour: 8, seconds: 47 }),
+		taskRun({ n: 5, task: "daily-inbox-triage", status: "completed", daysAgo: 3, hour: 7, seconds: 36 }),
+		taskRun({ n: 4, task: "weekly-review", status: "completed", daysAgo: 4, hour: 16, seconds: 120 }),
+		taskRun({ n: 15, task: "daily-inbox-triage", status: "completed", daysAgo: 4, hour: 7, seconds: 39 }),
+		taskRun({ n: 14, task: "calendar-prep", status: "completed", daysAgo: 4, hour: 8, seconds: 51 }),
+		taskRun({ n: 13, task: "calendar-prep", status: "completed", daysAgo: 5, hour: 8, seconds: 46 }),
+		taskRun({ n: 3, task: "daily-inbox-triage", status: "completed", daysAgo: 6, hour: 7, seconds: 40 }),
+		taskRun({ n: 2, task: "calendar-prep", status: "completed", daysAgo: 6, hour: 8, seconds: 49 }),
 	],
 	task_compile_query: [compileDetail],
 	task_compile_get: compileDetail,
@@ -1407,7 +1410,9 @@ const workflowsConfig = {
 	),
 };
 
-function workflowRun(n, task, status, minutes, seconds, extra = {}) {
+// A message-triggered run of one of the assistant's workflows, created
+// minutes ago and taking seconds; any other fields are added to the job.
+function workflowRun({ n, task, status, minutes, seconds, ...extra }) {
 	const created = new Date(Date.now() - minutes * 60_000);
 	return {
 		id: `job_${String(n).padStart(8, "0")}`,
@@ -1455,12 +1460,14 @@ const beNiceContext = {
 };
 
 const beNiceRuns = [
-	workflowRun(41, "be-nice", "completed", 12, 6, {
+	workflowRun({
+		n: 41, task: "be-nice", status: "completed", minutes: 12, seconds: 6,
 		output:
 			"You're welcome, Marcus! Glad the fixes landed well. Enjoy the release this afternoon.",
 		trigger_context: beNiceContext,
 	}),
-	workflowRun(38, "be-nice", "completed", 74, 4, {
+	workflowRun({
+		n: 38, task: "be-nice", status: "completed", minutes: 74, seconds: 4,
 		output: "",
 		delivery: {
 			target: "reply",
@@ -1468,25 +1475,29 @@ const beNiceRuns = [
 			message: "the message reported a bug, not something positive",
 		},
 	}),
-	workflowRun(35, "be-nice", "completed", 180, 5, {
+	workflowRun({
+		n: 35, task: "be-nice", status: "completed", minutes: 180, seconds: 5,
 		output:
 			"Congrats on the launch, Priya! The new onboarding flow looks great.",
 	}),
-	workflowRun(31, "be-nice", "completed", 26 * 60, 5, {
+	workflowRun({
+		n: 31, task: "be-nice", status: "completed", minutes: 26 * 60, seconds: 5,
 		output: "Thanks, Jordan! Happy to help anytime.",
 	}),
-	workflowRun(27, "be-nice", "failed", 27 * 60, 31, {
+	workflowRun({
+		n: 27, task: "be-nice", status: "failed", minutes: 27 * 60, seconds: 31,
 		attempts: 2,
 		error: "slack: chat.postMessage returned ratelimited",
 	}),
-	workflowRun(22, "be-nice", "completed", 2 * 24 * 60, 6, {
+	workflowRun({
+		n: 22, task: "be-nice", status: "completed", minutes: 2 * 24 * 60, seconds: 6,
 		output: "Nice work on the migration, Marcus!",
 	}),
 ];
 
 const workflowJobs = [
-	workflowRun(42, "deploy-trigger", "in_progress", 1, 40),
-	workflowRun(36, "deploy-trigger", "completed", 150, 48),
+	workflowRun({ n: 42, task: "deploy-trigger", status: "in_progress", minutes: 1, seconds: 40 }),
+	workflowRun({ n: 36, task: "deploy-trigger", status: "completed", minutes: 150, seconds: 48 }),
 	...beNiceRuns,
 ];
 

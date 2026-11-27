@@ -112,50 +112,53 @@ type RunOverrides struct {
 // Prompt sends a message to the agent and fans out stream events to consumers.
 // Each call runs in its own goroutine; multiple concurrent calls are supported.
 func (r *AgentRunner) Prompt(ctx context.Context, message string, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, nil, RunOverrides{}, "", "", true, consumers...)
+	r.promptCore(ctx, promptRequest{message: message, persistUserMessage: true, consumers: consumers})
 }
 
 // PromptMedia is like Prompt but also attaches media to the user message.
 // Each media URL may be a data URL ("data:image/png;base64,...") or a remote
 // URL. Text file data URLs are inlined into the message the model sees.
 func (r *AgentRunner) PromptMedia(ctx context.Context, message string, mediaURLs []string, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, mediaURLs, RunOverrides{}, "", "", true, consumers...)
+	r.promptCore(ctx, promptRequest{message: message, mediaURLs: mediaURLs, persistUserMessage: true, consumers: consumers})
 }
 
 // PromptMediaWithOverrides is like PromptMedia but also applies per-run
 // overrides for model, fallbacks, and tool permissions.
 func (r *AgentRunner) PromptMediaWithOverrides(ctx context.Context, message string, mediaURLs []string, overrides RunOverrides, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, mediaURLs, overrides, "", "", true, consumers...)
+	r.promptCore(ctx, promptRequest{message: message, mediaURLs: mediaURLs, overrides: overrides, persistUserMessage: true, consumers: consumers})
 }
 
 // PromptWithOverrides is like Prompt but applies the provided overrides for
 // this call only. Model, Fallbacks, RestrictTools, and DisabledTools in overrides take
 // precedence over agent-level defaults when non-empty.
 func (r *AgentRunner) PromptWithOverrides(ctx context.Context, message string, overrides RunOverrides, consumers ...StreamConsumer) {
-	r.promptCore(ctx, message, nil, overrides, "", "", true, consumers...)
+	r.promptCore(ctx, promptRequest{message: message, overrides: overrides, persistUserMessage: true, consumers: consumers})
+}
+
+// promptRequest is what a caller asks promptCore to run.
+type promptRequest struct {
+	message            string
+	mediaURLs          []string
+	overrides          RunOverrides
+	promptMsgID        string
+	checkpointPath     string
+	persistUserMessage bool
+	consumers          []StreamConsumer
 }
 
 // promptCore is the shared implementation for Prompt, PromptMedia, and
 // PromptWithOverrides.
-func (r *AgentRunner) promptCore(
-	ctx context.Context,
-	message string,
-	mediaURLs []string,
-	overrides RunOverrides,
-	promptMsgID, checkpointPath string,
-	persistUserMessage bool,
-	consumers ...StreamConsumer,
-) {
+func (r *AgentRunner) promptCore(ctx context.Context, req promptRequest) {
 	r.mu.Lock()
 	if successor := r.successor; successor != nil && !r.canceled {
 		r.mu.Unlock()
-		successor.promptCore(ctx, message, mediaURLs, overrides, promptMsgID, checkpointPath, persistUserMessage, consumers...)
+		successor.promptCore(ctx, req)
 		return
 	}
 	if r.canceled {
 		interrupted := r.interrupted
 		r.mu.Unlock()
-		for _, c := range consumers {
+		for _, c := range req.consumers {
 			c(StreamEvent{Type: StreamEventStop, AgentID: r.agent.ID, Interrupted: interrupted})
 		}
 		return
@@ -165,16 +168,7 @@ func (r *AgentRunner) promptCore(
 
 	go func() {
 		defer r.active.Done()
-		p := &promptRun{
-			r:                  r,
-			message:            message,
-			mediaURLs:          mediaURLs,
-			overrides:          overrides,
-			promptMsgID:        promptMsgID,
-			checkpointPath:     checkpointPath,
-			persistUserMessage: persistUserMessage,
-			consumers:          consumers,
-		}
+		p := &promptRun{r: r, promptRequest: req}
 		p.run(ctx)
 	}()
 }
@@ -183,7 +177,14 @@ func (r *AgentRunner) recoverPrompt(ctx context.Context, checkpointID, checkpoin
 	// The consumer that streamed the original reply (a Slack thread, say) is
 	// gone, so the recovered reply is delivered to the session's channels.
 	cp.Overrides.SuppressDelivery = false
-	r.promptCore(ctx, cp.Message, cp.MediaURLs, cp.Overrides, checkpointID, checkpointPath, false, consumers...)
+	r.promptCore(ctx, promptRequest{
+		message:        cp.Message,
+		mediaURLs:      cp.MediaURLs,
+		overrides:      cp.Overrides,
+		promptMsgID:    checkpointID,
+		checkpointPath: checkpointPath,
+		consumers:      consumers,
+	})
 }
 
 func (r *AgentRunner) resolveSessionID(ctx context.Context) string {
@@ -209,11 +210,20 @@ func (r *AgentRunner) resolveSessionID(ctx context.Context) string {
 }
 
 func (r *AgentRunner) appendSessionMessage(sessionID string, role domain.MessageRole, content string, mediaURLs []string, model string) string {
-	return r.appendSessionMessageWithSender(sessionID, role, content, mediaURLs, model, nil)
+	return r.appendSessionMessageWithSender(sessionID, sessionMessage{role: role, content: content, mediaURLs: mediaURLs, model: model})
 }
 
-func (r *AgentRunner) appendSessionMessageWithSender(sessionID string, role domain.MessageRole, content string, mediaURLs []string, model string, sender *domain.MessageSender) string {
-	if strings.TrimSpace(content) == "" && len(mediaURLs) == 0 {
+// sessionMessage is a message to persist to a session.
+type sessionMessage struct {
+	role      domain.MessageRole
+	content   string
+	mediaURLs []string
+	model     string // recorded for assistant messages only
+	sender    *domain.MessageSender
+}
+
+func (r *AgentRunner) appendSessionMessageWithSender(sessionID string, m sessionMessage) string {
+	if strings.TrimSpace(m.content) == "" && len(m.mediaURLs) == 0 {
 		return ""
 	}
 	if sessionID == "" {
@@ -221,14 +231,14 @@ func (r *AgentRunner) appendSessionMessageWithSender(sessionID string, role doma
 	}
 	msg := domain.Message{
 		ID:        fmt.Sprintf("msg_%d", time.Now().UnixNano()),
-		Role:      role,
-		Sender:    sender,
-		Content:   content,
-		MediaURLs: mediaURLs,
+		Role:      m.role,
+		Sender:    m.sender,
+		Content:   m.content,
+		MediaURLs: m.mediaURLs,
 		Timestamp: time.Now(),
 	}
-	if role == domain.MessageRoleAssistant {
-		msg.Model = model
+	if m.role == domain.MessageRoleAssistant {
+		msg.Model = m.model
 	}
 	if err := appendSessionMessage(r.agent.ID, sessionID, msg); err != nil {
 		slog.Warn("agent: failed to persist session message", "agent", r.agent.Name, "session", sessionID, "err", err)
@@ -782,60 +792,59 @@ func verboseStringArg(args map[string]any, keys ...string) (string, bool) {
 	return "", false
 }
 
-func (r *AgentRunner) executeToolCall(
-	promptCtx context.Context,
-	emit func(StreamEvent),
-	toolClient ToolClient,
-	sessionID string,
-	usageRec *domain.UsageRecord,
-	streamRec toolEventRecord,
-	name string,
-	args map[string]any,
-) (string, bool) {
+// toolCallEnv is the turn state a tool call runs in.
+type toolCallEnv struct {
+	emit      func(StreamEvent)
+	client    ToolClient
+	sessionID string
+	usage     *domain.UsageRecord
+}
+
+func (r *AgentRunner) executeToolCall(promptCtx context.Context, env toolCallEnv, name string, args map[string]any) (string, bool) {
 	// A held turn starts no new tool call until its hold is released.
 	if err := TurnHoldFromContext(promptCtx).Wait(promptCtx); err != nil {
-		emit(StreamEvent{Type: StreamEventStop})
+		env.emit(StreamEvent{Type: StreamEventStop})
 		return "", true
 	}
-	args = normalizeSessionToolArguments(name, sessionID, args)
-	streamRec.Args = args
+	args = normalizeSessionToolArguments(name, env.sessionID, args)
+	streamRec := toolEventRecord{Name: name, Args: args}
 	// The call, its result, and its history record share one ID, so a
 	// re-delivered event updates the call's chat entry instead of adding one.
 	// Providers' own call IDs are not unique across a session for every
 	// backend, so Aviary assigns its own.
 	streamRec.ID = newID("call")
-	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args}})
+	env.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args}})
 	if r.IsVerbose() {
-		emit(StreamEvent{Type: StreamEventStatus, Text: verboseStatusText(streamRec.Name, streamRec.Args)})
+		env.emit(StreamEvent{Type: StreamEventStatus, Text: verboseStatusText(streamRec.Name, streamRec.Args)})
 	}
-	if usageRec != nil {
-		usageRec.ToolCalls++
+	if env.usage != nil {
+		env.usage.ToolCalls++
 	}
-	untrack := trackSessionToolCall(r.agent.ID, sessionID, sessionToolCall{id: streamRec.ID, name: name, args: args, started: time.Now()})
-	resultText, shared, callErr := callToolOnce(promptCtx, toolClient, r.agent.ID, sessionID, name, args)
+	untrack := trackSessionToolCall(r.agent.ID, env.sessionID, sessionToolCall{id: streamRec.ID, name: name, args: args, started: time.Now()})
+	resultText, shared, callErr := callToolOnce(promptCtx, env.client, r.agent.ID, env.sessionID, name, args)
 	untrack()
 	if shared && callErr == nil {
 		resultText = sharedToolCallNote + resultText
 	}
 	if callErr != nil {
 		if errors.Is(callErr, context.Canceled) || promptCtx.Err() != nil {
-			emit(StreamEvent{Type: StreamEventStop})
+			env.emit(StreamEvent{Type: StreamEventStop})
 			return "", true
 		}
-		emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args, Error: callErr.Error(), Done: true}})
+		env.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args, Error: callErr.Error(), Done: true}})
 		errRec := toolEventRecord{ID: streamRec.ID, Name: name, Args: args, Error: callErr.Error()}
 		errPayload, _ := json.Marshal(errRec)
-		r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(errPayload), nil, "")
+		r.appendSessionMessage(env.sessionID, domain.MessageRoleTool, string(errPayload), nil, "")
 		return "error: " + callErr.Error(), false
 	}
 
-	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args, Result: resultText, Done: true}})
+	env.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args, Result: resultText, Done: true}})
 	if change, ok := FileChangeFromToolResult(name, resultText); ok {
-		emit(StreamEvent{Type: StreamEventFile, File: change})
+		env.emit(StreamEvent{Type: StreamEventFile, File: change})
 	}
 	histRec := toolEventRecord{ID: streamRec.ID, Name: name, Args: args, Result: resultText}
 	histPayload, _ := json.Marshal(histRec)
-	r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(histPayload), nil, "")
+	r.appendSessionMessage(env.sessionID, domain.MessageRoleTool, string(histPayload), nil, "")
 	return resultText, false
 }
 
@@ -871,46 +880,33 @@ func isCurrentSessionPlaceholder(value any) bool {
 // fallback model (e.g. 429 rate-limit, quota exhausted, service unavailable,
 // or expired/invalid auth which might be resolved by a refresh/fallback).
 func isRetryableError(err error) bool {
+	return errorMentionsAny(err,
+		"429", "too many requests", "rate limit", "quota", "overloaded",
+		"503", "service unavailable", "401", "unauthorized", "unauthenticated")
+}
+
+// errorMentionsAny reports whether err's lowercased message contains any of
+// markers. A nil err mentions nothing.
+func errorMentionsAny(err error, markers ...string) bool {
 	if err == nil {
 		return false
 	}
 	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "429") ||
-		strings.Contains(s, "too many requests") ||
-		strings.Contains(s, "rate limit") ||
-		strings.Contains(s, "quota") ||
-		strings.Contains(s, "overloaded") ||
-		strings.Contains(s, "503") ||
-		strings.Contains(s, "service unavailable") ||
-		strings.Contains(s, "401") ||
-		strings.Contains(s, "unauthorized") ||
-		strings.Contains(s, "unauthenticated")
+	return slices.ContainsFunc(markers, func(marker string) bool {
+		return strings.Contains(s, marker)
+	})
 }
 
 // isAuthError returns true for 401/authentication errors that may be resolved
 // by refreshing an OAuth token.
 func isAuthError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "401") ||
-		strings.Contains(s, "unauthorized") ||
-		strings.Contains(s, "unauthenticated")
+	return errorMentionsAny(err, "401", "unauthorized", "unauthenticated")
 }
 
 func isThrottleError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "429") ||
-		strings.Contains(s, "rate limit") ||
-		strings.Contains(s, "rate_limit") ||
-		strings.Contains(s, "rate_limit_exceeded") ||
-		strings.Contains(s, "resource_exhausted") ||
-		strings.Contains(s, "quota") ||
-		strings.Contains(s, "capacity")
+	return errorMentionsAny(err,
+		"429", "rate limit", "rate_limit", "rate_limit_exceeded",
+		"resource_exhausted", "quota", "capacity")
 }
 
 func markUsageFailure(rec *domain.UsageRecord, err error) {

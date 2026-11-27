@@ -913,8 +913,20 @@ func (w *Engine) standDownForStandingClaims(ctx context.Context, checker WorkClo
 // unconditionally on startup took work another instance was running (issue
 // #514).
 func (w *Engine) negotiateContestedIssues(ctx context.Context, checker WorkClosureChecker, newIssues []pendingIssue, seen map[string]bool, aggressive bool) []pendingIssue {
-	result, _ := w.negotiateContestedIssuesWithin(ctx, checker, newIssues, seen, aggressive, maxConcurrencyPermits)
+	result, _ := w.negotiateContestedIssuesWithin(ctx, newIssues, contestedReap{checker: checker, seen: seen, aggressive: aggressive, room: maxConcurrencyPermits})
 	return result
+}
+
+// contestedReap configures one negotiateContestedIssuesWithin pass.
+type contestedReap struct {
+	// checker resolves the ticket each candidate's ownership is negotiated on.
+	checker WorkClosureChecker
+	// seen is the poll's seen set; a candidate left unclaimed stays in it.
+	seen map[string]bool
+	// aggressive marks the first reap after startup.
+	aggressive bool
+	// room is how many new claims the pass may take.
+	room int
 }
 
 // negotiateContestedIssuesWithin is negotiateContestedIssues limited to room
@@ -925,10 +937,11 @@ func (w *Engine) negotiateContestedIssues(ctx context.Context, checker WorkClosu
 // instances that could have run it (issue #652). Claims this instance already
 // holds take no room and pass through. It also reports whether any candidate
 // was left for lack of room.
-func (w *Engine) negotiateContestedIssuesWithin(ctx context.Context, checker WorkClosureChecker, newIssues []pendingIssue, seen map[string]bool, aggressive bool, room int) ([]pendingIssue, bool) {
+func (w *Engine) negotiateContestedIssuesWithin(ctx context.Context, newIssues []pendingIssue, reap contestedReap) ([]pendingIssue, bool) {
 	if w.Comments == nil || len(newIssues) == 0 {
 		return newIssues, false
 	}
+	checker, seen, aggressive, room := reap.checker, reap.seen, reap.aggressive, reap.room
 	var remaining atomic.Int64
 	remaining.Store(int64(room))
 	var full atomic.Bool
@@ -1026,36 +1039,12 @@ func (w *Engine) negotiateContestedIssuesWithin(ctx context.Context, checker Wor
 					w.logf("issue #%d claimed by instance %s %s ago (within %s); skipping reap", issue.Number, standing.Owner, standing.OwnerAge.Round(time.Second), w.staleClaimAfter())
 					return
 				}
-				if !aggressive {
-					// This instance already holds the newest claim, so the
-					// handshake it would run has already been run and won.
-					// Asking again would spam the ticket with an ask/claim
-					// pair on every pass and stall each one for the grace
-					// period.
-					if standing.SelfHolds {
-						w.logf("issue #%d already claimed by this instance %s ago; dispatching without re-asking", issue.Number, standing.SelfAge.Round(time.Second))
+				if settled, claimed := w.reusePriorNegotiation(issue, target, standing, aggressive); settled {
+					if claimed {
 						keep[i] = true
 						newIssues[i].claim = &target
-						return
 					}
-					// The checks above are all derived from the ticket's own
-					// comments. This one is local: a negotiation this instance
-					// already ran on this target settled who owns the work, and
-					// re-running it would repost the same ask and the same claim
-					// on every pass, stalling each one for the grace window. That
-					// is the comment spam of issue #432, so the decision is reused
-					// until the record goes stale even when the comments read as
-					// if nothing had ever been negotiated.
-					if record, age, ok := w.settledHandshake(target); ok {
-						if record.Claimed {
-							w.logf("issue #%d handshake already settled %s ago in this instance's favour; dispatching without re-asking", issue.Number, age.Round(time.Second))
-							keep[i] = true
-							newIssues[i].claim = &target
-						} else {
-							w.logf("issue #%d handshake already settled %s ago for another instance; standing down without re-asking", issue.Number, age.Round(time.Second))
-						}
-						return
-					}
+					return
 				}
 				if !standing.OwnerClaimed {
 					w.logf("issue #%d has no claim from another instance; treating it as abandoned", issue.Number)
@@ -1120,6 +1109,56 @@ func (w *Engine) negotiateContestedIssuesWithin(ctx context.Context, checker Wor
 	return filtered, full.Load()
 }
 
+// reusePriorNegotiation reports whether a periodic reap can settle issue
+// without asking again, from a claim this instance already holds or a
+// handshake it already ran on target, and if so whether this instance owns
+// the work. The aggressive first reap never reuses either.
+func (w *Engine) reusePriorNegotiation(issue Issue, target ownershipTarget, standing claimStanding, aggressive bool) (settled, claimed bool) {
+	if aggressive {
+		return false, false
+	}
+	// This instance already holds the newest claim, so the handshake it would
+	// run has already been run and won. Asking again would spam the ticket
+	// with an ask/claim pair on every pass and stall each one for the grace
+	// period.
+	if standing.SelfHolds {
+		w.logf("issue #%d already claimed by this instance %s ago; dispatching without re-asking", issue.Number, standing.SelfAge.Round(time.Second))
+		return true, true
+	}
+	// The check above is derived from the ticket's own comments. This one is
+	// local: a negotiation this instance already ran on this target settled
+	// who owns the work, and re-running it would repost the same ask and the
+	// same claim on every pass, stalling each one for the grace window. That
+	// is the comment spam of issue #432, so the decision is reused until the
+	// record goes stale even when the comments read as if nothing had ever
+	// been negotiated.
+	record, age, ok := w.settledHandshake(target)
+	if !ok {
+		return false, false
+	}
+	if record.Claimed {
+		w.logf("issue #%d handshake already settled %s ago in this instance's favour; dispatching without re-asking", issue.Number, age.Round(time.Second))
+		return true, true
+	}
+	w.logf("issue #%d handshake already settled %s ago for another instance; standing down without re-asking", issue.Number, age.Round(time.Second))
+	return true, false
+}
+
+// discussionDispatch is the run loop state pollDiscussions dispatches
+// discussion runs through.
+type discussionDispatch struct {
+	// sem bounds how many agent runs are in flight.
+	sem *concurrencySemaphore
+	// wg tracks every dispatched run.
+	wg *sync.WaitGroup
+	// workMu guards active.
+	workMu *sync.Mutex
+	// active maps the work key of every run in flight to its kind.
+	active map[string]string
+	// run runs the agent on one discussion.
+	run func(context.Context, Issue) error
+}
+
 // pollDiscussions dispatches the gh-discuss skill for newly discovered
 // unanswered top-level Discussion threads on any Discussions-board targets.
 // Discussion dispatch is intentionally isolated from issue dispatch: it does
@@ -1128,10 +1167,11 @@ func (w *Engine) negotiateContestedIssuesWithin(ctx context.Context, checker Wor
 // tells the next poll whether it still needs an answer. active only guards
 // against dispatching the same discussion twice while an agent run for it
 // is still in flight.
-func (w *Engine) pollDiscussions(ctx context.Context, n int, targets []string, sem *concurrencySemaphore, wg *sync.WaitGroup, workMu *sync.Mutex, active map[string]string, run func(context.Context, Issue) error) {
+func (w *Engine) pollDiscussions(ctx context.Context, n int, targets []string, dispatch discussionDispatch) {
 	if w.Discussions == nil {
 		return
 	}
+	sem, wg, workMu, active, run := dispatch.sem, dispatch.wg, dispatch.workMu, dispatch.active, dispatch.run
 	// Snapshot the in-flight counts before this poll claims anything, so the
 	// rotation below is led by work that is genuinely still running rather
 	// than by the candidates this poll is about to queue.
@@ -1241,6 +1281,10 @@ type issueWatch struct {
 	// remember, when set, persists the keys of comments this run handled, so
 	// a restarted daemon resuming the session does not relay them again.
 	remember func(keys []string)
+	// checker, when set, reads back the issue's state and its pull requests,
+	// so the watch notices a closure, a rejected pull request or an edited
+	// description.
+	checker WorkClosureChecker
 }
 
 // canRelay reports whether this run can be resumed in place right now.
@@ -1255,7 +1299,8 @@ func (watch issueWatch) canRelay() bool {
 // closure. Closure and description changes are read from the closure checker,
 // new comments from the comment client, so browser mode watches the rendered
 // pages the rest of the run already reads and poll mode watches the API.
-func (w *Engine) watchForIssueUpdates(ctx context.Context, checker WorkClosureChecker, issue Issue, watch issueWatch, cancel context.CancelCauseFunc, ready chan<- struct{}) {
+func (w *Engine) watchForIssueUpdates(ctx context.Context, issue Issue, watch issueWatch, cancel context.CancelCauseFunc, ready chan<- struct{}) {
+	checker := watch.checker
 	repo := issueRepository(issue.Target, issue)
 	var previous OriginatingWorkState
 	var err error
@@ -1290,7 +1335,9 @@ func (w *Engine) watchForIssueUpdates(ctx context.Context, checker WorkClosureCh
 		return
 	}
 	close(ready)
-	if reason := closedWorkReason(OriginatingWorkState{}, previous, issue.Number); checker != nil && err == nil && !watch.closed && strings.EqualFold(previous.IssueState, "closed") && reason != "" {
+	readInitialState := checker != nil && err == nil
+	closedSinceStart := !watch.closed && strings.EqualFold(previous.IssueState, "closed")
+	if reason := closedWorkReason(OriginatingWorkState{}, previous, issue.Number); readInitialState && closedSinceStart && reason != "" {
 		cause := fmt.Errorf("%w: %s", errWorkClosedByUser, reason)
 		w.logf("issue #%d stopping agent: %s", issue.Number, reason)
 		cancel(cause)
@@ -1318,28 +1365,7 @@ func (w *Engine) watchForIssueUpdates(ctx context.Context, checker WorkClosureCh
 				if watch.observed != nil {
 					watch.observed(current)
 				}
-				if reason := closedWorkReason(previous, current, issue.Number); reason != "" {
-					if !watch.canRelay() {
-						cause := fmt.Errorf("%w: %s", errWorkClosedByUser, reason)
-						w.logf("issue #%d stopping agent: %s", issue.Number, reason)
-						cancel(cause)
-						return
-					}
-					w.jobSystem(issueKey(issue), reason+"; relayed into the session")
-					w.logf("issue #%d interrupting agent: %s; asking it to clean up in the same session", issue.Number, reason)
-					cancel(&workUpdate{summary: reason, closed: true, instruction: closedWorkCleanupPrompt(issue, reason)})
-					return
-				}
-				if number, reason := rejectedPullRequest(previous, current); reason != "" {
-					w.jobSystem(issueKey(issue), "restarted: "+reason)
-					w.logf("issue #%d restarting agent: %s while the issue is still open; starting a fresh attempt", issue.Number, reason)
-					cancel(&workUpdate{summary: reason, restart: true, instruction: rejectedPullRequestPrompt(issue, number)})
-					return
-				}
-				if watch.canRelay() && previous.IssueBody != "" && current.IssueBody != previous.IssueBody {
-					w.jobSystem(issueKey(issue), "issue description edited; relayed into the session")
-					w.logf("issue #%d interrupting agent: its description changed; relaying it into the same session", issue.Number)
-					cancel(&workUpdate{summary: fmt.Sprintf("issue #%d description changed", issue.Number), instruction: changedDescriptionPrompt(issue)})
+				if w.interruptOnWorkChange(issue, watch, previous, current, cancel) {
 					return
 				}
 				previous = current
@@ -1351,7 +1377,7 @@ func (w *Engine) watchForIssueUpdates(ctx context.Context, checker WorkClosureCh
 		if w.Comments == nil || !watch.canRelay() {
 			continue
 		}
-		relays := w.newComments(ctx, repo, issue, previous.PullRequests, watch, seen)
+		relays := w.newComments(ctx, commentScope{repo: repo, issue: issue, pullRequests: previous.PullRequests}, watch, seen)
 		if len(relays) == 0 {
 			continue
 		}
@@ -1365,6 +1391,39 @@ func (w *Engine) watchForIssueUpdates(ctx context.Context, checker WorkClosureCh
 		cancel(&workUpdate{summary: fmt.Sprintf("issue #%d has %d new comment(s)", issue.Number, len(relays)), instruction: newCommentsPrompt(issue, relays)})
 		return
 	}
+}
+
+// interruptOnWorkChange cancels the watched run when the issue's state moved
+// from previous to current in a way the run must hear about: a closure, a
+// rejected pull request, or, for a run that can be resumed, an edited
+// description. It reports whether it cancelled the run.
+func (w *Engine) interruptOnWorkChange(issue Issue, watch issueWatch, previous, current OriginatingWorkState, cancel context.CancelCauseFunc) bool {
+	if reason := closedWorkReason(previous, current, issue.Number); reason != "" {
+		if !watch.canRelay() {
+			cause := fmt.Errorf("%w: %s", errWorkClosedByUser, reason)
+			w.logf("issue #%d stopping agent: %s", issue.Number, reason)
+			cancel(cause)
+			return true
+		}
+		w.jobSystem(issueKey(issue), reason+"; relayed into the session")
+		w.logf("issue #%d interrupting agent: %s; asking it to clean up in the same session", issue.Number, reason)
+		cancel(&workUpdate{summary: reason, closed: true, instruction: closedWorkCleanupPrompt(issue, reason)})
+		return true
+	}
+	if number, reason := rejectedPullRequest(previous, current); reason != "" {
+		w.jobSystem(issueKey(issue), "restarted: "+reason)
+		w.logf("issue #%d restarting agent: %s while the issue is still open; starting a fresh attempt", issue.Number, reason)
+		cancel(&workUpdate{summary: reason, restart: true, instruction: rejectedPullRequestPrompt(issue, number)})
+		return true
+	}
+	descriptionEdited := previous.IssueBody != "" && current.IssueBody != previous.IssueBody
+	if watch.canRelay() && descriptionEdited {
+		w.jobSystem(issueKey(issue), "issue description edited; relayed into the session")
+		w.logf("issue #%d interrupting agent: its description changed; relaying it into the same session", issue.Number)
+		cancel(&workUpdate{summary: fmt.Sprintf("issue #%d description changed", issue.Number), instruction: changedDescriptionPrompt(issue)})
+		return true
+	}
+	return false
 }
 
 // relayedComment is a new comment from an allowed commenter on the issue a
@@ -1384,6 +1443,16 @@ func (c relayedComment) label() string {
 	return "posted " + c.CreatedAt.UTC().Format(time.RFC3339)
 }
 
+// commentScope names the conversations newComments reads: the issue's own
+// and those of the pull requests opened for it.
+type commentScope struct {
+	// repo is the issue's repository, and that of any pull request that does
+	// not name its own.
+	repo         string
+	issue        Issue
+	pullRequests []PullRequestWorkState
+}
+
 // newComments reads the issue's conversation and its pull requests'
 // conversations, review comments and review bodies, and returns every comment
 // from an allowed commenter posted since the run began that seen does not
@@ -1394,7 +1463,8 @@ func (c relayedComment) label() string {
 // is added to seen and remembered, so each is handled once; a list that
 // fails is logged and the rest are still read, so one failing read does not
 // hide the others.
-func (w *Engine) newComments(ctx context.Context, repo string, issue Issue, pullRequests []PullRequestWorkState, watch issueWatch, seen map[string]bool) []relayedComment {
+func (w *Engine) newComments(ctx context.Context, scope commentScope, watch issueWatch, seen map[string]bool) []relayedComment {
+	repo, issue, pullRequests := scope.repo, scope.issue, scope.pullRequests
 	var relays, handled = []relayedComment{}, []string{}
 	consider := func(number int, comments []Comment) {
 		for _, comment := range comments {
@@ -2493,14 +2563,8 @@ func (w *Engine) Run(ctx context.Context) error {
 				// and handled like listed ones (issue #1431).
 				if issueHydrator != nil {
 					workMu.Lock()
-					var unfinished []string
-					for key, state := range work {
-						if state.Status != "completed" && strings.HasPrefix(key, target+"#") {
-							unfinished = append(unfinished, key)
-						}
-					}
+					unfinished := unfinishedWorkKeys(work, target)
 					workMu.Unlock()
-					slices.Sort(unfinished)
 					w.adoptTrackedWork(target, unfinished)
 					issues = append(issues, w.requestedFixIssues(ctx, issueHydrator, target)...)
 				}
@@ -2529,7 +2593,7 @@ func (w *Engine) Run(ctx context.Context) error {
 			}
 		}
 		w.logChanged("poll-issues", strconv.Itoa(len(issues)), "poll #%d found %d open issue(s)", n, len(issues))
-		w.pollDiscussions(ctx, n, targets, sem, &wg, &workMu, active, runDiscussion)
+		w.pollDiscussions(ctx, n, targets, discussionDispatch{sem: sem, wg: &wg, workMu: &workMu, active: active, run: runDiscussion})
 		observed = make(map[string]bool, len(issues))
 		for _, issue := range issues {
 			if issue.Repository != "" && issue.Number > 0 {
@@ -2795,12 +2859,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					// #693). Keeping it queued as well would start a second, fresh
 					// run on the same comment once this one finishes.
 					delete(directMentions, mentionKey)
-					if nudge != nil {
-						select {
-						case nudge <- struct{}{}:
-						default:
-						}
-					}
+					trySignal(nudge)
 					w.logf("issue #%d direct mention of instance %s concerns the run in progress; relaying it into that run", issue.Number, w.Identity)
 				} else {
 					w.logChanged("mention-active-"+key, "waiting", "issue #%d direct mention of instance %s waits for the run in progress to finish: that run's session cannot be resumed to relay it", issue.Number, w.Identity)
@@ -2809,7 +2868,14 @@ func (w *Engine) Run(ctx context.Context) error {
 			if directMention && wasCompleted && !isActive && w.routeMention(ctx, mentions, issue, "finished", directMentions) {
 				continue
 			}
-			if issue.Number > 0 && (wasFailed || rejected > 0 || wasPaused || (staleRestoredState && remoteIssueAllowsDispatch(issue.Target, issue, w.ReadyState)) || shouldDispatchIssue(issue.Target, issue, isActive, wasActive, wasCompleted, seen[key], w.ReadyState) || (swept && !isActive && remoteIssueAllowsDispatch(issue.Target, issue, w.ReadyState)) || (directMention && !isActive)) {
+			localReason := wasFailed || rejected > 0 || wasPaused
+			restoredReady := staleRestoredState && remoteIssueAllowsDispatch(issue.Target, issue, w.ReadyState)
+			sweptReady := swept && !isActive && remoteIssueAllowsDispatch(issue.Target, issue, w.ReadyState)
+			mentionedIdle := directMention && !isActive
+			listedReady := shouldDispatchIssue(issue.Target, issue, isActive, wasActive, wasCompleted, seen[key], w.ReadyState)
+			remoteReady := restoredReady || listedReady || sweptReady
+			dispatchable := localReason || remoteReady || mentionedIdle
+			if issue.Number > 0 && dispatchable {
 				seen[key] = true
 				delete(restored, key)
 				delete(directMentions, mentionKey)
@@ -2820,7 +2886,10 @@ func (w *Engine) Run(ctx context.Context) error {
 				// sitting at "In Progress" that this instance has no record of
 				// is another instance's apparent work (typically stranded by
 				// one that died mid-run), so it must be negotiated too.
-				contested := (hadLocalRecord && !wasFailed && !wasActive && !wasPaused && rejected == 0) || (!hadLocalRecord && (projectItemInProgress(issue.Target, issue) || swept))
+				ownWork := wasFailed || wasActive || wasPaused || rejected != 0
+				reclaimed := hadLocalRecord && !ownWork
+				apparentlyForeign := !hadLocalRecord && (projectItemInProgress(issue.Target, issue) || swept)
+				contested := reclaimed || apparentlyForeign
 				session := AgentSession{
 					ID: state.SessionID, Agent: state.Agent, CheckoutDirectory: state.CheckoutDirectory,
 					// Persisted work is not an active worker after a daemon restart or
@@ -2868,7 +2937,8 @@ func (w *Engine) Run(ctx context.Context) error {
 					session = AgentSession{}
 					contested = false
 				}
-				fresh := !hadLocalRecord && !contested && !directMention && !wasPaused && !session.Resume
+				continuing := hadLocalRecord || wasPaused || session.Resume
+				fresh := !continuing && !contested && !directMention
 				newIssues = append(newIssues, pendingIssue{issue: issue, contested: contested, session: session, mentioned: directMention, woken: wasPaused, fresh: fresh})
 			}
 		}
@@ -2977,7 +3047,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				room--
 			}
 		}
-		newIssues, deferredForCapacity = w.negotiateContestedIssuesWithin(ctx, closureChecker, newIssues, seen, n == 1, room)
+		newIssues, deferredForCapacity = w.negotiateContestedIssuesWithin(ctx, newIssues, contestedReap{checker: closureChecker, seen: seen, aggressive: n == 1, room: room})
 		workMu.Lock()
 		inFlight := activeCountsByTarget(active, parseIssueWorkKey)
 		workMu.Unlock()
@@ -3339,7 +3409,7 @@ func (w *Engine) Run(ctx context.Context) error {
 						}
 					}
 					workMu.Unlock()
-					watch := issueWatch{since: since, seen: seenComments, continued: continued, remember: func(keys []string) {
+					watch := issueWatch{since: since, seen: seenComments, continued: continued, checker: closureChecker, remember: func(keys []string) {
 						workMu.Lock()
 						defer workMu.Unlock()
 						state, ok := work[key]
@@ -3382,7 +3452,7 @@ func (w *Engine) Run(ctx context.Context) error {
 					if closureChecker != nil || w.Comments != nil {
 						ready := make(chan struct{})
 						closureReady = ready
-						go w.watchForIssueUpdates(runCtx, closureChecker, i, watch, cancelRun, ready)
+						go w.watchForIssueUpdates(runCtx, i, watch, cancelRun, ready)
 					}
 					if closureReady != nil {
 						select {
@@ -3456,96 +3526,34 @@ func (w *Engine) Run(ctx context.Context) error {
 					state := work[key]
 					workMu.Unlock()
 					update, updated := workUpdateFor(cause)
-					if !updated || ctx.Err() != nil {
-						if scheduled != nil && ctx.Err() == nil {
-							// Print mode exits when the turn ends, so the
-							// wakeup the agent asked for would never fire and
-							// the run would look finished while it waits on
-							// CI. The session is kept alive and
-							// resumed with the agent's own prompt instead.
-							wakeups++
-							if wakeups > maxConsecutiveWakeups {
-								runErr = fmt.Errorf("agent scheduled %d wakeups in a row without finishing; stopping the run", maxConsecutiveWakeups)
-								break
-							}
-							if state.SessionID != "" && state.Agent != "" {
-								w.logf("issue #%d agent scheduled a wakeup in %s (%s); keeping session %s alive until then", i.Number, formatWakeupDelay(scheduled.Delay), scheduled.Reason, state.SessionID)
-								wait = &runWait{Delay: w.wakeupDelay(*scheduled), Reason: scheduled.Reason, For: "the scheduled wakeup"}
-								agentSession = AgentSession{ID: state.SessionID, Agent: state.Agent, CheckoutDirectory: state.CheckoutDirectory, Resume: true, Update: wakeupPrompt(i, *scheduled)}
-								publish()
-								continue
-							}
-							w.logf("issue #%d agent scheduled a wakeup, but its session cannot be resumed; treating the run as finished", i.Number)
-						}
-						if runErr != nil || ctx.Err() != nil || closureChecker == nil {
+					finished := !updated || ctx.Err() != nil
+					if finished && scheduled != nil && ctx.Err() == nil {
+						// Print mode exits when the turn ends, so the
+						// wakeup the agent asked for would never fire and
+						// the run would look finished while it waits on
+						// CI. The session is kept alive and
+						// resumed with the agent's own prompt instead.
+						wakeups++
+						if wakeups > maxConsecutiveWakeups {
+							runErr = fmt.Errorf("agent scheduled %d wakeups in a row without finishing; stopping the run", maxConsecutiveWakeups)
 							break
 						}
-						// The agent finishing its prompt is not the work being
-						// done: one that timed out or stopped
-						// early returns exactly as one that merged its pull
-						// request does. The run only counts as complete once
-						// GitHub says the issue is closed; while it is still
-						// open the work is kept alive and continued instead of
-						// being reported as finished.
-						closed, answered, held, observed := w.confirmIssueClosed(ctx, closureChecker, i)
-						if closed || !answered || ctx.Err() != nil {
-							// A run that finished with a ready pull request
-							// still open is paused on that pull request, so its
-							// slot is freed and a later poll wakes it on a merge
-							// or a close. One stacked on the blocker
-							// the issue was dispatched with waits for that
-							// blocker instead; stacked on anything
-							// else, it is a hold for a human like any other.
-							if closed && held != nil {
-								if held.Kind == core.PausedStacked {
-									if dependency, ok := stackableDependency(i); ok {
-										held.WaitingOn = []string{dependency.Reference(issueRepository(i.Target, i))}
-									} else {
-										held.Kind = core.PausedPullRequest
-									}
-								}
-								paused = held
-							}
-							break
+						if state.SessionID != "" && state.Agent != "" {
+							w.logf("issue #%d agent scheduled a wakeup in %s (%s); keeping session %s alive until then", i.Number, formatWakeupDelay(scheduled.Delay), scheduled.Reason, state.SessionID)
+							wait = &runWait{Delay: w.wakeupDelay(*scheduled), Reason: scheduled.Reason, For: "the scheduled wakeup"}
+							agentSession = AgentSession{ID: state.SessionID, Agent: state.Agent, CheckoutDirectory: state.CheckoutDirectory, Resume: true, Update: wakeupPrompt(i, *scheduled)}
+							publish()
+							continue
 						}
-						// An agent that keeps ending its turn on a blocker it
-						// cannot get past (auth, permissions, a broken tool)
-						// would otherwise be resumed forever, each turn a full
-						// prompt. A turn that committed, opened a pull request,
-						// or commented is progress; enough turns in a row
-						// without any pause the job for the owner instead.
-						if current := core.WorkProgress(observed); keepalives > 0 && current == progress {
-							stalled++
-						} else {
-							stalled = 0
-							progress = current
-						}
-						if stalled >= maxStalledKeepalives {
-							w.logf("issue #%d keepalive: the agent ended %d turns in a row with the issue still open and no new commits, pull requests, or comments; pausing it until it is retried", i.Number, stalled+1)
-							paused = &core.PausedWork{Kind: core.PausedManual, Reason: core.StalledPauseReason}
-							break
-						}
-						keepalives++
-						delay := w.keepaliveDelay(stalled)
-						wait = &runWait{Delay: delay, Reason: "keepalive backoff after a turn that left the issue open", For: "the keepalive backoff"}
-						if state.SessionID == "" || state.Agent == "" {
-							w.logf("issue #%d keepalive: the agent finished but the issue is still open, and its session cannot be resumed; restarting the agent in %s (attempt %d)", i.Number, formatWakeupDelay(delay), keepalives)
-							agentSession.Resume = false
-							agentSession.Update = ""
-						} else {
-							w.logf("issue #%d keepalive: the agent finished but the issue is still open; continuing session %s in %s (attempt %d)", i.Number, state.SessionID, formatWakeupDelay(delay), keepalives)
-							agentSession = AgentSession{ID: state.SessionID, Agent: state.Agent, CheckoutDirectory: state.CheckoutDirectory, Resume: true, Update: unclosedWorkPrompt(i)}
-						}
-						runErr = nil
-						publish()
-						continue
+						w.logf("issue #%d agent scheduled a wakeup, but its session cannot be resumed; treating the run as finished", i.Number)
 					}
-					// The session identity is read back from the work state so
-					// a run whose agent reported its own session ID after
-					// launch is resumed with that one rather than the
-					// placeholder it was dispatched with.
-					if state.SessionID == "" || state.Agent == "" {
-						if update.restart {
+					if !finished {
+						// The session identity is read back from the work state so
+						// a run whose agent reported its own session ID after
+						// launch is resumed with that one rather than the
+						// placeholder it was dispatched with.
+						sessionLost := state.SessionID == "" || state.Agent == ""
+						if sessionLost && update.restart {
 							// A rejected pull request leaves the issue open, so
 							// the work starts over in a fresh session rather
 							// than ending.
@@ -3556,14 +3564,73 @@ func (w *Engine) Run(ctx context.Context) error {
 							publish()
 							continue
 						}
-						w.logf("issue #%d cannot resume its session to deliver the update; stopping instead", i.Number)
+						if sessionLost {
+							w.logf("issue #%d cannot resume its session to deliver the update; stopping instead", i.Number)
+							break
+						}
+						alreadyClosed = alreadyClosed || update.closed
+						agentSession = AgentSession{ID: state.SessionID, Agent: state.Agent, CheckoutDirectory: state.CheckoutDirectory, Resume: true, Update: update.instruction}
+						runErr = nil
+						w.logf("issue #%d resuming session %s with the update", i.Number, state.SessionID)
+						publish()
+						continue
+					}
+					if runErr != nil || ctx.Err() != nil || closureChecker == nil {
 						break
 					}
-					alreadyClosed = alreadyClosed || update.closed
-					agentSession = AgentSession{ID: state.SessionID, Agent: state.Agent, CheckoutDirectory: state.CheckoutDirectory, Resume: true, Update: update.instruction}
+					// The agent finishing its prompt is not the work being
+					// done: one that timed out or stopped
+					// early returns exactly as one that merged its pull
+					// request does. The run only counts as complete once
+					// GitHub says the issue is closed; while it is still
+					// open the work is kept alive and continued instead of
+					// being reported as finished.
+					closed, answered, held, observed := w.confirmIssueClosed(ctx, closureChecker, i)
+					if closed || !answered || ctx.Err() != nil {
+						// A run that finished with a ready pull request
+						// still open is paused on that pull request, so its
+						// slot is freed and a later poll wakes it on a merge
+						// or a close. One stacked on the blocker
+						// the issue was dispatched with waits for that
+						// blocker instead; stacked on anything
+						// else, it is a hold for a human like any other.
+						if closed && held != nil {
+							resolveStackedHold(i, held)
+							paused = held
+						}
+						break
+					}
+					// An agent that keeps ending its turn on a blocker it
+					// cannot get past (auth, permissions, a broken tool)
+					// would otherwise be resumed forever, each turn a full
+					// prompt. A turn that committed, opened a pull request,
+					// or commented is progress; enough turns in a row
+					// without any pause the job for the owner instead.
+					if current := core.WorkProgress(observed); keepalives > 0 && current == progress {
+						stalled++
+					} else {
+						stalled = 0
+						progress = current
+					}
+					if stalled >= maxStalledKeepalives {
+						w.logf("issue #%d keepalive: the agent ended %d turns in a row with the issue still open and no new commits, pull requests, or comments; pausing it until it is retried", i.Number, stalled+1)
+						paused = &core.PausedWork{Kind: core.PausedManual, Reason: core.StalledPauseReason}
+						break
+					}
+					keepalives++
+					delay := w.keepaliveDelay(stalled)
+					wait = &runWait{Delay: delay, Reason: "keepalive backoff after a turn that left the issue open", For: "the keepalive backoff"}
+					if state.SessionID == "" || state.Agent == "" {
+						w.logf("issue #%d keepalive: the agent finished but the issue is still open, and its session cannot be resumed; restarting the agent in %s (attempt %d)", i.Number, formatWakeupDelay(delay), keepalives)
+						agentSession.Resume = false
+						agentSession.Update = ""
+					} else {
+						w.logf("issue #%d keepalive: the agent finished but the issue is still open; continuing session %s in %s (attempt %d)", i.Number, state.SessionID, formatWakeupDelay(delay), keepalives)
+						agentSession = AgentSession{ID: state.SessionID, Agent: state.Agent, CheckoutDirectory: state.CheckoutDirectory, Resume: true, Update: unclosedWorkPrompt(i)}
+					}
 					runErr = nil
-					w.logf("issue #%d resuming session %s with the update", i.Number, state.SessionID)
 					publish()
+					continue
 				}
 				workMu.Lock()
 				manualPause := pausing[key] && errors.Is(runErr, errWorkStoppedFromWebUI)
@@ -3572,18 +3639,19 @@ func (w *Engine) Run(ctx context.Context) error {
 				// teardown failing once the pull request merged (issue
 				// #685). The merged pull request outranks the run's own
 				// exit, so the job is done rather than failed.
+				var mergedState OriginatingWorkState
+				mergedNumber, merged := 0, false
 				if runErr != nil && !manualPause && closureChecker != nil && ctx.Err() == nil {
-					if state, err := closureChecker.OriginatingWorkState(ctx, issueRepository(i.Target, i), i.Number); err == nil {
-						if number, ok := mergedWork(state); ok {
-							w.logf("issue #%d run ended with an error, but pull request #%d merged and closed the issue; completing it: %v", i.Number, number, runErr)
-							jobMu.Lock()
-							if job, ok := jobs[key]; ok && job.SetPullRequest(state, issueRepository(i.Target, i)) {
-								jobs[key] = job
-							}
-							jobMu.Unlock()
-							runErr, paused = nil, nil
-						}
+					mergedState, mergedNumber, merged = mergedWorkState(ctx, closureChecker, i)
+				}
+				if merged {
+					w.logf("issue #%d run ended with an error, but pull request #%d merged and closed the issue; completing it: %v", i.Number, mergedNumber, runErr)
+					jobMu.Lock()
+					if job, ok := jobs[key]; ok && job.SetPullRequest(mergedState, issueRepository(i.Target, i)) {
+						jobs[key] = job
 					}
+					jobMu.Unlock()
+					runErr, paused = nil, nil
 				}
 				if manualPause {
 					// The owner paused the run: it is held, keeping its session
@@ -4335,7 +4403,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				}
 				compiled := false
 				if runErr == nil && run.RunCompiled != nil && session.Update == "" {
-					compiled, fellBack = w.runCompiledProjectTask(runCtx, key, run, request.repository, output, updateSession)
+					compiled, fellBack = w.runCompiledProjectTask(runCtx, compiledProjectRun{key: key, run: run, repository: request.repository, output: output, updateSession: updateSession})
 				}
 				if runErr == nil && !compiled {
 					runErr = w.runRelayingInbox(runCtx, inboxRun{key: key, subject: "scheduled run " + key, intro: intro, issue: issue, output: output, updateSession: updateSession}, session)
@@ -4596,13 +4664,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				workMu.Lock()
 				pending := nudgesForIssue(nudges, event.Repository, event.IssueNumber)
 				workMu.Unlock()
-				for _, nudge := range pending {
-					select {
-					case nudge <- struct{}{}:
-						w.logf("issue #%d %s delivery concerns work in flight; checking it now", event.IssueNumber, webhookEventLabel(event))
-					default:
-					}
-				}
+				w.nudgeWorkInFlight(event, pending)
 			}
 			// A direct mention is intentionally not an ordinary comment refresh:
 			// it must survive a lagging issue search (or a transient list
@@ -4624,57 +4686,12 @@ func (w *Engine) Run(ctx context.Context) error {
 					w.logf("issue #%d direct mention is still pending; using the scheduled follow-up refresh", number)
 				}
 			}
-			if kind, ok := webhookMentionKind(event); ok && w.addressedTo(event.CommentBody) {
-				// Acknowledge the mention was read regardless of whether it goes on
-				// to authorize a run: a human watching the thread should
-				// see the eyes reaction even when the mention is stale or from an
-				// unauthorized commenter, since either way this instance saw it.
-				w.reactToMention(ctx, event.Repository, kind, event.IssueNumber, event.CommentID, event.CommentNodeID)
-				// A mention in the webhook payload alone is not enough to trigger a
-				// run: the mentioning comment must also come from an
-				// allowed commenter and be on GitHub as delivered, reverified there
-				// rather than trusted from the delivery. A conversation comment
-				// must also still be the thread's last comment.
-				authorized := commenterAllowed(event.CommentAuthor, w.AllowedCommenters)
-				if authorized && w.Comments != nil {
-					var err error
-					if kind == ConversationComment {
-						authorized, err = authorizedDirectMention(ctx, w.Comments, event.Repository, event.IssueNumber, w.addressedTo, w.AllowedCommenters)
-					} else if lister, ok := w.Comments.(ReviewCommentLister); ok {
-						authorized, err = reviewMentionOnGitHub(ctx, lister, event.Repository, event.IssueNumber, event.CommentBody, event.CommentAuthor)
-					}
-					if err != nil {
-						w.logf("issue #%d failed to verify direct mention of instance %s%s: %v", event.IssueNumber, w.Identity, mentionLocationSuffix(kind), err)
-						authorized = false
-					}
+			if key, queued := w.acceptWebhookMention(ctx, event, mentions, directMentions); queued {
+				if err := poll(nil); err != nil && ctx.Err() == nil {
+					reportPollError("direct-mention", err)
 				}
-				keys := webhookMentionKeys(event)
-				if event.OnPullRequest {
-					keys = mentions.linkedIssueKeys(event.Repository, event.IssueNumber, keys)
-				}
-				if !authorized && kind == ConversationComment {
-					w.logf("issue #%d ignoring direct mention of instance %s: not the last comment or not from an allowed commenter", event.IssueNumber, w.Identity)
-				} else if !authorized {
-					w.logf("pull request #%d ignoring direct mention of instance %s in %s: not from an allowed commenter or not found on GitHub", event.IssueNumber, w.Identity, mentionLocation(kind))
-				} else if event.OnPullRequest && len(keys) == 0 {
-					w.logf("pull request #%d directly mentioned instance %s%s, but it closes no issue to run", event.IssueNumber, w.Identity, mentionLocationSuffix(kind))
-				} else if len(keys) > 0 {
-					key := keys[0]
-					for _, mentioned := range keys {
-						directMentions[mentioned] = true
-						mentions.comments[mentioned] = mentionComment{Kind: kind, Repository: event.Repository, Number: event.IssueNumber, ID: event.CommentID, Author: event.CommentAuthor}
-					}
-					if event.OnPullRequest {
-						w.logf("pull request #%d directly mentioned instance %s%s; refreshing for a threaded gh-fix run on %s", event.IssueNumber, w.Identity, mentionLocationSuffix(kind), formatIssueRefs(event.ClosesIssues))
-					} else {
-						w.logf("issue #%d directly mentioned instance %s; refreshing for a threaded gh-fix run", event.IssueNumber, w.Identity)
-					}
-					if err := poll(nil); err != nil && ctx.Err() == nil {
-						reportPollError("direct-mention", err)
-					}
-					followQueuedRun(key, event.IssueNumber)
-					continue
-				}
+				followQueuedRun(key, event.IssueNumber)
+				continue
 			}
 			// The payload alone decides whether this delivery could have
 			// changed dispatchable work. Pushes, pull request activity, and
@@ -4742,11 +4759,12 @@ func (w *Engine) Run(ctx context.Context) error {
 				jobMu.Lock()
 				status := jobs[key].Status
 				jobMu.Unlock()
-				if status == "failed" {
-					delete(retryAfterStop, key)
-					if err := poll(nil); err != nil && ctx.Err() == nil {
-						reportPollError("retry", err)
-					}
+				if status != "failed" {
+					continue
+				}
+				delete(retryAfterStop, key)
+				if err := poll(nil); err != nil && ctx.Err() == nil {
+					reportPollError("retry", err)
 				}
 			}
 			if len(directMentions) > 0 {
@@ -4759,13 +4777,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				stateReloadTimer = time.NewTimer(stateReloadDebounce)
 				stateReload = stateReloadTimer.C
 			} else {
-				if !stateReloadTimer.Stop() {
-					select {
-					case <-stateReloadTimer.C:
-					default:
-					}
-				}
-				stateReloadTimer.Reset(stateReloadDebounce)
+				restartTimer(stateReloadTimer, stateReloadDebounce)
 			}
 		case <-stateReload:
 			stateReloadTimer = nil
@@ -5236,6 +5248,143 @@ func saveState(path string, seen map[int]bool) error {
 
 // loadScopedWorkState reads the work state at path, keeping only the
 // records of targets' jobs, or every record when targets is empty.
+// unfinishedWorkKeys returns, sorted, the keys of target's work that has not
+// completed.
+func unfinishedWorkKeys(work map[string]workState, target string) []string {
+	var unfinished []string
+	for key, state := range work {
+		if state.Status != "completed" && strings.HasPrefix(key, target+"#") {
+			unfinished = append(unfinished, key)
+		}
+	}
+	slices.Sort(unfinished)
+	return unfinished
+}
+
+// resolveStackedHold settles what a run held on a pull request stacked on
+// another waits for: the blocker the issue was dispatched with, or, stacked
+// on anything else, a human like any other pull request hold.
+func resolveStackedHold(issue Issue, held *core.PausedWork) {
+	if held.Kind != core.PausedStacked {
+		return
+	}
+	if dependency, ok := stackableDependency(issue); ok {
+		held.WaitingOn = []string{dependency.Reference(issueRepository(issue.Target, issue))}
+		return
+	}
+	held.Kind = core.PausedPullRequest
+}
+
+// mergedWorkState reads issue's work state back and reports the pull request
+// that merged and closed it, if one did.
+func mergedWorkState(ctx context.Context, checker WorkClosureChecker, issue Issue) (OriginatingWorkState, int, bool) {
+	state, err := checker.OriginatingWorkState(ctx, issueRepository(issue.Target, issue), issue.Number)
+	if err != nil {
+		return state, 0, false
+	}
+	number, ok := mergedWork(state)
+	return state, number, ok
+}
+
+// nudgeWorkInFlight asks the watcher of each run in pending, the runs
+// working the issue event is about, to check GitHub now.
+func (w *Engine) nudgeWorkInFlight(event WebhookEvent, pending []chan struct{}) {
+	for _, nudge := range pending {
+		if trySignal(nudge) {
+			w.logf("issue #%d %s delivery concerns work in flight; checking it now", event.IssueNumber, webhookEventLabel(event))
+		}
+	}
+}
+
+// acceptWebhookMention handles a webhook delivery that may directly mention
+// this instance. A mention addressed to it is acknowledged with a reaction
+// whether or not it goes on to authorize a run: a human watching the thread
+// should see the eyes reaction even when the mention is stale or from an
+// unauthorized commenter, since either way this instance saw it. An
+// authorized mention is recorded in directMentions under every issue it
+// addresses, and acceptWebhookMention reports the first of them.
+func (w *Engine) acceptWebhookMention(ctx context.Context, event WebhookEvent, mentions *mentionScan, directMentions map[string]bool) (string, bool) {
+	kind, ok := webhookMentionKind(event)
+	if !ok || !w.addressedTo(event.CommentBody) {
+		return "", false
+	}
+	w.reactToMention(ctx, event.Repository, RecentComment{Kind: kind, Number: event.IssueNumber, ID: event.CommentID, NodeID: event.CommentNodeID})
+	authorized := w.verifyWebhookMention(ctx, event, kind)
+	keys := webhookMentionKeys(event)
+	if event.OnPullRequest {
+		keys = mentions.linkedIssueKeys(event.Repository, event.IssueNumber, keys)
+	}
+	switch {
+	case !authorized && kind == ConversationComment:
+		w.logf("issue #%d ignoring direct mention of instance %s: not the last comment or not from an allowed commenter", event.IssueNumber, w.Identity)
+		return "", false
+	case !authorized:
+		w.logf("pull request #%d ignoring direct mention of instance %s in %s: not from an allowed commenter or not found on GitHub", event.IssueNumber, w.Identity, mentionLocation(kind))
+		return "", false
+	case event.OnPullRequest && len(keys) == 0:
+		w.logf("pull request #%d directly mentioned instance %s%s, but it closes no issue to run", event.IssueNumber, w.Identity, mentionLocationSuffix(kind))
+		return "", false
+	case len(keys) == 0:
+		return "", false
+	}
+	for _, mentioned := range keys {
+		directMentions[mentioned] = true
+		mentions.comments[mentioned] = mentionComment{Kind: kind, Repository: event.Repository, Number: event.IssueNumber, ID: event.CommentID, Author: event.CommentAuthor}
+	}
+	if event.OnPullRequest {
+		w.logf("pull request #%d directly mentioned instance %s%s; refreshing for a threaded gh-fix run on %s", event.IssueNumber, w.Identity, mentionLocationSuffix(kind), formatIssueRefs(event.ClosesIssues))
+	} else {
+		w.logf("issue #%d directly mentioned instance %s; refreshing for a threaded gh-fix run", event.IssueNumber, w.Identity)
+	}
+	return keys[0], true
+}
+
+// verifyWebhookMention reports whether a delivered mention of kind may
+// trigger a run. The payload alone is not enough: the mentioning comment must
+// also come from an allowed commenter and be on GitHub as delivered,
+// reverified there rather than trusted from the delivery. A conversation
+// comment must also still be the thread's last comment.
+func (w *Engine) verifyWebhookMention(ctx context.Context, event WebhookEvent, kind CommentKind) bool {
+	authorized := commenterAllowed(event.CommentAuthor, w.AllowedCommenters)
+	if !authorized || w.Comments == nil {
+		return authorized
+	}
+	var err error
+	if kind == ConversationComment {
+		authorized, err = authorizedDirectMention(ctx, w.Comments, event.Repository, event.IssueNumber, w.mentionPolicy())
+	} else if lister, ok := w.Comments.(ReviewCommentLister); ok {
+		authorized, err = reviewMentionOnGitHub(ctx, lister, event.Repository, event.IssueNumber, event.CommentBody, event.CommentAuthor)
+	}
+	if err != nil {
+		w.logf("issue #%d failed to verify direct mention of instance %s%s: %v", event.IssueNumber, w.Identity, mentionLocationSuffix(kind), err)
+		return false
+	}
+	return authorized
+}
+
+// restartTimer stops timer, drains a tick it already fired, and restarts it
+// to fire after d.
+func restartTimer(timer *time.Timer, d time.Duration) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timer.Reset(d)
+}
+
+// trySignal sends on ch without blocking, and reports whether it did. A nil
+// or full channel is left alone.
+func trySignal(ch chan<- struct{}) bool {
+	select {
+	case ch <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
 func loadScopedWorkState(path string, targets []string) (map[string]workState, error) {
 	result := make(map[string]workState)
 	if path == "" {

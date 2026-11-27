@@ -19,16 +19,10 @@ const maxToolRounds = 200
 
 // promptRun holds the state of one prompt turn run by promptCore.
 type promptRun struct {
-	r                  *AgentRunner
-	ctx                context.Context
-	cancel             context.CancelFunc
-	message            string
-	mediaURLs          []string
-	overrides          RunOverrides
-	promptMsgID        string
-	checkpointPath     string
-	persistUserMessage bool
-	consumers          []StreamConsumer
+	r      *AgentRunner
+	ctx    context.Context
+	cancel context.CancelFunc
+	promptRequest
 
 	sessionID             string
 	turn                  *activeRun
@@ -226,7 +220,7 @@ func (p *promptRun) persistPromptMessage() {
 		if sender, ok := SessionSenderFromContext(p.ctx); ok {
 			userSender = sender
 		}
-		p.promptMsgID = p.r.appendSessionMessageWithSender(p.sessionID, domain.MessageRoleUser, p.message, p.mediaURLs, p.model, userSender)
+		p.promptMsgID = p.r.appendSessionMessageWithSender(p.sessionID, sessionMessage{role: domain.MessageRoleUser, content: p.message, mediaURLs: p.mediaURLs, model: p.model, sender: userSender})
 	}
 }
 
@@ -628,11 +622,7 @@ func (p *promptRun) runNativeToolCalls(answer string, calls []llm.ToolCall, tool
 		}
 		resultText, canceled := p.r.executeToolCall(
 			p.ctx,
-			p.emit,
-			p.toolClient,
-			p.sessionID,
-			p.usage,
-			toolEventRecord{Name: call.Name, Args: call.Arguments},
+			toolCallEnv{emit: p.emit, client: p.toolClient, sessionID: p.sessionID, usage: p.usage},
 			call.Name,
 			call.Arguments,
 		)

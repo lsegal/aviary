@@ -528,6 +528,15 @@ func isBoardColumn(n *html.Node) bool {
 	return hasRole(n, "group") && strings.TrimSpace(attrValue(n, "aria-label")) != ""
 }
 
+// isColumnHeading reports whether n is an h1-h4 heading element.
+func isColumnHeading(n *html.Node) bool {
+	switch n.Data {
+	case "h1", "h2", "h3", "h4":
+		return true
+	}
+	return false
+}
+
 // columnStatus names the board column, which is the status of every card in it.
 func columnStatus(column *html.Node) string {
 	if name := strings.TrimSpace(attrValue(column, "data-board-column")); name != "" {
@@ -537,8 +546,7 @@ func columnStatus(column *html.Node) string {
 		return normalizeStatus(label)
 	}
 	title := findNode(column, func(n *html.Node) bool {
-		return containsFold(attrValue(n, "data-testid"), "column-title") ||
-			n.Data == "h1" || n.Data == "h2" || n.Data == "h3" || n.Data == "h4"
+		return containsFold(attrValue(n, "data-testid"), "column-title") || isColumnHeading(n)
 	})
 	if title == nil {
 		return ""

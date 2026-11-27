@@ -48,6 +48,10 @@ func (w *Engine) runRelayingInbox(ctx context.Context, r inboxRun, session Agent
 			r.updateSession(reported)
 		}
 	}
+	// tracked is r with the agent's reports also tracked here, so a resumed
+	// run continues the session the agent reported.
+	tracked := r
+	tracked.updateSession = update
 	sessionID := func() string {
 		mu.Lock()
 		defer mu.Unlock()
@@ -84,7 +88,7 @@ func (w *Engine) runRelayingInbox(ctx context.Context, r inboxRun, session Agent
 				}
 			}
 		}()
-		err := w.runAgentSession(runCtx, runner, r.issue, session, update, r.output)
+		err := w.runAgentSession(runCtx, runner, tracked, session)
 		cause := context.Cause(runCtx)
 		cancel(nil)
 		<-watching
@@ -99,9 +103,11 @@ func (w *Engine) runRelayingInbox(ctx context.Context, r inboxRun, session Agent
 	}
 }
 
-// runAgentSession runs runner's agent on issue in session with the richest
-// interface it implements.
-func (w *Engine) runAgentSession(ctx context.Context, runner AgentRunner, issue Issue, session AgentSession, update func(AgentSession), output io.Writer) error {
+// runAgentSession runs runner's agent on r's issue in session with the
+// richest interface it implements, writing to r's output and reporting the
+// session to r's updateSession.
+func (w *Engine) runAgentSession(ctx context.Context, runner AgentRunner, r inboxRun, session AgentSession) error {
+	issue, update, output := r.issue, r.updateSession, r.output
 	switch runner := runner.(type) {
 	case SessionAgentOutputRunner:
 		return runner.RunSessionWithOutput(ctx, issue, session, update, output)

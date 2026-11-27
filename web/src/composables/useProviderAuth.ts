@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, type Ref, ref } from "vue";
 import { type CLIProvider, normalizeCLIList } from "../lib/cliProviders";
 import { parseToolJSON } from "../lib/projects";
 import { useMCP } from "./useMCP";
@@ -23,24 +23,53 @@ export interface KnownProvider {
 	baseURIPlaceholder?: string;
 }
 
+/** What sets apart a provider offering both OAuth sign-in and an API key. */
+interface SignInProviderSpec {
+	id: string;
+	label: string;
+	authId: string;
+	emoji: string;
+	description: string;
+	keyPlaceholder: string;
+	keyHelp: string;
+	/** The default model, with either kind of credential. */
+	model: string;
+	/** The model providers, with either kind of credential. */
+	providers: string[];
+}
+
+/**
+ * A provider that signs in with OAuth or an API key, using the same model
+ * and model providers either way and the auth keys `<authId>:oauth` and
+ * `<authId>:default`.
+ */
+function signInProvider(spec: SignInProviderSpec): KnownProvider {
+	const { model, providers, ...rest } = spec;
+	return {
+		...rest,
+		hasOAuth: true,
+		hasApiKey: true,
+		apiAuthKey: `${spec.authId}:default`,
+		defaultModel: model,
+		oauthModel: model,
+		defaultProviders: [...providers],
+		oauthProviders: [...providers],
+		authKeys: [`${spec.authId}:oauth`, `${spec.authId}:default`],
+	};
+}
+
 export const KNOWN_PROVIDERS: KnownProvider[] = [
-	{
+	signInProvider({
 		id: "anthropic",
 		label: "Anthropic",
 		authId: "anthropic",
-		hasOAuth: true,
-		hasApiKey: true,
 		emoji: "🤖",
 		description: "Claude - great for coding and reasoning",
 		keyPlaceholder: "sk-ant-...",
 		keyHelp: "Find your key at console.anthropic.com -> API Keys.",
-		apiAuthKey: "anthropic:default",
-		defaultModel: "anthropic/claude-sonnet-5-5",
-		oauthModel: "anthropic/claude-sonnet-5-5",
-		defaultProviders: ["anthropic"],
-		oauthProviders: ["anthropic"],
-		authKeys: ["anthropic:oauth", "anthropic:default"],
-	},
+		model: "anthropic/claude-sonnet-5-5",
+		providers: ["anthropic"],
+	}),
 	{
 		id: "openai",
 		label: "OpenAI",
@@ -65,23 +94,17 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
 		oauthProviders: ["openai-codex"],
 		authKeys: ["openai:oauth", "openai:default"],
 	},
-	{
+	signInProvider({
 		id: "google",
 		label: "Google (Gemini)",
 		authId: "gemini",
-		hasOAuth: true,
-		hasApiKey: true,
 		emoji: "✨",
 		description: "Google Gemini - fast and multimodal",
 		keyPlaceholder: "AIza...",
 		keyHelp: "Find your key at aistudio.google.com -> Get API key.",
-		apiAuthKey: "gemini:default",
-		defaultModel: "google-gemini/gemini-3.5-flash",
-		oauthModel: "google-gemini/gemini-3.5-flash",
-		defaultProviders: ["google-gemini", "google"],
-		oauthProviders: ["google-gemini", "google"],
-		authKeys: ["gemini:oauth", "gemini:default"],
-	},
+		model: "google-gemini/gemini-3.5-flash",
+		providers: ["google-gemini", "google"],
+	}),
 	{
 		id: "meta",
 		label: "Meta (Muse)",
@@ -130,25 +153,28 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
 		requiresBaseURI: true,
 		baseURIPlaceholder: "http://127.0.0.1:11434",
 	},
-	{
+	signInProvider({
 		id: "github-copilot",
 		label: "GitHub Copilot",
 		authId: "github-copilot",
-		hasOAuth: true,
-		hasApiKey: true,
 		emoji: "🐦",
 		description: "GitHub Copilot - code-specialized models",
 		keyPlaceholder: "ghp_... or personal access token",
 		keyHelp:
 			"Use a GitHub Personal Access Token (repo scope) or sign in via OAuth.",
-		apiAuthKey: "github-copilot:default",
-		defaultModel: "github-copilot/gpt-5.4",
-		oauthModel: "github-copilot/gpt-5.4",
-		oauthProviders: ["github-copilot"],
-		defaultProviders: ["github-copilot"],
-		authKeys: ["github-copilot:oauth", "github-copilot:default"],
-	},
+		model: "github-copilot/gpt-5.4",
+		providers: ["github-copilot"],
+	}),
 ];
+
+/** The reply that starts a sign-in through a local callback server. */
+interface CallbackOAuthStart {
+	url?: string;
+	callback_url?: string;
+	browser_opened?: boolean;
+	browser_open_error?: string;
+	expires_at?: string;
+}
 
 type CallTool = (
 	name: string,
@@ -256,26 +282,36 @@ export function useProviderAuth(callTool: CallTool) {
 		}
 	}
 
-	async function startOpenAI() {
+	/** Starts a sign-in that finishes on a local callback, with a countdown. */
+	async function startCallbackOAuth(
+		tool: string,
+		target: {
+			url: Ref<string>;
+			callbackUrl: Ref<string>;
+			expiresAt: Ref<number | null>;
+		},
+	) {
 		oauthBusy.value = true;
 		clearOAuthState();
 		try {
-			const raw = await callTool("auth_login_openai");
-			const parsed = JSON.parse(raw) as {
-				url?: string;
-				callback_url?: string;
-				browser_opened?: boolean;
-				browser_open_error?: string;
-				expires_at?: string;
-			};
-			openAIUrl.value = parsed.url ?? "";
-			openAICallbackUrl.value = parsed.callback_url ?? "";
-			openAIExpiresAt.value = parseExpiry(parsed.expires_at);
+			const raw = await callTool(tool);
+			const parsed = JSON.parse(raw) as CallbackOAuthStart;
+			target.url.value = parsed.url ?? "";
+			target.callbackUrl.value = parsed.callback_url ?? "";
+			target.expiresAt.value = parseExpiry(parsed.expires_at);
 			ensureCountdownTimer();
 			return parsed;
 		} finally {
 			oauthBusy.value = false;
 		}
+	}
+
+	function startOpenAI() {
+		return startCallbackOAuth("auth_login_openai", {
+			url: openAIUrl,
+			callbackUrl: openAICallbackUrl,
+			expiresAt: openAIExpiresAt,
+		});
 	}
 
 	async function completeOpenAI() {
@@ -287,26 +323,12 @@ export function useProviderAuth(callTool: CallTool) {
 		}
 	}
 
-	async function startGemini() {
-		oauthBusy.value = true;
-		clearOAuthState();
-		try {
-			const raw = await callTool("auth_login_gemini");
-			const parsed = JSON.parse(raw) as {
-				url?: string;
-				callback_url?: string;
-				browser_opened?: boolean;
-				browser_open_error?: string;
-				expires_at?: string;
-			};
-			geminiUrl.value = parsed.url ?? "";
-			geminiCallbackUrl.value = parsed.callback_url ?? "";
-			geminiExpiresAt.value = parseExpiry(parsed.expires_at);
-			ensureCountdownTimer();
-			return parsed;
-		} finally {
-			oauthBusy.value = false;
-		}
+	function startGemini() {
+		return startCallbackOAuth("auth_login_gemini", {
+			url: geminiUrl,
+			callbackUrl: geminiCallbackUrl,
+			expiresAt: geminiExpiresAt,
+		});
 	}
 
 	async function completeGemini() {

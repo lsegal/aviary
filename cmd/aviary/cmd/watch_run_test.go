@@ -215,7 +215,11 @@ func newServableWatchSession(t *testing.T) *watchSession {
 		t.Fatal(err)
 	}
 	global.Server.Port = freeLoopbackPort(t)
-	session, err := startWatchSession(t.TempDir(), global, sources, watchAgentChoice{}, nil, "", config.ProjectsConfig{Delivery: "poll", Interval: "1h"})
+	session, err := startWatchSession(t.TempDir(), watchSessionParams{
+		global:   global,
+		sources:  sources,
+		settings: config.ProjectsConfig{Delivery: "poll", Interval: "1h"},
+	})
 	t.Cleanup(func() { endWatchSession(session, io.Discard) })
 	if err != nil {
 		t.Fatal(err)

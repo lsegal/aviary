@@ -78,6 +78,8 @@ ARG WHISPER_MODEL_SHA256=a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897af
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
   && rm -rf /var/lib/apt/lists/*
 
+# Fail the build if any command in a pipe fails, not just the last.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN mkdir -p /out \
   && curl -fsSLo "/out/ggml-${WHISPER_MODEL}.bin" "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${WHISPER_MODEL}.bin" \
   && echo "${WHISPER_MODEL_SHA256}  /out/ggml-${WHISPER_MODEL}.bin" | sha256sum -c -
@@ -186,6 +188,6 @@ EXPOSE 1455 45289 16677
 
 # Serves HTTPS by default; AVIARY_CONFIG_SERVER_NO_TLS=true serves plain HTTP.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --start-interval=2s --retries=3 \
-  CMD curl -fsk https://127.0.0.1:16677/api/health || curl -fs http://127.0.0.1:16677/api/health || exit 1
+  CMD ["sh", "-c", "curl -fsk https://127.0.0.1:16677/api/health || curl -fs http://127.0.0.1:16677/api/health || exit 1"]
 
 CMD ["aviary", "serve"]

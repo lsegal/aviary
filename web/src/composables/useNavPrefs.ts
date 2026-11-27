@@ -7,6 +7,11 @@ import {
 	normalizeNavPrefs,
 	withOrder,
 } from "../lib/navPrefs";
+import {
+	clearPreferencesLocally,
+	requestPreferences,
+	storePreferencesLocally,
+} from "../lib/preferencesApi";
 import { useAuthStore } from "../stores/auth";
 
 // The user's navigation order and visibility (#1003). The server keeps them
@@ -23,7 +28,7 @@ function storedPrefs(): NavPrefs {
 		if (!raw) return emptyNavPrefs();
 		const parsed = JSON.parse(raw);
 		const prefs = normalizeNavPrefs(parsed);
-		if (hasStaleNavLists(parsed)) storeLocally(prefs);
+		if (hasStaleNavLists(parsed)) storePreferencesLocally(STORAGE_KEY, prefs);
 		return prefs;
 	} catch {
 		return emptyNavPrefs();
@@ -35,53 +40,23 @@ const prefs = ref<NavPrefs>(storedPrefs());
 const showHidden = ref(false);
 let loaded = false;
 
-function storeLocally(value: NavPrefs) {
-	try {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
-	} catch {
-		// Private browsing can refuse storage; the server copy still applies.
-	}
-}
-
-/** The server's reply to a navigation preferences request, as sent. */
-async function request(
-	method: "GET" | "PUT" | "DELETE",
-	body?: NavPrefs,
-): Promise<unknown> {
-	const token = useAuthStore().getToken();
-	try {
-		const res = await fetch(ENDPOINT, {
-			method,
-			headers: {
-				...(token ? { Authorization: `Bearer ${token}` } : {}),
-				...(body ? { "Content-Type": "application/json" } : {}),
-			},
-			body: body ? JSON.stringify(body) : undefined,
-		});
-		if (!res.ok) return undefined;
-		return await res.json();
-	} catch {
-		return undefined;
-	}
-}
-
 function save(next: NavPrefs) {
 	prefs.value = next;
-	storeLocally(next);
-	void request("PUT", next);
+	storePreferencesLocally(STORAGE_KEY, next);
+	void requestPreferences(ENDPOINT, "PUT", next);
 }
 
 export function useNavPrefs() {
 	if (!loaded && useAuthStore().isLoggedIn) {
 		loaded = true;
-		void request("GET").then((remote) => {
+		void requestPreferences(ENDPOINT, "GET").then((remote) => {
 			if (!remote) return;
 			const next = normalizeNavPrefs(remote);
 			// Drop a saved top-row order (#1015) from the server's copy too.
 			if (hasStaleNavLists(remote)) save(next);
 			else {
 				prefs.value = next;
-				storeLocally(next);
+				storePreferencesLocally(STORAGE_KEY, next);
 			}
 		});
 	}
@@ -107,12 +82,8 @@ export function useNavPrefs() {
 		/** Restores the built-in order and visibility, here and on the server. */
 		reset() {
 			prefs.value = emptyNavPrefs();
-			try {
-				localStorage.removeItem(STORAGE_KEY);
-			} catch {
-				// Nothing stored.
-			}
-			void request("DELETE");
+			clearPreferencesLocally(STORAGE_KEY);
+			void requestPreferences(ENDPOINT, "DELETE");
 		},
 	};
 }

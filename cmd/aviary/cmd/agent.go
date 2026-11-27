@@ -100,45 +100,21 @@ the sole agent, and with --file every argument is optional.`,
 	},
 }
 
-var agentStopCmd = &cobra.Command{
-	Use:   "stop [name]",
-	Short: "Immediately stop all work in progress for an agent",
-	Args:  cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		name, _, err := splitAgentArg(cmd.Context(), args, 1)
-		if err != nil {
-			return err
-		}
-		out, err := dispatcher.CallTool(cmd.Context(), "agent_stop", map[string]any{
-			"name": name,
-		})
-		if err != nil {
-			return err
-		}
-		fmt.Println(out)
-		return nil
-	},
-}
+var agentStopCmd = newAgentToolCmd(agentToolSpec{
+	use:      "stop [name]",
+	short:    "Immediately stop all work in progress for an agent",
+	args:     cobra.MaximumNArgs(1),
+	tool:     "agent_stop",
+	agentKey: "name",
+})
 
-var agentTemplateSyncCmd = &cobra.Command{
-	Use:   "template-sync [name]",
-	Short: "Sync embedded template files into an agent directory",
-	Args:  cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		name, _, err := splitAgentArg(cmd.Context(), args, 1)
-		if err != nil {
-			return err
-		}
-		out, err := dispatcher.CallTool(cmd.Context(), "agent_template_sync", map[string]any{
-			"agent": name,
-		})
-		if err != nil {
-			return err
-		}
-		fmt.Println(out)
-		return nil
-	},
-}
+var agentTemplateSyncCmd = newAgentToolCmd(agentToolSpec{
+	use:      "template-sync [name]",
+	short:    "Sync embedded template files into an agent directory",
+	args:     cobra.MaximumNArgs(1),
+	tool:     "agent_template_sync",
+	agentKey: "agent",
+})
 
 func init() {
 	agentRunCmd.Flags().StringVar(&agentRunFile, "file", "", "read prompt from file")

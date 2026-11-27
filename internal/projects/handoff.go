@@ -119,8 +119,8 @@ func commenterAllowed(login string, allowed []string) bool {
 // : it must be the very last comment, so a stale mention buried
 // under newer conversation cannot silently retrigger a run; addressed must
 // accept its body (Engine.addressedTo); and it must be posted by an allowed
-// commenter.
-func authorizedDirectMention(ctx context.Context, comments CommentLister, repo string, number int, addressed func(string) bool, allowed []string) (bool, error) {
+// commenter. policy supplies both checks.
+func authorizedDirectMention(ctx context.Context, comments CommentLister, repo string, number int, policy mentionPolicy) (bool, error) {
 	list, err := comments.ListComments(ctx, repo, number)
 	if err != nil {
 		return false, err
@@ -129,7 +129,20 @@ func authorizedDirectMention(ctx context.Context, comments CommentLister, repo s
 		return false, nil
 	}
 	last := list[len(list)-1]
-	return addressed(last.Body) && commenterAllowed(last.Author, allowed), nil
+	return policy.addressed(last.Body) && commenterAllowed(last.Author, policy.allowed), nil
+}
+
+// mentionPolicy is what a direct mention must satisfy to authorize a run.
+type mentionPolicy struct {
+	// addressed reports whether a comment body addresses this instance.
+	addressed func(string) bool
+	// allowed lists the commenters whose mentions count; empty allows anyone.
+	allowed []string
+}
+
+// mentionPolicy is the policy this instance applies to direct mentions.
+func (w *Engine) mentionPolicy() mentionPolicy {
+	return mentionPolicy{addressed: w.addressedTo, allowed: w.AllowedCommenters}
 }
 
 // parseClaim classifies a comment body as one of the handoff protocol

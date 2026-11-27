@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { boundingBoxOf } from "./helpers/box";
 import { clickCardAt } from "./helpers/cards";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { chooseOption, optionLabels } from "./helpers/select";
@@ -522,13 +523,13 @@ test("scheduled cards are compact: trigger and next run share one line (#875)", 
 	await page.goto("/system/watches/lsegal%2Faviary");
 	const weekly = page.getByTestId("scheduled-card").nth(1);
 	await expect(weekly.getByTestId("scheduled-trigger")).toBeVisible();
-	const details = await weekly
-		.getByTestId("scheduled-run-details")
-		.boundingBox();
-	const trigger = await weekly.getByTestId("scheduled-trigger").boundingBox();
-	const next = await weekly.getByTestId("scheduled-next").boundingBox();
-	expect(details!.height).toBeLessThan(24);
-	expect(Math.abs(trigger!.y - next!.y)).toBeLessThan(4);
+	const details = await boundingBoxOf(
+		weekly.getByTestId("scheduled-run-details"),
+	);
+	const trigger = await boundingBoxOf(weekly.getByTestId("scheduled-trigger"));
+	const next = await boundingBoxOf(weekly.getByTestId("scheduled-next"));
+	expect(details.height).toBeLessThan(24);
+	expect(Math.abs(trigger.y - next.y)).toBeLessThan(4);
 });
 
 for (const viewport of [
@@ -550,8 +551,8 @@ for (const viewport of [
 		await expect(job).toHaveCount(1);
 		// A never-run schedule still has the output area, with its empty state.
 		await expect(scheduled.getByTestId("scheduled-empty")).toBeVisible();
-		const s = (await scheduled.boundingBox())!;
-		const j = (await job.boundingBox())!;
+		const s = await boundingBoxOf(scheduled);
+		const j = await boundingBoxOf(job);
 		if (viewport.name === "desktop") {
 			expect(Math.abs(s.y - j.y)).toBeLessThan(1);
 			expect(Math.abs(s.height - j.height)).toBeLessThan(1);
@@ -566,7 +567,7 @@ for (const viewport of [
 			role: "button" | "link",
 			name: string,
 		) => {
-			const b = (await card.getByRole(role, { name }).boundingBox())!;
+			const b = await boundingBoxOf(card.getByRole(role, { name }));
 			return b.y + b.height;
 		};
 		const sBottom = await footerBottom(scheduled, "button", "Task settings");
@@ -2182,13 +2183,13 @@ test.describe("a running scheduled card keeps its size (#1157)", () => {
 		const cards = page.getByTestId("scheduled-card");
 		const boxes = [];
 		for (let i = 0; i < (await cards.count()); i++)
-			boxes.push((await cards.nth(i).boundingBox())!);
+			boxes.push(await boundingBoxOf(cards.nth(i)));
 		const footerTops = await footerButtonTops(
 			cards.nth(1).getByTestId("scheduled-footer"),
 		);
-		const grid = (await page
-			.getByRole("region", { name: "Jobs" })
-			.boundingBox())!;
+		const grid = await boundingBoxOf(
+			page.getByRole("region", { name: "Jobs" }),
+		);
 		return { cards: boxes, footerTops, gridHeight: grid.height };
 	}
 	function expectSameLayout(actual: Layout, expected: Layout) {
@@ -2285,14 +2286,14 @@ test.describe("a running scheduled card keeps its size (#1157)", () => {
 				// One row: Run now, Pause, Duplicate and the gear, always last.
 				expect(tops.length).toBe(4);
 				expect(new Set(tops).size).toBe(1);
-				const footerBox = (await footer.boundingBox())!;
-				const cardBox = (await release.boundingBox())!;
+				const footerBox = await boundingBoxOf(footer);
+				const cardBox = await boundingBoxOf(release);
 				expect(footerBox.x + footerBox.width).toBeLessThanOrEqual(
 					cardBox.x + cardBox.width + 1,
 				);
-				const gear = (await footer
-					.getByRole("button", { name: "Task settings" })
-					.boundingBox())!;
+				const gear = await boundingBoxOf(
+					footer.getByRole("button", { name: "Task settings" }),
+				);
 				expect(gear.x + gear.width).toBeLessThanOrEqual(
 					cardBox.x + cardBox.width,
 				);

@@ -116,7 +116,13 @@ func modelFlagWatchSessions(t *testing.T) func(choice watchAgentChoice, mode str
 	}
 	global.Agents[0].Fallbacks = []string{"gemini/flash"}
 	return func(choice watchAgentChoice, mode string) (*watchSession, error) {
-		session, err := startWatchSession(t.TempDir(), global, sources, choice, []string{"someone/existing"}, mode, config.ProjectsConfig{})
+		session, err := startWatchSession(t.TempDir(), watchSessionParams{
+			global:  global,
+			sources: sources,
+			choice:  choice,
+			targets: []string{"someone/existing"},
+			mode:    mode,
+		})
 		t.Cleanup(func() { endWatchSession(session, io.Discard) })
 		return session, err
 	}

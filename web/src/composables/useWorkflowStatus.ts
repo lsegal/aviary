@@ -33,6 +33,26 @@ function day(daysAgo: number): string {
 	return d.toISOString().slice(0, 10);
 }
 
+/** How a finished run ended, given why it chose not to reply, if it did. */
+function finishedRunOutcome(
+	job: Job,
+	skipReason: string | undefined,
+): WorkflowStatus["last"] {
+	if (job.status === "failed") return "failed";
+	if (job.script_error) return "fallback";
+	if (skipReason !== undefined) return "no_reply";
+	return "succeeded";
+}
+
+/** Records a completed or failed run as the workflow's latest finished one. */
+function recordFinishedRun(s: WorkflowStatus, job: Job) {
+	const skipReason =
+		job.status === "completed" ? skippedReplyReason(job) : undefined;
+	s.last = finishedRunOutcome(job, skipReason);
+	s.lastAt = job.updated_at;
+	s.lastSkipReason = skipReason;
+}
+
 /** Workflow statuses from a set of jobs, keyed by "<agent>/<task>". */
 export function workflowStatuses(jobs: Job[]): Map<string, WorkflowStatus> {
 	const out = new Map<string, WorkflowStatus>();
@@ -44,20 +64,8 @@ export function workflowStatuses(jobs: Job[]): Map<string, WorkflowStatus> {
 		if (job.status === "in_progress") s.activity = "running";
 		else if (job.status === "pending" && s.activity !== "running")
 			s.activity = "triggering";
-		else if (job.status === "completed" || job.status === "failed") {
-			const skipReason =
-				job.status === "completed" ? skippedReplyReason(job) : undefined;
-			s.last =
-				job.status === "failed"
-					? "failed"
-					: job.script_error
-						? "fallback"
-						: skipReason !== undefined
-							? "no_reply"
-							: "succeeded";
-			s.lastAt = job.updated_at;
-			s.lastSkipReason = skipReason;
-		}
+		else if (job.status === "completed" || job.status === "failed")
+			recordFinishedRun(s, job);
 		out.set(job.task_id, s);
 	}
 	return out;

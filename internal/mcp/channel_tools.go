@@ -305,36 +305,50 @@ func retargetChannel(cfg *config.Config, agentName, oldName, newName string) {
 	for i := range cfg.Agents {
 		a := &cfg.Agents[i]
 		if a.Name == agentName {
-			kept := a.Tasks[:0]
-			for _, t := range a.Tasks {
-				t.Target = move(t.Target)
-				if t.IsWorkflow() && strings.EqualFold(strings.TrimSpace(t.Channel), oldName) {
-					if newName == "" {
-						// A workflow belongs to its channel and goes with it.
-						removeWorkflowFile(*a, t)
-						continue
-					}
-					t.Channel = newName
-				}
-				kept = append(kept, t)
-			}
-			a.Tasks = kept
+			retargetAgentTasks(a, oldName, newName, move)
 		}
-		for j := range a.Projects {
-			reports := a.Projects[j].Reports
-			if reports == nil || reports.Agent != agentName {
-				continue
+		retargetProjectReports(a, agentName, move)
+	}
+}
+
+// retargetAgentTasks applies move to the targets of a's tasks and moves its
+// workflows on channel oldName to newName, removing them when newName is
+// empty.
+func retargetAgentTasks(a *config.AgentConfig, oldName, newName string, move func(string) string) {
+	kept := a.Tasks[:0]
+	for _, t := range a.Tasks {
+		t.Target = move(t.Target)
+		onChannel := t.IsWorkflow() && strings.EqualFold(strings.TrimSpace(t.Channel), oldName)
+		if onChannel && newName == "" {
+			// A workflow belongs to its channel and goes with it.
+			removeWorkflowFile(*a, t)
+			continue
+		}
+		if onChannel {
+			t.Channel = newName
+		}
+		kept = append(kept, t)
+	}
+	a.Tasks = kept
+}
+
+// retargetProjectReports applies move to the report targets of a's projects
+// that report through agentName, dropping reports left without targets.
+func retargetProjectReports(a *config.AgentConfig, agentName string, move func(string) string) {
+	for j := range a.Projects {
+		reports := a.Projects[j].Reports
+		if reports == nil || reports.Agent != agentName {
+			continue
+		}
+		var kept []string
+		for _, target := range reports.Targets {
+			if next := move(target); next != "" {
+				kept = append(kept, next)
 			}
-			var kept []string
-			for _, target := range reports.Targets {
-				if next := move(target); next != "" {
-					kept = append(kept, next)
-				}
-			}
-			reports.Targets = kept
-			if len(kept) == 0 {
-				a.Projects[j].Reports = nil
-			}
+		}
+		reports.Targets = kept
+		if len(kept) == 0 {
+			a.Projects[j].Reports = nil
 		}
 	}
 }

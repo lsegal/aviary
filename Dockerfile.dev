@@ -67,6 +67,9 @@ RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
   esac \
   && rm -rf /var/lib/apt/lists/*
 
+# Fail the build if any command in a pipe fails, not just the last.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # forgo powers `pnpm dev`'s Go hot reload; it only ships linux/amd64 binaries,
 # so other architectures fall back to plain `go run` at dev time.
 RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
@@ -96,7 +99,11 @@ RUN chmod 777 /home/linuxbrew /home/linuxbrew/.linuxbrew
 USER root
 
 RUN npm install -g pnpm@8.6.0
-RUN npm install -g @anthropic-ai/claude-code @openai/codex
+# The coding agent CLIs, pinned so rebuilds are reproducible; bump them here
+# or with --build-arg.
+ARG CLAUDE_CODE_VERSION=2.1.332
+ARG CODEX_VERSION=0.172.0
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "@openai/codex@${CODEX_VERSION}"
 
 COPY package.json pnpm-lock.yaml ./
 COPY docs/package.json docs/pnpm-lock.yaml ./docs/

@@ -121,33 +121,39 @@ func applySchemaTags(t reflect.Type, root *jsonschema.Schema) {
 
 		jsonName := jsonFieldName(field)
 		for key, value := range directives {
-			switch key {
-			case "enum":
-				if jsonName == "" || root.Properties == nil || root.Properties[jsonName] == nil {
-					continue
-				}
-				root.Properties[jsonName].Enum = splitSchemaNames(value)
-			case "atmostone":
-				names := splitSchemaKeys(value)
-				for i := 0; i < len(names); i++ {
-					for j := i + 1; j < len(names); j++ {
-						root.AllOf = append(root.AllOf, &jsonschema.Schema{
-							Not: &jsonschema.Schema{Required: []string{names[i], names[j]}},
-						})
-					}
-				}
-			case "atleastone":
-				names := splitSchemaKeys(value)
-				if len(names) == 0 {
-					continue
-				}
-				anyOf := make([]*jsonschema.Schema, 0, len(names))
-				for _, name := range names {
-					anyOf = append(anyOf, &jsonschema.Schema{Required: []string{name}})
-				}
-				root.AllOf = append(root.AllOf, &jsonschema.Schema{AnyOf: anyOf})
+			applySchemaDirective(root, jsonName, key, value)
+		}
+	}
+}
+
+// applySchemaDirective applies one `schema:"key=value"` directive of the
+// field named jsonName to root.
+func applySchemaDirective(root *jsonschema.Schema, jsonName, key, value string) {
+	switch key {
+	case "enum":
+		if jsonName == "" || root.Properties == nil || root.Properties[jsonName] == nil {
+			return
+		}
+		root.Properties[jsonName].Enum = splitSchemaNames(value)
+	case "atmostone":
+		names := splitSchemaKeys(value)
+		for i := 0; i < len(names); i++ {
+			for j := i + 1; j < len(names); j++ {
+				root.AllOf = append(root.AllOf, &jsonschema.Schema{
+					Not: &jsonschema.Schema{Required: []string{names[i], names[j]}},
+				})
 			}
 		}
+	case "atleastone":
+		names := splitSchemaKeys(value)
+		if len(names) == 0 {
+			return
+		}
+		anyOf := make([]*jsonschema.Schema, 0, len(names))
+		for _, name := range names {
+			anyOf = append(anyOf, &jsonschema.Schema{Required: []string{name}})
+		}
+		root.AllOf = append(root.AllOf, &jsonschema.Schema{AnyOf: anyOf})
 	}
 }
 

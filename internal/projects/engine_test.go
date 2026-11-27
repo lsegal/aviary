@@ -4844,7 +4844,7 @@ func TestNewCommentsReadsEveryConversationAndRemembersThem(t *testing.T) {
 	watch := issueWatch{since: since, remember: func(keys []string) { remembered = append(remembered, keys...) }}
 	seen := map[string]bool{}
 
-	got := w.newComments(context.Background(), "o/r", issue, pulls, watch, seen)
+	got := w.newComments(context.Background(), commentScope{repo: "o/r", issue: issue, pullRequests: pulls}, watch, seen)
 	var bodies []string
 	for _, relay := range got {
 		bodies = append(bodies, fmt.Sprintf("#%d %s", relay.number, relay.Body))
@@ -4855,13 +4855,13 @@ func TestNewCommentsReadsEveryConversationAndRemembersThem(t *testing.T) {
 	if len(remembered) != 5 {
 		t.Fatalf("remembered %v, want all five comments read", remembered)
 	}
-	if again := w.newComments(context.Background(), "o/r", issue, pulls, watch, seen); len(again) != 0 {
+	if again := w.newComments(context.Background(), commentScope{repo: "o/r", issue: issue, pullRequests: pulls}, watch, seen); len(again) != 0 {
 		t.Fatalf("relayed %v again", again)
 	}
 
 	w.Comments = failingConversation{fakeCommentClient: comments, number: 7}
 	comments.injectReview("o/r", 12, Comment{ID: 5, URL: "https://github.com/o/r/pull/12#pullrequestreview-5", Body: "review body", Author: "lsegal", CreatedAt: after})
-	if got := w.newComments(context.Background(), "o/r", issue, pulls, watch, seen); len(got) != 1 || got[0].Body != "review body" {
+	if got := w.newComments(context.Background(), commentScope{repo: "o/r", issue: issue, pullRequests: pulls}, watch, seen); len(got) != 1 || got[0].Body != "review body" {
 		t.Fatalf("relayed %v after the conversation list failed, want the review still read", got)
 	}
 }

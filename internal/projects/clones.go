@@ -136,12 +136,18 @@ func underRoots(path string, roots []string) bool {
 	path = resolvePath(path)
 	for _, root := range roots {
 		rel, err := filepath.Rel(resolvePath(root), path)
-		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-			continue
+		if err == nil && isStrictlyInside(rel) {
+			return true
 		}
-		return true
 	}
 	return false
+}
+
+// isStrictlyInside reports whether rel, a path relative to some root, names
+// something below that root rather than the root itself or a path outside it.
+func isStrictlyInside(rel string) bool {
+	escapes := rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return rel != "." && !escapes && !filepath.IsAbs(rel)
 }
 
 func formatBytes(n int64) string {

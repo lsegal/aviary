@@ -282,7 +282,12 @@ func TestStartWatchSessionIsolatesConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := startWatchSession(t.TempDir(), global, sources, watchAgentChoice{}, []string{"aviary-test/repo"}, "", config.ProjectsConfig{Concurrency: 5})
+	session, err := startWatchSession(t.TempDir(), watchSessionParams{
+		global:   global,
+		sources:  sources,
+		targets:  []string{"aviary-test/repo"},
+		settings: config.ProjectsConfig{Concurrency: 5},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

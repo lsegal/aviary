@@ -142,55 +142,86 @@ func RekeyChannels(prev, next *config.Config) error {
 	}
 	sm := agent.NewSessionManager()
 	for _, na := range next.Agents {
-		var pa *config.AgentConfig
-		for i := range prev.Agents {
-			if prev.Agents[i].Name == na.Name {
-				pa = &prev.Agents[i]
-			}
-		}
+		pa := findAgentConfig(prev, na.Name)
 		if pa == nil {
 			continue
 		}
-		for j, nc := range na.Channels {
-			if j >= len(pa.Channels) {
-				break
-			}
-			pc := pa.Channels[j]
-			if pc.Type != nc.Type || strings.TrimSpace(pc.ID) == strings.TrimSpace(nc.ID) || strings.TrimSpace(nc.ID) == "" {
-				continue
-			}
-			// Another channel still uses the old ID.
-			if na.ChannelByKey(pc.Type, pc.ID) >= 0 {
-				continue
-			}
-			oldIdx := pa.ChannelByKey(pc.Type, pc.ID)
-			owned, err := ChannelSessions(*pa, oldIdx)
-			if err != nil {
-				return err
-			}
-			for _, sess := range owned {
-				if sess.Name == pc.SessionName() {
-					if store.FindSessionPath(na.Name, nc.SessionName()) == "" {
-						if _, err := sm.Rekey(na.Name, sess.ID, nc.SessionName()); err != nil {
-							return err
-						}
-					}
-					continue
-				}
-				cfg, err := store.ReadSessionChannels(na.Name, sess.ID)
-				if err != nil || len(cfg.Channels) == 0 {
-					continue
-				}
-				for k := range cfg.Channels {
-					if cfg.Channels[k].Type == pc.Type && cfg.Channels[k].ConfiguredID == strings.TrimSpace(pc.ID) {
-						cfg.Channels[k].ConfiguredID = strings.TrimSpace(nc.ID)
-					}
-				}
-				if err := store.WriteSessionChannels(cfg); err != nil {
-					return err
-				}
-			}
+		if err := rekeyAgentChannels(sm, pa, &na); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// findAgentConfig returns the last agent in cfg named name, or nil.
+func findAgentConfig(cfg *config.Config, name string) *config.AgentConfig {
+	var found *config.AgentConfig
+	for i := range cfg.Agents {
+		if cfg.Agents[i].Name == name {
+			found = &cfg.Agents[i]
+		}
+	}
+	return found
+}
+
+// rekeyAgentChannels rekeys each of na's channels whose counterpart at the
+// same position in pa kept its type but changed its ID.
+func rekeyAgentChannels(sm *agent.SessionManager, pa, na *config.AgentConfig) error {
+	for j, nc := range na.Channels {
+		if j >= len(pa.Channels) {
+			break
+		}
+		if err := rekeyChannel(sm, pa, na, pa.Channels[j], nc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rekeyChannel moves the sessions owned by pa's channel pc over to na's
+// channel nc, when nc is pc with a new ID that no other channel still uses.
+func rekeyChannel(sm *agent.SessionManager, pa, na *config.AgentConfig, pc, nc config.ChannelConfig) error {
+	oldID, newID := strings.TrimSpace(pc.ID), strings.TrimSpace(nc.ID)
+	idChanged := pc.Type == nc.Type && oldID != newID && newID != ""
+	if !idChanged {
+		return nil
+	}
+	// Another channel still uses the old ID.
+	if na.ChannelByKey(pc.Type, pc.ID) >= 0 {
+		return nil
+	}
+	owned, err := ChannelSessions(*pa, pa.ChannelByKey(pc.Type, pc.ID))
+	if err != nil {
+		return err
+	}
+	for _, sess := range owned {
+		if err := rekeyChannelSession(sm, na.Name, sess, pc, nc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rekeyChannelSession renames pc's own session to nc's session name (unless
+// that name is taken), or rewrites the configured ID recorded by one of its
+// conversations.
+func rekeyChannelSession(sm *agent.SessionManager, agentName string, sess *domain.Session, pc, nc config.ChannelConfig) error {
+	if sess.Name == pc.SessionName() {
+		if store.FindSessionPath(agentName, nc.SessionName()) != "" {
+			return nil
+		}
+		_, err := sm.Rekey(agentName, sess.ID, nc.SessionName())
+		return err
+	}
+	cfg, err := store.ReadSessionChannels(agentName, sess.ID)
+	if err != nil || len(cfg.Channels) == 0 {
+		return nil
+	}
+	oldID, newID := strings.TrimSpace(pc.ID), strings.TrimSpace(nc.ID)
+	for k := range cfg.Channels {
+		if cfg.Channels[k].Type == pc.Type && cfg.Channels[k].ConfiguredID == oldID {
+			cfg.Channels[k].ConfiguredID = newID
+		}
+	}
+	return store.WriteSessionChannels(cfg)
 }
