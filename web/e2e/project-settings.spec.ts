@@ -599,13 +599,15 @@ test("add-project checks report each failing prerequisite", async ({
 	expect(calls.project_add).toBeUndefined();
 });
 
-test("a project's board names its agent and links to its projects in Code Loop settings", async ({
+test("a project's board links to its projects in its agent's Code Loop settings", async ({
 	page,
 }) => {
 	await setup(page);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
-	const owner = page.getByTestId("project-owner");
-	await expect(owner).toHaveText("agent: coder");
+	// The breadcrumb names the agent, so the header has no agent chip (#1570).
+	await expect(page.getByTestId("delivery-status")).toBeVisible();
+	await expect(page.getByTestId("project-owner")).toHaveCount(0);
+	await expect(page.getByTestId("settings-header")).not.toContainText("agent:");
 	// The header's actions are icon buttons, Settings rightmost, and there is
 	// no Add project button (projects are added under their agent).
 	const header = page.getByTestId("settings-header");

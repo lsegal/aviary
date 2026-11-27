@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { openBoardInfo } from "./helpers/boardHeader";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 // A Code Loop project in manual mode (#1307) is never searched for issues.
@@ -85,9 +86,10 @@ test("a manual project's header says so and hides the filter editor", async ({
 }) => {
 	await setup(page, ["lsegal/aviary"]);
 	await board(page, "lsegal/aviary");
-	const subtitle = page.getByTestId("board-subtitle");
+	const subtitle = (await openBoardInfo(page)).getByTestId("board-subtitle");
 	await expect(subtitle).toContainText("Manual: no issue watching");
-	await expect(subtitle).toContainText(/checked \d+s ago/);
+	await expect(page.getByTestId("board-mode")).toHaveText("Manual");
+	await expect(page.getByTestId("board-checked")).toHaveText(/\d+s ago/);
 	await expect(subtitle).not.toContainText("Issues matching");
 	await expect(page.getByTestId("project-manual-chip")).toHaveText("Manual");
 	await expect(page.getByTestId("issue-filter")).toHaveCount(0);
@@ -121,7 +123,10 @@ test("the header menu switches a project between watch and manual", async ({
 }) => {
 	const calls = await setup(page);
 	await board(page, "lsegal/zvidlib");
+	await openBoardInfo(page);
 	await expect(page.getByTestId("issue-filter")).toHaveText("assignee:@me");
+	await expect(page.getByTestId("board-mode")).toHaveText("Watch");
+	await page.keyboard.press("Escape");
 	await expect(page.getByTestId("project-manual-chip")).toHaveCount(0);
 
 	await page.getByRole("button", { name: "Issue discovery: Watch" }).click();
@@ -135,9 +140,10 @@ test("the header menu switches a project between watch and manual", async ({
 		{ target: "lsegal/zvidlib", mode: "manual" },
 	]);
 	await expect(page.getByTestId("project-manual-chip")).toHaveText("Manual");
-	await expect(page.getByTestId("board-subtitle")).toContainText(
-		"Manual: no issue watching",
-	);
+	await expect(
+		(await openBoardInfo(page)).getByTestId("board-subtitle"),
+	).toContainText("Manual: no issue watching");
+	await page.keyboard.press("Escape");
 
 	// Watch is the global mode, so picking it clears the override.
 	await page
@@ -151,6 +157,7 @@ test("the header menu switches a project between watch and manual", async ({
 		target: "lsegal/zvidlib",
 		mode: "inherit",
 	});
+	await openBoardInfo(page);
 	await expect(page.getByTestId("issue-filter")).toHaveText("assignee:@me");
 	await expect(page.getByTestId("project-manual-chip")).toHaveCount(0);
 });
@@ -177,7 +184,9 @@ test("under a global manual mode, watch is the override and manual clears it", a
 		{ target: "lsegal/zvidlib", mode: "watch" },
 	]);
 	await expect(page.getByTestId("project-manual-chip")).toHaveCount(0);
+	await openBoardInfo(page);
 	await expect(page.getByTestId("issue-filter")).toHaveText("assignee:@me");
+	await page.keyboard.press("Escape");
 
 	// The other project still follows the global manual mode.
 	const sidebar = page.getByTestId("sidebar-agent-projects").first();

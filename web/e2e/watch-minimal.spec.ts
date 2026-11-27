@@ -306,3 +306,24 @@ test("a watch session's mobile header reads version, bell, connection then gear,
 		"connection-status",
 	);
 });
+
+test("a watch session's Code Loop header is the compact one (#1570)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await mockWatchSession(page);
+	await page.goto("/agents/watch/projects/owner%2Frepo");
+	await expect(page.getByTestId("delivery-status")).toBeVisible();
+	await expect(page.getByTestId("board-info")).toBeVisible();
+	await expect(page.getByTestId("settings-header-icon")).toHaveCount(0);
+	await expect(page.getByTestId("project-owner")).toHaveCount(0);
+	expect(
+		await page
+			.getByTestId("settings-title")
+			.evaluate((el) => el.getBoundingClientRect().width),
+	).toBe(1);
+	await page.getByTestId("board-info").click();
+	await expect(
+		page.getByRole("dialog", { name: "Board details" }),
+	).toContainText("Issues");
+});
