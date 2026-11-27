@@ -58,11 +58,9 @@
 				<CalendarDaysIcon aria-hidden="true" :class="HEADER_COLLAPSE_ICON_CLS" />
 				<span :class="HEADER_COLLAPSE_LABEL_CLS">Schedule</span>
 			</button>
-			<button type="button" aria-label="Check now" title="Check now" :class="HEADER_ICON_CLS"
-				:disabled="checking" @click="onCheckNow">
-				<ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="{ 'animate-spin': checking }" />
-			</button>
-			<button type="button" data-testid="logs-toggle" :aria-pressed="logsOpen"
+			<!-- Logs, then Watch, move into "…" when the row is too narrow;
+				Refresh, Clear and Settings always live there (#1488). -->
+			<button v-if="!logsInMenu" type="button" data-testid="logs-toggle" :aria-pressed="logsOpen"
 				aria-label="Logs" title="Logs"
 				:class="logsOpen ? HEADER_ICON_ON_CLS : HEADER_ICON_CLS"
 				@click="logsOpen = !logsOpen">
@@ -74,14 +72,14 @@
 				@click="chatOpen = !chatOpen">
 				<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
-			<ClearJobsMenu v-if="targets.length" :targets="targets" :done="status?.states?.done ?? 0"
-				:failed="status?.states?.failed ?? 0" @cleared="refresh" />
-			<ProjectModeMenu v-if="filterTarget" :target="filterTarget" :manual="manual"
+			<ProjectModeMenu v-if="filterTarget && !watchInMenu" :target="filterTarget" :manual="manual"
 				:default-mode="status?.defaultMode ?? 'watch'" @changed="refresh" />
-			<router-link :to="settingsPath" data-testid="project-settings-link" aria-label="Settings" title="Settings"
-				:class="HEADER_ICON_CLS">
-				<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
-			</router-link>
+			<BoardMoreMenu ref="moreMenu" :targets="targets" :done="status?.states?.done ?? 0"
+				:failed="status?.states?.failed ?? 0" :checking="checking" :settings-path="settingsPath"
+				:logs-in-menu="logsInMenu" v-model:logs-open="logsOpen"
+				:mode-target="watchInMenu ? filterTarget : null" :manual="manual"
+				:default-mode="status?.defaultMode ?? 'watch'"
+				@refresh="onCheckNow" @cleared="refresh" @mode-changed="refresh" />
 			</HeaderOverflow>
 		</template>
 		<div class="flex min-h-0 flex-1">
@@ -228,14 +226,12 @@
 </template>
 
 <script setup lang="ts">
-import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import CalendarDaysIcon from "@heroicons/vue/24/outline/CalendarDaysIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronDownIcon from "@heroicons/vue/24/outline/ChevronDownIcon";
 import ChevronLeftIcon from "@heroicons/vue/24/outline/ChevronLeftIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import ChevronUpIcon from "@heroicons/vue/24/outline/ChevronUpIcon";
-import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
 import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
 import PlusIcon from "@heroicons/vue/24/outline/PlusIcon";
@@ -244,8 +240,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
+import BoardMoreMenu from "../components/projects/BoardMoreMenu.vue";
 import BoardStateFilter from "../components/projects/BoardStateFilter.vue";
-import ClearJobsMenu from "../components/projects/ClearJobsMenu.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import IssueFilterEditor from "../components/projects/IssueFilterEditor.vue";
 import JobCard from "../components/projects/JobCard.vue";
@@ -264,6 +260,7 @@ import UpNextStrip from "../components/projects/UpNextStrip.vue";
 import HeaderOverflow from "../components/ui/HeaderOverflow.vue";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useFilterRowFit } from "../composables/useFilterRowFit";
+import { useHeaderCollapse } from "../composables/useHeaderCollapse";
 import {
 	JOBS_PAGE_SIZE,
 	useProjectBoard,
@@ -752,6 +749,18 @@ watch(logsOpen, (open) =>
 	localStorage.setItem(LOGS_OPEN_KEY, open ? "1" : "0"),
 );
 const chatPanel = ref<{ send: (text: string) => Promise<void> } | null>(null);
+
+// Logs moves into the "…" menu on a header row under 600px, then Watch
+// under 420px (a phone), and either sooner if the row would not fit (#1488).
+const moreMenu = ref<{ trigger: HTMLElement | null } | null>(null);
+const headerCollapsed = useHeaderCollapse(
+	computed(() => moreMenu.value?.trigger),
+	() => (filterTarget.value ? 2 : 1),
+	[600, 420],
+	[aggregate, targets, smUp, () => status.value !== null],
+);
+const logsInMenu = computed(() => headerCollapsed.value >= 1);
+const watchInMenu = computed(() => headerCollapsed.value >= 2);
 
 async function onSummarize(job: ProjectJob) {
 	chatOpen.value = true;

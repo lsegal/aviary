@@ -609,9 +609,9 @@ test("a project's board names its agent and links to its projects in Code Loop s
 	// The header's actions are icon buttons, Settings rightmost, and there is
 	// no Add project button (projects are added under their agent).
 	const header = page.getByTestId("settings-header");
-	const settings = header.getByRole("link", { name: "Settings", exact: true });
-	await expect(settings).toHaveAttribute("title", "Settings");
-	await expect(settings).toHaveText("");
+	const more = header.getByRole("button", { name: "More board actions" });
+	await expect(more).toHaveAttribute("title", "More board actions");
+	await expect(more).toHaveText("");
 	const chatToggle = header.getByRole("button", { name: "Prompt chat" });
 	await expect(chatToggle).toHaveAttribute("title", "Prompt chat");
 	await expect(chatToggle).toHaveText("");
@@ -621,8 +621,12 @@ test("a project's board names its agent and links to its projects in Code Loop s
 	const actions = header.locator("a, button");
 	await expect(actions.last()).toHaveAttribute(
 		"data-testid",
-		"project-settings-link",
+		"board-more-menu",
 	);
+	// Settings is a labeled item in the "…" menu (#1488).
+	await more.click();
+	const settings = page.getByRole("menuitem", { name: "Settings" });
+	await expect(settings).toHaveAttribute("href", /\/projects\/settings/);
 	await settings.click();
 	await expect(page).toHaveURL(
 		"/projects/settings?agent=coder&project=lsegal%2Faviary",

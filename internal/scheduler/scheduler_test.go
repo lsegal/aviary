@@ -810,6 +810,7 @@ func TestTrigger(t *testing.T) {
 	mgr := agent.NewManager(nil)
 	s, err := New(mgr, 1)
 	assert.NoError(t, err)
+	t.Cleanup(s.Stop)
 
 	// Reconcile a config with a task to register it.
 	cfg := &config.Config{
@@ -876,6 +877,7 @@ func TestRunJobNow_ReturnedJobIsNotSharedWithWorker(t *testing.T) {
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m"}}})
 	s, err := New(mgr, 1)
 	require.NoError(t, err)
+	t.Cleanup(s.Stop)
 
 	job, err := s.Queue().EnqueueAt("alpha/daily", "alpha", "hello", "", 1, time.Now().Add(1*time.Hour), "", "")
 	require.NoError(t, err)
@@ -905,6 +907,7 @@ func TestRunJobNow_RejectsExhaustedPendingJob(t *testing.T) {
 	mgr.Reconcile(&config.Config{Agents: []config.AgentConfig{{Name: "alpha", Model: "m"}}})
 	s, err := New(mgr, 1)
 	assert.NoError(t, err)
+	t.Cleanup(s.Stop)
 
 	job := domain.Job{
 		ID:         newID("job"),
@@ -931,6 +934,7 @@ func TestTrigger_ReturnedJobIsNotSharedWithWorker(t *testing.T) {
 	mgr := agent.NewManager(nil)
 	s, err := New(mgr, 1)
 	require.NoError(t, err)
+	t.Cleanup(s.Stop)
 	cfg := &config.Config{Agents: []config.AgentConfig{{
 		Name:  "alpha",
 		Model: "m",
@@ -950,6 +954,7 @@ func TestTrigger_NotFound(t *testing.T) {
 	mgr := agent.NewManager(nil)
 	s, err := New(mgr, 1)
 	assert.NoError(t, err)
+	t.Cleanup(s.Stop)
 
 	_, err = s.Trigger("nonexistent/task")
 	assert.Error(t, err)

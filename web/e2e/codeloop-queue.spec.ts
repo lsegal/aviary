@@ -331,7 +331,7 @@ test("the header's Queue button looks like its neutral icon neighbors (#1305)", 
 }) => {
 	await setup(page);
 	const queue = page.getByTestId("queue-menu");
-	const settings = page.getByTestId("project-settings-link");
+	const settings = page.getByTestId("board-more-menu");
 	const look = (el: Element) => {
 		const s = getComputedStyle(el);
 		const r = el.getBoundingClientRect();

@@ -1300,10 +1300,10 @@ test("retry, stop, filters and check now call project tools", async ({
 		)
 		.toBe(true);
 
-	const checkNow = page.getByRole("button", { name: "Check now" });
-	await expect(checkNow).toHaveAttribute("title", "Check now");
-	await expect(checkNow).toHaveText("");
-	await checkNow.click();
+	// Refresh lives in the header's "…" menu (#1488).
+	await expect(page.getByRole("button", { name: "Check now" })).toHaveCount(0);
+	await page.getByTestId("board-more-menu").click();
+	await page.getByRole("menuitem", { name: "Refresh" }).click();
 	await expect
 		.poll(() => calls.project_refresh?.[0])
 		.toEqual({ target: "lsegal/aviary" });
@@ -1324,13 +1324,18 @@ test("done and failed jobs clear from their card and in bulk (#1460)", async ({
 		.toEqual({ target: "lsegal/aviary", number: 200 });
 
 	// The header's menu clears the project's failed jobs after a confirmation.
-	await page.getByTestId("clear-jobs-menu").click();
-	await expect(page.getByTestId("clear-jobs-items")).toContainText(
-		"Running, queued and paused jobs are never cleared.",
+	// It lives in the "…" menu, not as a trash button (#1488).
+	await expect(page.getByTestId("clear-jobs-menu")).toHaveCount(0);
+	await page.getByTestId("board-more-menu").click();
+	await expect(page.getByTestId("board-more-items")).toContainText(
+		"Clear this project's jobs",
 	);
 	await page.getByTestId("clear-jobs-failed").click();
 	const confirm = page.getByTestId("clear-jobs-confirm");
 	await expect(confirm).toContainText("failed jobs of lsegal/aviary");
+	await expect(confirm).toContainText(
+		"Running, queued and paused jobs are never cleared.",
+	);
 	await page.getByTestId("clear-jobs-confirm-confirm").click();
 	await expect(confirm).toHaveCount(0);
 	await expect
@@ -1389,10 +1394,12 @@ test("an agent's Code Loop is one board of all its projects, with no settings", 
 	// agent's projects in Code Loop settings.
 	await expect(page.locator("[data-field]")).toHaveCount(0);
 	await expect(page.getByTestId("agent-projects")).toHaveCount(0);
+	await page.getByTestId("board-more-menu").click();
 	await expect(page.getByTestId("project-settings-link")).toHaveAttribute(
 		"href",
 		"/projects/settings?agent=coder",
 	);
+	await page.keyboard.press("Escape");
 
 	// Filters and search narrow the whole board, as on one project's.
 	await stateChip(page, "Running").click();
@@ -1403,7 +1410,8 @@ test("an agent's Code Loop is one board of all its projects, with no settings", 
 
 	// One check reads every project.
 	await page.getByLabel("Search jobs").fill("");
-	await page.getByRole("button", { name: "Check now" }).click();
+	await page.getByTestId("board-more-menu").click();
+	await page.getByRole("menuitem", { name: "Refresh" }).click();
 	await expect.poll(() => calls.project_refresh?.[0]).toEqual({});
 });
 
@@ -1422,9 +1430,9 @@ test("the Code Loop board's header starts with a blue + that adds a project (#73
 		.poll(() => add.evaluate(blue))
 		.toBe(await page.getByTestId("sidebar-add-project").evaluate(blue));
 	await expect(add).toHaveCSS("color", "rgb(255, 255, 255)");
-	await expect(icons.locator(":scope > *").nth(2)).toHaveAttribute(
-		"aria-label",
-		"Check now",
+	await expect(icons.locator(":scope > *").last()).toHaveAttribute(
+		"data-testid",
+		"board-more-menu",
 	);
 	await add.click();
 	await expect(page).toHaveURL(/\/agents\/coder\/projects\?add=1$/);
@@ -1434,7 +1442,7 @@ test("the Code Loop board's header starts with a blue + that adds a project (#73
 
 	// One project's board has no + in its header.
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
-	await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
+	await expect(page.getByTestId("board-more-menu")).toBeVisible();
 	await expect(page.getByTestId("board-add-project")).toHaveCount(0);
 });
 
@@ -2397,8 +2405,8 @@ test("job details open under the project header, keeping the chat and logs panel
 	).toBeVisible();
 	await expect(page.getByTestId("settings-title")).toHaveText("#218");
 	await expect(page.getByTestId("delivery-status")).toHaveCount(0);
-	await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
-	await expect(page.getByTestId("project-settings-link")).toBeVisible();
+	await expect(page.getByTestId("board-more-menu")).toBeVisible();
+	await expect(page.getByTestId("logs-toggle")).toBeVisible();
 	// The open panels keep their content and the unsent draft.
 	await expect(chat).toContainText("Here is the failing run.");
 	await expect(input).toHaveValue("what about #218?");
@@ -3694,11 +3702,11 @@ for (const [label, width] of [
 		await expect(schedule).toHaveAccessibleName("Schedule task");
 		await expect(schedule).toHaveAttribute("title", "Schedule task");
 		const text = schedule.getByText("Schedule", { exact: true });
-		const check = page.getByRole("button", { name: "Check now" });
+		const check = page.getByTestId("prompt-chat-toggle");
 		const s = await schedule.boundingBox();
 		const c = await check.boundingBox();
 		if (label === "mobile") {
-			// The same square as the icon-only Check now beside it.
+			// The same square as the icon-only chat toggle beside it.
 			await expect(text).toBeHidden();
 			expect(Math.abs((s?.width ?? 0) - (c?.width ?? 0))).toBeLessThanOrEqual(
 				1,
@@ -3803,7 +3811,8 @@ test("the page's own scrolls and focus leave the Code Loop header shown (#1437)"
 	await expect
 		.poll(async () => (await titleRow.boundingBox())?.y)
 		.toBeLessThan((row?.y ?? 0) - 10);
-	await page.getByRole("button", { name: "Logs" }).focus();
+	// On a phone Logs is in the "…" menu (#1488); Prompt chat stays a button.
+	await page.getByRole("button", { name: "Prompt chat" }).focus();
 	await expect
 		.poll(async () => (await titleRow.boundingBox())?.y)
 		.toBeCloseTo(row?.y ?? 0, 0);
@@ -3906,3 +3915,131 @@ for (const { width, chat } of [
 		await toolbar.getByRole("button", { name: "Clear" }).click();
 		await expect(page).not.toHaveURL(/state=/);
 	});
+
+test("the board header's … menu holds Refresh, Clear and Settings (#1488)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const actions = page.getByTestId("settings-actions");
+	// Wide, Logs and Watch stay buttons, and "…" ends the row.
+	await expect(actions.getByTestId("logs-toggle")).toBeVisible();
+	await expect(actions.getByTestId("project-mode-menu")).toBeVisible();
+	await expect(actions.locator("a, button").last()).toHaveAttribute(
+		"data-testid",
+		"board-more-menu",
+	);
+	for (const name of ["Check now", "Clear finished jobs…", "Settings"])
+		await expect(actions.getByRole("button", { name })).toHaveCount(0);
+	await expect(actions.getByRole("link", { name: "Settings" })).toHaveCount(0);
+
+	// Keyboard: the menu button opens with Enter and its items take focus.
+	const more = page.getByTestId("board-more-menu");
+	await expect(more).toHaveAttribute("aria-haspopup", "menu");
+	await expect(more).toHaveAttribute("aria-expanded", "false");
+	await expect(more).toHaveAttribute("title", "More board actions");
+	await more.focus();
+	await page.keyboard.press("Enter");
+	await expect(more).toHaveAttribute("aria-expanded", "true");
+	const menu = page.getByTestId("board-more-items");
+	await expect(menu.getByRole("menuitem")).toHaveText([
+		"Refresh",
+		/Clear done/,
+		/Clear failed/,
+		/Clear all finished/,
+		"Settings",
+	]);
+	// Logs and Watch are buttons, so they are not in the menu too.
+	await expect(menu.getByTestId("board-logs")).toHaveCount(0);
+	await expect(menu.getByRole("menuitemradio")).toHaveCount(0);
+	await expect(menu.getByRole("menuitem", { name: "Refresh" })).toBeFocused();
+	await page.keyboard.press("ArrowDown");
+	await page.keyboard.press("ArrowDown");
+	await expect(
+		menu.getByRole("menuitem", { name: /Clear failed/ }),
+	).toBeFocused();
+	await page.keyboard.press("Enter");
+	await expect(page.getByTestId("clear-jobs-confirm")).toContainText(
+		"failed jobs of lsegal/aviary",
+	);
+	await page.getByTestId("clear-jobs-confirm-cancel").click();
+});
+
+test("the board header moves Logs, then Watch, into … as it narrows (#1488)", async ({
+	page,
+}) => {
+	await setup(page);
+	const actions = page.getByTestId("settings-actions");
+	const more = page.getByTestId("board-more-menu");
+	const menu = page.getByTestId("board-more-items");
+	let logsGone = false;
+	let watchGone = false;
+	for (const width of [
+		1440, 1024, 900, 800, 700, 640, 600, 520, 430, 390, 360, 320,
+	]) {
+		await page.setViewportSize({ width, height: 800 });
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		await expect(more).toBeVisible();
+		// +, Schedule and Chat are always buttons.
+		for (const id of ["queue-menu", "schedule-new", "prompt-chat-toggle"])
+			await expect(actions.getByTestId(id)).toBeVisible();
+		// The row never wraps or scrolls sideways.
+		await expect
+			.poll(() => actions.evaluate((el) => el.scrollWidth - el.clientWidth))
+			.toBeLessThanOrEqual(0);
+		const boxes = await actions
+			.locator(":scope > button, :scope > a")
+			.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
+		expect(new Set(boxes.map(Math.round)).size).toBe(1);
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= window.innerWidth,
+			),
+		).toBe(true);
+
+		// Each of Logs and Watch is a button or a menu item, never both.
+		const logsButton = await actions.getByTestId("logs-toggle").count();
+		const watchButton = await actions.getByTestId("project-mode-menu").count();
+		await more.click();
+		await expect(menu).toBeVisible();
+		const logsItem = await menu.getByTestId("board-logs").count();
+		const watchItems = await menu.getByRole("menuitemradio").count();
+		await page.keyboard.press("Escape");
+		expect(logsButton + logsItem).toBe(1);
+		expect(watchButton + (watchItems ? 1 : 0)).toBe(1);
+		// Logs goes first, then Watch; neither comes back as it narrows.
+		if (logsGone) expect(logsItem).toBe(1);
+		if (watchGone) expect(watchItems).toBe(2);
+		if (watchItems) expect(logsItem).toBe(1);
+		logsGone ||= logsItem === 1;
+		watchGone ||= watchItems === 2;
+	}
+	expect(logsGone && watchGone).toBe(true);
+});
+
+test("Logs and Watch work from the … menu on a phone (#1488)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 360, height: 800 });
+	const updates: unknown[] = [];
+	await setup(page, undefined, {
+		project_update: (args?: Record<string, unknown>) => {
+			updates.push(args);
+			return { ok: true };
+		},
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const more = page.getByTestId("board-more-menu");
+	await more.click();
+	await page.getByRole("menuitemcheckbox", { name: "Logs" }).click();
+	await expect(page.getByTestId("project-logs")).toBeVisible();
+	await more.click();
+	await expect(
+		page.getByRole("menuitemcheckbox", { name: "Logs" }),
+	).toHaveAttribute("aria-checked", "true");
+	await page.getByTestId("board-mode-manual").click();
+	await expect
+		.poll(() => updates[0])
+		.toEqual({ target: "lsegal/aviary", mode: "manual" });
+});

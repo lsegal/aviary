@@ -440,7 +440,7 @@ import { AGENT_PAGE_ICONS, pageIdentity } from "../lib/pageIdentity";
 import { useCrumbSwitcher } from "../composables/useCrumbSwitcher";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
-import { jobPath, type ProjectSummary, projectPath } from "../lib/projects";
+import { type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
 import { chatDisplayName, useChatSessionsStore } from "../stores/chatSessions";
 import {
@@ -1167,11 +1167,9 @@ function flyoutItems(children: NavChild[]): RailFlyoutItem[] {
 	}));
 }
 
-// How many running jobs the Code Loop flyout lists under each project.
-const FLYOUT_JOBS = 3;
-
-// The Code Loop flyout's projects, running ones first, each with its count
-// and its first running jobs; idle ones dimmed (#1359).
+// The Code Loop flyout's projects, running ones first, each with its
+// running count; idle ones dimmed (#1359). The count stands in for the jobs,
+// which the project's board lists (#1494).
 function projectItems(agent: string): RailFlyoutItem[] {
 	const owned = ownedProjects(agent);
 	const sorted = [
@@ -1180,21 +1178,10 @@ function projectItems(agent: string): RailFlyoutItem[] {
 	];
 	return sorted.map((p) => {
 		const [item] = flyoutItems([projectChild(agent, p)]);
-		const extra = p.runningJobs.length - FLYOUT_JOBS;
 		return {
 			...item,
 			badge: p.running,
 			dimmed: p.running === 0 && !item.active,
-			jobs: p.runningJobs.slice(0, FLYOUT_JOBS).map((j) => ({
-				key: j.id,
-				label: j.label,
-				to: jobPath(agent, p.name, j.number),
-				state: j.state,
-				runs: j.runs,
-			})),
-			...(extra > 0
-				? { more: { count: extra, to: `${item.to}?state=running` } }
-				: {}),
 		};
 	});
 }
