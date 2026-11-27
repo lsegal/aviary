@@ -2,9 +2,9 @@
 	<div data-testid="settings-header" class="shrink-0 bg-white dark:bg-gray-950">
 		<!-- The breadcrumb bar: back to the parent page, then the trail. -->
 		<!-- Only this bar stays pinned while the page scrolls; the title row
-			slides under it (#1437). -->
+			slides up under it (#1437). -->
 		<div data-testid="settings-crumb-bar"
-			class="sticky top-0 z-20 flex min-w-0 items-center gap-1 border-b bg-white dark:bg-gray-950 border-gray-200 px-2 py-1.5 sm:px-4 dark:border-gray-800">
+			class="relative z-20 flex min-w-0 items-center gap-1 border-b bg-white dark:bg-gray-950 border-gray-200 px-2 py-1.5 sm:px-4 dark:border-gray-800">
 			<router-link v-if="parent" :to="parent.to" data-testid="settings-back" :aria-label="`Back to ${parent.label}`"
 				:title="`Back to ${parent.label}`" :class="BACK_CLS">
 				<ArrowLeftIcon aria-hidden="true" class="h-4 w-4 shrink-0" />
@@ -37,7 +37,7 @@
 		</div>
 		<!-- The title row: the section's icon tile, the title with its status
 			and subtitle, and the page's actions on the right. -->
-		<div data-testid="settings-title-row"
+		<div data-testid="settings-title-row" :style="collapsed ? { marginTop: `-${collapsed}px` } : undefined"
 			class="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 sm:px-6 dark:border-gray-800">
 			<div class="flex min-w-0 flex-[1_1_14rem] items-center gap-3">
 				<span data-testid="settings-header-icon" aria-hidden="true"
@@ -122,6 +122,8 @@ const props = defineProps<{
 	titleLink?: { href: string; title: string } | null;
 	/** Makes the current crumb a switcher between its siblings (#1063). */
 	switcher?: { title: string; items: SwitcherItem[] } | null;
+	/** How far the title row has slid up under the breadcrumb bar (#1437). */
+	collapsed?: number;
 }>();
 
 const BACK_CLS =

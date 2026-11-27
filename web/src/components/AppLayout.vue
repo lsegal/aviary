@@ -358,21 +358,18 @@
       </div>
     </nav>
 
-    <!-- With the shared header the column scrolls by the title row's height,
-         so only the breadcrumb bar stays pinned (#1437). -->
-    <main ref="mainEl" data-testid="page-main" class="flex min-h-0 min-w-0 flex-1 flex-col"
-      :class="headerCrumbs.length ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'">
+    <!-- Only the header's breadcrumb bar stays pinned: its title row slides
+         away as the page scrolls (#1437). -->
+    <main ref="mainEl" data-testid="page-main" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <SettingsPageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back" :title-link="titleLink"
-        :switcher="leafSwitcher" :identity="pageIdentity(route.path)">
+        :switcher="leafSwitcher" :identity="pageIdentity(route.path)" :collapsed="headerOffset">
         <template v-if="$slots['header-icon']" #icon><slot name="header-icon" /></template>
         <template v-if="$slots['header-status']" #status><slot name="header-status" /></template>
         <template v-if="$slots['header-actions']" #actions><slot name="header-actions" /></template>
         <template v-if="$slots.header" #default><slot name="header" /></template>
       </SettingsPageHeader>
-      <!-- The page fills what the breadcrumb bar leaves. -->
-      <div data-testid="page-body" class="flex flex-col"
-        :class="headerCrumbs.length && pageHeight !== null ? 'shrink-0 overflow-hidden' : 'min-h-0 flex-1'"
-        :style="headerCrumbs.length && pageHeight !== null ? { height: `${pageHeight}px` } : undefined">
+      <!-- The page fills what the header leaves. -->
+      <div data-testid="page-body" class="flex min-h-0 flex-1 flex-col">
         <slot />
       </div>
     </main>
@@ -1146,12 +1143,18 @@ const headerCrumbs = computed((): SettingsCrumb[] => {
 		...props.trail.crumbs,
 	];
 });
-// Only the header's breadcrumb bar stays pinned; its title row scrolls
-// away with the page (#1437).
+// Only the header's breadcrumb bar stays pinned; its title row slides away
+// as the page scrolls (#1437), and comes back on every new page.
 const mainEl = ref<HTMLElement | null>(null);
-const { pageHeight } = useScrollAwayHeader(
+const { offset: headerOffset } = useScrollAwayHeader(
 	mainEl,
 	computed(() => headerCrumbs.value.length > 0),
+);
+watch(
+	() => route.path,
+	() => {
+		headerOffset.value = 0;
+	},
 );
 // The leaf's switcher between its sibling projects, tasks, channels or
 // files (#1063).
