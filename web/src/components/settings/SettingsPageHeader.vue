@@ -39,8 +39,8 @@
 			and subtitle, and the page's actions on the right. -->
 		<div data-testid="settings-title-row" :style="collapsed ? { marginTop: `-${collapsed}px` } : undefined"
 			class="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 sm:px-6 dark:border-gray-800">
-			<div class="flex min-w-0 flex-[1_1_14rem] items-center gap-3">
-				<span data-testid="settings-header-icon" aria-hidden="true"
+			<div class="flex min-w-0 items-center gap-3" :class="compact ? 'flex-[1_1_auto]' : 'flex-[1_1_14rem]'">
+				<span v-if="!compact" data-testid="settings-header-icon" aria-hidden="true"
 					class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" :class="identity.tileClass">
 					<slot name="icon">
 						<component :is="identity.icon" class="h-4 w-4" :class="identity.iconClass" />
@@ -50,7 +50,8 @@
 					<!-- The status chips wrap below the title rather than squeeze it
 						(#1209); only a title wider than the row truncates. -->
 					<div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-						<h2 data-testid="settings-title" class="max-w-full min-w-0 truncate text-lg font-bold text-gray-900 dark:text-white">
+						<h2 data-testid="settings-title" class="max-w-full min-w-0 truncate text-lg font-bold text-gray-900 dark:text-white"
+							:class="{ 'max-sm:sr-only': compact }">
 							<a v-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
 								class="hover:underline" :title="titleLink.title">{{ title }}</a>
 							<template v-else>{{ title }}</template>
@@ -124,6 +125,11 @@ const props = defineProps<{
 	switcher?: { title: string; items: SwitcherItem[] } | null;
 	/** How far the title row has slid up under the breadcrumb bar (#1437). */
 	collapsed?: number;
+	/**
+	 * Drops the icon tile, and below sm shows the title only to screen
+	 * readers, since the breadcrumb names the page (#1570).
+	 */
+	compact?: boolean;
 }>();
 
 const BACK_CLS =
