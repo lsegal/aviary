@@ -343,3 +343,58 @@ func TestProjectModeRoundTripAndValidation(t *testing.T) {
 		t.Fatalf("an unknown shared mode passed validation: %+v", issues)
 	}
 }
+
+func TestParseFinishedTTL(t *testing.T) {
+	for value, want := range map[string]time.Duration{
+		"336h": 336 * time.Hour,
+		"14d":  14 * 24 * time.Hour,
+		"2w":   14 * 24 * time.Hour,
+		" 3D ": 3 * 24 * time.Hour,
+		"0":    0,
+		"90m":  90 * time.Minute,
+	} {
+		got, err := ParseFinishedTTL(value)
+		if err != nil || got != want {
+			t.Errorf("ParseFinishedTTL(%q) = %v, %v; want %v", value, got, err, want)
+		}
+	}
+	for _, bad := range []string{"", "soon", "-1h", "-2d", "xd", "w"} {
+		if _, err := ParseFinishedTTL(bad); err == nil {
+			t.Errorf("ParseFinishedTTL(%q) accepted", bad)
+		}
+	}
+}
+
+func TestFinishedTTLFor(t *testing.T) {
+	var shared ProjectsConfig
+	if ttl, source := shared.FinishedTTLFor(""); ttl != DefaultProjectsFinishedTTL || source != ProjectModeSourceGlobal {
+		t.Fatalf("default finished_ttl = %v from %s", ttl, source)
+	}
+	shared.FinishedTTL = "1w"
+	if ttl, source := shared.FinishedTTLFor("inherit"); ttl != 7*24*time.Hour || source != ProjectModeSourceGlobal {
+		t.Fatalf("inherited finished_ttl = %v from %s", ttl, source)
+	}
+	if ttl, source := shared.FinishedTTLFor("12h"); ttl != 12*time.Hour || source != ProjectModeSourceProject {
+		t.Fatalf("overridden finished_ttl = %v from %s", ttl, source)
+	}
+	projects := AgentProjectsConfig{{Target: "o/a", FinishedTTL: "3d"}, {Target: "o/b", FinishedTTL: "inherit"}, {Target: "o/c", FinishedTTL: "bogus"}}
+	if got := projects.FinishedTTLs(); len(got) != 1 || got["o/a"] != "3d" {
+		t.Fatalf("FinishedTTLs = %v", got)
+	}
+	if got := shared.Override(ProjectsConfig{FinishedTTL: "5d"}).FinishedTTL; got != "5d" {
+		t.Fatalf("an overlay's finished_ttl = %q", got)
+	}
+}
+
+func TestValidateFinishedTTL(t *testing.T) {
+	cfg := Config{
+		Agents:   []AgentConfig{{Name: "coder", Projects: AgentProjectsConfig{{Target: "o/a", FinishedTTL: "soon"}}}},
+		Projects: ProjectsConfig{FinishedTTL: "-1h"},
+	}
+	issues := Validate(&cfg, nil)
+	for _, field := range []string{"agents[0].projects[0].finished_ttl", "projects.finished_ttl"} {
+		if !slices.ContainsFunc(issues, func(issue Issue) bool { return issue.Field == field }) {
+			t.Errorf("an invalid %s passed validation: %+v", field, issues)
+		}
+	}
+}

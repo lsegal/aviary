@@ -51,6 +51,13 @@
 				<span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">The global default. Each project can
 					override it in its own settings above or from its board's issue discovery menu.</span>
 			</label>
+			<label class="block max-w-md" data-testid="project-default-finished-ttl">
+				<span :class="LABEL">Keep done and failed jobs for <DefaultTag :on="isDefault('finishedTTL')" /></span>
+				<input v-model="form.finishedTTL" type="text" :placeholder="`${DEFAULT_FINISHED_TTL} (0 keeps them until cleared)`"
+					:class="INPUT" data-field="finished_ttl" />
+				<span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">How long finished jobs stay on the
+					board and in the job store, such as 336h, 14d or 2w. Each project can override it in its own settings.</span>
+			</label>
 			<label class="block">
 				<span :class="LABEL">Who can steer jobs through comments</span>
 				<input v-model="commentersText" type="text" placeholder="Only you (the signed-in gh user)" :class="[INPUT, 'font-mono']"
@@ -184,6 +191,7 @@ import { useProviderStatus } from "../../composables/useProviderAuth";
 import { APPROVAL_MODES } from "../../lib/approval";
 import {
 	cloneState,
+	DEFAULT_FINISHED_TTL,
 	DELIVERY_OPTIONS,
 	defaultFields,
 	defaultInterval,

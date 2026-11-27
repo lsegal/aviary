@@ -371,6 +371,45 @@ test("the global issue discovery mode flips projects without an override", async
 	expect(savedProjects(calls, "coder")[0]).not.toHaveProperty("mode");
 });
 
+test("finished_ttl is set globally and overridden per project (#1460)", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/projects/settings?agent=coder");
+	const card = page.getByTestId("agent-project-finished-ttl");
+	const source = card.getByTestId("project-finished-ttl-source");
+	await expect(source).toContainText("Inherited from the global setting: 2w");
+
+	// The global value is what projects inherit.
+	await page
+		.getByTestId("project-default-finished-ttl")
+		.locator('[data-field="finished_ttl"]')
+		.fill("10d");
+	await expect(source).toContainText("Inherited from the global setting: 10d");
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(1);
+	expect(savedConfig(calls).projects?.finished_ttl).toBe("10d");
+
+	// A project's own value overrides it, and Reset to global removes it.
+	const input = card.locator('[data-field="finished_ttl"]');
+	await input.fill("3d");
+	await input.blur();
+	await expect(source).toContainText(
+		"Overridden for this project: 3d (global: 10d)",
+	);
+	await expect(page.getByTestId("agent-project-yaml")).toContainText(
+		'finished_ttl: "3d"',
+	);
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(2);
+	expect(savedProjects(calls, "coder")[0].finished_ttl).toBe("3d");
+	await card.getByTestId("project-finished-ttl-reset").click();
+	await expect(source).toContainText("Inherited from the global setting");
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(3);
+	expect(savedProjects(calls, "coder")[0]).not.toHaveProperty("finished_ttl");
+});
+
 test("a project another agent owns cannot be added again", async ({ page }) => {
 	const calls = await setup(page, {
 		check: { ...READY_CHECK, target: "lsegal/aviary", fork: false },

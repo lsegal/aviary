@@ -227,7 +227,11 @@ export function useProjectBoard(
 	watch(page, () => void refresh());
 
 	async function action(
-		tool: "project_job_retry" | "project_job_stop" | "project_job_dismiss",
+		tool:
+			| "project_job_retry"
+			| "project_job_stop"
+			| "project_job_dismiss"
+			| "project_job_clear",
 		job: ProjectJob,
 	) {
 		await callTool(tool, { target: job.target, number: job.number });
@@ -280,6 +284,8 @@ export function useProjectBoard(
 		stop: (job: ProjectJob) => action("project_job_stop", job),
 		/** Takes a schedule's failed last run off the Failed state. */
 		dismiss: (job: ProjectJob) => action("project_job_dismiss", job),
+		/** Clears a done or failed job from the board and job store (#1460). */
+		clear: (job: ProjectJob) => action("project_job_clear", job),
 	};
 }
 

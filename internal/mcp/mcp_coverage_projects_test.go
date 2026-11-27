@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -16,13 +17,14 @@ import (
 
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/projects"
+	projectscore "github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/store"
 )
 
 var projectToolNames = []string{
 	"project_status", "project_job_list", "project_job_get", "project_job_explain",
 	"project_job_retry", "project_job_pause", "project_job_resume", "project_job_stop", "project_job_dismiss",
-	"project_job_queue", "project_queue_candidates",
+	"project_job_clear", "project_job_queue", "project_queue_candidates",
 	"project_refresh", "project_add", "project_update", "project_filter_check", "project_remove",
 	"project_clone_list", "project_clone_clear", "project_unblock_run",
 	"project_issue_comment", "project_issue_create", "project_issue_backfill_media",
@@ -422,4 +424,54 @@ func TestProjectUpdateRuntimeWatchKeepsConfig(t *testing.T) {
 	assert.Equal(t, before, readFile(t, config.DefaultPath()))
 	status := callJSON(t, d, "project_status", map[string]any{})
 	assert.Equal(t, map[string]any{"o/r": "label:bug", "o/s": "assignee:@me"}, status["issue_filters"])
+}
+
+func TestProjectUpdateSetsAndResetsFinishedTTL(t *testing.T) {
+	d, m := setupProjects(t)
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "coder", Model: "cli/codex", Projects: config.AgentProjectsConfig{{Target: "o/a"}}}}}
+	require.NoError(t, config.Save("", cfg))
+	m.Reconcile(cfg)
+
+	updated := callJSON(t, d, "project_update", map[string]any{"target": "o/a", "finished_ttl": "3d"})
+	assert.Equal(t, "3d", updated["finished_ttl"])
+	assert.Equal(t, "project", updated["finished_ttl_source"])
+	saved, err := config.Load("")
+	require.NoError(t, err)
+	assert.Equal(t, "3d", saved.Agents[0].Projects[0].FinishedTTL)
+	status := callJSON(t, d, "project_status", map[string]any{})
+	assert.Equal(t, map[string]any{"o/a": "3d"}, status["finished_ttls"])
+	assert.Equal(t, "2w", status["default_finished_ttl"])
+
+	toolCallContains(t, d, "project_update", map[string]any{"target": "o/a", "finished_ttl": "soon"}, "invalid finished_ttl")
+	reset := callJSON(t, d, "project_update", map[string]any{"target": "o/a", "finished_ttl": "inherit"})
+	assert.Equal(t, "2w", reset["finished_ttl"])
+	assert.Equal(t, "global", reset["finished_ttl_source"])
+	saved, err = config.Load("")
+	require.NoError(t, err)
+	assert.Empty(t, saved.Agents[0].Projects[0].FinishedTTL)
+}
+
+func TestProjectJobClear(t *testing.T) {
+	d, m := setupProjects(t)
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "coder", Model: "cli/codex", Projects: config.AgentProjectsConfig{{Target: "o/a"}, {Target: "o/b"}}}}}
+	require.NoError(t, config.Save("", cfg))
+	m.Reconcile(cfg)
+	m.Snapshot(projectscore.Snapshot{
+		Targets: []string{"o/a", "o/b"}, LastPoll: time.Now(),
+		Jobs: []projectscore.JobSnapshot{
+			{Target: "o/a", Number: 1, Status: "complete", Kind: projectscore.JobKindIssue},
+			{Target: "o/a", Number: 2, Status: "failed", Kind: projectscore.JobKindIssue},
+			{Target: "o/b", Number: 3, Status: "complete", Kind: projectscore.JobKindIssue},
+			{Target: "o/b", Number: 4, Status: "active", Kind: projectscore.JobKindIssue},
+		},
+	})
+	toolCallContains(t, d, "project_job_clear", map[string]any{"number": 4}, "only done and failed jobs can be cleared")
+	one := callJSON(t, d, "project_job_clear", map[string]any{"number": 2})
+	assert.Equal(t, []any{"o/a#2"}, one["cleared"])
+	done := callJSON(t, d, "project_job_clear", map[string]any{"target": "o/b", "which": "done"})
+	assert.Equal(t, []any{"o/b#3"}, done["cleared"])
+	all := callJSON(t, d, "project_job_clear", map[string]any{})
+	assert.Equal(t, []any{"o/a#1"}, all["cleared"])
+	list := callJSON(t, d, "project_job_list", map[string]any{})
+	assert.EqualValues(t, 1, list["total"], "only the running job is left")
 }

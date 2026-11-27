@@ -105,6 +105,10 @@ func TestWatchItemActionAvailable(t *testing.T) {
 		{name: "dismiss a failed schedule", item: watchItem{hasJob: true, job: ran, state: watchScheduled, scheduleState: watchFailed}, verb: "dismiss", ok: true},
 		{name: "dismiss a running schedule", item: watchItem{hasJob: true, job: ran, state: watchScheduled, scheduleState: watchRunning}, verb: "dismiss", why: "only a failed scheduled run can be dismissed"},
 		{name: "dismiss a failed job", item: watchItem{hasJob: true, job: watchJob{Number: 5, Status: "failed"}, state: watchFailed}, verb: "dismiss", why: "only a failed scheduled run can be dismissed"},
+		{name: "clear a done job", item: watchItem{hasJob: true, job: watchJob{Number: 6, Status: "complete", State: watchDone}, state: watchDone}, verb: "clear", ok: true},
+		{name: "clear a failed job", item: watchItem{hasJob: true, job: watchJob{Number: 5, Status: "failed", State: watchFailed}, state: watchFailed}, verb: "clear", ok: true},
+		{name: "clear a running job", item: watchItem{hasJob: true, job: ran, state: watchRunning}, verb: "clear", why: "only a done or failed job can be cleared"},
+		{name: "clear a failed schedule", item: watchItem{hasJob: true, job: watchJob{Number: 7, Status: "failed", State: watchFailed}, state: watchScheduled, scheduleState: watchFailed}, verb: "clear", why: "only a done or failed job can be cleared"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
