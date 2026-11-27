@@ -360,6 +360,12 @@
 		"skip_turn_media",
 		"text"
 	],
+	"project_job_clear": [
+		"number",
+		"target",
+		"targets",
+		"which"
+	],
 	"project_job_dismiss": [
 		"number",
 		"target"
@@ -506,6 +512,7 @@
 	],
 	"project_update": [
 		"filter",
+		"finished_ttl",
 		"mode",
 		"reset_filter",
 		"target"

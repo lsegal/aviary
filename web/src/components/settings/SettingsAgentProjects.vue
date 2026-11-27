@@ -60,27 +60,40 @@
 
 		<section v-if="selected" :class="CARD" data-testid="agent-project-mode">
 			<h3 :class="CARD_HEAD">Issue discovery <span :class="CARD_NOTE">How work reaches {{ selected }}</span></h3>
-			<div class="space-y-2 p-4">
-				<div class="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400" data-testid="project-mode-source">
-					<template v-if="selectedMode === 'inherit'">Inherited from the global setting: {{ projectModeName(globalMode) }}</template>
-					<template v-else>
-						Overridden for this project: {{ projectModeName(selectedMode) }} (global: {{ projectModeName(globalMode) }})
-						<button type="button" data-testid="project-mode-reset" class="text-blue-600 hover:underline dark:text-blue-400"
-							@click="store(withMode(section, selected, 'inherit'))">Reset to global</button>
-					</template>
-				</div>
-				<div class="grid gap-2 sm:grid-cols-3">
-					<label v-for="option in projectModeChoices(globalMode)" :key="option.value" :data-testid="`project-mode-option-${option.value}`"
+			<div class="p-4">
+				<div class="grid gap-2 sm:grid-cols-2">
+					<label v-for="option in PROJECT_MODES" :key="option.value" :data-testid="`project-mode-option-${option.value}`"
 						class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm"
 						:class="selectedMode === option.value ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/40' : 'border-gray-300 dark:border-gray-700'">
 						<input type="radio" name="project-mode" data-field="mode" :value="option.value" class="mt-0.5"
-							:checked="selectedMode === option.value" @change="store(withMode(section, selected, option.value))" />
+							:checked="selectedMode === option.value" @change="store(withMode(section, selected, projectModeOverride(option.value, globalMode)))" />
 						<span class="flex flex-col">
 							<span class="font-medium text-gray-900 dark:text-white">{{ option.label }}</span>
 							<span class="text-xs text-gray-500 dark:text-gray-400">{{ option.hint }}</span>
 						</span>
 					</label>
 				</div>
+			</div>
+		</section>
+
+		<section v-if="selected" :class="CARD" data-testid="agent-project-finished-ttl">
+			<h3 :class="CARD_HEAD">Finished jobs <span :class="CARD_NOTE">How long {{ selected }}'s done and failed jobs are kept</span></h3>
+			<div class="space-y-2 p-4">
+				<div class="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400" data-testid="project-finished-ttl-source">
+					<template v-if="!selectedTTL">Inherited from the global setting: {{ globalTTL }}</template>
+					<template v-else>
+						Overridden for this project: {{ selectedTTL }} (global: {{ globalTTL }})
+						<button type="button" data-testid="project-finished-ttl-reset" class="text-blue-600 hover:underline dark:text-blue-400"
+							@click="setTTL('')">Reset to global</button>
+					</template>
+				</div>
+				<label class="block max-w-xs">
+					<span :class="LABEL">Keep done and failed jobs for</span>
+					<input :value="selectedTTL" type="text" data-field="finished_ttl" :class="INPUT"
+						:placeholder="`Inherit (global: ${globalTTL})`" @change="setTTL(($event.target as HTMLInputElement).value)" />
+					<span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">Such as 336h, 14d or 2w; 0 keeps them
+						until cleared. Empty follows the global setting.</span>
+				</label>
 			</div>
 		</section>
 
@@ -157,6 +170,7 @@ import { channelName, channelTarget } from "../../lib/channels";
 import {
 	type AgentProjectsSection,
 	agentProjectsYAML,
+	globalFinishedTTL,
 	globalProjectMode,
 	isListed,
 	type JobModelsConfig,
@@ -164,21 +178,23 @@ import {
 	jobModels,
 	joinReportTarget,
 	type ProjectReports,
-	projectModeChoice,
+	projectFinishedTTL,
+	projectMode,
 	projectOwner,
 	projectTargets,
 	REPORT_EVENTS,
 	reportsError,
 	reportsFromSection,
 	splitReportTarget,
+	withFinishedTTL,
 	withMode,
 	withoutProject,
 	withProject,
 	withReports,
 } from "../../lib/projectSettings";
 import {
-	projectModeChoices,
-	projectModeName,
+	PROJECT_MODES,
+	projectModeOverride,
 	projectPath,
 } from "../../lib/projects";
 import { type AgentEntry, useSettingsStore } from "../../stores/settings";
@@ -338,12 +354,22 @@ const models = computed(() =>
 	jobModels(props.agent.name, props.config, cliNames.value),
 );
 
-// The selected project's mode override (#1307), written straight to its
-// entry, or "inherit" to follow the shared mode (#1371).
-const selectedMode = computed(() =>
-	projectModeChoice(section.value, selected.value),
-);
+// The selected project's effective mode (#1307). Picking the global mode
+// removes the project's override and picking the other stores it (#1461).
 const globalMode = computed(() => globalProjectMode(props.config));
+const selectedMode = computed(() =>
+	projectMode(section.value, selected.value, globalMode.value),
+);
+
+// The selected project's finished_ttl override (#1460), empty to follow the
+// shared value.
+const selectedTTL = computed(() =>
+	projectFinishedTTL(section.value, selected.value),
+);
+const globalTTL = computed(() => globalFinishedTTL(props.config));
+function setTTL(ttl: string) {
+	store(withFinishedTTL(section.value, selected.value, ttl));
+}
 
 // ── Reports ─────────────────────────────────────────────────────────────────
 

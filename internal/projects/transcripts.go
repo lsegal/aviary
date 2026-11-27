@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -54,6 +55,20 @@ func (s *transcriptStore) For(key string) *transcript.Log {
 	}
 	s.logs[key] = log
 	return log
+}
+
+// remove forgets the transcript of the job with key and deletes its stored
+// copy, for a job cleared from the job store.
+func (s *transcriptStore) remove(key string) {
+	if s == nil || key == "" {
+		return
+	}
+	s.mu.Lock()
+	delete(s.logs, key)
+	s.mu.Unlock()
+	if s.dir != "" {
+		_ = os.RemoveAll(filepath.Join(s.dir, transcriptDirName(key)))
+	}
 }
 
 // Lookup returns the transcript of the job with key when this run has one,

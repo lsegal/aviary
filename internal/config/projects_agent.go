@@ -29,6 +29,7 @@ var ProjectsAgentTools = []string{
 	"project_job_resume",
 	"project_job_stop",
 	"project_job_dismiss",
+	"project_job_clear",
 	"project_job_queue",
 	"project_queue_candidates",
 	"project_refresh",

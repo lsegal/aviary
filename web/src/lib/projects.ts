@@ -107,9 +107,6 @@ export interface ProjectTarget {
 	issues: number;
 	/** Manual mode: never searched for issues, so issues is not counted. */
 	manual?: boolean;
-	/** Where the mode comes from: the project's own override, or the shared
-	 * default (#1371). */
-	modeSource?: ProjectModeSource;
 	/** Not read from GitHub yet, so issues is not known. */
 	loading?: boolean;
 }
@@ -665,7 +662,6 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 	const jobs = obj(raw.jobs);
 	const counts = obj(raw.issue_counts);
 	const modes = obj(raw.modes);
-	const modeSources = obj(raw.mode_sources);
 	const states = obj(raw.states);
 	const loading = arr(raw.loading_targets).map(str);
 	return {
@@ -698,11 +694,6 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 			name: str(t),
 			issues: num(counts[str(t)]),
 			...(modes[str(t)] === "manual" ? { manual: true } : {}),
-			...(modeSources[str(t)] === "project"
-				? { modeSource: "project" as const }
-				: modeSources[str(t)] === "global"
-					? { modeSource: "global" as const }
-					: {}),
 			...(loading.includes(str(t)) ? { loading: true } : {}),
 		})),
 		clis: arr(raw.clis)
@@ -774,37 +765,32 @@ function runningJob(j: ProjectJob): RunningJob {
 /** How work reaches a project (#1307). */
 export type ProjectMode = "watch" | "manual";
 
-/** Where a project's mode comes from (#1371). */
-export type ProjectModeSource = "project" | "global";
-
-/** A project's mode choice: its own override, or inherit the shared mode. */
+/** A project's mode override: its own mode, or inherit the shared mode. */
 export type ProjectModeChoice = ProjectMode | "inherit";
 
-/** The label of a mode, as "Inherit (global: Watch)" shows it. */
-export function projectModeName(mode: ProjectMode): string {
-	return mode === "manual" ? "Manual" : "Watch";
+/** The issue discovery menu's label for a project's effective mode. */
+export function projectModeLabel(mode: ProjectMode): string {
+	return mode === "manual"
+		? "Issue discovery: Manual (no issue watching)"
+		: "Issue discovery: Watch";
 }
 
 /**
- * The mode choices of one project: inherit the shared mode, named in its
- * label, then the overrides of PROJECT_MODES.
+ * The override that picking mode stores for a project (#1461): none when it
+ * is the shared defaultMode, so the project keeps following the shared mode,
+ * else mode itself.
  */
-export function projectModeChoices(defaultMode: ProjectMode): {
-	value: ProjectModeChoice;
-	label: string;
-	hint: string;
-}[] {
-	return [
-		{
-			value: "inherit",
-			label: `Inherit (global: ${projectModeName(defaultMode)})`,
-			hint: "Follow the global Code Loop setting",
-		},
-		...PROJECT_MODES,
-	];
+export function projectModeOverride(
+	mode: ProjectMode,
+	defaultMode: ProjectMode,
+): ProjectModeChoice {
+	return mode === defaultMode ? "inherit" : mode;
 }
 
-/** The project modes, as the add-project flow and the header menu offer them. */
+/**
+ * The project modes, as every issue discovery picker offers them. The
+ * selected one is the project's effective mode (#1461).
+ */
 export const PROJECT_MODES: {
 	value: ProjectMode;
 	label: string;

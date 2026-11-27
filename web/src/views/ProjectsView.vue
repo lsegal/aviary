@@ -74,8 +74,10 @@
 				@click="chatOpen = !chatOpen">
 				<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
+			<ClearJobsMenu v-if="targets.length" :targets="targets" :done="status?.states?.done ?? 0"
+				:failed="status?.states?.failed ?? 0" @cleared="refresh" />
 			<ProjectModeMenu v-if="filterTarget" :target="filterTarget" :manual="manual"
-				:inherited="modeInherited" :default-mode="status?.defaultMode ?? 'watch'" @changed="refresh" />
+				:default-mode="status?.defaultMode ?? 'watch'" @changed="refresh" />
 			<router-link :to="settingsPath" data-testid="project-settings-link" aria-label="Settings" title="Settings"
 				:class="HEADER_ICON_CLS">
 				<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
@@ -225,7 +227,7 @@
 									@duplicate="duplicateSchedule" @dismiss="onAction(dismiss, $event)" />
 								<JobCard v-else :job="item.job" :now="now" :show-project="aggregate"
 									:busy="busyJob === item.job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
-									@summarize="onSummarize" />
+									@clear="onAction(clear, $event)" @summarize="onSummarize" />
 							</template>
 						</section>
 
@@ -261,6 +263,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
+import ClearJobsMenu from "../components/projects/ClearJobsMenu.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import IssueFilterEditor from "../components/projects/IssueFilterEditor.vue";
 import JobCard from "../components/projects/JobCard.vue";
@@ -469,6 +472,7 @@ const {
 	retry,
 	stop,
 	dismiss,
+	clear,
 	scheduleEntries,
 } = useProjectBoard(targets, states, search, kanban, ref(true));
 // The header's issue filter is editable for one project (#1213): the
@@ -487,12 +491,6 @@ const manual = computed(
 // Open issue counts for the board's projects, as a header chip (#1434).
 const issueSummary = computed(() =>
 	summarizeIssues(status.value?.targets ?? [], targets.value),
-);
-// Whether the project follows the shared mode rather than its own (#1371).
-const modeInherited = computed(
-	() =>
-		status.value?.targets.find((t) => t.name === filterTarget.value)
-			?.modeSource !== "project",
 );
 const {
 	schedules,

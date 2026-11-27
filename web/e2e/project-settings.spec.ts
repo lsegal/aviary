@@ -288,11 +288,13 @@ test("a project can be added in manual mode", async ({ page }) => {
 	await page.goto("/agents/coder/projects/lsegal%2Faviary?add=1");
 	const dialog = page.getByRole("dialog", { name: "Watch a repository" });
 	await dialog.getByLabel("Repository or project board").fill("lsegal/zvidlib");
-	// A new project inherits the global mode unless it picks its own (#1371).
-	const inherit = dialog.getByRole("radio", {
-		name: /Inherit \(global: Watch\)/,
-	});
-	await expect(inherit).toBeChecked();
+	// Only Watch and Manual are offered, with the global mode picked (#1461).
+	const modes = dialog.getByTestId("add-project-mode");
+	await expect(modes.getByRole("radio")).toHaveCount(2);
+	await expect(modes).not.toContainText(/inherit/i);
+	await expect(
+		dialog.getByRole("radio", { name: /Watch issues/ }),
+	).toBeChecked();
 	await expect(dialog.locator("footer code")).toHaveText(
 		"aviary project add lsegal/zvidlib --agent coder",
 	);
@@ -307,6 +309,14 @@ test("a project can be added in manual mode", async ({ page }) => {
 		"Ready to go",
 	);
 	await expect.poll(() => calls.project_check?.at(-1)?.mode).toBe("manual");
+	// Back to Watch, the global mode, passes no mode at all.
+	await dialog.getByRole("radio", { name: /Watch issues/ }).check();
+	await expect(dialog.locator("footer code")).toHaveText(
+		"aviary project add lsegal/zvidlib --agent coder",
+	);
+	await dialog
+		.getByRole("radio", { name: /Manual: only what I queue/ })
+		.check();
 	await dialog.getByRole("button", { name: "Start watching" }).click();
 	await expect(dialog).toBeHidden();
 	expect(calls.project_add).toEqual([
@@ -320,18 +330,11 @@ test("a project's issue discovery mode is set in its settings", async ({
 	const calls = await setup(page);
 	await page.goto("/projects/settings?agent=coder");
 	const card = page.getByTestId("agent-project-mode");
-	const source = card.getByTestId("project-mode-source");
-	await expect(
-		card.getByRole("radio", { name: /Inherit \(global: Watch\)/ }),
-	).toBeChecked();
-	await expect(source).toContainText(
-		"Inherited from the global setting: Watch",
-	);
-	await expect(card.getByTestId("project-mode-reset")).toHaveCount(0);
+	// Only Watch and Manual, with the effective mode checked (#1461).
+	await expect(card.getByRole("radio")).toHaveCount(2);
+	await expect(card).not.toContainText(/inherit|overridden|reset to global/i);
+	await expect(card.getByRole("radio", { name: /Watch issues/ })).toBeChecked();
 	await card.getByRole("radio", { name: /Manual: only what I queue/ }).check();
-	await expect(source).toContainText(
-		"Overridden for this project: Manual (global: Watch)",
-	);
 	await expect(page.getByTestId("agent-project-yaml")).toContainText(
 		"mode: manual",
 	);
@@ -339,21 +342,14 @@ test("a project's issue discovery mode is set in its settings", async ({
 	await expect.poll(() => calls.config_save?.length).toBe(1);
 	expect(savedProjects(calls, "coder")[0].mode).toBe("manual");
 
-	// Watch is an override of its own, saved as such.
+	// Watch is the global mode, so picking it removes the override.
 	await card.getByRole("radio", { name: /Watch issues/ }).check();
 	await saveChanges(page);
 	await expect.poll(() => calls.config_save?.length).toBe(2);
-	expect(savedProjects(calls, "coder")[0].mode).toBe("watch");
-
-	// Reset to global removes the override.
-	await card.getByTestId("project-mode-reset").click();
-	await expect(source).toContainText("Inherited from the global setting");
-	await saveChanges(page);
-	await expect.poll(() => calls.config_save?.length).toBe(3);
 	expect(savedProjects(calls, "coder")[0]).not.toHaveProperty("mode");
 });
 
-test("the global issue discovery mode is the default projects inherit", async ({
+test("the global issue discovery mode flips projects without an override", async ({
 	page,
 }) => {
 	const calls = await setup(page);
@@ -367,12 +363,51 @@ test("the global issue discovery mode is the default projects inherit", async ({
 	await chooseValue(global, "manual");
 	const card = page.getByTestId("agent-project-mode");
 	await expect(
-		card.getByRole("radio", { name: /Inherit \(global: Manual\)/ }),
+		card.getByRole("radio", { name: /Manual: only what I queue/ }),
 	).toBeChecked();
 	await saveChanges(page);
 	await expect.poll(() => calls.config_save?.length).toBe(1);
 	expect(savedConfig(calls).projects?.mode).toBe("manual");
 	expect(savedProjects(calls, "coder")[0]).not.toHaveProperty("mode");
+});
+
+test("finished_ttl is set globally and overridden per project (#1460)", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/projects/settings?agent=coder");
+	const card = page.getByTestId("agent-project-finished-ttl");
+	const source = card.getByTestId("project-finished-ttl-source");
+	await expect(source).toContainText("Inherited from the global setting: 2w");
+
+	// The global value is what projects inherit.
+	await page
+		.getByTestId("project-default-finished-ttl")
+		.locator('[data-field="finished_ttl"]')
+		.fill("10d");
+	await expect(source).toContainText("Inherited from the global setting: 10d");
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(1);
+	expect(savedConfig(calls).projects?.finished_ttl).toBe("10d");
+
+	// A project's own value overrides it, and Reset to global removes it.
+	const input = card.locator('[data-field="finished_ttl"]');
+	await input.fill("3d");
+	await input.blur();
+	await expect(source).toContainText(
+		"Overridden for this project: 3d (global: 10d)",
+	);
+	await expect(page.getByTestId("agent-project-yaml")).toContainText(
+		'finished_ttl: "3d"',
+	);
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(2);
+	expect(savedProjects(calls, "coder")[0].finished_ttl).toBe("3d");
+	await card.getByTestId("project-finished-ttl-reset").click();
+	await expect(source).toContainText("Inherited from the global setting");
+	await saveChanges(page);
+	await expect.poll(() => calls.config_save?.length).toBe(3);
+	expect(savedProjects(calls, "coder")[0]).not.toHaveProperty("finished_ttl");
 });
 
 test("a project another agent owns cannot be added again", async ({ page }) => {

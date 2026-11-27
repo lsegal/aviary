@@ -62,6 +62,7 @@ The TUI shows the watch's header (its targets and the web UI's URL), a stats lin
 | `r` / `p` / `u` | retry / pause / resume the selected job |
 | `s` | stop it, after a confirmation |
 | `d` | dismiss a failed scheduled run |
+| `x` | clear a done or failed job from the board and job history, after a confirmation |
 | `m` | queue the selected job's pull request for [`gh-safe-merge`](/skills/gh-safe-merge/) |
 | `Q` | queue jobs, such as `merge 1201 1207`, `discuss 4` or `fix 12` |
 | `c` | open / close the prompt chat |

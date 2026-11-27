@@ -46,6 +46,9 @@ type Watch struct {
 	// Modes sets the mode of single targets of the watch, "watch" or
 	// "manual", as a saved project's mode does.
 	Modes map[string]string `json:"modes,omitempty"`
+	// FinishedTTLs overrides finished_ttl for single targets of the watch,
+	// as a saved project's finished_ttl does.
+	FinishedTTLs map[string]string `json:"finished_ttls,omitempty"`
 }
 
 // Manager owns the Code Loop engine inside the Aviary server. It builds the
@@ -93,11 +96,13 @@ type Manager struct {
 	logSource atomic.Pointer[LogSource]
 
 	snapshot atomic.Pointer[core.Snapshot]
-	// cache is the last known state the read APIs show until the engine has
-	// polled each project; see stateCache.
-	cache   *stateCache
-	reports *reporter
-	quotas  atomic.Pointer[map[string]string]
+	// jobs is the durable store of every job Code Loop has seen, which the
+	// read APIs show beside the live snapshot; see jobStore. lastSweep is
+	// when its expired jobs were last removed, as Unix nanoseconds.
+	jobs      *jobStore
+	lastSweep atomic.Int64
+	reports   *reporter
+	quotas    atomic.Pointer[map[string]string]
 
 	// loginRetry is the pending retry of an engine start whose gh login
 	// lookup failed, and loginRetryDelay the wait before the next one.
@@ -208,8 +213,14 @@ func NewManager(stateDir string) (*Manager, error) {
 		stateDir:    stateDir,
 		identity:    identity,
 		transcripts: newTranscriptStore(filepath.Join(stateDir, "jobs")),
-		cache:       newStateCache(filepath.Join(stateDir, "cache.json")),
+		jobs:        newJobStore(filepath.Join(stateDir, "jobs.json")),
 		reports:     newReporter(),
+	}
+	// A job cleared or expired from the store takes its transcript with it.
+	m.jobs.onRemove = func(keys []string) {
+		for _, key := range keys {
+			m.transcripts.remove(key)
+		}
 	}
 	return m, nil
 }
@@ -373,7 +384,7 @@ func (m *Manager) Shutdown() {
 	m.running = nil
 	m.mu.Unlock()
 	m.stopRun(run)
-	m.cache.close()
+	m.jobs.close()
 	process.ReapAll()
 }
 
@@ -561,6 +572,14 @@ func (m *Manager) ProjectModes(targets []string) (modes, sources map[string]stri
 	return m.projectModesLocked(targets)
 }
 
+// DefaultMode returns the shared mode, "watch" or "manual", that projects
+// without their own override follow.
+func (m *Manager) DefaultMode() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.effectiveSettingsLocked().EffectiveMode()
+}
+
 // SetWatchMode sets or, with an empty mode or "inherit", clears the mode
 // override of target's runtime watch. It reports whether target has a
 // runtime watch.
@@ -592,6 +611,36 @@ func (m *Manager) SetWatchMode(target, mode string) (bool, error) {
 		return false, nil
 	}
 	return true, m.refresh()
+}
+
+// SetWatchFinishedTTL sets or, with an empty value or "inherit", clears the
+// finished_ttl override of target's runtime watch. It reports whether target
+// has a runtime watch.
+func (m *Manager) SetWatchFinishedTTL(target, ttl string) (bool, error) {
+	ttl, err := config.NormalizeFinishedTTLOverride(ttl)
+	if err != nil {
+		return false, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	found := false
+	for i := range m.watches {
+		if !slices.Contains(m.watches[i].Targets, target) {
+			continue
+		}
+		found = true
+		ttls := maps.Clone(m.watches[i].FinishedTTLs)
+		if ttls == nil {
+			ttls = map[string]string{}
+		}
+		if ttl == "" {
+			delete(ttls, target)
+		} else {
+			ttls[target] = ttl
+		}
+		m.watches[i].FinishedTTLs = ttls
+	}
+	return found, nil
 }
 
 // SetWatchFilter sets or, with an empty filter, clears the filter override
@@ -1215,7 +1264,8 @@ func (m *Manager) latestQuotas() map[string]string {
 func (m *Manager) Snapshot(snapshot core.Snapshot) {
 	m.snapshot.Store(&snapshot)
 	m.reports.observe(snapshot)
-	m.cache.observe(snapshot)
+	m.jobs.observe(snapshot)
+	m.sweepJobsInBackground()
 	m.mu.Lock()
 	owners := m.owners
 	m.mu.Unlock()
