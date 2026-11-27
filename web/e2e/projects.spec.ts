@@ -2671,7 +2671,11 @@ test.describe("phone width", () => {
 	test("prompt chat opens as a bottom drawer", async ({ page }) => {
 		await setup(page, undefined, chatFixtures({}));
 		await page.goto("/agents/coder/projects/lsegal%2Faviary");
-		await page.getByTestId("prompt-chat-toggle").click();
+		// At 390px the chat toggle is in "…" to keep the header on one line
+		// (#1576).
+		await headerSettled(page);
+		await page.getByTestId("board-more-menu").click();
+		await page.getByRole("menuitemcheckbox", { name: "Prompt chat" }).click();
 		const chat = page.getByTestId("project-chat");
 		await expect(chat).toBeVisible();
 		const box = await chat.boundingBox();

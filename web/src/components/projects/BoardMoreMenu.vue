@@ -17,15 +17,6 @@
 						<PlusIcon aria-hidden="true" :class="iconClass" />
 						<span>Add project</span>
 					</DropdownMenuItem>
-					<DropdownMenuGroup v-if="has('queue-menu')" data-testid="board-more-queue" aria-label="Queue">
-						<DropdownMenuLabel :class="labelClass">Queue</DropdownMenuLabel>
-						<DropdownMenuItem v-for="option in queueChoices" :key="option.skill" :disabled="option.disabled"
-							:data-testid="`board-more-queue-${option.skill}`" :title="option.title" :class="itemClass"
-							@select="emit('queue', option.skill)">
-							<component :is="option.icon" aria-hidden="true" :class="iconClass" />
-							<span>{{ option.label }}</span>
-						</DropdownMenuItem>
-					</DropdownMenuGroup>
 					<DropdownMenuItem v-if="has('schedule-new')" data-testid="board-more-schedule" :disabled="!canSchedule"
 						:class="itemClass" @select="emit('schedule')">
 						<CalendarDaysIcon aria-hidden="true" :class="iconClass" />
@@ -39,6 +30,16 @@
 							<CheckIcon aria-hidden="true" class="h-4 w-4" />
 						</DropdownMenuItemIndicator>
 					</DropdownMenuCheckboxItem>
+					<DropdownMenuSeparator v-if="has('queue-menu') && hasOtherAction" :class="separatorClass" />
+					<DropdownMenuGroup v-if="has('queue-menu')" data-testid="board-more-queue" aria-label="Queue">
+						<DropdownMenuLabel :class="labelClass">Queue</DropdownMenuLabel>
+						<DropdownMenuItem v-for="option in queueChoices" :key="option.skill" :disabled="option.disabled"
+							:data-testid="`board-more-queue-${option.skill}`" :title="option.title" :class="itemClass"
+							@select="emit('queue', option.skill)">
+							<component :is="option.icon" aria-hidden="true" :class="iconClass" />
+							<span>{{ option.label }}</span>
+						</DropdownMenuItem>
+					</DropdownMenuGroup>
 					<DropdownMenuSeparator v-if="hasAction" :class="separatorClass" />
 				</template>
 				<DropdownMenuItem data-testid="board-refresh" :disabled="checking" :class="itemClass"
@@ -264,13 +265,16 @@ const separatorClass = "my-1 h-px bg-gray-200 dark:bg-gray-700";
 
 const hidden = computed(() => props.hidden ?? []);
 const has = (id: string) => hidden.value.includes(id);
-const hasAction = computed(() =>
-	[
-		"board-add-project",
-		"queue-menu",
-		"schedule-new",
-		"prompt-chat-toggle",
-	].some(has),
+const ACTIONS = [
+	"board-add-project",
+	"queue-menu",
+	"schedule-new",
+	"prompt-chat-toggle",
+];
+const hasAction = computed(() => ACTIONS.some(has));
+// Queue's section follows the other actions behind a separator of its own.
+const hasOtherAction = computed(() =>
+	ACTIONS.some((id) => id !== "queue-menu" && has(id)),
 );
 const queueChoices = computed(() => queueOptions(props.status?.noMerge));
 const filterTarget = computed(() => props.filterTarget ?? "");
