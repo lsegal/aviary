@@ -68,6 +68,8 @@ var (
 	httpClient   = http.DefaultClient
 	// packageInstall installs packages with the platform package manager.
 	packageInstall = installPackages
+	// goos selects the platform package manager.
+	goos = runtime.GOOS
 )
 
 // DepsDir holds programs and models Aviary installs itself.
@@ -216,7 +218,7 @@ func installPackages(ctx context.Context, packages []string, logf func(string)) 
 		logf(strings.TrimSpace(string(out)))
 		return nil
 	}
-	if winget, err := lookPath("winget"); err == nil && runtime.GOOS == "windows" {
+	if winget, err := lookPath("winget"); err == nil && goos == "windows" {
 		ids := map[string]string{"ffmpeg": "Gyan.FFmpeg", "whisper-cpp": "ggerganov.whisper.cpp"}
 		for _, pkg := range packages {
 			out, err := exec.CommandContext(ctx, winget, "install", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--id", ids[pkg]).CombinedOutput()
