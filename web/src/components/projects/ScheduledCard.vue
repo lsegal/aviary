@@ -3,7 +3,7 @@
 		opens: its name is a link stretched over the box, and the output and
 		the footer's controls sit above it. -->
 	<article data-testid="scheduled-card"
-		class="@container relative flex h-full max-h-[50vh] min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border border-violet-200 bg-white focus-within:ring-2 focus-within:ring-blue-500 hover:border-violet-400 hover:shadow-sm dark:border-violet-900 dark:bg-gray-900 dark:hover:border-violet-700">
+		class="relative flex h-full max-h-[50vh] min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border border-violet-200 bg-white focus-within:ring-2 focus-within:ring-blue-500 hover:border-violet-400 hover:shadow-sm dark:border-violet-900 dark:bg-gray-900 dark:hover:border-violet-700">
 		<div class="shrink-0 space-y-1 px-4 pb-2.5 pt-3">
 			<!-- One line in every state, so a run never changes the card's
 				height (#1157). -->
@@ -89,9 +89,9 @@
 				</template>
 			</p>
 		</div>
-		<!-- The footer is one row in every state: a run adds nothing to it, and
-			on a narrow card Pause and Task settings fold into its menu (#1157), which
-			always has Duplicate (#1465). -->
+		<!-- The footer is one row in every state: a run adds nothing to it
+			(#1157), and its compact buttons fit a phone-width card without a
+			menu (#1486). -->
 		<div data-testid="scheduled-footer"
 			class="relative z-10 flex min-w-0 shrink-0 cursor-auto flex-nowrap items-center gap-2 border-t border-gray-100 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
 			<button v-if="failed && job" type="button" :disabled="busy" data-testid="scheduled-dismiss"
@@ -106,43 +106,21 @@
 			</button>
 			<button type="button" :disabled="busy" :aria-label="schedule.enabled ? 'Pause' : 'Resume'"
 				:title="schedule.enabled ? 'Pause this schedule' : 'Resume this schedule'"
-				:class="[ICON_BUTTON, '@max-[16rem]:hidden']" @click="emit('toggle', schedule)">
+				:class="ICON_BUTTON" @click="emit('toggle', schedule)">
 				<PauseIcon v-if="schedule.enabled" aria-hidden="true" class="h-4 w-4" />
 				<PlayCircleIcon v-else aria-hidden="true" class="h-4 w-4" />
 			</button>
-			<DropdownMenuRoot>
-				<DropdownMenuTrigger asChild>
-					<button type="button" aria-label="More actions" title="More actions" data-testid="scheduled-more"
-						:class="ICON_BUTTON">
-						<EllipsisHorizontalIcon aria-hidden="true" class="h-4 w-4" />
-					</button>
-				</DropdownMenuTrigger>
-				<DropdownMenuPortal>
-					<DropdownMenuContent align="end" :side-offset="6" data-testid="scheduled-more-items"
-						class="z-50 min-w-40 rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-						<DropdownMenuItem data-testid="scheduled-duplicate" :class="MENU_ITEM" @select="emit('duplicate', schedule)">
-							<DocumentDuplicateIcon aria-hidden="true" class="h-4 w-4" />
-							Duplicate…
-						</DropdownMenuItem>
-						<!-- The menu is portaled out of the card's container, so it
-							always lists Pause and Task settings, which a narrow card
-							folds into it. -->
-						<DropdownMenuItem :disabled="busy" :class="MENU_ITEM" @select="emit('toggle', schedule)">
-							<PauseIcon v-if="schedule.enabled" aria-hidden="true" class="h-4 w-4" />
-							<PlayCircleIcon v-else aria-hidden="true" class="h-4 w-4" />
-							{{ schedule.enabled ? "Pause" : "Resume" }}
-						</DropdownMenuItem>
-						<DropdownMenuItem :class="MENU_ITEM" @select="emit('settings', schedule)">
-							<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
-							Task settings
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenuPortal>
-			</DropdownMenuRoot>
+			<!-- Duplicate opens the duplicate dialog prefilled from this task
+				(#1465). The card has no overflow menu, so every action is one of
+				these buttons and none shows twice (#1486). -->
+			<button type="button" data-testid="scheduled-duplicate" aria-label="Duplicate…" title="Duplicate this task"
+				:class="ICON_BUTTON" @click="emit('duplicate', schedule)">
+				<DocumentDuplicateIcon aria-hidden="true" class="h-4 w-4" />
+			</button>
 			<!-- The gear, always the last action, edits the task in the full task
 				settings, as the sidebar's gear does. -->
 			<button type="button" data-testid="scheduled-settings" aria-label="Task settings" title="Task settings"
-				:class="[ICON_BUTTON, '@max-[16rem]:hidden']" @click="emit('settings', schedule)">
+				:class="ICON_BUTTON" @click="emit('settings', schedule)">
 				<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
 			<span v-if="agentLabel" data-testid="scheduled-agent"
@@ -155,17 +133,9 @@
 <script setup lang="ts">
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import DocumentDuplicateIcon from "@heroicons/vue/24/outline/DocumentDuplicateIcon";
-import EllipsisHorizontalIcon from "@heroicons/vue/24/outline/EllipsisHorizontalIcon";
 import PauseIcon from "@heroicons/vue/24/outline/PauseIcon";
 import PlayCircleIcon from "@heroicons/vue/24/outline/PlayCircleIcon";
 import PlayIcon from "@heroicons/vue/24/outline/PlayIcon";
-import {
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuPortal,
-	DropdownMenuRoot,
-	DropdownMenuTrigger,
-} from "radix-vue";
 import { computed } from "vue";
 import type { RouteLocationRaw } from "vue-router";
 import { projectOwner } from "../../lib/projectSettings";
@@ -218,8 +188,6 @@ const emit = defineEmits<{
 
 const ICON_BUTTON =
 	"shrink-0 rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800";
-const MENU_ITEM =
-	"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-700 outline-none data-[disabled]:cursor-not-allowed data-[highlighted]:bg-gray-100 data-[disabled]:opacity-50 dark:text-gray-200 dark:data-[highlighted]:bg-gray-800";
 
 const entry = computed(() => props.job?.schedule);
 const trigger = computed(() => triggerSummary(props.schedule));
