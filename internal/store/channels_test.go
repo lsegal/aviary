@@ -343,11 +343,12 @@ func TestEnsureSessionChannelTarget_ReadError(t *testing.T) {
 }
 
 // TestFindAllSessionChannelsConfigs_AgentsDirError verifies a read failure on
-// the agents directory, other than it not existing, is returned.
+// the agents directory, other than it not existing, is returned. A NUL byte in
+// the path is rejected as invalid on every platform; a regular file in place of
+// the directory is not portable because Windows reports it as not existing.
 func TestFindAllSessionChannelsConfigs_AgentsDirError(t *testing.T) {
-	setupStoreDir(t)
-
-	require.NoError(t, os.WriteFile(filepath.Join(DataDir(), DirAgents), []byte("not a dir"), 0o600))
+	SetDataDir(filepath.Join(t.TempDir(), "bad\x00dir"))
+	t.Cleanup(func() { SetDataDir("") })
 
 	found, err := FindAllSessionChannelsConfigs()
 	assert.Error(t, err)
