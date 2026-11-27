@@ -18,11 +18,11 @@
         <div class="flex flex-wrap items-center gap-1 text-sm">
           <input v-model="store.startDate" type="date"
             class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
-            @change="activePreset = null; store.fetch()" />
+            @change="activePreset = null; store.applyFilters()" />
           <span class="text-gray-400">to</span>
           <input v-model="store.endDate" type="date"
             class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
-            @change="activePreset = null; store.fetch()" />
+            @change="activePreset = null; store.applyFilters()" />
         </div>
         <span class="ml-auto text-sm font-semibold text-gray-700 dark:text-gray-300">
           {{ fmtTokens(store.totalTokens) }} tokens<template v-if="store.totalCost !== null">
@@ -223,92 +223,216 @@
       </div>
 
       <!-- Sessions list -->
-      <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        <div class="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-gray-800">
+      <div class="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900" data-testid="usage-sessions">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-gray-100 px-4 py-3 sm:px-5 dark:border-gray-800">
           <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Sessions</h3>
-          <span class="text-xs text-gray-400">{{ store.sessionList.length }} shown</span>
+          <span class="text-xs text-gray-400" data-testid="usage-session-total">{{ fmtCount(store.sessionTotal) }} {{ store.sessionTotal === 1 ? "session" : "sessions" }}</span>
+          <div class="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto sm:flex-wrap">
+            <AppSelect v-model="store.agentFilter" size="sm" class="min-w-0 sm:w-36" aria-label="Agent"
+              data-testid="usage-filter-agent" :options="agentFilterOptions" @update:model-value="store.applyFilters()" />
+            <AppSelect v-model="store.modelFilter" size="sm" class="min-w-0 sm:w-44" aria-label="Model"
+              data-testid="usage-filter-model" :options="modelFilterOptions" @update:model-value="store.applyFilters()" />
+            <AppSelect v-model="store.statusFilter" size="sm" class="min-w-0 sm:w-32" aria-label="Status"
+              data-testid="usage-filter-status" :options="STATUS_OPTIONS" @update:model-value="store.applyFilters()" />
+            <AppSelect v-model="store.deletedFilter" size="sm" class="min-w-0 sm:w-40" aria-label="Deleted sessions"
+              data-testid="usage-filter-deleted" :options="DELETED_OPTIONS" @update:model-value="store.applyFilters()" />
+          </div>
         </div>
-        <div v-if="!store.sessionList.length" class="px-5 py-8 text-center text-sm text-gray-400">
-          No sessions recorded in this date range.
+        <div v-if="!store.sessions.length" class="px-5 py-8 text-center text-sm text-gray-400">
+          No sessions match in this date range.
         </div>
-        <div v-else class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
+        <template v-else>
+          <!-- Desktop table -->
+          <table class="hidden w-full text-left text-xs sm:table">
             <thead>
               <tr class="border-b border-gray-100 text-gray-400 dark:border-gray-800">
-                <th class="px-5 py-2.5 font-medium">Session</th>
-                <th class="px-4 py-2.5 font-medium">Agent</th>
-                <th class="px-4 py-2.5 font-medium">Model</th>
-                <th class="px-4 py-2.5 text-right font-medium">Tokens</th>
-                <th class="px-4 py-2.5 text-right font-medium">Tools</th>
-                <th class="px-4 py-2.5 font-medium">Last Activity</th>
+                <th v-for="col in SESSION_COLUMNS" :key="col.key" scope="col"
+                  :aria-sort="store.sort === col.key ? (store.order === 'asc' ? 'ascending' : 'descending') : 'none'"
+                  class="py-2.5 font-medium first:pl-5 last:pr-5" :class="[col.right ? 'text-right' : '', col.key === 'name' ? 'px-4' : 'px-4']">
+                  <button type="button" class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200"
+                    :data-testid="`usage-sort-${col.key}`" @click="store.sortBy(col.key)">
+                    {{ col.label }}
+                    <ChevronUpIcon v-if="store.sort === col.key && store.order === 'asc'" class="h-3 w-3" />
+                    <ChevronDownIcon v-else-if="store.sort === col.key" class="h-3 w-3" />
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="s in store.sessionList" :key="s.session_id"
+              <tr v-for="s in store.sessions" :key="`${s.agent_id}/${s.session_id}`" data-testid="usage-session-row"
                 class="border-b border-gray-50 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/50">
-                <td class="px-5 py-2.5">
-                  <span class="flex items-center gap-1.5">
-                    <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="s.has_error ? 'bg-red-500' : s.has_throttle ? 'bg-amber-500' : 'bg-green-500'" />
-                    <span data-testid="usage-session-name" class="text-gray-700 dark:text-gray-300">{{ sessionLabel(s.agent_id, s.session_id, s.task, s.channel) }}</span>
+                <td class="max-w-0 py-2.5 pr-4 pl-5" style="width: 40%">
+                  <span class="flex min-w-0 items-center gap-1.5">
+                    <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="statusDot(s)" />
+                    <TrashIcon v-if="s.deleted" class="h-3.5 w-3.5 shrink-0 text-gray-400" data-testid="usage-session-deleted"
+                      :title="deletedTooltip(s)" aria-hidden="true" />
+                    <span class="flex min-w-0 flex-col">
+                      <RouterLink v-if="sessionLink(s)" :to="sessionLink(s)!" data-testid="usage-session-name"
+                        class="truncate text-gray-700 hover:text-blue-600 hover:underline dark:text-gray-300">{{ s.name }}</RouterLink>
+                      <span v-else data-testid="usage-session-name" :title="s.deleted ? deletedTooltip(s) : undefined"
+                        class="truncate" :class="nameClass(s)">{{ s.name }}</span>
+                      <span class="truncate text-[10px] text-gray-400" data-testid="usage-session-kind">{{ kindLabel(s) }}</span>
+                    </span>
                   </span>
                 </td>
-                <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ s.agent_id }}</td>
+                <td class="truncate px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ s.agent_id }}</td>
                 <td class="px-4 py-2.5">
                   <span class="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600 dark:bg-gray-800 dark:text-gray-400">{{ s.model }}</span>
                 </td>
                 <td class="px-4 py-2.5 text-right font-mono text-gray-700 dark:text-gray-300">{{ fmtTokens(s.input + s.output) }}</td>
                 <td class="px-4 py-2.5 text-right text-gray-600 dark:text-gray-400">{{ s.tool_calls }}</td>
-                <td class="px-4 py-2.5 text-gray-400">{{ fmtTs(s.last_ts) }}</td>
+                <td class="py-2.5 pr-5 pl-4 whitespace-nowrap text-gray-400">{{ fmtTs(s.last_ts) }}</td>
               </tr>
             </tbody>
           </table>
-        </div>
+
+          <!-- Phone cards -->
+          <ul class="divide-y divide-gray-100 sm:hidden dark:divide-gray-800">
+            <li v-for="s in store.sessions" :key="`${s.agent_id}/${s.session_id}`" class="px-4 py-3" data-testid="usage-session-card">
+              <div class="flex min-w-0 items-center gap-1.5">
+                <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="statusDot(s)" />
+                <TrashIcon v-if="s.deleted" class="h-3.5 w-3.5 shrink-0 text-gray-400" :title="deletedTooltip(s)" aria-hidden="true" />
+                <RouterLink v-if="sessionLink(s)" :to="sessionLink(s)!"
+                  class="truncate text-sm text-gray-700 hover:text-blue-600 dark:text-gray-300">{{ s.name }}</RouterLink>
+                <span v-else class="truncate text-sm" :class="nameClass(s)" :title="s.deleted ? deletedTooltip(s) : undefined">{{ s.name }}</span>
+                <span class="ml-auto shrink-0 font-mono text-xs text-gray-700 dark:text-gray-300">{{ fmtTokens(s.input + s.output) }}</span>
+              </div>
+              <div class="mt-1 truncate text-[11px] text-gray-400">
+                {{ kindLabel(s) }} · {{ s.agent_id }} · {{ s.model }} · {{ s.tool_calls }} tools · {{ fmtTs(s.last_ts) }}
+              </div>
+            </li>
+          </ul>
+
+          <!-- Pages -->
+          <div class="flex items-center justify-between gap-2 px-4 py-3 text-xs text-gray-500 sm:px-5 dark:text-gray-400">
+            <span data-testid="usage-session-range">{{ pageStart }}–{{ pageEnd }} of {{ fmtCount(store.sessionTotal) }}</span>
+            <div class="flex items-center gap-1">
+              <button type="button" class="rounded-md border border-gray-200 px-2.5 py-1 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
+                :disabled="currentPage === 0 || store.sessionsLoading" data-testid="usage-page-prev" @click="store.goToPage(currentPage - 1)">
+                Prev
+              </button>
+              <span class="px-2" data-testid="usage-page">Page {{ currentPage + 1 }} of {{ pageCount }}</span>
+              <button type="button" class="rounded-md border border-gray-200 px-2.5 py-1 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
+                :disabled="currentPage + 1 >= pageCount || store.sessionsLoading" data-testid="usage-page-next" @click="store.goToPage(currentPage + 1)">
+                Next
+              </button>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import ChevronDownIcon from "@heroicons/vue/16/solid/ChevronDownIcon";
+import ChevronUpIcon from "@heroicons/vue/16/solid/ChevronUpIcon";
+import TrashIcon from "@heroicons/vue/16/solid/TrashIcon";
+import { computed, onMounted, ref } from "vue";
 import AppLayout from "../components/AppLayout.vue";
 import SystemSettingsLink from "../components/SystemSettingsLink.vue";
-import { chatDisplayName, useChatSessionsStore } from "../stores/chatSessions";
-import { useUsageStore } from "../stores/usage";
+import { AppSelect, type SelectOption } from "../components/ui/select";
+import {
+	type DeletedFilter,
+	SESSIONS_PAGE_SIZE,
+	type SessionSort,
+	type StatusFilter,
+	type UsageSession,
+	useUsageStore,
+} from "../stores/usage";
 
 const store = useUsageStore();
-const chatSessions = useChatSessionsStore();
 
-// Sessions are listed by name, so load each listed agent's sessions once.
-watch(
-	() => [...new Set(store.sessionList.map((s) => s.agent_id))],
-	(agents) => {
-		for (const agent of agents) {
-			if (
-				agent &&
-				!(agent in chatSessions.byAgent) &&
-				!chatSessions.loading[agent]
-			)
-				void chatSessions.load(agent).catch(() => {});
-		}
-	},
-	{ immediate: true },
+const SESSION_COLUMNS: { key: SessionSort; label: string; right?: boolean }[] =
+	[
+		{ key: "name", label: "Session" },
+		{ key: "agent", label: "Agent" },
+		{ key: "model", label: "Model" },
+		{ key: "tokens", label: "Tokens", right: true },
+		{ key: "tools", label: "Tools", right: true },
+		{ key: "last", label: "Last Activity" },
+	];
+
+const STATUS_OPTIONS: SelectOption<StatusFilter>[] = [
+	{ value: "", label: "Any status" },
+	{ value: "ok", label: "OK" },
+	{ value: "error", label: "Error" },
+];
+
+const DELETED_OPTIONS: SelectOption<DeletedFilter>[] = [
+	{ value: "include", label: "With deleted" },
+	{ value: "exclude", label: "Without deleted" },
+	{ value: "only", label: "Only deleted" },
+];
+
+const agentFilterOptions = computed<SelectOption[]>(() => [
+	{ value: "", label: "All agents" },
+	...withSelected(store.agentOptions, store.agentFilter).map((a) => ({
+		value: a,
+		label: a,
+	})),
+]);
+
+const modelFilterOptions = computed<SelectOption[]>(() => [
+	{ value: "", label: "All models" },
+	...withSelected(store.modelOptions, store.modelFilter).map((m) => ({
+		value: m,
+		label: m,
+	})),
+]);
+
+// A filter stays choosable after a date change leaves it no records.
+function withSelected(list: string[], selected: string): string[] {
+	return selected && !list.includes(selected) ? [selected, ...list] : list;
+}
+
+const pageCount = computed(() =>
+	Math.max(1, Math.ceil(store.sessionTotal / SESSIONS_PAGE_SIZE)),
 );
+const currentPage = computed(() =>
+	Math.floor(store.offset / SESSIONS_PAGE_SIZE),
+);
+const pageStart = computed(() => (store.sessionTotal ? store.offset + 1 : 0));
+const pageEnd = computed(() => store.offset + store.sessions.length);
 
-function sessionLabel(
-	agent: string,
-	id: string,
-	task?: string,
-	channel?: string,
-): string {
-	// A workflow run is named after its workflow and the channel that fired it.
-	const taskName = task?.slice(task.indexOf("/") + 1);
-	if (taskName && channel) return `Workflow ${taskName} · ${channel}`;
-	if (taskName) return `Task ${taskName}`;
-	const sess = chatSessions.sessions(agent).find((s) => s.id === id);
-	if (sess) return chatDisplayName(sess);
-	if (agent in chatSessions.byAgent) return "Deleted session";
-	// Sessions the agent cannot list (such as Code Loop job runs) have no name.
-	return `…${id.slice(-12)}`;
+const KIND_LABELS: Record<UsageSession["kind"], string> = {
+	chat: "Chat",
+	job: "Code Loop job",
+	task: "Task",
+	workflow: "Workflow",
+};
+
+function kindLabel(s: UsageSession): string {
+	const kind = KIND_LABELS[s.kind] ?? s.kind;
+	// A task's owner is its own "agent/task" key, which the name repeats.
+	return s.owner && s.kind !== "task" ? `${kind} · ${s.owner}` : kind;
+}
+
+function statusDot(s: UsageSession): string {
+	if (s.has_error) return "bg-red-500";
+	return s.has_throttle ? "bg-amber-500" : "bg-green-500";
+}
+
+function nameClass(s: UsageSession): string {
+	return s.deleted
+		? "text-gray-400 line-through dark:text-gray-500"
+		: "text-gray-700 dark:text-gray-300";
+}
+
+function deletedTooltip(s: UsageSession): string {
+	if (!s.deleted_at) return "Session deleted";
+	const d = new Date(s.deleted_at);
+	return `Session deleted on ${d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+// Live chats open in Chat; deleted sessions and job runs have nowhere to go.
+function sessionLink(s: UsageSession): string | null {
+	if (s.deleted || s.kind !== "chat") return null;
+	return `/agents/${encodeURIComponent(s.agent_id)}/chat/${encodeURIComponent(s.session_id)}`;
+}
+
+function fmtCount(n: number): string {
+	return n.toLocaleString("en-US");
 }
 
 const hoveredDay = ref<number | null>(null);
