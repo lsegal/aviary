@@ -199,9 +199,9 @@ type tabJar struct{ tab *Tab }
 // readCookies reports every cookie the browser currently holds.
 func (j tabJar) readCookies() ([]sessionCookie, error) {
 	var jar []*network.Cookie
-	if err := j.tab.run(chromedp.ActionFunc(func(ctx context.Context) error {
-		cookies, err := storage.GetCookies().Do(ctx)
-		jar = cookies
+	if err := j.tab.run(chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+		res, err := cdp.Call(ctx, t, storage.GetCookies, storage.GetCookiesParams{})
+		jar = res.Cookies
 		return err
 	})); err != nil {
 		return nil, err
@@ -240,10 +240,9 @@ func (j tabJar) writeCookies(cookies []sessionCookie) error {
 	for _, cookie := range cookies {
 		// An omitted expiry is what makes the browser hold a cookie in memory
 		// only, so it is set for the expiring crumbs and left out otherwise.
-		var expires *cdp.TimeSinceEpoch
+		var expires cdp.TimeSinceEpoch
 		if cookie.Expires > 0 {
-			at := cdp.TimeSinceEpoch(time.Unix(0, int64(cookie.Expires*float64(time.Second))))
-			expires = &at
+			expires = cdp.TimeSinceEpoch(cookie.Expires)
 		}
 		params = append(params, &network.CookieParam{
 			Name:     cookie.Name,
@@ -256,8 +255,9 @@ func (j tabJar) writeCookies(cookies []sessionCookie) error {
 			Expires:  expires,
 		})
 	}
-	return j.tab.run(chromedp.ActionFunc(func(ctx context.Context) error {
-		return storage.SetCookies(params).Do(ctx)
+	return j.tab.run(chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+		_, err := cdp.Call(ctx, t, storage.SetCookies, storage.SetCookiesParams{Cookies: params})
+		return err
 	}))
 }
 

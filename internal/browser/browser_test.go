@@ -454,7 +454,7 @@ func TestSession_TabID_NoTarget(t *testing.T) {
 
 func TestSession_Run_CancelledContext(t *testing.T) {
 	s := makeTestSession()
-	err := s.Run(chromedp.ActionFunc(func(_ context.Context) error { return nil }))
+	err := s.Run(chromedp.Func(func(context.Context, *chromedp.Target) error { return nil }))
 	assert.
 		// With a cancelled context, chromedp.Run returns an error.
 		Error(t, err)

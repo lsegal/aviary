@@ -41,8 +41,8 @@ func (s *Session) Click(selector string) error {
 		return "clicked";
 	})()`, selectorJSON)
 
-	var result string
-	if err := s.Run(chromedp.Evaluate(expr, &result)); err != nil {
+	result, err := runValue(s, chromedp.Evaluate[string](expr))
+	if err != nil {
 		return err
 	}
 	if result != "clicked" {
@@ -54,14 +54,14 @@ func (s *Session) Click(selector string) error {
 // Type clears the element matching selector and types text into it.
 func (s *Session) Type(selector, text string) error {
 	return s.Run(
-		chromedp.Clear(selector, chromedp.ByQuery),
-		chromedp.SendKeys(selector, text, chromedp.ByQuery),
+		chromedp.Clear(chromedp.CSS(selector)),
+		chromedp.SendKeys(chromedp.CSS(selector), text),
 	)
 }
 
 // Fill sets the value of the element matching selector.
 func (s *Session) Fill(selector, text string) error {
-	return s.Run(chromedp.SetValue(selector, text, chromedp.ByQuery))
+	return s.Run(chromedp.SetValue(chromedp.CSS(selector), text))
 }
 
 // WaitVisible waits until an element matching the CSS selector is visible.
@@ -74,14 +74,12 @@ func (s *Session) WaitVisible(selector string, timeout time.Duration) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return chromedp.Run(ctx, chromedp.WaitVisible(selector, chromedp.ByQuery))
+	return chromedp.Do(ctx, chromedp.WaitVisible(chromedp.CSS(selector)))
 }
 
 // Screenshot captures the full page as PNG bytes.
 func (s *Session) Screenshot() ([]byte, error) {
-	var buf []byte
-	err := s.Run(chromedp.FullScreenshot(&buf, 90))
-	return buf, err
+	return runValue(s, chromedp.FullScreenshot(90))
 }
 
 func formatEvalJSResult(result any) (string, error) {
@@ -100,8 +98,8 @@ func formatEvalJSResult(result any) (string, error) {
 
 // EvalJS evaluates JavaScript and returns a text representation of the result.
 func (s *Session) EvalJS(expr string) (string, error) {
-	var result any
-	if err := s.Run(chromedp.Evaluate(expr, &result)); err != nil {
+	result, err := runValue(s, chromedp.Evaluate[any](expr))
+	if err != nil {
 		return "", err
 	}
 	return formatEvalJSResult(result)
