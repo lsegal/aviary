@@ -145,49 +145,31 @@
 						</section>
 						</div>
 
-						<div class="flex flex-wrap items-center gap-3 text-sm" data-testid="job-toolbar">
-							<div class="relative min-w-0 flex-1 max-sm:basis-full sm:max-w-xs">
+						<!-- Search keeps a usable width; the state filters fold into "Filters"
+							when the toolbar can't fit them beside it (#1490). -->
+						<div ref="toolbar" class="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm" data-testid="job-toolbar">
+							<div class="relative min-w-0" :class="toolbarStacked ? 'basis-full' : 'max-w-80 min-w-[220px] flex-[1_1_220px]'">
 								<span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400 dark:text-gray-500"
 									aria-hidden="true" data-testid="search-icon">
 									<MagnifyingGlassIcon class="h-4 w-4" />
 								</span>
 								<input v-model="search" type="search" aria-label="Search jobs" placeholder="Search jobs, logs, #issue, #PR, session…"
-									class="field-input pl-9!" />
+									class="field-input h-9 py-0! pl-9!" />
 							</div>
-								<!-- Below md the chips fold into a Filter button; md and up shows them inline as before. -->
-								<div ref="filterMenu" class="relative min-w-0 md:contents" @keydown.esc="closeFilter(true)">
-									<button ref="filterToggle" type="button" data-testid="filter-toggle" aria-controls="job-filter"
-										:aria-expanded="filterOpen"
-										class="flex max-w-full items-center gap-1.5 rounded-lg border px-2.5 py-1 md:hidden"
-										:class="filters.length ? 'border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'"
-										@click="filterOpen = !filterOpen">
-										<FunnelIcon aria-hidden="true" class="h-4 w-4 shrink-0" />
-										<span class="truncate" data-testid="filter-summary">Filter: {{ filterSummary }}</span>
-										<ChevronDownIcon aria-hidden="true" class="h-4 w-4 shrink-0 transition-transform" :class="filterOpen && 'rotate-180'" />
-									</button>
-									<div id="job-filter" role="group" aria-label="Job filter" class="max-w-full flex-wrap items-center gap-1.5 md:flex"
-										:class="filterOpen ? 'max-md:absolute max-md:left-0 max-md:top-full max-md:z-20 max-md:mt-1 max-md:flex max-md:w-64 max-md:rounded-xl max-md:border max-md:border-gray-200 max-md:bg-white max-md:p-2 max-md:shadow-lg dark:max-md:border-gray-700 dark:max-md:bg-gray-900' : 'max-md:hidden'">
-										<button v-for="state in BOARD_FILTERS" :key="state" type="button" :aria-pressed="filters.includes(state)"
-											class="shrink-0 rounded-full border px-3 py-1" :class="filters.includes(state) ? FILTER_ACTIVE[state] : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'"
-											@click="toggleState(state)">
-											{{ stateLabel(state) }}<span v-if="chipCount(state) !== null" class="ml-1.5 tabular-nums opacity-75">{{ chipCount(state) }}</span>
-										</button>
-										<button v-if="filters.length" type="button" class="px-1 text-gray-500 hover:text-gray-800 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
-											@click="setStates([])">Clear</button>
-									</div>
-								</div>
-								<button type="button" data-testid="kanban-toggle" :aria-pressed="kanban"
-									:aria-label="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
-									:title="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
-									class="rounded-lg border p-1.5"
-									:class="kanban ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
-									@click="kanban = !kanban">
-									<ViewColumnsIcon aria-hidden="true" class="h-5 w-5" />
-								</button>
-								<span v-if="searching" class="text-gray-500 dark:text-gray-400" data-testid="search-count">
+							<BoardStateFilter ref="stateFilter" :filters="filters" :counts="filterCounts" :collapsed="filtersCollapsed"
+								@toggle="toggleState" @clear="setStates([])" />
+							<button ref="kanbanButton" type="button" data-testid="kanban-toggle" :aria-pressed="kanban"
+								:aria-label="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
+								:title="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
+								class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border"
+								:class="kanban ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
+								@click="kanban = !kanban">
+								<ViewColumnsIcon aria-hidden="true" class="h-5 w-5" />
+							</button>
+								<span v-if="searching" ref="toolbarCount" class="shrink-0 whitespace-nowrap text-gray-500 dark:text-gray-400" data-testid="search-count">
 									{{ shownTotal }} of {{ unfilteredShown }} {{ unfilteredShown === 1 ? `${noun} matches` : `${noun}s match` }}
 								</span>
-								<span v-else class="text-gray-500 dark:text-gray-400" data-testid="job-total">
+								<span v-else ref="toolbarCount" class="shrink-0 whitespace-nowrap text-gray-500 dark:text-gray-400" data-testid="job-total">
 									<template v-if="filters.length">{{ shownTotal }} of {{ allItems }} {{ allItems === 1 ? noun : `${noun}s` }}</template>
 									<template v-else>{{ shownTotal }} {{ shownTotal === 1 ? noun : `${noun}s` }}</template>
 								</span>
@@ -255,7 +237,6 @@ import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import ChevronUpIcon from "@heroicons/vue/24/outline/ChevronUpIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
-import FunnelIcon from "@heroicons/vue/24/outline/FunnelIcon";
 import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
 import PlusIcon from "@heroicons/vue/24/outline/PlusIcon";
 import ViewColumnsIcon from "@heroicons/vue/24/outline/ViewColumnsIcon";
@@ -263,6 +244,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
+import type BoardStateFilter from "../components/projects/BoardStateFilter.vue";
 import ClearJobsMenu from "../components/projects/ClearJobsMenu.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import IssueFilterEditor from "../components/projects/IssueFilterEditor.vue";
@@ -281,6 +263,7 @@ import StatChipRow, {
 import UpNextStrip from "../components/projects/UpNextStrip.vue";
 import HeaderOverflow from "../components/ui/HeaderOverflow.vue";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
+import { useFilterRowFit } from "../composables/useFilterRowFit";
 import {
 	JOBS_PAGE_SIZE,
 	useProjectBoard,
@@ -323,16 +306,6 @@ import {
 	targetURL,
 } from "../lib/projects";
 import { taskSessionPath, useSettingsStore } from "../stores/settings";
-
-// A selected state chip fills with that state's color; Starting is orange.
-const FILTER_ACTIVE: Record<BoardFilter, string> = {
-	scheduled: "border-violet-600 bg-violet-600 text-white",
-	starting: "border-orange-500 bg-orange-500 text-white",
-	paused: "border-amber-500 bg-amber-500 text-white",
-	running: "border-blue-600 bg-blue-600 text-white",
-	done: "border-green-600 bg-green-600 text-white",
-	failed: "border-red-600 bg-red-600 text-white",
-};
 
 const route = useRoute();
 const router = useRouter();
@@ -392,32 +365,17 @@ function setStates(next: BoardFilter[]) {
 	else localStorage.removeItem(statesKey.value);
 	void router.replace({ query: { ...route.query, state: state || undefined } });
 }
-// Below md the chips fold into a Filter button whose label sums up the
-// selection; its panel closes on Esc or a tap outside it.
-const filterOpen = ref(false);
-const filterMenu = ref<HTMLElement | null>(null);
-const filterToggle = ref<HTMLButtonElement | null>(null);
-const filterSummary = computed(() => {
-	const active = BOARD_FILTERS.filter((s) => filters.value.includes(s));
-	if (!active.length) return "All";
-	return active
-		.map((s) => {
-			const n = chipCount(s);
-			return n === null ? stateLabel(s) : `${stateLabel(s)} ${n}`;
-		})
-		.join(", ");
-});
-function closeFilter(focus = false) {
-	if (!filterOpen.value) return;
-	filterOpen.value = false;
-	if (focus) filterToggle.value?.focus();
-}
-function onFilterOutside(e: PointerEvent) {
-	if (filterMenu.value && !filterMenu.value.contains(e.target as Node))
-		closeFilter();
-}
-onMounted(() => document.addEventListener("pointerdown", onFilterOutside));
-onUnmounted(() => document.removeEventListener("pointerdown", onFilterOutside));
+// The toolbar's layout follows its own width (#1490).
+const toolbar = ref<HTMLElement | null>(null);
+const stateFilter = ref<InstanceType<typeof BoardStateFilter> | null>(null);
+const kanbanButton = ref<HTMLElement | null>(null);
+const toolbarCount = ref<HTMLElement | null>(null);
+const { stacked: toolbarStacked, collapsed: filtersCollapsed } =
+	useFilterRowFit(
+		toolbar,
+		computed(() => stateFilter.value?.naturalWidth ?? 0),
+		[kanbanButton, toolbarCount],
+	);
 function toggleState(state: BoardFilter) {
 	setStates(
 		filters.value.includes(state)
@@ -657,6 +615,13 @@ function chipCount(state: BoardFilter): number | null {
 	if (state === "scheduled") return schedules.value.length;
 	return status.value ? status.value.states[state] : null;
 }
+const filterCounts = computed(
+	() =>
+		Object.fromEntries(BOARD_FILTERS.map((s) => [s, chipCount(s)])) as Record<
+			BoardFilter,
+			number | null
+		>,
+);
 
 // Each board state's stat card, in its pill's colors; Starting is orange.
 const STATE_CARD: Record<BoardState, string> = {
