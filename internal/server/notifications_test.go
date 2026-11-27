@@ -14,6 +14,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/notify"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/store"
@@ -261,4 +262,45 @@ func TestObserveCodeLoopJob_ScheduledFailuresAreOneSource(t *testing.T) {
 	s.observeCodeLoopJob(run(2000), config.ProjectReportMerged, "done")
 	s.observeCodeLoopJob(run(2001), config.ProjectReportFailed, "Scheduled prompt failed. exit 1")
 	assert.Len(t, *published, 3, "a failure after a successful run notifies again")
+}
+
+func TestRecordTaskScriptResult_NotifiesOncePerFailureStreak(t *testing.T) {
+	s, published := notifyServer(t, notify.DefaultSettings())
+	base := t.TempDir()
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", base)
+	old := mcp.GetDeps()
+	t.Cleanup(func() { mcp.SetDeps(old) })
+	mcp.SetDeps(&mcp.Deps{})
+	require.NoError(t, config.Save("", &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x", Tasks: []config.TaskConfig{{
+		Name: "release", Type: "project", Project: "acme/app", Prompt: "Release", Every: "5m",
+		Precompile: new(true), Compiled: `print(1)`, CompiledKey: "k", ScriptVerified: true,
+	}}}}}))
+	broken := errors.New("<string>:3: gh: Not Found (HTTP 404)")
+
+	for range 4 {
+		require.NoError(t, s.recordTaskScriptResult("bot", "release", broken))
+	}
+	// A rate limit neither counts nor notifies.
+	require.NoError(t, s.recordTaskScriptResult("bot", "release", errors.New("gh: API rate limit exceeded (HTTP 403)")))
+	require.Len(t, *published, 1, "a failure streak notifies once")
+	n := (*published)[0]
+	assert.Equal(t, notify.TypeScriptFailing, n.Type)
+	assert.Equal(t, notify.SeverityWarning, n.Severity)
+	assert.Equal(t, "Task bot/release's compiled script is failing", n.Title)
+	assert.Contains(t, n.Body, "gh 404")
+	assert.Equal(t, "/agents/bot/tasks/release", n.Link)
+
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	task := cfg.Agents[0].Tasks[0]
+	assert.Equal(t, 4, task.ScriptFailures)
+	assert.True(t, *task.Precompile)
+	assert.Equal(t, `print(1)`, task.Compiled)
+
+	// A completed run ends the streak; the next failure, a later run,
+	// notifies again.
+	s.notifier.Now = func() time.Time { return time.Now().Add(time.Hour) }
+	require.NoError(t, s.recordTaskScriptResult("bot", "release", nil))
+	require.NoError(t, s.recordTaskScriptResult("bot", "release", broken))
+	assert.Len(t, *published, 2)
 }
