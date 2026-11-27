@@ -42,8 +42,16 @@ export async function mockAviary(page: Page, extra: ToolFixtures = {}) {
 
 export const A = "/agents/Aviary";
 
-/** Every routed page, with its title and whether it has a parent. */
-export const PAGES: Array<{ url: string; title: string; back?: false }> = [
+/**
+ * Every routed page, with its title, whether it has a parent and whether it
+ * is a Code Loop board with the compact header (#1570).
+ */
+export const PAGES: Array<{
+	url: string;
+	title: string;
+	back?: false;
+	compact?: true;
+}> = [
 	{ url: "/system/overview", title: "Overview", back: false },
 	{ url: "/system/usage", title: "Usage" },
 	{ url: "/system/tools", title: "Tools" },
@@ -55,12 +63,12 @@ export const PAGES: Array<{ url: string; title: string; back?: false }> = [
 	{ url: "/system/settings", title: "Settings" },
 	{ url: "/system/providers", title: "Settings" },
 	{ url: "/system/display", title: "Settings" },
-	{ url: "/system/watches/w%2Fx", title: "Watch: w/x" },
+	{ url: "/system/watches/w%2Fx", title: "Watch: w/x", compact: true },
 	{ url: "/system/watches/w%2Fx/jobs/5", title: "#5" },
 	{ url: "/projects/settings", title: "Settings" },
 	{ url: `${A}/chat`, title: "Chats", back: false },
-	{ url: `${A}/projects`, title: "Code Loop" },
-	{ url: `${A}/projects/o%2Fr`, title: "o/r" },
+	{ url: `${A}/projects`, title: "Code Loop", compact: true },
+	{ url: `${A}/projects/o%2Fr`, title: "o/r", compact: true },
 	{ url: `${A}/projects/o%2Fr/jobs/1013`, title: "#1013" },
 	{ url: `${A}/channels`, title: "Channels" },
 	{ url: `${A}/channels/signal`, title: "signal" },

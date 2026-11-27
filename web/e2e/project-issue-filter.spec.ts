@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { openBoardInfo } from "./helpers/boardHeader";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 // The Code Loop header's issue filter is editable inline for one project
@@ -87,6 +88,7 @@ const board = (page: Page, project: string) =>
 test("edit → save sets the project's own filter only", async ({ page }) => {
 	const calls = await setup(page);
 	await board(page, "lsegal/aviary");
+	await openBoardInfo(page);
 	const subtitle = page.getByTestId("board-subtitle");
 	await expect(page.getByTestId("issue-filter")).toHaveText(SHARED);
 	await expect(page.getByTestId("issue-filter-custom")).toHaveCount(0);
@@ -128,6 +130,7 @@ test("edit → save sets the project's own filter only", async ({ page }) => {
 
 	// The other project keeps the shared filter.
 	await board(page, "lsegal/zvidlib");
+	await openBoardInfo(page);
 	await expect(page.getByTestId("issue-filter")).toHaveText(SHARED);
 	await expect(page.getByTestId("issue-filter-custom")).toHaveCount(0);
 });
@@ -135,6 +138,7 @@ test("edit → save sets the project's own filter only", async ({ page }) => {
 test("reset to default removes the project's own filter", async ({ page }) => {
 	const calls = await setup(page);
 	await board(page, "lsegal/aviary");
+	await openBoardInfo(page);
 	await page.getByTestId("issue-filter").dblclick();
 	await page.getByTestId("issue-filter-input").fill("label:bug");
 	await page.getByTestId("issue-filter-save").click();
@@ -156,6 +160,7 @@ test("an invalid filter is rejected inline and never saved", async ({
 }) => {
 	const calls = await setup(page);
 	await board(page, "lsegal/aviary");
+	await openBoardInfo(page);
 	await page.getByTestId("issue-filter-edit").click();
 	const input = page.getByTestId("issue-filter-input");
 	const status = page.getByTestId("issue-filter-status");
@@ -181,6 +186,7 @@ test("an invalid filter is rejected inline and never saved", async ({
 test("the filter editor works by keyboard alone", async ({ page }) => {
 	const calls = await setup(page);
 	await board(page, "lsegal/aviary");
+	await openBoardInfo(page);
 	await page.getByTestId("issue-filter-edit").focus();
 	await page.keyboard.press("Enter");
 	const input = page.getByTestId("issue-filter-input");
@@ -202,6 +208,7 @@ test.describe("on a phone", () => {
 	}) => {
 		await setup(page);
 		await board(page, "lsegal/aviary");
+		await openBoardInfo(page, true);
 		await page.getByTestId("issue-filter-edit").tap();
 		const editor = page.getByTestId("issue-filter-editor");
 		await expect(editor).toBeVisible();

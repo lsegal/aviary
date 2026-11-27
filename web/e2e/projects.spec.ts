@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { openBoardInfo, openInstanceTag } from "./helpers/boardHeader";
 import { boundingBoxOf } from "./helpers/box";
 import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
 
@@ -678,14 +679,20 @@ test("board shows status, ordered job cards and live output", async ({
 	);
 	await expect(repoLink).toHaveAttribute("target", "_blank");
 	await expect(page.getByTestId("delivery-status")).toHaveText("live");
-	await expect(page.getByTestId("instance-id")).toHaveText("Instance 7F3CA91B");
-	await expect(page.getByText("poll · checked")).toContainText("every 30s");
+	await expect(page.getByTestId("project-owner")).toHaveCount(0);
+	const tag = await openInstanceTag(page);
+	await expect(tag.getByTestId("instance-id")).toHaveText("7F3CA91B");
+	await page.keyboard.press("Escape");
+	await expect(tag).toBeHidden();
+	const info = await openBoardInfo(page);
+	await expect(info.getByTestId("board-delivery")).toHaveText("poll");
+	await expect(info.getByTestId("board-interval")).toHaveText("every 30s");
+	await expect(info.getByTestId("board-checked")).toContainText(/ago/);
 	// The header names the issue search pickup runs, never a ready label.
-	await expect(page.getByTestId("issue-filter")).toHaveText("assignee:@me");
-	await expect(page.getByText("poll · checked")).toContainText(
-		"Issues matching assignee:@me",
-	);
-	await expect(page.getByText("poll · checked")).not.toContainText("labeled");
+	await expect(info.getByTestId("issue-filter")).toHaveText("assignee:@me");
+	await expect(info).toContainText("Issues matching assignee:@me");
+	await expect(info).not.toContainText("labeled");
+	await page.keyboard.press("Escape");
 	const stats = page.getByRole("region", { name: "Job counts" });
 	await expect(stats).toContainText("2of 4 busy");
 	await expect(stats).toContainText("Merged (24h)3");
@@ -765,6 +772,7 @@ test("a board shown from the restart cache says it is refreshing until a live po
 	);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 
+	await openBoardInfo(page);
 	const indicator = page.getByTestId("stale-indicator");
 	await expect(indicator).toContainText("refreshing… last updated 3m ago");
 	// The cached board still renders its stats and cards meanwhile.
@@ -1963,14 +1971,13 @@ test.describe("GitHub sign-in banner", () => {
 		await expect(banner).toContainText("GitHub answered 404");
 		await expect(banner).toContainText('This is not "no issues"');
 		await expect(page.getByTestId("delivery-status")).toHaveText("offline");
-		await expect(page.getByText("browser · checked")).toContainText(
-			"every 20s",
-		);
+		const info = await openBoardInfo(page);
+		await expect(info.getByTestId("board-delivery")).toHaveText("browser");
+		await expect(info.getByTestId("board-interval")).toHaveText("every 20s");
 		// Without a filter every open issue is picked up, with no label.
-		await expect(page.getByText("browser · checked")).toContainText(
-			"All open issues",
-		);
+		await expect(info).toContainText("All open issues");
 		await expect(page.getByTestId("issue-filter")).toHaveCount(0);
+		await page.keyboard.press("Escape");
 		// The page only reads status until the user acts.
 		expect(calls.project_github_signin).toBeUndefined();
 
@@ -2041,7 +2048,9 @@ test.describe("GitHub sign-in banner", () => {
 		status = browserStatus({ signed_out: false, signing_in: false });
 		await expect(page.getByTestId("github-signin-banner")).toHaveCount(0);
 		status = STATUS;
-		await expect(page.getByText("poll · checked")).toBeVisible();
+		await expect(
+			(await openBoardInfo(page)).getByTestId("board-delivery"),
+		).toHaveText("poll");
 		await expect(page.getByTestId("github-signin-banner")).toHaveCount(0);
 	});
 });
@@ -3607,28 +3616,40 @@ for (const { name, width, height } of [
 	});
 }
 
-test("at 390px the Code Loop header wraps and the top nav hides its scrollbar (#1209)", async ({
+test("at 390px the Code Loop header is one chip row and the top nav hides its scrollbar (#1209, #1570)", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await setup(page);
 	await page.goto("/agents/coder/projects");
+	// The breadcrumb names the page, so the title is only for screen readers.
 	const title = page.getByTestId("settings-title");
 	await expect(title).toHaveText("Code Loop");
-	await expect(page.getByTestId("instance-id")).toBeVisible();
-
-	// The title is whole, and the chips wrap onto the line below it.
-	expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
-		true,
+	expect(await title.evaluate((el) => el.getBoundingClientRect().width)).toBe(
+		1,
 	);
-	const titleBox = await title.boundingBox();
-	for (const id of ["board-projects", "delivery-status", "instance-id"]) {
+	await expect(page.getByTestId("settings-current")).toHaveText("Code Loop");
+	await expect(page.getByTestId("settings-header-icon")).toHaveCount(0);
+
+	// The chips and the two icons share one row inside the screen.
+	const ids = [
+		"board-projects",
+		"delivery-status",
+		"instance-tag",
+		"board-info",
+	];
+	const boxes: Array<Awaited<ReturnType<Locator["boundingBox"]>>> = [];
+	for (const id of ids) {
 		const box = await page.getByTestId(id).boundingBox();
-		expect(box?.y, `${id} below the title`).toBeGreaterThanOrEqual(
-			(titleBox?.y ?? 0) + (titleBox?.height ?? 0) - 1,
-		);
-		expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
+		expect(box, id).not.toBeNull();
+		expect((box?.x ?? 0) + (box?.width ?? 0), id).toBeLessThanOrEqual(390);
+		boxes.push(box);
 	}
+	const mid = (b: (typeof boxes)[number]) => (b?.y ?? 0) + (b?.height ?? 0) / 2;
+	for (const b of boxes)
+		expect(Math.abs(mid(b) - mid(boxes[0]))).toBeLessThan(4);
+	// The row starts at the page's edge padding, with no icon tile before it.
+	expect(boxes[0]?.x).toBeLessThanOrEqual(17);
 
 	// Nothing in the header is wider than the screen, so nothing scrolls.
 	const header = await page.getByTestId("settings-header").evaluate((root) => ({
@@ -4041,4 +4062,156 @@ test("Logs and Watch work from the … menu on a phone (#1488)", async ({
 	await expect
 		.poll(() => updates[0])
 		.toEqual({ target: "lsegal/aviary", mode: "manual" });
+});
+
+for (const width of [360, 390, 430]) {
+	test(`at ${width}px a project's header is one chip row with no title, icon or agent chip (#1570)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 800 });
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		await expect(page.getByTestId("settings-current")).toHaveText(
+			"lsegal/aviary",
+		);
+		await expect(
+			page.getByRole("heading", { name: "lsegal/aviary" }),
+		).toBeAttached();
+		expect(
+			await page
+				.getByTestId("settings-title")
+				.evaluate((el) => el.getBoundingClientRect().width),
+		).toBe(1);
+		await expect(page.getByTestId("settings-header-icon")).toHaveCount(0);
+		await expect(page.getByTestId("project-owner")).toHaveCount(0);
+		await expect(page.getByTestId("board-subtitle")).toHaveCount(0);
+		const row: Array<Awaited<ReturnType<Locator["boundingBox"]>>> = [];
+		for (const id of [
+			"delivery-status",
+			"board-issues",
+			"instance-tag",
+			"board-info",
+		]) {
+			const box = await page.getByTestId(id).boundingBox();
+			expect(box, id).not.toBeNull();
+			row.push(box);
+		}
+		for (const b of row)
+			expect(Math.abs((b?.y ?? 0) - (row[0]?.y ?? 0))).toBeLessThan(6);
+		// The toolbar follows on the next row at most.
+		const more = await page.getByTestId("board-more-menu").boundingBox();
+		expect(more?.y ?? 0).toBeLessThan((row[0]?.y ?? 0) + 60);
+		const wide = await page
+			.getByTestId("settings-header")
+			.evaluate((root) =>
+				[root, ...root.querySelectorAll("*")]
+					.filter((el) => el.getBoundingClientRect().right > innerWidth + 1)
+					.map((el) => el.outerHTML.slice(0, 80)),
+			);
+		expect(wide).toEqual([]);
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= innerWidth,
+			),
+		).toBe(true);
+		// The details popover fits the screen too.
+		const info = await openBoardInfo(page, false);
+		const box = await info.boundingBox();
+		expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+		expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
+	});
+}
+
+test("on desktop a project's header keeps its title, with the icons and toolbar on one row (#1570)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const title = page.getByTestId("settings-title");
+	await expect(title).toBeVisible();
+	await expect(page.getByTestId("settings-header-icon")).toHaveCount(0);
+	const titleBox = await title.boundingBox();
+	const more = await page.getByTestId("board-more-menu").boundingBox();
+	const info = await page.getByTestId("board-info").boundingBox();
+	expect(Math.abs((more?.y ?? 0) - (titleBox?.y ?? 0))).toBeLessThan(12);
+	expect(Math.abs((info?.y ?? 0) - (titleBox?.y ?? 0))).toBeLessThan(12);
+	// The row starts at the page's padding with no icon tile.
+	const main = await page.locator("main").boundingBox();
+	expect((titleBox?.x ?? 0) - (main?.x ?? 0)).toBeLessThanOrEqual(25);
+});
+
+test("the instance tag and details popovers work by keyboard, tap and hover (#1570)", async ({
+	page,
+}) => {
+	await page.addInitScript(() => {
+		(window as unknown as { copied: string[] }).copied = [];
+		Object.defineProperty(navigator, "clipboard", {
+			value: {
+				writeText: async (t: string) => {
+					(window as unknown as { copied: string[] }).copied.push(t);
+				},
+			},
+		});
+	});
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+
+	// Enter opens the tag's popover as a named dialog; Esc closes it and
+	// returns focus to the tag.
+	const tag = page.getByRole("button", { name: "Instance ID", exact: true });
+	await expect(tag).toHaveAttribute("aria-haspopup", "dialog");
+	await expect(tag).toHaveAttribute("aria-expanded", "false");
+	await tag.focus();
+	await page.keyboard.press("Enter");
+	const tagPopover = page.getByRole("dialog", { name: "Instance ID" });
+	await expect(tagPopover).toBeVisible();
+	await expect(tag).toHaveAttribute("aria-expanded", "true");
+	await expect(tagPopover.getByTestId("instance-id")).toHaveText("7F3CA91B");
+	await tagPopover.getByRole("button", { name: /Copy instance ID/ }).click();
+	await expect(tagPopover.getByTestId("instance-id-copy-status")).toHaveText(
+		"Copied",
+	);
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { copied: string[] }).copied,
+		),
+	).toEqual(["7F3CA91B"]);
+	await page.keyboard.press("Escape");
+	await expect(tagPopover).toBeHidden();
+	await expect(tag).toBeFocused();
+
+	// Space opens the details; a click outside closes them.
+	const info = page.getByRole("button", { name: "Board details", exact: true });
+	await info.focus();
+	await page.keyboard.press("Space");
+	const details = page.getByRole("dialog", { name: "Board details" });
+	await expect(details).toBeVisible();
+	await expect(details).toContainText("Issues matching assignee:@me");
+	await expect(details.getByTestId("board-mode")).toHaveText("Watch");
+	await expect(details.getByTestId("board-delivery")).toHaveText("poll");
+	await expect(details.getByTestId("board-interval")).toHaveText("every 30s");
+	await page.mouse.click(600, 600);
+	await expect(details).toBeHidden();
+
+	// Hovering shows the details as a tooltip, gone when the pointer leaves.
+	await info.hover();
+	await expect(details).toBeVisible();
+	await expect(info).not.toBeFocused();
+	await page.mouse.move(600, 600);
+	await expect(details).toBeHidden();
+
+	// The filter editor works from inside the popover; Esc cancels the edit
+	// first, then closes the popover.
+	await info.click();
+	await details
+		.getByRole("button", { name: "Edit issue filter for this project" })
+		.click();
+	const input = details.getByTestId("issue-filter-input");
+	await expect(input).toBeFocused();
+	await input.press("Escape");
+	await expect(details.getByTestId("issue-filter-editor")).toHaveCount(0);
+	await expect(details).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(details).toBeHidden();
 });

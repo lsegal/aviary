@@ -5,13 +5,20 @@ import { expect, type Page } from "@playwright/test";
  * Scheduled Tasks task page's header from before #1067: a bordered
  * breadcrumb bar at the top of the page, with an icon-only arrow back to the
  * parent, then a bordered title row with the section's icon tile and the
- * page's bold title.
+ * page's bold title. A Code Loop board's compact header (#1570) has no icon
+ * tile.
  */
-export async function expectSettingsHeader(page: Page, back = true) {
+export async function expectSettingsHeader(
+	page: Page,
+	back = true,
+	compact = false,
+) {
 	const header = page.getByTestId("settings-header");
 	await expect(header).toHaveCount(1);
 	await expect(header.getByTestId("settings-breadcrumb")).toBeVisible();
-	await expect(header.getByTestId("settings-header-icon")).toBeVisible();
+	await expect(header.getByTestId("settings-header-icon")).toHaveCount(
+		compact ? 0 : 1,
+	);
 	const look = await header.evaluate((el) => {
 		const q = (id: string) => el.querySelector(`[data-testid="${id}"]`);
 		const box = (id: string) => q(id)?.getBoundingClientRect();
@@ -40,7 +47,7 @@ export async function expectSettingsHeader(page: Page, back = true) {
 		barBorder: "1px",
 		rowBorder: "1px",
 		rowBelowBar: true,
-		icon: [28, 28],
+		icon: compact ? [] : [28, 28],
 		titleSize: "18px",
 		titleWeight: "700",
 	});

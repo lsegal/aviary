@@ -1,13 +1,10 @@
 <template>
-	<AppLayout
+	<AppLayout :compact-header="!jobOpen"
 		:title-link="project && !jobOpen ? { href: targetURL(project), title: `Open ${project} on GitHub` } : null">
 		<template v-if="(project || aggregate) && !jobOpen" #header-status>
 				<span v-if="aggregate" data-testid="board-projects"
 					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
 					:title="targets.join(', ')">{{ targets.length }} {{ targets.length === 1 ? "project" : "projects" }}</span>
-				<router-link v-if="owner" :to="settingsPath" data-testid="project-owner"
-					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-					:title="`${project} belongs to agent ${owner}`">agent: {{ owner }}</router-link>
 				<span data-testid="delivery-status" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
 					:class="online ? 'bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300'">
 					<span class="h-1.5 w-1.5 rounded-full" :class="online ? 'bg-green-500' : 'bg-red-500'" />
@@ -19,28 +16,8 @@
 				<span v-if="issueSummary" data-testid="board-issues"
 					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
 					:title="issueSummary.title">{{ issueSummary.label }}</span>
-				<span v-if="status?.instanceID" data-testid="instance-id"
-					class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-200"
-					:title="`This instance signs its GitHub claims as /aviary:${status.instanceID}`">
-					Instance <code class="font-mono text-sm font-bold tracking-wider">{{ status.instanceID }}</code>
-				</span>
-		</template>
-		<template v-if="(project || aggregate) && !jobOpen && status" #header>
-			<div class="break-words" :class="{ 'sm:truncate': !editingFilter }" data-testid="board-subtitle">
-				<template v-if="manual">Manual: no issue watching</template>
-				<IssueFilterEditor v-else-if="filterTarget" v-model:editing="editingFilter" :target="filterTarget"
-					:filter="status.issueFilters[filterTarget] ?? status.issueFilter"
-					:custom="status.customFilters.includes(filterTarget)" @saved="refresh" />
-				<template v-else-if="status.issueFilter">Issues matching <code data-testid="issue-filter" class="font-mono">{{ status.issueFilter }}</code></template>
-				<template v-else>All open issues</template>
-				<template v-if="status.delivery && !manual"> · {{ status.delivery }}</template>
-				<template v-if="status.lastChecked"> · checked {{ age(status.lastChecked, now) }} ago</template>
-				<span v-if="status.stale" data-testid="stale-indicator" class="text-gray-400 dark:text-gray-500"
-					title="Showing the state saved before the last restart until the first live poll confirms it">
-					· refreshing…<template v-if="status.cachedAt"> last updated {{ age(status.cachedAt, now) }} ago</template>
-				</span>
-				<template v-if="status.interval"> · every {{ status.interval }}</template>
-			</div>
+				<BoardHeaderInfo v-if="status" :status="status" :manual="manual" :filter-target="filterTarget" :now="now"
+					@saved="refresh" />
 		</template>
 		<template v-if="project || aggregate" #header-actions>
 			<!-- With a job open on a phone, the job's own actions keep the row
@@ -240,10 +217,10 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
+import BoardHeaderInfo from "../components/projects/BoardHeaderInfo.vue";
 import BoardMoreMenu from "../components/projects/BoardMoreMenu.vue";
 import BoardStateFilter from "../components/projects/BoardStateFilter.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
-import IssueFilterEditor from "../components/projects/IssueFilterEditor.vue";
 import JobCard from "../components/projects/JobCard.vue";
 import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
@@ -284,7 +261,6 @@ import {
 	projectTargets,
 } from "../lib/projectSettings";
 import {
-	age,
 	BOARD_STATES,
 	type BoardFilter,
 	type BoardState,
@@ -435,7 +411,6 @@ const {
 const filterTarget = computed(() =>
 	targets.value.length === 1 ? targets.value[0] : "",
 );
-const editingFilter = ref(false);
 // A manual project (#1307) is never searched for issues, so its header says
 // so in place of the issue filter.
 const manual = computed(

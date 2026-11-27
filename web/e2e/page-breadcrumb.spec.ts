@@ -193,7 +193,8 @@ test("each nested page shows the shared header with its crumbs and parent link",
 		const back = page.getByTestId("settings-back");
 		await expect(back).toHaveAccessibleName(`Back to ${c.back}`);
 		await expect(back).toHaveAttribute("href", c.parent);
-		await expectSettingsHeader(page);
+		// A Code Loop board's header is the compact one (#1570).
+		await expectSettingsHeader(page, true, c.url.endsWith("/projects/o%2Fr"));
 	}
 });
 
