@@ -141,6 +141,11 @@ func (s *Server) projectOwner(project string) string {
 	return ""
 }
 
+// taskPath is the web UI path of a task's page.
+func taskPath(agentName, task string) string {
+	return "/agents/" + url.PathEscape(agentName) + "/tasks/" + url.PathEscape(task)
+}
+
 // taskRunPath is the web UI path of source's run, or "".
 func taskRunPath(source domain.OutputSource) string {
 	agentName, task, ok := strings.Cut(source.Task, "/")

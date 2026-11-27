@@ -299,7 +299,6 @@ func updateTask(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpdateArg
 		precompile := *args.Precompile
 		task.Precompile = &precompile
 		if !precompile || task.Compiled == "" {
-			// Turning it back on compiles a script that was set aside again.
 			task.Compiled, task.CompiledKey = "", ""
 		}
 		// Turning precompile off or back on starts the script over.

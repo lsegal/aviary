@@ -110,8 +110,7 @@ func projectScriptPlaceholderProblem(script string) string {
 // taskCompilerVersion is part of every compile key. Bump it whenever the
 // compiler, its determinism gate, the compile prompts or the script runtime
 // change in a way that can change or fix a compiled script, so every existing
-// compiled task, including one whose script was set aside after failing, is
-// compiled again on its next run instead of keeping a script built by the old
+// compiled task is compiled again on its next run instead of keeping a script built by the old
 // compiler. Version 3 changed the project prompt's latest-release example to
 // the /releases/latest endpoint (#1189).
 var taskCompilerVersion = 3

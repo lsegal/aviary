@@ -13,6 +13,7 @@ import (
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/notify"
 	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/store"
@@ -132,6 +133,30 @@ func (s *Server) observeRun(job domain.Job, status domain.TaskRunStatus, summary
 		return
 	}
 	s.emit(event)
+}
+
+// recordTaskScriptResult records how a precompiled script run ended and,
+// when the failure starts a run of failures, notifies once (#1568). Later
+// failures in the run stay quiet until a completed script run ends it.
+func (s *Server) recordTaskScriptResult(agentName, taskName string, runErr error) error {
+	result, err := mcp.RecordTaskScriptOutcome(agentName, taskName, runErr)
+	if err != nil || !result.StreakStarted {
+		return err
+	}
+	source := domain.OutputSource{Task: agentName + "/" + taskName, Workflow: result.Workflow}
+	section := notify.SectionTasks
+	if result.Workflow {
+		section = notify.SectionWorkflows
+	}
+	s.emit(notify.Event{
+		Type:     notify.TypeScriptFailing,
+		Severity: notify.SeverityWarning,
+		Title:    capitalize(source.Label()) + "'s compiled script is failing",
+		Body:     "Runs fall back to the model until it works again (last error: " + result.Cause + "). Use Recompile on the task page to compile a fresh script.",
+		Link:     taskPath(agentName, taskName),
+		Section:  section,
+	})
+	return nil
 }
 
 // observeCodeLoopJob notifies about a Code Loop job that failed, is waiting
