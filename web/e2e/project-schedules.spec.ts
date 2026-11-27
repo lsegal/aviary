@@ -916,8 +916,7 @@ test("a scheduled card's menu duplicates its task through the shared create form
 	});
 	await page.goto("/system/watches/lsegal%2Faviary");
 	const nightly = page.getByTestId("scheduled-card").first();
-	await nightly.getByTestId("scheduled-more").click();
-	await page.getByTestId("scheduled-duplicate").click();
+	await nightly.getByRole("button", { name: "Duplicate…" }).click();
 
 	const dialog = page.getByRole("dialog", { name: "Duplicate nightly-triage" });
 	await expect(dialog.getByLabel("Task name")).toHaveValue("nightly-triage-2");
@@ -2260,55 +2259,53 @@ test.describe("a running scheduled card keeps its size (#1157)", () => {
 		});
 	}
 
-	test("a narrow card folds Settings and Pause into a menu instead of wrapping", async ({
-		page,
-	}) => {
-		await page.setViewportSize({ width: 390, height: 844 });
-		const calls = await setup(page, {
-			tasks: TASKS_1157,
-			entries: [runningEntry],
-		});
-		await page.goto("/system/watches/lsegal%2Faviary");
-		const release = page.getByTestId("scheduled-card").nth(1);
-		await expect(release.getByTestId("scheduled-running")).toBeVisible();
-		const footer = release.getByTestId("scheduled-footer");
-		await expect(
-			footer.getByRole("button", { name: "Task settings" }),
-		).toBeVisible();
-		await expect(release.getByTestId("scheduled-more")).toBeVisible();
+	for (const width of [1280, 390]) {
+		test(`the footer shows each action once as a button, with no menu, at ${width}px (#1486)`, async ({
+			page,
+		}) => {
+			await page.setViewportSize({ width, height: 844 });
+			const calls = await setup(page, {
+				tasks: TASKS_1157,
+				entries: [runningEntry],
+			});
+			await page.goto("/system/watches/lsegal%2Faviary");
+			const release = page.getByTestId("scheduled-card").nth(1);
+			await expect(release.getByTestId("scheduled-running")).toBeVisible();
+			const footer = release.getByTestId("scheduled-footer");
+			const actions = ["Run now", "Pause", "Duplicate…", "Task settings"];
+			const check = async () => {
+				for (const name of actions) {
+					await expect(footer.getByRole("button", { name })).toBeVisible();
+				}
+				await expect(release.getByRole("button", { name: "More actions" })).toHaveCount(0);
+				await expect(release.getByTestId("scheduled-more")).toHaveCount(0);
+				const tops = await footerButtonTops(footer);
+				// One row: Run now, Pause, Duplicate and the gear, always last.
+				expect(tops.length).toBe(4);
+				expect(new Set(tops).size).toBe(1);
+				const footerBox = (await footer.boundingBox())!;
+				const cardBox = (await release.boundingBox())!;
+				expect(footerBox.x + footerBox.width).toBeLessThanOrEqual(
+					cardBox.x + cardBox.width + 1,
+				);
+				const gear = (await footer.getByRole("button", { name: "Task settings" }).boundingBox())!;
+				expect(gear.x + gear.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+			};
+			await check();
 
-		// Squeeze the card below the footer's width.
-		await release.evaluate((el) => {
-			(el as HTMLElement).style.width = "240px";
-		});
-		await expect(release.getByTestId("scheduled-more")).toBeVisible();
-		await expect(
-			footer.getByRole("button", { name: "Task settings" }),
-		).toBeHidden();
-		await expect(footer.getByRole("button", { name: "Pause" })).toBeHidden();
-		const tops = await footerButtonTops(footer);
-		// Run now and More actions; the gear folds into the menu.
-		expect(tops.length).toBe(2);
-		expect(new Set(tops).size).toBe(1);
-		const footerBox = (await footer.boundingBox())!;
-		const cardBox = (await release.boundingBox())!;
-		expect(footerBox.x + footerBox.width).toBeLessThanOrEqual(
-			cardBox.x + cardBox.width + 1,
-		);
+			// Squeezed narrower than any board column, every action stays a
+			// button on one row instead of folding into a menu.
+			await release.evaluate((el) => {
+				(el as HTMLElement).style.width = "220px";
+			});
+			await check();
 
-		await release.getByTestId("scheduled-more").click();
-		// Task settings stays the last action in the folded menu (#1165).
-		await expect(
-			page.getByTestId("scheduled-more-items").getByRole("menuitem"),
-		).toHaveText(["Duplicate…", "Pause", "Task settings"]);
-		await page
-			.getByTestId("scheduled-more-items")
-			.getByRole("menuitem", { name: "Pause" })
-			.click();
-		await expect.poll(() => calls.task_update?.length ?? 0).toBe(1);
-		expect(calls.task_update[0]).toMatchObject({
-			name: "assistant/aviary-release",
-			enabled: false,
+			await footer.getByRole("button", { name: "Pause" }).click();
+			await expect.poll(() => calls.task_update?.length ?? 0).toBe(1);
+			expect(calls.task_update[0]).toMatchObject({
+				name: "assistant/aviary-release",
+				enabled: false,
+			});
 		});
-	});
+	}
 });
