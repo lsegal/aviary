@@ -89,6 +89,7 @@ func (m *Manager) purgeTarget(target string) error {
 		return err
 	}
 	transcripts := m.transcripts.purge(target)
+	m.jobs.purgeTarget(target)
 	if engine == nil {
 		engine = &Engine{StatePath: m.statePath()}
 		engine.SetTempDirs(settings.TempDirs)
