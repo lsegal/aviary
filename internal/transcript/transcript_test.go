@@ -1,7 +1,9 @@
 package transcript
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -406,4 +408,100 @@ func TestCodexWebSearchAndMCPResults(t *testing.T) {
 	if len(result) != 1 || result[0].Output != "issue body" {
 		t.Fatalf("mcp result = %+v", result)
 	}
+}
+
+func lowerFileLimits(t *testing.T, events, raw int64) {
+	t.Helper()
+	saved := fileLimits
+	fileLimits = map[string]int64{eventsFile: events, rawFile: raw}
+	t.Cleanup(func() { fileLimits = saved })
+}
+
+func TestStoredFilesAreCappedToTheirTail(t *testing.T) {
+	lowerFileLimits(t, 4096, 2048)
+	dir := t.TempDir()
+	log, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := log.Recorder(nil)
+	for i := range 500 {
+		log.System(fmt.Sprintf("event %03d", i))
+		_, _ = fmt.Fprintf(recorder, "raw line %03d\n", i)
+	}
+	for name, limit := range fileLimits {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if int64(len(data)) > limit || len(data) < int(limit/4) {
+			t.Fatalf("%s = %d bytes, want at most %d and more than a few lines", name, len(data), limit)
+		}
+		if data[len(data)-1] != '\n' {
+			t.Fatalf("%s does not end on a line boundary", name)
+		}
+	}
+	first, _, _ := strings.Cut(string(mustRead(t, filepath.Join(dir, rawFile))), "\n")
+	if !strings.HasPrefix(first, "raw line ") || len(first) != len("raw line 000") {
+		t.Fatalf("raw file starts mid-line: %q", first)
+	}
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := reopened.Events(0)
+	if len(events) == 0 || len(events) >= 500 {
+		t.Fatalf("reopened events = %d, want the newest tail", len(events))
+	}
+	start := 500 - len(events)
+	for i, event := range events {
+		if want := fmt.Sprintf("event %03d", start+i); event.Text != want {
+			t.Fatalf("event %d = %q, want %q", i, event.Text, want)
+		}
+	}
+	if raw := reopened.Raw(0); !strings.HasSuffix(raw, "raw line 499\n") || strings.Contains(raw, "raw line 000\n") {
+		t.Fatalf("reopened raw does not hold the newest output: %q", raw)
+	}
+
+	// The reopened log keeps appending to the capped files.
+	reopened.System("after reopen")
+	if got := reopened.Events(1); len(got) != 1 || got[0].Text != "after reopen" {
+		t.Fatalf("newest event = %+v", got)
+	}
+	if info, err := os.Stat(filepath.Join(dir, eventsFile)); err != nil || info.Size() > fileLimits[eventsFile] {
+		t.Fatalf("events file after reopen = %v, %v", info, err)
+	}
+}
+
+func TestOpenCapsAnOversizedStoredFile(t *testing.T) {
+	lowerFileLimits(t, 4096, 2048)
+	dir := t.TempDir()
+	var raw strings.Builder
+	for i := range 1000 {
+		fmt.Fprintf(&raw, "old line %04d\n", i)
+	}
+	if err := os.WriteFile(filepath.Join(dir, rawFile), []byte(raw.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	log, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := mustRead(t, filepath.Join(dir, rawFile))
+	if int64(len(data)) > fileLimits[rawFile] || !strings.HasPrefix(string(data), "old line ") {
+		t.Fatalf("raw file = %d bytes starting %q", len(data), string(data[:min(len(data), 20)]))
+	}
+	if got := log.Raw(0); got != string(data) || !strings.HasSuffix(got, "old line 0999\n") {
+		t.Fatalf("raw = %q", got)
+	}
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
