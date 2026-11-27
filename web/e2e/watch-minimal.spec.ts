@@ -327,3 +327,44 @@ test("a watch session's Code Loop header is the compact one (#1570)", async ({
 		page.getByRole("dialog", { name: "Board details" }),
 	).toContainText("Issues");
 });
+
+test("a watch session's phone header lists the CLI providers in its details (#1580)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await mockWatchSession(page, {
+		project_status: {
+			states: { starting: 0, paused: 0, running: 0, done: 0, failed: 0 },
+			targets: ["owner/repo"],
+			clis: [
+				{ name: "claude", models: ["opus"], quota: "week 70% left" },
+				{ name: "codex", models: [], quota: "weekly 0% left" },
+			],
+		},
+	});
+	for (const path of [
+		"/agents/watch/projects",
+		"/agents/watch/projects/owner%2Frepo",
+	]) {
+		await page.goto(path);
+		const info = page.getByRole("button", {
+			name: "Board details",
+			exact: true,
+		});
+		await expect(info).toBeVisible();
+		await expect(
+			page.getByRole("region", { name: "CLI providers" }),
+		).toHaveCount(0);
+		await expect(page.getByTestId("board-info-alert")).toBeVisible();
+		await expect(info).toHaveAccessibleDescription(
+			"CLI provider needs attention: codex out of quota",
+		);
+		await info.click();
+		const clis = page
+			.getByRole("dialog", { name: "Board details" })
+			.getByRole("region", { name: "CLI providers" });
+		await expect(clis).toContainText("week 70% left");
+		await expect(clis).toContainText("weekly 0% left");
+		await page.keyboard.press("Escape");
+	}
+});

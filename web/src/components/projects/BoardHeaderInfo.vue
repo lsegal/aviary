@@ -17,10 +17,13 @@
 		<p data-testid="instance-id-copy-status" role="status" aria-live="polite"
 			class="text-xs text-gray-500 empty:hidden dark:text-gray-400">{{ copyStatus }}</p>
 	</HeaderInfoPopover>
-	<HeaderInfoPopover v-if="!hideInfo" testid="board-info" label="Board details" @escape-key-down="onEscape">
+	<HeaderInfoPopover v-if="!hideInfo" testid="board-info" label="Board details" :alert="cliAlert"
+		@escape-key-down="onEscape">
 		<template #icon><InformationCircleIcon aria-hidden="true" class="h-4 w-4" /></template>
 		<BoardDetailsList v-model:editing="editing" :status="status" :manual="manual" :filter-target="filterTarget"
 			:now="now" @saved="emit('saved')" />
+		<CLIProviderList v-if="showClis && status.clis.length" stacked testid="board-info-clis"
+			class="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700" :clis="status.clis" />
 	</HeaderInfoPopover>
 </template>
 
@@ -30,15 +33,18 @@
 // the board watches (the issue filter and its editor from #1213, the mode
 // from #1375, delivery, the last check and the poll interval), in place of
 // the instance badge and subtitle that took up a phone's header. On a narrow
-// phone either icon can move into the header's "…" menu (#1576).
+// phone either icon can move into the header's "…" menu (#1576). On a phone
+// the details also list the CLI providers, and the icon carries a warning dot
+// while one of them is signed out, out of quota or failing (#1580).
 import ClipboardDocumentIcon from "@heroicons/vue/24/outline/ClipboardDocumentIcon";
 import InformationCircleIcon from "@heroicons/vue/24/outline/InformationCircleIcon";
 import TagIcon from "@heroicons/vue/24/outline/TagIcon";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { useCopyText } from "../../composables/useCopyText";
-import type { ProjectStatus } from "../../lib/projects";
+import { cliProblemSummary, type ProjectStatus } from "../../lib/projects";
 import HeaderInfoPopover from "../ui/HeaderInfoPopover.vue";
 import BoardDetailsList from "./BoardDetailsList.vue";
+import CLIProviderList from "./CLIProviderList.vue";
 
 const props = defineProps<{
 	status: ProjectStatus;
@@ -50,6 +56,8 @@ const props = defineProps<{
 	hideInstance?: boolean;
 	/** The details icon is in the header's "…" menu instead (#1576). */
 	hideInfo?: boolean;
+	/** The CLI providers show in the details instead of under the stats (#1580). */
+	showClis?: boolean;
 }>();
 const emit = defineEmits<{
 	/** The issue filter was saved or reset. */
@@ -57,6 +65,9 @@ const emit = defineEmits<{
 }>();
 
 const editing = ref(false);
+const cliAlert = computed(() =>
+	props.showClis ? cliProblemSummary(props.status.clis ?? []) : "",
+);
 const { status: copyStatus, copy } = useCopyText(
 	"Couldn't copy; select the ID instead",
 );

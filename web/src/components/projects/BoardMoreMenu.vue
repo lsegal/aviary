@@ -2,8 +2,14 @@
 	<DropdownMenuRoot>
 		<DropdownMenuTrigger asChild>
 			<button ref="trigger" type="button" data-testid="board-more-menu" aria-label="More board actions"
-				title="More board actions" :class="HEADER_ICON_CLS">
+				title="More board actions" :class="['relative', HEADER_ICON_CLS]"
+				:aria-describedby="cliAlert ? cliAlertID : undefined">
 				<EllipsisHorizontalIcon aria-hidden="true" class="h-5 w-5" />
+				<template v-if="cliAlert">
+					<!-- The details moved here, so their warning dot does too (#1580). -->
+					<span aria-hidden="true" data-testid="board-more-menu-alert" :class="ALERT_DOT_CLS" />
+					<span :id="cliAlertID" class="sr-only">{{ cliAlert }}</span>
+				</template>
 			</button>
 		</DropdownMenuTrigger>
 		<DropdownMenuPortal>
@@ -85,6 +91,8 @@
 						<div class="px-3 py-1.5" @keydown="onDetailsKeydown">
 							<BoardDetailsList v-model:editing="editingFilter" :status="status" :manual="manual"
 								:filter-target="filterTarget" :now="now" @saved="emit('saved')" />
+							<CLIProviderList v-if="showClis && status.clis.length" stacked testid="board-more-clis"
+								class="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700" :clis="status.clis" />
 						</div>
 					</DropdownMenuGroup>
 				</template>
@@ -170,13 +178,14 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "radix-vue";
-import { computed, ref } from "vue";
+import { computed, ref, useId } from "vue";
 import type { RouteLocationRaw } from "vue-router";
 import { useCopyText } from "../../composables/useCopyText";
 import { useMCP } from "../../composables/useMCP";
 import { useProjectMode } from "../../composables/useProjectMode";
-import { HEADER_ICON_CLS } from "../../lib/headerActions";
+import { ALERT_DOT_CLS, HEADER_ICON_CLS } from "../../lib/headerActions";
 import {
+	cliProblemSummary,
 	PROJECT_MODES,
 	type ProjectMode,
 	type ProjectModeChoice,
@@ -185,6 +194,7 @@ import {
 } from "../../lib/projects";
 import ConfirmDialog from "../ui/ConfirmDialog.vue";
 import BoardDetailsList from "./BoardDetailsList.vue";
+import CLIProviderList from "./CLIProviderList.vue";
 import { queueOptions } from "./queueOptions";
 
 type ClearWhich = "done" | "failed" | "finished";
@@ -223,6 +233,8 @@ const props = defineProps<{
 	now?: number;
 	chatOpen?: boolean;
 	canSchedule?: boolean;
+	/** The board's details list the CLI providers, on a phone (#1580). */
+	showClis?: boolean;
 }>();
 const emit = defineEmits<{
 	refresh: [];
@@ -279,6 +291,13 @@ const hasOtherAction = computed(() =>
 const queueChoices = computed(() => queueOptions(props.status?.noMerge));
 const filterTarget = computed(() => props.filterTarget ?? "");
 const now = computed(() => props.now ?? Date.now());
+
+const cliAlertID = useId();
+const cliAlert = computed(() =>
+	props.showClis && has("board-info")
+		? cliProblemSummary(props.status?.clis ?? [])
+		: "",
+);
 
 const editingFilter = ref(false);
 function onDetailsKeydown(e: KeyboardEvent) {

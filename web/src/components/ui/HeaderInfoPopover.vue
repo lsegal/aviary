@@ -2,8 +2,13 @@
 	<PopoverRoot :open="open" @update:open="onOpenChange">
 		<PopoverTrigger asChild>
 			<button type="button" :data-testid="testid" :aria-label="label" :class="TRIGGER_CLS"
+				:aria-describedby="alert ? alertID : undefined"
 				@pointerdown="onTriggerPointerDown" @pointerenter="onHoverStart" @pointerleave="onHoverEnd">
 				<slot name="icon" />
+				<template v-if="alert">
+					<span aria-hidden="true" :data-testid="`${testid}-alert`" :class="ALERT_DOT_CLS" />
+					<span :id="alertID" class="sr-only">{{ alert }}</span>
+				</template>
 			</button>
 		</PopoverTrigger>
 		<PopoverPortal>
@@ -32,9 +37,14 @@ import {
 	PopoverRoot,
 	PopoverTrigger,
 } from "radix-vue";
+import { useId } from "vue";
 import { useHoverPopover } from "../../composables/useHoverPopover";
+import { ALERT_DOT_CLS } from "../../lib/headerActions";
 
 defineProps<{
+	/** A problem the popover's contents report, marked by a dot on the
+	 * closed icon and read out as the icon's description (#1580). */
+	alert?: string;
 	/** The icon's accessible name, which also names the popover. */
 	label: string;
 	/** The icon's test ID; the popover's is the same with `-popover`. */
@@ -45,8 +55,10 @@ const emit = defineEmits<{
 	escapeKeyDown: [event: KeyboardEvent];
 }>();
 
+const alertID = useId();
+
 const TRIGGER_CLS =
-	"inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 data-[state=open]:bg-gray-100 data-[state=open]:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white dark:data-[state=open]:bg-gray-800 dark:data-[state=open]:text-white";
+	"relative inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 data-[state=open]:bg-gray-100 data-[state=open]:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white dark:data-[state=open]:bg-gray-800 dark:data-[state=open]:text-white";
 
 const {
 	open,

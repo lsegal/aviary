@@ -17,7 +17,8 @@
 					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
 					:title="issueSummary.title">{{ issueSummary.label }}</span>
 				<BoardHeaderInfo v-if="status" :status="status" :manual="manual" :filter-target="filterTarget" :now="now"
-					:hide-instance="inMenu.has('instance-tag')" :hide-info="inMenu.has('board-info')" @saved="refresh" />
+					:hide-instance="inMenu.has('instance-tag')" :hide-info="inMenu.has('board-info')" :show-clis="!smUp"
+					@saved="refresh" />
 		</template>
 		<template v-if="project || aggregate" #header-actions>
 			<!-- With a job open on a phone, the job's own actions keep the row
@@ -59,7 +60,7 @@
 				:logs-in-menu="logsInMenu" v-model:logs-open="logsOpen"
 				:mode-target="watchInMenu ? filterTarget : null" :manual="manual"
 				:default-mode="status?.defaultMode ?? 'watch'"
-				:hidden="[...inMenu]" :status="status" :filter-target="filterTarget" :now="now"
+				:hidden="[...inMenu]" :status="status" :filter-target="filterTarget" :now="now" :show-clis="!smUp"
 				v-model:chat-open="chatOpen" :can-schedule="!!scheduleAgent"
 				@refresh="onCheckNow" @cleared="refresh" @mode-changed="refresh" @saved="refresh"
 				@add-project="openAdd" @queue="openQueue($event, project || targets[0])" @schedule="onNewSchedule" />
@@ -111,19 +112,11 @@
 							</button>
 						</div>
 
-						<!-- The projects' pills lead into each project, left of the CLI providers. -->
-						<div v-if="(aggregate && targets.length) || status?.clis.length" class="flex min-w-0 flex-wrap items-center gap-2" data-testid="board-nav-row">
+						<!-- The projects' pills lead into each project, left of the CLI
+							providers, which move into the details popover on a phone (#1580). -->
+						<div v-if="(aggregate && targets.length) || inlineCLIs" class="flex min-w-0 flex-wrap items-center gap-2" data-testid="board-nav-row">
 						<ProjectNavRow v-if="aggregate && targets.length" :agent="routeAgent" :targets="targets" />
-						<section v-if="status?.clis.length" class="ml-auto flex max-w-full flex-wrap items-center gap-2 text-xs" aria-label="CLI providers">
-							<span class="font-medium text-gray-600 dark:text-gray-300">CLI providers</span>
-							<span v-for="cli in status.clis" :key="cli.name"
-								class="inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-full border border-gray-200 px-2.5 py-1 dark:border-gray-700">
-								<span class="h-1.5 w-1.5 rounded-full" :class="cli.signedIn ? 'bg-green-500' : 'bg-gray-400'" />
-								<b class="text-gray-800 dark:text-gray-100">{{ cli.name }}</b>
-								<span v-if="cli.models.length" class="text-gray-600 dark:text-gray-300">{{ cli.models.join(", ") }}</span>
-								<span class="text-gray-500">{{ cli.quota || "no quota reported" }}</span>
-							</span>
-						</section>
+						<CLIProviderList v-if="inlineCLIs && status" class="ml-auto" :clis="status.clis" />
 						</div>
 
 						<!-- Search keeps a usable width; the state filters fold into "Filters"
@@ -226,6 +219,7 @@ import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
 import BoardHeaderInfo from "../components/projects/BoardHeaderInfo.vue";
 import BoardMoreMenu from "../components/projects/BoardMoreMenu.vue";
 import BoardStateFilter from "../components/projects/BoardStateFilter.vue";
+import CLIProviderList from "../components/projects/CLIProviderList.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import JobCard from "../components/projects/JobCard.vue";
 import KanbanBoard from "../components/projects/KanbanBoard.vue";
@@ -668,6 +662,8 @@ function onSmChange(e: MediaQueryListEvent) {
 }
 onMounted(() => smQuery.addEventListener("change", onSmChange));
 onUnmounted(() => smQuery.removeEventListener("change", onSmChange));
+// A phone's CLI providers are in the details popover instead (#1580).
+const inlineCLIs = computed(() => smUp.value && !!status.value?.clis.length);
 const statsCompact = computed(() => statsChoice.value ?? !wide.value);
 
 const busyJob = ref("");
