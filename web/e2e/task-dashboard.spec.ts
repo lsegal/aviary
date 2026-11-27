@@ -132,7 +132,8 @@ async function mockTask(
 			state.task = {
 				...state.task,
 				precompile: true,
-				precompile_note: undefined,
+				script_failures: undefined,
+				script_last_error: undefined,
 				compiled: 'print("fresh")',
 				compiled_key: "fresh",
 			};
@@ -549,9 +550,11 @@ test("a precompiled project task's fallback runs are marked and counted", async 
 			task: {
 				type: "project",
 				project: "acme/app",
-				precompile: false,
-				precompile_note:
-					"Precompile was turned off after the compiled script failed 3 runs in a row (last: gh 404), so the task runs on the model.",
+				precompile: true,
+				compiled: 'print("release")',
+				compiled_key: "k",
+				script_failures: 2,
+				script_last_error: "gh 404",
 			},
 		},
 	);
@@ -561,8 +564,8 @@ test("a precompiled project task's fallback runs are marked and counted", async 
 	);
 	await page.goto("/agents/assistant/tasks/report");
 
-	await expect(page.getByTestId("task-precompile-note")).toContainText(
-		"Precompile was turned off after the compiled script failed 3 runs in a row",
+	await expect(page.getByTestId("task-script-failing")).toContainText(
+		"failed its last 2 runs (last error: gh 404)",
 	);
 	const log = page.getByTestId("task-run-log");
 	await expect(log).toHaveAttribute("data-run", "fallback");
@@ -589,27 +592,37 @@ test("a precompiled project task's fallback runs are marked and counted", async 
 	await expect(rows.first()).toHaveAttribute("data-result", "fallback");
 });
 
-test("Recompile restarts a precompiled task whose script was turned off", async ({
+test("a failing compiled script keeps precompile on and offers Recompile", async ({
 	page,
 }) => {
 	const { calls } = await mockTask(page, [job("done", "completed", 30)], {
 		task: {
 			type: "project",
 			project: "acme/app",
-			precompile: false,
-			precompile_note:
-				"Precompile was turned off after the compiled script failed 3 runs in a row (last: gh 404), so the task runs on the model. Use Recompile on the task page to compile it again.",
+			precompile: true,
+			compiled: 'print("release")',
+			compiled_key: "k",
+			script_verified: true,
+			script_failures: 3,
+			script_last_error: "gh 404",
 		},
 	});
 	await page.goto("/agents/assistant/tasks/report");
 
 	const badge = page.getByTestId("compiled-status-chip");
-	await expect(badge).toHaveAttribute("data-state", "fallback");
-	await expect(badge).toHaveText("Falling back to model");
-	await expect(page.getByTestId("task-precompile-note")).toBeVisible();
+	await expect(badge).toHaveAttribute("data-state", "failing");
+	await expect(badge).toContainText("Script failing");
+	await expect(badge).toHaveAttribute("title", /last error: gh 404/);
+	const banner = page.getByTestId("task-script-failing");
+	await expect(banner).toContainText("failed its last 3 runs");
+	await expect(banner.getByTestId("task-script-last-error")).toHaveText(
+		"gh 404",
+	);
+	await expect(banner).toContainText("Precompile stays on");
+	await expect(page.getByText(/turned off/i)).toHaveCount(0);
 
-	await page.getByTestId("task-recompile").click();
-	await expect(page.getByTestId("task-precompile-note")).toHaveCount(0);
+	await banner.getByTestId("task-script-failing-recompile").click();
+	await expect(page.getByTestId("task-script-failing")).toHaveCount(0);
 	await expect(badge).toHaveAttribute("data-state", "compiled");
 	expect(
 		calls.filter((c) => c.tool === "config_task_convert_to_script"),

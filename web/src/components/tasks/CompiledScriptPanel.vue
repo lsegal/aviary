@@ -145,9 +145,7 @@ const status = computed(() =>
 );
 
 /** The line the last failure's Lua error points at, highlighted in the script. */
-const failedLine = computed(() =>
-	errorLine(props.lastFailedRun?.script_error || props.task.precompile_note),
-);
+const failedLine = computed(() => errorLine(props.lastFailedRun?.script_error));
 
 /** What live analysis of the edited prompt predicts a recompile does. */
 const prediction = computed(() => {
@@ -166,7 +164,6 @@ const notes = computed(() => {
 	};
 	if (script.value) add(source.value?.reason);
 	else add(props.attempts[0]?.reason);
-	add(props.task.precompile_note);
 	return out;
 });
 
@@ -178,8 +175,6 @@ const emptyText = computed(() => {
 			return "The last compile attempt failed, so there is no compiled script.";
 		case "not-compiled":
 			return "The prompt is not deterministic enough to compile, so runs use the model.";
-		case "fallback":
-			return "The compiled script was set aside after it failed, so runs use the model.";
 		default:
 			return "Not compiled yet. Save with precompile on to compile the prompt.";
 	}

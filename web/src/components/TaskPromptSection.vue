@@ -141,7 +141,7 @@ const showCompiled = computed(
 		!!props.savedTask &&
 		precompilesBesidePrompt(props.savedTask) &&
 		props.type !== "script" &&
-		(props.savedTask.precompile === true || !!props.savedTask.precompile_note),
+		props.savedTask.precompile === true,
 );
 const panelOpen = useCompiledPanelOpen();
 const analysis = ref<TaskAnalysis | null>(null);

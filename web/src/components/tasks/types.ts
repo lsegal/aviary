@@ -17,4 +17,10 @@ export interface TaskRow {
 }
 
 /** A task card's or row's quick actions. */
-export type TaskAction = "run" | "toggle" | "runs" | "duplicate" | "settings";
+export type TaskAction =
+	| "run"
+	| "toggle"
+	| "recompile"
+	| "runs"
+	| "duplicate"
+	| "settings";

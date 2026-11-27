@@ -129,8 +129,8 @@ export interface AgentTask {
 	script_verified?: boolean;
 	/** The compiled script's consecutive failed runs, written by Aviary. */
 	script_failures?: number;
-	/** Why Aviary set the compiled script aside or turned precompile off, written by Aviary. */
-	precompile_note?: string;
+	/** The short cause of the compiled script's last failed run, written by Aviary. */
+	script_last_error?: string;
 	/** How long a prompt run may go without output before it fails, e.g. "30m"; "0" disables it. */
 	idle_timeout?: string;
 	from_file?: boolean;

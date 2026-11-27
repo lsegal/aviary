@@ -487,6 +487,7 @@ function viewRuns(r: TaskRow) {
 function onAction(r: TaskRow, action: TaskAction) {
 	if (action === "run") void runNow(r);
 	else if (action === "toggle") void setEnabled(r, !r.enabled);
+	else if (action === "recompile") void recompile(r);
 	else if (action === "settings") openSettings(r.task.name);
 	else if (action === "duplicate")
 		openItemDialog({
@@ -512,6 +513,18 @@ async function act(r: TaskRow, fn: () => Promise<unknown>) {
 
 function runNow(r: TaskRow) {
 	return act(r, () => jobs.runTaskNow(r.id));
+}
+
+// Recompile discards the failing script and compiles a fresh one in the
+// background; precompile stays on.
+function recompile(r: TaskRow) {
+	return act(r, async () => {
+		await callTool("config_task_convert_to_script", {
+			agent: props.agent,
+			task: r.task.name,
+		});
+		await settings.fetchConfig();
+	});
 }
 
 // Optimistic: the switch, the sidebar and the editor flip at once, and a
