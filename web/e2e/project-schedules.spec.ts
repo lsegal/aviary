@@ -881,6 +881,83 @@ test("scheduled cards have no pencil; the gear is the last action and opens the 
 	await expect(page).toHaveURL(/\/system\/watches\/lsegal%2Faviary$/);
 });
 
+test("a scheduled card's menu duplicates its task through the shared create form (#1465)", async ({
+	page,
+}) => {
+	const calls = await setup(page, {
+		extra: () => ({
+			config_get: {
+				agents: [
+					{
+						name: "assistant",
+						model: "cli/codex/gpt-5.5",
+						channels: [{ type: "discord", id: "ops", name: "ops" }],
+						tasks: [
+							{
+								name: "nightly-triage",
+								type: "project",
+								project: "lsegal/aviary",
+								prompt:
+									"Triage issues opened since the last run and label them.",
+								model: "cli/claude/opus",
+								trigger: "daily",
+								at: "02:00",
+								timezone: "America/Toronto",
+								overlap: "skip",
+								missed: "run_once",
+								precompile: true,
+								compiled: "return 'stale'",
+							},
+						],
+					},
+				],
+			},
+		}),
+	});
+	await page.goto("/system/watches/lsegal%2Faviary");
+	const nightly = page.getByTestId("scheduled-card").first();
+	await nightly.getByTestId("scheduled-more").click();
+	await page.getByTestId("scheduled-duplicate").click();
+
+	const dialog = page.getByRole("dialog", { name: "Duplicate nightly-triage" });
+	await expect(dialog.getByLabel("Task name")).toHaveValue("nightly-triage-2");
+	await expect(dialog.getByLabel("Project", { exact: true })).toHaveValue(
+		"lsegal/aviary",
+	);
+	await expect(dialog.getByLabel("Prompt")).toHaveValue(
+		"Triage issues opened since the last run and label them.",
+	);
+	await expect(dialog.getByRole("radio", { name: "Daily" })).toHaveAttribute(
+		"aria-checked",
+		"true",
+	);
+	await dialog.getByRole("button", { name: "Create" }).click();
+	await expect(dialog).toBeHidden();
+	const config = JSON.parse(String(calls.config_save?.[0]?.config)) as {
+		agents: { name: string; tasks: Record<string, unknown>[] }[];
+	};
+	const copy = config.agents[0].tasks.find(
+		(t) => t.name === "nightly-triage-2",
+	);
+	expect(copy).toMatchObject({
+		type: "project",
+		project: "lsegal/aviary",
+		model: "cli/claude/opus",
+		trigger: "daily",
+		at: "02:00",
+		timezone: "America/Toronto",
+		overlap: "skip",
+		missed: "run_once",
+		precompile: true,
+	});
+	expect(copy).not.toHaveProperty("compiled");
+	// The board stays put and lists the copy.
+	await expect(page).toHaveURL(/\/system\/watches\/lsegal%2Faviary$/);
+	await expect(
+		page.getByTestId("scheduled-card").filter({ hasText: "nightly-triage-2" }),
+	).toHaveCount(1);
+});
+
 test("up next strip is hidden when no schedule is enabled", async ({
 	page,
 }) => {
@@ -2198,7 +2275,7 @@ test.describe("a running scheduled card keeps its size (#1157)", () => {
 		await expect(
 			footer.getByRole("button", { name: "Task settings" }),
 		).toBeVisible();
-		await expect(release.getByTestId("scheduled-more")).toBeHidden();
+		await expect(release.getByTestId("scheduled-more")).toBeVisible();
 
 		// Squeeze the card below the footer's width.
 		await release.evaluate((el) => {
@@ -2223,7 +2300,7 @@ test.describe("a running scheduled card keeps its size (#1157)", () => {
 		// Task settings stays the last action in the folded menu (#1165).
 		await expect(
 			page.getByTestId("scheduled-more-items").getByRole("menuitem"),
-		).toHaveText(["Pause", "Task settings"]);
+		).toHaveText(["Duplicate…", "Pause", "Task settings"]);
 		await page
 			.getByTestId("scheduled-more-items")
 			.getByRole("menuitem", { name: "Pause" })

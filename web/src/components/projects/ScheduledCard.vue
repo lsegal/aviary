@@ -110,12 +110,6 @@
 				<PauseIcon v-if="schedule.enabled" aria-hidden="true" class="h-4 w-4" />
 				<PlayCircleIcon v-else aria-hidden="true" class="h-4 w-4" />
 			</button>
-			<!-- The gear, always the last action, edits the task in the full task
-				settings, as the sidebar's gear does. -->
-			<button type="button" data-testid="scheduled-settings" aria-label="Task settings" title="Task settings"
-				:class="[ICON_BUTTON, '@max-[16rem]:hidden']" @click="emit('settings', schedule)">
-				<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
-			</button>
 			<DropdownMenuRoot>
 				<DropdownMenuTrigger asChild>
 					<button type="button" aria-label="More actions" title="More actions" data-testid="scheduled-more"
@@ -130,19 +124,27 @@
 							<DocumentDuplicateIcon aria-hidden="true" class="h-4 w-4" />
 							Duplicate…
 						</DropdownMenuItem>
-						<!-- Pause and Task settings fold in here on a narrow card. -->
-						<DropdownMenuItem :disabled="busy" :class="[MENU_ITEM, 'hidden @max-[16rem]:flex']" @select="emit('toggle', schedule)">
+						<!-- The menu is portaled out of the card's container, so it
+							always lists Pause and Task settings, which a narrow card
+							folds into it. -->
+						<DropdownMenuItem :disabled="busy" :class="MENU_ITEM" @select="emit('toggle', schedule)">
 							<PauseIcon v-if="schedule.enabled" aria-hidden="true" class="h-4 w-4" />
 							<PlayCircleIcon v-else aria-hidden="true" class="h-4 w-4" />
 							{{ schedule.enabled ? "Pause" : "Resume" }}
 						</DropdownMenuItem>
-						<DropdownMenuItem :class="[MENU_ITEM, 'hidden @max-[16rem]:flex']" @select="emit('settings', schedule)">
+						<DropdownMenuItem :class="MENU_ITEM" @select="emit('settings', schedule)">
 							<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
 							Task settings
 						</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenuPortal>
 			</DropdownMenuRoot>
+			<!-- The gear, always the last action, edits the task in the full task
+				settings, as the sidebar's gear does. -->
+			<button type="button" data-testid="scheduled-settings" aria-label="Task settings" title="Task settings"
+				:class="[ICON_BUTTON, '@max-[16rem]:hidden']" @click="emit('settings', schedule)">
+				<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
+			</button>
 			<span v-if="agentLabel" data-testid="scheduled-agent"
 				class="ml-auto min-w-0 truncate text-right font-mono text-xs text-gray-500 dark:text-gray-400"
 				:title="agentLabel">{{ agentLabel }}</span>

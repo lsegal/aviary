@@ -436,6 +436,14 @@ const repoWarning = computed(() => {
 	return refs.length ? refs : null;
 });
 
+// Keep as is holds for the project it was chosen for; another one asks again.
+watch(
+	() => form.project,
+	() => {
+		keptFor.value = "";
+	},
+);
+
 function replaceRepo() {
 	form.prompt = replaceRepoReferences(
 		form.prompt,
