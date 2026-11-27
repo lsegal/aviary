@@ -131,12 +131,27 @@ func NewMapper(format string) Mapper {
 	return nil
 }
 
-// maxEvents bounds how many events a job keeps in memory; the file keeps all
-// of them.
+// maxEvents bounds how many events a job keeps in memory.
 const maxEvents = 2000
 
 // maxRawBytes bounds how much raw output a job keeps in memory.
 const maxRawBytes = 256 * 1024
+
+// The file names a stored transcript keeps in its directory.
+const (
+	eventsFile = "events.jsonl"
+	rawFile    = "stdout.log"
+)
+
+// fileLimits bounds each stored transcript file. A file that grows past its
+// limit is cut down to its newest half, starting at a line boundary, so a
+// long-running or often-resumed job's directory stays bounded (issue #1467).
+// Half of each limit still covers what Open loads into memory. It is a
+// variable so tests can lower it.
+var fileLimits = map[string]int64{
+	eventsFile: 8 * 1024 * 1024,
+	rawFile:    2 * 1024 * 1024,
+}
 
 // Log is one job's transcript: its events and its raw output. It is safe for
 // concurrent use. When it has a directory, every event and every raw byte is
@@ -147,19 +162,27 @@ type Log struct {
 	events []Event
 	raw    []byte
 	now    func() time.Time
+	// sizes holds each stored file's size, so appends know when to compact.
+	sizes map[string]int64
 }
 
 // Open returns the transcript stored in dir, loading any events already
 // there. An empty dir keeps the transcript in memory only.
 func Open(dir string) (*Log, error) {
-	l := &Log{dir: dir, now: time.Now}
+	l := &Log{dir: dir, now: time.Now, sizes: map[string]int64{}}
 	if dir == "" {
 		return l, nil
 	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
 	}
-	if f, err := os.Open(filepath.Join(dir, "events.jsonl")); err == nil {
+	for _, name := range []string{eventsFile, rawFile} {
+		if info, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			l.sizes[name] = info.Size()
+			l.compact(name)
+		}
+	}
+	if f, err := os.Open(filepath.Join(dir, eventsFile)); err == nil {
 		scanner := bufio.NewScanner(f)
 		scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 		for scanner.Scan() {
@@ -173,7 +196,7 @@ func Open(dir string) (*Log, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	if raw, err := readTail(filepath.Join(dir, "stdout.log"), maxRawBytes); err == nil {
+	if raw, err := readTail(filepath.Join(dir, rawFile), maxRawBytes); err == nil {
 		l.raw = raw
 	}
 	return l, nil
@@ -218,7 +241,7 @@ func (l *Log) Add(events ...Event) {
 	}
 	l.trim()
 	if len(lines) > 0 {
-		appendFile(filepath.Join(l.dir, "events.jsonl"), lines)
+		l.appendFile(eventsFile, lines)
 	}
 }
 
@@ -277,17 +300,49 @@ func (l *Log) addRaw(p []byte) {
 		l.raw = append([]byte(nil), l.raw[len(l.raw)-maxRawBytes:]...)
 	}
 	if l.dir != "" {
-		appendFile(filepath.Join(l.dir, "stdout.log"), p)
+		l.appendFile(rawFile, p)
 	}
 }
 
-func appendFile(path string, data []byte) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+// appendFile appends data to the stored file name, then compacts it when it
+// has grown past its limit. l.mu must be held.
+func (l *Log) appendFile(name string, data []byte) {
+	f, err := os.OpenFile(filepath.Join(l.dir, name), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
 	if err != nil {
 		return
 	}
-	_, _ = f.Write(data)
+	n, _ := f.Write(data)
 	_ = f.Close()
+	l.sizes[name] += int64(n)
+	l.compact(name)
+}
+
+// compact cuts the stored file name down to its newest half once it is past
+// its limit, dropping the partial line the cut leaves at the start. l.mu must
+// be held, or l not yet shared.
+func (l *Log) compact(name string) {
+	limit := fileLimits[name]
+	if l.sizes[name] <= limit {
+		return
+	}
+	path := filepath.Join(l.dir, name)
+	tail, err := readTail(path, limit/2)
+	if err != nil {
+		return
+	}
+	if i := indexNewline(tail); i >= 0 && i < len(tail)-1 {
+		tail = tail[i+1:]
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, tail, 0o640); err != nil {
+		_ = os.Remove(tmp)
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return
+	}
+	l.sizes[name] = int64(len(tail))
 }
 
 // Recorder is an io.Writer over a run's raw output stream.
