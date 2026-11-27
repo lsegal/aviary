@@ -33,6 +33,10 @@
 					title="Discard the compiled script and compile a fresh one" @click="act(recompile)">
 					<ArrowPathIcon aria-hidden="true" class="h-4 w-4" /> Recompile
 				</button>
+				<button v-if="!workflow" type="button" data-testid="task-duplicate" :class="ACTION_CLS"
+					title="Open the create form prefilled from this task" @click="duplicate">
+					<DocumentDuplicateIcon aria-hidden="true" class="h-4 w-4" /> Duplicate
+				</button>
 				<button v-if="current?.job" type="button" data-testid="task-stop" :disabled="busy"
 					:class="[ACTION_CLS, 'text-red-600! dark:text-red-400!']" @click="act(() => dash.stop(current!.id))">
 					<StopIcon aria-hidden="true" class="h-4 w-4" /> Stop
@@ -126,6 +130,7 @@ import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import BoltIcon from "@heroicons/vue/24/outline/BoltIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
+import DocumentDuplicateIcon from "@heroicons/vue/24/outline/DocumentDuplicateIcon";
 import PauseIcon from "@heroicons/vue/24/outline/PauseIcon";
 import PlayCircleIcon from "@heroicons/vue/24/outline/PlayCircleIcon";
 import PlayIcon from "@heroicons/vue/24/outline/PlayIcon";
@@ -144,6 +149,7 @@ import TaskRunHistory, {
 import TaskRunLog from "../components/tasks/dashboard/TaskRunLog.vue";
 import TriggerContextPanel from "../components/tasks/dashboard/TriggerContextPanel.vue";
 import PausedChip from "../components/tasks/PausedChip.vue";
+import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useMCP } from "../composables/useMCP";
 import {
 	TASK_CHAT_MIN_HEIGHT,
@@ -397,6 +403,17 @@ async function act(fn: () => Promise<unknown>) {
 	} finally {
 		busy.value = false;
 	}
+}
+
+// Duplicate opens the create form prefilled from this task (#1465).
+const { open: openItemDialog } = useAgentItemDialogs();
+function duplicate() {
+	openItemDialog({
+		kind: "task",
+		agent: agent.value,
+		mode: "create",
+		duplicate: taskParam.value,
+	});
 }
 
 async function setEnabled(value: boolean) {

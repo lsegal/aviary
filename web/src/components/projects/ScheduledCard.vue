@@ -90,7 +90,8 @@
 			</p>
 		</div>
 		<!-- The footer is one row in every state: a run adds nothing to it, and
-			on a narrow card Pause and Task settings fold into a menu (#1157). -->
+			on a narrow card Pause and Task settings fold into its menu (#1157), which
+			always has Duplicate (#1465). -->
 		<div data-testid="scheduled-footer"
 			class="relative z-10 flex min-w-0 shrink-0 cursor-auto flex-nowrap items-center gap-2 border-t border-gray-100 bg-white px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900">
 			<button v-if="failed && job" type="button" :disabled="busy" data-testid="scheduled-dismiss"
@@ -118,19 +119,24 @@
 			<DropdownMenuRoot>
 				<DropdownMenuTrigger asChild>
 					<button type="button" aria-label="More actions" title="More actions" data-testid="scheduled-more"
-						:class="[ICON_BUTTON, 'hidden @max-[16rem]:block']">
+						:class="ICON_BUTTON">
 						<EllipsisHorizontalIcon aria-hidden="true" class="h-4 w-4" />
 					</button>
 				</DropdownMenuTrigger>
 				<DropdownMenuPortal>
 					<DropdownMenuContent align="end" :side-offset="6" data-testid="scheduled-more-items"
 						class="z-50 min-w-40 rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-						<DropdownMenuItem :disabled="busy" :class="MENU_ITEM" @select="emit('toggle', schedule)">
+						<DropdownMenuItem data-testid="scheduled-duplicate" :class="MENU_ITEM" @select="emit('duplicate', schedule)">
+							<DocumentDuplicateIcon aria-hidden="true" class="h-4 w-4" />
+							Duplicate…
+						</DropdownMenuItem>
+						<!-- Pause and Task settings fold in here on a narrow card. -->
+						<DropdownMenuItem :disabled="busy" :class="[MENU_ITEM, 'hidden @max-[16rem]:flex']" @select="emit('toggle', schedule)">
 							<PauseIcon v-if="schedule.enabled" aria-hidden="true" class="h-4 w-4" />
 							<PlayCircleIcon v-else aria-hidden="true" class="h-4 w-4" />
 							{{ schedule.enabled ? "Pause" : "Resume" }}
 						</DropdownMenuItem>
-						<DropdownMenuItem :class="MENU_ITEM" @select="emit('settings', schedule)">
+						<DropdownMenuItem :class="[MENU_ITEM, 'hidden @max-[16rem]:flex']" @select="emit('settings', schedule)">
 							<Cog6ToothIcon aria-hidden="true" class="h-4 w-4" />
 							Task settings
 						</DropdownMenuItem>
@@ -146,6 +152,7 @@
 
 <script setup lang="ts">
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
+import DocumentDuplicateIcon from "@heroicons/vue/24/outline/DocumentDuplicateIcon";
 import EllipsisHorizontalIcon from "@heroicons/vue/24/outline/EllipsisHorizontalIcon";
 import PauseIcon from "@heroicons/vue/24/outline/PauseIcon";
 import PlayCircleIcon from "@heroicons/vue/24/outline/PlayCircleIcon";
@@ -203,6 +210,7 @@ const emit = defineEmits<{
 	run: [schedule: ProjectSchedule];
 	settings: [schedule: ProjectSchedule];
 	toggle: [schedule: ProjectSchedule];
+	duplicate: [schedule: ProjectSchedule];
 	dismiss: [job: ProjectJob];
 }>();
 

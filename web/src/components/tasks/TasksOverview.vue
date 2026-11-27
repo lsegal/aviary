@@ -488,6 +488,13 @@ function onAction(r: TaskRow, action: TaskAction) {
 	if (action === "run") void runNow(r);
 	else if (action === "toggle") void setEnabled(r, !r.enabled);
 	else if (action === "settings") openSettings(r.task.name);
+	else if (action === "duplicate")
+		openItemDialog({
+			kind: "task",
+			agent: props.agent,
+			mode: "create",
+			duplicate: r.task.name,
+		});
 	else viewRuns(r);
 }
 

@@ -15,6 +15,11 @@ export interface AgentItemDialog {
 	 */
 	project?: string;
 	/**
+	 * Opens the create form prefilled from this task of agent's, to save a
+	 * copy of it: Duplicate in a task's menus (#1465).
+	 */
+	duplicate?: string;
+	/**
 	 * Called with the new task's agent and name in place of opening it on
 	 * the Scheduled Tasks page.
 	 */

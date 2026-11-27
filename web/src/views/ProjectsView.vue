@@ -204,7 +204,8 @@
 
 						<div v-if="loading && !boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
 						<KanbanBoard v-else-if="kanban" :jobs="boardJobs" :filters="filters" :now="now" :schedules="boardListSchedules"
-							:schedule-entries="scheduleEntries" :show-project="aggregate" @settings="openScheduleSettings" />
+							:schedule-entries="scheduleEntries" :show-project="aggregate" @settings="openScheduleSettings"
+									@duplicate="duplicateSchedule" />
 						<div v-else-if="!boardJobs.length && !boardSchedules.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
 							<p>No jobs match “<b class="text-gray-800 dark:text-gray-100">{{ search.trim() }}</b>”.</p>
 							<button type="button" class="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -558,6 +559,17 @@ async function toggleSchedule(s: ProjectSchedule) {
 }
 function openScheduleSettings(s: ProjectSchedule) {
 	openItemDialog({ kind: "task", mode: "edit", agent: s.agent, name: s.name });
+}
+// Duplicate opens the create form prefilled from the schedule's task, as
+// the sidebar's Duplicate does, and refreshes the board once it is saved.
+function duplicateSchedule(s: ProjectSchedule) {
+	openItemDialog({
+		kind: "task",
+		mode: "create",
+		agent: s.agent,
+		duplicate: s.name,
+		onCreated: () => void refreshSchedules(),
+	});
 }
 // An Up next run opens its task's page, as the task's card does.
 function openSchedule(id: string) {
