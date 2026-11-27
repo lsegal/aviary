@@ -2338,12 +2338,24 @@ func (w *Engine) Run(ctx context.Context) error {
 	reapCtx, stopReaping := context.WithCancel(ctx)
 	defer stopReaping()
 	go w.reapClonesEvery(reapCtx)
+	// publish runs on whichever goroutine changed a job, so two calls can
+	// overlap. Each reads the jobs under jobMu and stamps its snapshot with
+	// the order it read them in; one that reaches the store after a newer
+	// snapshot is dropped, so a slower call never puts stale jobs back on the
+	// board after a later change (issue #1501).
+	var (
+		publishMu        sync.Mutex
+		publishRead      uint64
+		publishPublished uint64
+	)
 	publish := func() {
 		if w.UI == nil {
 			return
 		}
 		running, queued, completed, failed := tasks.snapshot()
 		jobMu.Lock()
+		publishRead++
+		read := publishRead
 		list := publishedJobs(jobs)
 		counts := make(map[string]int, len(issueCounts))
 		for target, count := range issueCounts {
@@ -2367,6 +2379,12 @@ func (w *Engine) Run(ctx context.Context) error {
 		if w.GitHubSession != nil {
 			snapshot.GitHub = w.GitHubSession()
 		}
+		publishMu.Lock()
+		defer publishMu.Unlock()
+		if read < publishPublished {
+			return
+		}
+		publishPublished = read
 		w.published.Store(&snapshot)
 		w.UI.Snapshot(snapshot)
 	}
