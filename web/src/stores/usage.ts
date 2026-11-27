@@ -23,7 +23,63 @@ export interface UsageRecord {
 	task?: string;
 	/** The channel whose message fired a workflow run. */
 	channel?: string;
+	/** The session's name, kind and owner when the tokens were spent. */
+	session_name?: string;
+	session_kind?: SessionKind;
+	session_owner?: string;
 }
+
+export type SessionKind = "chat" | "job" | "task" | "workflow";
+
+/** One session's usage in range, as usage_sessions pages it. */
+export interface UsageSession {
+	session_id: string;
+	agent_id: string;
+	model: string;
+	provider: string;
+	input: number;
+	output: number;
+	cache_read: number;
+	cache_write: number;
+	tool_calls: number;
+	messages: number;
+	cost_usd?: number;
+	has_error: boolean;
+	has_throttle: boolean;
+	first_ts: string;
+	last_ts: string;
+	/** Live name, else the snapshot, else "Unknown session (deleted)". */
+	name: string;
+	kind: SessionKind;
+	owner?: string;
+	task?: string;
+	channel?: string;
+	deleted?: boolean;
+	deleted_at?: string;
+}
+
+interface UsageSessionsPage {
+	sessions: UsageSession[];
+	total: number;
+	offset: number;
+	limit: number;
+	agents: string[];
+	models: string[];
+}
+
+export type SessionSort =
+	| "name"
+	| "agent"
+	| "model"
+	| "tokens"
+	| "tools"
+	| "last";
+export type SortOrder = "asc" | "desc";
+export type StatusFilter = "" | "ok" | "error";
+export type DeletedFilter = "include" | "exclude" | "only";
+
+/** Sessions per page of the Sessions list. */
+export const SESSIONS_PAGE_SIZE = 50;
 
 // ProjectUsage is the Projects work a usage record reports instead of token
 // use: a job run's wall time, or an issue's merged or failed outcome. A
@@ -113,14 +169,64 @@ export const useUsageStore = defineStore("usage", () => {
 	const startDate = ref<string>(fmtDate(7));
 	const endDate = ref<string>(fmtDate(0));
 
+	// Filters narrow both the records behind the totals and charts and the
+	// Sessions list; sorting and paging only the list.
+	const agentFilter = ref("");
+	const modelFilter = ref("");
+	const statusFilter = ref<StatusFilter>("");
+	const deletedFilter = ref<DeletedFilter>("include");
+	const sort = ref<SessionSort>("last");
+	const order = ref<SortOrder>("desc");
+	const offset = ref(0);
+
+	const sessions = ref<UsageSession[]>([]);
+	const sessionTotal = ref(0);
+	const agentOptions = ref<string[]>([]);
+	const modelOptions = ref<string[]>([]);
+	const sessionsLoading = ref(false);
+
+	function filterArgs(): Record<string, string> {
+		const args: Record<string, string> = {
+			start: startDate.value,
+			end: endDate.value,
+		};
+		if (agentFilter.value) args.agent = agentFilter.value;
+		if (modelFilter.value) args.model = modelFilter.value;
+		if (statusFilter.value) args.status = statusFilter.value;
+		if (deletedFilter.value !== "include") args.deleted = deletedFilter.value;
+		return args;
+	}
+
+	async function fetchSessions() {
+		sessionsLoading.value = true;
+		try {
+			const raw = await callTool("usage_sessions", {
+				...filterArgs(),
+				sort: sort.value,
+				order: order.value,
+				limit: SESSIONS_PAGE_SIZE,
+				offset: offset.value,
+			});
+			const page = JSON.parse(raw) as UsageSessionsPage;
+			sessions.value = page.sessions ?? [];
+			sessionTotal.value = page.total ?? 0;
+			agentOptions.value = page.agents ?? [];
+			modelOptions.value = page.models ?? [];
+		} catch (e) {
+			error.value = e instanceof Error ? e.message : String(e);
+		} finally {
+			sessionsLoading.value = false;
+		}
+	}
+
 	async function fetch() {
 		loading.value = true;
 		error.value = null;
 		try {
-			const raw = await callTool("usage_query", {
-				start: startDate.value,
-				end: endDate.value,
-			});
+			const [raw] = await Promise.all([
+				callTool("usage_query", filterArgs()),
+				fetchSessions(),
+			]);
 			const all = (JSON.parse(raw) as UsageRecord[]) ?? [];
 			// Delivery records log where task output went and spend no tokens.
 			records.value = all.filter((r) => !r.project && !r.delivery);
@@ -132,10 +238,40 @@ export const useUsageStore = defineStore("usage", () => {
 		}
 	}
 
+	/** Reloads everything from the first page, after a filter changed. */
+	function applyFilters() {
+		offset.value = 0;
+		return fetch();
+	}
+
+	/** Sorts the Sessions list by column, flipping the order on a repeat. */
+	function sortBy(column: SessionSort) {
+		if (sort.value === column) {
+			order.value = order.value === "asc" ? "desc" : "asc";
+		} else {
+			sort.value = column;
+			order.value =
+				column === "name" || column === "agent" || column === "model"
+					? "asc"
+					: "desc";
+		}
+		offset.value = 0;
+		return fetchSessions();
+	}
+
+	function goToPage(page: number) {
+		const last = Math.max(
+			0,
+			Math.ceil(sessionTotal.value / SESSIONS_PAGE_SIZE) - 1,
+		);
+		offset.value = Math.min(Math.max(0, page), last) * SESSIONS_PAGE_SIZE;
+		return fetchSessions();
+	}
+
 	function setPreset(days: number) {
 		endDate.value = fmtDate(0);
 		startDate.value = fmtDate(days);
-		fetch();
+		applyFilters();
 	}
 
 	// ── Totals ────────────────────────────────────────────────────────────────
@@ -166,9 +302,7 @@ export const useUsageStore = defineStore("usage", () => {
 	const totalThrottles = computed(
 		() => records.value.filter((r) => r.has_throttle).length,
 	);
-	const sessionCount = computed(
-		() => new Set(records.value.map((r) => r.session_id)).size,
-	);
+	const sessionCount = computed(() => sessionTotal.value);
 	const avgTokensPerMsg = computed(() =>
 		totalMessages.value
 			? Math.round(totalTokens.value / totalMessages.value)
@@ -326,56 +460,6 @@ export const useUsageStore = defineStore("usage", () => {
 		return result;
 	});
 
-	// ── Sessions list ─────────────────────────────────────────────────────────
-
-	const sessionList = computed(() => {
-		type S = {
-			session_id: string;
-			agent_id: string;
-			model: string;
-			provider: string;
-			input: number;
-			output: number;
-			tool_calls: number;
-			has_error: boolean;
-			has_throttle: boolean;
-			first_ts: string;
-			last_ts: string;
-			task?: string;
-			channel?: string;
-		};
-		const m = new Map<string, S>();
-		for (const r of records.value) {
-			const s = m.get(r.session_id);
-			if (!s) {
-				m.set(r.session_id, {
-					session_id: r.session_id,
-					agent_id: r.agent_id,
-					model: usageModel(r) || blankKeyLabel(r),
-					provider: usageProvider(r) || blankKeyLabel(r),
-					input: r.input_tokens,
-					output: r.output_tokens,
-					tool_calls: r.tool_calls ?? 0,
-					has_error: r.has_error ?? false,
-					has_throttle: r.has_throttle ?? false,
-					first_ts: r.timestamp,
-					last_ts: r.timestamp,
-					task: r.task,
-					channel: r.channel,
-				});
-			} else {
-				s.input += r.input_tokens;
-				s.output += r.output_tokens;
-				s.tool_calls += r.tool_calls ?? 0;
-				s.has_error = s.has_error || (r.has_error ?? false);
-				s.has_throttle = s.has_throttle || (r.has_throttle ?? false);
-				if (r.timestamp < s.first_ts) s.first_ts = r.timestamp;
-				if (r.timestamp > s.last_ts) s.last_ts = r.timestamp;
-			}
-		}
-		return [...m.values()].sort((a, b) => b.last_ts.localeCompare(a.last_ts));
-	});
-
 	return {
 		records,
 		projectRecords,
@@ -409,6 +493,21 @@ export const useUsageStore = defineStore("usage", () => {
 		byDayOfWeek,
 		byHour,
 		byDay,
-		sessionList,
+		agentFilter,
+		modelFilter,
+		statusFilter,
+		deletedFilter,
+		sort,
+		order,
+		offset,
+		sessions,
+		sessionTotal,
+		sessionsLoading,
+		agentOptions,
+		modelOptions,
+		applyFilters,
+		sortBy,
+		goToPage,
+		fetchSessions,
 	};
 });

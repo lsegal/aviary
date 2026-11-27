@@ -208,6 +208,7 @@ func (p *promptRun) recordUsage() {
 		return
 	}
 	u.Timestamp = time.Now()
+	snapshotUsageSession(p.ctx, u)
 	if err := store.AppendJSONL(store.UsagePath(), u); err != nil {
 		slog.Warn("agent: failed to record usage", "err", err)
 	}

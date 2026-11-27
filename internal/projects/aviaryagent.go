@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/lsegal/aviary/internal/agent"
+	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/transcript"
 )
 
@@ -31,6 +32,8 @@ type AviaryAgentRun struct {
 	// Hold holds the turn's new tool calls while engaged, such as during the
 	// shutdown checkpoint.
 	Hold *agent.TurnHold
+	// Usage names the turn's session in Usage, such as the job's issue.
+	Usage agent.UsageSession
 }
 
 // AviaryAgentRunner runs one turn through core's agent runner and returns once
@@ -52,7 +55,7 @@ var errNoAviaryRunner = errors.New("in-process agents run only inside the aviary
 // readable output to output and its structured events to log, which may be
 // nil. It returns the turn's error, so a stopped turn reports
 // context.Canceled.
-func (r CommandRunner) runInProcess(ctx context.Context, spec agentSpec, model, prompt, mediaURL, workdir string, hold *agent.TurnHold, output io.Writer, log *transcript.Log) error {
+func (r CommandRunner) runInProcess(ctx context.Context, spec agentSpec, model, prompt, mediaURL, workdir string, hold *agent.TurnHold, usage agent.UsageSession, output io.Writer, log *transcript.Log) error {
 	if r.Aviary == nil {
 		return errNoAviaryRunner
 	}
@@ -68,6 +71,7 @@ func (r CommandRunner) runInProcess(ctx context.Context, spec agentSpec, model, 
 		Workdir:  workdir,
 		Event:    events.add,
 		Hold:     hold,
+		Usage:    usage,
 	})
 	events.flush()
 	return err
@@ -192,7 +196,7 @@ func (r CommandRunner) runInProcessJob(ctx context.Context, issue Issue, session
 	if recorder := r.transcriptRecorder(issue, ""); recorder != nil {
 		output = io.MultiWriter(recorder, output)
 	}
-	runErr := r.runInProcess(ctx, spec, session.Model, jobPrompt(r, issue, session), "", workdir, hold, output, log)
+	runErr := r.runInProcess(ctx, spec, session.Model, jobPrompt(r, issue, session), "", workdir, hold, agent.UsageSession{Name: jobUsageName(issue), Kind: domain.UsageKindJob, Owner: issueKey(issue)}, output, log)
 	if metadataOutput != nil {
 		metadataOutput.Flush()
 	}

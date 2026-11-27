@@ -85,7 +85,6 @@ describe("usage breakdowns", () => {
 			{ name: "claude", tokens: 1000, cost: 1.5 },
 			{ name: "codex", tokens: 100, cost: null },
 		]);
-		expect(store.sessionList[0]?.model).toBe("claude/opus");
 	});
 
 	it("gives no row to records that spent no tokens", async () => {
