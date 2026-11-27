@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -330,13 +331,114 @@ func TestLocal_MissingToolsReturnsUnavailable(t *testing.T) {
 }
 
 func TestLocal_FFmpegFailureIsReported(t *testing.T) {
+	if os.Getenv("AVIARY_TEST_EXIT_1") == "1" {
+		os.Exit(1)
+	}
+	// A real non-zero exit, as ffmpeg gives for input it can't read.
+	cmd := exec.Command(os.Args[0], "-test.run=^TestLocal_FFmpegFailureIsReported$")
+	cmd.Env = append(os.Environ(), "AVIARY_TEST_EXIT_1=1")
+	exitErr := cmd.Run()
+	require.Error(t, exitErr)
 	l := &Local{Resolve: readyStatus, run: func(context.Context, string, ...string) ([]byte, error) {
-		return []byte("Invalid data found when processing input\n"), errors.New("exit status 1")
+		return []byte("Invalid data found when processing input\n"), exitErr
 	}}
 	_, err := l.Transcribe(context.Background(), "/in/a.ogg", Options{})
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ErrEngineUnavailable)
-	assert.Contains(t, err.Error(), "Invalid data found")
+	assert.Contains(t, err.Error(), "ffmpeg couldn't convert the audio: Invalid data found")
+}
+
+func TestLocal_BrokenFFmpegIsReportedClearly(t *testing.T) {
+	for name, runErr := range map[string]error{
+		"crashed":   errors.New("signal: abort trap"),
+		"not found": &exec.Error{Name: "/bin/ffmpeg", Err: exec.ErrNotFound},
+	} {
+		t.Run(name, func(t *testing.T) {
+			l := &Local{Resolve: readyStatus, run: func(context.Context, string, ...string) ([]byte, error) {
+				return []byte("dyld[123]: Library not loaded: /opt/homebrew/opt/jpeg-xl/lib/libjxl.0.11.dylib\n"), runErr
+			}}
+			_, err := l.Transcribe(context.Background(), "/in/a.webm", Options{})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "ffmpeg is missing or failed to start")
+			assert.NotContains(t, err.Error(), "dyld")
+			assert.NotContains(t, err.Error(), "Library not loaded")
+		})
+	}
+}
+
+// writeFloatWAV writes mono 32-bit float WAV at rate.
+func writeFloatWAV(t *testing.T, path string, rate uint32, samples []float32) {
+	t.Helper()
+	var buf bytes.Buffer
+	buf.WriteString("RIFF")
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(36+4*len(samples)))
+	buf.WriteString("WAVEfmt ")
+	for _, v := range []any{uint32(16), uint16(3), uint16(1), rate, rate * 4, uint16(4), uint16(32)} {
+		_ = binary.Write(&buf, binary.LittleEndian, v)
+	}
+	buf.WriteString("data")
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(4*len(samples)))
+	_ = binary.Write(&buf, binary.LittleEndian, samples)
+	require.NoError(t, os.WriteFile(path, buf.Bytes(), 0o600))
+}
+
+func TestIsSpeechWAV(t *testing.T) {
+	dir := t.TempDir()
+	mono := filepath.Join(dir, "mono.wav")
+	writeWAV(t, mono, tone(time.Second, 0.5))
+	stereo := filepath.Join(dir, "stereo.wav")
+	writeWAV(t, stereo, tone(time.Second, 0.5), make([]int16, 16000))
+	float16k := filepath.Join(dir, "float16k.wav")
+	writeFloatWAV(t, float16k, 16000, make([]float32, 160))
+	float48k := filepath.Join(dir, "float48k.wav")
+	writeFloatWAV(t, float48k, 48000, make([]float32, 480))
+	webm := filepath.Join(dir, "rec.webm")
+	require.NoError(t, os.WriteFile(webm, []byte{0x1A, 0x45, 0xDF, 0xA3, 0, 0, 0, 0, 0, 0, 0, 0}, 0o600))
+	for path, want := range map[string]bool{
+		mono: true, stereo: true, float16k: true,
+		float48k: false, webm: false, filepath.Join(dir, "missing.wav"): false,
+	} {
+		assert.Equal(t, want, isSpeechWAV(path), filepath.Base(path))
+	}
+}
+
+func TestLocal_SpeechWAVSkipsFFmpeg(t *testing.T) {
+	for name, channels := range map[string][][]int16{
+		"mono":              {tone(2*time.Second, 0.5)},
+		"left channel only": {tone(2*time.Second, 0.5), make([]int16, 32000)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			in := filepath.Join(t.TempDir(), "recording.wav")
+			writeWAV(t, in, channels...)
+			st := readyStatus()
+			st.FFmpeg = Binary{Name: "ffmpeg"}
+			var calls [][]string
+			var heard []float64
+			l := &Local{Model: "base.en", Resolve: func() Status { return st }, run: fakeTools(t, &calls, nil, helloWorldJSON, &heard)}
+			got, err := l.Transcribe(context.Background(), in, Options{})
+			require.NoError(t, err)
+			assert.Equal(t, "Hello world.", got.Text)
+			assert.Equal(t, 2*time.Second, got.Duration)
+			require.Len(t, calls, 1, "only whisper-cli should run")
+			assert.Equal(t, "/bin/whisper-cli", calls[0][0])
+			assert.Len(t, heard, 32000)
+		})
+	}
+}
+
+func TestLocal_OtherWAVStillNeedsFFmpeg(t *testing.T) {
+	in := filepath.Join(t.TempDir(), "recording.wav")
+	writeFloatWAV(t, in, 48000, make([]float32, 48000))
+	st := readyStatus()
+	st.FFmpeg = Binary{Name: "ffmpeg"}
+	l := &Local{Resolve: func() Status { return st }, run: func(context.Context, string, ...string) ([]byte, error) {
+		t.Fatal("nothing should run")
+		return nil, nil
+	}}
+	_, err := l.Transcribe(context.Background(), in, Options{})
+	var unavailable *UnavailableError
+	require.ErrorAs(t, err, &unavailable)
+	assert.Equal(t, []string{"ffmpeg"}, unavailable.Missing)
 }
 
 func TestSettingsFrom(t *testing.T) {

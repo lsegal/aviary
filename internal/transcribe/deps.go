@@ -37,7 +37,11 @@ type Status struct {
 }
 
 // Missing lists what is not installed, in a form a user can act on.
-func (s Status) Missing() []string {
+func (s Status) Missing() []string { return s.missing(true) }
+
+// missing lists what is not installed, leaving out ffmpeg when the audio
+// needs no conversion.
+func (s Status) missing(ffmpeg bool) []string {
 	var missing []string
 	if !s.Whisper.Installed {
 		missing = append(missing, "whisper-cli")
@@ -45,7 +49,7 @@ func (s Status) Missing() []string {
 	if !s.Model.Downloaded {
 		missing = append(missing, "whisper model "+s.Model.Name)
 	}
-	if !s.FFmpeg.Installed {
+	if ffmpeg && !s.FFmpeg.Installed {
 		missing = append(missing, "ffmpeg")
 	}
 	return missing
