@@ -358,16 +358,18 @@
       </div>
     </nav>
 
-    <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <!-- Only the header's breadcrumb bar stays pinned: its title row slides
+         away as the page scrolls (#1437). -->
+    <main ref="mainEl" data-testid="page-main" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <SettingsPageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back" :title-link="titleLink"
-        :switcher="leafSwitcher" :identity="pageIdentity(route.path)">
+        :switcher="leafSwitcher" :identity="pageIdentity(route.path)" :collapsed="headerOffset">
         <template v-if="$slots['header-icon']" #icon><slot name="header-icon" /></template>
         <template v-if="$slots['header-status']" #status><slot name="header-status" /></template>
         <template v-if="$slots['header-actions']" #actions><slot name="header-actions" /></template>
         <template v-if="$slots.header" #default><slot name="header" /></template>
       </SettingsPageHeader>
       <!-- The page fills what the header leaves. -->
-      <div class="flex min-h-0 flex-1 flex-col">
+      <div data-testid="page-body" class="flex min-h-0 flex-1 flex-col">
         <slot />
       </div>
     </main>
@@ -413,6 +415,7 @@ import {
 } from "vue";
 import { type RouteLocationRaw, useRoute, useRouter } from "vue-router";
 import { useProjectList } from "../composables/useProjects";
+import { useScrollAwayHeader } from "../composables/useScrollAwayHeader";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useChannelDialogs } from "../composables/useChannelDialogs";
 import { channelName, channelPath } from "../lib/channels";
@@ -1140,6 +1143,14 @@ const headerCrumbs = computed((): SettingsCrumb[] => {
 		...props.trail.crumbs,
 	];
 });
+// Only the header's breadcrumb bar stays pinned; its title row slides away
+// as the page scrolls (#1437), and comes back on every new page.
+const mainEl = ref<HTMLElement | null>(null);
+const { offset: headerOffset, reset: showHeader } = useScrollAwayHeader(
+	mainEl,
+	computed(() => headerCrumbs.value.length > 0),
+);
+watch(() => route.path, showHeader);
 // The leaf's switcher between its sibling projects, tasks, channels or
 // files (#1063).
 const leafSwitcher = useCrumbSwitcher(
