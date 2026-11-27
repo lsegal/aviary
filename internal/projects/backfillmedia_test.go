@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -184,6 +185,9 @@ func TestManagerBackfillIssueMediaRejectsBadRequests(t *testing.T) {
 
 // Unreadable session history is reported rather than treated as no filings.
 func TestManagerBackfillIssueMediaReportsUnreadableHistory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reports reading a file as a directory as not existing, which reads as no history")
+	}
 	m, _ := backfillTestManager(t, "o/r")
 	if err := os.WriteFile(filepath.Join(store.DataDir(), store.DirAgents), []byte("not a dir"), 0o600); err != nil {
 		t.Fatal(err)
