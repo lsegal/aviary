@@ -58,6 +58,8 @@
 				<CalendarDaysIcon aria-hidden="true" :class="HEADER_COLLAPSE_ICON_CLS" />
 				<span :class="HEADER_COLLAPSE_LABEL_CLS">Schedule</span>
 			</button>
+			<ClearJobsMenu v-if="targets.length" :targets="targets" :done="status?.states?.done ?? 0"
+				:failed="status?.states?.failed ?? 0" @cleared="refresh" />
 			<button type="button" aria-label="Check now" title="Check now" :class="HEADER_ICON_CLS"
 				:disabled="checking" @click="onCheckNow">
 				<ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="{ 'animate-spin': checking }" />
@@ -225,7 +227,7 @@
 									@dismiss="onAction(dismiss, $event)" />
 								<JobCard v-else :job="item.job" :now="now" :show-project="aggregate"
 									:busy="busyJob === item.job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
-									@summarize="onSummarize" />
+									@clear="onAction(clear, $event)" @summarize="onSummarize" />
 							</template>
 						</section>
 
@@ -264,6 +266,7 @@ import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import IssueFilterEditor from "../components/projects/IssueFilterEditor.vue";
 import JobCard from "../components/projects/JobCard.vue";
+import ClearJobsMenu from "../components/projects/ClearJobsMenu.vue";
 import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
 import ProjectLogsPanel from "../components/projects/ProjectLogsPanel.vue";
@@ -469,6 +472,7 @@ const {
 	retry,
 	stop,
 	dismiss,
+	clear,
 	scheduleEntries,
 } = useProjectBoard(targets, states, search, kanban, ref(true));
 // The header's issue filter is editable for one project (#1213): the

@@ -31,6 +31,9 @@ export interface ProjectEntry {
 	/** The project's own mode, overriding the shared one (#1371); unset
 	 * follows the shared mode. "manual" never searches for issues (#1307). */
 	mode?: ProjectMode;
+	/** How long the project's done and failed jobs are kept, overriding the
+	 * shared finished_ttl (#1460); unset follows the shared value. */
+	finished_ttl?: string;
 }
 
 /** The reports form. With enabled false nothing is saved. */
@@ -68,6 +71,8 @@ export interface ProjectsSection {
 	fallbacks?: string[];
 	unblock_interval?: string;
 	temp_dirs?: string[];
+	/** How long done and failed jobs are kept; unset means DEFAULT_FINISHED_TTL. */
+	finished_ttl?: string;
 	// Fields this page doesn't edit (webhook, unblock_agent, ...) pass through untouched.
 	[key: string]: unknown;
 }
@@ -96,9 +101,13 @@ export interface ProjectSettings {
 	fallbacks: string[];
 	unblockInterval: string;
 	tempDirs: string[];
+	/** How long done and failed jobs are kept; empty uses DEFAULT_FINISHED_TTL. */
+	finishedTTL: string;
 }
 
 export const DEFAULT_CONCURRENCY = 3;
+/** projects.finished_ttl's default, matching config.DefaultProjectsFinishedTTL. */
+export const DEFAULT_FINISHED_TTL = "2w";
 export const DEFAULT_DELIVERY: Delivery = "browser";
 export const DEFAULT_INTERVAL = "30s";
 export const DEFAULT_BROWSER_INTERVAL = "20s";
@@ -159,7 +168,12 @@ export interface JobModelsConfig {
 		projects?: AgentProjectsSection;
 	}[];
 	models?: { defaults?: { model?: string; fallbacks?: string[] } };
-	projects?: { model?: string; fallbacks?: string[]; mode?: string };
+	projects?: {
+		model?: string;
+		fallbacks?: string[];
+		mode?: string;
+		finished_ttl?: string;
+	};
 }
 
 /**
@@ -338,6 +352,7 @@ export function settingsFromSection(
 		fallbacks: strings(s.fallbacks),
 		unblockInterval: (s.unblock_interval ?? "").trim(),
 		tempDirs: strings(s.temp_dirs),
+		finishedTTL: (s.finished_ttl ?? "").trim(),
 	};
 }
 
@@ -488,6 +503,8 @@ export function withSettings(
 	set("unblock_interval", s.unblockInterval.trim(), !s.unblockInterval.trim());
 	const dirs = clean(s.tempDirs);
 	set("temp_dirs", dirs, !dirs.length);
+	const ttl = s.finishedTTL.trim();
+	set("finished_ttl", ttl, !ttl);
 	return out;
 }
 
@@ -526,6 +543,40 @@ export function withMode(
 		const { mode: _, ...rest } = p;
 		return mode === "inherit" ? rest : { ...rest, mode };
 	});
+}
+
+/** target's own finished_ttl override, or "" when it inherits the shared one. */
+export function projectFinishedTTL(
+	section: AgentProjectsSection | undefined,
+	target: string,
+): string {
+	const entry = (section ?? []).find((p) => sameTarget(p.target, target));
+	const ttl = typeof entry?.finished_ttl === "string" ? entry.finished_ttl.trim() : "";
+	return ttl.toLowerCase() === "inherit" ? "" : ttl;
+}
+
+/** The projects with target's finished_ttl override set, or removed when empty. */
+export function withFinishedTTL(
+	section: AgentProjectsSection | undefined,
+	target: string,
+	ttl: string,
+): AgentProjectsSection {
+	const value = ttl.trim();
+	return (section ?? []).map((p) => {
+		if (!sameTarget(p.target, target)) return p;
+		const { finished_ttl: _, ...rest } = p;
+		return !value || value.toLowerCase() === "inherit"
+			? rest
+			: { ...rest, finished_ttl: value };
+	});
+}
+
+/** The shared finished_ttl, or DEFAULT_FINISHED_TTL when unset. */
+export function globalFinishedTTL(
+	cfg: JobModelsConfig | null | undefined,
+): string {
+	const ttl = cfg?.projects?.finished_ttl;
+	return (typeof ttl === "string" && ttl.trim()) || DEFAULT_FINISHED_TTL;
 }
 
 /** Which settings still hold their defaults, for the grey "default" tags. */

@@ -79,6 +79,12 @@
 				@click="emit('stop', job)">
 				<StopIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
+			<button v-if="clearable" type="button" :disabled="busy" data-testid="job-clear"
+				aria-label="Clear" title="Clear this finished job from the board and job store"
+				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+				@click="emit('clear', job)">
+				<XMarkIcon aria-hidden="true" class="h-4 w-4" />
+			</button>
 			<JobOutputToggle />
 			<div class="flex min-w-0 flex-1 flex-col items-end text-right font-mono text-xs">
 				<span v-if="agentLabel" data-testid="job-agent" class="max-w-full truncate text-gray-500 dark:text-gray-400"
@@ -95,6 +101,7 @@ import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import ArrowsPointingOutIcon from "@heroicons/vue/24/outline/ArrowsPointingOutIcon";
 import SparklesIcon from "@heroicons/vue/24/outline/SparklesIcon";
 import StopIcon from "@heroicons/vue/24/outline/StopIcon";
+import XMarkIcon from "@heroicons/vue/24/outline/XMarkIcon";
 import { computed } from "vue";
 import { projectOwner } from "../../lib/projectSettings";
 import {
@@ -122,7 +129,16 @@ const emit = defineEmits<{
 	retry: [job: ProjectJob];
 	stop: [job: ProjectJob];
 	summarize: [job: ProjectJob];
+	clear: [job: ProjectJob];
 }>();
+
+// A done or failed job can be cleared from the board and the job store
+// (#1460); a schedule's runs are dismissed instead.
+const clearable = computed(
+	() =>
+		!props.job.scheduled &&
+		(props.job.state === "done" || props.job.state === "failed"),
+);
 
 const settings = useSettingsStore();
 const owner = computed(() => projectOwner(settings.config, props.job.target));

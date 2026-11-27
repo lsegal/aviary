@@ -84,6 +84,27 @@
 			</div>
 		</section>
 
+		<section v-if="selected" :class="CARD" data-testid="agent-project-finished-ttl">
+			<h3 :class="CARD_HEAD">Finished jobs <span :class="CARD_NOTE">How long {{ selected }}'s done and failed jobs are kept</span></h3>
+			<div class="space-y-2 p-4">
+				<div class="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400" data-testid="project-finished-ttl-source">
+					<template v-if="!selectedTTL">Inherited from the global setting: {{ globalTTL }}</template>
+					<template v-else>
+						Overridden for this project: {{ selectedTTL }} (global: {{ globalTTL }})
+						<button type="button" data-testid="project-finished-ttl-reset" class="text-blue-600 hover:underline dark:text-blue-400"
+							@click="setTTL('')">Reset to global</button>
+					</template>
+				</div>
+				<label class="block max-w-xs">
+					<span :class="LABEL">Keep done and failed jobs for</span>
+					<input :value="selectedTTL" type="text" data-field="finished_ttl" :class="INPUT"
+						:placeholder="`Inherit (global: ${globalTTL})`" @change="setTTL(($event.target as HTMLInputElement).value)" />
+					<span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">Such as 336h, 14d or 2w; 0 keeps them
+						until cleared. Empty follows the global setting.</span>
+				</label>
+			</div>
+		</section>
+
 		<section v-if="selected" :class="CARD" data-testid="agent-project-reports">
 			<h3 :class="CARD_HEAD">Reports <span :class="CARD_NOTE">Send {{ selected }}'s job events through an Aviary agent's channels</span></h3>
 			<div class="space-y-4 p-4">
@@ -157,6 +178,7 @@ import { channelName, channelTarget } from "../../lib/channels";
 import {
 	type AgentProjectsSection,
 	agentProjectsYAML,
+	globalFinishedTTL,
 	globalProjectMode,
 	isListed,
 	type JobModelsConfig,
@@ -164,6 +186,7 @@ import {
 	jobModels,
 	joinReportTarget,
 	type ProjectReports,
+	projectFinishedTTL,
 	projectModeChoice,
 	projectOwner,
 	projectTargets,
@@ -171,6 +194,7 @@ import {
 	reportsError,
 	reportsFromSection,
 	splitReportTarget,
+	withFinishedTTL,
 	withMode,
 	withoutProject,
 	withProject,
@@ -344,6 +368,16 @@ const selectedMode = computed(() =>
 	projectModeChoice(section.value, selected.value),
 );
 const globalMode = computed(() => globalProjectMode(props.config));
+
+// The selected project's finished_ttl override (#1460), empty to follow the
+// shared value.
+const selectedTTL = computed(() =>
+	projectFinishedTTL(section.value, selected.value),
+);
+const globalTTL = computed(() => globalFinishedTTL(props.config));
+function setTTL(ttl: string) {
+	store(withFinishedTTL(section.value, selected.value, ttl));
+}
 
 // ── Reports ─────────────────────────────────────────────────────────────────
 

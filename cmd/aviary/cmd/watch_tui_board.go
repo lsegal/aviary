@@ -51,6 +51,7 @@ var watchHelpLines = []string{
 	"u          resume it",
 	"s          stop it (asks to confirm)",
 	"d          dismiss a failed scheduled run",
+	"x          clear a done or failed job (asks to confirm)",
 	"m          queue the selected job's pull request for gh-safe-merge",
 	"Q          queue jobs: merge 1201 1207 · discuss 4 · fix 12",
 	"c          open / close the prompt chat",

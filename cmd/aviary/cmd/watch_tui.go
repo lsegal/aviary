@@ -354,6 +354,7 @@ var watchActions = []struct{ key, verb, tool string }{
 	{"u", "resume", "project_job_resume"},
 	{"s", "stop", "project_job_stop"},
 	{"d", "dismiss", "project_job_dismiss"},
+	{"x", "clear", "project_job_clear"},
 }
 
 // actionAvailable reports whether the item accepts verb, from the actions
@@ -378,6 +379,13 @@ func (it watchItem) actionAvailable(verb string) (bool, string) {
 			return true, ""
 		}
 		return false, "only a failed scheduled run can be dismissed"
+	case "clear":
+		// Clearing removes a done or failed job from the board and the
+		// job store (issue #1460); a schedule's runs are dismissed instead.
+		if state := watchJobBoardState(it.job); !it.scheduled() && (state == watchDone || state == watchFailed) {
+			return true, ""
+		}
+		return false, "only a done or failed job can be cleared"
 	}
 	if it.job.Actions[verb] {
 		return true, ""
@@ -809,7 +817,7 @@ func (m watchModel) startAction(verb, tool string) (tea.Model, tea.Cmd) {
 		m.errText = fmt.Sprintf("cannot %s %s: %s", verb, watchJobKey(it.job), why)
 		return m, nil
 	}
-	if verb == "stop" {
+	if verb == "stop" || verb == "clear" {
 		m.confirm = &watchPendingAction{tool: tool, verb: verb, item: it}
 		return m, nil
 	}
