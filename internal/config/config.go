@@ -391,7 +391,7 @@ type TaskConfig struct {
 	// compiled script aside or turned precompile off. Aviary no longer
 	// writes it; MigrateAutoDisabledPrecompile restores those tasks and
 	// clears it.
-	PrecompileNote string `yaml:"precompile_note,omitempty" json:"precompile_note,omitempty"`
+	PrecompileNote string `yaml:"precompile_note,omitempty" json:"-"`
 	// IdleTimeout is how long a prompt run may go without any output before
 	// it is stopped and marked failed, e.g. "30m". "0" disables it. Empty
 	// uses DefaultTaskIdleTimeout.
