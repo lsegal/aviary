@@ -1,81 +1,24 @@
 name: Dependabot auto-merge
 on: pull_request
 
-# A newer push to the same Dependabot PR supersedes the wait on the old head.
-concurrency:
-  group: dependabot-automerge-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 permissions:
-  actions: write
-  checks: read
   contents: write
   pull-requests: write
-  statuses: read
 
 jobs:
   dependabot:
     runs-on: ubuntu-latest
     if: github.event.pull_request.user.login == 'dependabot[bot]'
-    timeout-minutes: 120
     steps:
       - name: Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
-      # main has no required status checks, so GitHub refuses to enable
-      # auto-merge on it (#1495). This job waits for every other check on the
-      # PR's head itself and merges once they all pass. A failing check leaves
-      # the PR open for a person without turning this job red.
-      - name: Merge once every other check passes
-        shell: bash
+      # Auto-merge waits on main's required status checks (the "main"
+      # ruleset); GitHub refuses to enable it on a branch without them (#1495).
+      - name: Enable auto-merge for Dependabot PRs
+        run: gh pr merge --auto --squash "$PR_URL"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          RUN_ID: ${{ github.run_id }}
-          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
-        run: |
-          set -euo pipefail
-          ok='success|skipped|neutral'
-          while :; do
-            current="$(gh pr view "$PR_URL" --json headRefOid,state --jq '"\(.state) \(.headRefOid)"')"
-            if [[ "$current" != "OPEN $HEAD_SHA" ]]; then
-              echo "::notice::PR is now '$current'; nothing to merge for $HEAD_SHA."
-              exit 0
-            fi
-
-            # Every other workflow's runs on this head (earlier runs of this
-            # one are superseded, not failures), so jobs a run adds later
-            # (such as reusable workflows) are covered before they register.
-            runs="$(gh api --paginate "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
-              --jq ".workflow_runs[] | select(.id != $RUN_ID and .name != \"$GITHUB_WORKFLOW\") | \"\(.status) \(.conclusion // \"\") \(.name)\"")"
-            # Check runs from other apps (CodeQL, Qlty), minus this job itself.
-            checks="$(gh api --paginate "repos/$REPO/commits/$HEAD_SHA/check-runs?per_page=100" \
-              --jq ".check_runs[] | select(.name != \"$GITHUB_JOB\") | \"\(.status) \(.conclusion // \"\") \(.name)\"")"
-            statuses="$(gh api "repos/$REPO/commits/$HEAD_SHA/status" \
-              --jq '.statuses[] | "\(.state) \(.state) \(.context)"' \
-              | sed -E 's/^success success/completed success/; s/^(failure|error) /completed failure /; s/^pending pending/pending - /')"
-            all="$(printf '%s\n%s\n%s\n' "$runs" "$checks" "$statuses" | sed '/^$/d')"
-
-            failed="$(grep -E '^completed ' <<<"$all" | grep -vE "^completed ($ok) " || true)"
-            if [[ -n "$failed" ]]; then
-              echo "::warning::Not merging: a check did not pass on $HEAD_SHA."
-              echo "$failed"
-              exit 0
-            fi
-            if [[ -n "$runs" ]] && ! grep -vqE '^completed ' <<<"$all"; then
-              break
-            fi
-            echo "Waiting for checks on $HEAD_SHA:"
-            grep -vE '^completed ' <<<"$all" || echo "(no other workflow run registered yet)"
-            sleep 30
-          done
-
-          gh pr merge "$PR_URL" --squash --match-head-commit "$HEAD_SHA"
-          # A merge made with GITHUB_TOKEN starts no push workflows, so run
-          # the default branch's checks on the merged code explicitly.
-          gh workflow run ci.yml --repo "$REPO" --ref "$BASE_BRANCH"
-          gh workflow run codeql.yml --repo "$REPO" --ref "$BASE_BRANCH"
+          PR_URL: ${{github.event.pull_request.html_url}}
+          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
