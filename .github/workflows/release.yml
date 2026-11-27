@@ -32,6 +32,19 @@ jobs:
       VERSION: ${{ inputs.level == 'version' && inputs.version || inputs.level }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      # The release commit is created through the API and main is moved to it
+      # immediately, before any required status check can report on it. An
+      # app that is a bypass actor on the main ruleset can make that update;
+      # GITHUB_TOKEN cannot (#1562). See "Publishing a Release" in
+      # CONTRIBUTING.md for the one-time setup.
+      - name: Mint release app token
+        id: app-token
+        if: vars.RELEASE_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
       - name: Setup git credentials
         run: |
           git config --global user.name 'github-actions[bot]'
@@ -52,6 +65,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm package
       - run: pnpm release
+        env:
+          RELEASE_TOKEN: ${{ steps.app-token.outputs.token }}
       - id: version
         run: echo "tag=v$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
 

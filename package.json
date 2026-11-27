@@ -53,7 +53,7 @@
 		"format": "biome format --write .",
 		"test": "concurrently -n go,scripts,unit,web \"pnpm test:go\" \"pnpm test:scripts\" \"pnpm test:web\" \"pnpm test:e2e\"",
 		"test:go": "go test ./...",
-		"test:scripts": "node --test scripts/dev-proxy.test.mjs scripts/dev-go.test.mjs scripts/dev-allowed-hosts.test.mjs scripts/go-coverage.test.mjs",
+		"test:scripts": "node --test scripts/dev-proxy.test.mjs scripts/dev-go.test.mjs scripts/dev-allowed-hosts.test.mjs scripts/go-coverage.test.mjs scripts/signed-release-commit.test.mjs",
 		"test:web": "vitest run",
 		"test:web:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text-summary",
 		"test:e2e": "pnpm exec playwright install && playwright test",
