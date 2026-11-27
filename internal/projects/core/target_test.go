@@ -3,6 +3,7 @@ package core
 import (
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -282,5 +283,101 @@ func TestValidateIssueFilter(t *testing.T) {
 				t.Fatalf("ValidateIssueFilter(%q) = %v, want an error containing %q", tt.filter, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestManualTargetsNil(t *testing.T) {
+	var none *ManualTargets
+	if none.Has("o/r") {
+		t.Fatal("nil ManualTargets.Has(o/r) = true, want false")
+	}
+	if got := none.List(); got != nil {
+		t.Fatalf("nil ManualTargets.List() = %v, want nil", got)
+	}
+}
+
+func TestManualTargetsHasAndList(t *testing.T) {
+	m := NewManualTargets([]string{"z/r", "a/r", "m/r", "a/r"})
+	if got, want := m.List(), []string{"a/r", "m/r", "z/r"}; !slices.Equal(got, want) {
+		t.Fatalf("List() = %v, want %v", got, want)
+	}
+	for target, want := range map[string]bool{"a/r": true, "m/r": true, "z/r": true, "o/r": false, "": false} {
+		if got := m.Has(target); got != want {
+			t.Errorf("Has(%q) = %v, want %v", target, got, want)
+		}
+	}
+	if got := NewManualTargets(nil).List(); len(got) != 0 {
+		t.Fatalf("empty List() = %v, want none", got)
+	}
+}
+
+func TestManualTargetsSet(t *testing.T) {
+	tests := []struct {
+		name          string
+		before, after []string
+		wantLeft      []string
+	}{
+		{name: "empty to empty"},
+		{name: "empty to some", after: []string{"a/r", "b/r"}},
+		{name: "unchanged", before: []string{"a/r", "b/r"}, after: []string{"b/r", "a/r"}},
+		{name: "some leave", before: []string{"a/r", "b/r", "c/r"}, after: []string{"b/r", "d/r"}, wantLeft: []string{"a/r", "c/r"}},
+		{name: "all leave", before: []string{"a/r", "b/r"}, wantLeft: []string{"a/r", "b/r"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewManualTargets(tt.before)
+			left := m.Set(tt.after)
+			slices.Sort(left)
+			if !slices.Equal(left, tt.wantLeft) {
+				t.Fatalf("Set(%v) left = %v, want %v", tt.after, left, tt.wantLeft)
+			}
+			want := slices.Compact(slices.Sorted(slices.Values(tt.after)))
+			if got := m.List(); !slices.Equal(got, want) {
+				t.Fatalf("List() after Set = %v, want %v", got, want)
+			}
+			for _, target := range tt.wantLeft {
+				if m.Has(target) {
+					t.Errorf("Has(%q) after leaving = true, want false", target)
+				}
+			}
+		})
+	}
+}
+
+func TestManualTargetsSetDoesNotAliasInput(t *testing.T) {
+	targets := []string{"a/r"}
+	m := NewManualTargets(targets)
+	targets[0] = "b/r"
+	if !m.Has("a/r") || m.Has("b/r") {
+		t.Fatalf("set followed a caller mutation: List() = %v", m.List())
+	}
+}
+
+func TestManualTargetsConcurrent(t *testing.T) {
+	m := NewManualTargets(nil)
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for j := range 100 {
+				if j%2 == i%2 {
+					m.Set([]string{"a/r"})
+				} else {
+					m.Set([]string{"b/r"})
+				}
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for range 100 {
+				m.Has("a/r")
+				m.List()
+			}
+		}()
+	}
+	wg.Wait()
+	if got := m.List(); len(got) != 1 || (got[0] != "a/r" && got[0] != "b/r") {
+		t.Fatalf("List() after concurrent Set = %v, want exactly one of a/r or b/r", got)
 	}
 }
