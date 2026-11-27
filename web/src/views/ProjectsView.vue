@@ -81,7 +81,7 @@
 							{{ scheduleError }}
 						</p>
 
-						<UpNextStrip v-if="!aggregate" :runs="upcoming" :now="now" @open="openSchedule" />
+						<UpNextStrip :runs="upcoming" :now="now" :show-project="aggregate" @open="openSchedule" />
 
 						<!-- The counts show as full cards or as one compact row of chips, the
 							default below md, and a toggle switches between them. -->
