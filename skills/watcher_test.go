@@ -151,70 +151,6 @@ func TestWatcherStartReturnsAfterStop(t *testing.T) {
 	}
 }
 
-func TestWatcherWatchesRootCreatedAfterStart(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "skills")
-	w := NewWatcher(root)
-	defer w.Stop()
-
-	changed := make(chan struct{}, 8)
-	w.OnChange(func() {
-		select {
-		case changed <- struct{}{}:
-		default:
-		}
-	})
-	startWatcher(t, w)
-
-	// The root does not exist yet; only its parent is watched. Keep creating
-	// skill files until the watcher has picked up the new tree and reports a
-	// change for a file inside it.
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "late"), 0o700))
-	skill := filepath.Join(root, "late", "SKILL.md")
-	require.Eventually(t, func() bool {
-		select {
-		case <-changed:
-		default:
-		}
-		_ = os.WriteFile(skill, []byte(time.Now().String()), 0o600)
-		select {
-		case <-changed:
-			return true
-		case <-time.After(watchDebounce * 3):
-			return false
-		}
-	}, 10*time.Second, 10*time.Millisecond)
-}
-
-func TestWatcherIgnoresUnrelatedFiles(t *testing.T) {
-	parent := t.TempDir()
-	root := filepath.Join(parent, "skills")
-	require.NoError(t, os.MkdirAll(root, 0o700))
-	w := NewWatcher(root)
-	defer w.Stop()
-
-	var mu sync.Mutex
-	calls := 0
-	w.OnChange(func() {
-		mu.Lock()
-		calls++
-		mu.Unlock()
-	})
-	startWatcher(t, w)
-
-	count := func() int {
-		mu.Lock()
-		defer mu.Unlock()
-		return calls
-	}
-
-	// Writes to unrelated files in the watched parent must never notify.
-	unrelated := filepath.Join(parent, "notes.txt")
-	for range 5 {
-		require.NoError(t, os.WriteFile(unrelated, []byte(time.Now().String()), 0o600))
-	}
-	assert.Never(t, func() bool { return count() > 0 }, watchDebounce*3, 20*time.Millisecond)
-}
-
 func TestWatchCreatedDir(t *testing.T) {
 	fw := newTestFSWatcher(t)
 	watched := map[string]struct{}{}
@@ -322,44 +258,107 @@ func TestAddWatchRootsFailsWhenParentMissing(t *testing.T) {
 	assert.Empty(t, watched)
 }
 
-func TestWatcherDebouncesBurstOfChanges(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "skills")
+// countingWatcher runs a Watcher over dirs and counts its notifications.
+type countingWatcher struct {
+	*Watcher
+	mu    sync.Mutex
+	calls int
+}
+
+func startCountingWatcher(t *testing.T, dirs ...string) *countingWatcher {
+	t.Helper()
+	cw := &countingWatcher{Watcher: NewWatcher(dirs...)}
+	cw.OnChange(func() {
+		cw.mu.Lock()
+		cw.calls++
+		cw.mu.Unlock()
+	})
+	startWatcher(t, cw.Watcher)
+	t.Cleanup(cw.Stop)
+	return cw
+}
+
+func (cw *countingWatcher) count() int {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+	return cw.calls
+}
+
+// waitForChange writes to file until a notification beyond the current count
+// arrives, polling slower than the debounce so each write's notification can
+// fire. It returns the settled count afterwards.
+func (cw *countingWatcher) waitForChange(t *testing.T, file string) int {
+	t.Helper()
+	before := cw.count()
+	require.Eventually(t, func() bool {
+		if cw.count() > before {
+			return true
+		}
+		_ = os.WriteFile(file, []byte(time.Now().String()), 0o600)
+		return false
+	}, 10*time.Second, watchDebounce*2)
+	return cw.count()
+}
+
+func newSkillFile(t *testing.T, root string) string {
+	t.Helper()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "demo"), 0o700))
 	skill := filepath.Join(root, "demo", "SKILL.md")
 	require.NoError(t, os.WriteFile(skill, []byte("initial"), 0o600))
-	w := NewWatcher(root)
-	defer w.Stop()
+	return skill
+}
 
-	var mu sync.Mutex
-	calls := 0
-	w.OnChange(func() {
-		mu.Lock()
-		calls++
-		mu.Unlock()
-	})
-	count := func() int {
-		mu.Lock()
-		defer mu.Unlock()
-		return calls
+func TestWatcherWatchesRootCreatedAfterStart(t *testing.T) {
+	parent := t.TempDir()
+	ready := filepath.Join(parent, "ready")
+	probe := newSkillFile(t, ready)
+	root := filepath.Join(parent, "skills")
+	cw := startCountingWatcher(t, ready, root)
+	cw.waitForChange(t, probe)
+
+	// Only root's parent is watched until root appears; creating it must
+	// notify and start watching the new tree.
+	late := filepath.Join(root, "late")
+	require.NoError(t, os.MkdirAll(late, 0o700))
+	skill := filepath.Join(late, "SKILL.md")
+	require.NoError(t, os.WriteFile(skill, []byte("created"), 0o600))
+	cw.waitForChange(t, skill)
+
+	// The tree is now watched, so a later edit inside it notifies too.
+	settled := cw.count()
+	require.NoError(t, os.WriteFile(skill, []byte("edited"), 0o600))
+	assert.Eventually(t, func() bool { return cw.count() > settled }, 5*time.Second, 10*time.Millisecond)
+}
+
+func TestWatcherIgnoresUnrelatedFiles(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "skills")
+	skill := newSkillFile(t, root)
+	cw := startCountingWatcher(t, root)
+	settled := cw.waitForChange(t, skill)
+
+	// Changes to unrelated files in the watched parent never notify.
+	unrelated := filepath.Join(parent, "notes.txt")
+	for range 5 {
+		require.NoError(t, os.WriteFile(unrelated, []byte(time.Now().String()), 0o600))
 	}
-	startWatcher(t, w)
+	require.NoError(t, os.Remove(unrelated))
+	assert.Never(t, func() bool { return cw.count() > settled }, watchDebounce*3, 20*time.Millisecond)
 
-	// Wait until the watcher is live, then let that notification settle.
-	// Polling slower than the debounce lets each probe's notification fire.
-	require.Eventually(t, func() bool {
-		if count() > 0 {
-			return true
-		}
-		_ = os.WriteFile(skill, []byte("probe"), 0o600)
-		return false
-	}, 10*time.Second, watchDebounce*2)
-	settled := count()
+	// The watcher is still running and reports the next skill edit.
+	assert.Equal(t, settled+1, cw.waitForChange(t, skill))
+}
+
+func TestWatcherDebouncesBurstOfChanges(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "skills")
+	skill := newSkillFile(t, root)
+	cw := startCountingWatcher(t, root)
+	settled := cw.waitForChange(t, skill)
 
 	// A burst of writes well inside one debounce window notifies once.
-	const writes = 10
-	for i := range writes {
+	for i := range 10 {
 		require.NoError(t, os.WriteFile(skill, []byte{byte('a' + i)}, 0o600))
 	}
-	require.Eventually(t, func() bool { return count() > settled }, 3*time.Second, 10*time.Millisecond)
-	assert.Never(t, func() bool { return count() > settled+1 }, watchDebounce*2, 20*time.Millisecond)
+	require.Eventually(t, func() bool { return cw.count() > settled }, 5*time.Second, 10*time.Millisecond)
+	assert.Never(t, func() bool { return cw.count() > settled+1 }, watchDebounce*2, 20*time.Millisecond)
 }

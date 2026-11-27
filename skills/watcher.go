@@ -48,6 +48,8 @@ func (w *Watcher) Start() error {
 	}
 	defer fw.Close() //nolint:errcheck
 
+	// watched is shared by the event loop and the debounce timer goroutine.
+	var watchedMu sync.Mutex
 	watched := make(map[string]struct{})
 	for _, dir := range w.dirs {
 		if err := addWatchRoots(fw, watched, dir); err != nil {
@@ -61,11 +63,13 @@ func (w *Watcher) Start() error {
 			debounceTimer.Stop()
 		}
 		debounceTimer = time.AfterFunc(watchDebounce, func() {
+			watchedMu.Lock()
 			for _, dir := range w.dirs {
 				if err := addWatchRoots(fw, watched, dir); err != nil {
 					slog.Warn("skills watcher: refresh failed", "dir", dir, "err", err)
 				}
 			}
+			watchedMu.Unlock()
 			w.notify()
 		})
 	}
@@ -86,7 +90,9 @@ func (w *Watcher) Start() error {
 				continue
 			}
 			if event.Has(fsnotify.Create) {
+				watchedMu.Lock()
 				watchCreatedDir(fw, watched, event.Name)
+				watchedMu.Unlock()
 			}
 			if event.Has(fsnotify.Write | fsnotify.Create | fsnotify.Remove | fsnotify.Rename) {
 				trigger()
