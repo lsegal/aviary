@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, type Ref, ref, watch } from "vue";
+import { computed, onScopeDispose, type Ref, ref, watch } from "vue";
 import { filterRowLayout } from "../lib/boardFilterRow";
 
 /**
@@ -30,7 +30,7 @@ export function useFilterRowFit(
 		},
 		{ immediate: true, flush: "post" },
 	);
-	onBeforeUnmount(() => observer?.disconnect());
+	onScopeDispose(() => observer?.disconnect());
 
 	const layout = computed(() =>
 		filterRowLayout(rowWidth.value, filterWidth.value, othersWidths.value),
