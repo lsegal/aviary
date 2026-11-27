@@ -145,7 +145,7 @@ func registerTaskManageTools(s *sdkmcp.Server) {
 func registerTaskUpcomingTool(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "task_upcoming",
-		Description: "List the next fires across enabled scheduled tasks, soonest first (default 5, at most 3 per task). project=<owner/repo> limits it to that project's scheduled prompts.",
+		Description: "List the next fires across enabled scheduled tasks, soonest first (default 5, at most 1 per task; per_task=<n> lists more fires of each task). project=<owner/repo> limits it to that project's scheduled prompts.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpcomingArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		d := GetDeps()
 		if d == nil || d.Scheduler == nil {
@@ -157,7 +157,7 @@ func registerTaskUpcomingTool(s *sdkmcp.Server) {
 		}
 		perTask := args.PerTask
 		if perTask <= 0 {
-			perTask = 3
+			perTask = 1
 		}
 		tasks := map[string]domain.ScheduledTask{}
 		for _, task := range d.Scheduler.ListTasks() {

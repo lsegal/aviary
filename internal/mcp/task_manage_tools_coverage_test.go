@@ -59,10 +59,13 @@ func TestTaskUpcoming_LimitsFiltersAndOrder(t *testing.T) {
 	setupSchedulerDeps(t, upcomingConfig())
 	d := NewDispatcher("https://localhost:16677", "")
 
-	// Defaults: 5 runs, at most 3 per task.
+	// Defaults: 5 runs, one per task, so every enabled task appears once at
+	// its next fire, soonest first.
 	runs := callUpcoming(t, d, map[string]any{})
-	require.Len(t, runs, 5)
-	assertUpcomingOrder(t, runs, 3)
+	require.Len(t, runs, 3)
+	assertUpcomingOrder(t, runs, 1)
+	ids := []string{runs[0].TaskID, runs[1].TaskID, runs[2].TaskID}
+	assert.ElementsMatch(t, []string{"bot/hourly", "bot/bihourly", "bot/triage"}, ids)
 	for _, run := range runs {
 		switch run.TaskID {
 		case "bot/triage":
@@ -75,14 +78,12 @@ func TestTaskUpcoming_LimitsFiltersAndOrder(t *testing.T) {
 		}
 	}
 
-	// One run per task, with room for more: every enabled task appears once.
-	runs = callUpcoming(t, d, map[string]any{"limit": 10, "per_task": 1})
-	require.Len(t, runs, 3)
-	assertUpcomingOrder(t, runs, 1)
-	ids := []string{runs[0].TaskID, runs[1].TaskID, runs[2].TaskID}
-	assert.ElementsMatch(t, []string{"bot/hourly", "bot/bihourly", "bot/triage"}, ids)
+	// A larger per_task lists more fires of each task, up to limit.
+	runs = callUpcoming(t, d, map[string]any{"per_task": 3})
+	require.Len(t, runs, 5)
+	assertUpcomingOrder(t, runs, 3)
 
-	// An explicit limit truncates; a large per_task lifts the default cap.
+	// An explicit limit truncates.
 	runs = callUpcoming(t, d, map[string]any{"limit": 2})
 	assert.Len(t, runs, 2)
 	runs = callUpcoming(t, d, map[string]any{"limit": 20, "per_task": 4})
@@ -91,6 +92,9 @@ func TestTaskUpcoming_LimitsFiltersAndOrder(t *testing.T) {
 
 	// project limits it to that project's tasks, capped per task.
 	runs = callUpcoming(t, d, map[string]any{"project": " o/r ", "limit": 10})
+	require.Len(t, runs, 1)
+	assert.Equal(t, "bot/triage", runs[0].TaskID)
+	runs = callUpcoming(t, d, map[string]any{"project": "o/r", "limit": 10, "per_task": 3})
 	require.Len(t, runs, 3)
 	for _, run := range runs {
 		assert.Equal(t, "bot/triage", run.TaskID)
@@ -98,6 +102,22 @@ func TestTaskUpcoming_LimitsFiltersAndOrder(t *testing.T) {
 	assertUpcomingOrder(t, runs, 3)
 	runs = callUpcoming(t, d, map[string]any{"project": "o/none"})
 	assert.Empty(t, runs)
+}
+
+// A task that fires every 30 seconds or every minute takes one entry by
+// default, leaving room for slower tasks, soonest first.
+func TestTaskUpcoming_FrequentTasksOncePerTask(t *testing.T) {
+	setupSchedulerDeps(t, &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x", Tasks: []config.TaskConfig{
+		{Name: "halfminute", Every: "30s", Prompt: "x"},
+		{Name: "minutely", Every: "1m", Prompt: "x"},
+		{Name: "hourly", Every: "1h", Prompt: "x"},
+	}}}})
+	d := NewDispatcher("https://localhost:16677", "")
+
+	runs := callUpcoming(t, d, map[string]any{})
+	require.Len(t, runs, 3)
+	assertUpcomingOrder(t, runs, 1)
+	assert.Equal(t, "bot/hourly", runs[2].TaskID, "the slow task still makes the list")
 }
 
 func TestTaskUpcoming_SchedulerNotInitialized(t *testing.T) {

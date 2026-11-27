@@ -348,9 +348,12 @@ export function useProjectJob(target: Ref<string>, number: Ref<number>) {
 	};
 }
 
-/** Next runs the board's "Up next" strip shows, and the most per schedule. */
+/**
+ * Next runs the board's "Up next" strip shows, and the most per schedule: one,
+ * so a task that fires often doesn't push every other task out of the strip.
+ */
 export const UP_NEXT_RUNS = 5;
-export const UP_NEXT_PER_SCHEDULE = 3;
+export const UP_NEXT_PER_SCHEDULE = 1;
 
 /**
  * The projects' scheduled prompts, kept live, with the next runs of the

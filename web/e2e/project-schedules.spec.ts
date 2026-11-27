@@ -352,19 +352,82 @@ test("a project board shows the up next strip", async ({ page }) => {
 	await page.goto("/system/watches/lsegal%2Faviary");
 
 	const strip = page.getByTestId("up-next");
-	await expect(strip.getByTestId("up-next-run")).toHaveCount(2);
+	// One chip per task: the second nightly fire isn't listed.
+	await expect(strip.getByTestId("up-next-run")).toHaveCount(1);
 	await expect(strip.getByTestId("up-next-run").first()).toContainText(
 		"nightly-triage",
 	);
 	expect(calls.task_upcoming?.[0]).toEqual({
 		project: "lsegal/aviary",
 		limit: 5,
-		per_task: 3,
+		per_task: 1,
 	});
 
 	// A run in the strip opens its task's page, as its card does.
 	await strip.getByTestId("up-next-run").first().click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/nightly-triage$/);
+});
+
+// Fires of a task every 30 seconds, every minute, and nightly, interleaved
+// the way a server listing several fires per task returns them.
+const FREQUENT_UPCOMING = [
+	["assistant/every-30s", "every-30s", 0.5],
+	["assistant/every-minute", "every-minute", 0.8],
+	["assistant/every-30s", "every-30s", 1],
+	["assistant/every-minute", "every-minute", 1.8],
+	["assistant/every-30s", "every-30s", 1.5],
+	["assistant/every-minute", "every-minute", 2.8],
+	["assistant/nightly-triage", "nightly-triage", 42],
+].map(([task_id, name, m]) => ({
+	task_id,
+	name,
+	project: "lsegal/aviary",
+	at: minutesFromNow(m as number),
+}));
+
+test("up next shows one chip per task, soonest first (#1574)", async ({
+	page,
+}) => {
+	await setup(page, { upcoming: FREQUENT_UPCOMING });
+	await page.goto("/system/watches/lsegal%2Faviary");
+
+	const chips = page.getByTestId("up-next").getByTestId("up-next-run");
+	await expect(chips).toHaveCount(3);
+	await expect(chips.nth(0)).toContainText("every-30s");
+	await expect(chips.nth(1)).toContainText("every-minute");
+	await expect(chips.nth(2)).toContainText("nightly-triage");
+});
+
+test("up next stays one row on a phone (#1574)", async ({ page }) => {
+	await page.setViewportSize({ width: 375, height: 812 });
+	await setup(page, {
+		upcoming: [
+			...FREQUENT_UPCOMING,
+			...["weekly-report", "dependency-sweep", "stale-issues"].map(
+				(name, i) => ({
+					task_id: `assistant/${name}`,
+					name,
+					project: "lsegal/aviary",
+					at: minutesFromNow(60 + i),
+				}),
+			),
+		],
+	});
+	await page.goto("/system/watches/lsegal%2Faviary");
+
+	const strip = page.getByTestId("up-next");
+	const chips = strip.getByTestId("up-next-run");
+	await expect(chips).toHaveCount(6);
+	// Every chip sits on the strip's one row; extra chips scroll sideways
+	// rather than wrapping the strip onto more rows.
+	const tops = new Set<number>();
+	for (const chip of await chips.all()) {
+		tops.add(Math.round((await boundingBoxOf(chip)).y));
+	}
+	expect(tops.size).toBe(1);
+	const box = await boundingBoxOf(strip);
+	const chipBox = await boundingBoxOf(chips.first());
+	expect(box.height).toBeLessThan(chipBox.height * 2);
 });
 
 test("board lists scheduled tasks as their own boxes with run details", async ({
