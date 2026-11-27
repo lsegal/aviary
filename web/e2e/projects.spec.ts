@@ -2048,7 +2048,9 @@ test.describe("GitHub sign-in banner", () => {
 		status = browserStatus({ signed_out: false, signing_in: false });
 		await expect(page.getByTestId("github-signin-banner")).toHaveCount(0);
 		status = STATUS;
-		await expect(page.getByText("poll · checked")).toBeVisible();
+		await expect(
+			(await openBoardInfo(page)).getByTestId("board-delivery"),
+		).toHaveText("poll");
 		await expect(page.getByTestId("github-signin-banner")).toHaveCount(0);
 	});
 });
@@ -4157,7 +4159,7 @@ test("the instance tag and details popovers work by keyboard, tap and hover (#15
 
 	// Enter opens the tag's popover as a named dialog; Esc closes it and
 	// returns focus to the tag.
-	const tag = page.getByRole("button", { name: "Instance ID" });
+	const tag = page.getByRole("button", { name: "Instance ID", exact: true });
 	await expect(tag).toHaveAttribute("aria-haspopup", "dialog");
 	await expect(tag).toHaveAttribute("aria-expanded", "false");
 	await tag.focus();
@@ -4180,7 +4182,7 @@ test("the instance tag and details popovers work by keyboard, tap and hover (#15
 	await expect(tag).toBeFocused();
 
 	// Space opens the details; a click outside closes them.
-	const info = page.getByRole("button", { name: "Board details" });
+	const info = page.getByRole("button", { name: "Board details", exact: true });
 	await info.focus();
 	await page.keyboard.press("Space");
 	const details = page.getByRole("dialog", { name: "Board details" });
