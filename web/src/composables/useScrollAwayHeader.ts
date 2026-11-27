@@ -1,7 +1,10 @@
 import { onBeforeUnmount, onMounted, type Ref, ref, watch } from "vue";
-
-/** How long after a wheel or touch move a scroll still counts as the user's. */
-const GESTURE_MS = 400;
+import {
+	headerTakesGesture,
+	scrollToTake,
+	slideOffset,
+	wheelPixels,
+} from "../lib/scrollAwayHeader";
 
 // Only the shared page header's breadcrumb bar stays pinned; the title row
 // scrolls away with the page (#1437). Each page keeps its own scroll areas
@@ -36,8 +39,7 @@ export function useScrollAwayHeader(
 
 	/** Slides the title row by delta, returning how much it moved. */
 	function slide(delta: number): number {
-		const next = Math.min(range(), Math.max(0, offset.value + delta));
-		const moved = next - offset.value;
+		const { next, moved } = slideOffset(offset.value, delta, range());
 		offset.value = next;
 		return moved;
 	}
@@ -57,20 +59,21 @@ export function useScrollAwayHeader(
 		return null;
 	}
 
-	const atBottom = (el: Element) =>
-		el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-
 	function onScroll(e: Event) {
 		const area = e.target;
 		if (!(area instanceof Element) || area === main.value) return;
 		const prev = last.get(area) ?? area.scrollTop;
 		const top = area.scrollTop;
 		last.set(area, top);
-		const down = top - prev;
-		if (!enabled.value || down <= 0 || Date.now() - gestureAt > GESTURE_MS)
-			return;
-		const moved = slide(down);
-		if (moved < 1) return;
+		if (!enabled.value) return;
+		const take = scrollToTake(
+			top - prev,
+			offset.value,
+			range(),
+			Date.now() - gestureAt,
+		);
+		if (!take) return;
+		const moved = slide(take);
 		// The title row takes the scroll the area just made, so the content
 		// stays where the user put it while the title row leaves.
 		area.scrollTop = top - moved;
@@ -86,25 +89,20 @@ export function useScrollAwayHeader(
 		const area = scrollArea(target);
 		// The area's position before the gesture scrolls it, for onScroll.
 		if (area && !last.has(area)) last.set(area, area.scrollTop);
-		if (!enabled.value || delta === 0) return false;
-		if (delta < 0) {
-			if (offset.value <= 0 || (area && area.scrollTop > 0)) return false;
-		} else if (offset.value >= range() || (area && !atBottom(area))) {
-			return false;
-		}
+		if (!enabled.value) return false;
+		if (!headerTakesGesture(delta, offset.value, range(), area)) return false;
 		return Math.abs(slide(delta)) > 0;
 	}
 
 	function onWheel(e: WheelEvent) {
 		if (e.ctrlKey || e.shiftKey) return;
 		if (e.deltaY > 0) gestureAt = Date.now();
-		const unit =
-			e.deltaMode === WheelEvent.DOM_DELTA_LINE
-				? 16
-				: e.deltaMode === WheelEvent.DOM_DELTA_PAGE
-					? (main.value?.clientHeight ?? 0)
-					: 1;
-		if (useGesture(e.target, e.deltaY * unit)) e.preventDefault();
+		const delta = wheelPixels(
+			e.deltaY,
+			e.deltaMode,
+			main.value?.clientHeight ?? 0,
+		);
+		if (useGesture(e.target, delta)) e.preventDefault();
 	}
 
 	function onTouchStart(e: TouchEvent) {
