@@ -49,7 +49,7 @@ func warmCache(t *testing.T, dir string) {
 	m := cacheTestManager(t, dir, "o/a", "o/b")
 	m.Snapshot(polledSnapshot())
 	m.Shutdown()
-	if _, err := os.Stat(filepath.Join(dir, "cache.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "jobs.json")); err != nil {
 		t.Fatalf("no cache saved: %v", err)
 	}
 }
@@ -63,7 +63,7 @@ func jobNumbers(list map[string]any) []int {
 	return numbers
 }
 
-func TestStateCacheColdStartServesNothingStale(t *testing.T) {
+func TestJobStoreColdStartServesNothingStale(t *testing.T) {
 	m := cacheTestManager(t, t.TempDir(), "o/a")
 	status := m.Status(t.Context(), 0, nil)
 	if status["stale"] != true || !slices.Equal(status["loading_targets"].([]string), []string{"o/a"}) {
@@ -77,7 +77,7 @@ func TestStateCacheColdStartServesNothingStale(t *testing.T) {
 	}
 }
 
-func TestStateCacheWarmStartServesCachedState(t *testing.T) {
+func TestJobStoreWarmStartServesCachedState(t *testing.T) {
 	dir := t.TempDir()
 	warmCache(t, dir)
 	m := cacheTestManager(t, dir, "o/a", "o/b")
@@ -109,7 +109,7 @@ func TestStateCacheWarmStartServesCachedState(t *testing.T) {
 	}
 }
 
-func TestStateCacheNeverDrivesActions(t *testing.T) {
+func TestJobStoreNeverDrivesActions(t *testing.T) {
 	dir := t.TempDir()
 	warmCache(t, dir)
 	m := cacheTestManager(t, dir, "o/a", "o/b")
@@ -124,7 +124,7 @@ func TestStateCacheNeverDrivesActions(t *testing.T) {
 	}
 }
 
-func TestStateCacheStaleClearsPerProjectAfterLivePoll(t *testing.T) {
+func TestJobStoreStaleClearsPerProjectAfterLivePoll(t *testing.T) {
 	dir := t.TempDir()
 	warmCache(t, dir)
 	m := cacheTestManager(t, dir, "o/a", "o/b")
@@ -155,7 +155,8 @@ func TestStateCacheStaleClearsPerProjectAfterLivePoll(t *testing.T) {
 		}
 	}
 
-	// The poll completes: nothing is stale and the cached jobs are gone.
+	// The poll completes: nothing is stale, the running job the poll no
+	// longer reports is gone, and the done job stays as history.
 	m.Snapshot(core.Snapshot{
 		Targets:     []string{"o/a", "o/b"},
 		IssueCounts: map[string]int{"o/a": 7, "o/b": 6},
@@ -166,12 +167,18 @@ func TestStateCacheStaleClearsPerProjectAfterLivePoll(t *testing.T) {
 	if status["stale"] != false || len(status["stale_targets"].([]string)) != 0 || status["cached_at"] != nil {
 		t.Fatalf("status still stale after a live poll: %v", status)
 	}
-	if list := m.ListJobs(nil, "", nil, nil, "", 0, 0); !slices.Equal(jobNumbers(list), []int{1}) || list["stale"] != false {
+	list = m.ListJobs(nil, "", nil, nil, "", 0, 0)
+	if !slices.Equal(jobNumbers(list), []int{1, 3}) || list["stale"] != false {
 		t.Fatalf("jobs after a live poll = %v", list)
+	}
+	for _, job := range list["jobs"].([]map[string]any) {
+		if job["stale"] != nil {
+			t.Fatalf("a job is still stale after a live poll: %v", job)
+		}
 	}
 }
 
-func TestStateCacheIgnoresACorruptOrIncompatibleCache(t *testing.T) {
+func TestJobStoreIgnoresACorruptOrIncompatibleCache(t *testing.T) {
 	for name, content := range map[string]string{
 		"corrupt":      "{not json",
 		"old version":  `{"version": 0, "cached_at": "2026-11-01T00:00:00Z", "snapshot": {"Targets": ["o/a"], "IssueCounts": {"o/a": 9}}}`,
@@ -179,7 +186,7 @@ func TestStateCacheIgnoresACorruptOrIncompatibleCache(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, "cache.json"), []byte(content), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "jobs.json"), []byte(content), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			m := cacheTestManager(t, dir, "o/a")
@@ -194,7 +201,7 @@ func TestStateCacheIgnoresACorruptOrIncompatibleCache(t *testing.T) {
 	}
 }
 
-func TestStateCacheReconcilesConfigChanges(t *testing.T) {
+func TestJobStoreReconcilesConfigChanges(t *testing.T) {
 	dir := t.TempDir()
 	warmCache(t, dir)
 	// o/b was removed from aviary.yaml and o/c added since the cache was saved.
@@ -214,7 +221,7 @@ func TestStateCacheReconcilesConfigChanges(t *testing.T) {
 	}
 }
 
-func TestStateCacheKeepsOnlyCompletePolls(t *testing.T) {
+func TestJobStoreKeepsOnlyCompletePolls(t *testing.T) {
 	dir := t.TempDir()
 	warmCache(t, dir)
 	m := cacheTestManager(t, dir, "o/a", "o/b")
