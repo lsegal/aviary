@@ -60,6 +60,7 @@ type Server struct {
 	sampler           *ProcSampler
 	watcher           *config.Watcher
 	projects          *projects.Manager
+	jobMessenger      jobMessenger // s.projects for Code Loop deliveries; replaced in tests
 	notifier          *notify.Service
 	skillsWatcher     *skills.Watcher
 	listenerRestartCh chan struct{}
