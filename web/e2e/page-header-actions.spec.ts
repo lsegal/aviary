@@ -152,16 +152,16 @@ test("on a phone an open job keeps its actions and moves the board's behind …"
 	await page.setViewportSize({ width: 390, height: 800 });
 	await page.goto(`${A}/projects/o%2Fr/jobs/1013`);
 	await expect(page.getByTestId("job-detail-actions")).toBeVisible();
-	await expect(page.getByTestId("project-settings-link")).toHaveCount(0);
+	await expect(page.getByTestId("board-more-menu")).toHaveCount(0);
 	await page.getByTestId("header-overflow").click();
 	const items = page.getByTestId("header-overflow-items");
 	await expect(items.getByTestId("logs-toggle")).toBeVisible();
-	await expect(items.getByTestId("project-settings-link")).toBeVisible();
+	await expect(items.getByTestId("board-more-menu")).toBeVisible();
 	// Wider, the board's actions are back in the row.
 	await page.keyboard.press("Escape");
 	await page.setViewportSize({ width: 768, height: 800 });
 	await expect(page.getByTestId("header-overflow")).toHaveCount(0);
 	await expect(
-		page.getByTestId("settings-actions").getByTestId("project-settings-link"),
+		page.getByTestId("settings-actions").getByTestId("board-more-menu"),
 	).toBeVisible();
 });
