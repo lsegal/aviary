@@ -215,7 +215,7 @@ func TestProjectTaskDefinedInConfig(t *testing.T) {
 
 func TestProjectTaskToolsAreTheCodeLoopAgentsOnly(t *testing.T) {
 	for _, name := range []string{
-		"project_task_list", "project_task_get", "project_task_create", "project_task_update",
+		"project_task_list", "project_task_get", "project_task_create", "project_task_update", "project_task_duplicate",
 		"project_task_pause", "project_task_resume", "project_task_run", "project_task_delete",
 	} {
 		assert.Contains(t, config.ProjectsAgentTools, name)

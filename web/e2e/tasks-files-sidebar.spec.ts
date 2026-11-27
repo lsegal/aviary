@@ -494,6 +494,7 @@ test("the … menu opens a task's settings and deletes tasks", async ({
 	await expect(page.getByRole("menuitem")).toHaveText([
 		"Pause",
 		"Settings",
+		"Duplicate…",
 		"Delete",
 	]);
 	await page.getByRole("menuitem", { name: "Settings" }).click();

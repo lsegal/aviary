@@ -39,6 +39,10 @@
 							<AppSelect id="agent-task-agent" v-model="form.agent" :disabled="dialog.mode !== 'create'"
 								:options="agentChoices.map((a) => ({ value: a, label: a }))" />
 						</template>
+						<p v-if="form.model && taskType === 'project'" data-testid="task-model-override"
+							class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+							Model override: <span class="font-mono">{{ form.model }}</span>
+						</p>
 						<div class="mt-3">
 							<TriggerEditor :key="editorKey" v-model="form.trigger" :preview="previewTrigger" :optional="form.targetKind !== 'project'" />
 						</div>
@@ -46,6 +50,26 @@
 							class="mt-3" :agent="feedbackAgent" :type="taskType" :target="form.target" :project="form.project"
 							:trigger="form.trigger" :show-precompile="showPrecompute" :saved-task="savedTask"
 							:task-agent="dialog.agent" />
+						<div v-if="repoWarning" role="status" data-testid="task-duplicate-repo-warning"
+							class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+							<p>
+								The prompt mentions <span class="font-mono">{{ promptRepo }}</span>
+								({{ repoWarning.length }} {{ repoWarning.length === 1 ? "reference" : "references" }}), but the copy runs on
+								<span class="font-mono">{{ form.project }}</span>.
+							</p>
+							<div class="mt-2 flex gap-2">
+								<button type="button" data-testid="task-duplicate-replace"
+									class="rounded-md bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-500"
+									@click="replaceRepo">
+									Replace with {{ form.project }}
+								</button>
+								<button type="button" data-testid="task-duplicate-keep"
+									class="rounded-md border border-amber-300 px-2.5 py-1 text-xs text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-900/40"
+									@click="keptFor = form.project">
+									Keep as is
+								</button>
+							</div>
+						</div>
 						<label for="agent-task-send-to" class="field-label mt-3">Send To</label>
 						<AppCombobox id="agent-task-send-to" v-model="form.target" data-testid="task-send-to"
 							aria-describedby="agent-task-send-to-help" :options="sendToOptions"
@@ -106,6 +130,11 @@ import { useTriggerPreview } from "../../composables/useTriggerPreview";
 import { channelName, channelTarget } from "../../lib/channels";
 import { projectTargets } from "../../lib/projectSettings";
 import {
+	nextTaskName,
+	replaceRepoReferences,
+	repoReferences,
+} from "../../lib/taskDuplicate";
+import {
 	applyTaskTrigger,
 	type TriggerFields,
 	taskTriggerFields,
@@ -155,7 +184,20 @@ const form = reactive({
 	precompute: true,
 	/** Where runs forward their output: "" or channel:<name>. */
 	target: "",
+	/** A project task's model override, kept from a duplicated task. */
+	model: "",
+	/** Whether the new task starts enabled, kept from a duplicated task. */
+	enabled: true,
 });
+/**
+ * A duplicate's suggested name, the next free one in the destination; the
+ * name follows the destination until the user edits it.
+ */
+const suggestedName = ref("");
+/** The repository the prompt mentions, the duplicated task's project. */
+const promptRepo = ref("");
+/** The project the user chose to keep the prompt's mentions for. */
+const keptFor = ref("");
 // Remounts the trigger editor for each dialog, so its preview starts afresh.
 const editorKey = ref(0);
 
@@ -192,6 +234,11 @@ const projectChoices = computed(() => {
 	const owners = new Map<string, string>();
 	// The board's Schedule button names a project its agent runs, owned or not.
 	if (d.mode === "create" && d.project) owners.set(d.project, d.agent);
+	// A duplicate may stay on its source's project, under the source's agent.
+	const source = d.duplicate
+		? agentTasks(d.agent).find((t) => t.name === d.duplicate)?.project
+		: "";
+	if (source) owners.set(source, d.agent);
 	for (const a of settings.config?.agents ?? []) {
 		if (d.mode !== "create" && a.name !== d.agent) continue;
 		for (const target of projectTargets(a.projects))
@@ -305,6 +352,7 @@ const title = computed(() => {
 	if (!d) return "";
 	if (d.mode === "create") {
 		if (d.kind === "file") return "Add file";
+		if (d.duplicate) return `Duplicate ${d.duplicate}`;
 		return form.targetKind === "project"
 			? "Add project scheduled task"
 			: "Add task";
@@ -319,6 +367,8 @@ const description = computed(() => {
 		return d.mode === "create"
 			? `A new markdown file in ${d.agent}'s directory.`
 			: `Renames ${d.name}, keeping its content.`;
+	if (d.duplicate)
+		return `A copy of ${d.agent}/${d.duplicate}, saved only when you create it. Change Project to copy it to another project, or Target to copy it between an agent and a project; the copy starts with no runs, session or compiled script.`;
 	if (d.mode !== "create")
 		return `Renames ${d.name} or changes its type, target, trigger and ${form.type}.`;
 	if (form.targetKind === "project")
@@ -334,10 +384,10 @@ watch(dialog, (d) => {
 	error.value = "";
 	deleteData.value = true;
 	busy.value = false;
-	const task =
-		d?.kind === "task" && d.name
-			? agentTasks(d.agent).find((t) => t.name === d.name)
-			: undefined;
+	const source = d?.kind === "task" ? (d.duplicate ?? d.name) : undefined;
+	const task = source
+		? agentTasks(d?.agent ?? "").find((t) => t.name === source)
+		: undefined;
 	const type = task ? agentTaskType(task.type) : "prompt";
 	const project = task ? type === "project" : !!d?.project;
 	form.name = d?.mode === "edit" ? (d.name ?? "") : "";
@@ -350,7 +400,63 @@ watch(dialog, (d) => {
 	form.project = task ? (task.project ?? "") : (d?.project ?? "");
 	form.precompute = initialPrecompute(task);
 	form.target = task?.target ?? "";
+	form.model = task?.model ?? "";
+	form.enabled = task?.enabled !== false;
+	keptFor.value = "";
+	promptRepo.value = d?.duplicate && type === "project" ? form.project : "";
+	suggestedName.value = "";
+	if (d?.duplicate) {
+		suggestedName.value = duplicateName(d.duplicate);
+		form.name = suggestedName.value;
+	}
 });
+
+/** The duplicated task's name, made unique among the destination's tasks. */
+function duplicateName(source: string): string {
+	return nextTaskName(
+		source,
+		agentTasks(taskAgent.value).map((t) => t.name),
+	);
+}
+
+// A duplicate's name is checked in its destination: moving it to another
+// agent suggests the name free there, unless the user renamed it.
+watch(taskAgent, () => {
+	const source = dialog.value?.duplicate;
+	if (!source || form.name !== suggestedName.value) return;
+	suggestedName.value = duplicateName(source);
+	form.name = suggestedName.value;
+});
+
+/**
+ * The prompt's mentions of the duplicated task's project once the copy
+ * targets another project, until the user replaces or keeps them.
+ */
+const repoWarning = computed(() => {
+	const repo = promptRepo.value;
+	if (!repo || taskType.value !== "project" || !form.project) return null;
+	if (form.project.toLowerCase() === repo.toLowerCase()) return null;
+	if (keptFor.value === form.project) return null;
+	const refs = repoReferences(form.prompt, repo);
+	return refs.length ? refs : null;
+});
+
+// Keep as is holds for the project it was chosen for; another one asks again.
+watch(
+	() => form.project,
+	() => {
+		keptFor.value = "";
+	},
+);
+
+function replaceRepo() {
+	form.prompt = replaceRepoReferences(
+		form.prompt,
+		promptRepo.value,
+		form.project,
+	);
+	promptRepo.value = form.project;
+}
 
 /**
  * A new task's trigger: daily at 09:00 for a project task, which needs a
@@ -429,8 +535,9 @@ async function submitTask(mode: "create" | "edit", from = "") {
 	if (mode === "create") {
 		const task = withForm(
 			{
-				enabled: true,
+				enabled: form.enabled,
 				name,
+				...(form.model ? { model: form.model } : {}),
 				watch: "",
 				run_once: false,
 				from_file: true,

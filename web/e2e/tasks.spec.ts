@@ -219,7 +219,7 @@ test("tasks show as cards by default with every field", async ({ page }) => {
 		await actions.evaluateAll((els) =>
 			els.map((e) => e.getAttribute("aria-label")),
 		),
-	).toEqual(["Run now", "Pause", "View runs", "Task settings"]);
+	).toEqual(["Run now", "Pause", "View runs", "Duplicate…", "Task settings"]);
 	await expect(actions.last()).toHaveAttribute("title", "Task settings");
 
 	const weekly = cards.filter({ hasText: "weekly-cleanup" });
@@ -265,7 +265,7 @@ test("the list toggle switches the layout and survives a reload", async ({
 		await rowActions.evaluateAll((els) =>
 			els.map((e) => e.getAttribute("aria-label")),
 		),
-	).toEqual(["Run now", "Pause", "View runs", "Task settings"]);
+	).toEqual(["Run now", "Pause", "View runs", "Duplicate…", "Task settings"]);
 	await rowActions.last().click();
 	await expect(page.getByRole("dialog", { name: "Edit task" })).toBeVisible();
 	await page.keyboard.press("Escape");

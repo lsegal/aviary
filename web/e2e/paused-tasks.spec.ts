@@ -239,6 +239,7 @@ test("the sidebar menu pauses and resumes a task without navigating", async ({
 	await expect(page.getByRole("menuitem")).toHaveText([
 		"Resume",
 		"Settings",
+		"Duplicate…",
 		"Delete",
 	]);
 	await page.keyboard.press("Escape");
@@ -247,6 +248,7 @@ test("the sidebar menu pauses and resumes a task without navigating", async ({
 	await expect(page.getByRole("menuitem")).toHaveText([
 		"Pause",
 		"Settings",
+		"Duplicate…",
 		"Delete",
 	]);
 	await page.getByRole("menuitem", { name: "Pause" }).click();

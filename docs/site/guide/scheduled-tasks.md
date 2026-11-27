@@ -199,6 +199,12 @@ A running job streams its output, a line at a time, into the **Live Output** pan
 
 `aviary task add` and `update` take every trigger field as a flag (`--schedule`, `--trigger`, `--every`, `--at`, `--days`, `--timezone`, `--start-at`, `--overlap`, `--missed`); `--days` also accepts ranges such as `mon-fri`. The agent may be omitted when only one agent exists.
 
+#### Duplicating a task
+
+**Duplicate…** in a task's menu in the sidebar, its buttons on the Scheduled Tasks page, its page header, and the menu on its Code Loop board card opens the create form prefilled with every setting of the task: prompt, type, trigger fields, timezone, overlap and missed policies, model override, Send To, precompile and enabled state, and its agent or project. Nothing is saved until you click **Create**.
+
+The name gets the next free numeric suffix (`release` → `release-2`, `release-2` → `release-3`), checked in the destination: copying into a project whose agent has no task by that name keeps it. Change **Project** to copy the task to another watched project, or **Target** to switch between an agent task and a project task; the trigger preview and the cost estimate follow the destination. When the prompt mentions the source project (its `owner/repo`, GitHub URLs or checkout paths), the form warns and offers to replace those mentions with the destination's; **Keep as is** leaves the prompt alone. The copy starts with no compiled script, run history or session, and is compiled for its destination when precompile is on. Agents copy project tasks with [`project_task_duplicate`](/reference/mcp/projects#project-scheduled-tasks).
+
 ### Scheduled prompts
 
 A `project` task runs its prompt on the board of a watched project, always on the project's agent. `project` names the project (its `owner/repo` target) and `model` optionally overrides that agent's model for the task's runs, exactly like a channel's model override: a `<provider>/<model>` string such as `claude/opus` or `anthropic/claude-sonnet-5-5`, validated the same way. Without it the agent runs the task with its own model. A model of a provider reached through a CLI runs the job on that CLI; any other model runs it on the agent itself with the overridden model, which needs the project to be attached to an agent. Task files and configuration written with the older `run_agent` or `cli` keys still load into `model` (a value naming only a CLI, such as `codex`, loads as `cli/codex`), and are saved back as `model`.

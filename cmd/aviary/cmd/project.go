@@ -56,6 +56,7 @@ var projectToolCommands = []projectToolCommand{
 	{[]string{"task", "get"}, "project_task_get", "name", "Show one project scheduled task's definition and run history"},
 	{[]string{"task", "create"}, "project_task_create", "project", "Create a scheduled task on a watched project"},
 	{[]string{"task", "update"}, "project_task_update", "name", "Change a project scheduled task"},
+	{[]string{"task", "duplicate"}, "project_task_duplicate", "name", "Copy a project scheduled task, to the same or another watched project"},
 	{[]string{"task", "pause"}, "project_task_pause", "name", "Pause a project scheduled task"},
 	{[]string{"task", "resume"}, "project_task_resume", "name", "Resume a paused project scheduled task"},
 	{[]string{"task", "run"}, "project_task_run", "name", "Run a project scheduled task now"},

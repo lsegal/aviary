@@ -1,7 +1,7 @@
 <template>
 	<div class="flex shrink-0 items-center gap-0.5" role="group" :aria-label="`${row.task.name} actions`" @click.stop>
 		<button v-for="a in actions" :key="a.key" type="button" :data-testid="`task-${a.key}`" :aria-label="a.label" :title="a.label"
-			:disabled="busy && a.key !== 'settings' && a.key !== 'runs'"
+			:disabled="busy && a.key !== 'settings' && a.key !== 'runs' && a.key !== 'duplicate'"
 			class="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
 			@click="emit('action', a.key)">
 			<component :is="a.icon" aria-hidden="true" class="h-4 w-4" />
@@ -11,6 +11,7 @@
 
 <script setup lang="ts">
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
+import DocumentDuplicateIcon from "@heroicons/vue/24/outline/DocumentDuplicateIcon";
 import ListBulletIcon from "@heroicons/vue/24/outline/ListBulletIcon";
 import PauseIcon from "@heroicons/vue/24/outline/PauseIcon";
 import PlayCircleIcon from "@heroicons/vue/24/outline/PlayCircleIcon";
@@ -18,8 +19,8 @@ import PlayIcon from "@heroicons/vue/24/outline/PlayIcon";
 import { computed } from "vue";
 import type { TaskAction, TaskRow } from "./types";
 
-// A task's quick actions: run now, pause or resume, view its runs, and its
-// settings, always last.
+// A task's quick actions: run now, pause or resume, view its runs,
+// duplicate it, and its settings, always last.
 const props = defineProps<{ row: TaskRow; busy: boolean }>();
 const emit = defineEmits<{ action: [action: TaskAction] }>();
 
@@ -30,6 +31,7 @@ const actions = computed(
 			? { key: "toggle", label: "Pause", icon: PauseIcon }
 			: { key: "toggle", label: "Resume", icon: PlayCircleIcon },
 		{ key: "runs", label: "View runs", icon: ListBulletIcon },
+		{ key: "duplicate", label: "Duplicate…", icon: DocumentDuplicateIcon },
 		{ key: "settings", label: "Task settings", icon: Cog6ToothIcon },
 	],
 );

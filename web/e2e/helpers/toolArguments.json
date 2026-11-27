@@ -458,6 +458,14 @@
 		"name",
 		"project"
 	],
+	"project_task_duplicate": [
+		"dry_run",
+		"name",
+		"new_name",
+		"new_project",
+		"project",
+		"replace_repo_references"
+	],
 	"project_task_get": [
 		"name",
 		"project"

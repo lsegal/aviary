@@ -224,7 +224,7 @@
 									:job="scheduleJob(scheduleEntries, item.schedule.id)" :busy="busySchedule === item.schedule.id"
 									@run="onScheduleAction(runScheduleNow, $event)"
 									@toggle="onScheduleAction(toggleSchedule, $event)" @settings="openScheduleSettings"
-									@dismiss="onAction(dismiss, $event)" />
+									@duplicate="duplicateSchedule" @dismiss="onAction(dismiss, $event)" />
 								<JobCard v-else :job="item.job" :now="now" :show-project="aggregate"
 									:busy="busyJob === item.job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
 									@clear="onAction(clear, $event)" @summarize="onSummarize" />
@@ -556,6 +556,17 @@ async function toggleSchedule(s: ProjectSchedule) {
 }
 function openScheduleSettings(s: ProjectSchedule) {
 	openItemDialog({ kind: "task", mode: "edit", agent: s.agent, name: s.name });
+}
+// Duplicate opens the create form prefilled from the schedule's task, as
+// the sidebar's Duplicate does, and refreshes the board once it is saved.
+function duplicateSchedule(s: ProjectSchedule) {
+	openItemDialog({
+		kind: "task",
+		mode: "create",
+		agent: s.agent,
+		duplicate: s.name,
+		onCreated: () => void refreshSchedules(),
+	});
 }
 // An Up next run opens its task's page, as the task's card does.
 function openSchedule(id: string) {

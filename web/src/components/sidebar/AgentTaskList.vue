@@ -21,6 +21,7 @@
 <script setup lang="ts">
 import PauseIcon from "@heroicons/vue/20/solid/PauseIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
+import DocumentDuplicateIcon from "@heroicons/vue/24/outline/DocumentDuplicateIcon";
 import PauseCircleIcon from "@heroicons/vue/24/outline/PauseCircleIcon";
 import PlayCircleIcon from "@heroicons/vue/24/outline/PlayCircleIcon";
 import { computed } from "vue";
@@ -74,6 +75,7 @@ function actionsFor(t: AgentTask): SidebarItemAction[] {
 			disabled: isPending(props.agent, t.name),
 		},
 		{ key: "settings", label: "Settings", icon: Cog6ToothIcon },
+		{ key: "duplicate", label: "Duplicate…", icon: DocumentDuplicateIcon },
 		{ key: "delete", label: "Delete", danger: true },
 	];
 }
@@ -82,6 +84,13 @@ function select(key: string, t: AgentTask) {
 	if (key === "toggle") void setTaskEnabled(props.agent, t.name, isPaused(t));
 	else if (key === "settings")
 		void router.push(agentTaskPath(props.agent, t.name));
+	else if (key === "duplicate")
+		open({
+			kind: "task",
+			agent: props.agent,
+			mode: "create",
+			duplicate: t.name,
+		});
 	else open({ kind: "task", agent: props.agent, mode: "delete", name: t.name });
 }
 </script>

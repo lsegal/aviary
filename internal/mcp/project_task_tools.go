@@ -462,6 +462,7 @@ func updateProjectTask(args projectTaskUpdateArgs, change string) (map[string]an
 }
 
 func registerProjectTaskTools(s *sdkmcp.Server) {
+	registerProjectTaskDuplicateTool(s)
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_task_list",
 		Description: "List the scheduled tasks of the projects this instance watches, or of one: each with its id, name, agent, project, enabled and paused, trigger (plain-language schedule), next_run, last_run (fire time, status and summary), precompile state, and source (kind file, a Markdown task file, or config, aviary.yaml, with its path)",
