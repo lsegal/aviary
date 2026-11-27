@@ -16,6 +16,11 @@
 			"!**/*.css"
 		]
 	},
+	"markdown": {
+		"formatter": {
+			"enabled": false
+		}
+	},
 	"linter": {
 		"rules": {
 			"suspicious": {
