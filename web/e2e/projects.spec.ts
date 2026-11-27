@@ -367,6 +367,7 @@ async function setup(
 		},
 		project_job_retry: ok("project_job_retry"),
 		project_job_stop: ok("project_job_stop"),
+		project_job_clear: ok("project_job_clear"),
 		project_refresh: ok("project_refresh"),
 		project_github_signin: ok("project_github_signin"),
 		project_github_use_polling: ok("project_github_use_polling"),
@@ -1306,6 +1307,35 @@ test("retry, stop, filters and check now call project tools", async ({
 	await expect
 		.poll(() => calls.project_refresh?.[0])
 		.toEqual({ target: "lsegal/aviary" });
+});
+
+test("done and failed jobs clear from their card and in bulk (#1460)", async ({
+	page,
+}) => {
+	const calls = await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	// Only finished cards offer Clear.
+	const running = page.getByTestId("job-card").filter({ hasText: "#218" });
+	await expect(running.getByTestId("job-clear")).toHaveCount(0);
+	const done = page.getByTestId("job-card").filter({ hasText: "#200" });
+	await done.getByRole("button", { name: "Clear", exact: true }).click();
+	await expect
+		.poll(() => calls.project_job_clear?.[0])
+		.toEqual({ target: "lsegal/aviary", number: 200 });
+
+	// The header's menu clears the project's failed jobs after a confirmation.
+	await page.getByTestId("clear-jobs-menu").click();
+	await expect(page.getByTestId("clear-jobs-items")).toContainText(
+		"Running, queued and paused jobs are never cleared.",
+	);
+	await page.getByTestId("clear-jobs-failed").click();
+	const confirm = page.getByTestId("clear-jobs-confirm");
+	await expect(confirm).toContainText("failed jobs of lsegal/aviary");
+	await page.getByTestId("clear-jobs-confirm-confirm").click();
+	await expect(confirm).toHaveCount(0);
+	await expect
+		.poll(() => calls.project_job_clear?.[1])
+		.toEqual({ targets: ["lsegal/aviary"], which: "failed" });
 });
 
 const ZVID_JOB = job({

@@ -383,11 +383,9 @@ func (s *jobStore) view(live []JobSnapshot, ttl finishedTTL) storeView {
 			v.hidden[key] = true
 			continue
 		}
-		finishedAt := job.Finished
-		if stored, ok := s.jobs[key]; ok {
-			finishedAt = stored.FinishedAt
-		}
-		if expired(ttl, job, finishedAt, now) {
+		// A live job expires by when the store first saw it finish; one the
+		// store has not recorded yet has just been seen.
+		if stored, ok := s.jobs[key]; ok && expired(ttl, job, stored.FinishedAt, now) {
 			v.hidden[key] = true
 		}
 	}
@@ -522,6 +520,7 @@ func mergeStored(live *core.Snapshot, stored storeView, configured []string) dis
 		}
 	}
 	display.staleJobs = map[string]bool{}
+	added := false
 	for _, job := range stored.jobs {
 		key := jobKey(job)
 		if liveJobs[key] || !slices.Contains(targets, job.Target) {
@@ -535,8 +534,12 @@ func mergeStored(live *core.Snapshot, stored storeView, configured []string) dis
 			continue
 		}
 		jobs = append(jobs, job)
+		added = true
 	}
-	sortJobSnapshots(jobs)
+	// The live jobs come sorted; only stored ones need placing among them.
+	if added {
+		sortJobSnapshots(jobs)
+	}
 	display.Jobs = jobs
 	display.Paused = 0
 	for _, job := range jobs {

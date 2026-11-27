@@ -551,7 +551,8 @@ export function projectFinishedTTL(
 	target: string,
 ): string {
 	const entry = (section ?? []).find((p) => sameTarget(p.target, target));
-	const ttl = typeof entry?.finished_ttl === "string" ? entry.finished_ttl.trim() : "";
+	const ttl =
+		typeof entry?.finished_ttl === "string" ? entry.finished_ttl.trim() : "";
 	return ttl.toLowerCase() === "inherit" ? "" : ttl;
 }
 
