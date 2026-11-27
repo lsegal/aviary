@@ -34,18 +34,6 @@ func (m *Manager) currentSnapshot() core.Snapshot {
 	return core.Snapshot{}
 }
 
-// display is the state the read APIs show: the live snapshot, with the cache
-// standing in for each project the engine has not polled yet. Only reads use
-// it; every action goes through currentSnapshot, so cached state never starts,
-// claims or restarts a job.
-func (m *Manager) display() displayState {
-	m.mu.Lock()
-	settings, _ := m.settingsLocked()
-	m.mu.Unlock()
-	cached, cachedAt := m.cache.load()
-	return mergeCached(m.snapshot.Load(), cached, cachedAt, settings.Targets)
-}
-
 // inFlightStatuses are the job statuses that still hold work: running,
 // waiting out a scheduled wakeup, queued, or paused.
 var inFlightStatuses = []string{"active", "waiting", "queued", "paused"}
@@ -108,6 +96,7 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 		delete(counts, target)
 	}
 	modes, modeSources := m.ProjectModes(watched)
+	finishedTTLs, finishedTTLSources, defaultFinishedTTL := m.projectFinishedTTLs(watched)
 	status := map[string]any{
 		"identity":     m.Identity(),
 		"running":      running,
@@ -120,7 +109,13 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 		"modes":        modes,
 		"mode_sources": modeSources,
 		"default_mode": settings.DefaultMode,
-		"states":       boardStateCounts(snapshot.Jobs, targets),
+		// How long each project's done and failed jobs are kept before they
+		// expire from the board and job store, and the shared value the
+		// projects without their own inherit (issue #1460).
+		"finished_ttls":        finishedTTLs,
+		"finished_ttl_sources": finishedTTLSources,
+		"default_finished_ttl": defaultFinishedTTL,
+		"states":               boardStateCounts(snapshot.Jobs, targets),
 		"jobs": map[string]int{
 			"running":    snapshot.Running,
 			"queued":     snapshot.Queued,

@@ -99,7 +99,16 @@ type projectUpdateArgs struct {
 	// ResetFilter removes the override.
 	ResetFilter bool `json:"reset_filter,omitempty" jsonschema:"Remove this project's own filter so it uses the shared projects filter again"`
 	// Mode sets or clears the project's own mode override.
-	Mode string `json:"mode,omitempty" jsonschema:"This project's own mode, overriding the shared projects mode for this project only: watch to pick up open issues matching the filter, manual to stop searching for issues so only work queued on demand, scheduled project tasks and agent tools start jobs, or inherit to remove the override and follow the shared projects mode again. Jobs already in flight carry on either way, and switching to watch checks for issues right away"`
+	// FinishedTTL sets or clears the project's own finished_ttl.
+	FinishedTTL string `json:"finished_ttl,omitempty" jsonschema:"How long this project's done and failed jobs stay on the board and in the job store before they expire, overriding the shared projects.finished_ttl for this project only: a duration such as 336h, 14d or 2w, 0 to keep them until cleared, or inherit to follow the shared value again"`
+	Mode        string `json:"mode,omitempty" jsonschema:"This project's own mode, overriding the shared projects mode for this project only: watch to pick up open issues matching the filter, manual to stop searching for issues so only work queued on demand, scheduled project tasks and agent tools start jobs, or inherit to remove the override and follow the shared projects mode again. Jobs already in flight carry on either way, and switching to watch checks for issues right away"`
+}
+
+type projectJobClearArgs struct {
+	Number  int      `json:"number,omitempty" jsonschema:"Clear this one job, by its issue, pull request or Discussion number"`
+	Target  string   `json:"target,omitempty" jsonschema:"The job's project with number; otherwise only clear jobs of this project"`
+	Targets []string `json:"targets,omitempty" jsonschema:"Only clear jobs of these projects, together with target; no projects means every project"`
+	Which   string   `json:"which,omitempty" jsonschema:"Without number, which finished jobs to clear: done, failed, or finished for both (the default)"`
 }
 
 type projectFilterCheckArgs struct {
@@ -338,6 +347,20 @@ func registerProjectTools(s *sdkmcp.Server) {
 	}
 
 	addTool(s, &sdkmcp.Tool{
+		Name:        "project_job_clear",
+		Description: "Clear done and failed Code Loop jobs from the board and the job store, with their transcripts: one job by number, or in bulk every done, failed or finished job of some projects or of all of them. A cleared run is never shown again, while a later run of the same issue is. Running, queued, paused, waiting and retrying jobs are never cleared, and a schedule's runs are dismissed rather than cleared",
+		Annotations: destructiveTool,
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectJobClearArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		return projectResult(func(m *projects.Manager) (map[string]any, error) {
+			targets := args.Targets
+			if args.Number <= 0 && strings.TrimSpace(args.Target) != "" {
+				targets = append([]string{strings.TrimSpace(args.Target)}, targets...)
+			}
+			return m.ClearJobs(targets, strings.TrimSpace(args.Which), strings.TrimSpace(args.Target), args.Number)
+		})
+	})
+
+	addTool(s, &sdkmcp.Tool{
 		Name:        "project_job_queue",
 		Description: "Queue Code Loop jobs on demand: pull requests for gh-safe-merge, which verify and merge concurrently up to the agent slots, starting in the order given and updating any pull request a sibling merge left behind, or Discussion threads for gh-discuss. Each becomes a board job with logs, transcript and pause, resume, stop and retry; queued jobs survive a restart. A number a job already owns is reported with that job and not queued twice. Safe merge is refused while no_merge is set. gh-fix retries an issue's finished job, or checks GitHub now so a matching issue is dispatched",
 		Annotations: mutatingTool,
@@ -465,7 +488,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "project_update",
-		Description: "Change one watched Code Loop project. filter sets the project's own issue search filter, replacing the shared projects filter for this project only, after checking it against GitHub; reset_filter removes it. mode switches it between watch and manual (no issue searches; only queued work, scheduled project tasks and agent tools start jobs). A saved project's changes are written to its entry in aviary.yaml, a runtime watch's last until the watch stops. The project is checked for work right away",
+		Description: "Change one watched Code Loop project. filter sets the project's own issue search filter, replacing the shared projects filter for this project only, after checking it against GitHub; reset_filter removes it. mode switches it between watch and manual (no issue searches; only queued work, scheduled project tasks and agent tools start jobs). finished_ttl sets how long its done and failed jobs are kept, or inherit follows the shared value. A saved project's changes are written to its entry in aviary.yaml, a runtime watch's last until the watch stops. The project is checked for work right away",
 		Annotations: mutatingTool,
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args projectUpdateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
@@ -659,11 +682,16 @@ func updateProject(ctx context.Context, m *projects.Manager, args projectUpdateA
 	filter := config.JoinFilter([]string{args.Filter})
 	setMode := strings.TrimSpace(args.Mode) != ""
 	setFilter := args.ResetFilter || filter != ""
+	setTTL := strings.TrimSpace(args.FinishedTTL) != ""
 	switch {
 	case args.ResetFilter && filter != "":
 		return nil, errors.New("pass filter or reset_filter, not both")
-	case !setFilter && !setMode:
-		return nil, errors.New("nothing to change: pass filter, reset_filter or mode")
+	case !setFilter && !setMode && !setTTL:
+		return nil, errors.New("nothing to change: pass filter, reset_filter, mode or finished_ttl")
+	}
+	ttl, err := config.NormalizeFinishedTTLOverride(args.FinishedTTL)
+	if err != nil {
+		return nil, err
 	}
 	mode := ""
 	if setMode {
@@ -695,6 +723,12 @@ func updateProject(ctx context.Context, m *projects.Manager, args projectUpdateA
 			return nil, err
 		}
 	}
+	if setTTL {
+		var err error
+		if runtime, err = m.SetWatchFinishedTTL(target, ttl); err != nil {
+			return nil, err
+		}
+	}
 	if runtime {
 		result["runtime"] = true
 	} else {
@@ -716,6 +750,9 @@ func updateProject(ctx context.Context, m *projects.Manager, args projectUpdateA
 					// Inherit removes the override.
 					cfg.Agents[i].Projects[j].Mode = mode
 				}
+				if setTTL {
+					cfg.Agents[i].Projects[j].FinishedTTL = ttl
+				}
 			}
 		}
 		if !found {
@@ -734,5 +771,6 @@ func updateProject(ctx context.Context, m *projects.Manager, args projectUpdateA
 	result["custom"] = m.IssueFilterCustom(target)
 	result["issue_filter"] = m.IssueFilter(target)
 	result["mode"], result["mode_source"] = m.ProjectMode(target)
+	result["finished_ttl"], result["finished_ttl_source"] = m.ProjectFinishedTTL(target)
 	return result, nil
 }

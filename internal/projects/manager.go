@@ -101,8 +101,8 @@ type Manager struct {
 	// when its expired jobs were last removed, as Unix nanoseconds.
 	jobs      *jobStore
 	lastSweep atomic.Int64
-	reports *reporter
-	quotas  atomic.Pointer[map[string]string]
+	reports   *reporter
+	quotas    atomic.Pointer[map[string]string]
 
 	// loginRetry is the pending retry of an engine start whose gh login
 	// lookup failed, and loginRetryDelay the wait before the next one.
