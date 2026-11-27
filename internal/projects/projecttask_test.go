@@ -589,3 +589,43 @@ func TestLastLine(t *testing.T) {
 		t.Fatalf("lastLine = %q", got)
 	}
 }
+
+// A precompiled task whose clone fails falls back to the agent, clones the
+// run's own project when no repository is given, and leaves no checkout.
+func TestEnginePrecompiledProjectTaskCloneFailureFallsBack(t *testing.T) {
+	runner := &scheduledRunner{started: make(chan Issue, 1)}
+	w, ctx := startScheduledEngine(t, runner)
+	root, _ := stubProjectClone(t, w)
+	var cloned []string
+	cloneProjectRepository = func(_ context.Context, repository, _ string) error {
+		cloned = append(cloned, repository)
+		return errors.New("gh repo clone: exit status 1: not found")
+	}
+	fire := time.Date(2026, 11, 22, 9, 0, 0, 0, time.UTC)
+	run := scheduler.ProjectRun{TaskID: "bot/clone", Name: "clone", Project: "o/r", Prompt: "Clone it", Fire: fire,
+		RunCompiled: func(ctx context.Context, clone func(context.Context) (string, error), _ func(string, ...any)) (string, error) {
+			_, err := clone(ctx)
+			return "", err
+		}}
+
+	summary, err := w.runProjectTask(ctx, run, "", AgentSession{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue := <-runner.started; issue.Prompt != "Clone it" {
+		t.Fatalf("agent got %+v", issue)
+	}
+	if summary != "Opened issue #12 for the stale lockfile" {
+		t.Fatalf("summary = %q, want the agent's", summary)
+	}
+	if len(cloned) != 1 || cloned[0] != "o/r" {
+		t.Fatalf("cloned %v, want the run's project", cloned)
+	}
+	job, _ := scheduledJob(w, int(fire.Unix()))
+	if !strings.Contains(job.Log, "not found") || !job.Fallback {
+		t.Fatalf("job = %+v, want the clone failure logged as a fallback", job)
+	}
+	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
+		t.Fatalf("clone root holds %v (%v), want the failed checkout removed", entries, err)
+	}
+}
