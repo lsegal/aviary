@@ -33,9 +33,10 @@
 					title="Discard the compiled script and compile a fresh one" @click="act(recompile)">
 					<ArrowPathIcon aria-hidden="true" class="h-4 w-4" /> Recompile
 				</button>
-				<button v-if="!workflow" type="button" data-testid="task-duplicate" :class="ACTION_CLS"
-					title="Open the create form prefilled from this task" @click="duplicate">
-					<DocumentDuplicateIcon aria-hidden="true" class="h-4 w-4" /> Duplicate
+				<button v-if="!workflow" type="button" data-testid="task-duplicate" :class="HEADER_COLLAPSE_CLS"
+					aria-label="Duplicate" title="Open the create form prefilled from this task" @click="duplicate">
+					<DocumentDuplicateIcon aria-hidden="true" :class="HEADER_COLLAPSE_ICON_CLS" />
+					<span :class="HEADER_COLLAPSE_LABEL_CLS">Duplicate</span>
 				</button>
 				<button v-if="current?.job" type="button" data-testid="task-stop" :disabled="busy"
 					:class="[ACTION_CLS, 'text-red-600! dark:text-red-400!']" @click="act(() => dash.stop(current!.id))">
@@ -162,6 +163,9 @@ import { workflowSettingsPath } from "../lib/channels";
 import { compiledStatus, type TaskCompileAttempt } from "../lib/compiledStatus";
 import {
 	HEADER_ACTION_CLS,
+	HEADER_COLLAPSE_CLS,
+	HEADER_COLLAPSE_ICON_CLS,
+	HEADER_COLLAPSE_LABEL_CLS,
 	HEADER_ICON_CLS,
 	HEADER_ICON_ON_CLS,
 } from "../lib/headerActions";
