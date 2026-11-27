@@ -16,7 +16,7 @@ require (
 	github.com/google/jsonschema-go v0.4.3
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/hexops/gotextdiff v1.0.3
-	github.com/mattn/go-isatty v0.0.22
+	github.com/mattn/go-isatty v0.0.24
 	github.com/mattn/go-runewidth v0.0.24
 	github.com/mattn/go-shellwords v1.0.13
 	github.com/modelcontextprotocol/go-sdk v1.6.1
