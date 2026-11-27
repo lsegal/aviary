@@ -3808,3 +3808,101 @@ test("the page's own scrolls and focus leave the Code Loop header shown (#1437)"
 		.poll(async () => (await titleRow.boundingBox())?.y)
 		.toBeCloseTo(row?.y ?? 0, 0);
 });
+
+// The filter row keeps search usable at every width: the state filters
+// show as one segmented control when they fit beside it and fold into a
+// "Filters" button otherwise, decided by the toolbar's own width (#1490).
+for (const { width, chat } of [
+	{ width: 1600, chat: false },
+	{ width: 1345, chat: false },
+	{ width: 1345, chat: true },
+	{ width: 1024, chat: false },
+	{ width: 768, chat: false },
+	{ width: 390, chat: false },
+])
+	test(`the filter row at ${width}px${chat ? " with the chat panel" : ""} keeps search usable (#1490)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		const toolbar = page.getByTestId("job-toolbar");
+		const search = toolbar.getByRole("searchbox", { name: "Search jobs" });
+		await expect(search).toBeVisible({ timeout: 15_000 });
+		if (chat) await page.getByTestId("prompt-chat-toggle").click();
+		const segments = page.getByTestId("state-filter-segments");
+		const toggle = page.getByTestId("filter-toggle");
+		await expect(segments.or(toggle)).toBeVisible();
+		const rowBox = await toolbar.boundingBox();
+		const searchBox = await search.boundingBox();
+		if (width < 640) {
+			// A phone's search takes its own full-width row.
+			expect(searchBox?.width ?? 0).toBeGreaterThan((rowBox?.width ?? 0) - 2);
+			await expect(toggle).toBeVisible();
+		} else {
+			expect(searchBox?.width ?? 0).toBeGreaterThanOrEqual(220);
+			expect(searchBox?.width ?? 0).toBeLessThanOrEqual(320);
+		}
+		if (width === 1345 && !chat) await expect(segments).toBeVisible();
+		if (chat) await expect(toggle).toBeVisible();
+
+		// Search, the filters, the layout toggle and the count share a line
+		// (below search on a phone), with nothing past the row's edge.
+		const mid = async (l: Locator) => {
+			const b = await l.boundingBox();
+			return (b?.y ?? 0) + (b?.height ?? 0) / 2;
+		};
+		const filterControl = (await segments.isVisible()) ? segments : toggle;
+		const line = await mid(filterControl);
+		expect(
+			Math.abs((await mid(page.getByTestId("kanban-toggle"))) - line),
+		).toBeLessThan(4);
+		expect(
+			Math.abs((await mid(page.getByTestId("job-total"))) - line),
+		).toBeLessThan(4);
+		if (width >= 640)
+			expect(Math.abs((await mid(search)) - line)).toBeLessThan(4);
+		const overflow = await toolbar.evaluate((row) => {
+			const right = row.getBoundingClientRect().right;
+			return {
+				row: row.scrollWidth - row.clientWidth,
+				page: document.documentElement.scrollWidth - window.innerWidth,
+				past: [...row.children].some(
+					(c) => c.getBoundingClientRect().right > right + 1,
+				),
+			};
+		});
+		expect(overflow).toEqual({ row: 0, page: 0, past: false });
+
+		// Either form lists the same options and counts and toggles alike.
+		const folded = await toggle.isVisible();
+		if (folded) await toggle.click();
+		const group = page.getByRole("group", { name: "Job filter" });
+		await expect(group.getByRole("button", { name: /^(?!Clear)/ })).toHaveText([
+			/^Scheduled/,
+			/^Starting/,
+			/^Paused/,
+			/^Running\s*1$/,
+			/^Done/,
+			/^Failed/,
+		]);
+		await stateChip(page, "Running").click();
+		await stateChip(page, "Done").click();
+		await expect(page).toHaveURL(/[?&]state=running%2Cdone|state=running,done/);
+		await expect(stateChip(page, "Running")).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		if (folded) await expect(toggle).toHaveText("Filters · 2");
+		await page.reload();
+		if (folded) {
+			await expect(toggle).toHaveText("Filters · 2");
+			await toggle.click();
+		}
+		await expect(stateChip(page, "Done")).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		await toolbar.getByRole("button", { name: "Clear" }).click();
+		await expect(page).not.toHaveURL(/state=/);
+	});
