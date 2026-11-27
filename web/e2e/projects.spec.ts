@@ -2867,8 +2867,8 @@ test("the state chips multi-select and each board remembers its own", async ({
 	await stateChip(page, "Running").click();
 	await stateChip(page, "Failed").click();
 	await pressed(["Running", "Failed"]);
-	await expect(stateChip(page, "Running")).toHaveClass(/bg-blue-600/);
-	await expect(stateChip(page, "Done")).not.toHaveClass(/bg-green-600/);
+	await expect(stateChip(page, "Running")).toHaveClass(/bg-blue-100/);
+	await expect(stateChip(page, "Done")).not.toHaveClass(/bg-green-100/);
 	await expect(cards).toHaveCount(2);
 	await expect(cards.filter({ hasText: "#218" })).toHaveCount(1);
 	await expect(cards.filter({ hasText: "#209" })).toHaveCount(1);
