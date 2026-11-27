@@ -1,10 +1,5 @@
 import { onBeforeUnmount, onMounted, type Ref, ref, watch } from "vue";
-import {
-	headerTakesGesture,
-	scrollToTake,
-	slideOffset,
-	wheelPixels,
-} from "../lib/scrollAwayHeader";
+import { findScrollArea, HeaderSlide } from "../lib/scrollAwayHeader";
 
 // Only the shared page header's breadcrumb bar stays pinned; the title row
 // scrolls away with the page (#1437). Each page keeps its own scroll areas
@@ -25,102 +20,58 @@ export function useScrollAwayHeader(
 ) {
 	/** How far the title row has slid under the breadcrumb bar, in pixels. */
 	const offset = ref(0);
-	const last = new WeakMap<Element, number>();
-	let gestureAt = 0;
-	let touchY: number | null = null;
-
-	/** The title row's full height: as far as it can slide. */
-	function range(): number {
-		const row = main.value?.querySelector<HTMLElement>(
-			'[data-testid="settings-title-row"]',
-		);
-		return row?.offsetHeight ?? 0;
-	}
-
-	/** Slides the title row by delta, returning how much it moved. */
-	function slide(delta: number): number {
-		const { next, moved } = slideOffset(offset.value, delta, range());
-		offset.value = next;
-		return moved;
-	}
+	const slide = new HeaderSlide<Element>(
+		() =>
+			main.value?.querySelector<HTMLElement>(
+				'[data-testid="settings-title-row"]',
+			)?.offsetHeight ?? 0,
+		(next) => {
+			offset.value = next;
+		},
+	);
 
 	/** The page's scroll area under the pointer, if any. */
-	function scrollArea(from: EventTarget | null): Element | null {
-		const col = main.value;
-		for (
-			let el = from instanceof Element ? from : null;
-			el && el !== col;
-			el = el.parentElement
-		) {
-			if (el.scrollHeight <= el.clientHeight + 1) continue;
-			const { overflowY } = getComputedStyle(el);
-			if (overflowY === "auto" || overflowY === "scroll") return el;
-		}
-		return null;
-	}
+	const areaAt = (target: EventTarget | null) =>
+		findScrollArea<Element>(
+			target instanceof Element ? target : null,
+			main.value ?? null,
+			(el) => getComputedStyle(el).overflowY,
+		);
 
 	function onScroll(e: Event) {
 		const area = e.target;
-		if (!(area instanceof Element) || area === main.value) return;
-		const prev = last.get(area) ?? area.scrollTop;
-		const top = area.scrollTop;
-		last.set(area, top);
-		if (!enabled.value) return;
-		const take = scrollToTake(
-			top - prev,
-			offset.value,
-			range(),
-			Date.now() - gestureAt,
-		);
-		if (!take) return;
-		const moved = slide(take);
-		// The title row takes the scroll the area just made, so the content
-		// stays where the user put it while the title row leaves.
-		area.scrollTop = top - moved;
-		last.set(area, area.scrollTop);
-	}
-
-	/**
-	 * Moves the title row for a gesture the page's scroll areas can't use:
-	 * up at an area's top, or down where nothing scrolls further. Returns
-	 * whether the gesture was used.
-	 */
-	function useGesture(target: EventTarget | null, delta: number): boolean {
-		const area = scrollArea(target);
-		// The area's position before the gesture scrolls it, for onScroll.
-		if (area && !last.has(area)) last.set(area, area.scrollTop);
-		if (!enabled.value) return false;
-		if (!headerTakesGesture(delta, offset.value, range(), area)) return false;
-		return Math.abs(slide(delta)) > 0;
+		if (!enabled.value || !(area instanceof Element) || area === main.value)
+			return;
+		slide.scrolled(area, Date.now());
 	}
 
 	function onWheel(e: WheelEvent) {
-		if (e.ctrlKey || e.shiftKey) return;
-		if (e.deltaY > 0) gestureAt = Date.now();
-		const delta = wheelPixels(
+		if (!enabled.value || e.ctrlKey || e.shiftKey) return;
+		const used = slide.wheel(
+			areaAt(e.target),
 			e.deltaY,
 			e.deltaMode,
 			main.value?.clientHeight ?? 0,
+			Date.now(),
 		);
-		if (useGesture(e.target, delta)) e.preventDefault();
+		if (used) e.preventDefault();
 	}
 
+	const touchY = (e: TouchEvent) =>
+		e.touches.length === 1 ? e.touches[0].clientY : null;
+
 	function onTouchStart(e: TouchEvent) {
-		touchY = e.touches.length === 1 ? e.touches[0].clientY : null;
+		slide.touchStart(touchY(e));
 	}
 
 	function onTouchMove(e: TouchEvent) {
-		gestureAt = Date.now();
-		if (touchY === null || e.touches.length !== 1) return;
-		const y = e.touches[0].clientY;
-		// A finger moving up scrolls the page down.
-		const used = useGesture(e.target, touchY - y);
-		touchY = y;
+		if (!enabled.value) return;
+		const used = slide.touchMove(areaAt(e.target), touchY(e), Date.now());
 		if (used && e.cancelable) e.preventDefault();
 	}
 
 	function onTouchEnd() {
-		touchY = null;
+		slide.touchEnd();
 	}
 
 	// Tabbing to one of the title row's actions brings the row back.
@@ -129,7 +80,7 @@ export function useScrollAwayHeader(
 			e.target instanceof Element &&
 			e.target.closest('[data-testid="settings-title-row"]')
 		)
-			offset.value = 0;
+			slide.reset();
 	}
 
 	const listeners: [string, EventListener, AddEventListenerOptions][] = [
@@ -150,9 +101,7 @@ export function useScrollAwayHeader(
 	});
 
 	// A new page, or a page without the header, starts with it shown.
-	watch(enabled, () => {
-		offset.value = 0;
-	});
+	watch(enabled, () => slide.reset());
 
 	onBeforeUnmount(() => {
 		const col = main.value;
@@ -161,5 +110,5 @@ export function useScrollAwayHeader(
 			col.removeEventListener(type, fn, { capture: opts.capture });
 	});
 
-	return { offset };
+	return { reset: () => slide.reset(), offset };
 }

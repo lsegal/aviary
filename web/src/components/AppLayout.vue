@@ -1146,16 +1146,11 @@ const headerCrumbs = computed((): SettingsCrumb[] => {
 // Only the header's breadcrumb bar stays pinned; its title row slides away
 // as the page scrolls (#1437), and comes back on every new page.
 const mainEl = ref<HTMLElement | null>(null);
-const { offset: headerOffset } = useScrollAwayHeader(
+const { offset: headerOffset, reset: showHeader } = useScrollAwayHeader(
 	mainEl,
 	computed(() => headerCrumbs.value.length > 0),
 );
-watch(
-	() => route.path,
-	() => {
-		headerOffset.value = 0;
-	},
-);
+watch(() => route.path, showHeader);
 // The leaf's switcher between its sibling projects, tasks, channels or
 // files (#1063).
 const leafSwitcher = useCrumbSwitcher(
