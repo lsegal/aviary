@@ -701,6 +701,11 @@ func (v *validator) checkProjectModels(p ProjectsConfig) {
 	if _, err := NormalizeProjectMode(p.Mode); err != nil {
 		v.errorf("projects.mode", "%v", err)
 	}
+	if strings.TrimSpace(p.FinishedTTL) != "" {
+		if _, err := ParseFinishedTTL(p.FinishedTTL); err != nil {
+			v.errorf("projects.finished_ttl", "%v", err)
+		}
+	}
 }
 
 // checkProjects rejects a project owned by more than one agent: a project has
@@ -716,6 +721,9 @@ func (v *validator) checkProjects(agents []AgentConfig) {
 			}
 			if _, err := NormalizeProjectMode(project.Mode); err != nil {
 				v.errorf(fmt.Sprintf("agents[%d].projects[%d].mode", i, j), "%v", err)
+			}
+			if _, err := NormalizeFinishedTTLOverride(project.FinishedTTL); err != nil {
+				v.errorf(fmt.Sprintf("agents[%d].projects[%d].finished_ttl", i, j), "%v", err)
 			}
 			if owner, ok := owners[target]; ok && owner != agent.Name {
 				v.errorf(fmt.Sprintf("agents[%d].projects[%d]", i, j), "%s is already owned by agent %q; a project belongs to exactly one agent", target, owner)

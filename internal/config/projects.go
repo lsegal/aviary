@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -77,6 +78,11 @@ type ProjectsConfig struct {
 	TempDirs []string `yaml:"temp_dirs,omitempty" json:"temp_dirs,omitempty"`
 	// Webhook configures webhook delivery.
 	Webhook *ProjectsWebhookConfig `yaml:"webhook,omitempty" json:"webhook,omitempty"`
+	// FinishedTTL is how long Code Loop keeps done and failed jobs before
+	// removing them from its job store and board, as a duration such as
+	// "336h", "14d" or "2w"; "0" keeps them until they are cleared. Unset
+	// means DefaultProjectsFinishedTTL. See ProjectConfig.FinishedTTL.
+	FinishedTTL string `yaml:"finished_ttl,omitempty" json:"finished_ttl,omitempty"`
 }
 
 // AgentProjectsConfig is an agent's projects: list in aviary.yaml: the
@@ -101,6 +107,9 @@ type ProjectConfig struct {
 	// claims issues, so only queued jobs, scheduled project tasks and agent
 	// tools start work. Empty uses the shared mode.
 	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+	// FinishedTTL overrides the shared finished_ttl for this project only.
+	// Empty uses the shared value.
+	FinishedTTL string `yaml:"finished_ttl,omitempty" json:"finished_ttl,omitempty"`
 	// Reports sends this project's job lifecycle events through an Aviary
 	// agent's channels. Unset means no reports.
 	Reports *ProjectReportsConfig `yaml:"reports,omitempty" json:"reports,omitempty"`
@@ -213,7 +222,90 @@ const (
 	DefaultProjectsDelivery        = "browser"
 	DefaultProjectsFilter          = "assignee:@me"
 	DefaultProjectsWebhookPath     = "/webhook"
+	// DefaultProjectsFinishedTTL is how long done and failed jobs are kept.
+	DefaultProjectsFinishedTTL = 14 * 24 * time.Hour
 )
+
+// ParseFinishedTTL parses a finished_ttl value: a Go duration, or a whole
+// number of days ("14d") or weeks ("2w"). Zero keeps finished jobs until
+// they are cleared; a negative value is an error.
+func ParseFinishedTTL(value string) (time.Duration, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	units := map[string]time.Duration{"d": 24 * time.Hour, "w": 7 * 24 * time.Hour}
+	var ttl time.Duration
+	var err error
+	if n := len(value); n > 1 && units[value[n-1:]] > 0 {
+		var count int
+		count, err = strconv.Atoi(value[:n-1])
+		ttl = time.Duration(count) * units[value[n-1:]]
+	} else {
+		ttl, err = time.ParseDuration(value)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("invalid finished_ttl %q; use a duration such as 336h, 14d or 2w", value)
+	}
+	if ttl < 0 {
+		return 0, fmt.Errorf("invalid finished_ttl %q; it cannot be negative", value)
+	}
+	return ttl, nil
+}
+
+// ProjectFinishedTTLInherit clears a project's finished_ttl override, so the
+// project follows the shared value.
+const ProjectFinishedTTLInherit = "inherit"
+
+// NormalizeFinishedTTLOverride checks a project's finished_ttl override,
+// returning it trimmed, or empty for no override when it is empty or
+// ProjectFinishedTTLInherit.
+func NormalizeFinishedTTLOverride(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.EqualFold(value, ProjectFinishedTTLInherit) {
+		return "", nil
+	}
+	if _, err := ParseFinishedTTL(value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+// EffectiveFinishedTTL returns the shared finished_ttl, or
+// DefaultProjectsFinishedTTL when it is unset or invalid.
+func (p ProjectsConfig) EffectiveFinishedTTL() time.Duration {
+	if strings.TrimSpace(p.FinishedTTL) != "" {
+		if ttl, err := ParseFinishedTTL(p.FinishedTTL); err == nil {
+			return ttl
+		}
+	}
+	return DefaultProjectsFinishedTTL
+}
+
+// FinishedTTLFor returns the finished_ttl a project with override uses and
+// where it comes from: ProjectModeSourceProject for the override, else
+// ProjectModeSourceGlobal for the shared value.
+func (p ProjectsConfig) FinishedTTLFor(override string) (time.Duration, string) {
+	if override, err := NormalizeFinishedTTLOverride(override); err == nil && override != "" {
+		if ttl, err := ParseFinishedTTL(override); err == nil {
+			return ttl, ProjectModeSourceProject
+		}
+	}
+	return p.EffectiveFinishedTTL(), ProjectModeSourceGlobal
+}
+
+// FinishedTTLs maps every project with its own finished_ttl override to it.
+func (p AgentProjectsConfig) FinishedTTLs() map[string]string {
+	ttls := map[string]string{}
+	for _, project := range p {
+		target := strings.TrimSpace(project.Target)
+		ttl, err := NormalizeFinishedTTLOverride(project.FinishedTTL)
+		if target == "" || err != nil || ttl == "" {
+			continue
+		}
+		if _, ok := ttls[target]; !ok {
+			ttls[target] = ttl
+		}
+	}
+	return ttls
+}
 
 // EffectiveConcurrency returns the job limit.
 func (p ProjectsConfig) EffectiveConcurrency() int {
@@ -412,6 +504,9 @@ func (p ProjectsConfig) Override(overlay ProjectsConfig) ProjectsConfig {
 	}
 	if overlay.Mode != "" {
 		merged.Mode = overlay.Mode
+	}
+	if overlay.FinishedTTL != "" {
+		merged.FinishedTTL = overlay.FinishedTTL
 	}
 	if overlay.ApprovalMode != "" {
 		merged.ApprovalMode = overlay.ApprovalMode
