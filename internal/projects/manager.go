@@ -622,10 +622,10 @@ func (m *Manager) SetWatchFilter(target string, filter []string) (bool, error) {
 	return true, m.refresh()
 }
 
-// setWatchOverrideLocked sets, or with clear deletes, target's entry in the
+// setWatchOverrideLocked sets, or with remove deletes, target's entry in the
 // per-target override map field selects on every watch of target, replacing
 // each map with a copy. It reports whether any watch covers target.
-func setWatchOverrideLocked[V any](watches []Watch, target string, field func(*Watch) *map[string]V, value V, clear bool) bool {
+func setWatchOverrideLocked[V any](watches []Watch, target string, field func(*Watch) *map[string]V, value V, remove bool) bool {
 	found := false
 	for i := range watches {
 		if !slices.Contains(watches[i].Targets, target) {
@@ -636,7 +636,7 @@ func setWatchOverrideLocked[V any](watches []Watch, target string, field func(*W
 		if overrides == nil {
 			overrides = map[string]V{}
 		}
-		if clear {
+		if remove {
 			delete(overrides, target)
 		} else {
 			overrides[target] = value
