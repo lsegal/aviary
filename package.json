@@ -80,7 +80,7 @@
 		"@playwright/test": "^1.65.0",
 		"@tailwindcss/typography": "^0.5.20",
 		"@tailwindcss/vite": "^4.3.3",
-		"@types/node": "^26.5.1",
+		"@types/node": "^26.6.6",
 		"@vitejs/plugin-vue": "^6.0.9",
 		"@vitest/coverage-v8": "^5.1.2",
 		"autoprefixer": "^10.6.1",
