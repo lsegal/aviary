@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupStoreDir(t *testing.T) {
@@ -192,4 +193,195 @@ func TestSessionChannelsPath(t *testing.T) {
 	assert.Equal(t, // channels path should end with .channels.json.
 		".json", filepath.Ext(p))
 
+}
+
+// TestSetSessionChannel_ReplacesConfig verifies SetSessionChannel writes a
+// single target and replaces any previously stored targets.
+func TestSetSessionChannel_ReplacesConfig(t *testing.T) {
+	setupStoreDir(t)
+
+	const agentID, sessionID = "agent_set", "sess-set"
+	require.NoError(t, EnsureSessionChannel(agentID, sessionID, "signal", "primary", "+1111"))
+	require.NoError(t, EnsureSessionChannel(agentID, sessionID, "slack", "alerts", "C1"))
+
+	require.NoError(t, SetSessionChannel(agentID, sessionID, "discord", "ops", "D42"))
+
+	got, err := ReadSessionChannels(agentID, sessionID)
+	require.NoError(t, err)
+	assert.Equal(t, sessionID, got.SessionID)
+	assert.Equal(t, agentID, got.AgentID)
+	assert.Equal(t, []SessionChannel{{Type: "discord", ConfiguredID: "ops", ID: "D42"}}, got.Channels)
+}
+
+// TestSetSessionChannelTarget_PersistsThread verifies the full target,
+// including thread metadata, round-trips through the sidecar file.
+func TestSetSessionChannelTarget_PersistsThread(t *testing.T) {
+	setupStoreDir(t)
+
+	target := SessionChannel{Type: "slack", ConfiguredID: "alerts", ID: "C9", ThreadTS: "1700000000.000100"}
+	require.NoError(t, SetSessionChannelTarget("agent_thread", "sess-thread", target))
+
+	got, err := ReadSessionChannels("agent_thread", "sess-thread")
+	require.NoError(t, err)
+	assert.Equal(t, []SessionChannel{target}, got.Channels)
+}
+
+// TestReadSessionChannels_CorruptJSON verifies a malformed sidecar file is
+// reported as an error rather than treated as empty.
+func TestReadSessionChannels_CorruptJSON(t *testing.T) {
+	setupStoreDir(t)
+
+	p := SessionChannelsPath("agent_bad", "sess-bad")
+	require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o700))
+	require.NoError(t, os.WriteFile(p, []byte("{not json"), 0o600))
+
+	cfg, err := ReadSessionChannels("agent_bad", "sess-bad")
+	assert.Error(t, err)
+	assert.Nil(t, cfg)
+}
+
+// TestReadSessionChannels_ReadError verifies read failures other than a
+// missing file are returned. A directory at the sidecar path makes
+// os.ReadFile fail on every platform.
+func TestReadSessionChannels_ReadError(t *testing.T) {
+	setupStoreDir(t)
+
+	require.NoError(t, os.MkdirAll(SessionChannelsPath("agent_dir", "sess-dir"), 0o700))
+
+	cfg, err := ReadSessionChannels("agent_dir", "sess-dir")
+	assert.Error(t, err)
+	assert.Nil(t, cfg)
+}
+
+// TestWriteSessionChannels_MkdirError verifies a failure to create the
+// sessions directory is returned. A regular file where the agent directory
+// should be blocks the directory creation.
+func TestWriteSessionChannels_MkdirError(t *testing.T) {
+	setupStoreDir(t)
+
+	agentDir := AgentDir("agent_blocked")
+	require.NoError(t, os.MkdirAll(filepath.Dir(agentDir), 0o700))
+	require.NoError(t, os.WriteFile(agentDir, []byte("not a dir"), 0o600))
+
+	err := SetSessionChannel("agent_blocked", "sess", "signal", "primary", "+1")
+	assert.Error(t, err)
+}
+
+// TestWriteSessionChannels_WriteError verifies a failure to write the sidecar
+// file is returned and leaves the blocking entry untouched.
+func TestWriteSessionChannels_WriteError(t *testing.T) {
+	setupStoreDir(t)
+
+	p := SessionChannelsPath("agent_wdir", "sess-wdir")
+	require.NoError(t, os.MkdirAll(p, 0o700))
+
+	err := WriteSessionChannels(&SessionChannelsConfig{SessionID: "sess-wdir", AgentID: "agent_wdir"})
+	assert.Error(t, err)
+
+	info, statErr := os.Stat(p)
+	require.NoError(t, statErr)
+	assert.True(t, info.IsDir())
+}
+
+// TestEnsureSessionChannelTarget_UpdatesThread verifies a matching target with
+// different thread metadata is updated in place instead of duplicated.
+func TestEnsureSessionChannelTarget_UpdatesThread(t *testing.T) {
+	setupStoreDir(t)
+
+	const agentID, sessionID = "agent_ts", "sess-ts"
+	other := SessionChannel{Type: "signal", ConfiguredID: "primary", ID: "+1"}
+	first := SessionChannel{Type: "slack", ConfiguredID: "alerts", ID: "C1", ThreadTS: "111.1"}
+	require.NoError(t, EnsureSessionChannelTarget(agentID, sessionID, other))
+	require.NoError(t, EnsureSessionChannelTarget(agentID, sessionID, first))
+
+	updated := first
+	updated.ThreadTS = "222.2"
+	require.NoError(t, EnsureSessionChannelTarget(agentID, sessionID, updated))
+
+	got, err := ReadSessionChannels(agentID, sessionID)
+	require.NoError(t, err)
+	assert.Equal(t, []SessionChannel{other, updated}, got.Channels)
+}
+
+// TestEnsureSessionChannelTarget_UnchangedSkipsWrite verifies an identical
+// target, thread included, leaves the file alone.
+func TestEnsureSessionChannelTarget_UnchangedSkipsWrite(t *testing.T) {
+	setupStoreDir(t)
+
+	const agentID, sessionID = "agent_same", "sess-same"
+	target := SessionChannel{Type: "slack", ConfiguredID: "alerts", ID: "C1", ThreadTS: "111.1"}
+	require.NoError(t, EnsureSessionChannelTarget(agentID, sessionID, target))
+
+	// Replace the file with an equivalent but differently formatted payload; a
+	// rewrite would reformat it.
+	p := SessionChannelsPath(agentID, sessionID)
+	compact := []byte(`{"session_id":"sess-same","agent_id":"agent_same","channels":[{"type":"slack","configured_id":"alerts","id":"C1","thread_ts":"111.1"}]}`)
+	require.NoError(t, os.WriteFile(p, compact, 0o600))
+
+	require.NoError(t, EnsureSessionChannelTarget(agentID, sessionID, target))
+
+	data, err := os.ReadFile(p)
+	require.NoError(t, err)
+	assert.Equal(t, string(compact), string(data))
+}
+
+// TestEnsureSessionChannelTarget_ReadError verifies a corrupt existing config
+// is reported and not overwritten.
+func TestEnsureSessionChannelTarget_ReadError(t *testing.T) {
+	setupStoreDir(t)
+
+	p := SessionChannelsPath("agent_corrupt", "sess-corrupt")
+	require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o700))
+	require.NoError(t, os.WriteFile(p, []byte("garbage"), 0o600))
+
+	err := EnsureSessionChannel("agent_corrupt", "sess-corrupt", "signal", "primary", "+1")
+	assert.Error(t, err)
+
+	data, readErr := os.ReadFile(p)
+	require.NoError(t, readErr)
+	assert.Equal(t, "garbage", string(data))
+}
+
+// TestFindAllSessionChannelsConfigs_AgentsDirError verifies a read failure on
+// the agents directory, other than it not existing, is returned.
+func TestFindAllSessionChannelsConfigs_AgentsDirError(t *testing.T) {
+	setupStoreDir(t)
+
+	require.NoError(t, os.WriteFile(filepath.Join(DataDir(), DirAgents), []byte("not a dir"), 0o600))
+
+	found, err := FindAllSessionChannelsConfigs()
+	assert.Error(t, err)
+	assert.Nil(t, found)
+}
+
+// TestFindAllSessionChannelsConfigs_SkipsUnrelatedEntries verifies the scan
+// ignores stray files, agents without sessions, non-channel files, nested
+// directories, and configs missing their session or agent ID.
+func TestFindAllSessionChannelsConfigs_SkipsUnrelatedEntries(t *testing.T) {
+	setupStoreDir(t)
+
+	want := &SessionChannelsConfig{
+		SessionID: "keep",
+		AgentID:   "agent_keep",
+		Channels:  []SessionChannel{{Type: "signal", ConfiguredID: "primary", ID: "+3"}},
+	}
+	require.NoError(t, WriteSessionChannels(want))
+
+	agentsDir := filepath.Join(DataDir(), DirAgents)
+	sessDir := filepath.Join(AgentDir("agent_keep"), "sessions")
+
+	// A stray file directly under agents/.
+	require.NoError(t, os.WriteFile(filepath.Join(agentsDir, "stray.txt"), []byte("x"), 0o600))
+	// An agent directory with no sessions directory.
+	require.NoError(t, os.MkdirAll(AgentDir("agent_nosessions"), 0o700))
+	// A non-channel file and a directory with the channel suffix.
+	require.NoError(t, os.WriteFile(filepath.Join(sessDir, "keep.jsonl"), []byte("{}\n"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(sessDir, "nested.channels.json"), 0o700))
+	// Valid JSON missing the agent or session ID.
+	require.NoError(t, os.WriteFile(filepath.Join(sessDir, "noagent.channels.json"), []byte(`{"session_id":"noagent"}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(sessDir, "nosession.channels.json"), []byte(`{"agent_id":"agent_keep"}`), 0o600))
+
+	found, err := FindAllSessionChannelsConfigs()
+	require.NoError(t, err)
+	assert.Equal(t, []*SessionChannelsConfig{want}, found)
 }
