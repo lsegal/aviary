@@ -147,6 +147,7 @@ export function useHeaderCollapse(
 				items()
 					.map(({ id }) => id)
 					.join(),
+			() => options.singleLine?.(),
 			...(options.deps ?? []),
 		],
 		() => void nextTick(measure),
