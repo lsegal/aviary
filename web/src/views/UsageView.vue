@@ -298,7 +298,7 @@
                 <span class="ml-auto shrink-0 font-mono text-xs text-gray-700 dark:text-gray-300">{{ fmtTokens(s.input + s.output) }}</span>
               </div>
               <div class="mt-1 truncate text-[11px] text-gray-400">
-                {{ kindLabel(s) }} · {{ s.agent_id }} · {{ s.model }} · {{ s.tool_calls }} tools · {{ fmtTs(s.last_ts) }}
+                {{ kindLabel(s) }} · {{ s.agent_id }} · {{ s.model }} · {{ s.tool_calls }} {{ s.tool_calls === 1 ? "tool" : "tools" }} · {{ fmtTs(s.last_ts) }}
               </div>
             </li>
           </ul>

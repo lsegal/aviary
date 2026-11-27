@@ -4,14 +4,20 @@
 
 ## usage_query
 
-Return raw token-usage records within a date range, used to populate the Usage dashboard.
+Return raw token-usage records within a date range, used for the Usage dashboard's totals and charts.
 
 **Arguments:**
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `start` | string | | Start of date range (RFC3339 or `YYYY-MM-DD`). Defaults to 30 days ago. |
-| `end` | string | | End of date range. Defaults to now. |
+| `end` | string | | End of date range. A bare date includes that whole day. Defaults to now. |
+| `agent` | string | | Only records of this agent ID. |
+| `model` | string | | Only records of this model. |
+| `status` | string | | `ok` keeps only sessions with no error, `error` only sessions that had one. |
+| `deleted` | string | | `include` (default), `exclude`, or `only` sessions that were deleted. |
+
+The filters match what `usage_sessions` lists, so totals summed from these records agree with its sessions. Code Loop work and delivery records (below) are always returned, whatever the filters.
 
 **Returns:** JSON array of usage records.
 
@@ -19,15 +25,19 @@ Return raw token-usage records within a date range, used to populate the Usage d
 [
   {
     "timestamp": "2026-03-22T14:30:00Z",
-    "agent": "assistant",
+    "agent_id": "assistant",
     "session_id": "01HZ...",
     "provider": "anthropic",
     "model": "claude-sonnet-4-6",
     "input_tokens": 1842,
-    "output_tokens": 312
+    "output_tokens": 312,
+    "session_name": "Plan the trip",
+    "session_kind": "chat"
   }
 ]
 ```
+
+Each token record snapshots the session that spent it: `session_name` is its display name at the time, `session_kind` is `chat`, `job` (a Code Loop job), `task` or `workflow`, and `session_owner` is what it belongs to, such as the issue a job worked on (`owner/repo#1433`), a task's `agent/task` key, or the channel that fired a workflow. The snapshot outlives the session, so Usage still names it after `session_remove`, a delete with session data, or clearing a Code Loop job.
 
 Records are stored per LLM call. Aggregate them by `model`, `provider`, or `agent` to produce cost breakdowns and usage summaries.
 
@@ -45,6 +55,46 @@ Records with a `project` object report Code Loop work instead of token use: `pro
   "project": { "issue": "owner/repo#42", "duration_ms": 1843000 }
 }
 ```
+
+## usage_sessions
+
+Return one sorted page of the sessions that spent tokens within a date range, each with its name, kind, owner and token totals. Sessions are aggregated, filtered, sorted and paged on the server.
+
+**Arguments:** every `usage_query` argument, plus:
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `sort` | string | | `name`, `agent`, `model`, `tokens`, `tools`, or `last` (default, last activity). |
+| `order` | string | | `asc` or `desc`. Text columns default to `asc`, the rest to `desc`. |
+| `limit` | number | | Sessions per page. Defaults to 50, at most 500. |
+| `offset` | number | | Sessions to skip before the page. |
+
+**Returns:** the page, the count and totals over every matching session, and the agents and models in range to filter by.
+
+```json
+{
+  "sessions": [
+    {
+      "session_id": "sess_01HZ...",
+      "agent_id": "assistant",
+      "model": "claude-sonnet-4-6",
+      "input": 18420, "output": 3120, "tool_calls": 4, "messages": 6,
+      "has_error": false, "has_throttle": false,
+      "first_ts": "2026-03-22T14:30:00Z", "last_ts": "2026-03-22T15:10:00Z",
+      "name": "Plan the trip", "kind": "chat",
+      "deleted": true, "deleted_at": "2026-03-23T09:00:00Z"
+    }
+  ],
+  "total": 696,
+  "offset": 0,
+  "limit": 50,
+  "totals": { "input": 9120000, "output": 412000, "cache_read": 0, "cache_write": 0, "tool_calls": 2210, "messages": 3410, "errors": 12 },
+  "agents": ["assistant", "projects"],
+  "models": ["claude-sonnet-4-6", "opus"]
+}
+```
+
+`name` is the session's live title while it exists, else the latest name its records snapshotted, else one recovered from its task, its Code Loop issue or its deletion record, else `Unknown session (deleted)`. `deleted` marks a session that no longer exists, and `deleted_at` is when it was deleted, when that was recorded. Code Loop job runs (agent `projects`) have no session of their own and are never marked deleted.
 
 ---
 
