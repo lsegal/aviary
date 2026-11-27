@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -85,13 +86,22 @@ func TestWriteDoctorOrphans(t *testing.T) {
 	assert.Zero(t, nerrs)
 	assert.Zero(t, nwarns)
 	assert.Equal(t, "\nOrphaned sessions\n─────────────────\n  (none)\n", out)
+}
+
+func TestWriteDoctorOrphans_UnlistableSessionsIsAnError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reports listing a file as a directory as not-exist, which counts as no sessions")
+	}
+	doctorTestEnv(t)
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot"}}}
 
 	// A sessions path that is not a directory cannot be listed, which the
 	// doctor counts as an error rather than as orphans.
 	sessions := filepath.Join(store.AgentDir("bot"), "sessions")
 	require.NoError(t, os.MkdirAll(filepath.Dir(sessions), 0o700))
 	require.NoError(t, os.WriteFile(sessions, []byte("not a dir"), 0o600))
-	out = doctorOutput(t, func() { nerrs, nwarns = writeDoctorOrphans(cfg) })
+	var nerrs, nwarns int
+	out := doctorOutput(t, func() { nerrs, nwarns = writeDoctorOrphans(cfg) })
 	assert.Equal(t, 1, nerrs)
 	assert.Zero(t, nwarns)
 	assert.Contains(t, out, `  [ERROR] agent "bot": listing sessions:`)
