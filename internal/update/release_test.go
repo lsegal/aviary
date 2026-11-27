@@ -2,6 +2,7 @@ package update
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -11,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -195,4 +197,191 @@ func TestInstallUnknownVersion(t *testing.T) {
 	_, err := Install(context.Background(), InstallOptions{Version: "9.9.9", TargetPath: filepath.Join(t.TempDir(), "aviary"), DownloadBase: srv.URL})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "release v9.9.9 not found")
+}
+
+func TestDownloadBase(t *testing.T) {
+	t.Run("explicit base wins over env", func(t *testing.T) {
+		t.Setenv(DownloadBaseEnv, "https://env.example")
+		assert.Equal(t, "https://explicit.example", downloadBase("  https://explicit.example/  "))
+	})
+	t.Run("env used when base is blank", func(t *testing.T) {
+		t.Setenv(DownloadBaseEnv, " https://env.example// ")
+		assert.Equal(t, "https://env.example", downloadBase("   "))
+	})
+	t.Run("default when base and env are blank", func(t *testing.T) {
+		t.Setenv(DownloadBaseEnv, " ")
+		assert.Equal(t, DefaultDownloadBase, downloadBase(""))
+	})
+}
+
+func TestTagFromReleasePath(t *testing.T) {
+	cases := []struct {
+		name, path, tag string
+		ok              bool
+	}{
+		{"plain tag", "/o/r/releases/tag/v1.2.3", "v1.2.3", true},
+		{"trailing slash", "/o/r/releases/tag/v1.2.3/", "v1.2.3", true},
+		{"escaped tag", "/o/r/releases/tag/v1.2.3%2Brc", "v1.2.3+rc", true},
+		{"not a tag path", "/o/r/releases", "", false},
+		{"empty tag", "/o/r/releases/tag/", "", false},
+		{"nested tag", "/o/r/releases/tag/v1/extra", "", false},
+		{"bad escape", "/o/r/releases/tag/v1%zz", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tag, ok := tagFromReleasePath(&url.URL{Path: tc.path})
+			assert.Equal(t, tc.ok, ok)
+			assert.Equal(t, tc.tag, tag)
+		})
+	}
+}
+
+func TestHTTPStatusError(t *testing.T) {
+	for status, want := range map[int]string{
+		http.StatusForbidden:           "pfx: HTTP 403 (" + rateLimitHint + ")",
+		http.StatusTooManyRequests:     "pfx: HTTP 429 (" + rateLimitHint + ")",
+		http.StatusNotFound:            "pfx: HTTP 404 (not found)",
+		http.StatusInternalServerError: "pfx: HTTP 500",
+		http.StatusOK:                  "pfx: HTTP 200",
+	} {
+		assert.EqualError(t, httpStatusError("pfx", &http.Response{StatusCode: status}), want)
+	}
+}
+
+// failingClient returns a client whose every request fails with err.
+func failingClient(err error) *http.Client {
+	return &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, err })}
+}
+
+func TestResolveLatestVersionErrors(t *testing.T) {
+	ctx := context.Background()
+	serve := func(t *testing.T, h http.HandlerFunc) string {
+		t.Helper()
+		srv := httptest.NewServer(h)
+		t.Cleanup(srv.Close)
+		return srv.URL
+	}
+
+	t.Run("invalid base URL", func(t *testing.T) {
+		_, err := resolveLatestVersion(ctx, http.DefaultClient, "://bad", "o/r")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "creating release request")
+	})
+	t.Run("transport error", func(t *testing.T) {
+		boom := errors.New("dial failed")
+		_, err := resolveLatestVersion(ctx, failingClient(boom), "http://example.invalid", "o/r")
+		require.ErrorIs(t, err, boom)
+		assert.Contains(t, err.Error(), "checking o/r releases")
+	})
+	t.Run("non-redirect status", func(t *testing.T) {
+		base := serve(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) })
+		_, err := resolveLatestVersion(ctx, http.DefaultClient, base, "o/r")
+		assert.EqualError(t, err, "release lookup failed: HTTP 404 (not found)")
+	})
+	t.Run("redirect without location", func(t *testing.T) {
+		base := serve(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusFound) })
+		_, err := resolveLatestVersion(ctx, http.DefaultClient, base, "o/r")
+		assert.EqualError(t, err, "release lookup failed: redirect has no location")
+	})
+	t.Run("redirect to non-tag path", func(t *testing.T) {
+		var followed bool
+		base := serve(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/o/r/releases" {
+				followed = true
+				return
+			}
+			http.Redirect(w, r, "/o/r/releases", http.StatusFound)
+		})
+		_, err := resolveLatestVersion(ctx, http.DefaultClient, base, "o/r")
+		assert.EqualError(t, err, "release lookup failed: o/r has no published release")
+		assert.False(t, followed, "the latest redirect must not be followed")
+	})
+	t.Run("absolute redirect", func(t *testing.T) {
+		base := serve(t, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "https://elsewhere.example/o/r/releases/tag/v2.0.0", http.StatusMovedPermanently)
+		})
+		tag, err := resolveLatestVersion(ctx, http.DefaultClient, base+"/", "o/r")
+		require.NoError(t, err)
+		assert.Equal(t, "v2.0.0", tag)
+	})
+}
+
+func TestFetchChecksum(t *testing.T) {
+	ctx := context.Background()
+	serveChecksums := func(t *testing.T, status int, body string) string {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/o/r/releases/download/v1.0.0/checksums.txt" {
+				t.Errorf("unexpected path %s", r.URL.Path)
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(body))
+		}))
+		t.Cleanup(srv.Close)
+		return srv.URL
+	}
+	upper := strings.Repeat("AB", 32)
+
+	t.Run("finds binary-mode entry and lowercases it", func(t *testing.T) {
+		base := serveChecksums(t, http.StatusOK, "garbage line with many fields\n"+strings.Repeat("0", 64)+"  other.zip\n"+upper+" *app.zip\n")
+		sum, err := fetchChecksum(ctx, http.DefaultClient, base, "o/r", "1.0.0", "app.zip")
+		require.NoError(t, err)
+		assert.Equal(t, strings.ToLower(upper), sum)
+	})
+	t.Run("missing asset entry", func(t *testing.T) {
+		base := serveChecksums(t, http.StatusOK, upper+"  other.zip\n")
+		_, err := fetchChecksum(ctx, http.DefaultClient, base, "o/r", "v1.0.0", "app.zip")
+		assert.EqualError(t, err, "checksums.txt for v1.0.0 has no entry for app.zip")
+	})
+	t.Run("not found", func(t *testing.T) {
+		base := serveChecksums(t, http.StatusNotFound, "")
+		_, err := fetchChecksum(ctx, http.DefaultClient, base, "o/r", "1.0.0", "app.zip")
+		assert.EqualError(t, err, "release v1.0.0 not found in o/r")
+	})
+	t.Run("server error", func(t *testing.T) {
+		base := serveChecksums(t, http.StatusBadGateway, rateLimitBody)
+		_, err := fetchChecksum(ctx, http.DefaultClient, base, "o/r", "1.0.0", "app.zip")
+		assert.EqualError(t, err, "downloading checksums.txt: HTTP 502")
+	})
+	t.Run("rate limited", func(t *testing.T) {
+		base := serveChecksums(t, http.StatusForbidden, rateLimitBody)
+		_, err := fetchChecksum(ctx, http.DefaultClient, base, "o/r", "1.0.0", "app.zip")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), rateLimitHint)
+		assert.NotContains(t, err.Error(), "203.0.113.7")
+	})
+	t.Run("overlong line", func(t *testing.T) {
+		base := serveChecksums(t, http.StatusOK, strings.Repeat("x", 128*1024))
+		_, err := fetchChecksum(ctx, http.DefaultClient, base, "o/r", "1.0.0", "app.zip")
+		require.ErrorIs(t, err, bufio.ErrTooLong)
+		assert.Contains(t, err.Error(), "reading checksums.txt")
+	})
+	t.Run("invalid base URL", func(t *testing.T) {
+		_, err := fetchChecksum(ctx, http.DefaultClient, "://bad", "o/r", "1.0.0", "app.zip")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "creating checksums request")
+	})
+	t.Run("transport error", func(t *testing.T) {
+		boom := errors.New("connection reset")
+		_, err := fetchChecksum(ctx, failingClient(boom), "http://example.invalid", "o/r", "1.0.0", "app.zip")
+		require.ErrorIs(t, err, boom)
+		assert.Contains(t, err.Error(), "downloading checksums.txt for 1.0.0")
+	})
+}
+
+func TestVerifyChecksum(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "asset.bin")
+	require.NoError(t, os.WriteFile(path, []byte("payload"), 0o600))
+	sum := sha256.Sum256([]byte("payload"))
+	want := hex.EncodeToString(sum[:])
+
+	require.NoError(t, verifyChecksum(path, want))
+
+	err := verifyChecksum(path, strings.Repeat("0", 64))
+	require.ErrorIs(t, err, errChecksumMismatch)
+	assert.Contains(t, err.Error(), "expected "+strings.Repeat("0", 64)+", got "+want)
+
+	err = verifyChecksum(filepath.Join(t.TempDir(), "missing.bin"), want)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	assert.Contains(t, err.Error(), "opening download")
 }
