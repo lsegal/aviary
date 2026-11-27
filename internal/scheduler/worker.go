@@ -548,8 +548,8 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 				logf:      logf,
 			})
 			compiledErr = err
-			// Only the script's own result counts toward setting it aside,
-			// not a failed compile or clone, nor a stopped run.
+			// Only the script's own result counts toward its failures, not
+			// a failed compile or clone, nor a stopped run.
 			scriptExecuted = executed && runCtx.Err() == nil
 			return output, err
 		}
@@ -621,11 +621,13 @@ func (p *WorkerPool) runCompiledPrompt(ctx context.Context, job *domain.Job, cfg
 		b.Addf("running the precompiled script")
 		scriptJob := *job
 		scriptJob.Script = script
-		output, runErr = executeScriptJobOutput(ctx, &scriptJob, b.Addf)
+		output, runErr = retryTransientScript(ctx, b.Addf, func() (string, error) {
+			return executeScriptJobOutput(ctx, &scriptJob, b.Addf)
+		})
 		executed = true
 	}
-	// Only the script's own result counts toward setting it aside, not a
-	// failed compile nor a stopped run.
+	// Only the script's own result counts toward its failures, not a failed
+	// compile nor a stopped run.
 	if executed && ctx.Err() == nil && p.scriptReporter != nil {
 		if reportErr := p.scriptReporter(cfg.Name, name, runErr); reportErr != nil {
 			slog.Warn("job: failed to record precompiled script result", "id", job.ID, "task", job.TaskID, "err", reportErr)
@@ -709,7 +711,9 @@ func (p *WorkerPool) runCompiledProjectTask(ctx context.Context, task compiledPr
 	ctx = agent.WithCommandEnv(ctx, map[string]string{"AVIARY_CHECKOUT_DIRECTORY": checkout, "GH_REPO": run.Project})
 	scriptJob := *task.job
 	scriptJob.Script = script
-	output, err = executeScriptJobOutput(ctx, &scriptJob, logf)
+	output, err = retryTransientScript(ctx, logf, func() (string, error) {
+		return executeScriptJobOutput(ctx, &scriptJob, logf)
+	})
 	return output, true, err
 }
 

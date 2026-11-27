@@ -43,6 +43,7 @@ type taskFileFrontmatter struct {
 	CompiledKey    string `yaml:"compiled_key,omitempty"`
 	ScriptVerified bool   `yaml:"script_verified,omitempty"`
 	ScriptFailures int    `yaml:"script_failures,omitempty"`
+	ScriptLastError string `yaml:"script_last_error,omitempty"`
 	PrecompileNote string `yaml:"precompile_note,omitempty"`
 	// LegacyRunAgent and LegacyCLI read the old keys of Model (see
 	// LegacyTaskModel). They are never written: saving a task moves the
@@ -104,6 +105,7 @@ func ParseMarkdownTask(defaultName string, data []byte) (TaskConfig, error) {
 	task.CompiledKey = fm.CompiledKey
 	task.ScriptVerified = fm.ScriptVerified
 	task.ScriptFailures = fm.ScriptFailures
+	task.ScriptLastError = fm.ScriptLastError
 	task.PrecompileNote = fm.PrecompileNote
 	if task.Model == "" {
 		task.Model = LegacyTaskModel(fm.LegacyRunAgent, fm.LegacyCLI)
@@ -161,6 +163,7 @@ func SaveMarkdownTask(dir string, task TaskConfig) (string, error) {
 		CompiledKey:    task.CompiledKey,
 		ScriptVerified: task.ScriptVerified,
 		ScriptFailures: task.ScriptFailures,
+		ScriptLastError: task.ScriptLastError,
 		PrecompileNote: task.PrecompileNote,
 	}
 	// Only include name in frontmatter when it differs from the filename stem.

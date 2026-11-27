@@ -159,10 +159,10 @@ func compileTaskInBackground(agentName, taskName, trigger string) {
 	})
 }
 
-// RecompileTask discards a prompt or project task's compiled script, whatever state it is in, turns precompile back on, and compiles it
-// again in the background. It is the Recompile action: it starts over a
-// script that is stale, was set aside after failing, or had precompile turned
-// off after repeated failures.
+// RecompileTask discards a prompt or project task's compiled script, whatever
+// state it is in, turns precompile on, and compiles it again in the
+// background. It is the Recompile action: it starts over a script that is
+// stale or keeps failing.
 func RecompileTask(agentName, taskName string) error {
 	_, agentCfg, task, err := findConfiguredTask(agentName, taskName)
 	if err != nil {
@@ -174,7 +174,7 @@ func RecompileTask(agentName, taskName string) error {
 	on := true
 	task.Precompile = &on
 	task.Compiled, task.CompiledKey = "", ""
-	task.ScriptVerified, task.ScriptFailures, task.PrecompileNote = false, 0, ""
+	task.ScriptVerified, task.ScriptFailures, task.ScriptLastError, task.PrecompileNote = false, 0, "", ""
 	if err := saveConfiguredTask(agentCfg, task); err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func EnsureTaskCompiled(ctx context.Context, agentName, taskName, trigger string
 	tracker.record.Reason = strings.TrimSpace(compiled.Reason)
 	tracker.record.Steps = toDomainCompileSteps(compiled.Steps)
 	task.Compiled = ""
-	task.ScriptVerified, task.ScriptFailures, task.PrecompileNote = false, 0, ""
+	task.ScriptVerified, task.ScriptFailures, task.ScriptLastError, task.PrecompileNote = false, 0, "", ""
 	script := strings.TrimSpace(compiled.Script)
 	problem := ""
 	if project && compiled.Type == "script" && script != "" && !compiled.NeedsDiscovery {
@@ -257,50 +257,63 @@ func EnsureTaskCompiled(ctx context.Context, agentName, taskName, trigger string
 	return task.Compiled, nil
 }
 
-// projectScriptFailureLimit is how many runs in a row a compiled project task
-// or workflow script that has completed before may fail before precompile is turned off,
-// so a broken script does not cost a script run and a model run every fire.
-const projectScriptFailureLimit = 3
+// TaskScriptResult is what recording a precompiled script run changed.
+type TaskScriptResult struct {
+	// StreakStarted is set when this failure started a run of failures: the
+	// script's previous counted run completed, or it had not failed yet. A
+	// streak notifies once, so later failures in it leave this unset.
+	StreakStarted bool
+	// Failures is the script's consecutive failed runs, and Cause the last
+	// failure's short cause.
+	Failures int
+	Cause    string
+	// Workflow is set when the task is a workflow.
+	Workflow bool
+}
 
-// RecordTaskScriptResult records how a precompiled project task's or
-// workflow's script run ended; runErr is nil when it completed. A script that fails
-// before it has ever completed is set aside at once and the task runs on its
-// prompt, since the compile gate could not catch the failure; one that has
-// completed before is given projectScriptFailureLimit runs in a row before
-// precompile is turned off. Either way PrecompileNote says what happened.
+// RecordTaskScriptResult records how a precompiled project task's, prompt
+// task's or workflow's script run ended; runErr is nil when it completed.
 func RecordTaskScriptResult(agentName, taskName string, runErr error) error {
+	_, err := RecordTaskScriptOutcome(agentName, taskName, runErr)
+	return err
+}
+
+// RecordTaskScriptOutcome records how a precompiled script run ended, for
+// display only (#1568): a failed run counts toward the task's consecutive
+// failures and records its cause, and a completed one resets them. It never
+// turns precompile off or discards the compiled script; each failed run
+// falls back to the model, and recompiling stays the user's Recompile. A
+// transient failure, such as a rate limit or a network error, says nothing
+// about the script and is not counted.
+func RecordTaskScriptOutcome(agentName, taskName string, runErr error) (TaskScriptResult, error) {
 	_, agentCfg, task, err := findConfiguredTask(agentName, taskName)
 	if err != nil {
-		return err
+		return TaskScriptResult{}, err
 	}
+	result := TaskScriptResult{Failures: task.ScriptFailures, Cause: task.ScriptLastError, Workflow: task.IsWorkflow()}
 	if strings.TrimSpace(task.Compiled) == "" {
-		return nil
+		return result, nil
 	}
 	if runErr == nil {
-		if task.ScriptVerified && task.ScriptFailures == 0 {
-			return nil
+		if task.ScriptVerified && task.ScriptFailures == 0 && task.ScriptLastError == "" {
+			return result, nil
 		}
-		task.ScriptVerified, task.ScriptFailures = true, 0
-		return saveConfiguredTask(agentCfg, task)
+		task.ScriptVerified, task.ScriptFailures, task.ScriptLastError = true, 0, ""
+		result.Failures, result.Cause = 0, ""
+		return result, saveConfiguredTask(agentCfg, task)
 	}
-	cause := scheduler.ProjectScriptFailureCause(runErr)
+	if scheduler.IsTransientScriptError(runErr) {
+		slog.Info("task_compile: not counting a transient compiled script failure", "component", "task_compile", "agent", agentCfg.Name,
+			"task", task.Name, "cause", scheduler.ProjectScriptFailureCause(runErr))
+		return result, nil
+	}
 	task.ScriptFailures++
-	switch {
-	case !task.ScriptVerified:
-		// The key stays, so the same prompt is not compiled again.
-		task.Compiled = ""
-		task.PrecompileNote = "The compiled script failed on its first run (" + cause + "), so it was set aside and the task runs on the model. Use Recompile on the task page to compile it again."
-	case task.ScriptFailures >= projectScriptFailureLimit:
-		off := false
-		task.Precompile = &off
-		task.Compiled, task.CompiledKey = "", ""
-		task.PrecompileNote = fmt.Sprintf("Precompile was turned off after the compiled script failed %d runs in a row (last: %s), so the task runs on the model. Use Recompile on the task page to compile it again.", task.ScriptFailures, cause)
-	}
-	if task.PrecompileNote != "" {
-		slog.Warn("task_compile: set aside a failing compiled script", "component", "task_compile", "agent", agentCfg.Name,
-			"task", task.Name, "failures", task.ScriptFailures, "note", task.PrecompileNote)
-	}
-	return saveConfiguredTask(agentCfg, task)
+	task.ScriptLastError = scheduler.ProjectScriptFailureCause(runErr)
+	result.Failures, result.Cause = task.ScriptFailures, task.ScriptLastError
+	result.StreakStarted = task.ScriptFailures == 1
+	slog.Warn("task_compile: compiled script failed; the run fell back to the model", "component", "task_compile", "agent", agentCfg.Name,
+		"task", task.Name, "failures", task.ScriptFailures, "cause", task.ScriptLastError)
+	return result, saveConfiguredTask(agentCfg, task)
 }
 
 func persistProjectCompileRecord(tracker *taskCompileTracker) {

@@ -303,7 +303,7 @@ func updateTask(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpdateArg
 			task.Compiled, task.CompiledKey = "", ""
 		}
 		// Turning precompile off or back on starts the script over.
-		task.ScriptVerified, task.ScriptFailures, task.PrecompileNote = false, 0, ""
+		task.ScriptVerified, task.ScriptFailures, task.ScriptLastError, task.PrecompileNote = false, 0, "", ""
 	}
 	task.Trigger = strings.ToLower(task.Trigger)
 	task.Overlap = strings.ToLower(task.Overlap)
