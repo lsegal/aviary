@@ -19,6 +19,37 @@ func newPublicHeader(link string) http.Header {
 	return header
 }
 
+// publicResponse is one canned public REST API reply: its JSON body and the
+// Link header that points at the next page, if any.
+type publicResponse struct {
+	body string
+	link string
+}
+
+// publicRepoResponse answers the visibility probe for owner/repo as public.
+var publicRepoResponse = publicResponse{body: `{"private":false}`}
+
+// publicOnlyGH returns a GHCLI for a public owner/repo that serves every
+// public API request from responses, and fails the test on any other URL or
+// on any attempt to run the gh CLI.
+func publicOnlyGH(t *testing.T, responses map[string]publicResponse) GHCLI {
+	t.Helper()
+	return GHCLI{
+		publicRepoCache: &sync.Map{},
+		runCommand: func(_ context.Context, args ...string) ([]byte, error) {
+			t.Errorf("ran gh %q, want only public API requests", args)
+			return nil, errors.New("should not run gh")
+		},
+		publicAPI: func(_ context.Context, requestURL string) ([]byte, http.Header, int, error) {
+			response, ok := responses[requestURL]
+			if !ok {
+				t.Fatalf("unexpected public API request: %s", requestURL)
+			}
+			return []byte(response.body), newPublicHeader(response.link), http.StatusOK, nil
+		},
+	}
+}
+
 func TestIsPublicRepoWithoutCacheNeverCallsNetwork(t *testing.T) {
 	gh := GHCLI{publicAPI: func(context.Context, string) ([]byte, http.Header, int, error) {
 		t.Fatal("publicAPI should not be called when publicRepoCache is nil")
@@ -86,27 +117,12 @@ func TestIsPublicRepoFalseOn404(t *testing.T) {
 }
 
 func TestApiGETUsesPublicAPIWhenPublic(t *testing.T) {
-	var requestedURL string
-	ranGH := false
-	gh := GHCLI{
-		publicAPI: func(_ context.Context, requestURL string) ([]byte, http.Header, int, error) {
-			requestedURL = requestURL
-			return []byte(`{"state":"open"}`), nil, http.StatusOK, nil
-		},
-		runCommand: func(context.Context, ...string) ([]byte, error) {
-			ranGH = true
-			return nil, nil
-		},
-	}
+	gh := publicOnlyGH(t, map[string]publicResponse{
+		"https://api.github.com/repos/owner/repo/issues/7": {body: `{"state":"open"}`},
+	})
 	body, err := gh.apiGETObject(context.Background(), true, "repos/owner/repo/issues/7")
 	if err != nil || string(body) != `{"state":"open"}` {
 		t.Fatalf("apiGETObject() = (%q, %v)", body, err)
-	}
-	if ranGH {
-		t.Fatal("apiGETObject() ran the gh CLI even though the public request succeeded")
-	}
-	if requestedURL != "https://api.github.com/repos/owner/repo/issues/7" {
-		t.Fatalf("requested URL = %q", requestedURL)
 	}
 }
 
@@ -164,28 +180,13 @@ func TestApiGETPassesExtraGHArgsOnFallback(t *testing.T) {
 }
 
 func TestApiGETPaginatedFollowsLinkHeaderWhenPublic(t *testing.T) {
-	calls := 0
-	gh := GHCLI{
-		publicAPI: func(_ context.Context, requestURL string) ([]byte, http.Header, int, error) {
-			calls++
-			if calls == 1 {
-				if requestURL != "https://api.github.com/repos/owner/repo/issues/7/comments" {
-					t.Fatalf("first request URL = %q", requestURL)
-				}
-				return []byte(`[{"body":"first"}]`), newPublicHeader(`<https://api.github.com/repos/owner/repo/issues/7/comments?page=2>; rel="next"`), http.StatusOK, nil
-			}
-			if requestURL != "https://api.github.com/repos/owner/repo/issues/7/comments?page=2" {
-				t.Fatalf("second request URL = %q", requestURL)
-			}
-			return []byte(`[{"body":"second"}]`), newPublicHeader(""), http.StatusOK, nil
-		},
-	}
+	gh := publicOnlyGH(t, map[string]publicResponse{
+		"https://api.github.com/repos/owner/repo/issues/7/comments":        {body: `[{"body":"first"}]`, link: `<https://api.github.com/repos/owner/repo/issues/7/comments?page=2>; rel="next"`},
+		"https://api.github.com/repos/owner/repo/issues/7/comments?page=2": {body: `[{"body":"second"}]`},
+	})
 	body, err := gh.apiGETPaginated(context.Background(), true, "repos/owner/repo/issues/7/comments")
 	if err != nil {
 		t.Fatalf("apiGETPaginated() error = %v", err)
-	}
-	if calls != 2 {
-		t.Fatalf("public API calls = %d, want 2", calls)
 	}
 	want := `[{"body":"first"},{"body":"second"}]`
 	if string(body) != want {
@@ -282,16 +283,12 @@ func TestResolveSelfLoginCaches(t *testing.T) {
 }
 
 func TestListPublicIssuesResolvesSelfLoginAndFiltersPullRequests(t *testing.T) {
-	var searchURL string
-	gh := GHCLI{
-		selfLoginCache: &sync.Map{},
-		runCommand: func(context.Context, ...string) ([]byte, error) {
-			return []byte("lsegal\n"), nil
-		},
-		publicAPI: func(_ context.Context, requestURL string) ([]byte, http.Header, int, error) {
-			searchURL = requestURL
-			return []byte(`{"items":[{"number":7,"title":"bug","body":"details","state":"open","created_at":"2026-07-20T17:38:43Z","labels":[{"name":"bug"}]},{"number":8,"title":"a pr","pull_request":{}}]}`), nil, http.StatusOK, nil
-		},
+	gh := publicOnlyGH(t, map[string]publicResponse{
+		"https://api.github.com/search/issues?per_page=100&q=repo%3Aowner%2Frepo+is%3Aissue+state%3Aopen+assignee%3Alsegal": {body: `{"items":[{"number":7,"title":"bug","body":"details","state":"open","created_at":"2026-07-20T17:38:43Z","labels":[{"name":"bug"}]},{"number":8,"title":"a pr","pull_request":{}}]}`},
+	})
+	gh.selfLoginCache = &sync.Map{}
+	gh.runCommand = func(context.Context, ...string) ([]byte, error) {
+		return []byte("lsegal\n"), nil
 	}
 	issues, ok := gh.listPublicIssues(context.Background(), "owner/repo", defaultIssueFilter, false)
 	if !ok {
@@ -299,9 +296,6 @@ func TestListPublicIssuesResolvesSelfLoginAndFiltersPullRequests(t *testing.T) {
 	}
 	if len(issues) != 1 || issues[0].Number != 7 || issues[0].Title != "bug" || len(issues[0].Labels) != 1 || issues[0].Labels[0].Name != "bug" {
 		t.Fatalf("issues = %#v", issues)
-	}
-	if !strings.Contains(searchURL, "repo%3Aowner%2Frepo") || !strings.Contains(searchURL, "assignee%3Alsegal") {
-		t.Fatalf("search URL = %q, want it to encode repo and resolved assignee qualifiers", searchURL)
 	}
 }
 
@@ -329,24 +323,12 @@ func TestListPublicIssuesFallsBackOnIncompleteResults(t *testing.T) {
 }
 
 func TestListIssuesUsesPublicSearchAPIForPublicRepo(t *testing.T) {
-	gh := GHCLI{
-		publicRepoCache: &sync.Map{},
-		runCommand: func(context.Context, ...string) ([]byte, error) {
-			t.Fatal("gh CLI should not run for a public repo's issue list")
-			return nil, nil
-		},
-		publicAPI: func(_ context.Context, requestURL string) ([]byte, http.Header, int, error) {
-			switch requestURL {
-			case "https://api.github.com/repos/owner/repo":
-				return []byte(`{"private":false}`), nil, http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/7/dependencies/blocked_by":
-				return []byte(`[]`), nil, http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/7/sub_issues":
-				return []byte(`[]`), nil, http.StatusOK, nil
-			}
-			return []byte(`{"items":[{"number":7,"title":"bug","state":"open","created_at":"2026-07-20T17:38:43Z"}]}`), nil, http.StatusOK, nil
-		},
-	}
+	gh := publicOnlyGH(t, map[string]publicResponse{
+		"https://api.github.com/repos/owner/repo":                                                         publicRepoResponse,
+		"https://api.github.com/search/issues?per_page=100&q=repo%3Aowner%2Frepo+is%3Aissue+state%3Aopen": {body: `{"items":[{"number":7,"title":"bug","state":"open","created_at":"2026-07-20T17:38:43Z"}]}`},
+		"https://api.github.com/repos/owner/repo/issues/7/dependencies/blocked_by":                        {body: `[]`},
+		"https://api.github.com/repos/owner/repo/issues/7/sub_issues":                                     {body: `[]`},
+	})
 	gh.AllIssues = true
 	issues, err := gh.ListIssues(context.Background(), "owner/repo")
 	if err != nil {
@@ -432,97 +414,90 @@ func TestListIssuesUsesAuthenticatedSearchWhenNotPublic(t *testing.T) {
 }
 
 func TestOriginatingWorkStateUsesPublicAPIForPublicRepo(t *testing.T) {
-	ranGH := false
-	responses := []string{
-		`{"private":false}`,
-		`{"state":"open"}`,
-		`[]`,
-	}
-	call := 0
-	gh := GHCLI{
-		publicRepoCache: &sync.Map{},
-		runCommand: func(context.Context, ...string) ([]byte, error) {
-			ranGH = true
-			return nil, errors.New("should not run gh")
-		},
-		publicAPI: func(context.Context, string) ([]byte, http.Header, int, error) {
-			body := responses[call]
-			call++
-			return []byte(body), nil, http.StatusOK, nil
-		},
-	}
+	gh := publicOnlyGH(t, map[string]publicResponse{
+		"https://api.github.com/repos/owner/repo":                                publicRepoResponse,
+		"https://api.github.com/repos/owner/repo/issues/7":                       {body: `{"state":"open"}`},
+		"https://api.github.com/repos/owner/repo/issues/7/timeline?per_page=100": {body: `[]`},
+	})
 	state, err := gh.OriginatingWorkState(context.Background(), "owner/repo", 7)
 	if err != nil || state.IssueState != "open" {
 		t.Fatalf("OriginatingWorkState() = (%#v, %v)", state, err)
 	}
-	if ranGH {
-		t.Fatal("OriginatingWorkState() ran the gh CLI for a public repo")
-	}
 }
 
-func TestLoadDependenciesUsesPublicAPIForPublicRepo(t *testing.T) {
-	ranGH := false
-	gh := GHCLI{
-		publicRepoCache: &sync.Map{},
-		runCommand: func(context.Context, ...string) ([]byte, error) {
-			ranGH = true
-			return nil, errors.New("should not run gh")
+// TestLoadDependenciesPublicAPI reads blockers and sub-issues of a public
+// repository's issue through the public API only. The paged cases keep a
+// blocker or open sub-issue on a later page from being dropped, which would let
+// aviary dispatch an issue GitHub still considers blocked, and keep closed
+// sub-issues spread over several pages from marking the issue as split.
+func TestLoadDependenciesPublicAPI(t *testing.T) {
+	const (
+		blockedBy = "https://api.github.com/repos/owner/repo/issues/9/dependencies/blocked_by"
+		subIssues = "https://api.github.com/repos/owner/repo/issues/9/sub_issues"
+	)
+	tests := []struct {
+		name             string
+		body             string
+		responses        map[string]publicResponse
+		wantDependsOn    []IssueDependency
+		wantHasSubIssues bool
+	}{
+		{
+			name: "body dependency and open sub-issue",
+			body: "depends on #4",
+			responses: map[string]publicResponse{
+				"https://api.github.com/repos/owner/repo/issues/4": {body: `{"state":"open"}`},
+				blockedBy: {body: `[]`},
+				subIssues: {body: `[{"number":10,"state":"open"}]`},
+			},
+			wantDependsOn:    []IssueDependency{{Number: 4, State: "open", Repository: "owner/repo"}},
+			wantHasSubIssues: true,
 		},
-		publicAPI: func(_ context.Context, requestURL string) ([]byte, http.Header, int, error) {
-			switch requestURL {
-			case "https://api.github.com/repos/owner/repo":
-				return []byte(`{"private":false}`), nil, http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/4":
-				return []byte(`{"state":"open"}`), nil, http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/9/dependencies/blocked_by":
-				return []byte(`[]`), nil, http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/9/sub_issues":
-				return []byte(`[{"number":10,"state":"open"}]`), nil, http.StatusOK, nil
+		{
+			name: "closed and merged sub-issues",
+			responses: map[string]publicResponse{
+				blockedBy: {body: `[]`},
+				subIssues: {body: `[{"number":10,"state":"closed"},{"number":11,"state":"MERGED"}]`},
+			},
+		},
+		{
+			name: "blocker and open sub-issue on second pages",
+			responses: map[string]publicResponse{
+				blockedBy:             {body: `[{"number":3,"state":"closed"}]`, link: `<` + blockedBy + `?page=2>; rel="next"`},
+				blockedBy + "?page=2": {body: `[{"number":5,"state":"open"}]`},
+				subIssues:             {body: `[{"number":10,"state":"closed"}]`, link: `<` + subIssues + `?page=2>; rel="next"`},
+				subIssues + "?page=2": {body: `[{"number":11,"state":"open"}]`},
+			},
+			wantDependsOn:    []IssueDependency{{Number: 3, State: "closed", Repository: "owner/repo"}, {Number: 5, State: "open", Repository: "owner/repo"}},
+			wantHasSubIssues: true,
+		},
+		{
+			name: "closed sub-issues across pages",
+			responses: map[string]publicResponse{
+				blockedBy:             {body: `[]`},
+				subIssues:             {body: `[{"number":10,"state":"closed"}]`, link: `<` + subIssues + `?page=2>; rel="next"`},
+				subIssues + "?page=2": {body: `[{"number":11,"state":"closed"}]`},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			responses := map[string]publicResponse{"https://api.github.com/repos/owner/repo": publicRepoResponse}
+			for requestURL, response := range tt.responses {
+				responses[requestURL] = response
 			}
-			t.Fatalf("unexpected request URL: %s", requestURL)
-			return nil, nil, 0, nil
-		},
-	}
-	issue := &Issue{Number: 9, Body: "depends on #4"}
-	if err := gh.loadDependencies(context.Background(), "owner/repo", issue); err != nil {
-		t.Fatalf("loadDependencies() error = %v", err)
-	}
-	if len(issue.DependsOn) != 1 || issue.DependsOn[0].Number != 4 || issue.DependsOn[0].State != "open" {
-		t.Fatalf("DependsOn = %#v", issue.DependsOn)
-	}
-	if !issue.HasSubIssues {
-		t.Fatal("HasSubIssues = false, want true")
-	}
-	if ranGH {
-		t.Fatal("loadDependencies() ran the gh CLI for a public repo")
-	}
-}
-
-func TestLoadDependenciesIgnoresClosedSubIssues(t *testing.T) {
-	gh := GHCLI{
-		publicRepoCache: &sync.Map{},
-		runCommand: func(context.Context, ...string) ([]byte, error) {
-			return nil, errors.New("should not run gh")
-		},
-		publicAPI: func(_ context.Context, requestURL string) ([]byte, http.Header, int, error) {
-			switch requestURL {
-			case "https://api.github.com/repos/owner/repo":
-				return []byte(`{"private":false}`), nil, http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/9/dependencies/blocked_by":
-				return []byte(`[]`), nil, http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/9/sub_issues":
-				return []byte(`[{"number":10,"state":"closed"},{"number":11,"state":"MERGED"}]`), nil, http.StatusOK, nil
+			gh := publicOnlyGH(t, responses)
+			issue := &Issue{Number: 9, Body: tt.body}
+			if err := gh.loadDependencies(context.Background(), "owner/repo", issue); err != nil {
+				t.Fatalf("loadDependencies() error = %v", err)
 			}
-			t.Fatalf("unexpected request URL: %s", requestURL)
-			return nil, nil, 0, nil
-		},
-	}
-	issue := &Issue{Number: 9}
-	if err := gh.loadDependencies(context.Background(), "owner/repo", issue); err != nil {
-		t.Fatalf("loadDependencies() error = %v", err)
-	}
-	if issue.HasSubIssues {
-		t.Fatal("HasSubIssues = true, want false for only closed/merged sub-issues")
+			if (len(issue.DependsOn) != 0 || len(tt.wantDependsOn) != 0) && !reflect.DeepEqual(issue.DependsOn, tt.wantDependsOn) {
+				t.Fatalf("DependsOn = %#v, want %#v", issue.DependsOn, tt.wantDependsOn)
+			}
+			if issue.HasSubIssues != tt.wantHasSubIssues {
+				t.Fatalf("HasSubIssues = %v, want %v", issue.HasSubIssues, tt.wantHasSubIssues)
+			}
+		})
 	}
 }
 
@@ -560,77 +535,6 @@ func TestLoadDependenciesUsesAuthenticatedRESTForPrivateRepo(t *testing.T) {
 		if len(call) > 0 && call[0] == "issue" {
 			t.Fatalf("gh calls = %#v, want no `gh issue view` (queries GraphQL)", calls)
 		}
-	}
-}
-
-// TestLoadDependenciesReadsEveryPublicPage keeps a blocker or open sub-issue
-// on a later page from being dropped, which would let aviary dispatch an issue
-// GitHub still considers blocked.
-func TestLoadDependenciesReadsEveryPublicPage(t *testing.T) {
-	gh := GHCLI{
-		publicRepoCache: &sync.Map{},
-		runCommand: func(context.Context, ...string) ([]byte, error) {
-			return nil, errors.New("should not run gh")
-		},
-		publicAPI: func(_ context.Context, requestURL string) ([]byte, http.Header, int, error) {
-			switch requestURL {
-			case "https://api.github.com/repos/owner/repo":
-				return []byte(`{"private":false}`), nil, http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/9/dependencies/blocked_by":
-				return []byte(`[{"number":3,"state":"closed"}]`), newPublicHeader(`<https://api.github.com/repos/owner/repo/issues/9/dependencies/blocked_by?page=2>; rel="next"`), http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/9/dependencies/blocked_by?page=2":
-				return []byte(`[{"number":5,"state":"open"}]`), newPublicHeader(""), http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/9/sub_issues":
-				return []byte(`[{"number":10,"state":"closed"}]`), newPublicHeader(`<https://api.github.com/repos/owner/repo/issues/9/sub_issues?page=2>; rel="next"`), http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/9/sub_issues?page=2":
-				return []byte(`[{"number":11,"state":"open"}]`), newPublicHeader(""), http.StatusOK, nil
-			}
-			t.Fatalf("unexpected request URL: %s", requestURL)
-			return nil, nil, 0, nil
-		},
-	}
-	issue := &Issue{Number: 9}
-	if err := gh.loadDependencies(context.Background(), "owner/repo", issue); err != nil {
-		t.Fatalf("loadDependencies() error = %v", err)
-	}
-	want := []IssueDependency{{Number: 3, State: "closed", Repository: "owner/repo"}, {Number: 5, State: "open", Repository: "owner/repo"}}
-	if !reflect.DeepEqual(issue.DependsOn, want) {
-		t.Fatalf("DependsOn = %#v, want %#v", issue.DependsOn, want)
-	}
-	if !issue.HasSubIssues {
-		t.Fatal("HasSubIssues = false, want true for an open sub-issue on the second page")
-	}
-}
-
-// TestLoadDependenciesIgnoresClosedSubIssuesAcrossPages keeps closed
-// sub-issues spread over several pages from marking the issue as split.
-func TestLoadDependenciesIgnoresClosedSubIssuesAcrossPages(t *testing.T) {
-	gh := GHCLI{
-		publicRepoCache: &sync.Map{},
-		runCommand: func(context.Context, ...string) ([]byte, error) {
-			return nil, errors.New("should not run gh")
-		},
-		publicAPI: func(_ context.Context, requestURL string) ([]byte, http.Header, int, error) {
-			switch requestURL {
-			case "https://api.github.com/repos/owner/repo":
-				return []byte(`{"private":false}`), nil, http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/9/dependencies/blocked_by":
-				return []byte(`[]`), newPublicHeader(""), http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/9/sub_issues":
-				return []byte(`[{"number":10,"state":"closed"}]`), newPublicHeader(`<https://api.github.com/repos/owner/repo/issues/9/sub_issues?page=2>; rel="next"`), http.StatusOK, nil
-			case "https://api.github.com/repos/owner/repo/issues/9/sub_issues?page=2":
-				return []byte(`[{"number":11,"state":"closed"}]`), newPublicHeader(""), http.StatusOK, nil
-			}
-			t.Fatalf("unexpected request URL: %s", requestURL)
-			return nil, nil, 0, nil
-		},
-	}
-	issue := &Issue{Number: 9}
-	if err := gh.loadDependencies(context.Background(), "owner/repo", issue); err != nil {
-		t.Fatalf("loadDependencies() error = %v", err)
-	}
-	if issue.HasSubIssues {
-		t.Fatal("HasSubIssues = true, want false when every sub-issue on every page is closed")
 	}
 }
 
@@ -675,29 +579,16 @@ func TestLoadDependenciesPaginatesAuthenticatedREST(t *testing.T) {
 }
 
 func TestListCommentsUsesPublicAPIForPublicRepo(t *testing.T) {
-	ranGH := false
-	gh := GHCLI{
-		publicRepoCache: &sync.Map{},
-		runCommand: func(context.Context, ...string) ([]byte, error) {
-			ranGH = true
-			return nil, errors.New("should not run gh")
-		},
-		publicAPI: func(_ context.Context, requestURL string) ([]byte, http.Header, int, error) {
-			if requestURL == "https://api.github.com/repos/owner/repo" {
-				return []byte(`{"private":false}`), nil, http.StatusOK, nil
-			}
-			return []byte(`[{"body":"hi","created_at":"2026-07-20T12:00:00Z"}]`), newPublicHeader(""), http.StatusOK, nil
-		},
-	}
+	gh := publicOnlyGH(t, map[string]publicResponse{
+		"https://api.github.com/repos/owner/repo":                   publicRepoResponse,
+		"https://api.github.com/repos/owner/repo/issues/7/comments": {body: `[{"body":"hi","created_at":"2026-07-20T12:00:00Z"}]`},
+	})
 	comments, err := gh.ListComments(context.Background(), "owner/repo", 7)
 	if err != nil {
 		t.Fatalf("ListComments() error = %v", err)
 	}
 	if len(comments) != 1 || comments[0].Body != "hi" {
 		t.Fatalf("comments = %#v", comments)
-	}
-	if ranGH {
-		t.Fatal("ListComments() ran the gh CLI for a public repo")
 	}
 }
 
