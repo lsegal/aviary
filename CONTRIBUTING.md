@@ -177,6 +177,27 @@ pnpm build            # Builds web assets and compiles the Go binary
 
 Web assets are built to `web/dist/`, copied into `internal/server/webdist/`, and embedded in the Go binary via `go:embed`. The `webdist/` directory is gitignored.
 
+## Publishing a Release
+
+Releases are published by dispatching the **Release** workflow (`.github/workflows/release.yml`). It builds the release assets, bumps the version, and runs `pnpm release` (`scripts/release.mjs`). That creates the version-bump commit through the GitHub Git Data API so GitHub signs it (it shows as Verified), moves `main` to it, creates the `vX.Y.Z` tag, and then creates the GitHub release with the assets.
+
+The `main` branch ruleset requires status checks. A commit created moments earlier has no check results, so moving `main` to it is refused unless the token belongs to a bypass actor on that ruleset. The workflow's `GITHUB_TOKEN` is not one. The release job therefore mints a token from a GitHub App and passes it to the release script as `RELEASE_TOKEN`. The script uses `RELEASE_TOKEN` for the commit and the branch update when it is set, and falls back to `GH_TOKEN` otherwise.
+
+### One-time setup
+
+1. Create a GitHub App (**Settings → Developer settings → GitHub Apps → New GitHub App**) owned by the repository owner. It needs no webhook and no callback URL. Under repository permissions, give it **Contents: Read and write** and nothing else. Allow it to be installed only on this account.
+2. Install the app on the `aviary` repository only.
+3. On the app's page, note the **Client ID** and generate a private key (a `.pem` file).
+4. In the repository's **Settings → Secrets and variables → Actions**, add the repository variable `RELEASE_APP_CLIENT_ID` with the client ID, and the repository secret `RELEASE_APP_PRIVATE_KEY` with the full contents of the `.pem` file.
+5. In **Settings → Rules → Rulesets → main**, add the app under **Bypass list** with the mode **Always allow**. Keep the required status checks.
+
+Without `RELEASE_APP_CLIENT_ID`, the token step is skipped and the release falls back to `GITHUB_TOKEN`, which works only while no ruleset blocks it. When a ruleset refuses the branch update, the release fails with a message that names this setup instead of the raw API error. The branch is moved before the tag is created and the GitHub release is created last, so a refused update leaves no tag and no release behind; fix the setup and dispatch the workflow again.
+
+### Alternatives
+
+- **Release from a tag instead of pushing to `main`.** Create the release commit off `main` (on a release branch or as a detached commit), tag it, publish from the tag, then bump the version on `main` through an auto-merged pull request that goes through CI. No bypass is needed, but the release commit is not on `main`'s history and the flow has more moving parts.
+- **Make GitHub Actions a bypass actor.** Adding the GitHub Actions integration to the ruleset's bypass list lets `GITHUB_TOKEN` move `main` with no app. It is only a settings change, but every workflow with `contents: write`, including ones a future change adds, could then push to `main` past the required checks. The app keeps the bypass to the one job that holds its private key.
+
 ## Regenerating Docs Screenshots
 
 The screenshots on the docs site and the aviary.bot landing page (`docs/site/public/screenshots/*-{light,dark}.png`) are rendered from the web UI against fixture data, not from a live instance. When the UI changes, update the fixtures in `scripts/generate-doc-screenshots.mjs` (for example `projectsFixtures` for the Code Loop board and run view) and regenerate:
