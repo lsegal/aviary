@@ -34,7 +34,13 @@ func ListSlackWorkspaceChannels(ctx context.Context, botToken string) (*SlackWor
 	if botToken == "" {
 		return nil, fmt.Errorf("slack bot token is required")
 	}
-	return listSlackWorkspaceChannelsWithClient(ctx, slack.New(botToken))
+	return listSlackWorkspaceChannelsWithClient(ctx, newSlackWorkspaceClient(botToken))
+}
+
+// newSlackWorkspaceClient builds the Slack client used by
+// ListSlackWorkspaceChannels. Tests replace it to point at a fake server.
+var newSlackWorkspaceClient = func(botToken string) *slack.Client {
+	return slack.New(botToken)
 }
 
 func listSlackWorkspaceChannelsWithClient(ctx context.Context, client *slack.Client) (*SlackWorkspaceInfo, error) {
