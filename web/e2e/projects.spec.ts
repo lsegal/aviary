@@ -4316,6 +4316,109 @@ test("on desktop a project's header keeps its title, with the icons and toolbar 
 	expect((titleBox?.x ?? 0) - (main?.x ?? 0)).toBeLessThanOrEqual(25);
 });
 
+test("on a phone the CLI providers move into the details popover, which warns while closed (#1580)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await setup(page);
+	for (const path of [
+		"/agents/coder/projects",
+		"/agents/coder/projects/lsegal%2Faviary",
+	]) {
+		await page.goto(path);
+		await headerSettled(page);
+		// No providers row: the board's toolbar follows the stats directly.
+		await expect(
+			page.getByRole("region", { name: "CLI providers" }),
+		).toHaveCount(0);
+		if (path.endsWith("projects"))
+			await expect(page.getByTestId("board-nav-row")).not.toContainText(
+				"CLI providers",
+			);
+		else await expect(page.getByTestId("board-nav-row")).toHaveCount(0);
+
+		// gemini is signed out, so the closed icon carries a described dot.
+		const info = page.getByRole("button", {
+			name: "Board details",
+			exact: true,
+		});
+		await expect(page.getByTestId("board-info-alert")).toBeVisible();
+		await expect(info).toHaveAccessibleDescription(
+			"CLI provider needs attention: gemini signed out",
+		);
+
+		// Enter opens the details with each provider's dot, model and quota.
+		await info.focus();
+		await page.keyboard.press("Enter");
+		const details = page.getByRole("dialog", { name: "Board details" });
+		const clis = details.getByRole("region", { name: "CLI providers" });
+		const rows = clis.getByTestId("cli-provider");
+		await expect(rows).toHaveText([
+			/claude\s*opus\s*38% of 5h quota left/,
+			/codex\s*gpt-5.6-terra\s*quota ok/,
+			/gemini\s*signed out/,
+		]);
+		await expect(rows.nth(0).locator("span").first()).toHaveClass(
+			/bg-green-500/,
+		);
+		await expect(rows.nth(2).locator("span").first()).toHaveClass(
+			/bg-gray-400/,
+		);
+		// The popover stays inside the screen.
+		const box = await details.boundingBox();
+		expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= window.innerWidth,
+			),
+		).toBe(true);
+		// Esc closes it and returns focus to the icon.
+		await page.keyboard.press("Escape");
+		await expect(details).toBeHidden();
+		await expect(info).toBeFocused();
+		// An outside tap closes it too.
+		await info.click();
+		await expect(details).toBeVisible();
+		await page.getByTestId("delivery-status").click();
+		await expect(details).toBeHidden();
+	}
+});
+
+test("with the details in … on a narrow phone, … carries the provider warning (#1580)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 260, height: 800 });
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await headerSettled(page);
+	await expect(page.getByTestId("board-info")).toHaveCount(0);
+	const more = page.getByTestId("board-more-menu");
+	await expect(page.getByTestId("board-more-menu-alert")).toBeVisible();
+	await expect(more).toHaveAccessibleDescription(
+		"CLI provider needs attention: gemini signed out",
+	);
+	await more.click();
+	const clis = page
+		.getByTestId("board-more-info")
+		.getByRole("region", { name: "CLI providers" });
+	await expect(clis.getByTestId("cli-provider")).toHaveCount(3);
+	await expect(clis).toContainText("38% of 5h quota left");
+});
+
+test("on desktop the CLI providers stay inline with no warning dot (#1580)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await expect(
+		page.getByRole("region", { name: "CLI providers" }),
+	).toContainText("signed out");
+	await expect(page.getByTestId("board-info")).toBeVisible();
+	await expect(page.getByTestId("board-info-alert")).toHaveCount(0);
+	await page.getByTestId("board-info").click();
+	await expect(page.getByTestId("board-info-clis")).toHaveCount(0);
+});
+
 test("the instance tag and details popovers work by keyboard, tap and hover (#1570)", async ({
 	page,
 }) => {

@@ -19,7 +19,7 @@ const STATUS = {
 	cachedAt: "",
 } as unknown as ProjectStatus;
 
-const render = (status: ProjectStatus) =>
+const render = (status: ProjectStatus, showClis = false) =>
 	renderToString(
 		createSSRApp({
 			render: () =>
@@ -28,6 +28,7 @@ const render = (status: ProjectStatus) =>
 					manual: false,
 					filterTarget: "o/r",
 					now: Date.now(),
+					showClis,
 				}),
 		}),
 	);
@@ -49,4 +50,26 @@ it("has no tag without an instance ID", async () => {
 	const html = await render({ ...STATUS, instanceID: "" });
 	expect(html).not.toContain('data-testid="instance-tag"');
 	expect(html).toContain('data-testid="board-info"');
+});
+
+// #1580: on a phone the CLI providers live in the details popover, and the
+// closed icon warns, with a description, when one of them has a problem.
+const CLIS = [
+	{ name: "claude", models: ["opus"], quota: "week 70% left", signedIn: true },
+	{ name: "gemini", models: [], quota: "signed out", signedIn: false },
+];
+
+it("marks the details icon when a CLI provider has a problem", async () => {
+	const html = await render({ ...STATUS, clis: CLIS }, true);
+	expect(html).toContain('data-testid="board-info-alert"');
+	expect(html).toMatch(/aria-describedby="[^"]+"/);
+	expect(html).toContain("CLI provider needs attention: gemini signed out");
+});
+
+it("has no warning when every provider is fine or on desktop", async () => {
+	const fine = await render({ ...STATUS, clis: CLIS.slice(0, 1) }, true);
+	expect(fine).not.toContain("board-info-alert");
+	expect(fine).not.toContain("aria-describedby");
+	const desktop = await render({ ...STATUS, clis: CLIS }, false);
+	expect(desktop).not.toContain("board-info-alert");
 });

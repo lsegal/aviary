@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	type CLIStatus,
+	cliProblem,
+	cliProblemSummary,
 	normalizeUpcoming,
 	UP_NEXT_WINDOW_MS,
 	type UpcomingRun,
@@ -84,5 +87,52 @@ describe("upNextRuns", () => {
 
 	it("takes a custom window", () => {
 		expect(upNextRuns([due("later", 10)], now, 15 * 60_000)).toHaveLength(1);
+	});
+});
+
+const cli = (name: string, quota: string, signedIn = true): CLIStatus => ({
+	name,
+	models: [],
+	quota,
+	signedIn,
+});
+
+describe("cliProblem (#1580)", () => {
+	it("flags signed-out, exhausted and failing providers", () => {
+		expect(cliProblem(cli("gemini", "signed out", false))).toBe("signed out");
+		expect(cliProblem(cli("claude", "session 0% left, week 40% left"))).toBe(
+			"out of quota",
+		);
+		expect(cliProblem(cli("claude", "0% of 5h quota left"))).toBe(
+			"out of quota",
+		);
+		expect(cliProblem(cli("codex", "quota exhausted"))).toBe("out of quota");
+		expect(cliProblem(cli("codex", "unavailable: timed out"))).toBe("error");
+	});
+
+	it("leaves healthy and untracked providers alone", () => {
+		for (const quota of [
+			"week 70% left",
+			"10% left",
+			"100% left",
+			"38% of 5h quota left",
+			"quota ok",
+			"",
+			"not tracked",
+		])
+			expect(cliProblem(cli("claude", quota)), quota).toBe("");
+	});
+
+	it("summarizes every provider with a problem", () => {
+		expect(cliProblemSummary([cli("claude", "week 70% left")])).toBe("");
+		expect(
+			cliProblemSummary([
+				cli("claude", "week 0% left"),
+				cli("codex", "quota ok"),
+				cli("gemini", "signed out", false),
+			]),
+		).toBe(
+			"CLI provider needs attention: claude out of quota, gemini signed out",
+		);
 	});
 });

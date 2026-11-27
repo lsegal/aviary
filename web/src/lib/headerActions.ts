@@ -43,4 +43,4 @@ export const HEADER_COLLAPSE_LABEL_CLS = "hidden sm:inline";
  * must be positioned (`relative`).
  */
 export const ALERT_DOT_CLS =
-	"pointer-events-none absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-gray-900";
+	"pointer-events-none absolute top-0 right-0 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-gray-900";
