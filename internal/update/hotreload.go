@@ -143,7 +143,8 @@ func WaitHotReload(ctx context.Context, dir string, since int, opts HotReloadWai
 // agent has not answered yet.
 func hotReloadVerdict(dir string, gen int) (HotReloadResult, bool) {
 	g := strconv.Itoa(gen)
-	if resp, err := os.ReadFile(filepath.Join(dir, "resp-"+g)); err == nil {
+	// An empty resp file is one forgo is still writing, not an answer.
+	if resp, err := os.ReadFile(filepath.Join(dir, "resp-"+g)); err == nil && strings.TrimSpace(string(resp)) != "" {
 		text := strings.TrimSpace(string(resp))
 		if text == "ok" {
 			return HotReloadResult{Applied: true, Generation: gen}, true
