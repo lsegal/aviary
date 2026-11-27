@@ -37,24 +37,6 @@
           @click="hide"><span class="min-w-0 flex-1 truncate">{{ item.label }}</span><span v-if="item.badge"
             data-testid="sidebar-rail-flyout-count" :aria-label="runningLabel(item.badge)"
             class="shrink-0 rounded-full bg-gray-200 px-1.5 text-xs font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">{{ item.badge }}</span></router-link>
-        <!-- A project's running jobs, under it (#1359). -->
-        <ul v-if="item.jobs?.length || item.more" :aria-label="`${item.label} running jobs`" class="mb-1 ml-3">
-          <li v-for="job in item.jobs" :key="job.key">
-            <router-link :to="job.to" data-testid="sidebar-rail-flyout-job" :data-state="job.state"
-              class="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 text-xs text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
-              @click="hide">
-              <span aria-hidden="true" class="h-1.5 w-1.5 shrink-0 rounded-full" :class="STATE_DOTS[job.state]" />
-              <span class="min-w-0 flex-1 truncate" :title="job.label">{{ job.label }}</span>
-              <span v-if="job.runs > 1" data-testid="sidebar-rail-flyout-runs" :aria-label="`${job.runs} runs`"
-                class="shrink-0 tabular-nums text-gray-500 dark:text-gray-400">×{{ job.runs }}</span>
-            </router-link>
-          </li>
-          <li v-if="item.more">
-            <router-link :to="item.more.to" data-testid="sidebar-rail-flyout-more"
-              class="block rounded-lg px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-              @click="hide">+{{ item.more.count }} more</router-link>
-          </li>
-        </ul>
       </li>
     </ul>
   </div>
@@ -68,20 +50,8 @@
 </template>
 
 <script lang="ts">
-import type { BoardState } from "../../lib/projects";
-
 // Only one icon's tooltip or flyout shows at a time.
 let closeOpen: (() => void) | null = null;
-
-/** One running job listed under a flyout item. */
-export interface RailFlyoutJob {
-	key: string;
-	label: string;
-	to: string;
-	state: BoardState;
-	/** Overlapping runs of one schedule, shown as ×N past 1. */
-	runs: number;
-}
 
 /** One sub-item in a rail icon's flyout. */
 export interface RailFlyoutItem {
@@ -93,20 +63,7 @@ export interface RailFlyoutItem {
 	badge?: number;
 	/** An idle project among projects, shown dimmed. */
 	dimmed?: boolean;
-	/** The item's first running jobs, listed under it. */
-	jobs?: RailFlyoutJob[];
-	/** The running jobs past those, as a "+N more" link. */
-	more?: { count: number; to: string };
 }
-
-// Each board state's dot, as the job status pill colors it.
-const STATE_DOTS: Record<BoardState, string> = {
-	starting: "bg-orange-500 animate-pulse",
-	paused: "bg-amber-500",
-	running: "bg-blue-500 animate-pulse",
-	done: "bg-green-500",
-	failed: "bg-red-500",
-};
 </script>
 
 <script setup lang="ts">
