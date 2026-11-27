@@ -220,3 +220,84 @@ test("summarizes project outcomes and wall time apart from token metrics", async
 			.getByText("3", { exact: true }),
 	).toBeVisible();
 });
+
+// #1470: records that spent no tokens left nameless "0" rows in the
+// breakdown cards, and a bare model split from its provider/model form.
+test("breakdowns merge model name forms and skip tokenless records", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		usage_query: [
+			{
+				timestamp: now,
+				session_id: "o/r#7",
+				agent_id: "projects",
+				model: "opus",
+				provider: "claude",
+				input_tokens: 600,
+				output_tokens: 100,
+			},
+			{
+				timestamp: now,
+				session_id: "s1",
+				agent_id: "assistant",
+				model: "claude/opus",
+				provider: "claude",
+				input_tokens: 200,
+				output_tokens: 100,
+			},
+			{
+				timestamp: now,
+				session_id: "task-editor",
+				agent_id: "assistant",
+				model: "",
+				provider: "",
+				input_tokens: 0,
+				output_tokens: 0,
+				has_error: true,
+			},
+		],
+	});
+	await page.goto("/system/usage");
+
+	for (const [title, name] of [
+		["Top Models", "claude/opus"],
+		["Top Providers", "claude"],
+	]) {
+		const rows = breakdown(page, title).locator("div.mb-3");
+		await expect(rows).toHaveCount(1);
+		await expect(rows.first()).toContainText(name);
+		await expect(rows.first()).toContainText("1.0K");
+	}
+});
+
+test("breakdowns show the empty state when no record spent tokens", async ({
+	page,
+}) => {
+	await mockMCP(page, {
+		agent_list: [],
+		job_list: [],
+		config_validate: [],
+		usage_query: [
+			{
+				timestamp: now,
+				session_id: "task-editor",
+				agent_id: "assistant",
+				model: "",
+				provider: "",
+				input_tokens: 0,
+				output_tokens: 0,
+				has_error: true,
+			},
+		],
+	});
+	await page.goto("/system/usage");
+
+	for (const title of ["Top Models", "Top Providers", "Top Agents"]) {
+		await expect(breakdown(page, title).locator("div.mb-3")).toHaveCount(0);
+		await expect(breakdown(page, title).getByText("No data")).toBeVisible();
+	}
+});
