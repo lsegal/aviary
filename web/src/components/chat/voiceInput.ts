@@ -8,6 +8,7 @@ import {
 	peakAcross,
 	SILENT_LEVEL,
 } from "./voiceLevel";
+import { decodeSpeech, MAX_RECORDING_MS } from "./voiceWav";
 
 export type VoiceState = "idle" | "recording" | "transcribing";
 
@@ -299,6 +300,13 @@ export function useVoiceInput(options: {
 		elapsedMs.value = 0;
 		timer = setInterval(() => {
 			elapsedMs.value = Date.now() - startedAt;
+			if (elapsedMs.value >= MAX_RECORDING_MS) {
+				console.debug("voice: recording reached its length limit", {
+					maxMs: MAX_RECORDING_MS,
+				});
+				stop();
+				return;
+			}
 			if (meter) {
 				const now = meter.read();
 				peakLevel = Math.max(peakLevel, now);
@@ -346,7 +354,23 @@ export function useVoiceInput(options: {
 		}
 		state.value = "transcribing";
 		try {
-			const result = await options.transcribe(audio);
+			// The browser decodes its own recording to 16 kHz mono WAV, so the
+			// server needs no ffmpeg; a format it can't decode is uploaded as
+			// recorded and converted on the server.
+			const speech = await decodeSpeech(audio);
+			console.debug("voice: converted in the browser", {
+				converted: speech !== null,
+				bytes: speech?.wav.size,
+				durationMs: speech?.durationMs,
+				peakDBFS: speech ? dBFS(speech.peak) : null,
+			});
+			// Decoded samples are exact, so silence is reported without an
+			// upload.
+			if (speech && isSilent(speech.peak)) {
+				error.value = silentMicMessage(label);
+				return;
+			}
+			const result = await options.transcribe(speech?.wav ?? audio);
 			const text = result.text.trim();
 			if (text) {
 				options.onTranscript(text);
@@ -354,7 +378,9 @@ export function useVoiceInput(options: {
 			}
 			// The server's measurement wins; the meter only decides when the
 			// server doesn't measure, and a missing meter never claims silence.
-			const silent = result.noSignal ?? (peak !== null && isSilent(peak));
+			const silent =
+				speech === null &&
+				(result.noSignal ?? (peak !== null && isSilent(peak)));
 			error.value = silent ? silentMicMessage(label) : NO_WORDS_MESSAGE;
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);

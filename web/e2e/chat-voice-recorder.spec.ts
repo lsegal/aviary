@@ -50,7 +50,7 @@ test.use({
 	},
 });
 
-test("uploads a complete WebM recording and shows the input level", async ({
+test("uploads the complete recording as 16 kHz mono WAV and shows the input level", async ({
 	page,
 }) => {
 	const uploads: Array<{ type: string; body: Buffer }> = [];
@@ -78,11 +78,22 @@ test("uploads a complete WebM recording and shows the input level", async ({
 
 	expect(uploads).toHaveLength(1);
 	const [upload] = uploads;
-	expect(upload.type).toMatch(/^audio\/webm/);
-	// The whole file, header included: EBML magic, and Opus at roughly
-	// 1 KB or more per second rather than a few hundred bytes.
-	expect([...upload.body.subarray(0, 4)]).toEqual([0x1a, 0x45, 0xdf, 0xa3]);
-	expect(upload.body.length).toBeGreaterThan(2000);
+	// The browser decoded the WebM/Opus recording itself and uploads 16 kHz
+	// mono 16-bit WAV, so the server needs no ffmpeg.
+	expect(upload.type).toBe("audio/wav");
+	const { body } = upload;
+	expect(body.toString("ascii", 0, 4)).toBe("RIFF");
+	expect(body.readUInt16LE(22)).toBe(1);
+	expect(body.readUInt32LE(24)).toBe(16000);
+	expect(body.readUInt16LE(34)).toBe(16);
+	// The whole recording: at least about two seconds at 32 KB per second.
+	expect(body.length).toBeGreaterThan(44 + 32000 * 1.5);
+	// The quiet left-channel mic survives the mono downmix.
+	let peak = 0;
+	for (let i = 44; i + 1 < body.length; i += 2) {
+		peak = Math.max(peak, Math.abs(body.readInt16LE(i)));
+	}
+	expect(peak / 32767).toBeGreaterThan(0.3);
 });
 
 test("requests raw capture so audio-interface input isn't processed", async ({
