@@ -1703,6 +1703,9 @@ func TestHandleIncomingChannelMessage_SendsAssistantStatus(t *testing.T) {
 		From:     "U123",
 		Text:     "hello",
 	})
+	// The run goes on in the background; a loaded runner can take longer than
+	// any polling window to start it, so wait for it to finish first.
+	waitForAgentRuns(t, srv, "bot")
 
 	assert.Eventually(t, func() bool {
 		statuses := ch.snapshotStatuses()
@@ -1712,6 +1715,16 @@ func TestHandleIncomingChannelMessage_SendsAssistantStatus(t *testing.T) {
 		registered, unregistered := ch.snapshotRegistrations()
 		return len(registered) == 1 && registered[0] == "D123|1710000000.123456" && unregistered == 1
 	}, time.Second, 10*time.Millisecond)
+}
+
+// waitForAgentRuns blocks until every run the named agent has started ends.
+func waitForAgentRuns(t *testing.T, srv *Server, name string) {
+	t.Helper()
+	runner, ok := srv.agents.Get(name)
+	if !ok {
+		t.Fatalf("agent %q is not running", name)
+	}
+	runner.Wait()
 }
 
 type stoppableThreadChannel struct {
@@ -1742,6 +1755,7 @@ func TestHandleIncomingChannelMessage_PlatformStopCancelsRun(t *testing.T) {
 		From:     "U123",
 		Text:     "hello",
 	})
+	waitForAgentRuns(t, srv, "bot")
 
 	assert.Eventually(t, func() bool {
 		lines := thread.snapshot()
@@ -1753,9 +1767,6 @@ func TestHandleIncomingChannelMessage_PlatformStopCancelsRun(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 	_, unregistered := status.snapshotRegistrations()
 	assert.Equal(t, 1, unregistered)
-	if runner, ok := srv.agents.Get("bot"); ok {
-		runner.Wait()
-	}
 	lines := thread.snapshot()
 	assert.Equal(t, 1, strings.Count(lines[len(lines)-1], "Stopped."), "a stopped run reports Stopped. once")
 }
