@@ -63,10 +63,18 @@
 							class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{{ dash.error.value }}</p>
 						<p v-if="recompileError" role="alert" data-testid="task-recompile-error"
 							class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{{ recompileError }}</p>
-						<p v-if="task.precompile_note" role="status" data-testid="task-precompile-note"
-							class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-							{{ task.precompile_note }}
-						</p>
+						<div v-if="scriptFailing" role="status" data-testid="task-script-failing"
+							class="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+							<p class="min-w-0 flex-1">
+								<span class="font-semibold">Script failing.</span>
+								The compiled script failed its last {{ task.script_failures === 1 ? "run" : `${task.script_failures} runs` }}<template v-if="task.script_last_error"> (last error: <code data-testid="task-script-last-error">{{ task.script_last_error }}</code>)</template>, so each fell back to the model. Precompile stays on.
+							</p>
+							<button type="button" data-testid="task-script-failing-recompile" :disabled="busy"
+								class="inline-flex shrink-0 items-center gap-1 rounded-md border border-red-300 bg-white px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
+								@click="act(recompile)">
+								<ArrowPathIcon aria-hidden="true" class="h-3.5 w-3.5" /> Recompile
+							</button>
+						</div>
 
 						<router-view v-if="route.params.run" :dashboard="dash" />
 						<template v-else>
@@ -160,7 +168,11 @@ import { useCompiledPanelOpen } from "../composables/useTaskCompiles";
 import { useTaskDashboard } from "../composables/useTaskDashboard";
 import { useTaskPause } from "../composables/useTaskPause";
 import { workflowSettingsPath } from "../lib/channels";
-import { compiledStatus, type TaskCompileAttempt } from "../lib/compiledStatus";
+import {
+	compiledStatus,
+	isScriptFailing,
+	type TaskCompileAttempt,
+} from "../lib/compiledStatus";
 import {
 	HEADER_ACTION_CLS,
 	HEADER_COLLAPSE_CLS,
@@ -217,14 +229,18 @@ const settingsLink = computed(() =>
 );
 /**
  * Whether the task's runs can try a compiled script and fall back to the
- * model: a project task or prompt workflow that has precompile on, or had it
- * until Aviary turned it off.
+ * model: a project task or prompt workflow that has precompile on.
  */
 const precompiles = computed(
 	() =>
 		!!task.value &&
 		precompilesBesidePrompt(task.value) &&
-		(task.value.precompile === true || !!task.value.precompile_note),
+		task.value.precompile === true,
+);
+
+// Whether the compiled script failed its last runs, which fell back to the model.
+const scriptFailing = computed(
+	() => !!task.value && isScriptFailing(task.value),
 );
 
 // The header's compiled chip opens the editor with the compiled script shown.

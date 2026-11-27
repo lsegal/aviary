@@ -517,7 +517,7 @@ function dropCompiled(task: AgentTask) {
 	delete task.compiled_key;
 	delete task.script_verified;
 	delete task.script_failures;
-	delete task.precompile_note;
+	delete task.script_last_error;
 }
 
 async function submitTask(mode: "create" | "edit", from = "") {
@@ -590,7 +590,7 @@ const wide = computed(
 		compiledPanelOpen.value &&
 		!!savedTask.value &&
 		precompilesBesidePrompt(savedTask.value) &&
-		(savedTask.value.precompile === true || !!savedTask.value.precompile_note),
+		savedTask.value.precompile === true,
 );
 
 function editedTask(): AgentTask | undefined {

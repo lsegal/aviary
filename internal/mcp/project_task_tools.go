@@ -220,11 +220,11 @@ func projectTaskEntry(t projectTask, full bool) map[string]any {
 		"enabled": enabled,
 		"paused":  !enabled,
 		"precompile": map[string]any{
-			"enabled":  EffectiveTaskPrecompile(tc),
-			"compiled": tc.Compiled != "",
-			"verified": tc.ScriptVerified,
-			"failures": tc.ScriptFailures,
-			"note":     tc.PrecompileNote,
+			"enabled":    EffectiveTaskPrecompile(tc),
+			"compiled":   tc.Compiled != "",
+			"verified":   tc.ScriptVerified,
+			"failures":   tc.ScriptFailures,
+			"last_error": tc.ScriptLastError,
 		},
 		"source": projectTaskSource(t),
 	}

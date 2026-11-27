@@ -16,7 +16,7 @@ interface Task {
 	compiled?: string;
 	compiled_key?: string;
 	script_failures?: number;
-	precompile_note?: string;
+	script_last_error?: string;
 }
 
 const NOW = new Date().toISOString();
@@ -191,7 +191,12 @@ test("workflow rows show each compiled state in the shared chip", async ({
 		COMPILED,
 		{ ...COMPILED, name: "vague", compiled: "", compiled_key: "k2" },
 		{ ...COMPILED, name: "fresh", compiled: "", compiled_key: "" },
-		{ ...COMPILED, name: "flaky", script_failures: 2 },
+		{
+			...COMPILED,
+			name: "flaky",
+			script_failures: 2,
+			script_last_error: "gh 404",
+		},
 		{ ...COMPILED, name: "off", precompile: false, compiled: "" },
 	]);
 	await page.goto(
@@ -206,7 +211,9 @@ test("workflow rows show each compiled state in the shared chip", async ({
 	await expect(chip("vague")).toHaveAttribute("data-state", "not-compiled");
 	await expect(chip("vague")).toHaveText("Not compiled");
 	await expect(chip("fresh")).toHaveAttribute("data-state", "compiling");
-	await expect(chip("flaky")).toHaveText("Falling back to model");
+	await expect(chip("flaky")).toHaveAttribute("data-state", "failing");
+	await expect(chip("flaky")).toHaveText("Script failing");
+	await expect(chip("flaky")).toHaveAttribute("title", /last error: gh 404/);
 	await expect(chip("off")).toHaveCount(0);
 });
 

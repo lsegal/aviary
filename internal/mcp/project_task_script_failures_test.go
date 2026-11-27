@@ -97,71 +97,89 @@ func setupCompiledReleaseTask(t *testing.T, script string) string {
 
 var errGh404 = errors.New("<string>:52: failed to read main SHA: gh: Not Found (HTTP 404) {\n  \"message\": \"Not Found\",\n  \"status\": \"404\"\n}\nstack traceback:\n    [G]: in function 'error'")
 
-func TestScriptFailingItsFirstRunIsSetAside(t *testing.T) {
+var errRateLimited = errors.New("<string>:12: gh: API rate limit exceeded for user ID 1. (HTTP 403)")
+
+func TestScriptFailingItsFirstRunStaysCompiled(t *testing.T) {
 	key := setupCompiledReleaseTask(t, `print("checked")`)
 
-	require.NoError(t, RecordTaskScriptResult("bot", "release", errGh404))
+	result, err := RecordTaskScriptOutcome("bot", "release", errGh404)
+	require.NoError(t, err)
+	assert.True(t, result.StreakStarted)
 	task := loadedTask(t, "release")
-	assert.Empty(t, task.Compiled, "a script that never completed is dropped at once")
-	assert.Equal(t, key, task.CompiledKey, "and not compiled again for the same prompt")
+	assert.Equal(t, `print("checked")`, task.Compiled, "the script is kept")
+	assert.Equal(t, key, task.CompiledKey)
 	require.NotNil(t, task.Precompile)
 	assert.True(t, *task.Precompile)
-	assert.Contains(t, task.PrecompileNote, "failed on its first run (gh 404)")
+	assert.Equal(t, 1, task.ScriptFailures)
+	assert.Equal(t, "gh 404", task.ScriptLastError)
+	assert.Empty(t, task.PrecompileNote)
 
-	// Later runs use the model without compiling again.
+	// The next run still runs the script.
 	got, err := EnsureTaskCompiled(context.Background(), "bot", "release", "run")
 	require.NoError(t, err)
-	assert.Empty(t, got)
+	assert.Equal(t, `print("checked")`, got)
 }
 
-func TestConsecutiveScriptFailuresTurnPrecompileOff(t *testing.T) {
+func TestConsecutiveScriptFailuresNeverTurnPrecompileOff(t *testing.T) {
 	setupCompiledReleaseTask(t, `print("checked")`)
 
 	require.NoError(t, RecordTaskScriptResult("bot", "release", nil))
 	task := loadedTask(t, "release")
 	assert.True(t, task.ScriptVerified)
 
-	for i := 1; i < projectScriptFailureLimit; i++ {
-		require.NoError(t, RecordTaskScriptResult("bot", "release", errGh404))
+	started := 0
+	for i := 1; i <= 10; i++ {
+		result, err := RecordTaskScriptOutcome("bot", "release", errGh404)
+		require.NoError(t, err)
+		if result.StreakStarted {
+			started++
+		}
 		task = loadedTask(t, "release")
 		assert.Equal(t, i, task.ScriptFailures)
-		assert.NotEmpty(t, task.Compiled, "a script that has worked gets more than one chance")
+		assert.Equal(t, `print("checked")`, task.Compiled)
+		assert.True(t, EffectiveTaskPrecompile(task), "precompile stays on")
 		assert.Empty(t, task.PrecompileNote)
 	}
-	// A success in between starts the count over.
-	require.NoError(t, RecordTaskScriptResult("bot", "release", nil))
-	assert.Zero(t, loadedTask(t, "release").ScriptFailures)
+	assert.Equal(t, 1, started, "a run of failures starts one streak")
 
-	for range projectScriptFailureLimit {
-		require.NoError(t, RecordTaskScriptResult("bot", "release", errGh404))
-	}
-	task = loadedTask(t, "release")
-	require.NotNil(t, task.Precompile)
-	assert.False(t, *task.Precompile, "precompile is turned off")
-	assert.False(t, EffectiveTaskPrecompile(task))
-	assert.Empty(t, task.Compiled)
-	assert.Contains(t, task.PrecompileNote, fmt.Sprintf("failed %d runs in a row (last: gh 404)", projectScriptFailureLimit))
-
-	// The note reaches the UI with the task's config.
+	// The failure count and last error reach the UI with the task's config.
 	data, err := json.Marshal(task)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), `"precompile_note":"Precompile was turned off`)
+	assert.Contains(t, string(data), `"script_failures":10`)
+	assert.Contains(t, string(data), `"script_last_error":"gh 404"`)
 
-	// Turning precompile back on clears the note and compiles a fresh script.
-	_, err = NewDispatcher("https://localhost:16677", "").CallTool(context.Background(), "task_update", map[string]any{
-		"name": "bot/release", "precompile": true,
-	})
-	require.NoError(t, err)
+	// A success ends the streak, so the next failure starts a new one.
+	require.NoError(t, RecordTaskScriptResult("bot", "release", nil))
 	task = loadedTask(t, "release")
-	assert.Empty(t, task.PrecompileNote)
 	assert.Zero(t, task.ScriptFailures)
-	require.Eventually(t, func() bool { return loadedTask(t, "release").Compiled != "" }, 5*time.Second, 20*time.Millisecond)
+	assert.Empty(t, task.ScriptLastError)
+	result, err := RecordTaskScriptOutcome("bot", "release", errGh404)
+	require.NoError(t, err)
+	assert.True(t, result.StreakStarted)
+}
+
+func TestTransientScriptFailuresAreNotCounted(t *testing.T) {
+	setupCompiledReleaseTask(t, `print("checked")`)
+	for _, runErr := range []error{
+		errRateLimited,
+		errors.New("gh: You have exceeded a secondary rate limit (HTTP 403)"),
+		errors.New("Post \"https://api.github.com/graphql\": dial tcp: lookup api.github.com: no such host"),
+		errors.New("gh: Server Error (HTTP 502)"),
+	} {
+		result, err := RecordTaskScriptOutcome("bot", "release", runErr)
+		require.NoError(t, err)
+		assert.False(t, result.StreakStarted, runErr.Error())
+	}
+	task := loadedTask(t, "release")
+	assert.Zero(t, task.ScriptFailures)
+	assert.Empty(t, task.ScriptLastError)
+	assert.Equal(t, `print("checked")`, task.Compiled)
 }
 
 func TestScriptStateSurvivesMarkdownTaskFile(t *testing.T) {
 	dir := t.TempDir()
 	task := config.TaskConfig{Name: "release", Type: "project", Project: "acme/app", Prompt: releaseShaPrompt, Every: "5m",
-		Precompile: new(true), Compiled: `print(1)`, CompiledKey: "k", ScriptVerified: true, ScriptFailures: 2, PrecompileNote: "note"}
+		Precompile: new(true), Compiled: `print(1)`, CompiledKey: "k", ScriptVerified: true, ScriptFailures: 2, ScriptLastError: "gh 404"}
 	path, err := config.SaveMarkdownTask(dir, task)
 	require.NoError(t, err)
 	raw, err := os.ReadFile(path)
@@ -170,7 +188,7 @@ func TestScriptStateSurvivesMarkdownTaskFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, loaded.ScriptVerified)
 	assert.Equal(t, 2, loaded.ScriptFailures)
-	assert.Equal(t, "note", loaded.PrecompileNote)
+	assert.Equal(t, "gh 404", loaded.ScriptLastError)
 }
 
 func TestTaskCompileQueryHonorsFilters(t *testing.T) {
@@ -223,9 +241,8 @@ func TestTaskCompileQueryHonorsFilters(t *testing.T) {
 	assert.Contains(t, full, big)
 }
 
-func TestCompilerVersionBumpRecompilesCompiledAndSetAsideScripts(t *testing.T) {
+func TestCompilerVersionBumpRecompilesFailingScripts(t *testing.T) {
 	key := setupCompiledReleaseTask(t, `print("old compiler")`)
-	// The old compiler's script failed and was set aside, keeping its key.
 	require.NoError(t, RecordTaskScriptResult("bot", "release", errGh404))
 	require.Equal(t, key, loadedTask(t, "release").CompiledKey)
 
@@ -238,19 +255,18 @@ func TestCompilerVersionBumpRecompilesCompiledAndSetAsideScripts(t *testing.T) {
 	assert.Equal(t, `print("old compiler")`, got, "the new compiler compiles the task again")
 	task := loadedTask(t, "release")
 	assert.NotEqual(t, key, task.CompiledKey)
-	assert.Empty(t, task.PrecompileNote, "the set-aside note is cleared")
+	assert.Zero(t, task.ScriptFailures, "the failures are cleared")
+	assert.Empty(t, task.ScriptLastError)
 	assert.False(t, task.ScriptVerified)
 }
 
-func TestRecompileRestartsScriptAfterPrecompileWasTurnedOff(t *testing.T) {
+func TestRecompileRestartsFailingScript(t *testing.T) {
 	setupCompiledReleaseTask(t, `print("checked")`)
 	require.NoError(t, RecordTaskScriptResult("bot", "release", nil))
-	for range projectScriptFailureLimit {
+	for range 3 {
 		require.NoError(t, RecordTaskScriptResult("bot", "release", errGh404))
 	}
-	task := loadedTask(t, "release")
-	require.False(t, EffectiveTaskPrecompile(task))
-	assert.Contains(t, task.PrecompileNote, "Recompile")
+	require.Equal(t, 3, loadedTask(t, "release").ScriptFailures)
 
 	out, err := NewDispatcher("https://localhost:16677", "").CallTool(context.Background(), "config_task_convert_to_script", map[string]any{
 		"agent": "bot", "task": "release",
@@ -259,11 +275,44 @@ func TestRecompileRestartsScriptAfterPrecompileWasTurnedOff(t *testing.T) {
 	assert.Contains(t, out, "recompiling")
 	backgroundCompiles.Wait()
 
-	task = loadedTask(t, "release")
-	assert.True(t, EffectiveTaskPrecompile(task), "Recompile turns precompile back on")
+	task := loadedTask(t, "release")
+	assert.True(t, EffectiveTaskPrecompile(task))
 	assert.Equal(t, `print("checked")`, task.Compiled)
 	assert.NotEmpty(t, task.CompiledKey)
-	assert.Empty(t, task.PrecompileNote)
 	assert.Zero(t, task.ScriptFailures)
+	assert.Empty(t, task.ScriptLastError)
 	assert.False(t, task.ScriptVerified)
+}
+
+func TestMigrateRestoresTasksChangedAfterScriptFailures(t *testing.T) {
+	off := false
+	cfg := &config.Config{Agents: []config.AgentConfig{{Name: "bot", Model: "test/x", Tasks: []config.TaskConfig{
+		{Name: "release", Type: "project", Project: "acme/app", Prompt: releaseShaPrompt, Every: "5m", Precompile: &off, ScriptVerified: true, ScriptFailures: 3,
+			PrecompileNote: "Precompile was turned off after the compiled script failed 3 runs in a row (last: gh 403), so the task runs on the model. Use Recompile on the task page to compile it again."},
+		{Name: "aside", Type: "project", Project: "acme/app", Prompt: releaseShaPrompt, Every: "5m", Precompile: new(true), CompiledKey: "k", ScriptFailures: 1,
+			PrecompileNote: "The compiled script failed on its first run (gh 404), so it was set aside and the task runs on the model. Use Recompile on the task page to compile it again."},
+		{Name: "manual", Type: "project", Project: "acme/app", Prompt: releaseShaPrompt, Every: "5m", Precompile: &off},
+	}}}}
+	setupProjectTaskCompile(t, cfg, compiledScript(`print(1)`))
+
+	restored, err := MigrateAutoDisabledPrecompile()
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"bot/release", "bot/aside"}, restored)
+
+	release := loadedTask(t, "release")
+	assert.True(t, EffectiveTaskPrecompile(release), "precompile is back on")
+	assert.Empty(t, release.PrecompileNote)
+	assert.Zero(t, release.ScriptFailures)
+	aside := loadedTask(t, "aside")
+	assert.True(t, EffectiveTaskPrecompile(aside))
+	assert.Empty(t, aside.CompiledKey, "the set-aside script is compiled again")
+	assert.Empty(t, aside.PrecompileNote)
+	manual := loadedTask(t, "manual")
+	require.NotNil(t, manual.Precompile)
+	assert.False(t, *manual.Precompile, "a task the user turned off is left alone")
+
+	// It runs once: a second pass finds nothing to restore.
+	restored, err = MigrateAutoDisabledPrecompile()
+	require.NoError(t, err)
+	assert.Empty(t, restored)
 }

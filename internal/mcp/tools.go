@@ -2821,7 +2821,7 @@ func registerServerTools(s *sdkmcp.Server) {
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "config_task_convert_to_script",
-		Description: "Recompile a prompt task, project task or prompt workflow in the background, keeping its type and prompt: it discards the current, stale or set-aside compiled script, turns precompile on, and compiles a fresh script beside the prompt. Runs execute that script and fall back to the model if it fails. Script tasks have no prompt to compile.",
+		Description: "Recompile a prompt task, project task or prompt workflow in the background, keeping its type and prompt: it discards the current, stale or failing compiled script, turns precompile on, and compiles a fresh script beside the prompt. Runs execute that script and fall back to the model if it fails. Script tasks have no prompt to compile.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args configTaskConvertToScriptArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		slog.Info("mcp: tool call", "component", "settings", "tool", "config_task_convert_to_script", "agent", args.Agent, "task", args.Task)
 		// A prompt, project or workflow task keeps its prompt and stores its
