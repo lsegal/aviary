@@ -232,3 +232,18 @@ func TestUsageSessionsKeepNamesOfDeletedSessions(t *testing.T) {
 	assert.Equal(t, domain.UsageKindJob, got["o/r#8"].Kind)
 	assert.False(t, got["o/r#8"].Deleted, "Code Loop job runs have no session to delete")
 }
+
+func TestUsageSessionsMergeBareAndProviderModelNames(t *testing.T) {
+	d := setupUsageTools(t)
+	now := time.Now().Add(-time.Minute)
+	appendUsage(t,
+		domain.UsageRecord{Timestamp: now, AgentID: projects.UsageAgentID, SessionID: "o/r#1", Model: "opus", Provider: "claude", InputTokens: 1},
+		domain.UsageRecord{Timestamp: now, AgentID: projects.UsageAgentID, SessionID: "o/r#2", Model: "claude/opus", Provider: "claude", InputTokens: 2},
+	)
+	page := callUsageSessions(t, d, map[string]any{"model": "claude/opus"})
+	assert.Equal(t, []string{"claude/opus"}, page.Models)
+	assert.Equal(t, 2, page.Total)
+	for _, r := range page.Sessions {
+		assert.Equal(t, "claude/opus", r.Model)
+	}
+}

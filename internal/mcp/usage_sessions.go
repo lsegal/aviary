@@ -161,7 +161,18 @@ func readUsageRange(start, end time.Time) ([]domain.UsageRecord, error) {
 // matchesRecord reports whether token record r passes the agent and model
 // filters.
 func (f usageFilter) matchesRecord(r domain.UsageRecord) bool {
-	return (f.Agent == "" || r.AgentID == f.Agent) && (f.Model == "" || r.Model == f.Model)
+	return (f.Agent == "" || r.AgentID == f.Agent) && (f.Model == "" || usageModelName(r) == f.Model)
+}
+
+// usageModelName is the provider/model name of r's model. Older Code Loop
+// records store the bare model ("opus") beside provider "claude", while
+// core's prompts store "claude/opus"; both name the same model.
+func usageModelName(r domain.UsageRecord) string {
+	model, provider := strings.TrimSpace(r.Model), strings.TrimSpace(r.Provider)
+	if model == "" || provider == "" || model == provider || strings.HasPrefix(model, provider+"/") {
+		return model
+	}
+	return provider + "/" + model
 }
 
 // matchesSession reports whether row passes the status and deleted filters.
@@ -200,7 +211,7 @@ func usageSessions(records []domain.UsageRecord, f usageFilter) []UsageSessionRo
 		row := rows[key]
 		if row == nil {
 			row = &UsageSessionRow{
-				SessionID: r.SessionID, AgentID: r.AgentID, Model: r.Model, Provider: r.Provider,
+				SessionID: r.SessionID, AgentID: r.AgentID, Model: usageModelName(r), Provider: r.Provider,
 				Task: r.Task, Channel: r.Channel, first: r.Timestamp, last: r.Timestamp,
 			}
 			rows[key] = row
@@ -381,8 +392,8 @@ func pageUsageSessions(records []domain.UsageRecord, rows []UsageSessionRow, off
 			continue
 		}
 		agents[r.AgentID] = true
-		if r.Model != "" {
-			models[r.Model] = true
+		if m := usageModelName(r); m != "" {
+			models[m] = true
 		}
 	}
 	page := rows[offset:min(offset+limit, len(rows))]

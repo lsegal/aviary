@@ -277,7 +277,7 @@
                 </td>
                 <td class="truncate px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ s.agent_id }}</td>
                 <td class="px-4 py-2.5">
-                  <span class="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600 dark:bg-gray-800 dark:text-gray-400">{{ s.model }}</span>
+                  <span class="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600 dark:bg-gray-800 dark:text-gray-400">{{ sessionModel(s) }}</span>
                 </td>
                 <td class="px-4 py-2.5 text-right font-mono text-gray-700 dark:text-gray-300">{{ fmtTokens(s.input + s.output) }}</td>
                 <td class="px-4 py-2.5 text-right text-gray-600 dark:text-gray-400">{{ s.tool_calls }}</td>
@@ -298,7 +298,7 @@
                 <span class="ml-auto shrink-0 font-mono text-xs text-gray-700 dark:text-gray-300">{{ fmtTokens(s.input + s.output) }}</span>
               </div>
               <div class="mt-1 truncate text-[11px] text-gray-400">
-                {{ kindLabel(s) }} · {{ s.agent_id }} · {{ s.model }} · {{ s.tool_calls }} {{ s.tool_calls === 1 ? "tool" : "tools" }} · {{ fmtTs(s.last_ts) }}
+                {{ kindLabel(s) }} · {{ s.agent_id }} · {{ sessionModel(s) }} · {{ s.tool_calls }} {{ s.tool_calls === 1 ? "tool" : "tools" }} · {{ fmtTs(s.last_ts) }}
               </div>
             </li>
           </ul>
@@ -333,6 +333,7 @@ import AppLayout from "../components/AppLayout.vue";
 import SystemSettingsLink from "../components/SystemSettingsLink.vue";
 import { AppSelect, type SelectOption } from "../components/ui/select";
 import {
+	blankKeyLabel,
 	type DeletedFilter,
 	SESSIONS_PAGE_SIZE,
 	type SessionSort,
@@ -429,6 +430,11 @@ function deletedTooltip(s: UsageSession): string {
 function sessionLink(s: UsageSession): string | null {
 	if (s.deleted || s.kind !== "chat") return null;
 	return `/agents/${encodeURIComponent(s.agent_id)}/chat/${encodeURIComponent(s.session_id)}`;
+}
+
+// The server names models provider/model; a blank one gets the breakdowns' label.
+function sessionModel(s: UsageSession): string {
+	return s.model || blankKeyLabel(s);
 }
 
 function fmtCount(n: number): string {

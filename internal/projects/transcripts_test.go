@@ -41,7 +41,7 @@ func TestCommandRunnerRecordsJobUsage(t *testing.T) {
 	got := records[0]
 	got.Timestamp = time.Time{}
 	want := domain.UsageRecord{
-		SessionID: "o/r#7", AgentID: UsageAgentID, Model: "opus", Provider: "claude",
+		SessionID: "o/r#7", AgentID: UsageAgentID, Model: "claude/opus", Provider: "claude",
 		InputTokens: 10, OutputTokens: 4, CacheReadTokens: 30, CacheWriteTokens: 2, ToolCalls: 1, CostUSD: 0.25,
 		// The job's issue names its session in Usage, even once the job is
 		// cleared.

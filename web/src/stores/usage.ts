@@ -107,6 +107,46 @@ function fmtDate(daysAgo: number): string {
 	return d.toISOString().slice(0, 10);
 }
 
+/** The label a breakdown groups token use under when its key is blank. */
+export const UNKNOWN_LABEL = "Unknown";
+
+/** The agent ID Code Loop records its runs and bookkeeping under. */
+export const CODE_LOOP_AGENT_ID = "projects";
+
+/** The label Code Loop bookkeeping that names no model is grouped under. */
+export const CODE_LOOP_BOOKKEEPING_LABEL = "Code Loop bookkeeping";
+
+/** The label a record whose key is blank is shown and grouped under. */
+export function blankKeyLabel(r: Pick<UsageRecord, "agent_id">) {
+	return r.agent_id === CODE_LOOP_AGENT_ID
+		? CODE_LOOP_BOOKKEEPING_LABEL
+		: UNKNOWN_LABEL;
+}
+
+/**
+ * The provider a usage record's tokens belong to: its provider field, or the
+ * prefix of a provider/model name when the field is blank.
+ */
+export function usageProvider(r: Pick<UsageRecord, "model" | "provider">) {
+	const provider = r.provider?.trim() ?? "";
+	if (provider) return provider;
+	const model = r.model?.trim() ?? "";
+	const slash = model.indexOf("/");
+	return slash > 0 ? model.slice(0, slash) : "";
+}
+
+/**
+ * The provider/model name of a usage record's model. Older Code Loop records
+ * store the bare model ("opus") beside provider "claude", while core's
+ * prompts store "claude/opus"; both name the same model.
+ */
+export function usageModel(r: Pick<UsageRecord, "model" | "provider">) {
+	const model = r.model?.trim() ?? "";
+	const provider = r.provider?.trim() ?? "";
+	if (!model || !provider || model === provider) return model;
+	return model.startsWith(`${provider}/`) ? model : `${provider}/${model}`;
+}
+
 function sumCost(records: UsageRecord[]): number | null {
 	let total: number | null = null;
 	for (const r of records) {
@@ -342,10 +382,15 @@ export const useUsageStore = defineStore("usage", () => {
 
 	// ── Breakdowns ────────────────────────────────────────────────────────────
 
-	function tally(key: keyof UsageRecord) {
+	// Records that spent no tokens, such as a failed prompt, count as
+	// messages but name no model worth a row, so breakdowns skip them. A
+	// token-bearing record with a blank key is grouped under a clear label
+	// rather than a nameless row.
+	function tally(keyOf: (r: UsageRecord) => string) {
 		const m = new Map<string, { tokens: number; cost: number | null }>();
 		for (const r of records.value) {
-			const k = String(r[key] ?? "");
+			if (!(r.input_tokens + r.output_tokens) && !r.cost_usd) continue;
+			const k = keyOf(r).trim() || blankKeyLabel(r);
 			const v = m.get(k) ?? { tokens: 0, cost: null };
 			v.tokens += r.input_tokens + r.output_tokens;
 			if (r.cost_usd) v.cost = (v.cost ?? 0) + r.cost_usd;
@@ -357,9 +402,9 @@ export const useUsageStore = defineStore("usage", () => {
 			.map(([name, v]) => ({ name, ...v }));
 	}
 
-	const topModels = computed(() => tally("model"));
-	const topProviders = computed(() => tally("provider"));
-	const topAgents = computed(() => tally("agent_id"));
+	const topModels = computed(() => tally(usageModel));
+	const topProviders = computed(() => tally(usageProvider));
+	const topAgents = computed(() => tally((r) => r.agent_id ?? ""));
 
 	// ── Time activity ─────────────────────────────────────────────────────────
 
