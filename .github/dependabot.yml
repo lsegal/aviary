@@ -6,6 +6,10 @@ updates:
       default-days: 14
     schedule:
       interval: weekly
+    groups:
+      all:
+        patterns:
+          - "*"
 
   - package-ecosystem: npm
     directory: /
@@ -13,6 +17,10 @@ updates:
       default-days: 14
     schedule:
       interval: weekly
+    groups:
+      all:
+        patterns:
+          - "*"
 
   - package-ecosystem: npm
     directory: /docs
@@ -20,6 +28,10 @@ updates:
       default-days: 14
     schedule:
       interval: weekly
+    groups:
+      all:
+        patterns:
+          - "*"
 
   - package-ecosystem: github-actions
     directory: /
@@ -27,6 +39,10 @@ updates:
       default-days: 14
     schedule:
       interval: weekly
+    groups:
+      all:
+        patterns:
+          - "*"
 
   - package-ecosystem: docker
     directory: /
@@ -34,3 +50,7 @@ updates:
       default-days: 14
     schedule:
       interval: weekly
+    groups:
+      all:
+        patterns:
+          - "*"
