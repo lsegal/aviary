@@ -34,12 +34,9 @@
 </template>
 
 <script setup lang="ts">
-// The project header's issue discovery menu (#1307): Watch picks up issues
-// matching the filter, Manual never searches for issues, so only work queued
-// on demand, scheduled project tasks and agent tools start jobs. The checked
-// mode is the effective one; picking the global default clears the project's
-// override and picking the other mode stores it (#1461). A change applies at
-// once through project_update, to this project only.
+// The project header's issue discovery menu (#1307): the eye button. On a
+// narrow header it moves into the board's "…" menu instead (#1488); both
+// share useProjectMode.
 
 import CheckIcon from "@heroicons/vue/16/solid/CheckIcon";
 import EyeIcon from "@heroicons/vue/24/outline/EyeIcon";
@@ -54,15 +51,12 @@ import {
 	DropdownMenuRoot,
 	DropdownMenuTrigger,
 } from "radix-vue";
-import { computed, ref } from "vue";
-import { useMCP } from "../../composables/useMCP";
+import { useProjectMode } from "../../composables/useProjectMode";
 import { HEADER_ICON_CLS } from "../../lib/headerActions";
 import {
 	PROJECT_MODES,
 	type ProjectMode,
 	type ProjectModeChoice,
-	projectModeLabel,
-	projectModeOverride,
 } from "../../lib/projects";
 
 // manual is the effective mode; defaultMode is the global one.
@@ -73,29 +67,10 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ changed: [mode: ProjectModeChoice] }>();
 
-const { callTool } = useMCP();
-const saving = ref(false);
-const error = ref("");
-
-const choice = computed<ProjectMode>(() => (props.manual ? "manual" : "watch"));
-const label = computed(() => projectModeLabel(choice.value));
+const { saving, error, choice, label, pick } = useProjectMode(props, (mode) =>
+	emit("changed", mode),
+);
 
 const itemClass =
 	"flex cursor-pointer items-start gap-2 rounded-lg px-3 py-2 text-sm text-gray-700 outline-none data-[highlighted]:bg-gray-100 dark:text-gray-200 dark:data-[highlighted]:bg-gray-800";
-
-async function pick(value: string) {
-	const picked = value as ProjectMode;
-	if (picked === choice.value) return;
-	const mode = projectModeOverride(picked, props.defaultMode);
-	saving.value = true;
-	error.value = "";
-	try {
-		await callTool("project_update", { target: props.target, mode });
-		emit("changed", mode);
-	} catch (e) {
-		error.value = e instanceof Error ? e.message : String(e);
-	} finally {
-		saving.value = false;
-	}
-}
 </script>
