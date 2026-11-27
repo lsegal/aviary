@@ -1147,11 +1147,13 @@ const headerCrumbs = computed((): SettingsCrumb[] => {
 	];
 });
 // Only the header's breadcrumb bar stays pinned; its title row slides away
-// as the page scrolls (#1437), and comes back on every new page.
+// as the page scrolls (#1437), and comes back on every new page. A compact
+// header is slim enough to stay pinned whole under the breadcrumb bar, so
+// its chips and toolbar stay in reach (#1572).
 const mainEl = ref<HTMLElement | null>(null);
 const { offset: headerOffset, reset: showHeader } = useScrollAwayHeader(
 	mainEl,
-	computed(() => headerCrumbs.value.length > 0),
+	computed(() => headerCrumbs.value.length > 0 && !props.compactHeader),
 );
 watch(() => route.path, showHeader);
 // The leaf's switcher between its sibling projects, tasks, channels or

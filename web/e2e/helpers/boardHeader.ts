@@ -23,3 +23,31 @@ export async function openInstanceTag(page: Page) {
 	await expect(popover).toBeVisible();
 	return popover;
 }
+
+/**
+ * Checks that the compact Code Loop header lines its chips up on the right
+ * with the toolbar on a phone (#1572): beside it when they share a row, or
+ * ending where it ends on the row above it.
+ */
+export async function expectHeaderRightAligned(page: Page, lastChip: string) {
+	const box = async (id: string) => {
+		const b = await page.getByTestId(id).boundingBox();
+		if (!b) throw new Error(`no ${id}`);
+		return { ...b, right: b.x + b.width, mid: b.y + b.height / 2 };
+	};
+	const row = await box("settings-title-row");
+	const actions = await box("settings-actions");
+	const chip = await box(lastChip);
+	// The toolbar ends at the row's right padding.
+	expect(row.right - actions.right).toBeGreaterThanOrEqual(15);
+	expect(row.right - actions.right).toBeLessThanOrEqual(17);
+	if (Math.abs(chip.mid - actions.mid) < 6) {
+		// One row: the chips sit just before the toolbar.
+		expect(chip.right).toBeLessThanOrEqual(actions.x);
+		expect(actions.x - chip.right).toBeLessThanOrEqual(12);
+	} else {
+		// Two rows: the chips end where the toolbar ends.
+		expect(chip.mid).toBeLessThan(actions.mid);
+		expect(Math.abs(actions.right - chip.right)).toBeLessThanOrEqual(2);
+	}
+}

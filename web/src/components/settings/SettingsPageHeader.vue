@@ -36,10 +36,14 @@
 			</nav>
 		</div>
 		<!-- The title row: the section's icon tile, the title with its status
-			and subtitle, and the page's actions on the right. -->
+			and subtitle, and the page's actions on the right. A compact header
+			lines its chips up on the right with the toolbar on phones, on one
+			row when they fit (#1572). -->
 		<div data-testid="settings-title-row" :style="collapsed ? { marginTop: `-${collapsed}px` } : undefined"
-			class="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 sm:px-6 dark:border-gray-800">
-			<div class="flex min-w-0 items-center gap-3" :class="compact ? 'flex-[1_1_auto]' : 'flex-[1_1_14rem]'">
+			class="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 sm:px-6 dark:border-gray-800"
+			:class="{ 'relative max-sm:justify-end max-sm:gap-x-2 max-sm:gap-y-1.5 max-sm:py-2': compact }">
+			<div class="flex min-w-0 items-center gap-3"
+				:class="compact ? 'flex-[1_1_auto] max-sm:flex-[0_1_auto]' : 'flex-[1_1_14rem]'">
 				<span v-if="!compact" data-testid="settings-header-icon" aria-hidden="true"
 					class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" :class="identity.tileClass">
 					<slot name="icon">
@@ -49,9 +53,9 @@
 				<div class="min-w-0 flex-1">
 					<!-- The status chips wrap below the title rather than squeeze it
 						(#1209); only a title wider than the row truncates. -->
-					<div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+					<div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" :class="{ 'max-sm:justify-end': compact }">
 						<h2 data-testid="settings-title" class="max-w-full min-w-0 truncate text-lg font-bold text-gray-900 dark:text-white"
-							:class="{ 'max-sm:sr-only': compact }">
+							:class="{ 'max-sm:sr-only max-sm:left-0 max-sm:top-0': compact }">
 							<a v-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
 								class="hover:underline" :title="titleLink.title">{{ title }}</a>
 							<template v-else>{{ title }}</template>
@@ -68,7 +72,8 @@
 			<!-- The actions keep to one row (#1347): when they don't fit beside
 				the title they move under it, and a select truncates its label
 				before anything wraps. -->
-			<div data-testid="settings-actions" class="ml-auto flex min-w-0 max-w-full flex-nowrap items-center justify-end gap-2">
+			<div data-testid="settings-actions" class="ml-auto flex min-w-0 max-w-full flex-nowrap items-center justify-end gap-2"
+				:class="{ 'max-sm:ml-0': compact }">
 				<div id="page-header-actions" class="contents" />
 				<slot name="actions" />
 			</div>
@@ -127,7 +132,8 @@ const props = defineProps<{
 	collapsed?: number;
 	/**
 	 * Drops the icon tile, and below sm shows the title only to screen
-	 * readers, since the breadcrumb names the page (#1570).
+	 * readers, since the breadcrumb names the page (#1570), and right-aligns
+	 * the chips with the toolbar (#1572).
 	 */
 	compact?: boolean;
 }>();
