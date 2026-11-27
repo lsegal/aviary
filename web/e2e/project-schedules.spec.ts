@@ -348,7 +348,11 @@ async function setup(
 }
 
 // A task's next fires, each task listed as task_upcoming lists it.
-const upcomingRun = (name: string, minutes: number, project = "lsegal/aviary") => ({
+const upcomingRun = (
+	name: string,
+	minutes: number,
+	project = "lsegal/aviary",
+) => ({
 	task_id: `assistant/${name}`,
 	name,
 	project,
