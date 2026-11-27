@@ -186,3 +186,18 @@ func TestGitPullMessage_SaysHowTheCodeGoesLive(t *testing.T) {
 		}
 	}
 }
+
+// forgo's resp file exists, empty, for a moment while it is being written;
+// that is not an answer, so the wait keeps going until the real verdict.
+func TestWaitHotReload_EmptyRespIsNotAnAnswer(t *testing.T) {
+	dir := t.TempDir()
+	writeCtl(t, dir, map[string]string{"link-2": "patch 1 2\n", "resp-2": ""})
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		writeCtl(t, dir, map[string]string{"resp-2": "ok\n"})
+	}()
+	res := WaitHotReload(context.Background(), dir, 1, fastWait)
+	if !res.Applied || res.Generation != 2 {
+		t.Fatalf("result = %+v, want generation 2 applied", res)
+	}
+}
