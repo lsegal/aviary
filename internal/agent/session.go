@@ -342,6 +342,12 @@ func sessionAt(agentID, sessionID, path string) (*domain.Session, []map[string]a
 // It returns an error if the session cannot be found or deleted, or is a
 // permanent session such as Main Chat, which can only be cleared.
 func (m *SessionManager) Delete(agentID, sessionID string) error {
+	return m.remove(agentID, sessionID, true)
+}
+
+// remove deletes the session's files. tombstone records the deletion for
+// Usage; a session moved to a new ID is not deleted, so it records none.
+func (m *SessionManager) remove(agentID, sessionID string, tombstone bool) error {
 	p := store.FindSessionPath(agentID, sessionID)
 	if p == "" {
 		return fmt.Errorf("session %q not found", sessionID)
@@ -353,8 +359,12 @@ func (m *SessionManager) Delete(agentID, sessionID string) error {
 	if !sess.Deletable() {
 		return fmt.Errorf("session %q cannot be deleted; clear it instead", sessionID)
 	}
+	name := SessionDisplayName(sess, SessionTitle(agentID, sessionID))
 	if err := os.Remove(p); err != nil {
 		return fmt.Errorf("deleting session %q: %w", sessionID, err)
+	}
+	if tombstone {
+		recordSessionDeleted(agentID, sessionID, name)
 	}
 	for _, sidecar := range []string{store.SessionMetaPath(agentID, sessionID), store.SessionChannelsPath(agentID, sessionID)} {
 		if err := os.Remove(sidecar); err != nil && !os.IsNotExist(err) {
@@ -449,7 +459,7 @@ func (m *SessionManager) relocate(agentID, sessionID, id, name string, typ domai
 			return nil, fmt.Errorf("moving session %q: %w", sessionID, err)
 		}
 	}
-	if err := m.Delete(agentID, sessionID); err != nil {
+	if err := m.remove(agentID, sessionID, false); err != nil {
 		return nil, err
 	}
 	ClearSessionDelivery(agentID, sessionID)

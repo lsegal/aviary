@@ -1464,7 +1464,19 @@ func (r CommandRunner) recordUsage(issue Issue, spec agentSpec, recorder *transc
 		ToolCalls:        tools,
 		CostUSD:          usage.CostUSD,
 		HasError:         runErr != nil,
+		SessionName:      jobUsageName(issue),
+		SessionKind:      domain.UsageKindJob,
+		SessionOwner:     issueKey(issue),
 	})
+}
+
+// jobUsageName is the name Usage shows for a Code Loop job on issue: its
+// title, or its "owner/repo#number" key when the title is unknown.
+func jobUsageName(issue Issue) string {
+	if title := strings.TrimSpace(issue.Title); title != "" {
+		return title
+	}
+	return issueKey(issue)
 }
 
 func commandArgs(r CommandRunner, issue Issue) []string {

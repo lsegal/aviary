@@ -498,6 +498,11 @@ func UsagePath() string {
 	return filepath.Join(SubDir(DirUsage), "usage.jsonl")
 }
 
+// DeletedSessionsPath returns the path to the log of deleted sessions' tombstones.
+func DeletedSessionsPath() string {
+	return filepath.Join(SubDir(DirUsage), "deleted_sessions.jsonl")
+}
+
 // CheckpointDir returns the directory where pending run checkpoints are stored
 // for an agent: <datadir>/agents/<agentID>/checkpoints/.
 func CheckpointDir(agentID string) string {
