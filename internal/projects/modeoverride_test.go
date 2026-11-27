@@ -140,3 +140,17 @@ func TestEngineSkipsDiscoveryPerProject(t *testing.T) {
 		}
 	}
 }
+
+// DefaultMode is the shared mode project_update compares a pick against, so
+// picking it clears the project's override (issue #1461).
+func TestManagerDefaultMode(t *testing.T) {
+	m := newTestManager(t)
+	m.Reconcile(ownedBy(config.ProjectsConfig{}, "o/a"))
+	if got := m.DefaultMode(); got != config.ProjectModeWatch {
+		t.Errorf("default mode = %q, want watch", got)
+	}
+	m.Reconcile(ownedBy(config.ProjectsConfig{Mode: "manual"}, "o/a"))
+	if got := m.DefaultMode(); got != config.ProjectModeManual {
+		t.Errorf("default mode = %q, want manual", got)
+	}
+}

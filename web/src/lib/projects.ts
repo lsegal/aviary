@@ -768,6 +768,13 @@ export type ProjectMode = "watch" | "manual";
 /** A project's mode override: its own mode, or inherit the shared mode. */
 export type ProjectModeChoice = ProjectMode | "inherit";
 
+/** The issue discovery menu's label for a project's effective mode. */
+export function projectModeLabel(mode: ProjectMode): string {
+	return mode === "manual"
+		? "Issue discovery: Manual (no issue watching)"
+		: "Issue discovery: Watch";
+}
+
 /**
  * The override that picking mode stores for a project (#1461): none when it
  * is the shared defaultMode, so the project keeps following the shared mode,

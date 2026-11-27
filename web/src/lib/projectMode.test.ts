@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { globalProjectMode, projectMode, withMode } from "./projectSettings";
-import { projectModeOverride } from "./projects";
+import { projectModeLabel, projectModeOverride } from "./projects";
 
 // #1461: the picker shows the effective mode and stores an override only
 // for the mode that differs from the global one.
@@ -35,4 +35,11 @@ it("clears the override when the global mode is picked", () => {
 	expect(section).toEqual([{ target: "o/a" }]);
 	// Without an override, a new global mode flips the project.
 	expect(projectMode(section, "o/a", "manual")).toBe("manual");
+});
+
+it("labels the menu with the effective mode only", () => {
+	expect(projectModeLabel("watch")).toBe("Issue discovery: Watch");
+	expect(projectModeLabel("manual")).toBe(
+		"Issue discovery: Manual (no issue watching)",
+	);
 });

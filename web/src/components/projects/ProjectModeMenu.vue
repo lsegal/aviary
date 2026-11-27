@@ -61,6 +61,7 @@ import {
 	PROJECT_MODES,
 	type ProjectMode,
 	type ProjectModeChoice,
+	projectModeLabel,
 	projectModeOverride,
 } from "../../lib/projects";
 
@@ -77,11 +78,7 @@ const saving = ref(false);
 const error = ref("");
 
 const choice = computed<ProjectMode>(() => (props.manual ? "manual" : "watch"));
-const label = computed(() =>
-	props.manual
-		? "Issue discovery: Manual (no issue watching)"
-		: "Issue discovery: Watch",
-);
+const label = computed(() => projectModeLabel(choice.value));
 
 const itemClass =
 	"flex cursor-pointer items-start gap-2 rounded-lg px-3 py-2 text-sm text-gray-700 outline-none data-[highlighted]:bg-gray-100 dark:text-gray-200 dark:data-[highlighted]:bg-gray-800";
