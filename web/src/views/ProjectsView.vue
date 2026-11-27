@@ -17,20 +17,23 @@
 					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
 					:title="issueSummary.title">{{ issueSummary.label }}</span>
 				<BoardHeaderInfo v-if="status" :status="status" :manual="manual" :filter-target="filterTarget" :now="now"
-					@saved="refresh" />
+					:hide-instance="inMenu.has('instance-tag')" :hide-info="inMenu.has('board-info')" @saved="refresh" />
 		</template>
 		<template v-if="project || aggregate" #header-actions>
 			<!-- With a job open on a phone, the job's own actions keep the row
 				and the board's move behind "…" (#1347). -->
 			<HeaderOverflow :collapsed="jobOpen && !smUp" label="Board actions">
-			<button v-if="aggregate" type="button" data-testid="board-add-project" aria-label="Add project" title="Add project"
+			<!-- On a phone the header is one line, so everything but "…" moves
+				into "…" one at a time until it fits: Logs, Watch, Chat,
+				Schedule, Queue and Add project, then the details and instance
+				icons (#1576). -->
+			<button v-if="aggregate && !inMenu.has('board-add-project')" type="button" data-testid="board-add-project" aria-label="Add project" title="Add project"
 				:class="HEADER_ADD_CLS" @click="openAdd">
 				<PlusIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
-			<!-- A watch session's board is one agent's, so it queues when it has one project. -->
-			<QueueMenu v-if="!aggregate || targets.length === 1" :no-merge="status?.noMerge"
+			<QueueMenu v-if="canQueue && !inMenu.has('queue-menu')" :no-merge="status?.noMerge"
 				@pick="openQueue($event, project || targets[0])" />
-			<button v-if="!aggregate" type="button" data-testid="schedule-new" aria-label="Schedule task"
+			<button v-if="!aggregate && !inMenu.has('schedule-new')" type="button" data-testid="schedule-new" aria-label="Schedule task"
 				title="Schedule task" :class="HEADER_COLLAPSE_CLS" :disabled="!scheduleAgent" @click="onNewSchedule">
 				<CalendarDaysIcon aria-hidden="true" :class="HEADER_COLLAPSE_ICON_CLS" />
 				<span :class="HEADER_COLLAPSE_LABEL_CLS">Schedule</span>
@@ -43,7 +46,7 @@
 				@click="logsOpen = !logsOpen">
 				<DocumentTextIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
-			<button type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
+			<button v-if="!inMenu.has('prompt-chat-toggle')" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
 				aria-label="Prompt chat" title="Prompt chat"
 				:class="chatOpen ? HEADER_ICON_ON_CLS : HEADER_ICON_CLS"
 				@click="chatOpen = !chatOpen">
@@ -56,7 +59,10 @@
 				:logs-in-menu="logsInMenu" v-model:logs-open="logsOpen"
 				:mode-target="watchInMenu ? filterTarget : null" :manual="manual"
 				:default-mode="status?.defaultMode ?? 'watch'"
-				@refresh="onCheckNow" @cleared="refresh" @mode-changed="refresh" />
+				:hidden="[...inMenu]" :status="status" :filter-target="filterTarget" :now="now"
+				v-model:chat-open="chatOpen" :can-schedule="!!scheduleAgent"
+				@refresh="onCheckNow" @cleared="refresh" @mode-changed="refresh" @saved="refresh"
+				@add-project="openAdd" @queue="openQueue($event, project || targets[0])" @schedule="onNewSchedule" />
 			</HeaderOverflow>
 		</template>
 		<div class="flex min-h-0 flex-1">
@@ -237,7 +243,10 @@ import UpNextStrip from "../components/projects/UpNextStrip.vue";
 import HeaderOverflow from "../components/ui/HeaderOverflow.vue";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useFilterRowFit } from "../composables/useFilterRowFit";
-import { useHeaderCollapse } from "../composables/useHeaderCollapse";
+import {
+	type HeaderCollapseItem,
+	useHeaderCollapse,
+} from "../composables/useHeaderCollapse";
 import {
 	JOBS_PAGE_SIZE,
 	useProjectBoard,
@@ -727,15 +736,49 @@ const chatPanel = ref<{ send: (text: string) => Promise<void> } | null>(null);
 
 // Logs moves into the "…" menu on a header row under 600px, then Watch
 // under 420px (a phone), and either sooner if the row would not fit (#1488).
+// On a phone the compact header is one line of chips and actions (#1576),
+// so Chat, Schedule, Queue and Add project follow, then the details and
+// instance icons, until the line fits; desktop keeps them all.
 const moreMenu = ref<{ trigger: HTMLElement | null } | null>(null);
+// A watch session's board is one agent's, so it queues when it has one project.
+const canQueue = computed(() => !aggregate.value || targets.value.length === 1);
+const singleLineHeader = computed(() => !smUp.value && !jobOpen.value);
+const collapseItems = computed((): HeaderCollapseItem[] => {
+	const items: HeaderCollapseItem[] = [{ id: "logs-toggle", below: 600 }];
+	if (filterTarget.value) items.push({ id: "project-mode-menu", below: 420 });
+	if (!singleLineHeader.value) return items;
+	items.push({ id: "prompt-chat-toggle" });
+	if (!aggregate.value) items.push({ id: "schedule-new" });
+	if (canQueue.value) items.push({ id: "queue-menu" });
+	if (aggregate.value) items.push({ id: "board-add-project" });
+	if (status.value) items.push({ id: "board-info" });
+	if (status.value?.instanceID) items.push({ id: "instance-tag" });
+	return items;
+});
 const headerCollapsed = useHeaderCollapse(
 	computed(() => moreMenu.value?.trigger),
-	() => (filterTarget.value ? 2 : 1),
-	[600, 420],
-	[aggregate, targets, smUp, () => status.value !== null],
+	() => collapseItems.value,
+	{
+		singleLine: () => singleLineHeader.value,
+		deps: [
+			aggregate,
+			targets,
+			smUp,
+			manual,
+			() => issueSummary.value?.label,
+			() => online.value,
+		],
+	},
 );
-const logsInMenu = computed(() => headerCollapsed.value >= 1);
-const watchInMenu = computed(() => headerCollapsed.value >= 2);
+// The items in the "…" menu instead of the header, never in both (#1486).
+const inMenu = computed(
+	() =>
+		new Set(
+			collapseItems.value.slice(0, headerCollapsed.value).map(({ id }) => id),
+		),
+);
+const logsInMenu = computed(() => inMenu.value.has("logs-toggle"));
+const watchInMenu = computed(() => inMenu.value.has("project-mode-menu"));
 
 async function onSummarize(job: ProjectJob) {
 	chatOpen.value = true;

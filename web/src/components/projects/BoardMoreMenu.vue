@@ -8,7 +8,40 @@
 		</DropdownMenuTrigger>
 		<DropdownMenuPortal>
 			<DropdownMenuContent align="end" :side-offset="6" :collision-padding="8" data-testid="board-more-items"
-				class="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-60 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+				class="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-60 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+				<template v-if="hidden.length">
+					<!-- The header items that moved here on a narrow phone, each
+						shown here or in the header, never both (#1486, #1576). -->
+					<DropdownMenuItem v-if="has('board-add-project')" data-testid="board-more-add-project" :class="itemClass"
+						@select="emit('addProject')">
+						<PlusIcon aria-hidden="true" :class="iconClass" />
+						<span>Add project</span>
+					</DropdownMenuItem>
+					<DropdownMenuItem v-if="has('schedule-new')" data-testid="board-more-schedule" :disabled="!canSchedule"
+						:class="itemClass" @select="emit('schedule')">
+						<CalendarDaysIcon aria-hidden="true" :class="iconClass" />
+						<span>Schedule task</span>
+					</DropdownMenuItem>
+					<DropdownMenuCheckboxItem v-if="has('prompt-chat-toggle')" data-testid="board-more-chat" :checked="chatOpen"
+						:class="itemClass" @update:checked="emit('update:chatOpen', $event)">
+						<ChatBubbleLeftRightIcon aria-hidden="true" :class="iconClass" />
+						<span class="flex-1">Prompt chat</span>
+						<DropdownMenuItemIndicator>
+							<CheckIcon aria-hidden="true" class="h-4 w-4" />
+						</DropdownMenuItemIndicator>
+					</DropdownMenuCheckboxItem>
+					<DropdownMenuSeparator v-if="has('queue-menu') && hasOtherAction" :class="separatorClass" />
+					<DropdownMenuGroup v-if="has('queue-menu')" data-testid="board-more-queue" aria-label="Queue">
+						<DropdownMenuLabel :class="labelClass">Queue</DropdownMenuLabel>
+						<DropdownMenuItem v-for="option in queueChoices" :key="option.skill" :disabled="option.disabled"
+							:data-testid="`board-more-queue-${option.skill}`" :title="option.title" :class="itemClass"
+							@select="emit('queue', option.skill)">
+							<component :is="option.icon" aria-hidden="true" :class="iconClass" />
+							<span>{{ option.label }}</span>
+						</DropdownMenuItem>
+					</DropdownMenuGroup>
+					<DropdownMenuSeparator v-if="hasAction" :class="separatorClass" />
+				</template>
 				<DropdownMenuItem data-testid="board-refresh" :disabled="checking" :class="itemClass"
 					@select="emit('refresh')">
 					<ArrowPathIcon aria-hidden="true" :class="[iconClass, { 'animate-spin': checking }]" />
@@ -41,6 +74,36 @@
 					<p v-if="mode.error.value" data-testid="board-mode-error" class="px-3 py-1.5 text-xs text-red-600 dark:text-red-400">
 						{{ mode.error.value }}
 					</p>
+				</template>
+				<template v-if="status && has('board-info')">
+					<DropdownMenuSeparator :class="separatorClass" />
+					<DropdownMenuGroup data-testid="board-more-info" aria-label="Board details">
+						<DropdownMenuLabel :class="labelClass">Board details</DropdownMenuLabel>
+						<!-- The filter editor takes its own keys, so the menu's
+							typeahead and Tab trap leave it alone; Esc cancels an
+							edit before it closes the menu. -->
+						<div class="px-3 py-1.5" @keydown="onDetailsKeydown">
+							<BoardDetailsList v-model:editing="editingFilter" :status="status" :manual="manual"
+								:filter-target="filterTarget" :now="now" @saved="emit('saved')" />
+						</div>
+					</DropdownMenuGroup>
+				</template>
+				<template v-if="status?.instanceID && has('instance-tag')">
+					<DropdownMenuSeparator :class="separatorClass" />
+					<DropdownMenuGroup data-testid="board-more-instance" aria-label="Instance">
+						<DropdownMenuLabel :class="labelClass">Instance</DropdownMenuLabel>
+						<p class="px-3 pb-1 text-xs text-gray-500 dark:text-gray-400">
+							<code data-testid="board-more-instance-id" class="font-mono text-sm font-bold tracking-wider text-gray-900 dark:text-white">{{ status.instanceID }}</code>
+							· signs its GitHub claims as <code class="font-mono">/aviary:{{ status.instanceID }}</code>
+						</p>
+						<DropdownMenuItem data-testid="board-more-instance-copy" :class="itemClass"
+							@select.prevent="copy(status.instanceID)">
+							<ClipboardDocumentIcon aria-hidden="true" :class="iconClass" />
+							<span class="flex-1">Copy instance ID</span>
+						</DropdownMenuItem>
+						<p data-testid="board-more-instance-copy-status" role="status" aria-live="polite"
+							class="px-3 text-xs text-gray-500 empty:hidden dark:text-gray-400">{{ copyStatus }}</p>
+					</DropdownMenuGroup>
 				</template>
 				<template v-if="targets.length">
 					<DropdownMenuSeparator :class="separatorClass" />
@@ -76,19 +139,27 @@
 // The Code Loop board header's "…" menu (#1488): Refresh, the clear actions
 // (#1460) and Settings always live here, and Logs and the issue discovery
 // (Watch) choice join them when the header is too narrow for their buttons.
-// Each clear action asks through the shared confirm dialog first.
+// Each clear action asks through the shared confirm dialog first. On a
+// narrow phone the header's other items move in too, one at a time, until
+// its single line fits (#1576): Chat, Schedule, Queue and Add project as
+// items, then the board details and instance popovers as sections.
 
 import CheckIcon from "@heroicons/vue/16/solid/CheckIcon";
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
+import CalendarDaysIcon from "@heroicons/vue/24/outline/CalendarDaysIcon";
+import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
+import ClipboardDocumentIcon from "@heroicons/vue/24/outline/ClipboardDocumentIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
 import EllipsisHorizontalIcon from "@heroicons/vue/24/outline/EllipsisHorizontalIcon";
 import EyeIcon from "@heroicons/vue/24/outline/EyeIcon";
 import EyeSlashIcon from "@heroicons/vue/24/outline/EyeSlashIcon";
+import PlusIcon from "@heroicons/vue/24/outline/PlusIcon";
 import TrashIcon from "@heroicons/vue/24/outline/TrashIcon";
 import {
 	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuItemIndicator,
 	DropdownMenuLabel,
@@ -101,6 +172,7 @@ import {
 } from "radix-vue";
 import { computed, ref } from "vue";
 import type { RouteLocationRaw } from "vue-router";
+import { useCopyText } from "../../composables/useCopyText";
 import { useMCP } from "../../composables/useMCP";
 import { useProjectMode } from "../../composables/useProjectMode";
 import { HEADER_ICON_CLS } from "../../lib/headerActions";
@@ -108,8 +180,12 @@ import {
 	PROJECT_MODES,
 	type ProjectMode,
 	type ProjectModeChoice,
+	type ProjectStatus,
+	type QueueSkill,
 } from "../../lib/projects";
 import ConfirmDialog from "../ui/ConfirmDialog.vue";
+import BoardDetailsList from "./BoardDetailsList.vue";
+import { queueOptions } from "./queueOptions";
 
 type ClearWhich = "done" | "failed" | "finished";
 interface ClearOption {
@@ -134,12 +210,31 @@ const props = defineProps<{
 	modeTarget: string | null;
 	manual: boolean;
 	defaultMode: ProjectMode;
+	/**
+	 * The data-testids of the header items moved into this menu (#1576):
+	 * board-add-project, queue-menu, schedule-new, prompt-chat-toggle,
+	 * board-info and instance-tag.
+	 */
+	hidden?: readonly string[];
+	/** The board's status, for its details and instance sections. */
+	status?: ProjectStatus | null;
+	/** The project whose filter the details edit; empty on aggregate boards. */
+	filterTarget?: string;
+	now?: number;
+	chatOpen?: boolean;
+	canSchedule?: boolean;
 }>();
 const emit = defineEmits<{
 	refresh: [];
 	"update:logsOpen": [open: boolean];
 	cleared: [count: number];
 	modeChanged: [mode: ProjectModeChoice];
+	addProject: [];
+	queue: [skill: QueueSkill];
+	schedule: [];
+	"update:chatOpen": [open: boolean];
+	/** The issue filter was saved or reset from the details section. */
+	saved: [];
 }>();
 
 const { callTool } = useMCP();
@@ -167,6 +262,31 @@ const iconClass = "h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400";
 const labelClass =
 	"px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400";
 const separatorClass = "my-1 h-px bg-gray-200 dark:bg-gray-700";
+
+const hidden = computed(() => props.hidden ?? []);
+const has = (id: string) => hidden.value.includes(id);
+const ACTIONS = [
+	"board-add-project",
+	"queue-menu",
+	"schedule-new",
+	"prompt-chat-toggle",
+];
+const hasAction = computed(() => ACTIONS.some(has));
+// Queue's section follows the other actions behind a separator of its own.
+const hasOtherAction = computed(() =>
+	ACTIONS.some((id) => id !== "queue-menu" && has(id)),
+);
+const queueChoices = computed(() => queueOptions(props.status?.noMerge));
+const filterTarget = computed(() => props.filterTarget ?? "");
+const now = computed(() => props.now ?? Date.now());
+
+const editingFilter = ref(false);
+function onDetailsKeydown(e: KeyboardEvent) {
+	if (e.key !== "Escape" || editingFilter.value) e.stopPropagation();
+}
+const { status: copyStatus, copy } = useCopyText(
+	"Couldn't copy; select the ID instead",
+);
 
 const pending = ref<ClearOption | null>(null);
 const single = computed(() => props.targets.length === 1);
