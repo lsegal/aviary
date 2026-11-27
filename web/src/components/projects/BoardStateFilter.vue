@@ -3,7 +3,7 @@
 		<template v-if="!collapsed">
 			<div id="job-filter" ref="segments" role="group" aria-label="Job filter" :class="SEGMENTS_CLS" data-testid="state-filter-segments">
 				<button v-for="state in BOARD_FILTERS" :key="state" type="button" :aria-pressed="filters.includes(state)"
-					:class="[SEGMENT_CLS, segmentTone(state)]" @click="emit('toggle', state)">
+					:class="[SEGMENT_CLS, tone(state)]" @click="emit('toggle', state)">
 					{{ stateLabel(state) }}<span v-if="counts[state] !== null" :class="BADGE_CLS">{{ counts[state] }}</span>
 				</button>
 			</div>
@@ -17,7 +17,7 @@
 				:class="filters.length ? 'border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'"
 				@click="open = !open">
 				<FunnelIcon aria-hidden="true" class="h-4 w-4 shrink-0" />
-				<span data-testid="filter-summary">{{ filters.length ? `Filters · ${filters.length}` : "Filters" }}</span>
+				<span data-testid="filter-summary">{{ label }}</span>
 				<ChevronDownIcon aria-hidden="true" class="h-4 w-4 shrink-0 transition-transform" :class="open && 'rotate-180'" />
 			</button>
 			<div v-if="open" id="job-filter" role="group" aria-label="Job filter"
@@ -44,7 +44,8 @@
 import CheckIcon from "@heroicons/vue/24/outline/CheckIcon";
 import ChevronDownIcon from "@heroicons/vue/24/outline/ChevronDownIcon";
 import FunnelIcon from "@heroicons/vue/24/outline/FunnelIcon";
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { filtersLabel, segmentTone } from "../../lib/boardFilterRow";
 import {
 	BOARD_FILTERS,
 	type BoardFilter,
@@ -69,25 +70,10 @@ const BADGE_CLS =
 const CLEAR_CLS =
 	"shrink-0 px-1 text-xs text-gray-500 hover:text-gray-800 hover:underline dark:text-gray-400 dark:hover:text-gray-100";
 
-// A selected segment tints with its state's color; Starting is orange.
-const SEGMENT_ON: Record<BoardFilter, string> = {
-	scheduled:
-		"bg-violet-100 text-violet-800 dark:bg-violet-900/60 dark:text-violet-100",
-	starting:
-		"bg-orange-100 text-orange-800 dark:bg-orange-900/60 dark:text-orange-100",
-	paused:
-		"bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-100",
-	running: "bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-100",
-	done: "bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-100",
-	failed: "bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-100",
-};
-
-function segmentTone(state: BoardFilter) {
-	if (props.filters.includes(state)) return SEGMENT_ON[state];
-	// Empty states dim but stay selectable.
-	const dim = props.counts[state] === 0 ? "opacity-60 " : "";
-	return `${dim}text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800`;
+function tone(state: BoardFilter) {
+	return segmentTone(state, props.filters.includes(state), props.counts[state]);
 }
+const label = computed(() => filtersLabel(props.filters.length));
 
 const root = ref<HTMLElement | null>(null);
 const segments = ref<HTMLElement | null>(null);

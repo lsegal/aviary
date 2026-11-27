@@ -271,6 +271,7 @@ import {
 	useProjectSchedules,
 } from "../composables/useProjects";
 import { useTaskPause } from "../composables/useTaskPause";
+import { filterCounts as countFilters } from "../lib/boardFilterRow";
 import {
 	HEADER_ADD_CLS,
 	HEADER_COLLAPSE_CLS,
@@ -287,7 +288,6 @@ import {
 } from "../lib/projectSettings";
 import {
 	age,
-	BOARD_FILTERS,
 	BOARD_STATES,
 	type BoardFilter,
 	type BoardState,
@@ -615,13 +615,7 @@ function chipCount(state: BoardFilter): number | null {
 	if (state === "scheduled") return schedules.value.length;
 	return status.value ? status.value.states[state] : null;
 }
-const filterCounts = computed(
-	() =>
-		Object.fromEntries(BOARD_FILTERS.map((s) => [s, chipCount(s)])) as Record<
-			BoardFilter,
-			number | null
-		>,
-);
+const filterCounts = computed(() => countFilters(chipCount));
 
 // Each board state's stat card, in its pill's colors; Starting is orange.
 const STATE_CARD: Record<BoardState, string> = {
