@@ -1,7 +1,7 @@
 import { onBeforeUnmount, onMounted, type Ref, ref, watch } from "vue";
 
-/** How long after a wheel, touch or key a scroll still counts as the user's. */
-const GESTURE_MS = 600;
+/** How long after a wheel or touch move a scroll still counts as the user's. */
+const GESTURE_MS = 400;
 
 // Only the shared page header's breadcrumb bar stays pinned; the title row
 // scrolls away with the page (#1437). The page's main column scrolls by the
@@ -10,8 +10,8 @@ const GESTURE_MS = 600;
 // the breadcrumb bar is sticky. A user's scroll inside one of the page's
 // scroll areas first scrolls the column until the title row is gone, so
 // the header leaves as the content moves, then scrolls the area itself.
-// Scrolling back up past an area's top reveals the header again through
-// the browser's own scroll chaining. Scrolls a page makes itself, such as
+// Scrolling back up past an area's top reveals the header again, in the
+// same wheel gesture rather than only the next one. Scrolls a page makes itself, such as
 // following new log lines, leave the header alone.
 export function useScrollAwayHeader(
 	main: Ref<HTMLElement | null | undefined>,
@@ -44,7 +44,11 @@ export function useScrollAwayHeader(
 			bar && col ? Math.max(0, col.clientHeight - bar.offsetHeight) : null;
 	}
 
-	function onGesture() {
+	// Only a downward wheel or a touch drag hides the header: a click or a
+	// key that makes the page scroll itself, such as a "More below" pill
+	// jumping to the end, must not.
+	function onGesture(e: Event) {
+		if (e instanceof WheelEvent && e.deltaY <= 0) return;
 		gestureAt = Date.now();
 	}
 
@@ -68,7 +72,35 @@ export function useScrollAwayHeader(
 		last.set(area, area.scrollTop);
 	}
 
-	const GESTURES = ["wheel", "touchmove", "keydown", "pointerdown"] as const;
+	/** The scroll area under the pointer that scrolls vertically, if any. */
+	function scrollArea(from: EventTarget | null, col: HTMLElement) {
+		for (
+			let el = from instanceof Element ? from : null;
+			el && el !== col;
+			el = el.parentElement
+		) {
+			if (el.scrollHeight <= el.clientHeight) continue;
+			const { overflowY } = getComputedStyle(el);
+			if (overflowY === "auto" || overflowY === "scroll") return el;
+		}
+		return null;
+	}
+
+	// Chrome keeps a wheel gesture on the area it started in, so a flick up
+	// stops at the area's top; the rest of it reveals the header.
+	function onWheel(e: WheelEvent) {
+		const col = main.value;
+		if (!col || !enabled.value || e.deltaY >= 0 || col.scrollTop <= 0) return;
+		if (e.ctrlKey || e.shiftKey) return;
+		const area = scrollArea(e.target, col);
+		if (!area || area.scrollTop > 0) return;
+		e.preventDefault();
+		const line = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1;
+		const page = e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? col.clientHeight : 1;
+		col.scrollTop += e.deltaY * line * page;
+	}
+
+	const GESTURES = ["wheel", "touchmove"] as const;
 
 	onMounted(() => {
 		observer = new ResizeObserver(measure);
@@ -79,6 +111,7 @@ export function useScrollAwayHeader(
 		col.addEventListener("scroll", onScroll, { capture: true, passive: true });
 		for (const g of GESTURES)
 			col.addEventListener(g, onGesture, { capture: true, passive: true });
+		col.addEventListener("wheel", onWheel, { passive: false });
 	});
 
 	// The header comes and goes with the route.
@@ -91,6 +124,7 @@ export function useScrollAwayHeader(
 		col.removeEventListener("scroll", onScroll, { capture: true });
 		for (const g of GESTURES)
 			col.removeEventListener(g, onGesture, { capture: true });
+		col.removeEventListener("wheel", onWheel);
 	});
 
 	return { pageHeight };
