@@ -137,3 +137,112 @@ func TestGHCLIListIssuesUsesTargetFilter(t *testing.T) {
 		t.Fatalf("filter after clearing overrides = %q", filter)
 	}
 }
+
+func TestSetGHRunCommandRoutesFilterChecks(t *testing.T) {
+	m := newTestManager(t)
+	calls := 0
+	m.SetGHRunCommand(func(context.Context, ...string) ([]byte, error) {
+		calls++
+		return []byte(`{"total_count": 3}`), nil
+	})
+	matches, err := m.CheckIssueFilter(context.Background(), "o/r", "label:bug")
+	if err != nil || matches != 3 || calls != 1 {
+		t.Fatalf("CheckIssueFilter = %d, %v after %d gh calls; want 3, nil after 1", matches, err, calls)
+	}
+}
+
+func TestCheckIssueFilterRejectsBeforeCallingGH(t *testing.T) {
+	m := newTestManager(t)
+	m.ghRunCommand = func(context.Context, ...string) ([]byte, error) {
+		t.Error("a rejected check reached GitHub")
+		return nil, errors.New("unexpected")
+	}
+	for _, tc := range []struct{ name, target, filter, want string }{
+		{"whitespace filter", "o/r", " \t\n ", "the filter is empty"},
+		{"invalid syntax", "o/r", "(label:bug", ""},
+		{"bad target", "not a target", "label:bug", "target must be OWNER/REPO"},
+	} {
+		matches, err := m.CheckIssueFilter(context.Background(), tc.target, tc.filter)
+		if err == nil || matches != 0 {
+			t.Errorf("%s: CheckIssueFilter = %d, %v; want 0 and an error", tc.name, matches, err)
+			continue
+		}
+		if tc.want != "" && !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %q, want it to contain %q", tc.name, err, tc.want)
+		}
+	}
+}
+
+func TestCheckIssueFilterCountsProjectIssues(t *testing.T) {
+	m := newTestManager(t)
+	var args []string
+	m.ghRunCommand = func(_ context.Context, a ...string) ([]byte, error) {
+		args = a
+		return []byte(`{"data":{"organization":{"projectV2":{"items":{"nodes":[` +
+			`{"id":"PVTI_1","fieldValueByName":{"name":"Todo"},"content":{"__typename":"Issue","number":1,"state":"OPEN","repository":{"nameWithOwner":"o/r"}}},` +
+			`{"id":"PVTI_2","fieldValueByName":{"name":"Todo"},"content":{"__typename":"PullRequest"}},` +
+			`{"id":"PVTI_3","fieldValueByName":{"name":"Done"},"content":{"__typename":"Issue","number":2,"state":"OPEN","repository":{"nameWithOwner":"o/r"}}}` +
+			`],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}}`), nil
+	}
+	matches, err := m.CheckIssueFilter(context.Background(), "https://github.com/orgs/o/projects/4", "label:bug")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matches != 2 {
+		t.Fatalf("matches = %d, want the 2 issue items", matches)
+	}
+	if !slices.Contains(args, "graphql") || !slices.Contains(args, "login=o") || !slices.Contains(args, "number=4") {
+		t.Fatalf("gh args = %q, want a project items query for o's project 4", args)
+	}
+	if !slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "itemQuery=") && strings.Contains(a, "label:bug") }) {
+		t.Fatalf("gh args = %q, want the filter in the item query", args)
+	}
+}
+
+func TestCheckIssueFilterWrapsProjectErrors(t *testing.T) {
+	m := newTestManager(t)
+	m.ghRunCommand = func(context.Context, ...string) ([]byte, error) {
+		return nil, errors.New("exit status 1")
+	}
+	_, err := m.CheckIssueFilter(context.Background(), "https://github.com/users/o/projects/3", "label:bug")
+	if err == nil || !strings.HasPrefix(err.Error(), "check filter: ") || !strings.Contains(err.Error(), "exit status 1") {
+		t.Fatalf("err = %v, want a wrapped project listing error", err)
+	}
+}
+
+func TestCheckIssueFilterRejectsMalformedSearch(t *testing.T) {
+	m := newTestManager(t)
+	m.ghRunCommand = func(context.Context, ...string) ([]byte, error) {
+		return []byte(`{"total_count": "many"`), nil
+	}
+	matches, err := m.CheckIssueFilter(context.Background(), "o/r", "label:bug")
+	if err == nil || matches != 0 || !strings.Contains(err.Error(), "check filter: decode search") {
+		t.Fatalf("CheckIssueFilter = %d, %v; want a decode error", matches, err)
+	}
+}
+
+func TestCheckIssueFilterSearchErrorFallbacks(t *testing.T) {
+	ghErr := errors.New("exit status 1")
+	for _, tc := range []struct{ name, output, want string }{
+		{"errors message", `{"message":"Validation Failed","errors":[{"message":""},{"message":"bad qualifier"}]}`, "bad qualifier"},
+		{"top-level message only", `gh: {"message":"API rate limit exceeded","errors":[]}`, "API rate limit exceeded"},
+		{"empty messages", `{"message":"","errors":[{"message":""}]}`, "check filter: exit status 1"},
+		{"malformed JSON", `{"message":`, "check filter: exit status 1"},
+		{"no JSON", "gh: could not connect", "check filter: exit status 1"},
+		{"no output", "", "check filter: exit status 1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newTestManager(t)
+			m.ghRunCommand = func(context.Context, ...string) ([]byte, error) {
+				return []byte(tc.output), ghErr
+			}
+			matches, err := m.CheckIssueFilter(context.Background(), "o/r", "label:bug")
+			if err == nil || matches != 0 || err.Error() != tc.want {
+				t.Fatalf("CheckIssueFilter = %d, %v; want 0, %q", matches, err, tc.want)
+			}
+			if strings.HasPrefix(tc.want, "check filter: ") && !errors.Is(err, ghErr) {
+				t.Fatalf("err = %v, want it to wrap gh's error", err)
+			}
+		})
+	}
+}

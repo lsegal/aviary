@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
@@ -155,5 +159,118 @@ func TestApplyGlobalFlagsHonoursRootFlags(t *testing.T) {
 	}
 	if dispatcher == prevDispatcher {
 		t.Fatal("the dispatcher was not rebuilt")
+	}
+}
+
+// runProjectToolCmd runs a generated aviary project subcommand for spec with
+// args and returns its output.
+func runProjectToolCmd(t *testing.T, spec projectToolCommand, args ...string) (string, error) {
+	t.Helper()
+	cmd := newProjectToolCommand(spec)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetContext(context.Background())
+	// RunE directly: Execute would run cobra.OnInitialize, which rebuilds the
+	// dispatcher from the real config.
+	err := cmd.RunE(cmd, args)
+	return out.String(), err
+}
+
+func TestProjectToolCommandUse(t *testing.T) {
+	cmd := newProjectToolCommand(projectToolCommand{[]string{"job", "get"}, "project_job_get", "number", "Show one job"})
+	if cmd.Use != "get [number] [--field value ...]" || cmd.Short != "Show one job" {
+		t.Fatalf("use = %q, short = %q", cmd.Use, cmd.Short)
+	}
+	if !strings.Contains(cmd.Long, "aviary tool project_job_get --help") {
+		t.Fatalf("long = %q", cmd.Long)
+	}
+	cmd = newProjectToolCommand(projectToolCommand{[]string{"status"}, "project_status", "", "Show status"})
+	if cmd.Use != "status [--field value ...]" {
+		t.Fatalf("use = %q", cmd.Use)
+	}
+}
+
+func TestProjectToolCommandRun(t *testing.T) {
+	startToolServer(t)
+	echo := projectToolCommand{[]string{"echo"}, "echo", "message", "Echo"}
+
+	tests := []struct {
+		name     string
+		spec     projectToolCommand
+		args     []string
+		want     string
+		wantErr  string
+		wantJSON map[string]any
+	}{
+		{name: "help shows the tool's fields", spec: echo, args: []string{"--help"}, want: "aviary tool echo [--count <value>] --message <value>"},
+		{name: "positional fills the field", spec: echo, args: []string{"hi", "--count", "2"}, wantJSON: map[string]any{"message": "hi", "count": float64(2)}},
+		{name: "field flags", spec: echo, args: []string{"--message", "hey", "--count=3"}, wantJSON: map[string]any{"message": "hey", "count": float64(3)}},
+		{name: "unknown tool", spec: projectToolCommand{[]string{"missing"}, "missing", "", "Missing"}, wantErr: `tool "missing" is not available`},
+		{name: "argument parse error", spec: echo, args: []string{"hi", "stray"}, wantErr: `unexpected argument "stray"`},
+		{name: "positional without a positional field", spec: projectToolCommand{[]string{"echo"}, "echo", "", "Echo"}, args: []string{"hi"}, wantErr: `unexpected argument "hi"`},
+		{name: "failed call", spec: projectToolCommand{[]string{"fail"}, "fail", "", "Fail"}, wantErr: "tool exploded"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := runProjectToolCmd(t, tt.spec, tt.args...)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want %q", err, tt.wantErr)
+				}
+				if out != "" {
+					t.Fatalf("a failed command printed %q", out)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.want != "" && !strings.Contains(out, tt.want) {
+				t.Fatalf("output %q does not contain %q", out, tt.want)
+			}
+			if tt.wantJSON != nil {
+				var got map[string]any
+				if err := json.Unmarshal([]byte(out), &got); err != nil {
+					t.Fatalf("output %q: %v", out, err)
+				}
+				if !reflect.DeepEqual(got, tt.wantJSON) {
+					t.Fatalf("payload = %v, want %v", got, tt.wantJSON)
+				}
+			}
+		})
+	}
+}
+
+// TestProjectToolCommandHonoursGlobalServerFlag checks a root --server flag,
+// which flag parsing would otherwise swallow, redirects the call.
+func TestProjectToolCommandHonoursGlobalServerFlag(t *testing.T) {
+	url := startToolServer(t)
+	prevServer, prevToken := serverURL, token
+	t.Cleanup(func() { serverURL, token = prevServer, prevToken })
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(dead.Close)
+	useRemoteDispatcher(t, dead.URL)
+
+	out, err := runProjectToolCmd(t, projectToolCommand{[]string{"echo"}, "echo", "message", "Echo"}, "--server", url, "--token=test-token", "hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != `{"message":"hi"}` {
+		t.Fatalf("output = %q", out)
+	}
+}
+
+func TestApplyGlobalFlagsKeepsFlagsItCannotApply(t *testing.T) {
+	prevServer, prevDispatcher := serverURL, dispatcher
+	t.Cleanup(func() { serverURL, dispatcher = prevServer, prevDispatcher })
+	serverURL = "https://localhost:2"
+	rest := applyGlobalFlags([]string{"-server", "x", "--number", "7", "--server"})
+	if want := []string{"-server", "x", "--number", "7", "--server"}; !reflect.DeepEqual(rest, want) {
+		t.Fatalf("rest = %v, want %v", rest, want)
+	}
+	if serverURL != "https://localhost:2" || dispatcher != prevDispatcher {
+		t.Fatalf("unapplied flags changed state: server %q", serverURL)
 	}
 }

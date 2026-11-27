@@ -13,6 +13,7 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
 	"github.com/lsegal/aviary/internal/projects"
+	"github.com/lsegal/aviary/internal/projects/core"
 	"github.com/lsegal/aviary/internal/store"
 )
 
@@ -73,14 +74,15 @@ func (s *Server) deliverToCodeLoop(source domain.OutputSource, target config.Tas
 	ref := target.Project + "#" + fmt.Sprint(target.Number)
 	delivery.Project, delivery.Number = target.Project, target.Number
 	delivery.Owner = s.projectOwner(target.Project)
-	if s.projects == nil {
+	messenger := s.codeLoopMessenger()
+	if messenger == nil {
 		return errors.New("the Code Loop engine is not running, so the output could not reach " + ref)
 	}
 	label := source.Label()
 	if source.Task == "" {
 		label = "Aviary"
 	}
-	outcome, _, err := s.projects.SendJobMessage(context.Background(), target.Project, target.Number, projects.InboxMessage{
+	outcome, _, err := messenger.SendJobMessage(context.Background(), target.Project, target.Number, projects.InboxMessage{
 		Source:    label,
 		SourceURL: taskRunPath(source),
 		Text:      text,
@@ -104,6 +106,24 @@ func (s *Server) deliverToCodeLoop(source domain.OutputSource, target config.Tas
 		delivery.Message = "delivered to Code Loop " + ref
 	}
 	return nil
+}
+
+// jobMessenger hands a message to a Code Loop job. *projects.Manager
+// implements it.
+type jobMessenger interface {
+	SendJobMessage(ctx context.Context, target string, number int, message projects.InboxMessage, options projects.JobDeliveryOptions) (string, core.JobSnapshot, error)
+}
+
+// codeLoopMessenger is what Code Loop deliveries go through, or nil when the
+// Code Loop engine is not running.
+func (s *Server) codeLoopMessenger() jobMessenger {
+	if s.jobMessenger != nil {
+		return s.jobMessenger
+	}
+	if s.projects == nil {
+		return nil
+	}
+	return s.projects
 }
 
 // projectOwner names the agent that owns project, or "" for a runtime watch.
