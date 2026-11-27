@@ -8,8 +8,8 @@ import (
 
 // printToolResult calls an MCP tool through the dispatcher and prints its
 // output followed by a newline.
-func printToolResult(cmd *cobra.Command, tool string, params map[string]any) error {
-	out, err := dispatcher.CallTool(cmd.Context(), tool, params)
+func printToolResult(cmd *cobra.Command, tool string, args any) error {
+	out, err := dispatcher.CallTool(cmd.Context(), tool, args)
 	if err != nil {
 		return err
 	}

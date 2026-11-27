@@ -155,9 +155,25 @@ func NewHydration(hydrate IssueHydrator, handled func(core.Issue) bool) *Hydrati
 	return &Hydration{hydrate: hydrate, handled: handled, hydrated: map[string]map[string]hydratedIssue{}}
 }
 
+// IssueSourceOptions configures NewIssueSource.
+type IssueSourceOptions struct {
+	// Hydrate and Handled build the source's Hydration; see NewHydration.
+	Hydrate IssueHydrator
+	Handled func(core.Issue) bool
+	// Filter is the issue search filter, and AllIssues lists every issue
+	// rather than only the filtered ones.
+	Filter    string
+	AllIssues bool
+	// Vision, when set, is the fallback reader for pages the extractor
+	// cannot read.
+	Vision *Vision
+	// Logf logs the source's progress.
+	Logf func(string, ...interface{})
+}
+
 // NewIssueSource builds the issue source browser mode polls with,
 // reading each target through its own tab of the shared browser.
-func NewIssueSource(browser *Browser, hydrate IssueHydrator, handled func(core.Issue) bool, filter string, allIssues bool, vision *Vision, logf func(string, ...interface{})) *IssueSource {
+func NewIssueSource(browser *Browser, options IssueSourceOptions) *IssueSource {
 	return &IssueSource{
 		pageFor: func(target string) (Page, error) {
 			tab, err := browser.Tab(target)
@@ -166,12 +182,12 @@ func NewIssueSource(browser *Browser, hydrate IssueHydrator, handled func(core.I
 			}
 			return tab, nil
 		},
-		filter:    filter,
-		allIssues: allIssues,
-		vision:    vision,
-		logf:      logf,
+		filter:    options.Filter,
+		allIssues: options.AllIssues,
+		vision:    options.Vision,
+		logf:      options.Logf,
 		profile:   browser.Profile(),
-		Hydration: NewHydration(hydrate, handled),
+		Hydration: NewHydration(options.Hydrate, options.Handled),
 		reported:  map[string]bool{},
 		lastURL:   map[string]string{},
 		lastRows:  map[string]string{},

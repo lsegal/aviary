@@ -50,28 +50,42 @@ func (m *Manager) SetAviaryAgentRunner(run AviaryAgentRunner) {
 // the server, which is the only place core's agents run.
 var errNoAviaryRunner = errors.New("in-process agents run only inside the aviary server")
 
-// runInProcess runs one turn of an in-process agent definition, with model
-// overriding the agent's default model when set, writing its
-// readable output to output and its structured events to log, which may be
-// nil. It returns the turn's error, so a stopped turn reports
-// context.Canceled.
-func (r CommandRunner) runInProcess(ctx context.Context, spec agentSpec, model, prompt, mediaURL, workdir string, hold *agent.TurnHold, usage agent.UsageSession, output io.Writer, log *transcript.Log) error {
+// inProcessTurn is one turn runInProcess runs.
+type inProcessTurn struct {
+	// model, when set, overrides the agent's default model.
+	model    string
+	prompt   string
+	mediaURL string
+	workdir  string
+	hold     *agent.TurnHold
+	usage    agent.UsageSession
+	// output receives the turn's readable output.
+	output io.Writer
+	// log, which may be nil, receives its structured events.
+	log *transcript.Log
+}
+
+// runInProcess runs one turn of an in-process agent definition, with the
+// turn's model overriding the agent's default model when set, writing its
+// readable output to the turn's output and its structured events to its log.
+// It returns the turn's error, so a stopped turn reports context.Canceled.
+func (r CommandRunner) runInProcess(ctx context.Context, spec agentSpec, turn inProcessTurn) error {
 	if r.Aviary == nil {
 		return errNoAviaryRunner
 	}
 	if strings.TrimSpace(spec.Model) == "" {
 		return fmt.Errorf("agent %q: name the Aviary agent to run, as %s/<agent>", spec.Name, spec.Name)
 	}
-	events := &inProcessEvents{output: output, log: log}
+	events := &inProcessEvents{output: turn.output, log: turn.log}
 	err := r.Aviary(ctx, AviaryAgentRun{
 		Agent:    spec.Model,
-		Model:    model,
-		Prompt:   prompt,
-		MediaURL: mediaURL,
-		Workdir:  workdir,
+		Model:    turn.model,
+		Prompt:   turn.prompt,
+		MediaURL: turn.mediaURL,
+		Workdir:  turn.workdir,
 		Event:    events.add,
-		Hold:     hold,
-		Usage:    usage,
+		Hold:     turn.hold,
+		Usage:    turn.usage,
 	})
 	events.flush()
 	return err
@@ -196,7 +210,15 @@ func (r CommandRunner) runInProcessJob(ctx context.Context, issue Issue, session
 	if recorder := r.transcriptRecorder(issue, ""); recorder != nil {
 		output = io.MultiWriter(recorder, output)
 	}
-	runErr := r.runInProcess(ctx, spec, session.Model, jobPrompt(r, issue, session), "", workdir, hold, agent.UsageSession{Name: jobUsageName(issue), Kind: domain.UsageKindJob, Owner: issueKey(issue)}, output, log)
+	runErr := r.runInProcess(ctx, spec, inProcessTurn{
+		model:   session.Model,
+		prompt:  jobPrompt(r, issue, session),
+		workdir: workdir,
+		hold:    hold,
+		usage:   agent.UsageSession{Name: jobUsageName(issue), Kind: domain.UsageKindJob, Owner: issueKey(issue)},
+		output:  output,
+		log:     log,
+	})
 	if metadataOutput != nil {
 		metadataOutput.Flush()
 	}

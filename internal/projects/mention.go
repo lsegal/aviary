@@ -189,11 +189,12 @@ func mentionScanRepos(targets []string, issues []Issue) []string {
 // cursors of their own, so one listing failing never skips the other's
 // window. listed is the "repo#number" keys the poll just listed.
 func (w *Engine) scanDirectMentions(ctx context.Context, scan *mentionScan, repos []string, listed map[string]bool, directMentions map[string]bool) {
+	poll := mentionPoll{listed: listed, directMentions: directMentions}
 	reviews, _ := w.Mentions.(ReviewMentionSource)
 	for _, repo := range repos {
-		w.scanMentionStream(ctx, scan, repo, repo, "recent comments", w.Mentions.RecentComments, nil, listed, directMentions)
+		w.scanMentionStream(ctx, scan, mentionStream{repo: repo, cursor: repo, label: "recent comments", list: w.Mentions.RecentComments}, poll)
 		if reviews != nil {
-			w.scanMentionStream(ctx, scan, repo, repo+" reviews", "recent pull request reviews", reviews.RecentReviewComments, nil, listed, directMentions)
+			w.scanMentionStream(ctx, scan, mentionStream{repo: repo, cursor: repo + " reviews", label: "recent pull request reviews", list: reviews.RecentReviewComments}, poll)
 		}
 	}
 	w.scanLinkedPullRequests(ctx, scan, repos, listed, directMentions)
@@ -206,23 +207,49 @@ func (w *Engine) scanDirectMentions(ctx context.Context, scan *mentionScan, repo
 // request in such a repository is never acted on, so the derived watch never
 // dispatches that repository's own issues.
 func (w *Engine) scanLinkedPullRequests(ctx context.Context, scan *mentionScan, covered []string, listed map[string]bool, directMentions map[string]bool) {
+	poll := mentionPoll{listed: listed, directMentions: directMentions}
 	reviews, _ := w.Mentions.(ReviewMentionSource)
 	for _, repo := range scan.linked.repos() {
 		if slices.ContainsFunc(covered, func(candidate string) bool { return strings.EqualFold(candidate, repo) }) {
 			continue
 		}
 		only := func(number int) bool { return len(scan.linked.issues(repo, number)) > 0 }
-		w.scanMentionStream(ctx, scan, repo, repo, "linked pull request comments", w.Mentions.RecentComments, only, listed, directMentions)
+		w.scanMentionStream(ctx, scan, mentionStream{repo: repo, cursor: repo, label: "linked pull request comments", list: w.Mentions.RecentComments, only: only}, poll)
 		if reviews != nil {
-			w.scanMentionStream(ctx, scan, repo, repo+" reviews", "linked pull request reviews", reviews.RecentReviewComments, only, listed, directMentions)
+			w.scanMentionStream(ctx, scan, mentionStream{repo: repo, cursor: repo + " reviews", label: "linked pull request reviews", list: reviews.RecentReviewComments, only: only}, poll)
 		}
 	}
 }
 
-// scanMentionStream reads one listing of repo's recent comments from the
-// cursor stored under cursor and acts on each new mention in it. When only is
-// set, comments on numbers it rejects are skipped.
-func (w *Engine) scanMentionStream(ctx context.Context, scan *mentionScan, repo, cursor, label string, list func(context.Context, string, time.Time) ([]RecentComment, error), only func(int) bool, listed map[string]bool, directMentions map[string]bool) {
+// mentionPoll is the poll a mention scan reports into.
+type mentionPoll struct {
+	// listed is the "repo#number" keys the poll just listed.
+	listed map[string]bool
+	// directMentions collects the keys of the issues authorized mentions
+	// address.
+	directMentions map[string]bool
+}
+
+// mentionStream is one listing of a repository's recent comments that
+// scanMentionStream reads.
+type mentionStream struct {
+	// repo is the repository listed.
+	repo string
+	// cursor names where the scan's position in this listing is stored.
+	cursor string
+	// label describes the listing in log lines.
+	label string
+	// list reads the comments updated since a time.
+	list func(context.Context, string, time.Time) ([]RecentComment, error)
+	// only, when set, skips comments on numbers it rejects.
+	only func(int) bool
+}
+
+// scanMentionStream reads one listing of the stream's repo's recent comments
+// from the cursor stored under its cursor and acts on each new mention in it.
+// When the stream sets only, comments on numbers it rejects are skipped.
+func (w *Engine) scanMentionStream(ctx context.Context, scan *mentionScan, stream mentionStream, poll mentionPoll) {
+	repo, cursor, label, list, only := stream.repo, stream.cursor, stream.label, stream.list, stream.only
 	since, ok := scan.since[cursor]
 	if !ok {
 		// An identity is new on every start, so nothing posted before this
@@ -262,7 +289,7 @@ func (w *Engine) scanMentionStream(ctx context.Context, scan *mentionScan, repo,
 		if scan.handled[key] {
 			continue
 		}
-		if !w.handleScannedMention(ctx, scan, repo, comment, listed, directMentions) {
+		if !w.handleScannedMention(ctx, scan, repo, comment, poll) {
 			// Verification failed rather than ruling the mention out, so the
 			// next scan tries it again from where this one started.
 			if next.After(comment.UpdatedAt.Add(-mentionScanOverlap)) {
@@ -287,12 +314,13 @@ func (w *Engine) scanMentionStream(ctx context.Context, scan *mentionScan, repo,
 // always on a pull request, so it addresses the issues that pull request
 // closes, or nothing. It reports false only when the mention could not be
 // verified and should be read again on the next scan.
-func (w *Engine) handleScannedMention(ctx context.Context, scan *mentionScan, repo string, comment RecentComment, listed map[string]bool, directMentions map[string]bool) bool {
-	w.reactToMention(ctx, repo, comment.Kind, comment.Number, comment.ID, comment.NodeID)
+func (w *Engine) handleScannedMention(ctx context.Context, scan *mentionScan, repo string, comment RecentComment, poll mentionPoll) bool {
+	listed, directMentions := poll.listed, poll.directMentions
+	w.reactToMention(ctx, repo, comment)
 	authorized := commenterAllowed(comment.Author, w.AllowedCommenters)
 	if authorized && w.Comments != nil && comment.Kind == ConversationComment {
 		var err error
-		authorized, err = authorizedDirectMention(ctx, w.Comments, repo, comment.Number, w.addressedTo, w.AllowedCommenters)
+		authorized, err = authorizedDirectMention(ctx, w.Comments, repo, comment.Number, w.mentionPolicy())
 		if err != nil {
 			w.logf("%s#%d failed to verify direct mention of instance %s: %v", repo, comment.Number, w.Identity, err)
 			return false
@@ -340,11 +368,12 @@ func (w *Engine) handleScannedMention(ctx context.Context, scan *mentionScan, re
 	return true
 }
 
-// reactToMention acknowledges a mention with the eyes reaction through the
-// endpoint its kind of comment needs: a review body is reached only through
-// its GraphQL node ID. A failure is logged and otherwise ignored, since the
-// reaction only tells a human the mention was read.
-func (w *Engine) reactToMention(ctx context.Context, repo string, kind CommentKind, number int, id int64, nodeID string) {
+// reactToMention acknowledges a mention, the comment on repo, with the eyes
+// reaction through the endpoint its kind of comment needs: a review body is
+// reached only through its GraphQL node ID. A failure is logged and otherwise
+// ignored, since the reaction only tells a human the mention was read.
+func (w *Engine) reactToMention(ctx context.Context, repo string, comment RecentComment) {
+	kind, number, id, nodeID := comment.Kind, comment.Number, comment.ID, comment.NodeID
 	var err error
 	switch kind {
 	case ConversationComment:

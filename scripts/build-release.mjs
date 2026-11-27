@@ -65,38 +65,41 @@ function releaseAssetURL(version, goos, goarch) {
 
 function renderHomebrewFormula(version, hashes) {
 	const formulaVersion = releaseVersion(version);
-	return `class Aviary < Formula
-  desc "Aviary: the AI Agent Nest"
-  homepage "https://aviary.bot"
-  license "MIT"
-  version "${formulaVersion}"
+	return `# frozen_string_literal: true
+
+# Installs the Aviary CLI and server from its GitHub release binaries.
+class Aviary < Formula
+  desc 'Aviary: the AI Agent Nest'
+  homepage 'https://aviary.bot'
+  license 'MIT'
+  version '${formulaVersion}'
 
   on_macos do
     on_arm do
-      url "${releaseAssetURL(version, "darwin", "arm64")}"
-      sha256 "${hashes.darwin_arm64}"
+      url '${releaseAssetURL(version, "darwin", "arm64")}'
+      sha256 '${hashes.darwin_arm64}'
     end
 
     on_intel do
-      url "${releaseAssetURL(version, "darwin", "amd64")}"
-      sha256 "${hashes.darwin_amd64}"
+      url '${releaseAssetURL(version, "darwin", "amd64")}'
+      sha256 '${hashes.darwin_amd64}'
     end
   end
 
   on_linux do
     on_arm do
-      url "${releaseAssetURL(version, "linux", "arm64")}"
-      sha256 "${hashes.linux_arm64}"
+      url '${releaseAssetURL(version, "linux", "arm64")}'
+      sha256 '${hashes.linux_arm64}'
     end
 
     on_intel do
-      url "${releaseAssetURL(version, "linux", "amd64")}"
-      sha256 "${hashes.linux_amd64}"
+      url '${releaseAssetURL(version, "linux", "amd64")}'
+      sha256 '${hashes.linux_amd64}'
     end
   end
 
   def install
-    bin.install "aviary"
+    bin.install 'aviary'
   end
 
   test do

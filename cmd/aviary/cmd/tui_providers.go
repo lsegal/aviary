@@ -132,7 +132,7 @@ func (m providerMgrModel) updateMethod(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m providerMgrModel) updateAPIKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	p := tuiProviders[m.cursor]
-	return m.updateCredentialInput(msg, &m.keyInput, credentialInput{
+	return m.updateCredentialInput(msg, func(m *providerMgrModel) *textinput.Model { return &m.keyInput }, credentialInput{
 		storeKey:   p.apiKey,
 		emptyError: "API key cannot be empty",
 		savedMsg:   p.name + " API key saved.",
@@ -141,7 +141,7 @@ func (m providerMgrModel) updateAPIKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m providerMgrModel) updateOAuth(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	p := tuiProviders[m.cursor]
-	return m.updateCredentialInput(msg, &m.codeInput, credentialInput{
+	return m.updateCredentialInput(msg, func(m *providerMgrModel) *textinput.Model { return &m.codeInput }, credentialInput{
 		storeKey:   p.oauthKey,
 		emptyError: "OAuth token/code cannot be empty",
 		savedMsg:   p.name + " OAuth credential saved.",
@@ -157,8 +157,9 @@ type credentialInput struct {
 }
 
 // updateCredentialInput handles key input for a single-field credential
-// prompt. input must point at a field of m.
-func (m providerMgrModel) updateCredentialInput(msg tea.KeyMsg, input *textinput.Model, ci credentialInput) (tea.Model, tea.Cmd) {
+// prompt. field selects the prompt's text input within the model.
+func (m providerMgrModel) updateCredentialInput(msg tea.KeyMsg, field func(*providerMgrModel) *textinput.Model, ci credentialInput) (tea.Model, tea.Cmd) {
+	input := field(&m)
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit

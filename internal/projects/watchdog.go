@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/clidefs"
 	"github.com/lsegal/aviary/internal/llm"
 	"github.com/lsegal/aviary/internal/process"
@@ -526,7 +525,7 @@ func (r CommandRunner) runUnblock(ctx context.Context, spec agentSpec, prompt st
 	}
 	if definition.InProcess {
 		var text bytes.Buffer
-		err := r.runInProcess(ctx, spec, "", prompt, "", os.TempDir(), nil, agent.UsageSession{}, &text, nil)
+		err := r.runInProcess(ctx, spec, inProcessTurn{prompt: prompt, workdir: os.TempDir(), output: &text})
 		return text.String(), err
 	}
 	call, err := newOneShotPrompt(definition, clidefs.Values{Prompt: prompt, Model: spec.Model, Level: spec.Level, Approval: r.Approval}, os.TempDir())

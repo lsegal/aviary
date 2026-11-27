@@ -47,7 +47,7 @@ type browserToolSpec struct {
 	requireTab      bool
 	requireSelector bool
 	// params builds the tool arguments after the tab/selector checks pass.
-	params func(args []string) (map[string]any, error)
+	params func(args []string) (any, error)
 }
 
 // newBrowserToolCmd builds a cobra command from a browserToolSpec.
@@ -74,7 +74,7 @@ func newBrowserToolCmd(spec browserToolSpec) *cobra.Command {
 
 // browserTextParams builds tab/selector/text arguments, preferring a
 // positional text argument over --text.
-func browserTextParams(args []string) (map[string]any, error) {
+func browserTextParams(args []string) (any, error) {
 	text := browserText
 	if len(args) > 0 {
 		text = args[0]
@@ -94,7 +94,7 @@ var browserOpenCmd = newBrowserToolCmd(browserToolSpec{
 	short: "Open a URL in a new browser tab and print its tab ID",
 	args:  cobra.ExactArgs(1),
 	tool:  "browser_open",
-	params: func(args []string) (map[string]any, error) {
+	params: func(args []string) (any, error) {
 		return map[string]any{"url": args[0]}, nil
 	},
 })
@@ -103,7 +103,7 @@ var browserTabsCmd = newBrowserToolCmd(browserToolSpec{
 	use:   "tabs",
 	short: "List all open browser tabs",
 	tool:  "browser_tabs",
-	params: func([]string) (map[string]any, error) {
+	params: func([]string) (any, error) {
 		return nil, nil
 	},
 })
@@ -114,7 +114,7 @@ var browserClickCmd = newBrowserToolCmd(browserToolSpec{
 	tool:            "browser_click",
 	requireTab:      true,
 	requireSelector: true,
-	params: func([]string) (map[string]any, error) {
+	params: func([]string) (any, error) {
 		return map[string]any{
 			"tab_id":   browserTabID,
 			"selector": browserSelector,
@@ -128,7 +128,7 @@ var browserNavigateCmd = newBrowserToolCmd(browserToolSpec{
 	args:       cobra.ExactArgs(1),
 	tool:       "browser_navigate",
 	requireTab: true,
-	params: func(args []string) (map[string]any, error) {
+	params: func(args []string) (any, error) {
 		return map[string]any{
 			"tab_id": browserTabID,
 			"url":    args[0],
@@ -161,7 +161,7 @@ var browserScreenshotCmd = newBrowserToolCmd(browserToolSpec{
 	short:      "Capture a screenshot of a tab",
 	tool:       "browser_screenshot",
 	requireTab: true,
-	params: func([]string) (map[string]any, error) {
+	params: func([]string) (any, error) {
 		return map[string]any{"tab_id": browserTabID}, nil
 	},
 })
@@ -172,7 +172,7 @@ var browserWaitCmd = newBrowserToolCmd(browserToolSpec{
 	tool:            "browser_wait",
 	requireTab:      true,
 	requireSelector: true,
-	params: func([]string) (map[string]any, error) {
+	params: func([]string) (any, error) {
 		return map[string]any{
 			"tab_id":     browserTabID,
 			"selector":   browserSelector,
@@ -186,7 +186,7 @@ var browserTextCmd = newBrowserToolCmd(browserToolSpec{
 	short:      "Extract normalized page text",
 	tool:       "browser_text",
 	requireTab: true,
-	params: func([]string) (map[string]any, error) {
+	params: func([]string) (any, error) {
 		return map[string]any{
 			"tab_id":     browserTabID,
 			"selector":   browserSelector,
@@ -201,7 +201,7 @@ var browserQueryCmd = newBrowserToolCmd(browserToolSpec{
 	tool:            "browser_query",
 	requireTab:      true,
 	requireSelector: true,
-	params: func([]string) (map[string]any, error) {
+	params: func([]string) (any, error) {
 		return map[string]any{
 			"tab_id":          browserTabID,
 			"selector":        browserSelector,
@@ -218,7 +218,7 @@ var browserEvalCmd = newBrowserToolCmd(browserToolSpec{
 	args:       cobra.ExactArgs(1),
 	tool:       "browser_eval",
 	requireTab: true,
-	params: func(args []string) (map[string]any, error) {
+	params: func(args []string) (any, error) {
 		return map[string]any{
 			"tab_id":     browserTabID,
 			"javascript": args[0],

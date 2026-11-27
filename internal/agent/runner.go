@@ -801,52 +801,50 @@ type toolCallEnv struct {
 }
 
 func (r *AgentRunner) executeToolCall(promptCtx context.Context, env toolCallEnv, name string, args map[string]any) (string, bool) {
-	emit, toolClient, sessionID, usageRec := env.emit, env.client, env.sessionID, env.usage
-	streamRec := toolEventRecord{Name: name}
 	// A held turn starts no new tool call until its hold is released.
 	if err := TurnHoldFromContext(promptCtx).Wait(promptCtx); err != nil {
-		emit(StreamEvent{Type: StreamEventStop})
+		env.emit(StreamEvent{Type: StreamEventStop})
 		return "", true
 	}
-	args = normalizeSessionToolArguments(name, sessionID, args)
-	streamRec.Args = args
+	args = normalizeSessionToolArguments(name, env.sessionID, args)
+	streamRec := toolEventRecord{Name: name, Args: args}
 	// The call, its result, and its history record share one ID, so a
 	// re-delivered event updates the call's chat entry instead of adding one.
 	// Providers' own call IDs are not unique across a session for every
 	// backend, so Aviary assigns its own.
 	streamRec.ID = newID("call")
-	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args}})
+	env.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args}})
 	if r.IsVerbose() {
-		emit(StreamEvent{Type: StreamEventStatus, Text: verboseStatusText(streamRec.Name, streamRec.Args)})
+		env.emit(StreamEvent{Type: StreamEventStatus, Text: verboseStatusText(streamRec.Name, streamRec.Args)})
 	}
-	if usageRec != nil {
-		usageRec.ToolCalls++
+	if env.usage != nil {
+		env.usage.ToolCalls++
 	}
-	untrack := trackSessionToolCall(r.agent.ID, sessionID, sessionToolCall{id: streamRec.ID, name: name, args: args, started: time.Now()})
-	resultText, shared, callErr := callToolOnce(promptCtx, toolClient, r.agent.ID, sessionID, name, args)
+	untrack := trackSessionToolCall(r.agent.ID, env.sessionID, sessionToolCall{id: streamRec.ID, name: name, args: args, started: time.Now()})
+	resultText, shared, callErr := callToolOnce(promptCtx, env.client, r.agent.ID, env.sessionID, name, args)
 	untrack()
 	if shared && callErr == nil {
 		resultText = sharedToolCallNote + resultText
 	}
 	if callErr != nil {
 		if errors.Is(callErr, context.Canceled) || promptCtx.Err() != nil {
-			emit(StreamEvent{Type: StreamEventStop})
+			env.emit(StreamEvent{Type: StreamEventStop})
 			return "", true
 		}
-		emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args, Error: callErr.Error(), Done: true}})
+		env.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args, Error: callErr.Error(), Done: true}})
 		errRec := toolEventRecord{ID: streamRec.ID, Name: name, Args: args, Error: callErr.Error()}
 		errPayload, _ := json.Marshal(errRec)
-		r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(errPayload), nil, "")
+		r.appendSessionMessage(env.sessionID, domain.MessageRoleTool, string(errPayload), nil, "")
 		return "error: " + callErr.Error(), false
 	}
 
-	emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args, Result: resultText, Done: true}})
+	env.emit(StreamEvent{Type: StreamEventTool, Tool: &ToolEvent{ID: streamRec.ID, Name: streamRec.Name, Args: streamRec.Args, Result: resultText, Done: true}})
 	if change, ok := FileChangeFromToolResult(name, resultText); ok {
-		emit(StreamEvent{Type: StreamEventFile, File: change})
+		env.emit(StreamEvent{Type: StreamEventFile, File: change})
 	}
 	histRec := toolEventRecord{ID: streamRec.ID, Name: name, Args: args, Result: resultText}
 	histPayload, _ := json.Marshal(histRec)
-	r.appendSessionMessage(sessionID, domain.MessageRoleTool, string(histPayload), nil, "")
+	r.appendSessionMessage(env.sessionID, domain.MessageRoleTool, string(histPayload), nil, "")
 	return resultText, false
 }
 

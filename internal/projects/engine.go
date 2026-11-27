@@ -4385,7 +4385,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				}
 				compiled := false
 				if runErr == nil && run.RunCompiled != nil && session.Update == "" {
-					compiled, fellBack = w.runCompiledProjectTask(runCtx, key, run, request.repository, output, updateSession)
+					compiled, fellBack = w.runCompiledProjectTask(runCtx, compiledProjectRun{key: key, run: run, repository: request.repository, output: output, updateSession: updateSession})
 				}
 				if runErr == nil && !compiled {
 					runErr = w.runRelayingInbox(runCtx, inboxRun{key: key, subject: "scheduled run " + key, intro: intro, issue: issue, output: output, updateSession: updateSession}, session)
@@ -4646,13 +4646,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				workMu.Lock()
 				pending := nudgesForIssue(nudges, event.Repository, event.IssueNumber)
 				workMu.Unlock()
-				for _, nudge := range pending {
-					select {
-					case nudge <- struct{}{}:
-						w.logf("issue #%d %s delivery concerns work in flight; checking it now", event.IssueNumber, webhookEventLabel(event))
-					default:
-					}
-				}
+				w.nudgeWorkInFlight(event, pending)
 			}
 			// A direct mention is intentionally not an ordinary comment refresh:
 			// it must survive a lagging issue search (or a transient list
@@ -4674,57 +4668,12 @@ func (w *Engine) Run(ctx context.Context) error {
 					w.logf("issue #%d direct mention is still pending; using the scheduled follow-up refresh", number)
 				}
 			}
-			if kind, ok := webhookMentionKind(event); ok && w.addressedTo(event.CommentBody) {
-				// Acknowledge the mention was read regardless of whether it goes on
-				// to authorize a run: a human watching the thread should
-				// see the eyes reaction even when the mention is stale or from an
-				// unauthorized commenter, since either way this instance saw it.
-				w.reactToMention(ctx, event.Repository, kind, event.IssueNumber, event.CommentID, event.CommentNodeID)
-				// A mention in the webhook payload alone is not enough to trigger a
-				// run: the mentioning comment must also come from an
-				// allowed commenter and be on GitHub as delivered, reverified there
-				// rather than trusted from the delivery. A conversation comment
-				// must also still be the thread's last comment.
-				authorized := commenterAllowed(event.CommentAuthor, w.AllowedCommenters)
-				if authorized && w.Comments != nil {
-					var err error
-					if kind == ConversationComment {
-						authorized, err = authorizedDirectMention(ctx, w.Comments, event.Repository, event.IssueNumber, w.addressedTo, w.AllowedCommenters)
-					} else if lister, ok := w.Comments.(ReviewCommentLister); ok {
-						authorized, err = reviewMentionOnGitHub(ctx, lister, event.Repository, event.IssueNumber, event.CommentBody, event.CommentAuthor)
-					}
-					if err != nil {
-						w.logf("issue #%d failed to verify direct mention of instance %s%s: %v", event.IssueNumber, w.Identity, mentionLocationSuffix(kind), err)
-						authorized = false
-					}
+			if key, queued := w.acceptWebhookMention(ctx, event, mentions, directMentions); queued {
+				if err := poll(nil); err != nil && ctx.Err() == nil {
+					reportPollError("direct-mention", err)
 				}
-				keys := webhookMentionKeys(event)
-				if event.OnPullRequest {
-					keys = mentions.linkedIssueKeys(event.Repository, event.IssueNumber, keys)
-				}
-				if !authorized && kind == ConversationComment {
-					w.logf("issue #%d ignoring direct mention of instance %s: not the last comment or not from an allowed commenter", event.IssueNumber, w.Identity)
-				} else if !authorized {
-					w.logf("pull request #%d ignoring direct mention of instance %s in %s: not from an allowed commenter or not found on GitHub", event.IssueNumber, w.Identity, mentionLocation(kind))
-				} else if event.OnPullRequest && len(keys) == 0 {
-					w.logf("pull request #%d directly mentioned instance %s%s, but it closes no issue to run", event.IssueNumber, w.Identity, mentionLocationSuffix(kind))
-				} else if len(keys) > 0 {
-					key := keys[0]
-					for _, mentioned := range keys {
-						directMentions[mentioned] = true
-						mentions.comments[mentioned] = mentionComment{Kind: kind, Repository: event.Repository, Number: event.IssueNumber, ID: event.CommentID, Author: event.CommentAuthor}
-					}
-					if event.OnPullRequest {
-						w.logf("pull request #%d directly mentioned instance %s%s; refreshing for a threaded gh-fix run on %s", event.IssueNumber, w.Identity, mentionLocationSuffix(kind), formatIssueRefs(event.ClosesIssues))
-					} else {
-						w.logf("issue #%d directly mentioned instance %s; refreshing for a threaded gh-fix run", event.IssueNumber, w.Identity)
-					}
-					if err := poll(nil); err != nil && ctx.Err() == nil {
-						reportPollError("direct-mention", err)
-					}
-					followQueuedRun(key, event.IssueNumber)
-					continue
-				}
+				followQueuedRun(key, event.IssueNumber)
+				continue
 			}
 			// The payload alone decides whether this delivery could have
 			// changed dispatchable work. Pushes, pull request activity, and
@@ -4792,11 +4741,12 @@ func (w *Engine) Run(ctx context.Context) error {
 				jobMu.Lock()
 				status := jobs[key].Status
 				jobMu.Unlock()
-				if status == "failed" {
-					delete(retryAfterStop, key)
-					if err := poll(nil); err != nil && ctx.Err() == nil {
-						reportPollError("retry", err)
-					}
+				if status != "failed" {
+					continue
+				}
+				delete(retryAfterStop, key)
+				if err := poll(nil); err != nil && ctx.Err() == nil {
+					reportPollError("retry", err)
 				}
 			}
 			if len(directMentions) > 0 {
@@ -4809,13 +4759,7 @@ func (w *Engine) Run(ctx context.Context) error {
 				stateReloadTimer = time.NewTimer(stateReloadDebounce)
 				stateReload = stateReloadTimer.C
 			} else {
-				if !stateReloadTimer.Stop() {
-					select {
-					case <-stateReloadTimer.C:
-					default:
-					}
-				}
-				stateReloadTimer.Reset(stateReloadDebounce)
+				restartTimer(stateReloadTimer, stateReloadDebounce)
 			}
 		case <-stateReload:
 			stateReloadTimer = nil
@@ -5322,6 +5266,94 @@ func mergedWorkState(ctx context.Context, checker WorkClosureChecker, issue Issu
 	}
 	number, ok := mergedWork(state)
 	return state, number, ok
+}
+
+// nudgeWorkInFlight asks the watcher of each run in pending, the runs
+// working the issue event is about, to check GitHub now.
+func (w *Engine) nudgeWorkInFlight(event WebhookEvent, pending []chan struct{}) {
+	for _, nudge := range pending {
+		if trySignal(nudge) {
+			w.logf("issue #%d %s delivery concerns work in flight; checking it now", event.IssueNumber, webhookEventLabel(event))
+		}
+	}
+}
+
+// acceptWebhookMention handles a webhook delivery that may directly mention
+// this instance. A mention addressed to it is acknowledged with a reaction
+// whether or not it goes on to authorize a run: a human watching the thread
+// should see the eyes reaction even when the mention is stale or from an
+// unauthorized commenter, since either way this instance saw it. An
+// authorized mention is recorded in directMentions under every issue it
+// addresses, and acceptWebhookMention reports the first of them.
+func (w *Engine) acceptWebhookMention(ctx context.Context, event WebhookEvent, mentions *mentionScan, directMentions map[string]bool) (string, bool) {
+	kind, ok := webhookMentionKind(event)
+	if !ok || !w.addressedTo(event.CommentBody) {
+		return "", false
+	}
+	w.reactToMention(ctx, event.Repository, RecentComment{Kind: kind, Number: event.IssueNumber, ID: event.CommentID, NodeID: event.CommentNodeID})
+	authorized := w.verifyWebhookMention(ctx, event, kind)
+	keys := webhookMentionKeys(event)
+	if event.OnPullRequest {
+		keys = mentions.linkedIssueKeys(event.Repository, event.IssueNumber, keys)
+	}
+	switch {
+	case !authorized && kind == ConversationComment:
+		w.logf("issue #%d ignoring direct mention of instance %s: not the last comment or not from an allowed commenter", event.IssueNumber, w.Identity)
+		return "", false
+	case !authorized:
+		w.logf("pull request #%d ignoring direct mention of instance %s in %s: not from an allowed commenter or not found on GitHub", event.IssueNumber, w.Identity, mentionLocation(kind))
+		return "", false
+	case event.OnPullRequest && len(keys) == 0:
+		w.logf("pull request #%d directly mentioned instance %s%s, but it closes no issue to run", event.IssueNumber, w.Identity, mentionLocationSuffix(kind))
+		return "", false
+	case len(keys) == 0:
+		return "", false
+	}
+	for _, mentioned := range keys {
+		directMentions[mentioned] = true
+		mentions.comments[mentioned] = mentionComment{Kind: kind, Repository: event.Repository, Number: event.IssueNumber, ID: event.CommentID, Author: event.CommentAuthor}
+	}
+	if event.OnPullRequest {
+		w.logf("pull request #%d directly mentioned instance %s%s; refreshing for a threaded gh-fix run on %s", event.IssueNumber, w.Identity, mentionLocationSuffix(kind), formatIssueRefs(event.ClosesIssues))
+	} else {
+		w.logf("issue #%d directly mentioned instance %s; refreshing for a threaded gh-fix run", event.IssueNumber, w.Identity)
+	}
+	return keys[0], true
+}
+
+// verifyWebhookMention reports whether a delivered mention of kind may
+// trigger a run. The payload alone is not enough: the mentioning comment must
+// also come from an allowed commenter and be on GitHub as delivered,
+// reverified there rather than trusted from the delivery. A conversation
+// comment must also still be the thread's last comment.
+func (w *Engine) verifyWebhookMention(ctx context.Context, event WebhookEvent, kind CommentKind) bool {
+	authorized := commenterAllowed(event.CommentAuthor, w.AllowedCommenters)
+	if !authorized || w.Comments == nil {
+		return authorized
+	}
+	var err error
+	if kind == ConversationComment {
+		authorized, err = authorizedDirectMention(ctx, w.Comments, event.Repository, event.IssueNumber, w.mentionPolicy())
+	} else if lister, ok := w.Comments.(ReviewCommentLister); ok {
+		authorized, err = reviewMentionOnGitHub(ctx, lister, event.Repository, event.IssueNumber, event.CommentBody, event.CommentAuthor)
+	}
+	if err != nil {
+		w.logf("issue #%d failed to verify direct mention of instance %s%s: %v", event.IssueNumber, w.Identity, mentionLocationSuffix(kind), err)
+		return false
+	}
+	return authorized
+}
+
+// restartTimer stops timer, drains a tick it already fired, and restarts it
+// to fire after d.
+func restartTimer(timer *time.Timer, d time.Duration) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timer.Reset(d)
 }
 
 // trySignal sends on ch without blocking, and reports whether it did. A nil

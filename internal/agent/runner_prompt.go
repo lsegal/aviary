@@ -19,9 +19,9 @@ const maxToolRounds = 200
 
 // promptRun holds the state of one prompt turn run by promptCore.
 type promptRun struct {
-	r                  *AgentRunner
-	ctx                context.Context
-	cancel             context.CancelFunc
+	r      *AgentRunner
+	ctx    context.Context
+	cancel context.CancelFunc
 	promptRequest
 
 	sessionID             string
