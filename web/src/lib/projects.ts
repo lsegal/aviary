@@ -1094,11 +1094,20 @@ export interface UpcomingRun {
 	at: string;
 }
 
+/**
+ * The upcoming runs as the "Up next" strip shows them: each task's soonest
+ * fire only, soonest first, so a task that fires every minute takes one chip
+ * and leaves room for other tasks.
+ */
 export function normalizeUpcoming(v: unknown): UpcomingRun[] {
-	return arr(v).map((u) => {
+	const runs = new Map<string, UpcomingRun>();
+	for (const u of arr(v)) {
 		const raw = obj(u);
-		return { id: str(raw.task_id), name: str(raw.name), at: str(raw.at) };
-	});
+		const run = { id: str(raw.task_id), name: str(raw.name), at: str(raw.at) };
+		const prev = runs.get(run.id);
+		if (!prev || Date.parse(run.at) < Date.parse(prev.at)) runs.set(run.id, run);
+	}
+	return [...runs.values()].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
 
 /**

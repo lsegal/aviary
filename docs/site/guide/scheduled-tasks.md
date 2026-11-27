@@ -195,7 +195,7 @@ A running job streams its output, a line at a time, into the **Live Output** pan
 | `task_delete` | `aviary task rm <name>` | Delete a task file; `delete_data` (`--delete-data`) also deletes its session and run history |
 | `task_session` | | The task's session, which every run shares, titled with the task's name |
 
-| `task_upcoming` | | Next fires across enabled tasks (default 5, at most 3 per task), optionally for one project |
+| `task_upcoming` | | Next fires across enabled tasks (default 5, at most 1 per task), optionally for one project |
 
 `aviary task add` and `update` take every trigger field as a flag (`--schedule`, `--trigger`, `--every`, `--at`, `--days`, `--timezone`, `--start-at`, `--overlap`, `--missed`); `--days` also accepts ranges such as `mon-fri`. The agent may be omitted when only one agent exists.
 
