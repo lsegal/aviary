@@ -8,7 +8,7 @@
 		</DropdownMenuTrigger>
 		<DropdownMenuPortal>
 			<DropdownMenuContent align="end" :side-offset="6" :collision-padding="8" data-testid="board-more-items"
-				class="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-60 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+				class="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-60 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
 				<template v-if="hidden.length">
 					<!-- The header items that moved here on a narrow phone, each
 						shown here or in the header, never both (#1486, #1576). -->
@@ -17,24 +17,15 @@
 						<PlusIcon aria-hidden="true" :class="iconClass" />
 						<span>Add project</span>
 					</DropdownMenuItem>
-					<DropdownMenuSub v-if="has('queue-menu')">
-						<DropdownMenuSubTrigger data-testid="board-more-queue" :class="itemClass">
-							<PlusIcon aria-hidden="true" :class="iconClass" />
-							<span class="flex-1">Queue</span>
-							<ChevronRightIcon aria-hidden="true" class="h-4 w-4" />
-						</DropdownMenuSubTrigger>
-						<DropdownMenuPortal>
-							<DropdownMenuSubContent :side-offset="4" :collision-padding="8" data-testid="board-more-queue-items"
-								class="z-50 min-w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-								<DropdownMenuItem v-for="option in queueChoices" :key="option.skill" :disabled="option.disabled"
-									:data-testid="`board-more-queue-${option.skill}`" :title="option.title" :class="itemClass"
-									@select="emit('queue', option.skill)">
-									<component :is="option.icon" aria-hidden="true" :class="iconClass" />
-									<span>{{ option.label }}</span>
-								</DropdownMenuItem>
-							</DropdownMenuSubContent>
-						</DropdownMenuPortal>
-					</DropdownMenuSub>
+					<DropdownMenuGroup v-if="has('queue-menu')" data-testid="board-more-queue" aria-label="Queue">
+						<DropdownMenuLabel :class="labelClass">Queue</DropdownMenuLabel>
+						<DropdownMenuItem v-for="option in queueChoices" :key="option.skill" :disabled="option.disabled"
+							:data-testid="`board-more-queue-${option.skill}`" :title="option.title" :class="itemClass"
+							@select="emit('queue', option.skill)">
+							<component :is="option.icon" aria-hidden="true" :class="iconClass" />
+							<span>{{ option.label }}</span>
+						</DropdownMenuItem>
+					</DropdownMenuGroup>
 					<DropdownMenuItem v-if="has('schedule-new')" data-testid="board-more-schedule" :disabled="!canSchedule"
 						:class="itemClass" @select="emit('schedule')">
 						<CalendarDaysIcon aria-hidden="true" :class="iconClass" />
@@ -153,7 +144,6 @@
 // items, then the board details and instance popovers as sections.
 
 import CheckIcon from "@heroicons/vue/16/solid/CheckIcon";
-import ChevronRightIcon from "@heroicons/vue/16/solid/ChevronRightIcon";
 import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import CalendarDaysIcon from "@heroicons/vue/24/outline/CalendarDaysIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
@@ -177,9 +167,6 @@ import {
 	DropdownMenuRadioItem,
 	DropdownMenuRoot,
 	DropdownMenuSeparator,
-	DropdownMenuSub,
-	DropdownMenuSubContent,
-	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "radix-vue";
 import { computed, ref } from "vue";
