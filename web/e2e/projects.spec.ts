@@ -3811,7 +3811,8 @@ test("the page's own scrolls and focus leave the Code Loop header shown (#1437)"
 	await expect
 		.poll(async () => (await titleRow.boundingBox())?.y)
 		.toBeLessThan((row?.y ?? 0) - 10);
-	await page.getByRole("button", { name: "Logs" }).focus();
+	// On a phone Logs is in the "…" menu (#1488); Prompt chat stays a button.
+	await page.getByRole("button", { name: "Prompt chat" }).focus();
 	await expect
 		.poll(async () => (await titleRow.boundingBox())?.y)
 		.toBeCloseTo(row?.y ?? 0, 0);
