@@ -14,8 +14,8 @@
 					<ArrowPathIcon aria-hidden="true" :class="[iconClass, { 'animate-spin': checking }]" />
 					<span>Refresh</span>
 				</DropdownMenuItem>
-				<DropdownMenuCheckboxItem v-if="logsInMenu" data-testid="board-logs" :model-value="logsOpen"
-					:class="itemClass" @update:model-value="emit('update:logsOpen', $event)">
+				<DropdownMenuCheckboxItem v-if="logsInMenu" data-testid="board-logs" :checked="logsOpen"
+					:class="itemClass" @update:checked="emit('update:logsOpen', $event)">
 					<DocumentTextIcon aria-hidden="true" :class="iconClass" />
 					<span class="flex-1">Logs</span>
 					<DropdownMenuItemIndicator>

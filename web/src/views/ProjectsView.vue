@@ -791,12 +791,13 @@ watch(logsOpen, (open) =>
 );
 const chatPanel = ref<{ send: (text: string) => Promise<void> } | null>(null);
 
-// Logs, then Watch, move into the "…" menu when the header row is too
-// narrow for their buttons (#1488).
+// Logs moves into the "…" menu on a header row under 600px, then Watch
+// under 420px (a phone), and either sooner if the row would not fit (#1488).
 const moreMenu = ref<{ trigger: HTMLElement | null } | null>(null);
 const headerCollapsed = useHeaderCollapse(
 	computed(() => moreMenu.value?.trigger),
 	() => (filterTarget.value ? 2 : 1),
+	[600, 420],
 	[aggregate, targets, smUp, () => status.value !== null],
 );
 const logsInMenu = computed(() => headerCollapsed.value >= 1);

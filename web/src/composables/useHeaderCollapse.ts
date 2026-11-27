@@ -1,13 +1,14 @@
 // How many of a page header's optional icon buttons move into its "…" menu
-// so the action row stays on one line (#1488). The Code Loop board drops
-// Logs first, then Watch, as the header narrows.
+// (#1488). The Code Loop board drops Logs first, then Watch, as the header
+// narrows, so a phone's row keeps only the buttons that matter most.
 //
 // The actions sit in SettingsPageHeader's settings-actions row, which never
-// wraps and is at most as wide as the title row's content box. Every
-// optional button is a HEADER_ICON_CLS square (36px) plus the row's 8px gap,
-// so the row's full width is its current width plus that much per button
-// already in the menu; the count is the fewest buttons to drop for that to
-// fit. Measuring that way keeps the result stable as buttons come and go.
+// wraps and is at most as wide as the title row's content box. A button
+// moves into the menu below its width threshold, and also whenever the row
+// would not fit otherwise. Every optional button is a HEADER_ICON_CLS square
+// (36px) plus the row's 8px gap, so the row's full width is its current
+// width plus that much per button already in the menu. Measuring that way
+// keeps the result stable as buttons come and go.
 
 import {
 	nextTick,
@@ -25,16 +26,20 @@ export const HEADER_OPTIONAL_SLOT_PX = 44;
 /**
  * The number of buttons to move into the menu so that a row now `width`
  * wide, with `dropped` buttons already moved, fits in `available`, at most
- * `optional`.
+ * `optional`. The i-th button also moves below `thresholds[i]` pixels.
  */
 export function collapsedCount(
 	width: number,
 	dropped: number,
 	available: number,
 	optional: number,
+	thresholds: readonly number[] = [],
 ): number {
 	const full = width + dropped * HEADER_OPTIONAL_SLOT_PX;
-	let count = 0;
+	let count = Math.min(
+		optional,
+		thresholds.filter((t) => available < t).length,
+	);
 	while (count < optional && full - count * HEADER_OPTIONAL_SLOT_PX > available)
 		count++;
 	return count;
@@ -42,13 +47,15 @@ export function collapsedCount(
 
 /**
  * Watches the header row holding `anchor` and returns how many of its
- * `optional()` buttons belong in the menu. Outside a header row, such as in
+ * `optional()` buttons belong in the menu, the i-th one at least below
+ * `thresholds[i]` pixels of row. Outside a header row, such as in
  * HeaderOverflow's popover, nothing collapses. `deps` re-measures when the
  * row's contents change without resizing it.
  */
 export function useHeaderCollapse(
 	anchor: Ref<HTMLElement | null | undefined>,
 	optional: () => number,
+	thresholds: readonly number[] = [],
 	deps: WatchSource[] = [],
 ): Ref<number> {
 	const collapsed = ref(0);
@@ -75,6 +82,7 @@ export function useHeaderCollapse(
 			Math.min(collapsed.value, max),
 			available,
 			max,
+			thresholds,
 		);
 		observe([row, titleRow]);
 	}
