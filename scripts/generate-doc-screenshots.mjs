@@ -74,7 +74,8 @@ function usageRecord({
 	};
 }
 
-const docsVersion = "0.7.3";
+// A release build reports its tag, so the sidebar label links to release notes.
+const docsVersion = "v1.0.1";
 
 const versionPayload = {
 	latestVersion: docsVersion,
@@ -396,6 +397,72 @@ const usageFixtures = {
 		}),
 	],
 };
+
+// Names the Sessions table shows; usage_sessions pages them on the server.
+const usageSessionNames = {
+	"sess-main": "Main Chat",
+	"sess-triage": "Inbox triage",
+	"sess-research": "Pricing page research",
+	"sess-research-2": "Competitor feature matrix",
+	"sess-research-3": "Weekly market notes",
+	"sess-ops": "Deploy checklist",
+	"sess-ops-2": "Certificate renewals",
+	"sess-support": "Support follow-ups",
+};
+
+function usageSessionsPage(args = {}) {
+	const bySession = new Map();
+	for (const r of usageFixtures.usage_query) {
+		if (r.project) continue;
+		let s = bySession.get(r.session_id);
+		if (!s) {
+			s = {
+				session_id: r.session_id,
+				agent_id: r.agent_id,
+				model: r.model,
+				provider: r.provider,
+				input: 0,
+				output: 0,
+				cache_read: 0,
+				cache_write: 0,
+				tool_calls: 0,
+				messages: 0,
+				has_error: false,
+				has_throttle: false,
+				first_ts: r.timestamp,
+				last_ts: r.timestamp,
+				name: usageSessionNames[r.session_id] ?? r.session_id,
+				kind: "chat",
+			};
+			bySession.set(r.session_id, s);
+		}
+		s.input += r.input_tokens;
+		s.output += r.output_tokens;
+		s.cache_read += r.cache_read_tokens ?? 0;
+		s.cache_write += r.cache_write_tokens ?? 0;
+		s.tool_calls += r.tool_calls ?? 0;
+		s.messages += 2;
+		s.has_error ||= Boolean(r.has_error);
+		s.has_throttle ||= Boolean(r.has_throttle);
+		if (r.timestamp < s.first_ts) s.first_ts = r.timestamp;
+		if (r.timestamp > s.last_ts) s.last_ts = r.timestamp;
+	}
+	const sessions = [...bySession.values()].sort((a, b) =>
+		b.last_ts.localeCompare(a.last_ts),
+	);
+	const offset = args.offset ?? 0;
+	const limit = args.limit ?? 50;
+	return {
+		sessions: sessions.slice(offset, offset + limit),
+		total: sessions.length,
+		offset,
+		limit,
+		agents: [...new Set(sessions.map((s) => s.agent_id))].sort(),
+		models: [...new Set(sessions.map((s) => s.model))].sort(),
+	};
+}
+
+usageFixtures.usage_sessions = usageSessionsPage;
 
 // The configuration every page loads: the sidebar lists its agents and their
 // sessions, tasks and channels.
@@ -776,7 +843,7 @@ function codingSkill(name, summary, runByProjects, outdatedIn = []) {
 			cli: cli.id,
 			installed: true,
 			current: !outdatedIn.includes(cli.id),
-			version: outdatedIn.includes(cli.id) ? "0.7.1" : docsVersion,
+			version: outdatedIn.includes(cli.id) ? "v1.0.0" : docsVersion,
 			source: "lsegal/aviary",
 		})),
 	};
