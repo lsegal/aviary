@@ -1577,7 +1577,7 @@ test("the Scheduled chip counts, filters and persists with the job state chips",
 	// Scheduled alone shows only the scheduled items.
 	await chip(page, "Scheduled").click();
 	await expect(page).toHaveURL(/[?&]state=scheduled$/);
-	await expect(chip(page, "Scheduled")).toHaveClass(/bg-violet-600/);
+	await expect(chip(page, "Scheduled")).toHaveClass(/bg-violet-100/);
 	await expect(scheduled).toHaveCount(2);
 	await expect(jobs).toHaveCount(0);
 	await expect(total).toHaveText(/^2 of \d+ items$/);
@@ -1630,7 +1630,7 @@ test("a mobile board folds the filter chips into a Filter button", async ({
 	).toBeVisible();
 	await expect(toggle).toBeVisible();
 	await expect(toggle).toHaveAttribute("aria-expanded", "false");
-	await expect(toggle).toHaveText("Filter: All");
+	await expect(toggle).toHaveText("Filters");
 	await expect(group).toBeHidden();
 	await expect(page.getByTestId("kanban-toggle")).toBeVisible();
 	await expect(page.getByTestId("job-total")).toHaveText("3 items");
@@ -1656,7 +1656,7 @@ test("a mobile board folds the filter chips into a Filter button", async ({
 	await expect(page).toHaveURL(/[?&]state=running$/);
 	await expect(chip(page, "Running")).toHaveAttribute("aria-pressed", "true");
 	await chip(page, "Scheduled").click();
-	await expect(toggle).toHaveText(/^Filter: Scheduled 2, Running \d+$/);
+	await expect(toggle).toHaveText("Filters · 2");
 
 	// Esc closes the panel and returns focus to the button.
 	await page.keyboard.press("Escape");
@@ -1669,7 +1669,7 @@ test("a mobile board folds the filter chips into a Filter button", async ({
 	await expect(group).toBeVisible();
 	await group.getByRole("button", { name: "Clear" }).click();
 	await expect(page).not.toHaveURL(/state=/);
-	await expect(toggle).toHaveText("Filter: All");
+	await expect(toggle).toHaveText("Filters");
 
 	// A tap outside closes it.
 	await page.getByTestId("job-total").click();
@@ -1679,7 +1679,7 @@ test("a mobile board folds the filter chips into a Filter button", async ({
 	await toggle.click();
 	await chip(page, "Running").click();
 	await page.reload();
-	await expect(toggle).toHaveText(/^Filter: Running \d+$/);
+	await expect(toggle).toHaveText("Filters · 1");
 
 	// Desktop widths show the inline chips and no Filter button.
 	await page.setViewportSize({ width: 1280, height: 720 });
