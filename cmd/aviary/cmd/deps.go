@@ -36,7 +36,8 @@ var depsInstallCmd = &cobra.Command{
 	Short: "Install whisper-cli and ffmpeg, and download the whisper model",
 	Long: `Install what voice transcription needs: whisper.cpp's whisper-cli and
 ffmpeg through Homebrew (or winget on Windows), and the configured whisper
-model (default base.en), downloaded to Aviary's deps directory.`,
+model (default base.en), downloaded to Aviary's deps directory. ffmpeg
+converts channel voice notes; the web UI's mic doesn't need it.`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		out := cmd.OutOrStdout()
 		st, err := depsInstall(cmd.Context(), depsModel(), func(line string) {

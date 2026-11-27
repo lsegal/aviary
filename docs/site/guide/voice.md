@@ -7,7 +7,7 @@ Aviary turns speech into text with a local [whisper.cpp](https://github.com/ggml
 
 ## Install
 
-Transcription needs three things: whisper.cpp's `whisper-cli`, a whisper model, and `ffmpeg` to convert audio to the 16 kHz mono WAV that `whisper-cli` reads.
+Transcription needs whisper.cpp's `whisper-cli` and a whisper model. Channel voice messages also need `ffmpeg`, which converts their audio to the 16 kHz WAV that `whisper-cli` reads. The composer's mic button doesn't need `ffmpeg`: the browser converts its own recording.
 
 ```sh
 aviary deps install
@@ -47,10 +47,12 @@ If transcription fails, or the engine is not installed, the message still reache
 The mic button sits beside **Send** in the chat composer.
 
 1. Click it to start recording. The first time, the browser asks for microphone access. While recording, the composer shows the elapsed time and a **Cancel** button that discards the audio.
-2. Click it again to stop. The recording is uploaded to the Aviary server and transcribed; the mic and **Send** buttons are disabled until the transcript comes back.
+2. Click it again to stop. The browser decodes the recording, mixes every channel down to mono, resamples it to 16 kHz, and uploads it to the Aviary server as 16-bit WAV, which goes straight to `whisper-cli` with no `ffmpeg` step. The mic and **Send** buttons are disabled until the transcript comes back. A recording that is digitally silent is reported at once ("No speech detected") without being uploaded. If the browser can't decode its own recording, the original is uploaded instead and the server converts it with `ffmpeg`.
 3. The transcript is **inserted into the composer at the cursor**, after any text you already typed. It is never sent automatically: edit it if needed, then send it like any message.
 
-Browsers only allow microphone access on secure pages. Open the control panel over `https://` or at `localhost`; on a plain `http://` LAN address the mic button is disabled and explains why. The Aviary server, the Docker image, and `pnpm dev` all serve HTTPS by default; from a phone, accept or trust the self-signed certificate as described in [TLS Certificates](/guide/operations#tls-certificates). If microphone access was denied, allow it in the browser's site settings and try again. When the server has no transcription engine, the composer shows what is missing and how to install it.
+A recording stops on its own after 10 minutes and is transcribed; at 16 kHz 16-bit mono that is about 19 MB, under the server's 50 MB upload limit.
+
+Browsers only allow microphone access on secure pages. Open the control panel over `https://` or at `localhost`; on a plain `http://` LAN address the mic button is disabled and explains why. The Aviary server, the Docker image, and `pnpm dev` all serve HTTPS by default; from a phone, accept or trust the self-signed certificate as described in [TLS Certificates](/guide/operations#tls-certificates). If microphone access was denied, allow it in the browser's site settings and try again. When the server has no transcription engine, the composer shows what is missing and how to install it. When `ffmpeg` is needed but missing or broken (for example after a Homebrew upgrade removes a library it links against), the error says so instead of showing the raw loader message.
 
 ## Configuration
 

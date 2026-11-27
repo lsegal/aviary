@@ -113,8 +113,9 @@ export async function decodeSpeech(audio: Blob): Promise<SpeechAudio | null> {
 	try {
 		const ctx = new Ctx(1, 1, SPEECH_RATE);
 		const decoded = await ctx.decodeAudioData(await audio.arrayBuffer());
-		let channels = Array.from({ length: decoded.numberOfChannels }, (_, i) =>
-			decoded.getChannelData(i),
+		let channels: Float32Array[] = Array.from(
+			{ length: decoded.numberOfChannels },
+			(_, i) => decoded.getChannelData(i),
 		);
 		if (decoded.sampleRate !== SPEECH_RATE) {
 			channels = await resample(Ctx, decoded);
