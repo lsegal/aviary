@@ -20,11 +20,12 @@
 
 				<fieldset class="mt-4" data-testid="add-project-mode">
 					<legend class="block text-xs font-medium text-gray-700 dark:text-gray-300">Issue discovery</legend>
-					<div class="mt-1 grid gap-2 sm:grid-cols-3">
-						<label v-for="option in projectModeChoices(globalMode)" :key="option.value" :data-testid="`add-project-mode-${option.value}`"
+					<div class="mt-1 grid gap-2 sm:grid-cols-2">
+						<label v-for="option in PROJECT_MODES" :key="option.value" :data-testid="`add-project-mode-${option.value}`"
 							class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm"
-							:class="mode === option.value ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/40' : 'border-gray-300 dark:border-gray-700'">
-							<input v-model="mode" type="radio" name="add-project-mode" :value="option.value" class="mt-0.5" />
+							:class="effectiveMode === option.value ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/40' : 'border-gray-300 dark:border-gray-700'">
+							<input type="radio" name="add-project-mode" :value="option.value" class="mt-0.5"
+								:checked="effectiveMode === option.value" @change="picked = option.value" />
 							<span class="flex flex-col">
 								<span class="font-medium text-gray-900 dark:text-white">{{ option.label }}</span>
 								<span class="text-xs text-gray-500 dark:text-gray-400">{{ option.hint }}</span>
@@ -105,7 +106,11 @@ import {
 	projectOwner,
 	settingsFromSection,
 } from "../../lib/projectSettings";
-import { type ProjectModeChoice, projectModeChoices } from "../../lib/projects";
+import {
+	PROJECT_MODES,
+	type ProjectMode,
+	projectModeOverride,
+} from "../../lib/projects";
 import { useSettingsStore } from "../../stores/settings";
 
 // agent owns the new project: the agent whose Code Loop board the dialog
@@ -126,11 +131,14 @@ const cliNames = computed(() =>
 // The probe is slow, so it runs here only when nothing is cached yet.
 if (cliStatus.clis.value === null) void cliStatus.refresh();
 const target = ref(props.initial ?? "");
-// A new project follows the global mode unless it picks its own (#1371).
-const mode = ref<ProjectModeChoice>("inherit");
+// The picked mode starts as the global one. Picking the global mode stores
+// no override, so the project keeps following it; picking the other mode
+// stores that as the project's override (#1461).
+const picked = ref<ProjectMode | null>(null);
 const globalMode = computed(() => globalProjectMode(store.config));
-const effectiveMode = computed(() =>
-	mode.value === "inherit" ? globalMode.value : mode.value,
+const effectiveMode = computed(() => picked.value ?? globalMode.value);
+const mode = computed(() =>
+	projectModeOverride(effectiveMode.value, globalMode.value),
 );
 const input = ref<HTMLInputElement | null>(null);
 // The owning agent's job models, once the config has loaded, pick which CLI

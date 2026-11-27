@@ -77,7 +77,7 @@
 			<ClearJobsMenu v-if="targets.length" :targets="targets" :done="status?.states?.done ?? 0"
 				:failed="status?.states?.failed ?? 0" @cleared="refresh" />
 			<ProjectModeMenu v-if="filterTarget" :target="filterTarget" :manual="manual"
-				:inherited="modeInherited" :default-mode="status?.defaultMode ?? 'watch'" @changed="refresh" />
+				:default-mode="status?.defaultMode ?? 'watch'" @changed="refresh" />
 			<router-link :to="settingsPath" data-testid="project-settings-link" aria-label="Settings" title="Settings"
 				:class="HEADER_ICON_CLS">
 				<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
@@ -491,12 +491,6 @@ const manual = computed(
 // Open issue counts for the board's projects, as a header chip (#1434).
 const issueSummary = computed(() =>
 	summarizeIssues(status.value?.targets ?? [], targets.value),
-);
-// Whether the project follows the shared mode rather than its own (#1371).
-const modeInherited = computed(
-	() =>
-		status.value?.targets.find((t) => t.name === filterTarget.value)
-			?.modeSource !== "project",
 );
 const {
 	schedules,

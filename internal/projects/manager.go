@@ -572,6 +572,14 @@ func (m *Manager) ProjectModes(targets []string) (modes, sources map[string]stri
 	return m.projectModesLocked(targets)
 }
 
+// DefaultMode returns the shared mode, "watch" or "manual", that projects
+// without their own override follow.
+func (m *Manager) DefaultMode() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.effectiveSettingsLocked().EffectiveMode()
+}
+
 // SetWatchMode sets or, with an empty mode or "inherit", clears the mode
 // override of target's runtime watch. It reports whether target has a
 // runtime watch.

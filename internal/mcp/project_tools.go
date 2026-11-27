@@ -85,6 +85,7 @@ type projectAddArgs struct {
 	Agent   string `json:"agent,omitempty" jsonschema:"The Aviary agent that owns the project; it lands in that agent's projects and its model and fallbacks are the provider and model defaults of the project's jobs. Required unless runtime is set"`
 	Runtime bool   `json:"runtime,omitempty" jsonschema:"Watch until the server stops without writing aviary.yaml, as aviary watch does"`
 	// Mode overrides the shared projects mode for this project.
+	// Mode sets or clears the project's own mode override.
 	Mode string `json:"mode,omitempty" jsonschema:"This project's own mode, overriding the shared projects mode: watch picks up open issues matching the filter; manual never searches for issues, so only work queued on demand, scheduled project tasks and agent tools start jobs. Empty or inherit follows the shared projects mode"`
 	// Reports opts a saved project in to job reports.
 	Reports *config.ProjectReportsConfig `json:"reports,omitempty" jsonschema:"Send this project's job events (merged, failed, waiting) through an Aviary agent's channels; leave out for no reports"`
@@ -98,10 +99,9 @@ type projectUpdateArgs struct {
 	Filter string `json:"filter,omitempty" jsonschema:"This project's own issue search filter, in GitHub search syntax such as label:bug -label:wip assignee:@me; it replaces the shared projects filter for this project only. It is checked against GitHub first and an invalid filter is refused"`
 	// ResetFilter removes the override.
 	ResetFilter bool `json:"reset_filter,omitempty" jsonschema:"Remove this project's own filter so it uses the shared projects filter again"`
-	// Mode sets or clears the project's own mode override.
 	// FinishedTTL sets or clears the project's own finished_ttl.
 	FinishedTTL string `json:"finished_ttl,omitempty" jsonschema:"How long this project's done and failed jobs stay on the board and in the job store before they expire, overriding the shared projects.finished_ttl for this project only: a duration such as 336h, 14d or 2w, 0 to keep them until cleared, or inherit to follow the shared value again"`
-	Mode        string `json:"mode,omitempty" jsonschema:"This project's own mode, overriding the shared projects mode for this project only: watch to pick up open issues matching the filter, manual to stop searching for issues so only work queued on demand, scheduled project tasks and agent tools start jobs, or inherit to remove the override and follow the shared projects mode again. Jobs already in flight carry on either way, and switching to watch checks for issues right away"`
+	Mode        string `json:"mode,omitempty" jsonschema:"This project's own mode, overriding the shared projects mode for this project only: watch to pick up open issues matching the filter, manual to stop searching for issues so only work queued on demand, scheduled project tasks and agent tools start jobs, or inherit to remove the override and follow the shared projects mode again. Picking the shared mode itself also removes the override. Jobs already in flight carry on either way, and switching to watch checks for issues right away"`
 }
 
 type projectJobClearArgs struct {
@@ -698,6 +698,11 @@ func updateProject(ctx context.Context, m *projects.Manager, args projectUpdateA
 		var err error
 		if mode, err = config.NormalizeProjectModeOverride(args.Mode); err != nil {
 			return nil, err
+		}
+		// Picking the shared mode clears the override, so the project keeps
+		// following the shared mode when it changes later (#1461).
+		if mode == m.DefaultMode() {
+			mode = ""
 		}
 	}
 	result := map[string]any{"target": target}

@@ -107,6 +107,15 @@ test("a manual project's header says so and hides the filter editor", async ({
 	).toHaveCount(0);
 });
 
+// #1461: the menu offers only Watch and Manual, checks the effective mode,
+// and stores an override only for the mode that differs from the global one.
+async function expectTwoModes(page: Page) {
+	const items = page.getByTestId("project-mode-items");
+	await expect(items.getByRole("menuitemradio")).toHaveCount(2);
+	await expect(items).not.toContainText(/inherit|overridden/i);
+	await expect(items).not.toContainText("Reset to global");
+}
+
 test("the header menu switches a project between watch and manual", async ({
 	page,
 }) => {
@@ -115,14 +124,9 @@ test("the header menu switches a project between watch and manual", async ({
 	await expect(page.getByTestId("issue-filter")).toHaveText("assignee:@me");
 	await expect(page.getByTestId("project-manual-chip")).toHaveCount(0);
 
-	const menu = page.getByRole("button", {
-		name: "Issue discovery: Watch, inherited",
-	});
-	await menu.click();
-	await expect(page.getByTestId("project-mode-source")).toHaveText(
-		"Inherited: Watch",
-	);
-	await expect(page.getByTestId("project-mode-inherit")).toHaveAttribute(
+	await page.getByRole("button", { name: "Issue discovery: Watch" }).click();
+	await expectTwoModes(page);
+	await expect(page.getByTestId("project-mode-watch")).toHaveAttribute(
 		"aria-checked",
 		"true",
 	);
@@ -135,24 +139,23 @@ test("the header menu switches a project between watch and manual", async ({
 		"Manual: no issue watching",
 	);
 
+	// Watch is the global mode, so picking it clears the override.
 	await page
 		.getByRole("button", {
 			name: "Issue discovery: Manual (no issue watching)",
 		})
 		.click();
-	await expect(page.getByTestId("project-mode-source")).toHaveText(
-		"Overridden: Manual (global: Watch)",
-	);
+	await expectTwoModes(page);
 	await page.getByTestId("project-mode-watch").click();
 	expect(calls.project_update.at(-1)).toEqual({
 		target: "lsegal/zvidlib",
-		mode: "watch",
+		mode: "inherit",
 	});
 	await expect(page.getByTestId("issue-filter")).toHaveText("assignee:@me");
 	await expect(page.getByTestId("project-manual-chip")).toHaveCount(0);
 });
 
-test("a project overridden to watch under a global manual mode resets to global", async ({
+test("under a global manual mode, watch is the override and manual clears it", async ({
 	page,
 }) => {
 	const calls = await setup(page, [], "manual");
@@ -161,13 +164,14 @@ test("a project overridden to watch under a global manual mode resets to global"
 
 	await page
 		.getByRole("button", {
-			name: "Issue discovery: Manual (no issue watching), inherited",
+			name: "Issue discovery: Manual (no issue watching)",
 		})
 		.click();
-	await expect(page.getByTestId("project-mode-inherit")).toContainText(
-		"Inherit (global: Manual)",
+	await expectTwoModes(page);
+	await expect(page.getByTestId("project-mode-manual")).toHaveAttribute(
+		"aria-checked",
+		"true",
 	);
-	await expect(page.getByTestId("project-mode-reset")).toHaveCount(0);
 	await page.getByTestId("project-mode-watch").click();
 	expect(calls.project_update).toEqual([
 		{ target: "lsegal/zvidlib", mode: "watch" },
@@ -184,7 +188,7 @@ test("a project overridden to watch under a global manual mode resets to global"
 	).toHaveText("manual");
 
 	await page.getByRole("button", { name: "Issue discovery: Watch" }).click();
-	await page.getByTestId("project-mode-reset").click();
+	await page.getByTestId("project-mode-manual").click();
 	expect(calls.project_update.at(-1)).toEqual({
 		target: "lsegal/zvidlib",
 		mode: "inherit",
