@@ -1,23 +1,39 @@
 import { ref } from "vue";
 import { useMCP } from "./useMCP";
 
+export type StreamChunkType = "text" | "media" | "tool";
+
+/** One message to run on an agent with useStream's streamAgent. */
+export interface StreamAgentRequest {
+	agentName: string;
+	message: string;
+	/** The session to continue by ID; empty opens `session` by name. */
+	sessionID?: string;
+	mediaURLs?: string[];
+	project?: string;
+	/** The session's name; "main" when unset. */
+	session?: string;
+	retry?: boolean;
+}
+
 export function useStream() {
 	const { callTool } = useMCP();
 	const streaming = ref(false);
 	const error = ref<string | null>(null);
 
-	type StreamChunkType = "text" | "media" | "tool";
-
 	async function streamAgent(
-		agentName: string,
-		message: string,
+		request: StreamAgentRequest,
 		onChunk: (chunk: string, type?: StreamChunkType) => void,
-		sessionID = "",
-		mediaURLs: string[] = [],
-		project?: string,
-		session = "main",
-		retry = false,
 	): Promise<void> {
+		const {
+			agentName,
+			message,
+			sessionID = "",
+			mediaURLs = [],
+			project,
+			session = "main",
+			retry = false,
+		} = request;
 		streaming.value = true;
 		error.value = null;
 

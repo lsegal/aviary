@@ -301,7 +301,14 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	for _, dir := range sweepStaleWatchDirs(os.TempDir()) {
 		_, _ = fmt.Fprintf(out, "Removed %s, left behind by an earlier watch.\n", dir)
 	}
-	session, err := startWatchSession(os.TempDir(), global, sources, agent, targets, watchMode(), settings)
+	session, err := startWatchSession(os.TempDir(), watchSessionParams{
+		global:   global,
+		sources:  sources,
+		choice:   agent,
+		targets:  targets,
+		mode:     watchMode(),
+		settings: settings,
+	})
 	// The session directory goes on every way out, a panic included.
 	defer endWatchSession(session, cmd.ErrOrStderr())
 	if err != nil {

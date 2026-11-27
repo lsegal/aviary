@@ -256,19 +256,31 @@ func resolveSkillBinary(skill skills.Definition) string {
 	return strings.TrimSpace(skill.Runtime.Binary)
 }
 
+// skillSetting returns the configured value of skill's setting key, or nil
+// when key is empty or the config does not set it.
+func skillSetting(skill skills.Definition, key string) any {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil
+	}
+	cfg, err := config.Load("")
+	if err != nil || cfg == nil || cfg.Skills == nil {
+		return nil
+	}
+	skillCfg, ok := cfg.Skills[skill.Name]
+	if !ok || skillCfg.Settings == nil {
+		return nil
+	}
+	return skillCfg.Settings[key]
+}
+
 func allowedSkillCommands(skill skills.Definition) map[string]struct{} {
 	commands := append([]string{}, skill.Runtime.AllowedCommands...)
-	if cfg, err := config.Load(""); err == nil && cfg != nil && cfg.Skills != nil {
-		if skillCfg, ok := cfg.Skills[skill.Name]; ok && skillCfg.Settings != nil {
-			if key := strings.TrimSpace(skill.Runtime.AllowedCommandsSetting); key != "" {
-				if raw, ok := skillCfg.Settings[key].([]any); ok {
-					commands = commands[:0]
-					for _, value := range raw {
-						if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
-							commands = append(commands, strings.TrimSpace(text))
-						}
-					}
-				}
+	if raw, ok := skillSetting(skill, skill.Runtime.AllowedCommandsSetting).([]any); ok {
+		commands = commands[:0]
+		for _, value := range raw {
+			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+				commands = append(commands, strings.TrimSpace(text))
 			}
 		}
 	}

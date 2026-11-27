@@ -20,6 +20,25 @@ type ChannelMetadata struct {
 	DisabledAt time.Time `json:"disabled_at,omitempty"`
 }
 
+// markEnabled records now as the enable time unless the channel is already
+// marked enabled more recently than it was disabled.
+func (m *ChannelMetadata) markEnabled(now time.Time) {
+	if !m.EnabledAt.After(m.DisabledAt) {
+		m.EnabledAt = now
+	}
+}
+
+// markDisabled records now as the disable time unless the channel is already
+// marked disabled more recently than it was enabled, and reports whether it
+// changed m.
+func (m *ChannelMetadata) markDisabled(now time.Time) bool {
+	if m.DisabledAt.After(m.EnabledAt) {
+		return false
+	}
+	m.DisabledAt = now
+	return true
+}
+
 // AppState stores runtime metadata that should not live in aviary.yaml.
 type AppState struct {
 	Channels map[string]ChannelMetadata `json:"channels,omitempty"`
@@ -136,21 +155,17 @@ func UpdateChannelMetadataState(prevCfg, nextCfg *config.Config, now time.Time) 
 			meta := state.Channels[key]
 			enabled := config.BoolOr(ch.Enabled, true)
 			prevCh, existedBefore := prevChannels[key]
-			if existedBefore {
-				prevEnabled := config.BoolOr(prevCh.Enabled, true)
-				if prevEnabled != enabled {
-					if enabled {
-						if !meta.EnabledAt.After(meta.DisabledAt) {
-							meta.EnabledAt = now
-						}
-					} else if !meta.DisabledAt.After(meta.EnabledAt) {
-						meta.DisabledAt = now
-					}
-				}
-			} else if enabled {
+			switch {
+			case !existedBefore && enabled:
 				meta.EnabledAt = now
-			} else {
+			case !existedBefore:
 				meta.DisabledAt = now
+			case config.BoolOr(prevCh.Enabled, true) == enabled:
+				// Unchanged: keep the recorded timestamps.
+			case enabled:
+				meta.markEnabled(now)
+			default:
+				meta.markDisabled(now)
 			}
 			state.Channels[key] = meta
 		}
@@ -161,8 +176,7 @@ func UpdateChannelMetadataState(prevCfg, nextCfg *config.Config, now time.Time) 
 			continue
 		}
 		meta := state.Channels[key]
-		if config.BoolOr(prevCh.Enabled, true) && !meta.DisabledAt.After(meta.EnabledAt) {
-			meta.DisabledAt = now
+		if config.BoolOr(prevCh.Enabled, true) && meta.markDisabled(now) {
 			state.Channels[key] = meta
 		}
 	}

@@ -162,8 +162,8 @@ func (s *cliToolScope) call(name string, req *sdkmcp.CallToolRequest) (*sdkmcp.C
 
 	s.callMu.Lock()
 	defer s.callMu.Unlock()
-	text, canceled := turn.runner.executeToolCall(turn.ctx, turn.emit, turn.client, turn.sessionID, turn.usage,
-		toolEventRecord{Name: name, Args: args}, name, args)
+	text, canceled := turn.runner.executeToolCall(turn.ctx,
+		toolCallEnv{emit: turn.emit, client: turn.client, sessionID: turn.sessionID, usage: turn.usage}, name, args)
 	if canceled {
 		return nil, context.Canceled
 	}

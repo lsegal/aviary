@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -125,25 +124,9 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 		return nil, err
 	}
 
-	type toolCallFunc struct {
-		Name      string `json:"name,omitempty"`
-		Arguments string `json:"arguments,omitempty"`
-	}
-	type toolCallMsg struct {
-		Index    int64        `json:"index"`
-		ID       string       `json:"id,omitempty"`
-		Type     string       `json:"type,omitempty"`
-		Function toolCallFunc `json:"function,omitempty"`
-	}
-	type msgPayload struct {
-		Role       string        `json:"role"`
-		Content    any           `json:"content,omitempty"`
-		ToolCallID string        `json:"tool_call_id,omitempty"`
-		ToolCalls  []toolCallMsg `json:"tool_calls,omitempty"`
-	}
-	messages := make([]msgPayload, 0, len(req.Messages)+1)
+	messages := make([]copilotMessage, 0, len(req.Messages)+1)
 	if req.System != "" {
-		messages = append(messages, msgPayload{Role: "system", Content: req.System})
+		messages = append(messages, copilotMessage{Role: "system", Content: req.System})
 	}
 	var userMeta string
 	for i := 0; i < len(req.Messages); i++ {
@@ -151,7 +134,7 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 		switch m.Role {
 		case RoleUser:
 			if m.Result != nil {
-				messages = append(messages, msgPayload{
+				messages = append(messages, copilotMessage{
 					Role:       "tool",
 					Content:    m.Result.Content,
 					ToolCallID: m.Result.ToolCallID,
@@ -161,47 +144,18 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 			// Extract metadata if present (e.g., from m.Content or a new field)
 			// For now, assume metadata is not in m.Content, but could be passed via a new field in Message in the future.
 			// If you want to support metadata, parse it here and set userMeta accordingly.
-			messages = append(messages, msgPayload{Role: "user", Content: m.Content})
+			messages = append(messages, copilotMessage{Role: "user", Content: m.Content})
 		case RoleAssistant:
-			msg := msgPayload{Role: "assistant", Content: m.Content}
-			for {
-				if m.ToolCall != nil {
-					toolID := strings.TrimSpace(m.ToolCall.ID)
-					if toolID == "" {
-						toolID = "call_" + strconv.Itoa(i)
-					}
-					msg.ToolCalls = append(msg.ToolCalls, toolCallMsg{
-						Index: int64(len(msg.ToolCalls)),
-						ID:    toolID,
-						Type:  "function",
-						Function: toolCallFunc{
-							Name:      m.ToolCall.Name,
-							Arguments: mustJSONMap(m.ToolCall.Arguments),
-						},
-					})
-				}
-				if i+1 >= len(req.Messages) || req.Messages[i+1].Role != RoleAssistant {
-					break
-				}
-				i++
-				m = req.Messages[i]
-				if m.Content != "" {
-					if s, ok := msg.Content.(string); ok {
-						msg.Content = s + "\n" + m.Content
-					}
-				}
-			}
-			if len(msg.ToolCalls) > 0 {
-				msg.Content = nil
-			}
+			var msg copilotMessage
+			msg, i = copilotAssistantTurn(req.Messages, i)
 			messages = append(messages, msg)
 		case RoleSystem:
-			messages = append(messages, msgPayload{Role: "system", Content: m.Content})
+			messages = append(messages, copilotMessage{Role: "system", Content: m.Content})
 		}
 	}
 	// If userMeta is set, append a final assistant message with the metadata line
 	if userMeta != "" {
-		messages = append(messages, msgPayload{Role: "assistant", Content: userMeta})
+		messages = append(messages, copilotMessage{Role: "assistant", Content: userMeta})
 	}
 
 	payload := map[string]any{
@@ -285,15 +239,9 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 				CompletionTokens int `json:"completion_tokens"`
 			} `json:"usage"`
 		}
-		type pendingToolCall struct {
-			ID        string
-			Name      string
-			Arguments strings.Builder
-		}
-
 		scanner := newSSEScanner(resp.Body)
 		var lastUsage *Usage
-		pendingCalls := map[int64]*pendingToolCall{}
+		pendingCalls := pendingToolCalls{}
 		for scanner.Scan() {
 			line := scanner.Text()
 			if !strings.HasPrefix(line, "data: ") {
@@ -312,20 +260,7 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 					ch <- Event{Type: EventTypeText, Text: choice.Delta.Content}
 				}
 				for _, tc := range choice.Delta.ToolCalls {
-					call := pendingCalls[tc.Index]
-					if call == nil {
-						call = &pendingToolCall{}
-						pendingCalls[tc.Index] = call
-					}
-					if tc.ID != "" {
-						call.ID = tc.ID
-					}
-					if tc.Function.Name != "" {
-						call.Name = tc.Function.Name
-					}
-					if tc.Function.Arguments != "" {
-						call.Arguments.WriteString(tc.Function.Arguments)
-					}
+					pendingCalls.applyDelta(tc.Index, tc.ID, tc.Function.Name, tc.Function.Arguments)
 				}
 			}
 			if c.Usage != nil && (c.Usage.PromptTokens > 0 || c.Usage.CompletionTokens > 0) {
@@ -339,28 +274,8 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 			ch <- Event{Type: EventTypeError, Error: fmt.Errorf("copilot stream: %w", err)}
 			return
 		}
-		if len(pendingCalls) > 0 {
-			indexes := make([]int, 0, len(pendingCalls))
-			for idx := range pendingCalls {
-				indexes = append(indexes, int(idx))
-			}
-			sortInts(indexes)
-			for _, idx := range indexes {
-				call := pendingCalls[int64(idx)]
-				if strings.TrimSpace(call.Name) == "" {
-					continue
-				}
-				args, err := parseToolArguments(call.Arguments.String())
-				if err != nil {
-					ch <- Event{Type: EventTypeError, Error: fmt.Errorf("copilot tool arguments for %q: %w", call.Name, err)}
-					return
-				}
-				ch <- Event{Type: EventTypeToolCall, ToolCall: &ToolCall{
-					ID:        call.ID,
-					Name:      call.Name,
-					Arguments: args,
-				}}
-			}
+		if !pendingCalls.emit(ch, "copilot") {
+			return
 		}
 		if lastUsage != nil {
 			ch <- Event{Type: EventTypeUsage, Usage: lastUsage}
@@ -369,4 +284,59 @@ func (p *CopilotProvider) Stream(ctx context.Context, req Request) (<-chan Event
 	}()
 
 	return ch, nil
+}
+
+type copilotToolCallFunc struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+}
+
+type copilotToolCall struct {
+	Index    int64               `json:"index"`
+	ID       string              `json:"id,omitempty"`
+	Type     string              `json:"type,omitempty"`
+	Function copilotToolCallFunc `json:"function,omitempty"`
+}
+
+type copilotMessage struct {
+	Role       string            `json:"role"`
+	Content    any               `json:"content,omitempty"`
+	ToolCallID string            `json:"tool_call_id,omitempty"`
+	ToolCalls  []copilotToolCall `json:"tool_calls,omitempty"`
+}
+
+// copilotAssistantTurn folds the assistant message at msgs[i] and the
+// assistant messages directly after it into one chat message, joining their
+// text and collecting their tool calls. Messages with tool calls carry no
+// content. It returns the message and the index of the last message it
+// consumed.
+func copilotAssistantTurn(msgs []Message, i int) (copilotMessage, int) {
+	m := msgs[i]
+	text := m.Content
+	var toolCalls []copilotToolCall
+	for {
+		if m.ToolCall != nil {
+			toolCalls = append(toolCalls, copilotToolCall{
+				Index: int64(len(toolCalls)),
+				ID:    toolCallIDOrDefault(m.ToolCall, i),
+				Type:  "function",
+				Function: copilotToolCallFunc{
+					Name:      m.ToolCall.Name,
+					Arguments: mustJSONMap(m.ToolCall.Arguments),
+				},
+			})
+		}
+		if i+1 >= len(msgs) || msgs[i+1].Role != RoleAssistant {
+			break
+		}
+		i++
+		m = msgs[i]
+		if m.Content != "" {
+			text += "\n" + m.Content
+		}
+	}
+	if len(toolCalls) > 0 {
+		return copilotMessage{Role: "assistant", ToolCalls: toolCalls}, i
+	}
+	return copilotMessage{Role: "assistant", Content: text}, i
 }

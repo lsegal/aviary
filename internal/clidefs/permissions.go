@@ -157,12 +157,21 @@ func (d Definition) validatePermissions() error {
 			{"allowPath", templates.AllowPath, pathPlaceholders},
 			{"denyPath", templates.DenyPath, pathPlaceholders},
 		} {
-			for _, arg := range field.args {
-				for _, match := range placeholderPattern.FindAllStringSubmatch(arg, -1) {
-					if !contains(field.allowed, match[1]) {
-						return fmt.Errorf(`field "permissions.%s.%s": %q may only use {%s}`, mode, field.name, arg, strings.Join(field.allowed, "}, {"))
-					}
-				}
+			if err := validatePlaceholders(mode, field.name, field.args, field.allowed); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// validatePlaceholders reports the first arg in the permissions.<mode>.<name>
+// field that uses a placeholder outside allowed.
+func validatePlaceholders(mode ApprovalMode, name string, args, allowed []string) error {
+	for _, arg := range args {
+		for _, match := range placeholderPattern.FindAllStringSubmatch(arg, -1) {
+			if !contains(allowed, match[1]) {
+				return fmt.Errorf(`field "permissions.%s.%s": %q may only use {%s}`, mode, name, arg, strings.Join(allowed, "}, {"))
 			}
 		}
 	}

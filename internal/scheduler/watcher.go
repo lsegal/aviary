@@ -64,9 +64,7 @@ func (fw *FileWatcher) Remove(name string) {
 
 // Start begins dispatching file events. Blocks until Stop is called.
 func (fw *FileWatcher) Start() {
-	// pending is shared with the debounce timers' goroutines.
-	var pendingMu sync.Mutex
-	pending := make(map[string]*time.Timer) // path → debounce timer
+	debouncer := newPathDebouncer(fw.dispatch)
 
 	for {
 		select {
@@ -77,33 +75,7 @@ func (fw *FileWatcher) Start() {
 			if !ok {
 				return
 			}
-			path := event.Name
-			// Debounce: reset timer on each event for the same path.
-			pendingMu.Lock()
-			if t, ok := pending[path]; ok {
-				t.Reset(watchDebounce)
-			} else {
-				pending[path] = time.AfterFunc(watchDebounce, func() {
-					pendingMu.Lock()
-					delete(pending, path)
-					pendingMu.Unlock()
-
-					fw.mu.Lock()
-					handlers := make([]watchEntry, 0, len(fw.handlers))
-					for _, h := range fw.handlers {
-						handlers = append(handlers, h)
-					}
-					fw.mu.Unlock()
-
-					for _, h := range handlers {
-						if matched, _ := filepath.Match(h.glob, path); matched {
-							slog.Info("file watch triggered", "path", path)
-							h.fn(path)
-						}
-					}
-				})
-			}
-			pendingMu.Unlock()
+			debouncer.touch(event.Name)
 
 		case err, ok := <-fw.watcher.Errors:
 			if !ok {
@@ -112,6 +84,52 @@ func (fw *FileWatcher) Start() {
 			slog.Warn("file watcher error", "err", err)
 		}
 	}
+}
+
+// dispatch runs every registered handler whose glob matches path.
+func (fw *FileWatcher) dispatch(path string) {
+	fw.mu.Lock()
+	handlers := make([]watchEntry, 0, len(fw.handlers))
+	for _, h := range fw.handlers {
+		handlers = append(handlers, h)
+	}
+	fw.mu.Unlock()
+
+	for _, h := range handlers {
+		if matched, _ := filepath.Match(h.glob, path); matched {
+			slog.Info("file watch triggered", "path", path)
+			h.fn(path)
+		}
+	}
+}
+
+// pathDebouncer calls fire for a path once no event has touched that path for
+// watchDebounce.
+type pathDebouncer struct {
+	// mu guards pending, which is shared with the debounce timers' goroutines.
+	mu      sync.Mutex
+	pending map[string]*time.Timer // path → debounce timer
+	fire    func(path string)
+}
+
+func newPathDebouncer(fire func(path string)) *pathDebouncer {
+	return &pathDebouncer{pending: make(map[string]*time.Timer), fire: fire}
+}
+
+// touch starts path's debounce timer, or resets it if one is already pending.
+func (d *pathDebouncer) touch(path string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if t, ok := d.pending[path]; ok {
+		t.Reset(watchDebounce)
+		return
+	}
+	d.pending[path] = time.AfterFunc(watchDebounce, func() {
+		d.mu.Lock()
+		delete(d.pending, path)
+		d.mu.Unlock()
+		d.fire(path)
+	})
 }
 
 // Stop halts the file watcher and releases its OS watch handle, whether or

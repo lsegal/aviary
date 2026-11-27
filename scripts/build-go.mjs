@@ -2,25 +2,9 @@ import { mkdir } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "./lib/args.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-function parseArgs(argv) {
-	const args = {};
-	for (let i = 0; i < argv.length; i += 1) {
-		const arg = argv[i];
-		if (!arg.startsWith("--")) continue;
-		const key = arg.slice(2);
-		const next = argv[i + 1];
-		if (!next || next.startsWith("--")) {
-			args[key] = "true";
-			continue;
-		}
-		args[key] = next;
-		i += 1;
-	}
-	return args;
-}
 
 function readGoEnv(key) {
 	return execFileSync("go", ["env", key], {

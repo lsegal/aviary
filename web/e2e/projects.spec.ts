@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { boundingBoxOf } from "./helpers/box";
 import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
 
 // Fixtures follow the payloads internal/projects' Manager returns for
@@ -1218,19 +1219,17 @@ for (const [label, width] of [
 			await expect(agent).toHaveAttribute("title", /^gh-fix · /);
 			await expectRightAligned(card, time);
 			await expectRightAligned(card, agent);
-			const timeBox = await time.boundingBox();
-			const titleBox = await title.boundingBox();
-			const agentBox = await agent.boundingBox();
-			const retryBox = await card
-				.getByRole("button", { name: "Retry" })
-				.boundingBox();
+			const timeBox = await boundingBoxOf(time);
+			const titleBox = await boundingBoxOf(title);
+			const agentBox = await boundingBoxOf(agent);
+			const retryBox = await boundingBoxOf(
+				card.getByRole("button", { name: "Retry" }),
+			);
 			// The time stays in the header row above the title; the label sits
 			// in the footer beside the actions.
-			expect(timeBox!.y + timeBox!.height).toBeLessThanOrEqual(titleBox!.y);
-			expect(agentBox!.y).toBeGreaterThan(titleBox!.y + titleBox!.height);
-			expect(Math.abs(agentBox!.y - retryBox!.y)).toBeLessThan(
-				retryBox!.height,
-			);
+			expect(timeBox.y + timeBox.height).toBeLessThanOrEqual(titleBox.y);
+			expect(agentBox.y).toBeGreaterThan(titleBox.y + titleBox.height);
+			expect(Math.abs(agentBox.y - retryBox.y)).toBeLessThan(retryBox.height);
 		}
 	});
 }
@@ -1259,16 +1258,16 @@ test("a long agent label truncates inside the card with a tooltip (#756)", async
 	);
 	expect(truncated).toBe(true);
 	await expectRightAligned(card, agent);
-	const cardBox = await card.boundingBox();
-	const agentBox = await agent.boundingBox();
-	expect(agentBox!.x + agentBox!.width).toBeLessThanOrEqual(
-		cardBox!.x + cardBox!.width,
+	const cardBox = await boundingBoxOf(card);
+	const agentBox = await boundingBoxOf(agent);
+	expect(agentBox.x + agentBox.width).toBeLessThanOrEqual(
+		cardBox.x + cardBox.width,
 	);
 	// One line tall, and the title keeps the full header width.
-	expect(agentBox!.height).toBeLessThan(24);
+	expect(agentBox.height).toBeLessThan(24);
 	const title = card.getByRole("heading");
-	const titleBox = await title.boundingBox();
-	expect(titleBox!.width).toBeGreaterThan(cardBox!.width - 40);
+	const titleBox = await boundingBoxOf(title);
+	expect(titleBox.width).toBeGreaterThan(cardBox.width - 40);
 });
 
 test("retry, stop, filters and check now call project tools", async ({

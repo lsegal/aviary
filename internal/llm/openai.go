@@ -112,26 +112,9 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 	// Build input array in Responses API format.
 	// Tool results are top-level function_call_output items; function calls from
 	// the assistant are top-level function_call items. Other messages use role/content.
-	type inputTextContent struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	type inputImageContent struct {
-		Type     string `json:"type"`
-		ImageURL string `json:"image_url"`
-	}
-	type inputFileContent struct {
-		Type     string `json:"type"`
-		Filename string `json:"filename"`
-		FileData string `json:"file_data"`
-	}
-	type inputMessage struct {
-		Role    string `json:"role"`
-		Content any    `json:"content"`
-	}
 	var input []any
 	if strings.TrimSpace(req.System) != "" {
-		input = append(input, inputMessage{Role: "system", Content: req.System})
+		input = append(input, codexInputMessage{Role: "system", Content: req.System})
 	}
 	for _, m := range req.Messages {
 		switch m.Role {
@@ -145,21 +128,10 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 				continue
 			}
 			if len(m.MediaURLs) > 0 {
-				parts := make([]any, 0, 1+len(m.MediaURLs))
-				if strings.TrimSpace(m.Content) != "" {
-					parts = append(parts, inputTextContent{Type: "input_text", Text: m.Content})
-				}
-				for _, mediaURL := range m.MediaURLs {
-					if isImageMediaURL(mediaURL) {
-						parts = append(parts, inputImageContent{Type: "input_image", ImageURL: mediaURL})
-					} else if filename, fileData, ok := openAIFileInput(mediaURL); ok && p.fileInput {
-						parts = append(parts, inputFileContent{Type: "input_file", Filename: filename, FileData: fileData})
-					}
-				}
-				input = append(input, inputMessage{Role: "user", Content: parts})
+				input = append(input, codexInputMessage{Role: "user", Content: p.userContentParts(m)})
 				continue
 			}
-			input = append(input, inputMessage{Role: "user", Content: m.Content})
+			input = append(input, codexInputMessage{Role: "user", Content: m.Content})
 		case RoleAssistant:
 			if m.ToolCall != nil {
 				input = append(input, map[string]any{
@@ -170,12 +142,12 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 				})
 				continue
 			}
-			input = append(input, inputMessage{
+			input = append(input, codexInputMessage{
 				Role:    "assistant",
-				Content: []inputTextContent{{Type: "output_text", Text: m.Content}},
+				Content: []codexInputTextContent{{Type: "output_text", Text: m.Content}},
 			})
 		case RoleSystem:
-			input = append(input, inputMessage{Role: "system", Content: m.Content})
+			input = append(input, codexInputMessage{Role: "system", Content: m.Content})
 		}
 	}
 
@@ -239,45 +211,10 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 		defer resp.Body.Close() //nolint:errcheck
 		defer close(ch)
 
-		// Responses API SSE events:
-		//   response.output_text.delta              {"delta":"text"}
-		//   response.output_item.added              {"output_index":N,"item":{"type":"function_call","call_id":"...","name":"..."}}
-		//   response.function_call_arguments.delta  {"output_index":N,"delta":"..."}
-		//   response.function_call_arguments.done   {"output_index":N,"arguments":"..."}
-		//   response.completed                      {"response":{"id":"...","usage":{...}}}
-		//   response.failed                         {"response":{"error":{...}}}
-		type responsesEvent struct {
-			Type        string `json:"type"`
-			Delta       string `json:"delta"`
-			Arguments   string `json:"arguments"`
-			OutputIndex int    `json:"output_index"`
-			Response    *struct {
-				ID    string `json:"id"`
-				Error *struct {
-					Message string `json:"message"`
-					Code    string `json:"code"`
-				} `json:"error"`
-				Usage *struct {
-					InputTokens  int `json:"input_tokens"`
-					OutputTokens int `json:"output_tokens"`
-				} `json:"usage"`
-			} `json:"response"`
-			Item *struct {
-				Type   string `json:"type"`
-				CallID string `json:"call_id"`
-				Name   string `json:"name"`
-			} `json:"item"`
-		}
-		type pendingToolCall struct {
-			ID        string
-			Name      string
-			Arguments strings.Builder
-		}
-
 		scanner := newSSEScanner(resp.Body)
 		var lastUsage *Usage
 		var lastResponseID string
-		pendingCalls := map[int]*pendingToolCall{}
+		pendingCalls := pendingToolCalls{}
 		for scanner.Scan() {
 			line := scanner.Text()
 			if !strings.HasPrefix(line, "data: ") {
@@ -287,7 +224,7 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 			if data == "" || data == "[DONE]" {
 				continue
 			}
-			var ev responsesEvent
+			var ev codexResponsesEvent
 			if err := json.Unmarshal([]byte(data), &ev); err != nil {
 				continue
 			}
@@ -298,41 +235,29 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 				}
 			case "response.output_item.added":
 				if ev.Item != nil && ev.Item.Type == "function_call" {
-					pendingCalls[ev.OutputIndex] = &pendingToolCall{
+					pendingCalls[int64(ev.OutputIndex)] = &pendingToolCall{
 						ID:   ev.Item.CallID,
 						Name: ev.Item.Name,
 					}
 				}
 			case "response.function_call_arguments.delta":
-				if call := pendingCalls[ev.OutputIndex]; call != nil {
+				if call := pendingCalls[int64(ev.OutputIndex)]; call != nil {
 					call.Arguments.WriteString(ev.Delta)
 				}
 			case "response.function_call_arguments.done":
 				// Arguments are already accumulated via deltas; nothing extra needed.
 			case "response.completed":
-				if ev.Response != nil {
-					if ev.Response.ID != "" {
-						lastResponseID = ev.Response.ID
-					}
-					if ev.Response.Usage != nil {
-						u := ev.Response.Usage
-						if u.InputTokens > 0 || u.OutputTokens > 0 {
-							lastUsage = &Usage{
-								InputTokens:  u.InputTokens,
-								OutputTokens: u.OutputTokens,
-							}
-						}
-					}
+				if ev.Response == nil {
+					continue
+				}
+				if ev.Response.ID != "" {
+					lastResponseID = ev.Response.ID
+				}
+				if usage := ev.Response.usage(); usage != nil {
+					lastUsage = usage
 				}
 			case "response.failed":
-				msg := "unknown error"
-				if ev.Response != nil && ev.Response.Error != nil {
-					msg = ev.Response.Error.Message
-					if ev.Response.Error.Code != "" {
-						msg = ev.Response.Error.Code + ": " + msg
-					}
-				}
-				ch <- Event{Type: EventTypeError, Error: fmt.Errorf("openai codex: response.failed: %s", msg)}
+				ch <- Event{Type: EventTypeError, Error: fmt.Errorf("openai codex: response.failed: %s", ev.failureMessage())}
 				return
 			}
 		}
@@ -340,28 +265,8 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 			ch <- Event{Type: EventTypeError, Error: fmt.Errorf("openai codex stream: %w", err)}
 			return
 		}
-		if len(pendingCalls) > 0 {
-			indexes := make([]int, 0, len(pendingCalls))
-			for idx := range pendingCalls {
-				indexes = append(indexes, idx)
-			}
-			sortInts(indexes)
-			for _, idx := range indexes {
-				call := pendingCalls[idx]
-				if strings.TrimSpace(call.Name) == "" {
-					continue
-				}
-				args, err := parseToolArguments(call.Arguments.String())
-				if err != nil {
-					ch <- Event{Type: EventTypeError, Error: fmt.Errorf("openai codex tool arguments for %q: %w", call.Name, err)}
-					return
-				}
-				ch <- Event{Type: EventTypeToolCall, ToolCall: &ToolCall{
-					ID:        call.ID,
-					Name:      call.Name,
-					Arguments: args,
-				}}
-			}
+		if !pendingCalls.emit(ch, "openai codex") {
+			return
 		}
 		if lastUsage != nil {
 			ch <- Event{Type: EventTypeUsage, Usage: lastUsage}
@@ -370,6 +275,104 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan E
 	}()
 
 	return ch, nil
+}
+
+type codexInputTextContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type codexInputImageContent struct {
+	Type     string `json:"type"`
+	ImageURL string `json:"image_url"`
+}
+
+type codexInputFileContent struct {
+	Type     string `json:"type"`
+	Filename string `json:"filename"`
+	FileData string `json:"file_data"`
+}
+
+type codexInputMessage struct {
+	Role    string `json:"role"`
+	Content any    `json:"content"`
+}
+
+// userContentParts converts a user message with media into Responses API
+// input parts: the text (if any), then images, then PDFs when the model
+// accepts file input.
+func (p *OpenAICodexProvider) userContentParts(m Message) []any {
+	parts := make([]any, 0, 1+len(m.MediaURLs))
+	if strings.TrimSpace(m.Content) != "" {
+		parts = append(parts, codexInputTextContent{Type: "input_text", Text: m.Content})
+	}
+	for _, mediaURL := range m.MediaURLs {
+		if isImageMediaURL(mediaURL) {
+			parts = append(parts, codexInputImageContent{Type: "input_image", ImageURL: mediaURL})
+			continue
+		}
+		if filename, fileData, ok := openAIFileInput(mediaURL); ok && p.fileInput {
+			parts = append(parts, codexInputFileContent{Type: "input_file", Filename: filename, FileData: fileData})
+		}
+	}
+	return parts
+}
+
+// codexResponsesEvent is one Responses API SSE event:
+//
+//	response.output_text.delta              {"delta":"text"}
+//	response.output_item.added              {"output_index":N,"item":{"type":"function_call","call_id":"...","name":"..."}}
+//	response.function_call_arguments.delta  {"output_index":N,"delta":"..."}
+//	response.function_call_arguments.done   {"output_index":N,"arguments":"..."}
+//	response.completed                      {"response":{"id":"...","usage":{...}}}
+//	response.failed                         {"response":{"error":{...}}}
+type codexResponsesEvent struct {
+	Type        string                  `json:"type"`
+	Delta       string                  `json:"delta"`
+	Arguments   string                  `json:"arguments"`
+	OutputIndex int                     `json:"output_index"`
+	Response    *codexResponsesResponse `json:"response"`
+	Item        *struct {
+		Type   string `json:"type"`
+		CallID string `json:"call_id"`
+		Name   string `json:"name"`
+	} `json:"item"`
+}
+
+type codexResponsesResponse struct {
+	ID    string `json:"id"`
+	Error *struct {
+		Message string `json:"message"`
+		Code    string `json:"code"`
+	} `json:"error"`
+	Usage *struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+}
+
+// usage returns the response's token usage, or nil when it reports none.
+func (r *codexResponsesResponse) usage() *Usage {
+	u := r.Usage
+	if u == nil {
+		return nil
+	}
+	hasTokens := u.InputTokens > 0 || u.OutputTokens > 0
+	if !hasTokens {
+		return nil
+	}
+	return &Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens}
+}
+
+// failureMessage describes a response.failed event's error.
+func (ev codexResponsesEvent) failureMessage() string {
+	if ev.Response == nil || ev.Response.Error == nil {
+		return "unknown error"
+	}
+	if ev.Response.Error.Code == "" {
+		return ev.Response.Error.Message
+	}
+	return ev.Response.Error.Code + ": " + ev.Response.Error.Message
 }
 
 // Ping validates OpenAI credentials by listing models (GET /v1/models).
@@ -397,70 +400,14 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 				continue
 			}
 			if len(m.MediaURLs) > 0 {
-				parts := make([]openai.ChatCompletionContentPartUnionParam, 0, 1+len(m.MediaURLs))
-				if strings.TrimSpace(m.Content) != "" {
-					parts = append(parts, openai.TextContentPart(m.Content))
-				}
-				for _, mediaURL := range m.MediaURLs {
-					if isImageMediaURL(mediaURL) {
-						parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
-							URL: mediaURL,
-						}))
-					} else if filename, fileData, ok := openAIFileInput(mediaURL); ok && p.fileInput {
-						parts = append(parts, openai.FileContentPart(openai.ChatCompletionContentPartFileFileParam{
-							Filename: openai.String(filename),
-							FileData: openai.String(fileData),
-						}))
-					}
-				}
-				messages = append(messages, openai.UserMessage(parts))
+				messages = append(messages, openai.UserMessage(p.userContentParts(m)))
 				continue
 			}
 			messages = append(messages, openai.UserMessage(m.Content))
 		case RoleAssistant:
-			assistantText := m.Content
-			toolCalls := make([]openai.ChatCompletionMessageToolCallParam, 0, 1)
-			for {
-				if m.ToolCall != nil {
-					argsJSON := mustJSONMap(m.ToolCall.Arguments)
-					toolID := strings.TrimSpace(m.ToolCall.ID)
-					if toolID == "" {
-						toolID = "call_" + strconv.Itoa(i)
-					}
-					toolCalls = append(toolCalls, openai.ChatCompletionMessageToolCallParam{
-						ID: toolID,
-						Function: openai.ChatCompletionMessageToolCallFunctionParam{
-							Name:      m.ToolCall.Name,
-							Arguments: argsJSON,
-						},
-					})
-				}
-				if i+1 >= len(req.Messages) || req.Messages[i+1].Role != RoleAssistant {
-					break
-				}
-				next := req.Messages[i+1]
-				if next.Content != "" {
-					if assistantText != "" {
-						assistantText += "\n"
-					}
-					assistantText += next.Content
-				}
-				if next.ToolCall == nil {
-					i++
-					continue
-				}
-				i++
-				m = next
-			}
-			if len(toolCalls) > 0 {
-				msg := openai.ChatCompletionAssistantMessageParam{ToolCalls: toolCalls}
-				if assistantText != "" {
-					msg.Content.OfString = openai.String(assistantText)
-				}
-				messages = append(messages, openai.ChatCompletionMessageParamUnion{OfAssistant: &msg})
-				continue
-			}
-			messages = append(messages, openai.AssistantMessage(assistantText))
+			var msg openai.ChatCompletionMessageParamUnion
+			msg, i = openAIAssistantTurn(req.Messages, i)
+			messages = append(messages, msg)
 		case RoleSystem:
 			messages = append(messages, openai.SystemMessage(m.Content))
 		}
@@ -499,12 +446,7 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 	go func() {
 		defer close(ch)
 		var lastUsage *Usage
-		type pendingToolCall struct {
-			ID        string
-			Name      string
-			Arguments strings.Builder
-		}
-		pendingCalls := map[int64]*pendingToolCall{}
+		pendingCalls := pendingToolCalls{}
 		for stream.Next() {
 			chunk := stream.Current()
 			for _, choice := range chunk.Choices {
@@ -512,20 +454,7 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 					ch <- Event{Type: EventTypeText, Text: choice.Delta.Content}
 				}
 				for _, tc := range choice.Delta.ToolCalls {
-					call := pendingCalls[tc.Index]
-					if call == nil {
-						call = &pendingToolCall{}
-						pendingCalls[tc.Index] = call
-					}
-					if tc.ID != "" {
-						call.ID = tc.ID
-					}
-					if tc.Function.Name != "" {
-						call.Name = tc.Function.Name
-					}
-					if tc.Function.Arguments != "" {
-						call.Arguments.WriteString(tc.Function.Arguments)
-					}
+					pendingCalls.applyDelta(tc.Index, tc.ID, tc.Function.Name, tc.Function.Arguments)
 				}
 			}
 			// Capture usage from the final chunk (populated when include_usage=true).
@@ -540,28 +469,8 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 			ch <- Event{Type: EventTypeError, Error: fmt.Errorf("openai stream: %w", err)}
 			return
 		}
-		if len(pendingCalls) > 0 {
-			indexes := make([]int, 0, len(pendingCalls))
-			for idx := range pendingCalls {
-				indexes = append(indexes, int(idx))
-			}
-			sortInts(indexes)
-			for _, idx := range indexes {
-				call := pendingCalls[int64(idx)]
-				if call == nil || strings.TrimSpace(call.Name) == "" {
-					continue
-				}
-				args, err := parseToolArguments(call.Arguments.String())
-				if err != nil {
-					ch <- Event{Type: EventTypeError, Error: fmt.Errorf("openai tool arguments for %q: %w", call.Name, err)}
-					return
-				}
-				ch <- Event{Type: EventTypeToolCall, ToolCall: &ToolCall{
-					ID:        call.ID,
-					Name:      call.Name,
-					Arguments: args,
-				}}
-			}
+		if !pendingCalls.emit(ch, "openai") {
+			return
 		}
 		if lastUsage != nil {
 			ch <- Event{Type: EventTypeUsage, Usage: lastUsage}
@@ -570,6 +479,86 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Event,
 	}()
 
 	return ch, nil
+}
+
+// userContentParts converts a user message with media into chat content
+// parts: the text (if any), then images, then PDFs when the model accepts
+// file input.
+func (p *OpenAIProvider) userContentParts(m Message) []openai.ChatCompletionContentPartUnionParam {
+	parts := make([]openai.ChatCompletionContentPartUnionParam, 0, 1+len(m.MediaURLs))
+	if strings.TrimSpace(m.Content) != "" {
+		parts = append(parts, openai.TextContentPart(m.Content))
+	}
+	for _, mediaURL := range m.MediaURLs {
+		if isImageMediaURL(mediaURL) {
+			parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
+				URL: mediaURL,
+			}))
+			continue
+		}
+		if filename, fileData, ok := openAIFileInput(mediaURL); ok && p.fileInput {
+			parts = append(parts, openai.FileContentPart(openai.ChatCompletionContentPartFileFileParam{
+				Filename: openai.String(filename),
+				FileData: openai.String(fileData),
+			}))
+		}
+	}
+	return parts
+}
+
+// openAIAssistantTurn folds the assistant message at msgs[i] and the
+// assistant messages directly after it into one chat message, joining their
+// text and collecting their tool calls. It returns the message and the index
+// of the last message it consumed.
+//
+// A following assistant message without a tool call leaves the current tool
+// call in place, so it is collected again on the next pass.
+func openAIAssistantTurn(msgs []Message, i int) (openai.ChatCompletionMessageParamUnion, int) {
+	m := msgs[i]
+	assistantText := m.Content
+	toolCalls := make([]openai.ChatCompletionMessageToolCallParam, 0, 1)
+	for {
+		if m.ToolCall != nil {
+			toolCalls = append(toolCalls, openAIToolCallParam(m.ToolCall, i))
+		}
+		if i+1 >= len(msgs) || msgs[i+1].Role != RoleAssistant {
+			break
+		}
+		i++
+		next := msgs[i]
+		assistantText = appendLine(assistantText, next.Content)
+		if next.ToolCall != nil {
+			m = next
+		}
+	}
+	if len(toolCalls) == 0 {
+		return openai.AssistantMessage(assistantText), i
+	}
+	msg := openai.ChatCompletionAssistantMessageParam{ToolCalls: toolCalls}
+	if assistantText != "" {
+		msg.Content.OfString = openai.String(assistantText)
+	}
+	return openai.ChatCompletionMessageParamUnion{OfAssistant: &msg}, i
+}
+
+// openAIToolCallParam converts a tool call from message index i, naming it
+// "call_<i>" when it has no ID.
+func openAIToolCallParam(call *ToolCall, i int) openai.ChatCompletionMessageToolCallParam {
+	return openai.ChatCompletionMessageToolCallParam{
+		ID: toolCallIDOrDefault(call, i),
+		Function: openai.ChatCompletionMessageToolCallFunctionParam{
+			Name:      call.Name,
+			Arguments: mustJSONMap(call.Arguments),
+		},
+	}
+}
+
+// toolCallIDOrDefault returns the call's trimmed ID, or "call_<i>" when empty.
+func toolCallIDOrDefault(call *ToolCall, i int) string {
+	if id := strings.TrimSpace(call.ID); id != "" {
+		return id
+	}
+	return "call_" + strconv.Itoa(i)
 }
 
 // openAIFileInput returns the filename and file data OpenAI file input takes
@@ -591,9 +580,13 @@ func openAIFileInput(mediaURL string) (filename string, fileData string, ok bool
 // models do not.
 func openAIModelSupportsFileInput(model string) bool {
 	m := strings.ToLower(strings.TrimSpace(model))
-	if m == "gpt-4" || strings.HasPrefix(m, "gpt-4-") || strings.HasPrefix(m, "gpt-3") ||
-		strings.HasPrefix(m, "o1-mini") || strings.HasPrefix(m, "o1-preview") || strings.HasPrefix(m, "o3-mini") {
+	if m == "gpt-4" {
 		return false
+	}
+	for _, prefix := range []string{"gpt-4-", "gpt-3", "o1-mini", "o1-preview", "o3-mini"} {
+		if strings.HasPrefix(m, prefix) {
+			return false
+		}
 	}
 	for _, kind := range []string{"audio", "realtime", "transcribe", "tts"} {
 		if strings.Contains(m, kind) {

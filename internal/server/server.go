@@ -1165,11 +1165,12 @@ func tlsConfigChanged(a, b config.TLSConfig) bool {
 // serverSettingsChanged reports whether a config change affects server-level
 // settings that require a restart (port, TLS mode, bind address).
 func serverSettingsChanged(oldCfg, newCfg *config.Config) bool {
-	return oldCfg.Server.Port != newCfg.Server.Port ||
-		config.EffectiveServerExternalAccess(oldCfg.Server) != config.EffectiveServerExternalAccess(newCfg.Server) ||
-		config.EffectiveServerNoTLS(oldCfg.Server) != config.EffectiveServerNoTLS(newCfg.Server) ||
-		oldCfg.Server.DisableTokenAuth != newCfg.Server.DisableTokenAuth ||
+	listenerChanged := oldCfg.Server.Port != newCfg.Server.Port ||
+		config.EffectiveServerExternalAccess(oldCfg.Server) != config.EffectiveServerExternalAccess(newCfg.Server)
+	tlsChanged := config.EffectiveServerNoTLS(oldCfg.Server) != config.EffectiveServerNoTLS(newCfg.Server) ||
 		tlsConfigChanged(config.EffectiveServerTLS(oldCfg.Server), config.EffectiveServerTLS(newCfg.Server))
+	authChanged := oldCfg.Server.DisableTokenAuth != newCfg.Server.DisableTokenAuth
+	return listenerChanged || tlsChanged || authChanged
 }
 
 // Addr returns the server address string.

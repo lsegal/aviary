@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "./lib/args.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const releaseDir = path.join(rootDir, "dist", "release");
@@ -16,23 +17,6 @@ const defaultTargets = [
 	{ goos: "darwin", goarch: "amd64" },
 	{ goos: "darwin", goarch: "arm64" },
 ];
-
-function parseArgs(argv) {
-	const args = {};
-	for (let i = 0; i < argv.length; i += 1) {
-		const arg = argv[i];
-		if (!arg.startsWith("--")) continue;
-		const key = arg.slice(2);
-		const next = argv[i + 1];
-		if (!next || next.startsWith("--")) {
-			args[key] = "true";
-			continue;
-		}
-		args[key] = next;
-		i += 1;
-	}
-	return args;
-}
 
 function resolveVersion(explicitVersion) {
 	if (explicitVersion) return explicitVersion;

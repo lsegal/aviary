@@ -131,56 +131,56 @@ func (m providerMgrModel) updateMethod(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m providerMgrModel) updateAPIKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
-		return m, tea.Quit
-	case "esc":
-		m.keyInput.Blur()
-		m.mode = "method"
-	case "enter":
-		v := strings.TrimSpace(m.keyInput.Value())
-		if v == "" {
-			m.err = "API key cannot be empty"
-			return m, nil
-		}
-		if err := m.store.Set(tuiProviders[m.cursor].apiKey, v); err != nil {
-			m.err = err.Error()
-			return m, nil
-		}
-		m.err = ""
-		m.message = tuiProviders[m.cursor].name + " API key saved."
-		m.mode = ""
-	default:
-		var cmd tea.Cmd
-		m.keyInput, cmd = m.keyInput.Update(msg)
-		return m, cmd
-	}
-	return m, nil
+	p := tuiProviders[m.cursor]
+	return m.updateCredentialInput(msg, &m.keyInput, credentialInput{
+		storeKey:   p.apiKey,
+		emptyError: "API key cannot be empty",
+		savedMsg:   p.name + " API key saved.",
+	})
 }
 
 func (m providerMgrModel) updateOAuth(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	p := tuiProviders[m.cursor]
+	return m.updateCredentialInput(msg, &m.codeInput, credentialInput{
+		storeKey:   p.oauthKey,
+		emptyError: "OAuth token/code cannot be empty",
+		savedMsg:   p.name + " OAuth credential saved.",
+	})
+}
+
+// credentialInput describes where a single-field credential prompt stores its
+// value and which messages it reports.
+type credentialInput struct {
+	storeKey   string
+	emptyError string
+	savedMsg   string
+}
+
+// updateCredentialInput handles key input for a single-field credential
+// prompt. input must point at a field of m.
+func (m providerMgrModel) updateCredentialInput(msg tea.KeyMsg, input *textinput.Model, ci credentialInput) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "esc":
-		m.codeInput.Blur()
+		input.Blur()
 		m.mode = "method"
 	case "enter":
-		v := strings.TrimSpace(m.codeInput.Value())
+		v := strings.TrimSpace(input.Value())
 		if v == "" {
-			m.err = "OAuth token/code cannot be empty"
+			m.err = ci.emptyError
 			return m, nil
 		}
-		if err := m.store.Set(tuiProviders[m.cursor].oauthKey, v); err != nil {
+		if err := m.store.Set(ci.storeKey, v); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
 		m.err = ""
-		m.message = tuiProviders[m.cursor].name + " OAuth credential saved."
+		m.message = ci.savedMsg
 		m.mode = ""
 	default:
 		var cmd tea.Cmd
-		m.codeInput, cmd = m.codeInput.Update(msg)
+		*input, cmd = input.Update(msg)
 		return m, cmd
 	}
 	return m, nil

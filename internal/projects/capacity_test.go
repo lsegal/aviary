@@ -171,7 +171,7 @@ func TestNegotiateContestedIssuesWithinNoRoomClaimsNothing(t *testing.T) {
 	w := &Engine{Comments: comments, Identity: "SELF", Out: io.Discard, ownershipWait: func(context.Context) bool { return true }}
 	seen := map[string]bool{}
 	pending := []pendingIssue{{issue: Issue{Number: 1, Target: "o/r", Repository: "o/r"}, contested: true}}
-	result, full := w.negotiateContestedIssuesWithin(context.Background(), nil, pending, seen, true, 0)
+	result, full := w.negotiateContestedIssuesWithin(context.Background(), pending, contestedReap{seen: seen, aggressive: true, room: 0})
 	w.negotiateWG.Wait()
 	if len(result) != 0 || !full {
 		t.Fatalf("result = %v, full = %v; want nothing dispatched and the batch reported full", result, full)
@@ -184,7 +184,7 @@ func TestNegotiateContestedIssuesWithinNoRoomClaimsNothing(t *testing.T) {
 	}
 
 	comments.inject("o/r", 1, Comment{Body: claimComment("SELF", false), CreatedAt: time.Now()})
-	result, _ = w.negotiateContestedIssuesWithin(context.Background(), nil, pending, seen, false, 0)
+	result, _ = w.negotiateContestedIssuesWithin(context.Background(), pending, contestedReap{seen: seen, aggressive: false, room: 0})
 	if len(result) != 1 || result[0].claim == nil {
 		t.Fatalf("a claim this instance already holds did not pass through: %+v", result)
 	}
@@ -198,7 +198,7 @@ func TestNegotiateContestedIssuesWithinLimitsNegotiationsToRoom(t *testing.T) {
 		{issue: Issue{Number: 1, Target: "o/r", Repository: "o/r"}, contested: true},
 		{issue: Issue{Number: 2, Target: "o/r", Repository: "o/r"}, contested: true},
 	}
-	_, full := w.negotiateContestedIssuesWithin(context.Background(), nil, pending, map[string]bool{}, true, 1)
+	_, full := w.negotiateContestedIssuesWithin(context.Background(), pending, contestedReap{seen: map[string]bool{}, aggressive: true, room: 1})
 	w.negotiateWG.Wait()
 	if !full {
 		t.Fatalf("two candidates with room for one did not report the batch full")

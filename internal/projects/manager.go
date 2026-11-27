@@ -589,23 +589,7 @@ func (m *Manager) SetWatchMode(target, mode string) (bool, error) {
 		return false, err
 	}
 	m.mu.Lock()
-	found := false
-	for i := range m.watches {
-		if !slices.Contains(m.watches[i].Targets, target) {
-			continue
-		}
-		found = true
-		modes := maps.Clone(m.watches[i].Modes)
-		if modes == nil {
-			modes = map[string]string{}
-		}
-		if mode == "" {
-			delete(modes, target)
-		} else {
-			modes[target] = mode
-		}
-		m.watches[i].Modes = modes
-	}
+	found := setWatchOverrideLocked(m.watches, target, func(w *Watch) *map[string]string { return &w.Modes }, mode, mode == "")
 	m.mu.Unlock()
 	if !found {
 		return false, nil
@@ -623,52 +607,43 @@ func (m *Manager) SetWatchFinishedTTL(target, ttl string) (bool, error) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	found := false
-	for i := range m.watches {
-		if !slices.Contains(m.watches[i].Targets, target) {
-			continue
-		}
-		found = true
-		ttls := maps.Clone(m.watches[i].FinishedTTLs)
-		if ttls == nil {
-			ttls = map[string]string{}
-		}
-		if ttl == "" {
-			delete(ttls, target)
-		} else {
-			ttls[target] = ttl
-		}
-		m.watches[i].FinishedTTLs = ttls
-	}
-	return found, nil
+	return setWatchOverrideLocked(m.watches, target, func(w *Watch) *map[string]string { return &w.FinishedTTLs }, ttl, ttl == ""), nil
 }
 
 // SetWatchFilter sets or, with an empty filter, clears the filter override
 // of target's runtime watch. It reports whether target has a runtime watch.
 func (m *Manager) SetWatchFilter(target string, filter []string) (bool, error) {
 	m.mu.Lock()
-	found := false
-	for i := range m.watches {
-		if !slices.Contains(m.watches[i].Targets, target) {
-			continue
-		}
-		found = true
-		filters := maps.Clone(m.watches[i].Filters)
-		if filters == nil {
-			filters = map[string][]string{}
-		}
-		if config.JoinFilter(filter) == "" {
-			delete(filters, target)
-		} else {
-			filters[target] = slices.Clone(filter)
-		}
-		m.watches[i].Filters = filters
-	}
+	found := setWatchOverrideLocked(m.watches, target, func(w *Watch) *map[string][]string { return &w.Filters }, slices.Clone(filter), config.JoinFilter(filter) == "")
 	m.mu.Unlock()
 	if !found {
 		return false, nil
 	}
 	return true, m.refresh()
+}
+
+// setWatchOverrideLocked sets, or with clear deletes, target's entry in the
+// per-target override map field selects on every watch of target, replacing
+// each map with a copy. It reports whether any watch covers target.
+func setWatchOverrideLocked[V any](watches []Watch, target string, field func(*Watch) *map[string]V, value V, clear bool) bool {
+	found := false
+	for i := range watches {
+		if !slices.Contains(watches[i].Targets, target) {
+			continue
+		}
+		found = true
+		overrides := maps.Clone(*field(&watches[i]))
+		if overrides == nil {
+			overrides = map[string]V{}
+		}
+		if clear {
+			delete(overrides, target)
+		} else {
+			overrides[target] = value
+		}
+		*field(&watches[i]) = overrides
+	}
+	return found
 }
 
 // jobSpecsLocked resolves each target's job specs, in fallback order, from

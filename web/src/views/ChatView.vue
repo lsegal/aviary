@@ -1286,8 +1286,16 @@ async function runTurn(
 			}
 		};
 		await streamAgent(
-			selectedAgent.value,
-			text,
+			{
+				agentName: selectedAgent.value,
+				message: text,
+				// A pinned session is opened by name, which creates it on first use.
+				sessionID: props.session ? "" : selectedSessionId.value,
+				mediaURLs,
+				project: props.project,
+				session: props.session,
+				retry,
+			},
 			(chunk, type) => {
 				if (type === "media" && chunk) {
 					messages.value.push({
@@ -1305,12 +1313,6 @@ async function runTurn(
 					flushPendingChunks();
 				}
 			},
-			// A pinned session is opened by name, which creates it on first use.
-			props.session ? "" : selectedSessionId.value,
-			mediaURLs,
-			props.project,
-			props.session,
-			retry,
 		);
 		flushPendingChunks();
 	} catch (e) {

@@ -245,6 +245,15 @@ func reloadTaskConfig() error {
 
 // updateTask is task_update, which project_task_update, project_task_pause
 // and project_task_resume also save through.
+// hasScheduleSettings reports whether task sets any schedule trigger or
+// schedule option, which a message-triggered workflow cannot have.
+func hasScheduleSettings(task config.TaskConfig) bool {
+	hasCron := task.Schedule != "" || task.StartAt != ""
+	hasRecurrence := task.Every != "" || task.At != "" || task.Days != ""
+	hasOptions := task.RunOnce || task.Missed != ""
+	return hasCron || hasRecurrence || hasOptions
+}
+
 func updateTask(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpdateArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 	_, agentCfg, task, err := findConfiguredTask(args.Agent, args.Name)
 	if err != nil {
@@ -322,7 +331,7 @@ func updateTask(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpdateArg
 		if agentCfg.ChannelByName(task.Channel) < 0 {
 			return nil, struct{}{}, fmt.Errorf("workflows need one of agent %q's channels; %q is not one", agentCfg.Name, task.Channel)
 		}
-		if task.Watch != "" || task.Schedule != "" || task.Every != "" || task.At != "" || task.Days != "" || task.StartAt != "" || task.RunOnce || task.Missed != "" {
+		if task.Watch != "" || hasScheduleSettings(task) {
 			return nil, struct{}{}, fmt.Errorf("workflows are triggered by messages and cannot also have a schedule or watch")
 		}
 		task.Channel = agentCfg.Channels[agentCfg.ChannelByName(task.Channel)].EffectiveName()

@@ -23,6 +23,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/auth"
+	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/channels"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/cronutil"
@@ -31,6 +32,7 @@ import (
 	"github.com/lsegal/aviary/internal/models"
 	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/schedule"
+	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/scriptruntime"
 	"github.com/lsegal/aviary/internal/sessiontarget"
 	"github.com/lsegal/aviary/internal/store"
@@ -475,48 +477,17 @@ func registerAgentTools(s *sdkmcp.Server) {
 				// Still attempt to delete matching checkpoints even if nothing was running.
 				slog.Info("mcp: agent_stop - no active runs for session", "agent", args.Name, "session", sid)
 			}
-			// Delete checkpoints matching this session ID.
-			dir := store.CheckpointDir(args.Name)
-			entries, err := os.ReadDir(dir)
-			if err == nil {
-				for _, e := range entries {
-					if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-						continue
-					}
-					p := filepath.Join(dir, e.Name())
-					v, rerr := store.ReadJSON[agent.RunCheckpoint](p)
-					if rerr == nil {
-						if v.SessionID == sid {
-							if derr := store.DeleteJSON(p); derr != nil {
-								slog.Warn("mcp: failed to delete checkpoint", "agent", args.Name, "path", p, "err", derr)
-							}
-						}
-					} else {
-						// Couldn't read checkpoint — try to delete to avoid leaving corrupt files.
-						if derr := store.DeleteJSON(p); derr != nil {
-							slog.Warn("mcp: failed to delete unreadable checkpoint", "agent", args.Name, "path", p, "err", derr)
-						}
-					}
-				}
-			}
+			deleteSessionCheckpoints(args.Name, sid)
 			return text(fmt.Sprintf("agent %q stopped (session %s)", args.Name, sid))
 		}
 
 		// No session specified: stop whole agent and delete all checkpoints.
 		runner.Stop()
-		dir := store.CheckpointDir(args.Name)
-		entries, err := os.ReadDir(dir)
-		if err == nil {
-			for _, e := range entries {
-				if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-					continue
-				}
-				p := filepath.Join(dir, e.Name())
-				if err := store.DeleteJSON(p); err != nil {
-					slog.Warn("mcp: failed to delete checkpoint", "agent", args.Name, "path", p, "err", err)
-				}
+		forEachCheckpointFile(args.Name, func(p string) {
+			if err := store.DeleteJSON(p); err != nil {
+				slog.Warn("mcp: failed to delete checkpoint", "agent", args.Name, "path", p, "err", err)
 			}
-		}
+		})
 		return text(fmt.Sprintf("agent %q stopped", args.Name))
 	})
 
@@ -1369,16 +1340,7 @@ func registerTaskTools(s *sdkmcp.Server) {
 		Name:        "task_run",
 		Description: "Immediately trigger a configured task by name (e.g. 'myagent/daily-report' or just 'daily-report')",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args taskNameArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		slog.Info("mcp: tool call", "component", "scheduler", "tool", "task_run", "task", args.Name)
-		d := GetDeps()
-		if d.Scheduler == nil {
-			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
-		}
-		job, err := d.Scheduler.Trigger(args.Name)
-		if err != nil {
-			return nil, struct{}{}, err
-		}
-		return jsonResult(job)
+		return runSchedulerJob("task_run", "task", args.Name, (*scheduler.Scheduler).Trigger)
 	})
 
 	addTool(s, &sdkmcp.Tool{
@@ -1779,45 +1741,8 @@ func registerJobTools(s *sdkmcp.Server) {
 			// If no explicit job output was captured, attempt to show the
 			// session message log for the job's session (includes tool
 			// events, secondary inputs, media markers, and assistant text).
-			if job.SessionID != "" {
-				sessPath := store.FindSessionPath(job.AgentID, job.SessionID)
-				if sessPath != "" {
-					lines, err := store.ReadJSONL[domain.Message](sessPath)
-					if err == nil && len(lines) > 0 {
-						var sb strings.Builder
-						for _, msg := range lines {
-							if msg.Role == "" {
-								// response marker or metadata — skip
-								continue
-							}
-							ts := ""
-							if !msg.Timestamp.IsZero() {
-								ts = msg.Timestamp.Format(time.RFC3339Nano)
-							}
-							content := strings.TrimSpace(msg.Content)
-							for _, mediaURL := range msg.MediaURLs {
-								if content != "" {
-									content += " "
-								}
-								content += "[media: " + mediaURL + "]"
-							}
-							// Pretty-print tool JSON payloads when possible.
-							if msg.Role == domain.MessageRoleTool && content != "" {
-								var pretty any
-								if jerr := json.Unmarshal([]byte(content), &pretty); jerr == nil {
-									if p, merr := json.MarshalIndent(pretty, "", "  "); merr == nil {
-										content = string(p)
-									}
-								}
-							}
-							fmt.Fprintf(&sb, "[%s] <%s>: %s\n", ts, string(msg.Role), content)
-						}
-						out := sb.String()
-						if strings.TrimSpace(out) != "" {
-							return text(out)
-						}
-					}
-				}
+			if out := jobSessionLog(job); strings.TrimSpace(out) != "" {
+				return text(out)
 			}
 			return text("(no output captured)")
 		}
@@ -1851,16 +1776,7 @@ func registerJobTools(s *sdkmcp.Server) {
 		Name:        "job_run_now",
 		Description: "Immediately run an existing pending job by ID, ignoring its scheduled time and worker concurrency limits",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args jobIDArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		slog.Info("mcp: tool call", "component", "scheduler", "tool", "job_run_now", "id", args.ID)
-		d := GetDeps()
-		if d.Scheduler == nil {
-			return nil, struct{}{}, fmt.Errorf("scheduler not initialized")
-		}
-		job, err := d.Scheduler.RunJobNow(args.ID)
-		if err != nil {
-			return nil, struct{}{}, err
-		}
-		return jsonResult(job)
+		return runSchedulerJob("job_run_now", "id", args.ID, (*scheduler.Scheduler).RunJobNow)
 	})
 }
 
@@ -2028,40 +1944,24 @@ func registerBrowserTools(s *sdkmcp.Server) {
 		Name:        "browser_keystroke",
 		Description: "Send keystrokes to an element by CSS selector in the specified tab",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserTypeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_keystroke", "tab_id", args.TabID, "selector", args.Selector)
-		d := GetDeps()
-		if d.Browser == nil {
-			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
-		}
-		if args.TabID == "" {
-			return nil, struct{}{}, fmt.Errorf("tab_id is required")
-		}
-		if err := d.Browser.Type(ctx, args.TabID, args.Selector, args.Text); err != nil {
-			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_keystroke", "tab_id", args.TabID, "selector", args.Selector, "err", err)
-			return nil, struct{}{}, err
-		}
-		slog.Info("keystrokes sent", "component", "browser", "tab_id", args.TabID, "selector", args.Selector)
-		return text(fmt.Sprintf("keystrokes sent to %q in tab %s", args.Selector, args.TabID))
+		return browserTypeText(ctx, args, browserTypeAction{
+			tool:    "browser_keystroke",
+			run:     (*browser.Manager).Type,
+			logMsg:  "keystrokes sent",
+			doneFmt: "keystrokes sent to %q in tab %s",
+		})
 	})
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "browser_fill",
 		Description: "Fill (default typing) text in an element by CSS selector in the specified tab",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, args browserTypeArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		slog.Info("mcp: tool call", "component", "browser", "tool", "browser_fill", "tab_id", args.TabID, "selector", args.Selector)
-		d := GetDeps()
-		if d.Browser == nil {
-			return nil, struct{}{}, fmt.Errorf("browser manager not initialized")
-		}
-		if args.TabID == "" {
-			return nil, struct{}{}, fmt.Errorf("tab_id is required")
-		}
-		if err := d.Browser.Fill(ctx, args.TabID, args.Selector, args.Text); err != nil {
-			slog.Error("mcp: tool failed", "component", "browser", "tool", "browser_fill", "tab_id", args.TabID, "selector", args.Selector, "err", err)
-			return nil, struct{}{}, err
-		}
-		slog.Info("filled element", "component", "browser", "tab_id", args.TabID, "selector", args.Selector)
-		return text(fmt.Sprintf("filled %q in tab %s", args.Selector, args.TabID))
+		return browserTypeText(ctx, args, browserTypeAction{
+			tool:    "browser_fill",
+			run:     (*browser.Manager).Fill,
+			logMsg:  "filled element",
+			doneFmt: "filled %q in tab %s",
+		})
 	})
 
 	addTool(s, &sdkmcp.Tool{
@@ -2476,40 +2376,19 @@ func registerAuthTools(s *sdkmcp.Server) {
 		Description: "Start Google Gemini OAuth login (gemini-cli style). Returns the full authorization URL and callback URL, " +
 			"and attempts to open the browser automatically. Call auth_login_gemini_complete after authorization succeeds.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		start, err := auth.StartGeminiLogin()
-		if err != nil {
-			return nil, struct{}{}, fmt.Errorf("gemini login: %w", err)
-		}
-		return jsonResult(map[string]any{
-			"url":                start.AuthorizeURL,
-			"callback_url":       start.CallbackURL,
-			"browser_opened":     start.BrowserOpened,
-			"browser_open_error": start.BrowserOpenErr,
-			"expires_at":         start.ExpiresAt.UTC().Format(time.RFC3339),
-			"timeout_seconds":    int(auth.BrowserLoginTimeout / time.Second),
-		})
+		return startBrowserLogin("gemini", auth.StartGeminiLogin)
 	})
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "auth_login_gemini_complete",
 		Description: "Wait for the Google Gemini OAuth callback, exchange the authorization code for tokens, and store them.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		loginCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-		defer cancel()
-		token, err := auth.CompleteGeminiLogin(loginCtx)
-		if err != nil {
-			return nil, struct{}{}, fmt.Errorf("gemini login: %w", err)
-		}
-		tokenJSON, _ := json.Marshal(token)
-		st, err := authStore()
-		if err != nil {
-			return nil, struct{}{}, err
-		}
-		if err := st.Set("gemini:oauth", string(tokenJSON)); err != nil {
-			return nil, struct{}{}, err
-		}
-		reconcileAgents()
-		return text(fmt.Sprintf("Gemini OAuth login successful. Access token stored (expires %s).", time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
+		return completeBrowserLogin(ctx, browserLogin{
+			label:    "gemini",
+			display:  "Gemini",
+			storeKey: "gemini:oauth",
+			complete: auth.CompleteGeminiLogin,
+		})
 	})
 
 	addTool(s, &sdkmcp.Tool{
@@ -2517,40 +2396,19 @@ func registerAuthTools(s *sdkmcp.Server) {
 		Description: "Start OpenAI Codex OAuth login. Returns the full authorization URL and callback URL, " +
 			"and attempts to open the browser automatically. Call auth_login_openai_complete after authorization succeeds.",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		start, err := auth.StartOpenAILogin()
-		if err != nil {
-			return nil, struct{}{}, fmt.Errorf("OpenAI login: %w", err)
-		}
-		return jsonResult(map[string]any{
-			"url":                start.AuthorizeURL,
-			"callback_url":       start.CallbackURL,
-			"browser_opened":     start.BrowserOpened,
-			"browser_open_error": start.BrowserOpenErr,
-			"expires_at":         start.ExpiresAt.UTC().Format(time.RFC3339),
-			"timeout_seconds":    int(auth.BrowserLoginTimeout / time.Second),
-		})
+		return startBrowserLogin("OpenAI", auth.StartOpenAILogin)
 	})
 
 	addTool(s, &sdkmcp.Tool{
 		Name:        "auth_login_openai_complete",
 		Description: "Wait for the OpenAI Codex OAuth callback, exchange the authorization code for tokens, and store them.",
 	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, _ struct{}) (*sdkmcp.CallToolResult, struct{}, error) {
-		loginCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-		defer cancel()
-		token, err := auth.CompleteOpenAILogin(loginCtx)
-		if err != nil {
-			return nil, struct{}{}, fmt.Errorf("OpenAI login: %w", err)
-		}
-		tokenJSON, _ := json.Marshal(token)
-		st, err := authStore()
-		if err != nil {
-			return nil, struct{}{}, err
-		}
-		if err := st.Set("openai:oauth", string(tokenJSON)); err != nil {
-			return nil, struct{}{}, err
-		}
-		reconcileAgents()
-		return text(fmt.Sprintf("OpenAI OAuth login successful. Access token stored (expires %s).", time.UnixMilli(token.ExpiresAt).UTC().Format(time.RFC3339)))
+		return completeBrowserLogin(ctx, browserLogin{
+			label:    "OpenAI",
+			display:  "OpenAI",
+			storeKey: "openai:oauth",
+			complete: auth.CompleteOpenAILogin,
+		})
 	})
 
 	addTool(s, &sdkmcp.Tool{
@@ -2753,79 +2611,8 @@ func registerServerTools(s *sdkmcp.Server) {
 		// their files; then write any tasks marked FromFile in the incoming
 		// config to markdown files and remove them from the inline config so
 		// aviary.yaml does not duplicate file-backed tasks.
-		for i := range cfg.Agents {
-			// Build set of previous file-backed task names.
-			prevFileTasks := map[string]struct{}{}
-			if i < len(prevCfg.Agents) {
-				for _, t := range prevCfg.Agents[i].Tasks {
-					if t.FromFile {
-						prevFileTasks[t.Name] = struct{}{}
-					}
-				}
-			}
-
-			// Build set of current task names for quick lookup.
-			currTasks := map[string]struct{}{}
-			for _, t := range cfg.Agents[i].Tasks {
-				currTasks[t.Name] = struct{}{}
-			}
-
-			// Any prev file-backed task missing from currTasks should have
-			// its markdown file removed.
-			if len(prevFileTasks) > 0 {
-				tasksDir := config.AgentTasksDir(cfg.Agents[i])
-				pattern := filepath.Join(tasksDir, "*.md")
-				files, _ := filepath.Glob(pattern)
-				for name := range prevFileTasks {
-					if _, ok := currTasks[name]; ok {
-						continue
-					}
-					// Find matching file by parsing each markdown file and
-					// comparing the parsed task name.
-					for _, f := range files {
-						tc, terr := config.LoadMarkdownTask(f)
-						if terr != nil {
-							continue
-						}
-						if tc.Name == name {
-							// Delete via store helper using agent name and
-							// relative filename (preserve subdirectory such as "tasks/").
-							// Compute the path relative to the agent directory so the
-							// store helper deletes the correct file.
-							agentDir := store.AgentDir(cfg.Agents[i].Name)
-							rel, rerr := filepath.Rel(agentDir, f)
-							if rerr != nil {
-								return nil, struct{}{}, fmt.Errorf("computing relative task file path: %w", rerr)
-							}
-							if derr := deleteAgentFile(cfg.Agents[i].Name, rel); derr != nil {
-								if os.IsNotExist(derr) {
-									// Ignore missing files (race or already-removed).
-									continue
-								}
-								return nil, struct{}{}, fmt.Errorf("deleting task file %s: %w", rel, derr)
-							}
-							break
-						}
-					}
-				}
-			}
-
-			// Now write any tasks in the incoming config that are marked
-			// FromFile to actual markdown files and remove them from the
-			// inline config to avoid duplication.
-			var filtered []config.TaskConfig
-			for _, t := range cfg.Agents[i].Tasks {
-				if t.FromFile {
-					dir := config.AgentTasksDir(cfg.Agents[i])
-					if _, err := config.SaveMarkdownTask(dir, t); err != nil {
-						return nil, struct{}{}, fmt.Errorf("writing task file: %w", err)
-					}
-					// skip adding to filtered (remove from inline config)
-					continue
-				}
-				filtered = append(filtered, t)
-			}
-			cfg.Agents[i].Tasks = filtered
+		if err := syncFileBackedTasks(prevCfg, &cfg); err != nil {
+			return nil, struct{}{}, err
 		}
 		if err := config.Save("", &cfg); err != nil {
 			return nil, struct{}{}, err

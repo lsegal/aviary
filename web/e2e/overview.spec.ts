@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { boundingBoxOf } from "./helpers/box";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 const AGENTS = [
@@ -287,12 +288,6 @@ test("a System page keeps its icon in the rail and header, but not the sidebar l
 	expect(await railIcon.locator("svg").innerHTML()).toBe(cardIcon);
 });
 
-const box = async (locator: import("@playwright/test").Locator) => {
-	const b = await locator.boundingBox();
-	if (!b) throw new Error("element has no bounding box");
-	return b;
-};
-
 const padding = (locator: import("@playwright/test").Locator) =>
 	locator.evaluate((el) => getComputedStyle(el).paddingTop);
 
@@ -334,7 +329,7 @@ for (const { name, width } of [
 		await expect(cards.first().getByText("1 starting")).toBeVisible();
 		for (const card of await cards.all()) {
 			expect(await padding(card)).toBe("16px");
-			expect((await box(card)).height).toBeGreaterThanOrEqual(44);
+			expect((await boundingBoxOf(card)).height).toBeGreaterThanOrEqual(44);
 		}
 		const value = cards.first().locator("span").nth(1);
 		expect(await value.evaluate((el) => getComputedStyle(el).fontSize)).toBe(
@@ -364,22 +359,22 @@ test("System cards are compact on mobile only, leaving page headers alone (#925)
 	const card = cards.first();
 	const tile = card.getByTestId("system-page-icon");
 	expect(await padding(card)).toBe("16px");
-	expect((await box(tile)).width).toBe(28);
+	expect((await boundingBoxOf(tile)).width).toBe(28);
 	for (const c of await cards.all()) {
-		expect((await box(c)).height).toBeGreaterThanOrEqual(44);
+		expect((await boundingBoxOf(c)).height).toBeGreaterThanOrEqual(44);
 	}
 	expect(await overflows(cards)).toEqual([]);
 
 	await page.setViewportSize({ width: 1280, height: 900 });
 	expect(await padding(card)).toBe("20px");
-	expect((await box(tile)).width).toBe(36);
+	expect((await boundingBoxOf(tile)).width).toBe(36);
 
 	await page.setViewportSize({ width: 375, height: 900 });
 	await card.click();
 	await expect(page).toHaveURL("/system/usage");
 	// The header keeps the shared header's tile (#1147).
 	const header = page.getByTestId("settings-header-icon");
-	expect((await box(header)).width).toBe(28);
+	expect((await boundingBoxOf(header)).width).toBe(28);
 });
 
 test("loading skeleton matches the compact status cards (#925)", async ({
@@ -404,7 +399,7 @@ test("loading skeleton matches the compact status cards (#925)", async ({
 	const skeleton = page.getByTestId("overview-stat-skeleton").first();
 	await expect(skeleton).toBeVisible();
 	expect(await padding(skeleton)).toBe("16px");
-	const skeletonHeight = (await box(skeleton)).height;
+	const skeletonHeight = (await boundingBoxOf(skeleton)).height;
 
 	release();
 	const card = page
@@ -413,6 +408,6 @@ test("loading skeleton matches the compact status cards (#925)", async ({
 		.first();
 	await expect(card).toBeVisible();
 	expect(
-		Math.abs((await box(card)).height - skeletonHeight),
+		Math.abs((await boundingBoxOf(card)).height - skeletonHeight),
 	).toBeLessThanOrEqual(4);
 });

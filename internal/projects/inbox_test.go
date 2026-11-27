@@ -313,7 +313,7 @@ func TestWatcherRelaysQueuedOutputOnResume(t *testing.T) {
 	ready := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
-		engine.watchForIssueUpdates(ctx, nil, issue, issueWatch{since: time.Now(), resumable: func() bool { return true }}, cancel, ready)
+		engine.watchForIssueUpdates(ctx, issue, issueWatch{since: time.Now(), resumable: func() bool { return true }}, cancel, ready)
 		close(done)
 	}()
 	select {

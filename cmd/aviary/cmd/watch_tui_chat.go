@@ -934,7 +934,15 @@ func (r *watchChatRenderer) inlineStyled(text string, base lipgloss.Style) strin
 // watchRefBlocked reports whether a # after c is no issue reference, as in
 // an HTML entity or a URL fragment.
 func watchRefBlocked(c byte) bool {
-	return c == '&' || c == '/' || c == '#' || c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+	return isASCIIAlnum(c) || strings.IndexByte("&/#_", c) >= 0
+}
+
+// isASCIIAlnum reports whether c is an ASCII letter or digit.
+func isASCIIAlnum(c byte) bool {
+	isDigit := c >= '0' && c <= '9'
+	isLower := c >= 'a' && c <= 'z'
+	isUpper := c >= 'A' && c <= 'Z'
+	return isDigit || isLower || isUpper
 }
 
 // ref records and styles an issue reference, reversed while selected.

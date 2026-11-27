@@ -86,13 +86,9 @@ func (w *Watcher) Start() error {
 				continue
 			}
 			if event.Has(fsnotify.Create) {
-				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-					if err := addWatchTree(fw, watched, event.Name); err != nil {
-						slog.Warn("skills watcher: could not watch created dir", "dir", event.Name, "err", err)
-					}
-				}
+				watchCreatedDir(fw, watched, event.Name)
 			}
-			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+			if event.Has(fsnotify.Write | fsnotify.Create | fsnotify.Remove | fsnotify.Rename) {
 				trigger()
 			}
 
@@ -102,6 +98,18 @@ func (w *Watcher) Start() error {
 			}
 			slog.Warn("skills watcher error", "err", err)
 		}
+	}
+}
+
+// watchCreatedDir adds a newly created directory tree at path to fw, if path
+// is a directory.
+func watchCreatedDir(fw *fsnotify.Watcher, watched map[string]struct{}, path string) {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return
+	}
+	if err := addWatchTree(fw, watched, path); err != nil {
+		slog.Warn("skills watcher: could not watch created dir", "dir", path, "err", err)
 	}
 }
 

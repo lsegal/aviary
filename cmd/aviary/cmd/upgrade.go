@@ -217,6 +217,13 @@ var updateSkills = func(ctx context.Context, version string) error {
 	return err
 }
 
+// serverRunsCheckout reports whether srv is a healthy source build running
+// from the checkout at dir.
+func serverRunsCheckout(srv runningServer, dir string) bool {
+	healthySource := srv.Problem == "" && srv.InstallType == update.InstallSource
+	return healthySource && srv.Git != nil && sameDir(srv.Git.Dir, dir)
+}
+
 // runSourceUpgrade pulls the source checkout in this process. When the
 // running server is a dev build from the same checkout, the pulled code goes
 // live by forgo's hot reload where it can, and otherwise by restarting the
@@ -224,7 +231,7 @@ var updateSkills = func(ctx context.Context, version string) error {
 func runSourceUpgrade(check update.CheckResult) error {
 	dir := sourceUpgradeDir(check)
 	srv, running := findRunningServer()
-	sameCheckout := running && srv.Problem == "" && srv.InstallType == update.InstallSource && srv.Git != nil && sameDir(srv.Git.Dir, dir)
+	sameCheckout := running && serverRunsCheckout(srv, dir)
 	hotDir, since := "", 0
 	if sameCheckout && srv.Git.HotReload {
 		hotDir = srv.Git.HotReloadDir

@@ -466,9 +466,9 @@ func TestAgentRunner_AlreadyAnsweredMessageIsNotRunAgain(t *testing.T) {
 	require.NoError(t, MarkMessageResponded("agent_answered", "ans-sess", msgs[0].ID, "msg_reply"))
 
 	done := make(chan StreamEventType, 1)
-	runner.promptCore(WithSessionID(context.Background(), "ans-sess"), "hi", nil, RunOverrides{}, msgs[0].ID, "", false, func(e StreamEvent) {
+	runner.promptCore(WithSessionID(context.Background(), "ans-sess"), promptRequest{message: "hi", promptMsgID: msgs[0].ID, consumers: []StreamConsumer{func(e StreamEvent) {
 		done <- e.Type
-	})
+	}}})
 	select {
 	case typ := <-done:
 		assert.Equal(t, StreamEventDone, typ)
