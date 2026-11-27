@@ -1447,9 +1447,11 @@ func (r CommandRunner) recordUsage(issue Issue, spec agentSpec, recorder *transc
 	if usage.InputTokens == 0 && usage.OutputTokens == 0 && runErr == nil {
 		return
 	}
-	model := spec.Model
-	if model == "" {
-		model = spec.Name
+	// Record the provider/model form core's own prompts record (#1470), so
+	// System → Usage groups a Code Loop run's model with core's.
+	model := spec.Name
+	if spec.Model != "" {
+		model += "/" + spec.Model
 	}
 	r.RecordUsage(domain.UsageRecord{
 		Timestamp:        time.Now(),
