@@ -237,6 +237,26 @@ func TestOpenAIProvider_Stream_ToolCallWithoutText(t *testing.T) {
 	assert.False(t, hasContent)
 }
 
+func TestOpenAIProvider_Stream_ToolCallFollowedByTextSentOnce(t *testing.T) {
+	p, body := newOpenAITestServer(t)
+	ch, err := p.Stream(context.Background(), Request{Messages: []Message{
+		{Role: RoleUser, Content: "check"},
+		{Role: RoleAssistant, ToolCall: &ToolCall{Name: "read", Arguments: map[string]any{"f": "a"}}},
+		{Role: RoleAssistant, Content: "Reading it now."},
+		{Role: RoleUser, Result: &ToolResult{ToolCallID: "call_1", Content: "A"}},
+	}})
+	require.NoError(t, err)
+	collectEvents(t, ch)
+
+	msgs := (*body)["messages"].([]any)
+	require.Len(t, msgs, 3)
+	asst := msgs[1].(map[string]any)
+	assert.Equal(t, "Reading it now.", asst["content"])
+	calls := asst["tool_calls"].([]any)
+	require.Len(t, calls, 1)
+	assert.Equal(t, "call_1", calls[0].(map[string]any)["id"])
+}
+
 func TestOpenAIProvider_Stream_ToolDefinitionsIncludeExamples(t *testing.T) {
 	p, body := newOpenAITestServer(t)
 	ch, err := p.Stream(context.Background(), Request{
