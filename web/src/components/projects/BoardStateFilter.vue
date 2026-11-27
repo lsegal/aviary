@@ -1,20 +1,7 @@
 <template>
 	<div ref="root" class="relative flex shrink-0 items-center gap-1.5" @keydown.esc="close(true)">
-		<!-- The full control, laid out off-screen at its natural width, tells
-			the toolbar how much room the segments need even while folded (#1490). -->
-		<div class="pointer-events-none absolute top-0 left-0 h-0 w-0 overflow-hidden" aria-hidden="true" inert>
-			<div ref="measure" class="flex w-max items-center gap-1.5" data-testid="state-filter-measure">
-				<div :class="SEGMENTS_CLS">
-					<span v-for="state in BOARD_FILTERS" :key="state" :class="SEGMENT_CLS">
-						{{ stateLabel(state) }}<span v-if="counts[state] !== null" :class="BADGE_CLS">{{ counts[state] }}</span>
-					</span>
-				</div>
-				<span :class="CLEAR_CLS">Clear</span>
-			</div>
-		</div>
-
 		<template v-if="!collapsed">
-			<div id="job-filter" role="group" aria-label="Job filter" :class="SEGMENTS_CLS" data-testid="state-filter-segments">
+			<div id="job-filter" ref="segments" role="group" aria-label="Job filter" :class="SEGMENTS_CLS" data-testid="state-filter-segments">
 				<button v-for="state in BOARD_FILTERS" :key="state" type="button" :aria-pressed="filters.includes(state)"
 					:class="[SEGMENT_CLS, segmentTone(state)]" @click="emit('toggle', state)">
 					{{ stateLabel(state) }}<span v-if="counts[state] !== null" :class="BADGE_CLS">{{ counts[state] }}</span>
@@ -103,10 +90,17 @@ function segmentTone(state: BoardFilter) {
 }
 
 const root = ref<HTMLElement | null>(null);
-const measure = ref<HTMLElement | null>(null);
+const segments = ref<HTMLElement | null>(null);
 const toggleButton = ref<HTMLButtonElement | null>(null);
 const open = ref(false);
-/** The full control's width, whether or not it is showing. */
+// Room for Clear, reserved whether or not it shows so selecting a state
+// never folds the control.
+const CLEAR_RESERVE = 44;
+/**
+ * The full control's width, measured while it shows and remembered while
+ * folded, so the toolbar knows when it fits again. No hidden copy measures
+ * it: one would reach past a phone's edge.
+ */
 const naturalWidth = ref(0);
 
 function close(focus = false) {
@@ -124,18 +118,28 @@ watch(
 	},
 );
 
-let observer: ResizeObserver | undefined;
+function measureSegments() {
+	if (segments.value)
+		naturalWidth.value = segments.value.offsetWidth + CLEAR_RESERVE;
+}
+const observer = new ResizeObserver(measureSegments);
+watch(segments, (el, old) => {
+	if (old) observer.unobserve(old);
+	if (el) {
+		observer.observe(el);
+		measureSegments();
+	}
+});
 onMounted(() => {
 	document.addEventListener("pointerdown", onOutside);
-	observer = new ResizeObserver(() => {
-		naturalWidth.value = measure.value?.offsetWidth ?? 0;
-	});
-	if (measure.value) observer.observe(measure.value);
-	naturalWidth.value = measure.value?.offsetWidth ?? 0;
+	if (segments.value) {
+		observer.observe(segments.value);
+		measureSegments();
+	}
 });
 onBeforeUnmount(() => {
 	document.removeEventListener("pointerdown", onOutside);
-	observer?.disconnect();
+	observer.disconnect();
 });
 
 defineExpose({ naturalWidth });
