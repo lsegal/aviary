@@ -147,7 +147,8 @@ export function useScrollAwayHeader(
 	onMounted(() => {
 		const col = main.value;
 		if (!col) return;
-		for (const [type, fn, opts] of listeners) col.addEventListener(type, fn, opts);
+		for (const [type, fn, opts] of listeners)
+			col.addEventListener(type, fn, opts);
 	});
 
 	// A new page, or a page without the header, starts with it shown.

@@ -3711,7 +3711,9 @@ test("only the breadcrumb bar stays pinned while the Code Loop board scrolls (#1
 	// A small scroll moves the content and the title row together.
 	await content.hover();
 	await page.mouse.wheel(0, 30);
-	await expect.poll(async () => contentBefore - (await top(content))).toBeCloseTo(30, 0);
+	await expect
+		.poll(async () => contentBefore - (await top(content)))
+		.toBeCloseTo(30, 0);
 	expect(await top(titleRow)).toBeCloseTo(row.y - 30, 0);
 	expect(await top(crumbs)).toBeCloseTo(bar.y, 0);
 
@@ -3766,7 +3768,11 @@ test("the page's own scrolls and focus leave the Code Loop header shown (#1437)"
 	// Hidden by a scroll, the title row comes back when a key reaches its actions.
 	await page.getByTestId("settings-crumb-bar").hover();
 	for (let i = 0; i < 4; i++) await page.mouse.wheel(0, 100);
-	await expect.poll(async () => (await titleRow.boundingBox())?.y).toBeLessThan((row?.y ?? 0) - 10);
+	await expect
+		.poll(async () => (await titleRow.boundingBox())?.y)
+		.toBeLessThan((row?.y ?? 0) - 10);
 	await page.getByRole("button", { name: "Logs" }).focus();
-	await expect.poll(async () => (await titleRow.boundingBox())?.y).toBeCloseTo(row?.y ?? 0, 0);
+	await expect
+		.poll(async () => (await titleRow.boundingBox())?.y)
+		.toBeCloseTo(row?.y ?? 0, 0);
 });
