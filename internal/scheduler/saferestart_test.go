@@ -33,7 +33,6 @@ func TestScheduler_CheckpointRequeuesRunningJobsWithRestartNote(t *testing.T) {
 	setupSchedulerDataDir(t)
 	s, err := New(agent.NewManager(nil), 1)
 	require.NoError(t, err)
-	t.Cleanup(s.Stop)
 
 	_, err = s.queue.Enqueue("alpha/daily", "alpha", "write the report", "", 1, "", "")
 	require.NoError(t, err)
