@@ -3064,45 +3064,68 @@ func projectTaskCompileNote(ctx context.Context, agentName, taskName string) str
 // ── Usage tools ──────────────────────────────────────────────────────────────
 
 type usageQueryArgs struct {
-	Start string `json:"start,omitempty"`
-	End   string `json:"end,omitempty"`
+	Start   string `json:"start,omitempty" jsonschema:"start of the date range, RFC 3339 or YYYY-MM-DD; defaults to 30 days ago"`
+	End     string `json:"end,omitempty" jsonschema:"end of the date range; a bare date includes that day; defaults to now"`
+	Agent   string `json:"agent,omitempty" jsonschema:"only records of this agent ID"`
+	Model   string `json:"model,omitempty" jsonschema:"only records of this model"`
+	Status  string `json:"status,omitempty" jsonschema:"only sessions that are ok (no error) or error (had an error)"`
+	Deleted string `json:"deleted,omitempty" jsonschema:"include (default), exclude, or only deleted sessions"`
+}
+
+type usageSessionsArgs struct {
+	usageQueryArgs
+	Sort   string `json:"sort,omitempty" jsonschema:"column to sort by: name, agent, model, tokens, tools or last (default)"`
+	Order  string `json:"order,omitempty" jsonschema:"asc or desc; text columns default to asc, the rest to desc"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"sessions per page, default 50, at most 500"`
+	Offset int    `json:"offset,omitempty" jsonschema:"sessions to skip before the page"`
+}
+
+// usageQuery reads the records in the arguments' range and the sessions
+// that match their filters.
+func usageQuery(args usageQueryArgs) ([]domain.UsageRecord, usageFilter, []UsageSessionRow, error) {
+	start, end := parseUsageRange(args.Start, args.End)
+	f := usageFilter{Start: start, End: end, Agent: args.Agent, Model: args.Model, Status: args.Status, Deleted: args.Deleted}
+	switch f.Status {
+	case "", "ok", "error":
+	default:
+		return nil, f, nil, fmt.Errorf("unknown status %q: use ok or error", f.Status)
+	}
+	switch f.Deleted {
+	case "", "include", "exclude", "only":
+	default:
+		return nil, f, nil, fmt.Errorf("unknown deleted %q: use include, exclude or only", f.Deleted)
+	}
+	records, err := readUsageRange(start, end)
+	if err != nil {
+		return nil, f, nil, err
+	}
+	f.resolveSession = storeSessionResolver()
+	return records, f, usageSessions(records, f), nil
 }
 
 func registerUsageTools(s *sdkmcp.Server) {
 	addTool(s, &sdkmcp.Tool{
 		Name:        "usage_query",
-		Description: "Return raw token-usage records within a date range for display in the Usage dashboard",
+		Description: "Return raw token-usage records within a date range for the Usage dashboard's totals and charts, narrowed by agent, model, session status and deleted state. Code Loop work and delivery records are always included",
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args usageQueryArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-		now := time.Now()
-		start := now.AddDate(0, 0, -30)
-		end := now
-		parse := func(s string, fallback time.Time) time.Time {
-			if s == "" {
-				return fallback
-			}
-			for _, layout := range []string{time.RFC3339, "2006-01-02"} {
-				if t, err := time.Parse(layout, s); err == nil {
-					return t
-				}
-			}
-			return fallback
-		}
-		start = parse(args.Start, start)
-		end = parse(args.End, end)
-		if len(args.End) == 10 {
-			end = end.AddDate(0, 0, 1)
-		}
-		records, err := store.ReadJSONL[domain.UsageRecord](store.UsagePath())
+		records, f, rows, err := usageQuery(args)
 		if err != nil {
-			return nil, struct{}{}, fmt.Errorf("reading usage log: %w", err)
+			return nil, struct{}{}, err
 		}
-		filtered := records[:0]
-		for _, r := range records {
-			if (r.Timestamp.Equal(start) || r.Timestamp.After(start)) && r.Timestamp.Before(end) {
-				filtered = append(filtered, r)
-			}
+		return jsonResult(filterUsageRecords(records, f, rows))
+	})
+	addTool(s, &sdkmcp.Tool{
+		Name:        "usage_sessions",
+		Description: "Return one sorted page of the sessions that spent tokens within a date range, each named even after it was deleted, with the total count and token totals over every matching session, filtered like usage_query",
+	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args usageSessionsArgs) (*sdkmcp.CallToolResult, struct{}, error) {
+		records, _, rows, err := usageQuery(args.usageQueryArgs)
+		if err != nil {
+			return nil, struct{}{}, err
 		}
-		return jsonResult(filtered)
+		if err := sortUsageSessions(rows, args.Sort, args.Order); err != nil {
+			return nil, struct{}{}, err
+		}
+		return jsonResult(pageUsageSessions(records, rows, args.Offset, args.Limit))
 	})
 }
 

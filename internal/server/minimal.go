@@ -39,13 +39,14 @@ func SetWebUIEnabled(on bool) { webUIOff.Store(!on) }
 // control and the instance's own pages are refused. Agents' own tool calls go through their in-process MCP
 // server, which this does not restrict.
 var minimalTools = map[string]bool{
-	"ping":          true,
-	"server_status": true,
-	"agent_list":    true,
-	"agent_get":     true,
-	"models_list":   true,
-	"skills_list":   true,
-	"usage_query":   true,
+	"ping":           true,
+	"server_status":  true,
+	"agent_list":     true,
+	"agent_get":      true,
+	"models_list":    true,
+	"skills_list":    true,
+	"usage_query":    true,
+	"usage_sessions": true,
 	// provider_cli_list names the CLI providers Code Loop jobs can run on.
 	"provider_cli_list": true,
 	"config_get":        true,
