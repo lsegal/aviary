@@ -2,6 +2,7 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -146,5 +147,126 @@ func TestGHCLIPostsCommentsWithAttachments(t *testing.T) {
 	want := []string{"issue", "comment", "3", "--repo", "o/r", "--body", "@octo hi", "--attach", "/a.png", "--attach", "/b.mp4"}
 	if len(calls) != 1 || !slices.Equal(calls[0], want) {
 		t.Errorf("calls = %q, want %q", calls, want)
+	}
+}
+
+// writeAttachmentBytes writes data to a file named name under dir.
+func writeAttachmentBytes(t *testing.T, dir, name string, data []byte) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// The extension names the type when it is known; otherwise the first bytes
+// do, and a file that cannot be read has none.
+func TestFileContentType(t *testing.T) {
+	dir := t.TempDir()
+	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+	gif := []byte("GIF89a\x01\x00\x01\x00")
+	for _, c := range []struct{ name, path, want string }{
+		{"png extension", writeAttachmentBytes(t, dir, "shot.png", nil), "image/png"},
+		{"upper-case extension", writeAttachmentBytes(t, dir, "SHOT.JPG", nil), "image/jpeg"},
+		{"extension wins over content", writeAttachmentBytes(t, dir, "clip.mp4", png), "video/mp4"},
+		{"no extension sniffs png", writeAttachmentBytes(t, dir, "screenshot", png), "image/png"},
+		{"unknown extension sniffs gif", writeAttachmentBytes(t, dir, "frame.aviaryunknown", gif), "image/gif"},
+		{"no extension text drops parameters", writeAttachmentBytes(t, dir, "notes", []byte("hello world")), "text/plain"},
+		{"no extension empty file", writeAttachmentBytes(t, dir, "empty", nil), "text/plain"},
+		{"missing file without extension", filepath.Join(dir, "gone"), ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := fileContentType(c.path); got != c.want {
+				t.Errorf("fileContentType(%s) = %q, want %q", c.path, got, c.want)
+			}
+		})
+	}
+}
+
+func TestCheckAttachment(t *testing.T) {
+	dir := t.TempDir()
+	sniffed := writeAttachmentBytes(t, dir, "screenshot", []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"))
+	if path, err := checkAttachment("  " + sniffed + "  "); err != nil || path != sniffed {
+		t.Errorf("a PNG without an extension, padded: %q, %v", path, err)
+	}
+	// Videos have their own, larger limit than images.
+	video := writeAttachment(t, dir, "clip.mp4", maxImageAttachmentBytes+1)
+	if path, err := checkAttachment(video); err != nil || path != video {
+		t.Errorf("a video over the image limit: %q, %v", path, err)
+	}
+	// A relative path resolves against the working directory.
+	t.Chdir(dir)
+	if path, err := checkAttachment("clip.mp4"); err != nil || path != video {
+		t.Errorf("a relative path: %q, %v", path, err)
+	}
+	for _, blank := range []string{"", "   "} {
+		if _, err := checkAttachment(blank); err == nil || !strings.Contains(err.Error(), "not a file path") {
+			t.Errorf("checkAttachment(%q) = %v, want not a file path", blank, err)
+		}
+	}
+	text := writeAttachmentBytes(t, dir, "notes", []byte("plain words"))
+	if _, err := checkAttachment(text); err == nil || !strings.Contains(err.Error(), "unsupported type text/plain") || !strings.Contains(err.Error(), "GitHub takes only images") {
+		t.Errorf("sniffed text: %v", err)
+	}
+	huge := writeAttachment(t, dir, "huge.png", maxImageAttachmentBytes+1)
+	if _, err := checkAttachment(huge); err == nil || !strings.Contains(err.Error(), "too large (11 MB; GitHub takes up to 10 MB for image/png)") {
+		t.Errorf("an oversized image: %v", err)
+	}
+	// A path below a regular file fails to stat; the error names the path
+	// whichever way the platform reports it.
+	under := filepath.Join(sniffed, "inner.png")
+	if _, err := checkAttachment(under); err == nil || !strings.Contains(err.Error(), under) {
+		t.Errorf("a path under a file: %v", err)
+	}
+}
+
+func TestCheckAttachments(t *testing.T) {
+	dir := t.TempDir()
+	a := writeAttachment(t, dir, "a.png", 1)
+	b := writeAttachment(t, dir, "b.gif", 1)
+	paths, err := checkAttachments([]string{a, b, a})
+	if err != nil || !slices.Equal(paths, []string{a, b}) {
+		t.Errorf("paths = %q, %v; want duplicates dropped", paths, err)
+	}
+	if paths, err := checkAttachments(nil); err != nil || paths != nil {
+		t.Errorf("no files: %q, %v", paths, err)
+	}
+	// Every bad file is named in one error and nothing is returned.
+	missing := filepath.Join(dir, "gone.png")
+	notes := writeAttachment(t, dir, "notes.txt", 1)
+	paths, err = checkAttachments([]string{a, missing, notes})
+	if paths != nil || err == nil || !strings.HasPrefix(err.Error(), "cannot attach ") || !strings.Contains(err.Error(), missing) || !strings.Contains(err.Error(), notes) || !strings.Contains(err.Error(), "; ") {
+		t.Errorf("bad files: %q, %v", paths, err)
+	}
+	// More distinct files than gh takes at once is refused; repeats of one
+	// file are not counted.
+	var many []string
+	for i := range maxAttachments + 1 {
+		many = append(many, writeAttachment(t, dir, "shot"+strconv.Itoa(i)+".png", 1))
+	}
+	paths, err = checkAttachments(many)
+	if paths != nil || err == nil || !strings.Contains(err.Error(), "51 attachments is more than the 50 GitHub takes at once") {
+		t.Errorf("too many files: %d paths, %v", len(paths), err)
+	}
+	if paths, err := checkAttachments(slices.Repeat([]string{a}, maxAttachments+1)); err != nil || len(paths) != 1 {
+		t.Errorf("one file repeated: %q, %v", paths, err)
+	}
+}
+
+func TestGHCLIPostCommentWithAttachmentsReportsFailure(t *testing.T) {
+	g := GHCLI{runCommand: func(context.Context, ...string) ([]byte, error) {
+		return []byte("  failed to upload a.png: HTTP 422\n"), errors.New("exit status 1")
+	}}
+	url, err := g.PostCommentWithAttachments(context.Background(), "o/r", 3, "hi", []string{"/a.png"})
+	if url != "" || err == nil || err.Error() != "post comment with attachments on o/r#3: exit status 1: failed to upload a.png: HTTP 422" {
+		t.Errorf("url = %q, err = %v", url, err)
+	}
+	// gh's progress lines before the URL are dropped.
+	g.runCommand = func(context.Context, ...string) ([]byte, error) {
+		return []byte("Uploading a.png\nhttps://github.com/o/r/issues/3#issuecomment-9\n"), nil
+	}
+	if url, err := g.PostCommentWithAttachments(context.Background(), "o/r", 3, "hi", nil); err != nil || url != "https://github.com/o/r/issues/3#issuecomment-9" {
+		t.Errorf("url = %q, %v", url, err)
 	}
 }
