@@ -1318,7 +1318,7 @@ test("done and failed jobs clear from their card and in bulk (#1460)", async ({
 	const running = page.getByTestId("job-card").filter({ hasText: "#218" });
 	await expect(running.getByTestId("job-clear")).toHaveCount(0);
 	const done = page.getByTestId("job-card").filter({ hasText: "#200" });
-	await done.getByRole("button", { name: "Clear", exact: true }).click();
+	await done.getByRole("button", { name: "Clear job" }).click();
 	await expect
 		.poll(() => calls.project_job_clear?.[0])
 		.toEqual({ target: "lsegal/aviary", number: 200 });
@@ -2859,7 +2859,9 @@ test("the state chips multi-select and each board remembers its own", async ({
 			);
 	};
 	await pressed([]);
-	await expect(page.getByRole("button", { name: "Clear" })).toHaveCount(0);
+	await expect(
+		page.getByRole("button", { name: "Clear", exact: true }),
+	).toHaveCount(0);
 
 	// Running and Failed together show only their jobs, in list and kanban.
 	await stateChip(page, "Running").click();
@@ -2906,7 +2908,7 @@ test("the state chips multi-select and each board remembers its own", async ({
 	await expect(cards).toHaveCount(2);
 
 	// Deselecting every chip shows every job again, and stays that way.
-	await page.getByRole("button", { name: "Clear" }).click();
+	await page.getByRole("button", { name: "Clear", exact: true }).click();
 	await pressed([]);
 	await expect(cards).toHaveCount(5);
 	await expect(total).toHaveText("5 jobs");

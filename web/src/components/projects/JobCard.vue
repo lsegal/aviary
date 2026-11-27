@@ -80,7 +80,7 @@
 				<StopIcon aria-hidden="true" class="h-4 w-4" />
 			</button>
 			<button v-if="clearable" type="button" :disabled="busy" data-testid="job-clear"
-				aria-label="Clear" title="Clear this finished job from the board and job store"
+				aria-label="Clear job" title="Clear this finished job from the board and job store"
 				class="rounded-lg border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 				@click="emit('clear', job)">
 				<XMarkIcon aria-hidden="true" class="h-4 w-4" />

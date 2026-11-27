@@ -58,8 +58,6 @@
 				<CalendarDaysIcon aria-hidden="true" :class="HEADER_COLLAPSE_ICON_CLS" />
 				<span :class="HEADER_COLLAPSE_LABEL_CLS">Schedule</span>
 			</button>
-			<ClearJobsMenu v-if="targets.length" :targets="targets" :done="status?.states?.done ?? 0"
-				:failed="status?.states?.failed ?? 0" @cleared="refresh" />
 			<button type="button" aria-label="Check now" title="Check now" :class="HEADER_ICON_CLS"
 				:disabled="checking" @click="onCheckNow">
 				<ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="{ 'animate-spin': checking }" />
@@ -76,6 +74,8 @@
 				@click="chatOpen = !chatOpen">
 				<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
+			<ClearJobsMenu v-if="targets.length" :targets="targets" :done="status?.states?.done ?? 0"
+				:failed="status?.states?.failed ?? 0" @cleared="refresh" />
 			<ProjectModeMenu v-if="filterTarget" :target="filterTarget" :manual="manual"
 				:inherited="modeInherited" :default-mode="status?.defaultMode ?? 'watch'" @changed="refresh" />
 			<router-link :to="settingsPath" data-testid="project-settings-link" aria-label="Settings" title="Settings"
