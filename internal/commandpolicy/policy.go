@@ -14,6 +14,10 @@ type compiledRule struct {
 	matcher *regexp.Regexp
 }
 
+// foldCase makes rules and commands match case-insensitively. Windows
+// command names are case-insensitive, so it defaults on there.
+var foldCase = runtime.GOOS == "windows"
+
 // Policy evaluates ordered allow/deny command rules.
 type Policy struct {
 	rules []compiledRule
@@ -78,7 +82,7 @@ func compileRule(raw string) (compiledRule, bool, error) {
 
 func normalize(command string) string {
 	command = strings.TrimSpace(command)
-	if runtime.GOOS == "windows" {
+	if foldCase {
 		command = strings.ToLower(command)
 	}
 	return command
