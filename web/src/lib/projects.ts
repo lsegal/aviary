@@ -88,6 +88,29 @@ export interface CLIStatus {
 	signedIn: boolean;
 }
 
+/**
+ * Why a CLI provider needs attention -- signed out, out of quota, or its
+ * quota reader failed -- or "" when it is fine. The narrow Code Loop header
+ * marks its details icon when any provider has a problem (#1580).
+ */
+export function cliProblem(cli: CLIStatus): string {
+	if (!cli.signedIn) return "signed out";
+	if (/(?<![\d.])0%[^,]*\bleft\b|exhausted|limit reached/i.test(cli.quota))
+		return "out of quota";
+	if (/^unavailable\b|\berror\b|\bfailed\b/i.test(cli.quota)) return "error";
+	return "";
+}
+
+/** One sentence naming each CLI provider with a problem, or "". */
+export function cliProblemSummary(clis: readonly CLIStatus[]): string {
+	const problems = clis
+		.map((cli) => [cli.name, cliProblem(cli)])
+		.filter(([, problem]) => problem)
+		.map(([name, problem]) => `${name} ${problem}`);
+	if (!problems.length) return "";
+	return `CLI provider needs attention: ${problems.join(", ")}`;
+}
+
 export interface ProjectTarget {
 	name: string;
 	issues: number;

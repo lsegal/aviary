@@ -36,3 +36,11 @@ export const HEADER_COLLAPSE_ICON_CLS = "h-5 w-5 sm:h-4 sm:w-4";
 
 /** The label of a HEADER_COLLAPSE_CLS action: hidden on phones. */
 export const HEADER_COLLAPSE_LABEL_CLS = "hidden sm:inline";
+
+/**
+ * The warning dot on a header icon whose contents need attention, such as the
+ * Code Loop details icon when a CLI provider is signed out (#1580). The icon
+ * must be positioned (`relative`).
+ */
+export const ALERT_DOT_CLS =
+	"pointer-events-none absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-gray-900";
