@@ -185,6 +185,18 @@ func fakeCodex() {
 	}
 	out := json.NewEncoder(os.Stdout)
 	_ = out.Encode(map[string]any{"type": "thread.started", "thread_id": thread})
+	switch prompt {
+	case "crash": // exits before finishing the turn, saying why on stderr
+		fmt.Fprintln(os.Stderr, "  codex: out of credits  ")
+		os.Exit(3)
+	case "silent-crash": // exits before finishing the turn without a word
+		os.Exit(3)
+	case "quit": // exits cleanly without finishing the turn
+		return
+	case "hang": // never finishes the turn until it is killed
+		time.Sleep(30 * time.Second)
+		return
+	}
 	if prompt == "fail" {
 		_ = out.Encode(map[string]any{"type": "turn.failed", "error": map[string]any{"message": "nope"}})
 		return
