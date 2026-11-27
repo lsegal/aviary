@@ -99,7 +99,7 @@ type projectUpdateArgs struct {
 	// ResetFilter removes the override.
 	ResetFilter bool `json:"reset_filter,omitempty" jsonschema:"Remove this project's own filter so it uses the shared projects filter again"`
 	// Mode sets or clears the project's own mode override.
-	Mode string `json:"mode,omitempty" jsonschema:"This project's own mode, overriding the shared projects mode for this project only: watch to pick up open issues matching the filter, manual to stop searching for issues so only work queued on demand, scheduled project tasks and agent tools start jobs, or inherit to remove the override and follow the shared projects mode again. Jobs already in flight carry on either way, and switching to watch checks for issues right away"`
+	Mode string `json:"mode,omitempty" jsonschema:"This project's own mode, overriding the shared projects mode for this project only: watch to pick up open issues matching the filter, manual to stop searching for issues so only work queued on demand, scheduled project tasks and agent tools start jobs, or inherit to remove the override and follow the shared projects mode again. Picking the shared mode itself also removes the override. Jobs already in flight carry on either way, and switching to watch checks for issues right away"`
 }
 
 type projectFilterCheckArgs struct {
@@ -670,6 +670,11 @@ func updateProject(ctx context.Context, m *projects.Manager, args projectUpdateA
 		var err error
 		if mode, err = config.NormalizeProjectModeOverride(args.Mode); err != nil {
 			return nil, err
+		}
+		// Picking the shared mode clears the override, so the project keeps
+		// following the shared mode when it changes later (#1461).
+		if mode == m.DefaultMode() {
+			mode = ""
 		}
 	}
 	result := map[string]any{"target": target}
