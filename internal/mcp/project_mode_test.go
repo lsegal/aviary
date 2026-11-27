@@ -38,14 +38,17 @@ func TestProjectModeAddUpdateAndStatus(t *testing.T) {
 	assert.Equal(t, "manual", saved.Agents[0].Projects[0].Mode)
 	assert.Empty(t, saved.Agents[0].Projects[0].Filter, "changing the mode leaves the filter alone")
 
+	// #1461: picking the shared mode clears the override.
 	updated = callJSON(t, d, "project_update", map[string]any{"target": "o/a", "mode": "watch"})
 	assert.Equal(t, "watch", updated["mode"])
-	assert.Equal(t, "project", updated["mode_source"])
+	assert.Equal(t, "global", updated["mode_source"])
 	saved, err = config.Load("")
 	require.NoError(t, err)
-	assert.Equal(t, "watch", saved.Agents[0].Projects[0].Mode, "watch is saved as an override")
+	assert.Empty(t, saved.Agents[0].Projects[0].Mode, "the shared mode is not saved as an override")
 	assert.Equal(t, "manual", saved.Agents[0].Projects[1].Mode, "only the named project changes")
 
+	updated = callJSON(t, d, "project_update", map[string]any{"target": "o/a", "mode": "manual"})
+	assert.Equal(t, "project", updated["mode_source"])
 	updated = callJSON(t, d, "project_update", map[string]any{"target": "o/a", "mode": "inherit"})
 	assert.Equal(t, "watch", updated["mode"])
 	assert.Equal(t, "global", updated["mode_source"])
@@ -141,4 +144,30 @@ func TestProjectCheckReportsModeSource(t *testing.T) {
 		assert.Equal(t, tc.want, res.Mode, "%s %q", tc.target, tc.mode)
 		assert.Equal(t, tc.source, res.ModeSource, "%s %q", tc.target, tc.mode)
 	}
+}
+
+// #1461: under a shared manual mode, watch is saved as an override and
+// manual, the shared mode, clears it again.
+func TestProjectUpdateSharedModeClearsOverride(t *testing.T) {
+	d, m := setupProjects(t)
+	cfg := &config.Config{
+		Agents:   []config.AgentConfig{{Name: "coder", Model: "cli/codex", Projects: config.AgentProjectsConfig{{Target: "o/a"}}}},
+		Projects: config.ProjectsConfig{Mode: "manual"},
+	}
+	require.NoError(t, config.Save("", cfg))
+	m.Reconcile(cfg)
+
+	updated := callJSON(t, d, "project_update", map[string]any{"target": "o/a", "mode": "watch"})
+	assert.Equal(t, "watch", updated["mode"])
+	assert.Equal(t, "project", updated["mode_source"])
+	saved, err := config.Load("")
+	require.NoError(t, err)
+	assert.Equal(t, "watch", saved.Agents[0].Projects[0].Mode, "the other mode is saved as an override")
+
+	updated = callJSON(t, d, "project_update", map[string]any{"target": "o/a", "mode": "manual"})
+	assert.Equal(t, "manual", updated["mode"])
+	assert.Equal(t, "global", updated["mode_source"])
+	saved, err = config.Load("")
+	require.NoError(t, err)
+	assert.Empty(t, saved.Agents[0].Projects[0].Mode, "the shared mode clears the override")
 }

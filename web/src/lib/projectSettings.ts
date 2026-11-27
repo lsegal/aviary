@@ -506,13 +506,14 @@ export function withReports(
 	});
 }
 
-/** Target's own mode override, or "inherit" when it follows the shared mode. */
-export function projectModeChoice(
+/** Target's effective mode: its own override, else the shared defaultMode. */
+export function projectMode(
 	section: AgentProjectsSection | undefined,
 	target: string,
-): ProjectModeChoice {
+	defaultMode: ProjectMode,
+): ProjectMode {
 	const entry = (section ?? []).find((p) => sameTarget(p.target, target));
-	return parseMode(entry?.mode) ?? "inherit";
+	return parseMode(entry?.mode) ?? defaultMode;
 }
 
 /** The projects with target's mode override set, or removed for "inherit". */
