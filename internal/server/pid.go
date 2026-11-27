@@ -11,6 +11,10 @@ import (
 	"github.com/lsegal/aviary/internal/config"
 )
 
+// configBaseDir resolves the Aviary config base directory. It is a variable so
+// tests can exercise the fallback paths used when no base directory resolves.
+var configBaseDir = config.BaseDir
+
 // PIDPath returns the path to the PID file.
 func PIDPath() string {
 	if p := strings.TrimSpace(os.Getenv("AVIARY_PID_FILE")); p != "" {
@@ -20,7 +24,7 @@ func PIDPath() string {
 	// Use the configured Aviary config base dir when available. `config.BaseDir`
 	// returns the explicit `AVIARY_CONFIG_BASE_DIR` when set, otherwise the
 	// parent directory of `DefaultPath()`.
-	base := strings.TrimSpace(config.BaseDir())
+	base := strings.TrimSpace(configBaseDir())
 	if base != "" {
 		return filepath.Join(base, "aviary.pid")
 	}
