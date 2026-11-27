@@ -204,8 +204,7 @@
 
 						<div v-if="loading && !boardJobs.length && !boardSchedules.length" class="py-12 text-center text-sm text-gray-400">Loading jobs…</div>
 						<KanbanBoard v-else-if="kanban" :jobs="boardJobs" :filters="filters" :now="now" :schedules="boardListSchedules"
-							:schedule-entries="scheduleEntries" :show-project="aggregate" @settings="openScheduleSettings"
-									@duplicate="duplicateSchedule" />
+							:schedule-entries="scheduleEntries" :show-project="aggregate" @settings="openScheduleSettings" />
 						<div v-else-if="!boardJobs.length && !boardSchedules.length && searching" class="py-12 text-center text-sm text-gray-500 dark:text-gray-400" data-testid="search-empty">
 							<p>No jobs match “<b class="text-gray-800 dark:text-gray-100">{{ search.trim() }}</b>”.</p>
 							<button type="button" class="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -223,7 +222,7 @@
 									:job="scheduleJob(scheduleEntries, item.schedule.id)" :busy="busySchedule === item.schedule.id"
 									@run="onScheduleAction(runScheduleNow, $event)"
 									@toggle="onScheduleAction(toggleSchedule, $event)" @settings="openScheduleSettings"
-									@dismiss="onAction(dismiss, $event)" />
+									@duplicate="duplicateSchedule" @dismiss="onAction(dismiss, $event)" />
 								<JobCard v-else :job="item.job" :now="now" :show-project="aggregate"
 									:busy="busyJob === item.job.id" @retry="onAction(retry, $event)" @stop="onAction(stop, $event)"
 									@summarize="onSummarize" />

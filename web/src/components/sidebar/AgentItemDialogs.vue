@@ -234,6 +234,11 @@ const projectChoices = computed(() => {
 	const owners = new Map<string, string>();
 	// The board's Schedule button names a project its agent runs, owned or not.
 	if (d.mode === "create" && d.project) owners.set(d.project, d.agent);
+	// A duplicate may stay on its source's project, under the source's agent.
+	const source = d.duplicate
+		? agentTasks(d.agent).find((t) => t.name === d.duplicate)?.project
+		: "";
+	if (source) owners.set(source, d.agent);
 	for (const a of settings.config?.agents ?? []) {
 		if (d.mode !== "create" && a.name !== d.agent) continue;
 		for (const target of projectTargets(a.projects))
