@@ -3266,18 +3266,26 @@ async function revertToLatestBackup() {
 	}
 }
 
+// Each loadSessions call takes the next number; only the latest call's
+// response is shown, so a slow list for an agent switched away from cannot
+// overwrite the current agent's sessions (#1673).
+let sessionLoadSeq = 0;
+
 async function loadSessions() {
 	if (!sessionAgent.value) return;
+	const seq = ++sessionLoadSeq;
 	sessionLoading.value = true;
 	errorMessage.value = "";
 	try {
 		const raw = await callTool("session_list", { agent: sessionAgent.value });
+		if (seq !== sessionLoadSeq) return;
 		sessions.value = safeJsonParse<SessionRow[]>(raw, []);
 	} catch (e) {
+		if (seq !== sessionLoadSeq) return;
 		errorMessage.value = e instanceof Error ? e.message : String(e);
 		sessions.value = [];
 	} finally {
-		sessionLoading.value = false;
+		if (seq === sessionLoadSeq) sessionLoading.value = false;
 	}
 }
 
