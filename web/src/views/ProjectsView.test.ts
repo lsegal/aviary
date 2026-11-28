@@ -19,6 +19,10 @@ import StatChipRow from "../components/projects/StatChipRow.vue";
 import UpNextStrip from "../components/projects/UpNextStrip.vue";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import type {
+	HeaderCollapseItem,
+	HeaderMeasure,
+} from "../composables/useHeaderCollapse";
+import type {
 	BoardState,
 	ProjectJob,
 	ProjectSchedule,
@@ -44,6 +48,15 @@ const m = vi.hoisted(() => ({
 	fetchConfig: null as unknown as () => Promise<void>,
 	boardArgs: [] as unknown[],
 	cliFits: null as unknown as { value: boolean },
+	taken: null as unknown as { value: ReadonlySet<string> },
+	collapse: null as unknown as {
+		items: () => readonly HeaderCollapseItem[];
+		options: {
+			singleLine?: () => boolean;
+			title?: string;
+			deps?: unknown[];
+		};
+	},
 }));
 
 vi.mock("../composables/useProjects", () => ({
@@ -59,7 +72,14 @@ vi.mock("../composables/useTaskPause", () => ({
 	useTaskPause: () => ({ setTaskEnabled: m.setTaskEnabled }),
 }));
 vi.mock("../composables/useHeaderCollapse", () => ({
-	useHeaderCollapse: () => ref(new Set<string>()),
+	useHeaderCollapse: (
+		_anchor: unknown,
+		items: () => readonly HeaderCollapseItem[],
+		options: typeof m.collapse.options,
+	) => {
+		m.collapse = { items, options };
+		return m.taken;
+	},
 }));
 vi.mock("../composables/useFitsWidth", () => ({
 	useFitsWidth: () => m.cliFits,
@@ -190,6 +210,7 @@ let media: Record<string, { matches: boolean; listeners: Set<unknown> }>;
 beforeEach(() => {
 	localStorage.clear();
 	m.cliFits = ref(true);
+	m.taken = ref(new Set<string>());
 	board = {
 		status: ref(makeStatus()),
 		jobs: ref([makeJob(1), makeJob(2)]),
@@ -506,6 +527,92 @@ describe("ProjectsView header", () => {
 		expect(w.find('[data-testid="board-nav-row"]').exists()).toBe(false);
 		expect(w.findComponent(BoardHeaderInfo).props("showClis")).toBe(true);
 		expect(w.findComponent(BoardMoreMenu).props("showClis")).toBe(true);
+	});
+
+	it("fills a board's one-line header by priority", async () => {
+		board.status.value = makeStatus({ instanceID: "ABC123" });
+		await render("/agents/bot/projects/o%2Fr");
+		const { items, options } = m.collapse;
+		expect(options.singleLine?.()).toBe(true);
+		expect(options.title).toBe("title-hidden");
+		// The fit re-runs when the header's chips change.
+		expect(
+			(options.deps ?? []).map((d) => (typeof d === "function" ? d() : d)),
+		).toHaveLength(5);
+		const list = items();
+		expect(list.map((i) => i.id)).toEqual([
+			"title-hidden",
+			"instance-icon",
+			"info-icon",
+			"logs-toggle",
+			"project-mode-menu",
+			"prompt-chat-toggle",
+			"schedule-new",
+			"queue-menu",
+			"board-info",
+			"instance-tag",
+		]);
+		const widths: Record<string, number> = {
+			"settings-title": 120,
+			"instance-badge-measure": 90,
+			"board-meta-measure": 200,
+			"header-icon-measure": 24,
+		};
+		const measure: HeaderMeasure = {
+			width: (id) => widths[id] ?? 0,
+			statusGap: 6,
+			actionsGap: 8,
+			titleGap: 12,
+		};
+		const saves = Object.fromEntries(
+			list.filter((i) => i.saves).map((i) => [i.id, i.saves?.(measure)]),
+		);
+		expect(saves).toEqual({
+			"title-hidden": 132,
+			"instance-icon": 66,
+			"info-icon": 176,
+			"board-info": 30,
+			"instance-tag": 30,
+		});
+		expect(list[0]).toMatchObject({ refill: true, spare: 48 });
+		expect(list[1]).toMatchObject({ refill: true, group: "instance" });
+		expect(list.find((i) => i.id === "logs-toggle")?.below).toBeUndefined();
+	});
+
+	it("collapses only Logs and Watch while a job is open", async () => {
+		await render("/agents/bot/projects/o%2Fr/jobs/4");
+		expect(m.collapse.options.singleLine?.()).toBe(false);
+		expect(m.collapse.items()).toEqual([
+			{ id: "logs-toggle", below: 600 },
+			{ id: "project-mode-menu", below: 420 },
+		]);
+	});
+
+	it("applies the steps the header fit takes", async () => {
+		board.status.value = makeStatus({ instanceID: "ABC123" });
+		m.taken.value = new Set([
+			"title-hidden",
+			"instance-icon",
+			"info-icon",
+			"logs-toggle",
+			"project-mode-menu",
+			"instance-tag",
+		]);
+		const { w } = await render("/agents/bot/projects/o%2Fr");
+		const info = w.findComponent(BoardHeaderInfo);
+		expect(info.props("instanceInline")).toBe(false);
+		expect(info.props("infoInline")).toBe(false);
+		expect(info.props("hideInstance")).toBe(true);
+		expect(info.props("hideInfo")).toBe(false);
+		const menu = w.findComponent(BoardMoreMenu);
+		expect(menu.props("logsInMenu")).toBe(true);
+		expect(menu.props("modeTarget")).toBe("o/r");
+		// The shrink and title steps are not items in "…" (#1486).
+		expect(menu.props("hidden")).toEqual([
+			"logs-toggle",
+			"project-mode-menu",
+			"instance-tag",
+		]);
 	});
 
 	it("ticks the clock every second", async () => {
