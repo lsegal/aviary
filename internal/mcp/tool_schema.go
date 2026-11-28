@@ -199,11 +199,9 @@ func jsonFieldName(field reflect.StructField) string {
 	if tag == "-" {
 		return ""
 	}
-	if name, _, ok := strings.Cut(tag, ","); ok {
-		name = strings.TrimSpace(name)
-		if name != "" {
-			return name
-		}
+	name, _, _ := strings.Cut(tag, ",")
+	if name = strings.TrimSpace(name); name != "" {
+		return name
 	}
 	return field.Name
 }
