@@ -925,3 +925,511 @@ describe("skills", () => {
 		m.wrapper.unmount();
 	});
 });
+
+describe("agent pages", () => {
+	const twoAgents = () =>
+		makeConfig({
+			agents: [
+				agent("alpha", {
+					tasks: [
+						{ name: "daily", prompt: "p" },
+						{ name: "weekly", prompt: "q" },
+					],
+					channels: [
+						{ type: "slack", id: "team", name: "Team" },
+						{ type: "discord", id: "ops" },
+					],
+				}),
+				agent("beta"),
+			],
+		});
+
+	it("opens the first agent's chat from /agents", async () => {
+		const m = await mountSettings("/agents", twoAgents());
+		expect(m.router.currentRoute.value.path).toBe("/agents/alpha/chat");
+		m.wrapper.unmount();
+	});
+
+	it("shows the empty state header with no agents", async () => {
+		const m = await mountSettings("/agents", makeConfig());
+		expect(crumbs(m).map((c) => c.label)).toEqual(["Agents"]);
+		m.wrapper.unmount();
+	});
+
+	it("adds an agent from /agents?add", async () => {
+		const m = await mountSettings("/agents?add", twoAgents());
+		await m.settle();
+		expect(m.ctx.draft.agents).toHaveLength(3);
+		expect(m.ctx.selectedAgentIdx).toBe(2);
+		expect(m.router.currentRoute.value.path).toBe("/agents/_2/settings");
+		expect(crumbs(m).map((c) => c.label)).toEqual(["New agent", "Agent Settings"]);
+		m.ctx.draft.agents[2].name = "gamma";
+		await m.settle();
+		expect(m.router.currentRoute.value.path).toBe("/agents/gamma/settings");
+		m.wrapper.unmount();
+	});
+
+	it("routes a bare agent to its chat and index segments to names", async () => {
+		const m = await mountSettings("/agents/alpha/settings", twoAgents());
+		await m.router.push("/agents/alpha");
+		await m.settle();
+		expect(m.router.currentRoute.value.path).toBe("/agents/alpha/chat");
+		m.wrapper.unmount();
+		const n = await mountSettings("/agents/_1/settings?x=1", twoAgents());
+		expect(n.router.currentRoute.value.path).toBe("/agents/beta/settings");
+		n.wrapper.unmount();
+	});
+
+	it("builds the Agent Settings header and follows subtab changes", async () => {
+		const m = await mountSettings("/agents/alpha/settings", twoAgents());
+		expect(m.ctx.selectedAgentSubtab).toBe("general");
+		expect(m.ctx.onAgentSettingsPage).toBe(true);
+		expect(crumbs(m)).toEqual([
+			{ label: "alpha", to: "/agents/alpha/chat" },
+			{ label: "Agent Settings" },
+		]);
+		const layout = m.wrapper.findComponent({ name: "AppLayout" });
+		expect(layout.vm.$attrs.back).toEqual({
+			label: "alpha",
+			to: "/agents/alpha/chat",
+		});
+
+		await m.router.push("/agents/alpha/settings/permissions");
+		await m.settle();
+		expect(m.ctx.selectedAgentSubtab).toBe("permissions");
+		expect(crumbs(m).map((c) => c.label)).toEqual([
+			"alpha",
+			"Agent Settings",
+			"Permissions",
+		]);
+		await m.router.push("/agents/alpha/settings?section=permissions");
+		await m.settle();
+		expect(m.ctx.selectedAgentSubtab).toBe("permissions");
+
+		// Selecting another agent routes to it and resets its selections.
+		m.ctx.selectedAgentIdx = 1;
+		await m.settle();
+		expect(m.router.currentRoute.value.path).toBe(
+			"/agents/beta/settings/permissions",
+		);
+		expect(m.ctx.selectedTaskIdx).toBeNull();
+		expect(m.ctx.selectedChannelIdx).toBeNull();
+		await m.router.push("/agents/alpha/settings");
+		await m.settle();
+		expect(m.ctx.selectedAgentIdx).toBe(0);
+		m.ctx.selectedAgentSubtab = "files";
+		await m.settle();
+		expect(m.router.currentRoute.value.path).toBe("/agents/alpha/files");
+		m.wrapper.unmount();
+	});
+
+	it("opens a channel's settings by name", async () => {
+		const m = await mountSettings(
+			"/agents/alpha/channels/ops/settings",
+			twoAgents(),
+		);
+		expect(m.ctx.selectedAgentSubtab).toBe("channels");
+		expect(m.ctx.selectedChannelIdx).toBe(1);
+		expect(m.ctx.channelNotFound).toBe(false);
+		expect(crumbs(m).map((c) => c.label)).toEqual([
+			"alpha",
+			"Channels",
+			"ops",
+			"Settings",
+		]);
+		// Renaming a channel named by its ID moves the address with it.
+		m.ctx.selectedChannel.id = "ops2";
+		await m.settle();
+		expect(m.router.currentRoute.value.path).toBe(
+			"/agents/alpha/channels/ops2/settings",
+		);
+		await m.router.push("/agents/alpha/channels/missing/settings");
+		await m.settle();
+		expect(m.ctx.channelNotFound).toBe(true);
+		m.wrapper.unmount();
+	});
+
+	it("keeps the channel selection inside the list", async () => {
+		const m = await mountSettings("/agents/alpha/settings", twoAgents());
+		const channels = m.ctx.draft.agents[0].channels;
+		m.ctx.selectedChannelIdx = 1;
+		channels.pop();
+		await m.settle();
+		expect(m.ctx.selectedChannelIdx).toBe(0);
+		m.ctx.selectedChannelIdx = 5;
+		expect(m.ctx.selectedChannel.id).toBe("team");
+		channels.pop();
+		await m.settle();
+		expect(m.ctx.selectedChannelIdx).toBeNull();
+		expect(m.ctx.selectedChannel).toBeNull();
+		channels.push({ type: "slack", id: "new" });
+		await m.settle();
+		expect(m.ctx.selectedChannelIdx).toBe(0);
+		expect(m.ctx.selectedAgentAsSingletonList[0].i).toBe(0);
+		m.wrapper.unmount();
+	});
+
+	it("shows the Scheduled Tasks root with New task", async () => {
+		const m = await mountSettings("/agents/alpha/tasks", twoAgents());
+		expect(m.ctx.tasksRoot).toBe(true);
+		expect(m.ctx.selectedTask).toBeNull();
+		expect(crumbs(m).map((c) => c.label)).toEqual(["alpha", "Scheduled Tasks"]);
+		await m.wrapper.find('[data-testid="new-task-button"]').trigger("click");
+		expect(fakes.openItemDialog).toHaveBeenCalledWith({
+			kind: "task",
+			agent: "alpha",
+			mode: "create",
+		});
+		expect(m.wrapper.text()).not.toContain("Save Changes");
+		m.wrapper.unmount();
+	});
+
+	it("opens a task's editor from ?task", async () => {
+		const m = await mountSettings("/agents/alpha/tasks?task=weekly", twoAgents());
+		expect(m.ctx.selectedTaskIdx).toBe(1);
+		expect(m.ctx.selectedTask.name).toBe("weekly");
+		expect(crumbs(m)).toEqual([
+			{ label: "alpha", to: "/agents/alpha/chat" },
+			{ label: "Scheduled Tasks", to: "/agents/alpha/tasks" },
+			{ label: "weekly", to: "/agents/alpha/tasks/weekly" },
+			{ label: "Settings" },
+		]);
+		m.ctx.selectedTaskIdx = 9;
+		expect(m.ctx.selectedTask.name).toBe("daily");
+		m.ctx.setSelectedTaskEnabled(false);
+		m.ctx.selectedTaskIdx = 0;
+		m.ctx.setSelectedTaskEnabled(false);
+		expect(m.ctx.isTaskEnabled(m.ctx.draft.agents[0].tasks[0])).toBe(false);
+		const tasks = m.ctx.draft.agents[0].tasks;
+		tasks.splice(0, 2);
+		await m.settle();
+		expect(m.ctx.selectedTaskIdx).toBeNull();
+		tasks.push({ name: "n", prompt: "" });
+		await m.settle();
+		expect(m.ctx.selectedTaskIdx).toBe(0);
+		m.wrapper.unmount();
+	});
+
+	it("renames a task and follows it in the URL", async () => {
+		fakes.tools.config_task_rename = (args) => {
+			const cfg = JSON.parse(JSON.stringify(fakes.settings.config));
+			cfg.agents[0].tasks[1].name = args?.new_name;
+			fakes.settings.fetchConfig.mockImplementation(async () => {
+				fakes.settings.config = cfg;
+			});
+			return "ok";
+		};
+		const m = await mountSettings("/agents/alpha/tasks?task=weekly", twoAgents());
+		await m.ctx.onTaskNameBlur();
+		m.ctx.onTaskNameFocus();
+		await m.ctx.onTaskNameBlur();
+		expect(fakes.callTool).not.toHaveBeenCalledWith(
+			"config_task_rename",
+			expect.anything(),
+		);
+		m.ctx.onTaskNameFocus();
+		m.ctx.selectedTask.name = "monthly";
+		await m.ctx.onTaskNameBlur();
+		await m.settle();
+		expect(fakes.callTool).toHaveBeenCalledWith("config_task_rename", {
+			agent: "alpha",
+			task: "weekly",
+			new_name: "monthly",
+		});
+		expect(m.router.currentRoute.value.fullPath).toBe(
+			"/agents/alpha/tasks?task=monthly",
+		);
+		expect(m.ctx.renamingTask).toBe(false);
+		m.wrapper.unmount();
+	});
+
+	it("reverts a task rename that fails", async () => {
+		fakes.tools.config_task_rename = () => {
+			throw new Error("taken");
+		};
+		const m = await mountSettings("/agents/alpha/tasks?task=daily", twoAgents());
+		m.ctx.onTaskNameFocus();
+		m.ctx.selectedTask.name = "weekly2";
+		await m.ctx.onTaskNameBlur();
+		expect(m.ctx.selectedTask.name).toBe("daily");
+		m.wrapper.unmount();
+
+		// An unnamed agent cannot rename its tasks.
+		const n = await mountSettings("/agents/_0/settings", twoAgents());
+		n.ctx.draft.agents[0].name = "";
+		await n.settle();
+		n.ctx.onTaskNameFocus();
+		n.ctx.selectedTask.name = "other";
+		await n.ctx.onTaskNameBlur();
+		expect(n.ctx.selectedTask.name).toBe("daily");
+		expect(fakes.callTool).not.toHaveBeenCalledWith(
+			"config_task_rename",
+			expect.objectContaining({ task: "daily", new_name: "other" }),
+		);
+		n.wrapper.unmount();
+	});
+
+	it("moves a task into its own file", async () => {
+		const m = await mountSettings("/agents/alpha/tasks?task=daily", twoAgents());
+		fakes.tools.config_task_move_to_file = () => "Moved to tasks/daily.md";
+		await m.ctx.moveTaskToFile(0, 0, "alpha", "daily");
+		expect(m.ctx.draft.agents[0].tasks[0].file).toBe("tasks/daily.md");
+		expect(m.ctx.draft.agents[0].tasks[0].from_file).toBe(true);
+		await m.settle();
+		expect(m.wrapper.text()).toContain("Moved to tasks/daily.md");
+
+		fakes.tools.config_task_move_to_file = () => "done";
+		await m.ctx.moveTaskToFile(0, 1, "alpha", "Weekly Report!");
+		expect(m.ctx.draft.agents[0].tasks[1].file).toBe("tasks/weekly-report.md");
+		m.ctx.draft.agents[0].tasks[1].name = "";
+		await m.ctx.moveTaskToFile(0, 1, "alpha", "");
+		expect(m.ctx.draft.agents[0].tasks[1].file).toBe("tasks/task.md");
+		await m.ctx.moveTaskToFile(0, 9, "alpha", "none");
+
+		fakes.tools.config_task_move_to_file = () => {
+			throw new Error("exists");
+		};
+		await m.ctx.moveTaskToFile(0, 0, "alpha", "daily");
+		await m.settle();
+		expect(m.wrapper.text()).toContain("exists");
+		m.wrapper.unmount();
+	});
+
+	it("renames and deletes agents straight away", async () => {
+		const m = await mountSettings("/system/settings", twoAgents());
+		m.ctx.draft.server.port = 5555;
+		await m.ctx.renameAgentEntry(1, "bravo");
+		const saved = fakes.settings.saveConfig.mock.calls[0][0];
+		expect(saved.agents[1].name).toBe("bravo");
+		// Other unsaved edits stay out of that save.
+		expect(saved.server.port).toBe(0);
+		expect(m.ctx.draft.agents[1].name).toBe("bravo");
+		await m.ctx.renameAgentEntry(9, "x");
+
+		await m.ctx.deleteAgentEntry(1, true);
+		expect(fakes.settings.saveConfig.mock.calls[1][1]).toEqual([
+			{ kind: "agent", name: "bravo" },
+		]);
+		expect(m.ctx.draft.agents).toHaveLength(1);
+		await m.ctx.deleteAgentEntry(9);
+
+		// A never-saved agent only leaves the draft.
+		m.ctx.draft.agents.push(agent(""));
+		await m.ctx.deleteAgentEntry(1);
+		expect(fakes.settings.saveConfig).toHaveBeenCalledTimes(2);
+		m.wrapper.unmount();
+	});
+
+	it("removes an agent through its dialog", async () => {
+		const m = await mountSettings("/agents/beta/settings", twoAgents());
+		m.ctx.removeAgent(1);
+		await m.settle();
+		expect(m.wrapper.text()).toContain("beta");
+		await (dialog(m, "remove-agent-dialog").action as () => Promise<void>)();
+		await m.settle();
+		expect(m.ctx.selectedAgentIdx).toBe(0);
+		expect(m.router.currentRoute.value.path).toBe("/agents/alpha/settings");
+		await (dialog(m, "remove-agent-dialog").action as () => Promise<void>)();
+
+		m.ctx.removeAgent(0);
+		await (dialog(m, "remove-agent-dialog").action as () => Promise<void>)();
+		await m.settle();
+		expect(m.ctx.draft.agents).toHaveLength(0);
+		expect(m.router.currentRoute.value.path).toBe("/agents");
+		m.wrapper.unmount();
+	});
+
+	it("keeps the slot's address when removing an earlier agent", async () => {
+		const cfg = twoAgents();
+		cfg.agents.push(agent("gamma") as never);
+		const m = await mountSettings("/agents/alpha/settings", cfg);
+		m.ctx.removeAgent(0);
+		await (dialog(m, "remove-agent-dialog").action as () => Promise<void>)();
+		await m.settle();
+		expect(m.ctx.selectedAgentIdx).toBe(0);
+		expect(m.router.currentRoute.value.path).toBe("/agents/beta/settings");
+		m.wrapper.unmount();
+	});
+
+	it("names the project task targets the agent watches", async () => {
+		const cfg = twoAgents();
+		cfg.agents[0].projects = [
+			{ repo: "lsegal/aviary" },
+			{ repo: "lsegal/aviary" },
+		] as never;
+		const m = await mountSettings("/agents/alpha/settings", cfg);
+		const watched = m.ctx.projectTargetOptions({ name: "t", prompt: "" });
+		expect(watched.length).toBe(new Set(watched).size);
+		expect(
+			m.ctx.projectTargetOptions({ name: "t", prompt: "", project: " gone " }),
+		).toEqual([...watched, "gone"]);
+		m.wrapper.unmount();
+	});
+});
+
+describe("agent files", () => {
+	const filesConfig = () =>
+		makeConfig({ agents: [agent("alpha"), agent("beta")] });
+
+	it("opens the first file and names it in the URL", async () => {
+		fakes.agentFiles.lists = { alpha: ["AGENTS.md", "notes.md"], beta: [] };
+		fakes.tools.agent_file_read = (args) => `# ${args?.file}`;
+		const m = await mountSettings("/agents/alpha/files", filesConfig());
+		await m.settle();
+		const state = m.ctx.getAgentFileState("alpha");
+		expect(state.selectedFile).toBe("AGENTS.md");
+		expect(state.content).toBe("# AGENTS.md");
+		expect(m.router.currentRoute.value.fullPath).toBe(
+			"/agents/alpha/files?file=AGENTS.md",
+		);
+		expect(m.ctx.isAgentFilesPage).toBe(true);
+		expect(m.wrapper.find('[data-testid="agent-file-hint"]').exists()).toBe(
+			true,
+		);
+		expect(m.wrapper.find('[data-testid="agent-file-builtin"]').exists()).toBe(
+			true,
+		);
+
+		// Picking another file in the sidebar routes to it.
+		await m.router.push("/agents/alpha/files?file=notes.md");
+		await m.settle();
+		expect(state.selectedFile).toBe("notes.md");
+		expect(
+			m.wrapper.find('[data-testid="agent-file-builtin"]').exists(),
+		).toBe(false);
+		m.wrapper.unmount();
+	});
+
+	it("saves, syncs and refreshes a file", async () => {
+		fakes.agentFiles.lists = { alpha: ["notes.md"] };
+		fakes.tools.agent_file_read = () => "disk";
+		const m = await mountSettings(
+			"/agents/alpha/files?file=notes.md",
+			filesConfig(),
+		);
+		await m.settle();
+		const state = m.ctx.getAgentFileState("alpha");
+		expect(state.content).toBe("disk");
+		vi.useFakeTimers();
+		state.content = "edited";
+		const save = m.ctx.saveAgentFile("alpha");
+		await vi.runAllTicks();
+		await save;
+		expect(fakes.callTool).toHaveBeenCalledWith("agent_file_write", {
+			agent: "alpha",
+			file: "notes.md",
+			content: "edited",
+		});
+		expect(state.savedContent).toBe("edited");
+		expect(state.saveFlash).toBe(true);
+		await m.ctx.saveAgentFile("alpha");
+		vi.advanceTimersByTime(3300);
+		expect(state.saveFlash).toBe(false);
+		vi.useRealTimers();
+		await m.ctx.saveAgentFile("");
+		await m.ctx.saveAgentFile("nobody");
+
+		await m.ctx.syncAgentTemplates("alpha");
+		expect(fakes.agentFiles.syncTemplates).toHaveBeenCalledWith("alpha");
+		expect(fakes.agentFiles.load).toHaveBeenLastCalledWith("alpha");
+		await m.ctx.syncAgentTemplates("");
+
+		// Refresh with unsaved edits asks first.
+		state.content = "unsaved";
+		await m.ctx.refreshAgentFiles("alpha");
+		await m.settle();
+		expect(dialog(m, "discard-file-dialog").open).toBe(true);
+		await (dialog(m, "discard-file-dialog").action as () => Promise<void>)();
+		expect(state.content).toBe("disk");
+		state.content = "unsaved again";
+		await m.ctx.refreshAgentFiles("alpha");
+		await m.settle();
+		const onCancel = dialog(m, "discard-file-dialog").onCancel as () => Promise<void>;
+		await onCancel();
+		expect(state.content).toBe("unsaved again");
+		state.content = state.savedContent;
+		await m.ctx.refreshAgentFiles("alpha");
+		await m.settle();
+		await (dialog(m, "discard-file-dialog").action as () => Promise<void>)();
+		m.wrapper.unmount();
+	});
+
+	it("shows file errors", async () => {
+		fakes.agentFiles.lists = { alpha: ["notes.md"] };
+		fakes.tools.agent_file_read = () => "disk";
+		const m = await mountSettings(
+			"/agents/alpha/files?file=notes.md",
+			filesConfig(),
+		);
+		await m.settle();
+		const state = m.ctx.getAgentFileState("alpha");
+		fakes.tools.agent_file_write = () => {
+			throw new Error("write failed");
+		};
+		await m.ctx.saveAgentFile("alpha");
+		expect(state.error).toBe("write failed");
+		fakes.tools.agent_file_read = () => {
+			throw new Error("read failed");
+		};
+		await m.ctx.selectAgentFile("alpha", "notes.md");
+		expect(state.error).toBe("read failed");
+		await m.ctx.selectAgentFile("", "x");
+		fakes.agentFiles.syncTemplates.mockRejectedValueOnce(new Error("sync failed"));
+		await m.ctx.syncAgentTemplates("alpha");
+		expect(state.error).toBe("sync failed");
+		fakes.agentFiles.load.mockRejectedValueOnce("load failed");
+		await m.ctx.refreshAgentFiles("alpha");
+		expect(state.error).toBe("load failed");
+		m.wrapper.unmount();
+	});
+
+	it("follows the sidebar's file list", async () => {
+		fakes.agentFiles.lists = { alpha: ["a.md", "b.md"] };
+		fakes.tools.agent_file_read = (args) => String(args?.file);
+		const m = await mountSettings("/agents/alpha/files?file=b.md", filesConfig());
+		await m.settle();
+		const state = m.ctx.getAgentFileState("alpha");
+		expect(state.selectedFile).toBe("b.md");
+		// The open file goes away: the editor empties.
+		fakes.agentFiles.lists = { alpha: ["a.md"] };
+		await m.settle();
+		expect(state.files).toEqual(["a.md"]);
+		expect(state.selectedFile).toBe("");
+		m.wrapper.unmount();
+	});
+
+	it("moves a renamed agent's editor state and preloads files", async () => {
+		fakes.agentFiles.lists = { alpha: ["a.md"], beta: ["b.md"] };
+		const m = await mountSettings("/agents/alpha/settings", filesConfig());
+		await m.settle();
+		expect(fakes.agentFiles.load).toHaveBeenCalledWith("alpha");
+		expect(fakes.agentFiles.load).toHaveBeenCalledWith("beta");
+		// Renaming an agent other than the open one carries its editor along.
+		m.ctx.getAgentFileState("beta").content = "x";
+		m.ctx.draft.agents[1].name = "bet";
+		await m.settle();
+		expect(m.ctx.agentFileEditorState.beta).toBeUndefined();
+		expect(m.ctx.agentFileEditorState.bet).toMatchObject({
+			content: "x",
+			loaded: false,
+		});
+		m.ctx.draft.agents[0].name = "alef";
+		await m.settle();
+		m.ctx.onAgentNameChange(m.ctx.draft.agents[0]);
+		m.ctx.onAgentNameChange(agent(""));
+		await m.settle();
+		expect(fakes.agentFiles.load).toHaveBeenCalledWith("alef");
+		m.wrapper.unmount();
+	});
+
+	it("loads files when the Agents tab opens", async () => {
+		fakes.agentFiles.lists = { alpha: [] };
+		const m = await mountSettings("/system/settings", filesConfig());
+		expect(fakes.agentFiles.load).not.toHaveBeenCalled();
+		await m.router.push("/agents/alpha/files");
+		await m.settle();
+		expect(fakes.agentFiles.load).toHaveBeenCalledWith("alpha");
+		expect(m.ctx.getAgentFileState("alpha").selectedFile).toBe("");
+		m.wrapper.unmount();
+	});
+});

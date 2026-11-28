@@ -174,7 +174,6 @@ function makeRouter(): Router {
 				component: Blank,
 				meta: settings,
 			},
-			{ path: "/agents/:agent/:rest(.*)*", component: Blank },
 			{ path: "/projects/settings", component: Blank, meta: settings },
 			{
 				path: "/system/:tab(settings|providers|display|notifications|sessions|skills)",
