@@ -191,7 +191,7 @@
 							</div>
 						</template>
 
-						<template v-else-if="currentProvider?.id === 'gemini'">
+						<template v-else-if="currentProvider?.id === 'google'">
 							<div v-if="!geminiUrl">
 								<p class="mb-4 text-sm text-gray-600 dark:text-gray-400">
 									Sign in with your Google account. We'll open Google's consent page and also show the full URL here in
