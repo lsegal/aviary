@@ -70,8 +70,13 @@ body {
 
 /* The installed app draws edge to edge (viewport-fit=cover), so keep the UI
    clear of notches, status bars, and home indicators. Views fill #app with
-   h-full rather than 100dvh so the insets aren't counted twice. */
+   h-full rather than 100dvh so the insets aren't counted twice. #app also
+   clips: an absolutely positioned element with no positioned ancestor, such
+   as the hidden native <select> a radix Select renders, would otherwise sit
+   at its in-pane offset and stretch the document past the screen (#1656). */
 #app {
+	position: relative;
+	overflow: clip;
 	height: 100vh;
 	height: 100dvh;
 	padding: env(safe-area-inset-top) env(safe-area-inset-right)
