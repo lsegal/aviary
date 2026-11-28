@@ -254,7 +254,7 @@ func TestCFPCovFileToolsReportFilesystemErrors(t *testing.T) {
 
 	call := func(tool string, args map[string]any) string {
 		t.Helper()
-		return toolText(t, d, ctx, tool, args)
+		return toolText(ctx, t, d, tool, args)
 	}
 
 	assert.Contains(t, call("file_read", map[string]any{"path": "./sandbox/missing.txt"}), "reading file metadata")

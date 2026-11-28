@@ -75,7 +75,7 @@ var taskListCmd = &cobra.Command{
 	Short: "List scheduled tasks with their trigger, next run and last result",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		out, err := dispatcher.CallTool(cmd.Context(), "task_list", map[string]any{})
+		out, err := callTool(cmd, dispatcher, "task_list", map[string]any{})
 		if err != nil {
 			return err
 		}
@@ -175,7 +175,7 @@ that agent's model for the task's runs (default: the agent's own model):
 		}
 		for _, f := range []string{"schedule", "trigger", "every", "at", "days", "start_at"} {
 			if _, ok := params[f]; ok {
-				out, err := dispatcher.CallTool(cmd.Context(), "task_schedule", params)
+				out, err := callTool(cmd, dispatcher, "task_schedule", params)
 				if err != nil {
 					return err
 				}
@@ -203,7 +203,7 @@ var taskUpdateCmd = &cobra.Command{
 		if len(params) == 1 {
 			return fmt.Errorf("nothing to update; pass at least one flag")
 		}
-		out, err := dispatcher.CallTool(cmd.Context(), "task_update", params)
+		out, err := callTool(cmd, dispatcher, "task_update", params)
 		if err != nil {
 			return err
 		}
@@ -219,7 +219,7 @@ var taskRmCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		deleteData, _ := cmd.Flags().GetBool("delete-data")
-		out, err := dispatcher.CallTool(cmd.Context(), "task_delete", map[string]any{"name": args[0], "delete_data": deleteData})
+		out, err := callTool(cmd, dispatcher, "task_delete", map[string]any{"name": args[0], "delete_data": deleteData})
 		if err != nil {
 			return err
 		}
@@ -241,7 +241,7 @@ var taskPreviewCmd = &cobra.Command{
 		if days, ok := params["days"].(string); ok {
 			params["days"] = expandDayRange(days)
 		}
-		out, err := dispatcher.CallTool(cmd.Context(), "task_preview", params)
+		out, err := callTool(cmd, dispatcher, "task_preview", params)
 		if err != nil {
 			return err
 		}
@@ -273,7 +273,7 @@ var taskRunCmd = &cobra.Command{
 	Short: "Run a scheduled task right now",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		out, err := dispatcher.CallTool(cmd.Context(), "task_run", map[string]any{"name": args[0]})
+		out, err := callTool(cmd, dispatcher, "task_run", map[string]any{"name": args[0]})
 		if err != nil {
 			return err
 		}
@@ -301,7 +301,7 @@ specified task (format: <agent>/<task> or <task-name>).
 		if len(args) == 1 {
 			params["name"] = args[0]
 		}
-		out, err := dispatcher.CallTool(cmd.Context(), "task_stop", params)
+		out, err := callTool(cmd, dispatcher, "task_stop", params)
 		if err != nil {
 			return err
 		}

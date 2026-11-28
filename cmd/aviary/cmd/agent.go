@@ -18,7 +18,7 @@ var agentListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all configured agents and their current state",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		out, err := dispatcher.CallTool(cmd.Context(), "agent_list", nil)
+		out, err := callTool(cmd, dispatcher, "agent_list", nil)
 		if err != nil {
 			return err
 		}
@@ -80,7 +80,7 @@ the sole agent, and with --file every argument is optional.`,
 		}
 		switch agentRunOutputFormat {
 		case "text":
-			out, err := dispatcher.CallTool(cmd.Context(), "agent_run", toolArgs)
+			out, err := callTool(cmd, dispatcher, "agent_run", toolArgs)
 			if err != nil {
 				return err
 			}

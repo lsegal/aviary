@@ -143,7 +143,7 @@ func newProjectToolCommand(spec projectToolCommand) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			out, err := activeDispatcher().CallTool(cmd.Context(), spec.tool, payload)
+			out, err := callTool(cmd, activeDispatcher(), spec.tool, payload)
 			if err != nil {
 				return err
 			}

@@ -94,5 +94,5 @@ func TestChannelToolsLifecycle(t *testing.T) {
 // tool marked as an error.
 func callText(t *testing.T, d *Dispatcher, tool string, args map[string]any) string {
 	t.Helper()
-	return toolText(t, d, context.Background(), tool, args)
+	return toolText(context.Background(), t, d, tool, args)
 }

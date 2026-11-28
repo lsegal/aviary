@@ -279,7 +279,7 @@ func TestBrowserTools_WithManager_TabsAndErrors(t *testing.T) {
 
 	// browser_tabs returns a list, or reports an error when Chrome is not
 	// running; either way the call itself goes through.
-	toolText(t, d, context.Background(), "browser_tabs", nil)
+	toolText(context.Background(), t, d, "browser_tabs", nil)
 
 	// browser_eval missing tab_id
 	toolCallContains(t, d, "browser_eval", map[string]any{"javascript": "1"}, "tab_id")

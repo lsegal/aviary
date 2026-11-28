@@ -220,7 +220,7 @@ func TestEnsureInProcessDeps_KeepsInjectedDeps(t *testing.T) {
 
 // toolText calls a tool and returns its text. A result the tool marked as an
 // error is returned as its message; any other error fails the test.
-func toolText(t *testing.T, d *Dispatcher, ctx context.Context, tool string, args any) string {
+func toolText(ctx context.Context, t *testing.T, d *Dispatcher, tool string, args any) string {
 	t.Helper()
 	out, err := d.CallTool(ctx, tool, args)
 	var toolErr *ToolError

@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lsegal/aviary/internal/codingskills"
+	"github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/saferestart"
 	"github.com/lsegal/aviary/internal/server"
 	"github.com/lsegal/aviary/internal/update"
@@ -414,11 +415,13 @@ var findRunningServer = func() (srv runningServer, ok bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	out, err := dispatcher.CallTool(ctx, "server_version_check", map[string]any{})
-	if err != nil {
+	var toolErr *mcp.ToolError
+	if errors.As(err, &toolErr) {
+		out = toolErr.Text
+	} else if err != nil {
 		return runningServer{Problem: "did not respond"}, true
 	}
-	if json.Unmarshal([]byte(out), &srv) != nil {
-		// A tool error comes back as its message.
+	if err != nil || json.Unmarshal([]byte(out), &srv) != nil {
 		return runningServer{Problem: "could not report its install (" + strings.TrimSpace(out) + ")"}, true
 	}
 	return srv, true
@@ -433,7 +436,7 @@ var restartServer = func(when string) error {
 	if err != nil {
 		return err
 	}
-	// The restart status comes back as JSON, and a tool error as its message.
+	// The restart status comes back as JSON; a tool error is already err.
 	var st saferestart.Status
 	if json.Unmarshal([]byte(out), &st) != nil {
 		return errors.New(strings.TrimSpace(out))
