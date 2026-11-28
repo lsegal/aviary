@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, type Ref, ref } from "vue";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
+import BoardHeaderInfo from "../components/projects/BoardHeaderInfo.vue";
 import BoardMoreMenu from "../components/projects/BoardMoreMenu.vue";
 import BoardStateFilter from "../components/projects/BoardStateFilter.vue";
 import CLIProviderList from "../components/projects/CLIProviderList.vue";
@@ -42,6 +43,7 @@ const m = vi.hoisted(() => ({
 	config: null as unknown,
 	fetchConfig: null as unknown as () => Promise<void>,
 	boardArgs: [] as unknown[],
+	cliFits: null as unknown as { value: boolean },
 }));
 
 vi.mock("../composables/useProjects", () => ({
@@ -57,7 +59,10 @@ vi.mock("../composables/useTaskPause", () => ({
 	useTaskPause: () => ({ setTaskEnabled: m.setTaskEnabled }),
 }));
 vi.mock("../composables/useHeaderCollapse", () => ({
-	useHeaderCollapse: () => ref(0),
+	useHeaderCollapse: () => ref(new Set<string>()),
+}));
+vi.mock("../composables/useFitsWidth", () => ({
+	useFitsWidth: () => m.cliFits,
 }));
 vi.mock("../composables/useFilterRowFit", () => ({
 	useFilterRowFit: () => ({ stacked: ref(false), collapsed: ref(false) }),
@@ -184,6 +189,7 @@ let media: Record<string, { matches: boolean; listeners: Set<unknown> }>;
 
 beforeEach(() => {
 	localStorage.clear();
+	m.cliFits = ref(true);
 	board = {
 		status: ref(makeStatus()),
 		jobs: ref([makeJob(1), makeJob(2)]),
@@ -482,13 +488,24 @@ describe("ProjectsView header", () => {
 			clis: [{ name: "codex" }] as ProjectStatus["clis"],
 		});
 		const { w } = await render("/agents/bot/projects/o%2Fr");
-		// Below sm the row hides and the details popover shows them (#1582).
-		expect(testid(w, "board-nav-row").classes()).toEqual(
-			expect.arrayContaining(["hidden", "sm:flex"]),
-		);
-		expect(w.findComponent(CLIProviderList).props("clis")).toEqual([
+		// A measured one-line fit puts them inline, not in ⓘ (#1585).
+		const row = testid(w, "board-nav-row");
+		expect(row.findComponent(CLIProviderList).props("clis")).toEqual([
 			{ name: "codex" },
 		]);
+		expect(w.findComponent(BoardHeaderInfo).props("showClis")).toBe(false);
+		expect(w.findComponent(BoardMoreMenu).props("showClis")).toBe(false);
+	});
+
+	it("moves the models and quota into ⓘ when the row does not fit", async () => {
+		m.cliFits.value = false;
+		board.status.value = makeStatus({
+			clis: [{ name: "codex" }] as ProjectStatus["clis"],
+		});
+		const { w } = await render("/agents/bot/projects/o%2Fr");
+		expect(w.find('[data-testid="board-nav-row"]').exists()).toBe(false);
+		expect(w.findComponent(BoardHeaderInfo).props("showClis")).toBe(true);
+		expect(w.findComponent(BoardMoreMenu).props("showClis")).toBe(true);
 	});
 
 	it("ticks the clock every second", async () => {
