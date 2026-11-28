@@ -298,7 +298,7 @@ test("scheduled cards have no pencil; the gear is the last action and opens the 
 		expect(
 			Math.max(names.indexOf("Pause"), names.indexOf("Resume")),
 		).toBeLessThan(names.length - 1);
-		const gear = actions.at(-1) as Element;
+		const gear = actions.at(-1) as HTMLElement;
 		await expect.element(gear).toHaveAttribute("title", "Task settings");
 	}
 

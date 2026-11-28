@@ -209,7 +209,7 @@ test("settings leaves server and cdp ports unset until the user enters them", as
 			scheduler: { concurrency: "" },
 			skills: {},
 		},
-		config_save: (args) => {
+		config_save: (args?: { config?: string }) => {
 			savedConfig = JSON.parse(String(args?.config ?? "{}")) as Record<
 				string,
 				unknown
@@ -270,7 +270,7 @@ test("settings can disable browser tab reuse", async () => {
 			scheduler: { concurrency: "" },
 			skills: {},
 		},
-		config_save: (args) => {
+		config_save: (args?: { config?: string }) => {
 			savedConfig = JSON.parse(String(args?.config ?? "{}")) as Record<
 				string,
 				unknown
@@ -318,7 +318,7 @@ async function setupApprovalSettings(
 			skills: {},
 			approval,
 		},
-		config_save: (args) => {
+		config_save: (args?: { config?: string }) => {
 			saved.push(JSON.parse(String(args?.config ?? "{}")));
 			return {};
 		},
@@ -452,7 +452,7 @@ test("system skills shows provider installs and installs them on one page", asyn
 			scheduler: { concurrency: "" },
 			skills: {},
 		},
-		config_save: async (args) => {
+		config_save: async (args?: { config?: string }) => {
 			savedConfigs.push(String(args?.config));
 			return {};
 		},
@@ -586,7 +586,7 @@ async function mockServerSettings(
 			scheduler: { concurrency: "" },
 			skills: {},
 		},
-		config_save: (args) => {
+		config_save: (args?: { config?: string }) => {
 			savedConfig = JSON.parse(String(args?.config ?? "{}")) as Record<
 				string,
 				unknown
