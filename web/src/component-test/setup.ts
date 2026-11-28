@@ -15,11 +15,21 @@ declare module "vitest/browser" {
 	}
 }
 
+// Vitest's locators build every chained query (loc.getByRole(), .nth(),
+// .filter()) through their own prototype's `locator(selector)`, which
+// locators.extend would replace with a wrapper that calls it again. Keep the
+// prototype's own method and extend only `page`, where chaining off a
+// locator then reaches the original.
+const locatorProto = Object.getPrototypeOf(page.getByTestId("probe")) as {
+	locator: unknown;
+};
+const ownLocator = locatorProto.locator;
 locators.extend({
 	locator(selector: string) {
 		return selector;
 	},
 });
+locatorProto.locator = ownLocator;
 
 // Playwright matches text, names, labels and placeholders as
 // case-insensitive substrings unless told `exact: true`; Vitest matches
