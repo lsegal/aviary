@@ -390,6 +390,9 @@ func (g GHCLI) apiList(ctx context.Context, path string) ([]byte, error) {
 }
 
 func (g GHCLI) runAPI(ctx context.Context, args []string, body ...string) ([]byte, error) {
+	if g.apiCommand != nil {
+		return g.apiCommand(ctx, args, body...)
+	}
 	// Bounded like every other `gh` call: webhook reconciliation runs on the
 	// poll loop, so a call stuck on a connection that died while the machine
 	// slept would otherwise stop the watch for good.
