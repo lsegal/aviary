@@ -12,8 +12,11 @@ const CLIS = [
 	{ name: "gemini", models: [], quota: "", signedIn: false },
 ] as unknown as CLIStatus[];
 
-const render = (props: Record<string, unknown>) =>
-	renderToString(createSSRApp({ render: () => h(CLIProviderList, props) }));
+const render = (props: {
+	clis: readonly CLIStatus[];
+	stacked?: boolean;
+	testid?: string;
+}) => renderToString(createSSRApp({ render: () => h(CLIProviderList, props) }));
 
 it("labels the list as the agents' models and quota", async () => {
 	const html = await render({ clis: CLIS, testid: "board-info-clis" });
