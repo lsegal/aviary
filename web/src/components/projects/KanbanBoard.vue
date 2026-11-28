@@ -30,9 +30,8 @@
 							<Cog6ToothIcon aria-hidden="true" class="h-3.5 w-3.5" />
 						</button>
 					</div>
-					<router-link v-if="showProject" :to="projectBoardPath(s.project)" data-testid="kanban-scheduled-project"
-						class="relative z-10 block w-fit max-w-full truncate rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-						:title="`Open ${s.project}'s board`">{{ s.project }}</router-link>
+					<ProjectChip v-if="showProject" :project="s.project" compact data-testid="kanban-scheduled-project"
+						class="relative z-10 block w-fit" />
 					<p data-testid="kanban-scheduled-next" class="tabular-nums text-violet-700 dark:text-violet-300"
 						:title="nextOf(s).kind === 'next' ? formatFire(s.nextRun) : ''">
 						<PausedChip v-if="nextOf(s).kind === 'paused'" />
@@ -66,7 +65,8 @@
 						class="block truncate text-sm font-medium text-gray-900 hover:underline dark:text-white">
 						{{ job.title || job.id }}
 					</router-link>
-					<p class="flex flex-wrap items-center gap-x-1.5 text-gray-500 dark:text-gray-400">
+					<p class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-gray-500 dark:text-gray-400">
+						<ProjectChip v-if="showProject" :project="job.target" compact data-testid="kanban-project" />
 						<span v-if="job.scheduled">Scheduled</span>
 						<a v-else-if="job.kind === 'merge' || job.kind === 'discuss'" :href="job.issueURL" target="_blank" rel="noreferrer"
 							data-testid="kanban-kind" class="hover:underline">{{ job.kind === "merge" ? "Safe merge PR" : "Discuss" }} #{{ job.number }}</a>
@@ -107,7 +107,6 @@ import {
 	jobStates,
 	type ProjectJob,
 	type ProjectSchedule,
-	projectPath,
 	runResultClass,
 	runResultIcon,
 	scheduleJob,
@@ -121,6 +120,7 @@ import {
 } from "../../lib/projects";
 import { taskSessionPath, useSettingsStore } from "../../stores/settings";
 import PausedChip from "../tasks/PausedChip.vue";
+import ProjectChip from "./ProjectChip.vue";
 import PullRequestLink from "./PullRequestLink.vue";
 
 const props = withDefaults(
@@ -133,7 +133,7 @@ const props = withDefaults(
 		schedules?: ProjectSchedule[];
 		/** The schedules' board entries: their last and next runs and any run in flight. */
 		scheduleEntries?: ProjectJob[];
-		/** Names each scheduled card's project, on a board of several. */
+		/** Names each card's project, on a board of several. */
 		showProject?: boolean;
 	}>(),
 	{
@@ -176,9 +176,6 @@ const columns = computed(() =>
 );
 
 const settings = useSettingsStore();
-function projectBoardPath(target: string) {
-	return projectPath(projectOwner(settings.config, target), target);
-}
 function runPath(job: ProjectJob) {
 	return jobPath(
 		projectOwner(settings.config, job.target),
