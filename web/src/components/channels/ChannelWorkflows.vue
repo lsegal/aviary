@@ -171,6 +171,7 @@ import { useMCP } from "../../composables/useMCP";
 import { useTaskPause } from "../../composables/useTaskPause";
 import { useToasts } from "../../composables/useToasts";
 import { channelName, channelTarget } from "../../lib/channels";
+import { scriptFailingStatus } from "../../lib/compiledStatus";
 import {
 	codeLoopTargetLabel,
 	isCodeLoopTarget,
@@ -288,7 +289,8 @@ const saved = computed(() =>
 const precompileHelp = computed(() => {
 	if (form.type === "script" || !form.precompile) return "";
 	const w = saved.value;
-	if (w?.precompile === true && w.precompile_note) return w.precompile_note;
+	if (w?.precompile === true && w.compiled && w.script_failures)
+		return scriptFailingStatus(w).title;
 	if (w?.precompile === true && w.compiled)
 		return "Precompiled: each matching message runs its script with no model calls, and falls back to the model if it fails";
 	return "";

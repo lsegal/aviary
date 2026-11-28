@@ -718,12 +718,19 @@ func (m watchModel) updateChatKey(msg tea.KeyMsg, key string) (tea.Model, tea.Cm
 	if m.updateChatLayout(key) {
 		return m, nil, true
 	}
-	if (m.chat.full || m.chat.focus == watchFocusTranscript) && key != "c" && key != "q" && key != "?" {
+	boardHidden := m.chat.full || m.chat.focus == watchFocusTranscript
+	if boardHidden && !watchChatPassthroughKey(key) {
 		// Board keys act only from the board: the full-screen
 		// chat hides it, and the transcript has the focus.
 		return m, nil, true
 	}
 	return m, nil, false
+}
+
+// watchChatPassthroughKey reports whether key still reaches the board while
+// the board is hidden behind the chat.
+func watchChatPassthroughKey(key string) bool {
+	return key == "c" || key == "q" || key == "?"
 }
 
 // updateBoardNavKey handles the board's cursor, filter and log scroll keys.

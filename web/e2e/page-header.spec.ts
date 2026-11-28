@@ -28,7 +28,7 @@ for (const p of PAGES) {
 			await page.goto(p.url);
 			const header = page.getByTestId("settings-header");
 			await expect(page.getByTestId("settings-title")).toHaveText(p.title);
-			await expectSettingsHeader(page, p.back !== false);
+			await expectSettingsHeader(page, p.back !== false, p.compact);
 			// The header opens the page, and it is the page's only header.
 			expect(
 				await header.evaluate(

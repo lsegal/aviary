@@ -723,7 +723,7 @@ func (s *Scheduler) SetTaskCompiler(fn TaskCompiler) {
 }
 
 // SetTaskScriptReporter registers what records each precompiled
-// project task or workflow script run's result, so a failing script can be set aside.
+// task or workflow script run's result, for the task's failure count.
 func (s *Scheduler) SetTaskScriptReporter(fn TaskScriptReporter) {
 	s.pool.scriptReporter = fn
 }

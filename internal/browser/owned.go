@@ -10,7 +10,7 @@ import (
 
 	"github.com/chromedp/cdproto"
 	cdpbrowser "github.com/chromedp/cdproto/browser"
-	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/remote"
 )
 
 // Supervisor starts, waits on, and kills an owned browser subprocess, so the
@@ -130,7 +130,7 @@ func (c *OwnedChild) Stop(wsURL string) {
 // it from would flash a new window, and chromedp's Browser refuses to send this
 // command itself.
 func CloseOverDevTools(ctx context.Context, wsURL string) error {
-	connection, err := chromedp.DialContext(ctx, wsURL)
+	connection, err := remote.DialContext(ctx, wsURL)
 	if err != nil {
 		return err
 	}

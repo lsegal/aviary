@@ -37,6 +37,7 @@ On a Mac, **macOS Notification Center when no browser is open** has the server s
 | Code Loop | A job is done or its pull request merged | No | Toast |
 | Scheduled tasks & workflows | A run with **Send via: Notify** finished | Yes | Toast |
 | Scheduled tasks & workflows | A workflow failed | Yes | Toast |
+| Scheduled tasks & workflows | A precompiled task's or workflow's compiled script started failing (once per streak) | Yes | Toast |
 | Agents & API | Sent by an agent's `notify` tool or the API | Yes | Toast |
 
 Each can be turned off, given another style, or given its own sound. The **Notifications** switch at the top turns everything off at once.

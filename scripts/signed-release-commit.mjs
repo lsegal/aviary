@@ -6,17 +6,47 @@ import { execFileSync } from "node:child_process";
 // signed by GitHub, so the release commit shows as Verified and PR branches
 // that merge it still satisfy the signed-commits ruleset (#858).
 
-function git(...args) {
-	return execFileSync("git", args, { maxBuffer: 256 * 1024 * 1024 });
+// The release commit and the branch update use RELEASE_TOKEN when it is set.
+// release.yml mints it from a GitHub App that is a bypass actor on the `main`
+// ruleset, so moving main to the fresh commit is not blocked by required
+// status checks that cannot have reported on it yet (#1562). Without it the
+// workflow's GH_TOKEN is used, which only works while no ruleset blocks it.
+export function releaseToken(env = process.env) {
+	if (env.RELEASE_TOKEN) {
+		return { token: env.RELEASE_TOKEN, source: "RELEASE_TOKEN" };
+	}
+	if (env.GH_TOKEN) {
+		return { token: env.GH_TOKEN, source: "GH_TOKEN" };
+	}
+	return null;
 }
 
-function gitText(...args) {
-	return git(...args).toString().trim();
+export class RulesetRejectedError extends Error {
+	constructor({ branch, tokenSource, detail }) {
+		super(
+			`GitHub rejected moving ${branch} to the release commit because a branch ruleset blocks it (${detail}). ` +
+				`The release commit is created through the API right before this update, so required status checks can never have reported on it. ` +
+				`Release with a token that can bypass the ruleset: set the RELEASE_APP_CLIENT_ID repository variable and the RELEASE_APP_PRIVATE_KEY secret ` +
+				`for a GitHub App installed on this repository, and add that app as a bypass actor on the ${branch} ruleset ` +
+				`(see "Publishing a Release" in CONTRIBUTING.md). This run used ${tokenSource}. No tag or GitHub release was created.`,
+		);
+		this.name = "RulesetRejectedError";
+	}
+}
+
+function ruleViolationDetail(text) {
+	try {
+		const message = JSON.parse(text).message ?? "";
+		if (/repository rule violations/i.test(message)) {
+			return message.replace(/\s+/g, " ").trim();
+		}
+	} catch {}
+	return null;
 }
 
 // Lists the paths HEAD changes relative to its parent, as tree entries for
 // the Git Data API. Deleted paths get a null sha, which removes them.
-function changedEntries() {
+function changedEntries(git) {
 	const fields = git(
 		"diff-tree",
 		"-r",
@@ -48,10 +78,17 @@ function changedEntries() {
 export async function publishSignedRelease({
 	repo,
 	token,
+	tokenSource = "the provided token",
 	branch,
 	tag,
 	apiUrl = "https://api.github.com",
+	cwd,
+	fetch = globalThis.fetch,
 }) {
+	const git = (...args) =>
+		execFileSync("git", args, { cwd, maxBuffer: 256 * 1024 * 1024 });
+	const gitText = (...args) => git(...args).toString().trim();
+
 	async function api(method, path, body) {
 		const res = await fetch(`${apiUrl}/repos/${repo}/${path}`, {
 			method,
@@ -64,6 +101,10 @@ export async function publishSignedRelease({
 		});
 		const text = await res.text();
 		if (!res.ok) {
+			const detail = res.status === 422 && ruleViolationDetail(text);
+			if (detail && method === "PATCH" && path === `git/refs/heads/${branch}`) {
+				throw new RulesetRejectedError({ branch, tokenSource, detail });
+			}
 			throw new Error(`${method} ${path} failed (${res.status}): ${text}`);
 		}
 		return JSON.parse(text);
@@ -78,7 +119,7 @@ export async function publishSignedRelease({
 	}
 
 	const entries = [];
-	for (const { localSha, ...entry } of changedEntries()) {
+	for (const { localSha, ...entry } of changedEntries(git)) {
 		if (localSha) {
 			const blob = await api("POST", "git/blobs", {
 				content: git("cat-file", "blob", localSha).toString("base64"),
@@ -112,6 +153,9 @@ export async function publishSignedRelease({
 		);
 	}
 
+	// Move the branch before creating the tag: if the update is rejected, no
+	// tag exists yet, and release.mjs creates the GitHub release only after
+	// this function returns, so a failed release leaves nothing behind.
 	await api("PATCH", `git/refs/heads/${branch}`, {
 		sha: commit.sha,
 		force: false,

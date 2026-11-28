@@ -12,8 +12,9 @@ import (
 func TestIssueSourceReportsItsWiring(t *testing.T) {
 	existing := &Tab{}
 	vision := NewVision(nil, nil)
-	source := NewIssueSource(&Browser{tabs: map[string]*Tab{"owner/repo": existing}},
-		&fakeIssueHydrator{}, func(core.Issue) bool { return false }, "label:agent", true, vision, nil)
+	source := NewIssueSource(&Browser{tabs: map[string]*Tab{"owner/repo": existing}}, IssueSourceOptions{
+		Hydrate: &fakeIssueHydrator{}, Handled: func(core.Issue) bool { return false }, Filter: "label:agent", AllIssues: true, Vision: vision,
+	})
 
 	if got := source.Filter(); got != "label:agent" {
 		t.Errorf("Filter() = %q, want %q", got, "label:agent")
@@ -42,7 +43,7 @@ func TestIssueSourceReportsItsWiring(t *testing.T) {
 // TestIssueSourceDefaults checks a source built without a filter, the
 // all-issues switch, or the vision fallback reports none of them.
 func TestIssueSourceDefaults(t *testing.T) {
-	source := NewIssueSource(&Browser{}, nil, nil, "", false, nil, nil)
+	source := NewIssueSource(&Browser{}, IssueSourceOptions{})
 	if got := source.Filter(); got != "" {
 		t.Errorf("Filter() = %q, want empty", got)
 	}

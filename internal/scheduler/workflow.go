@@ -183,6 +183,10 @@ func DisplayName(id, name string) string {
 
 // looksLikeRawID reports whether s looks like a phone number, a UUID or a
 // platform user ID rather than a person's name.
+// rawIDPunctuation lists the non-alphanumeric characters a raw ID such as a
+// formatted phone number may contain.
+const rawIDPunctuation = "+- ()."
+
 func looksLikeRawID(s string) bool {
 	digits, letters := 0, 0
 	for _, r := range s {
@@ -191,7 +195,7 @@ func looksLikeRawID(s string) bool {
 			digits++
 		case unicode.IsLetter(r):
 			letters++
-		case r == '+' || r == '-' || r == ' ' || r == '(' || r == ')' || r == '.':
+		case strings.ContainsRune(rawIDPunctuation, r):
 		default:
 			return false
 		}

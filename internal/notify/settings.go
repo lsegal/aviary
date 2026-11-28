@@ -16,6 +16,7 @@ const (
 	TypeCodeLoopDone    = "codeloop.done"
 	TypeTaskRun         = "task.run"
 	TypeWorkflowFailed  = "workflow.failed"
+	TypeScriptFailing   = "task.script_failing"
 	TypeCustom          = "custom"
 	// TypeTest is the settings page's Test notification. It has no settings
 	// of its own and reaches every enabled delivery method.
@@ -61,6 +62,7 @@ var EventTypes = []EventType{
 	{TypeCodeLoopDone, SectionCodeLoop, "Code Loop job done or pull request merged", store.NotificationEvent{Enabled: false, Delivery: DeliverySmall}},
 	{TypeTaskRun, SectionTasks, "Task or workflow with the Notify target finished", store.NotificationEvent{Enabled: true, Delivery: DeliverySmall}},
 	{TypeWorkflowFailed, SectionWorkflows, "Workflow failed", store.NotificationEvent{Enabled: true, Delivery: DeliverySmall}},
+	{TypeScriptFailing, SectionTasks, "Precompiled script of a task or workflow started failing", store.NotificationEvent{Enabled: true, Delivery: DeliverySmall}},
 	{TypeCustom, SectionSystem, "Sent by an agent or the notify API", store.NotificationEvent{Enabled: true, Delivery: DeliverySmall}},
 }
 

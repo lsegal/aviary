@@ -147,13 +147,9 @@ func (q *JobQueue) ForceStart(id string) (*domain.Job, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	path := store.FindJobPath(id)
-	if path == "" {
-		return nil, fmt.Errorf("job %s not found", id)
-	}
-	job, err := store.ReadJSON[domain.Job](path)
+	path, job, err := loadJob(id)
 	if err != nil {
-		return nil, fmt.Errorf("reading job %s: %w", id, err)
+		return nil, err
 	}
 	if job.Status != domain.JobStatusPending {
 		return nil, fmt.Errorf("job %s is not pending", id)
@@ -249,46 +245,28 @@ func (q *JobQueue) Claim() (*domain.Job, error) {
 // Requeue returns a job interrupted by a safe restart to pending, without
 // counting the interrupted attempt, and records note for the resumed run.
 func (q *JobQueue) Requeue(id, note string) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	path := store.FindJobPath(id)
-	if path == "" {
-		return fmt.Errorf("job %s not found", id)
-	}
-	job, err := store.ReadJSON[domain.Job](path)
-	if err != nil {
-		return fmt.Errorf("reading job %s: %w", id, err)
-	}
-	job.Status = domain.JobStatusPending
-	if job.Attempts > 0 {
-		job.Attempts--
-	}
-	job.LockedAt = nil
-	job.NextRetryAt = nil
-	job.ResumeNote = note
-	job.UpdatedAt = time.Now()
-	return store.WriteJSON(path, &job)
+	return q.updateJob(id, func(job *domain.Job) bool {
+		job.Status = domain.JobStatusPending
+		if job.Attempts > 0 {
+			job.Attempts--
+		}
+		job.LockedAt = nil
+		job.NextRetryAt = nil
+		job.ResumeNote = note
+		job.UpdatedAt = time.Now()
+		return true
+	})
 }
 
 // ClearResumeNote removes a job's resume note once the resumed run has it.
 func (q *JobQueue) ClearResumeNote(id string) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	path := store.FindJobPath(id)
-	if path == "" {
-		return fmt.Errorf("job %s not found", id)
-	}
-	job, err := store.ReadJSON[domain.Job](path)
-	if err != nil {
-		return fmt.Errorf("reading job %s: %w", id, err)
-	}
-	if job.ResumeNote == "" {
-		return nil
-	}
-	job.ResumeNote = ""
-	return store.WriteJSON(path, &job)
+	return q.updateJob(id, func(job *domain.Job) bool {
+		if job.ResumeNote == "" {
+			return false
+		}
+		job.ResumeNote = ""
+		return true
+	})
 }
 
 // Complete marks a job as completed.
@@ -303,46 +281,36 @@ func (q *JobQueue) Cancel(id string) error {
 
 // Fail marks a job as failed and schedules a retry if attempts remain.
 func (q *JobQueue) Fail(id string, cause error) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	path := store.FindJobPath(id)
-	if path == "" {
-		return fmt.Errorf("job %s not found", id)
-	}
-	job, err := store.ReadJSON[domain.Job](path)
-	if err != nil {
-		return fmt.Errorf("reading job %s: %w", id, err)
-	}
-
-	now := time.Now()
-	job.UpdatedAt = now
-	job.LockedAt = nil
-	if cause != nil {
-		job.Error = cause.Error()
-		job.ErrorOutput, job.BugReportURL = "", ""
-		var failure *domain.RunFailure
-		if errors.As(cause, &failure) {
-			job.ErrorOutput, job.BugReportURL = failure.Output, failure.BugReportURL
+	return q.updateJob(id, func(job *domain.Job) bool {
+		now := time.Now()
+		job.UpdatedAt = now
+		job.LockedAt = nil
+		if cause != nil {
+			job.Error = cause.Error()
+			job.ErrorOutput, job.BugReportURL = "", ""
+			var failure *domain.RunFailure
+			if errors.As(cause, &failure) {
+				job.ErrorOutput, job.BugReportURL = failure.Output, failure.BugReportURL
+			}
 		}
-	}
 
-	if job.Attempts >= job.MaxRetries {
-		job.Status = domain.JobStatusFailed
-		slog.Warn("job failed (no retries left)", "id", id, "err", cause)
-	} else {
-		// Exponential backoff: 30s, 60s, 120s … capped at 1h.
-		backoff := retryBase * (1 << (job.Attempts - 1))
-		if backoff > retryMax {
-			backoff = retryMax
+		if job.Attempts >= job.MaxRetries {
+			job.Status = domain.JobStatusFailed
+			slog.Warn("job failed (no retries left)", "id", id, "err", cause)
+		} else {
+			// Exponential backoff: 30s, 60s, 120s … capped at 1h.
+			backoff := retryBase * (1 << (job.Attempts - 1))
+			if backoff > retryMax {
+				backoff = retryMax
+			}
+			next := now.Add(backoff)
+			job.NextRetryAt = &next
+			job.Status = domain.JobStatusPending
+			slog.Info("job will retry", "id", id, "at", next, "err", cause)
 		}
-		next := now.Add(backoff)
-		job.NextRetryAt = &next
-		job.Status = domain.JobStatusPending
-		slog.Info("job will retry", "id", id, "at", next, "err", cause)
-	}
 
-	return store.WriteJSON(path, &job)
+		return true
+	})
 }
 
 // EnqueueAt writes a new pending job that will not be claimed until at.
@@ -439,149 +407,107 @@ func (q *JobQueue) RecoverStuck() {
 
 // Heartbeat refreshes the lease for an in-progress job.
 func (q *JobQueue) Heartbeat(id string) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	path := store.FindJobPath(id)
-	if path == "" {
-		return fmt.Errorf("job %s not found", id)
-	}
-	job, err := store.ReadJSON[domain.Job](path)
-	if err != nil {
-		return fmt.Errorf("reading job %s: %w", id, err)
-	}
-	if job.Status != domain.JobStatusInProgress {
-		return nil
-	}
-	now := time.Now()
-	job.LockedAt = &now
-	job.UpdatedAt = now
-	return store.WriteJSON(path, &job)
+	return q.updateJob(id, func(job *domain.Job) bool {
+		if job.Status != domain.JobStatusInProgress {
+			return false
+		}
+		now := time.Now()
+		job.LockedAt = &now
+		job.UpdatedAt = now
+		return true
+	})
 }
 
 // SetSession associates a durable execution session with a job.
 func (q *JobQueue) SetSession(id, sessionID string) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	path := store.FindJobPath(id)
-	if path == "" {
-		return fmt.Errorf("job %s not found", id)
-	}
-	job, err := store.ReadJSON[domain.Job](path)
-	if err != nil {
-		return fmt.Errorf("reading job %s: %w", id, err)
-	}
-	job.SessionID = sessionID
-	job.UpdatedAt = time.Now()
-	return store.WriteJSON(path, &job)
+	return q.updateJob(id, func(job *domain.Job) bool {
+		job.SessionID = sessionID
+		job.UpdatedAt = time.Now()
+		return true
+	})
 }
 
 // SetTrigger records what fired a job's run.
 func (q *JobQueue) SetTrigger(id, trigger string) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	path := store.FindJobPath(id)
-	if path == "" {
-		return fmt.Errorf("job %s not found", id)
-	}
-	job, err := store.ReadJSON[domain.Job](path)
-	if err != nil {
-		return fmt.Errorf("reading job %s: %w", id, err)
-	}
-	job.Trigger = trigger
-	return store.WriteJSON(path, &job)
+	return q.updateJob(id, func(job *domain.Job) bool {
+		job.Trigger = trigger
+		return true
+	})
 }
 
 // SetTriggerContext records the channel message that started a workflow run.
 func (q *JobQueue) SetTriggerContext(id string, tc *domain.TriggerContext) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	path := store.FindJobPath(id)
-	if path == "" {
-		return fmt.Errorf("job %s not found", id)
-	}
-	job, err := store.ReadJSON[domain.Job](path)
-	if err != nil {
-		return fmt.Errorf("reading job %s: %w", id, err)
-	}
-	job.TriggerContext = tc
-	return store.WriteJSON(path, &job)
+	return q.updateJob(id, func(job *domain.Job) bool {
+		job.TriggerContext = tc
+		return true
+	})
 }
 
 // SetDelivery records where a job's output was sent and how that went.
 func (q *JobQueue) SetDelivery(id string, delivery *domain.JobDelivery) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	path := store.FindJobPath(id)
-	if path == "" {
-		return fmt.Errorf("job %s not found", id)
-	}
-	job, err := store.ReadJSON[domain.Job](path)
-	if err != nil {
-		return fmt.Errorf("reading job %s: %w", id, err)
-	}
-	job.Delivery = delivery
-	job.UpdatedAt = time.Now()
-	return store.WriteJSON(path, &job)
+	return q.updateJob(id, func(job *domain.Job) bool {
+		job.Delivery = delivery
+		job.UpdatedAt = time.Now()
+		return true
+	})
 }
 
 // UpdateOutput persists the text output captured during a job's execution.
 func (q *JobQueue) UpdateOutput(id, output string) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	path := store.FindJobPath(id)
-	if path == "" {
-		return fmt.Errorf("job %s not found", id)
-	}
-	job, err := store.ReadJSON[domain.Job](path)
-	if err != nil {
-		return fmt.Errorf("reading job %s: %w", id, err)
-	}
-	job.Output = output
-	job.UpdatedAt = time.Now()
-	return store.WriteJSON(path, &job)
+	return q.updateJob(id, func(job *domain.Job) bool {
+		job.Output = output
+		job.UpdatedAt = time.Now()
+		return true
+	})
 }
 
 // SetScriptError records why a precompiled project task's or workflow's script failed
 // before the model ran the task instead, for the run's logs and status.
 func (q *JobQueue) SetScriptError(id, scriptErr string) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	path := store.FindJobPath(id)
-	if path == "" {
-		return fmt.Errorf("job %s not found", id)
-	}
-	job, err := store.ReadJSON[domain.Job](path)
-	if err != nil {
-		return fmt.Errorf("reading job %s: %w", id, err)
-	}
-	job.ScriptError = scriptErr
-	return store.WriteJSON(path, &job)
+	return q.updateJob(id, func(job *domain.Job) bool {
+		job.ScriptError = scriptErr
+		return true
+	})
 }
 
 func (q *JobQueue) updateStatus(id string, status domain.JobStatus) error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
+	return q.updateJob(id, func(job *domain.Job) bool {
+		job.Status = status
+		if status == domain.JobStatusCompleted {
+			job.Error, job.ErrorOutput, job.BugReportURL = "", "", ""
+		}
+		job.LockedAt = nil
+		job.UpdatedAt = time.Now()
+		return true
+	})
+}
 
+// loadJob loads the job with id from disk, returning its file path. Callers
+// must hold q.mu.
+func loadJob(id string) (string, domain.Job, error) {
 	path := store.FindJobPath(id)
 	if path == "" {
-		return fmt.Errorf("job %s not found", id)
+		return "", domain.Job{}, fmt.Errorf("job %s not found", id)
 	}
 	job, err := store.ReadJSON[domain.Job](path)
 	if err != nil {
-		return fmt.Errorf("reading job %s: %w", id, err)
+		return "", domain.Job{}, fmt.Errorf("reading job %s: %w", id, err)
 	}
-	job.Status = status
-	if status == domain.JobStatusCompleted {
-		job.Error, job.ErrorOutput, job.BugReportURL = "", "", ""
+	return path, job, nil
+}
+
+// updateJob loads the job with id under q.mu, applies mutate, and writes the
+// job back when mutate reports a change.
+func (q *JobQueue) updateJob(id string, mutate func(job *domain.Job) bool) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	path, job, err := loadJob(id)
+	if err != nil {
+		return err
 	}
-	job.LockedAt = nil
-	job.UpdatedAt = time.Now()
+	if !mutate(&job) {
+		return nil
+	}
 	return store.WriteJSON(path, &job)
 }

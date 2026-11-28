@@ -540,10 +540,16 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 			defer cancel(nil)
 			stop := context.AfterFunc(runCtx, func() { cancel(context.Cause(runCtx)) })
 			defer stop()
-			output, executed, err := p.runCompiledProjectTask(scriptCtx, job, cfg.Name, run, clone, logf)
+			output, executed, err := p.runCompiledProjectTask(scriptCtx, compiledProjectTask{
+				job:       job,
+				agentName: cfg.Name,
+				run:       run,
+				clone:     clone,
+				logf:      logf,
+			})
 			compiledErr = err
-			// Only the script's own result counts toward setting it aside,
-			// not a failed compile or clone, nor a stopped run.
+			// Only the script's own result counts toward its failures, not
+			// a failed compile or clone, nor a stopped run.
 			scriptExecuted = executed && runCtx.Err() == nil
 			return output, err
 		}
@@ -615,11 +621,13 @@ func (p *WorkerPool) runCompiledPrompt(ctx context.Context, job *domain.Job, cfg
 		b.Addf("running the precompiled script")
 		scriptJob := *job
 		scriptJob.Script = script
-		output, runErr = executeScriptJobOutput(ctx, &scriptJob, b.Addf)
+		output, runErr = retryTransientScript(ctx, b.Addf, func() (string, error) {
+			return executeScriptJobOutput(ctx, &scriptJob, b.Addf)
+		})
 		executed = true
 	}
-	// Only the script's own result counts toward setting it aside, not a
-	// failed compile nor a stopped run.
+	// Only the script's own result counts toward its failures, not a failed
+	// compile nor a stopped run.
 	if executed && ctx.Err() == nil && p.scriptReporter != nil {
 		if reportErr := p.scriptReporter(cfg.Name, name, runErr); reportErr != nil {
 			slog.Warn("job: failed to record precompiled script result", "id", job.ID, "task", job.TaskID, "err", reportErr)
@@ -672,28 +680,40 @@ func fallbackSummary(summary string, scriptErr error) string {
 	return summary + "\n\n" + note
 }
 
+// compiledProjectTask is one run of a precompiled project task's script.
+type compiledProjectTask struct {
+	job       *domain.Job
+	agentName string
+	run       ProjectRun
+	clone     func(context.Context) (string, error) // makes a fresh clone of the project
+	logf      func(string, ...any)
+}
+
 // runCompiledProjectTask runs a precompiled project task's script in checkout,
 // a fresh clone of its project, with the same environment the task's agent
 // gets: its tools and exec permissions, the clone granted to them and their
 // default directory, and the clone and repository in the command env.
-func (p *WorkerPool) runCompiledProjectTask(ctx context.Context, job *domain.Job, agentName string, run ProjectRun, clone func(context.Context) (string, error), logf func(string, ...any)) (output string, executed bool, err error) {
-	script, err := p.taskCompiler(ctx, agentName, run.Name)
+func (p *WorkerPool) runCompiledProjectTask(ctx context.Context, task compiledProjectTask) (output string, executed bool, err error) {
+	run, logf := task.run, task.logf
+	script, err := p.taskCompiler(ctx, task.agentName, run.Name)
 	if err != nil {
 		return "", false, err
 	}
 	if strings.TrimSpace(script) == "" {
 		return "", false, ErrProjectTaskNotCompiled
 	}
-	checkout, err := clone(ctx)
+	checkout, err := task.clone(ctx)
 	if err != nil {
 		return "", false, fmt.Errorf("cloning %s: %w", run.Project, err)
 	}
 	logf("running the precompiled script in %s", checkout)
 	ctx = agent.WithProjectTaskScript(agent.WithFilesystemGrant(ctx, checkout))
 	ctx = agent.WithCommandEnv(ctx, map[string]string{"AVIARY_CHECKOUT_DIRECTORY": checkout, "GH_REPO": run.Project})
-	scriptJob := *job
+	scriptJob := *task.job
 	scriptJob.Script = script
-	output, err = executeScriptJobOutput(ctx, &scriptJob, logf)
+	output, err = retryTransientScript(ctx, logf, func() (string, error) {
+		return executeScriptJobOutput(ctx, &scriptJob, logf)
+	})
 	return output, true, err
 }
 

@@ -234,6 +234,7 @@ func ReleaseAgent(a config.AgentConfig, deleteData bool) error {
 		return nil
 	}
 	if sessions, err := agent.NewSessionManager().List(a.Name); err == nil {
+		agent.RecordSessionsDeleted(a.Name, sessions)
 		for _, sess := range sessions {
 			_, files := sessionContent(a.Name, sess.ID)
 			for _, f := range files {

@@ -37,7 +37,11 @@ type Status struct {
 }
 
 // Missing lists what is not installed, in a form a user can act on.
-func (s Status) Missing() []string {
+func (s Status) Missing() []string { return s.missing(true) }
+
+// missing lists what is not installed, leaving out ffmpeg when the audio
+// needs no conversion.
+func (s Status) missing(ffmpeg bool) []string {
 	var missing []string
 	if !s.Whisper.Installed {
 		missing = append(missing, "whisper-cli")
@@ -45,7 +49,7 @@ func (s Status) Missing() []string {
 	if !s.Model.Downloaded {
 		missing = append(missing, "whisper model "+s.Model.Name)
 	}
-	if !s.FFmpeg.Installed {
+	if ffmpeg && !s.FFmpeg.Installed {
 		missing = append(missing, "ffmpeg")
 	}
 	return missing
@@ -64,6 +68,8 @@ var (
 	httpClient   = http.DefaultClient
 	// packageInstall installs packages with the platform package manager.
 	packageInstall = installPackages
+	// goos selects the platform package manager.
+	goos = runtime.GOOS
 )
 
 // DepsDir holds programs and models Aviary installs itself.
@@ -212,7 +218,7 @@ func installPackages(ctx context.Context, packages []string, logf func(string)) 
 		logf(strings.TrimSpace(string(out)))
 		return nil
 	}
-	if winget, err := lookPath("winget"); err == nil && runtime.GOOS == "windows" {
+	if winget, err := lookPath("winget"); err == nil && goos == "windows" {
 		ids := map[string]string{"ffmpeg": "Gyan.FFmpeg", "whisper-cpp": "ggerganov.whisper.cpp"}
 		for _, pkg := range packages {
 			out, err := exec.CommandContext(ctx, winget, "install", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--id", ids[pkg]).CombinedOutput()

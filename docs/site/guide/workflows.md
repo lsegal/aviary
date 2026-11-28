@@ -93,7 +93,7 @@ A prompt workflow can be precompiled like a [project task](./scheduled-tasks.md#
 1. Runs the compiled script, which reads the message from the Lua global `trigger` (`trigger.message.text`, `.sender`, `trigger.before`, `trigger.channel`, `trigger.entry`). What the script prints is the workflow's reply; a script that decides not to reply calls `tool.task_no_reply({reason = "..."})` instead (see [Not replying](#not-replying)).
 2. Falls back to a normal model run on the prompt if the script or the compile fails. The run shows **Succeeded via fallback**, the script's error is in the run's logs, and the workflow's card says its last run fell back to the model.
 
-A script that fails on its first run is set aside, and one that fails 3 runs in a row turns precompile off, exactly as for project tasks; the workflow's page says why. Workflow cards, the Workflows tab and the workflow's page show a badge with the compiled state (**Compiled**, **Compiling…**, **Not precompiled** or **Runs on model**), and the page also counts compile attempts, fallback runs and script failures.
+A failing script never turns precompile off: each failed run falls back to the model, and the workflow shows **Script failing** with the last error and **Recompile**, exactly as for [project tasks](/guide/scheduled-tasks#precompiled-project-tasks). Workflow cards, the Workflows tab and the workflow's page show a badge with the compiled state (**Compiled**, **Compiling…**, **Script failing**, **Not precompiled** or **Runs on model**), and the page also counts compile attempts, fallback runs and script failures.
 
 ## Examples
 

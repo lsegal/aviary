@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -451,5 +452,180 @@ func TestEnginePrecompiledProjectTaskFallsBackToTheAgent(t *testing.T) {
 				t.Fatalf("job fallback = %v, want %v", job.Fallback, tc.failure)
 			}
 		})
+	}
+}
+
+// TestManagerWatchedProjects checks the projects the Code Loop agent's task
+// tools may act on: every configured project with its owning agent, every
+// runtime watch with its watch's agent (or "" when no agent owns it), and no
+// blank or unwatched targets.
+func TestManagerWatchedProjects(t *testing.T) {
+	m := newTestManager(t)
+	if got := m.WatchedProjects(); len(got) != 0 {
+		t.Fatalf("with nothing watched = %v, want none", got)
+	}
+	m.Reconcile(&config.Config{Agents: []config.AgentConfig{
+		{Name: "opus", Model: "cli/claude/opus", Projects: config.AgentProjectsConfig{{Target: "o/a"}, {Target: "o/manual", Mode: "manual"}, {Target: "  "}}},
+		{Name: "shared", Model: "cli/codex", Projects: config.AgentProjectsConfig{{Target: "o/b"}}},
+	}})
+	m.mu.Lock()
+	m.watches = append(m.watches,
+		Watch{Targets: []string{"o/runtime", " "}},
+		Watch{Targets: []string{"o/b"}, Agent: " opus "},
+	)
+	m.mu.Unlock()
+
+	want := map[string]string{"o/a": "opus", "o/manual": "opus", "o/b": "opus", "o/runtime": ""}
+	if got := m.WatchedProjects(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("WatchedProjects = %v, want %v", got, want)
+	}
+	if _, ok := m.WatchedProjects()["o/unwatched"]; ok {
+		t.Fatal("an unwatched project was listed")
+	}
+}
+
+// TestManagerLogTaskChange checks a prompt chat's task change lands in the
+// Code Loop log, naming the project, task, and change.
+func TestManagerLogTaskChange(t *testing.T) {
+	m := newTestManager(t)
+	recorder := recordLogs(t, m)
+	for _, change := range []string{"added", "removed", "changed"} {
+		m.LogTaskChange("o/r", "bot/digest", change)
+	}
+	lines, _ := recorder.since(logComponent, 0, 0)
+	want := []string{
+		"o/r: scheduled task bot/digest added from the prompt chat",
+		"o/r: scheduled task bot/digest removed from the prompt chat",
+		"o/r: scheduled task bot/digest changed from the prompt chat",
+	}
+	if !reflect.DeepEqual(lines, want) {
+		t.Fatalf("logged %v, want %v", lines, want)
+	}
+}
+
+func TestManagerRunProjectTaskFailsOnBadSettings(t *testing.T) {
+	m := newTestManager(t)
+	m.mu.Lock()
+	m.agents = nil
+	m.watches = append(m.watches, Watch{Targets: []string{"o/r"}, Agent: "ghost"})
+	m.mu.Unlock()
+	_, err := m.RunProjectTask(context.Background(), scheduler.ProjectRun{TaskID: "bot/x", Project: "o/r", Prompt: "x"})
+	if err == nil || !strings.Contains(err.Error(), `agent "ghost"`) {
+		t.Fatalf("err = %v, want the unconfigured agent reported", err)
+	}
+}
+
+func TestManagerRunProjectTaskWithoutAnEngine(t *testing.T) {
+	m := newTestManager(t)
+	m.Reconcile(&config.Config{
+		Models: config.ModelsConfig{Defaults: &config.ModelDefaults{Model: "cli/codex"}},
+		Agents: []config.AgentConfig{{Name: "coder", Model: "cli/codex", Projects: config.AgentProjectsConfig{{Target: "o/r"}}}},
+	})
+	for _, run := range []scheduler.ProjectRun{
+		{TaskID: "bot/x", Project: " o/r ", Prompt: "x"},
+		{TaskID: "bot/x", Project: "o/r", Prompt: "x", Model: "cli/claude/opus"},
+	} {
+		if _, err := m.RunProjectTask(context.Background(), run); !errors.Is(err, ErrNotWatching) {
+			t.Fatalf("run %+v err = %v, want ErrNotWatching", run, err)
+		}
+	}
+}
+
+func TestEngineRunProjectTaskRefusals(t *testing.T) {
+	t.Run("not ready", func(t *testing.T) {
+		w := &Engine{notReadyWait: 10 * time.Millisecond}
+		if _, err := w.runProjectTask(context.Background(), scheduler.ProjectRun{Prompt: "x"}, "o/r", AgentSession{}); !errors.Is(err, core.ErrNotReady) {
+			t.Fatalf("err = %v, want ErrNotReady", err)
+		}
+	})
+	t.Run("no prompt", func(t *testing.T) {
+		w := &Engine{}
+		close(w.readyChan())
+		if _, err := w.runProjectTask(context.Background(), scheduler.ProjectRun{Prompt: "  "}, "o/r", AgentSession{}); err == nil || !strings.Contains(err.Error(), "needs a prompt") {
+			t.Fatalf("err = %v, want the empty prompt refused", err)
+		}
+	})
+	t.Run("caller gives up before the run starts", func(t *testing.T) {
+		// A ready engine whose loop never takes the request.
+		w := &Engine{}
+		close(w.readyChan())
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		if _, err := w.runProjectTask(ctx, scheduler.ProjectRun{Prompt: "x"}, "o/r", AgentSession{}); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("err = %v, want the caller's deadline", err)
+		}
+	})
+}
+
+// A run without a fire time is stamped with the time it starts.
+func TestEngineProjectTaskDefaultsItsFireTime(t *testing.T) {
+	runner := &scheduledRunner{started: make(chan Issue, 1)}
+	w, ctx := startScheduledEngine(t, runner)
+	before := time.Now()
+	if _, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: "bot/now", Name: "now", Project: "o/r", Prompt: "Now"}, "o/r", AgentSession{}); err != nil {
+		t.Fatal(err)
+	}
+	<-runner.started
+	snapshot := w.published.Load()
+	if snapshot == nil {
+		t.Fatal("no snapshot published")
+	}
+	found := false
+	for _, job := range snapshot.Jobs {
+		if job.Kind == core.JobKindSchedule && int64(job.Number) >= before.Unix()-1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("jobs = %+v, want a scheduled job numbered by the current time", snapshot.Jobs)
+	}
+}
+
+func TestLastLine(t *testing.T) {
+	if got := lastLine(" \n\n "); got != "" {
+		t.Fatalf("blank log = %q, want empty", got)
+	}
+	if got := lastLine("first\n  second  \n\n"); got != "second" {
+		t.Fatalf("lastLine = %q", got)
+	}
+}
+
+// A precompiled task whose clone fails falls back to the agent, clones the
+// run's own project when no repository is given, and leaves no checkout.
+func TestEnginePrecompiledProjectTaskCloneFailureFallsBack(t *testing.T) {
+	runner := &scheduledRunner{started: make(chan Issue, 1)}
+	w, ctx := startScheduledEngine(t, runner)
+	root, _ := stubProjectClone(t, w)
+	var cloned []string
+	cloneProjectRepository = func(_ context.Context, repository, _ string) error {
+		cloned = append(cloned, repository)
+		return errors.New("gh repo clone: exit status 1: not found")
+	}
+	fire := time.Date(2026, 11, 22, 9, 0, 0, 0, time.UTC)
+	run := scheduler.ProjectRun{TaskID: "bot/clone", Name: "clone", Project: "o/r", Prompt: "Clone it", Fire: fire,
+		RunCompiled: func(ctx context.Context, clone func(context.Context) (string, error), _ func(string, ...any)) (string, error) {
+			_, err := clone(ctx)
+			return "", err
+		}}
+
+	summary, err := w.runProjectTask(ctx, run, "", AgentSession{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue := <-runner.started; issue.Prompt != "Clone it" {
+		t.Fatalf("agent got %+v", issue)
+	}
+	if summary != "Opened issue #12 for the stale lockfile" {
+		t.Fatalf("summary = %q, want the agent's", summary)
+	}
+	if len(cloned) != 1 || cloned[0] != "o/r" {
+		t.Fatalf("cloned %v, want the run's project", cloned)
+	}
+	job, _ := scheduledJob(w, int(fire.Unix()))
+	if !strings.Contains(job.Log, "not found") || !job.Fallback {
+		t.Fatalf("job = %+v, want the clone failure logged as a fallback", job)
+	}
+	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
+		t.Fatalf("clone root holds %v (%v), want the failed checkout removed", entries, err)
 	}
 }

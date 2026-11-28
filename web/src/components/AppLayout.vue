@@ -362,7 +362,8 @@
          away as the page scrolls (#1437). -->
     <main ref="mainEl" data-testid="page-main" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <SettingsPageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back" :title-link="titleLink"
-        :switcher="leafSwitcher" :identity="pageIdentity(route.path)" :collapsed="headerOffset">
+        :switcher="leafSwitcher" :identity="pageIdentity(route.path)" :collapsed="headerOffset"
+        :compact="compactHeader">
         <template v-if="$slots['header-icon']" #icon><slot name="header-icon" /></template>
         <template v-if="$slots['header-status']" #status><slot name="header-status" /></template>
         <template v-if="$slots['header-actions']" #actions><slot name="header-actions" /></template>
@@ -440,7 +441,7 @@ import { AGENT_PAGE_ICONS, pageIdentity } from "../lib/pageIdentity";
 import { useCrumbSwitcher } from "../composables/useCrumbSwitcher";
 import { isSettingsPath, SYSTEM_PAGES } from "../lib/systemNav";
 import { shortVersion } from "../lib/version";
-import { jobPath, type ProjectSummary, projectPath } from "../lib/projects";
+import { type ProjectSummary, projectPath } from "../lib/projects";
 import { useAuthStore } from "../stores/auth";
 import { chatDisplayName, useChatSessionsStore } from "../stores/chatSessions";
 import {
@@ -531,6 +532,8 @@ const props = defineProps<{
 	trail?: { from: RouteLocationRaw; crumbs: SettingsCrumb[] } | null;
 	/** An outside page the header's title opens in a new tab. */
 	titleLink?: { href: string; title: string } | null;
+	/** The header's compact look, with no icon tile or phone title (#1570). */
+	compactHeader?: boolean;
 }>();
 const auth = useAuthStore();
 // An `aviary watch` session shows only Code Loop and Scheduled Tasks.
@@ -1144,11 +1147,13 @@ const headerCrumbs = computed((): SettingsCrumb[] => {
 	];
 });
 // Only the header's breadcrumb bar stays pinned; its title row slides away
-// as the page scrolls (#1437), and comes back on every new page.
+// as the page scrolls (#1437), and comes back on every new page. A compact
+// header is slim enough to stay pinned whole under the breadcrumb bar, so
+// its chips and toolbar stay in reach (#1572).
 const mainEl = ref<HTMLElement | null>(null);
 const { offset: headerOffset, reset: showHeader } = useScrollAwayHeader(
 	mainEl,
-	computed(() => headerCrumbs.value.length > 0),
+	computed(() => headerCrumbs.value.length > 0 && !props.compactHeader),
 );
 watch(() => route.path, showHeader);
 // The leaf's switcher between its sibling projects, tasks, channels or
@@ -1167,11 +1172,9 @@ function flyoutItems(children: NavChild[]): RailFlyoutItem[] {
 	}));
 }
 
-// How many running jobs the Code Loop flyout lists under each project.
-const FLYOUT_JOBS = 3;
-
-// The Code Loop flyout's projects, running ones first, each with its count
-// and its first running jobs; idle ones dimmed (#1359).
+// The Code Loop flyout's projects, running ones first, each with its
+// running count; idle ones dimmed (#1359). The count stands in for the jobs,
+// which the project's board lists (#1494).
 function projectItems(agent: string): RailFlyoutItem[] {
 	const owned = ownedProjects(agent);
 	const sorted = [
@@ -1180,21 +1183,10 @@ function projectItems(agent: string): RailFlyoutItem[] {
 	];
 	return sorted.map((p) => {
 		const [item] = flyoutItems([projectChild(agent, p)]);
-		const extra = p.runningJobs.length - FLYOUT_JOBS;
 		return {
 			...item,
 			badge: p.running,
 			dimmed: p.running === 0 && !item.active,
-			jobs: p.runningJobs.slice(0, FLYOUT_JOBS).map((j) => ({
-				key: j.id,
-				label: j.label,
-				to: jobPath(agent, p.name, j.number),
-				state: j.state,
-				runs: j.runs,
-			})),
-			...(extra > 0
-				? { more: { count: extra, to: `${item.to}?state=running` } }
-				: {}),
 		};
 	});
 }

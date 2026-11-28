@@ -3,6 +3,7 @@ package transcribe
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -19,8 +20,10 @@ func runCommand(ctx context.Context, name string, args ...string) ([]byte, error
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }
 
-// Local transcribes with whisper.cpp's whisper-cli, converting input to
-// 16 kHz WAV with ffmpeg and keeping its loudest channel first.
+// Local transcribes with whisper.cpp's whisper-cli. Input that is already
+// 16 kHz WAV, as the web UI's mic uploads, goes straight to whisper-cli;
+// anything else is converted with ffmpeg first. Either way the loudest
+// channel is kept.
 type Local struct {
 	Model string
 	// Resolve finds the tools; it defaults to Detect for Model.
@@ -43,7 +46,8 @@ func (l *Local) status() Status {
 // Transcribe implements Engine.
 func (l *Local) Transcribe(ctx context.Context, audioPath string, opts Options) (Transcript, error) {
 	st := l.status()
-	if missing := st.Missing(); len(missing) > 0 {
+	needFFmpeg := !isSpeechWAV(audioPath)
+	if missing := st.missing(needFFmpeg); len(missing) > 0 {
 		return Transcript{}, &UnavailableError{Missing: missing}
 	}
 	run := l.run
@@ -56,20 +60,23 @@ func (l *Local) Transcribe(ctx context.Context, audioPath string, opts Options) 
 	}
 	defer os.RemoveAll(dir) //nolint:errcheck
 
-	converted := filepath.Join(dir, "converted.wav")
-	if out, err := run(ctx, st.FFmpeg.Path, ffmpegArgs(audioPath, converted)...); err != nil {
-		return Transcript{}, fmt.Errorf("converting audio with ffmpeg: %w: %s", err, firstLine(out))
+	converted := audioPath
+	if needFFmpeg {
+		converted = filepath.Join(dir, "converted.wav")
+		if out, err := run(ctx, st.FFmpeg.Path, ffmpegArgs(audioPath, converted)...); err != nil {
+			return Transcript{}, ffmpegError(st.FFmpeg.Path, err, out)
+		}
 	}
 	wav := filepath.Join(dir, "audio.wav")
 	level, err := prepareSpeech(converted, wav)
 	if err != nil {
-		return Transcript{}, fmt.Errorf("converting audio with ffmpeg: %w", err)
+		return Transcript{}, fmt.Errorf("reading converted audio: %w", err)
 	}
 	inputSize := int64(-1)
 	if info, err := os.Stat(audioPath); err == nil {
 		inputSize = info.Size()
 	}
-	slog.Debug("transcribe: converted audio", "component", "transcribe", "input", filepath.Base(audioPath), "input_bytes", inputSize,
+	slog.Debug("transcribe: converted audio", "component", "transcribe", "input", filepath.Base(audioPath), "input_bytes", inputSize, "ffmpeg", needFFmpeg,
 		"duration", level.Duration, "channels", level.Channels, "channel", level.Channel,
 		"peak_dbfs", roundDB(dBFS(level.Peak)), "rms_dbfs", roundDB(dBFS(level.RMS)), "max_peak_dbfs", roundDB(dBFS(level.MaxPeak)),
 		"channel_peaks_dbfs", dBFSList(level.ChannelPeaks), "channel_rms_dbfs", dBFSList(level.ChannelRMS),
@@ -99,6 +106,21 @@ func (l *Local) Transcribe(ctx context.Context, audioPath string, opts Options) 
 		return Transcript{Language: t.Language, Duration: t.Duration, NoSpeech: true, PeakDBFS: &peak}, nil
 	}
 	return t, nil
+}
+
+// ffmpegError explains an ffmpeg failure. When ffmpeg couldn't start or was
+// killed by a signal, its output is a loader or crash message (such as a
+// dyld "Library not loaded" error after a Homebrew upgrade) that means
+// nothing to a user, so it goes to the log and the error says ffmpeg is
+// broken instead. A normal non-zero exit means the input couldn't be
+// converted, and ffmpeg's own first line explains why.
+func ffmpegError(path string, err error, out []byte) error {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.Exited() {
+		return fmt.Errorf("ffmpeg couldn't convert the audio: %s", firstLine(out))
+	}
+	slog.Warn("transcribe: ffmpeg failed to start", "component", "transcribe", "path", path, "err", err, "output", strings.TrimSpace(string(out)))
+	return fmt.Errorf("ffmpeg is missing or failed to start (%v); reinstall it with `aviary deps install` or your package manager. The web UI's mic doesn't need ffmpeg; only channel voice notes and other audio formats do", err)
 }
 
 func dBFSList(levels []float64) []float64 {

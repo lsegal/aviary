@@ -74,7 +74,8 @@ function usageRecord({
 	};
 }
 
-const docsVersion = "0.7.3";
+// A release build reports its tag, so the sidebar label links to release notes.
+const docsVersion = "v1.0.1";
 
 const versionPayload = {
 	latestVersion: docsVersion,
@@ -396,6 +397,72 @@ const usageFixtures = {
 		}),
 	],
 };
+
+// Names the Sessions table shows; usage_sessions pages them on the server.
+const usageSessionNames = {
+	"sess-main": "Main Chat",
+	"sess-triage": "Inbox triage",
+	"sess-research": "Pricing page research",
+	"sess-research-2": "Competitor feature matrix",
+	"sess-research-3": "Weekly market notes",
+	"sess-ops": "Deploy checklist",
+	"sess-ops-2": "Certificate renewals",
+	"sess-support": "Support follow-ups",
+};
+
+function usageSessionsPage(args = {}) {
+	const bySession = new Map();
+	for (const r of usageFixtures.usage_query) {
+		if (r.project) continue;
+		let s = bySession.get(r.session_id);
+		if (!s) {
+			s = {
+				session_id: r.session_id,
+				agent_id: r.agent_id,
+				model: r.model,
+				provider: r.provider,
+				input: 0,
+				output: 0,
+				cache_read: 0,
+				cache_write: 0,
+				tool_calls: 0,
+				messages: 0,
+				has_error: false,
+				has_throttle: false,
+				first_ts: r.timestamp,
+				last_ts: r.timestamp,
+				name: usageSessionNames[r.session_id] ?? r.session_id,
+				kind: "chat",
+			};
+			bySession.set(r.session_id, s);
+		}
+		s.input += r.input_tokens;
+		s.output += r.output_tokens;
+		s.cache_read += r.cache_read_tokens ?? 0;
+		s.cache_write += r.cache_write_tokens ?? 0;
+		s.tool_calls += r.tool_calls ?? 0;
+		s.messages += 2;
+		s.has_error ||= Boolean(r.has_error);
+		s.has_throttle ||= Boolean(r.has_throttle);
+		if (r.timestamp < s.first_ts) s.first_ts = r.timestamp;
+		if (r.timestamp > s.last_ts) s.last_ts = r.timestamp;
+	}
+	const sessions = [...bySession.values()].sort((a, b) =>
+		b.last_ts.localeCompare(a.last_ts),
+	);
+	const offset = args.offset ?? 0;
+	const limit = args.limit ?? 50;
+	return {
+		sessions: sessions.slice(offset, offset + limit),
+		total: sessions.length,
+		offset,
+		limit,
+		agents: [...new Set(sessions.map((s) => s.agent_id))].sort(),
+		models: [...new Set(sessions.map((s) => s.model))].sort(),
+	};
+}
+
+usageFixtures.usage_sessions = usageSessionsPage;
 
 // The configuration every page loads: the sidebar lists its agents and their
 // sessions, tasks and channels.
@@ -776,7 +843,7 @@ function codingSkill(name, summary, runByProjects, outdatedIn = []) {
 			cli: cli.id,
 			installed: true,
 			current: !outdatedIn.includes(cli.id),
-			version: outdatedIn.includes(cli.id) ? "0.7.1" : docsVersion,
+			version: outdatedIn.includes(cli.id) ? "v1.0.0" : docsVersion,
 			source: "lsegal/aviary",
 		})),
 	};
@@ -866,7 +933,9 @@ const compileDetail = {
 		"events = calendar_events_today()\nmail = email_inbox_list(unread_only=true)\nprint(render_morning_brief(events, mail))",
 };
 
-function taskRun(n, task, status, daysAgo, hour, seconds, extra = {}) {
+// A scheduled run of one of the assistant's tasks, created daysAgo at hour
+// and taking seconds; any other fields are added to the job as given.
+function taskRun({ n, task, status, daysAgo, hour, seconds, ...extra }) {
 	const created = new Date(iso(daysAgo, hour));
 	return {
 		id: `job_${String(n).padStart(8, "0")}`,
@@ -885,22 +954,23 @@ function taskRun(n, task, status, daysAgo, hour, seconds, extra = {}) {
 
 const jobsFixtures = {
 	job_query: [
-		taskRun(12, "calendar-prep", "in_progress", 0, 8, 30),
-		taskRun(11, "daily-inbox-triage", "completed", 0, 7, 41),
-		taskRun(10, "calendar-prep", "completed", 1, 8, 52),
-		taskRun(9, "daily-inbox-triage", "completed", 1, 7, 38),
-		taskRun(8, "calendar-prep", "failed", 2, 8, 95, {
+		taskRun({ n: 12, task: "calendar-prep", status: "in_progress", daysAgo: 0, hour: 8, seconds: 30 }),
+		taskRun({ n: 11, task: "daily-inbox-triage", status: "completed", daysAgo: 0, hour: 7, seconds: 41 }),
+		taskRun({ n: 10, task: "calendar-prep", status: "completed", daysAgo: 1, hour: 8, seconds: 52 }),
+		taskRun({ n: 9, task: "daily-inbox-triage", status: "completed", daysAgo: 1, hour: 7, seconds: 38 }),
+		taskRun({
+			n: 8, task: "calendar-prep", status: "failed", daysAgo: 2, hour: 8, seconds: 95,
 			error: "calendar_events_today: provider returned 503",
 		}),
-		taskRun(7, "daily-inbox-triage", "completed", 2, 7, 44),
-		taskRun(6, "calendar-prep", "completed", 3, 8, 47),
-		taskRun(5, "daily-inbox-triage", "completed", 3, 7, 36),
-		taskRun(4, "weekly-review", "completed", 4, 16, 120),
-		taskRun(15, "daily-inbox-triage", "completed", 4, 7, 39),
-		taskRun(14, "calendar-prep", "completed", 4, 8, 51),
-		taskRun(13, "calendar-prep", "completed", 5, 8, 46),
-		taskRun(3, "daily-inbox-triage", "completed", 6, 7, 40),
-		taskRun(2, "calendar-prep", "completed", 6, 8, 49),
+		taskRun({ n: 7, task: "daily-inbox-triage", status: "completed", daysAgo: 2, hour: 7, seconds: 44 }),
+		taskRun({ n: 6, task: "calendar-prep", status: "completed", daysAgo: 3, hour: 8, seconds: 47 }),
+		taskRun({ n: 5, task: "daily-inbox-triage", status: "completed", daysAgo: 3, hour: 7, seconds: 36 }),
+		taskRun({ n: 4, task: "weekly-review", status: "completed", daysAgo: 4, hour: 16, seconds: 120 }),
+		taskRun({ n: 15, task: "daily-inbox-triage", status: "completed", daysAgo: 4, hour: 7, seconds: 39 }),
+		taskRun({ n: 14, task: "calendar-prep", status: "completed", daysAgo: 4, hour: 8, seconds: 51 }),
+		taskRun({ n: 13, task: "calendar-prep", status: "completed", daysAgo: 5, hour: 8, seconds: 46 }),
+		taskRun({ n: 3, task: "daily-inbox-triage", status: "completed", daysAgo: 6, hour: 7, seconds: 40 }),
+		taskRun({ n: 2, task: "calendar-prep", status: "completed", daysAgo: 6, hour: 8, seconds: 49 }),
 	],
 	task_compile_query: [compileDetail],
 	task_compile_get: compileDetail,
@@ -1407,7 +1477,9 @@ const workflowsConfig = {
 	),
 };
 
-function workflowRun(n, task, status, minutes, seconds, extra = {}) {
+// A message-triggered run of one of the assistant's workflows, created
+// minutes ago and taking seconds; any other fields are added to the job.
+function workflowRun({ n, task, status, minutes, seconds, ...extra }) {
 	const created = new Date(Date.now() - minutes * 60_000);
 	return {
 		id: `job_${String(n).padStart(8, "0")}`,
@@ -1455,12 +1527,14 @@ const beNiceContext = {
 };
 
 const beNiceRuns = [
-	workflowRun(41, "be-nice", "completed", 12, 6, {
+	workflowRun({
+		n: 41, task: "be-nice", status: "completed", minutes: 12, seconds: 6,
 		output:
 			"You're welcome, Marcus! Glad the fixes landed well. Enjoy the release this afternoon.",
 		trigger_context: beNiceContext,
 	}),
-	workflowRun(38, "be-nice", "completed", 74, 4, {
+	workflowRun({
+		n: 38, task: "be-nice", status: "completed", minutes: 74, seconds: 4,
 		output: "",
 		delivery: {
 			target: "reply",
@@ -1468,25 +1542,29 @@ const beNiceRuns = [
 			message: "the message reported a bug, not something positive",
 		},
 	}),
-	workflowRun(35, "be-nice", "completed", 180, 5, {
+	workflowRun({
+		n: 35, task: "be-nice", status: "completed", minutes: 180, seconds: 5,
 		output:
 			"Congrats on the launch, Priya! The new onboarding flow looks great.",
 	}),
-	workflowRun(31, "be-nice", "completed", 26 * 60, 5, {
+	workflowRun({
+		n: 31, task: "be-nice", status: "completed", minutes: 26 * 60, seconds: 5,
 		output: "Thanks, Jordan! Happy to help anytime.",
 	}),
-	workflowRun(27, "be-nice", "failed", 27 * 60, 31, {
+	workflowRun({
+		n: 27, task: "be-nice", status: "failed", minutes: 27 * 60, seconds: 31,
 		attempts: 2,
 		error: "slack: chat.postMessage returned ratelimited",
 	}),
-	workflowRun(22, "be-nice", "completed", 2 * 24 * 60, 6, {
+	workflowRun({
+		n: 22, task: "be-nice", status: "completed", minutes: 2 * 24 * 60, seconds: 6,
 		output: "Nice work on the migration, Marcus!",
 	}),
 ];
 
 const workflowJobs = [
-	workflowRun(42, "deploy-trigger", "in_progress", 1, 40),
-	workflowRun(36, "deploy-trigger", "completed", 150, 48),
+	workflowRun({ n: 42, task: "deploy-trigger", status: "in_progress", minutes: 1, seconds: 40 }),
+	workflowRun({ n: 36, task: "deploy-trigger", status: "completed", minutes: 150, seconds: 48 }),
 	...beNiceRuns,
 ];
 

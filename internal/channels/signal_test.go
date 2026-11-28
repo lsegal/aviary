@@ -301,19 +301,55 @@ func waitMsgTimeout(msgs <-chan IncomingMessage, timeout time.Duration) (Incomin
 // waitConnected polls until the fake daemon has at least one connection.
 func waitConnected(t *testing.T, fd *fakeDaemon, timeout time.Duration) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
-	connected := false
-	for time.Now().Before(deadline) {
+	assert.Eventually(t, func() bool {
 		fd.mu.Lock()
-		n := len(fd.conns)
-		fd.mu.Unlock()
-		if n > 0 {
-			connected = true
-			break
+		defer fd.mu.Unlock()
+		return len(fd.conns) > 0
+	}, timeout, 10*time.Millisecond)
+}
+
+// connectChannel points ch at a daemon address without starting it.
+func connectChannel(ch *SignalChannel, addr string) {
+	ch.addrMu.Lock()
+	ch.addr = addr
+	ch.addrMu.Unlock()
+}
+
+// waitForRequest polls reqs until one has the given method (any method when
+// empty) and returns it, or fails the test and returns nil after timeout.
+func waitForRequest(t *testing.T, reqs func() []map[string]any, method string, timeout time.Duration) map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		for _, req := range reqs() {
+			if m, _ := req["method"].(string); method == "" || m == method {
+				return req
+			}
+		}
+		if !time.Now().Before(deadline) {
+			assert.Failf(t, "expected rpc request", "method %q not received within %s", method, timeout)
+			return nil
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	assert.True(t, connected)
+}
+
+// waitSentRequest waits for the first captured outbound send-style request.
+func (fd *fakeDaemon) waitSentRequest(t *testing.T, timeout time.Duration) map[string]any {
+	t.Helper()
+	return waitForRequest(t, fd.SentRequests, "", timeout)
+}
+
+// waitRequest waits for an rpc request with the given method.
+func (fd *fakeDaemon) waitRequest(t *testing.T, method string, timeout time.Duration) map[string]any {
+	t.Helper()
+	return waitForRequest(t, fd.Requests, method, timeout)
+}
+
+// requestParams returns the params object of an rpc request.
+func requestParams(req map[string]any) map[string]any {
+	params, _ := req["params"].(map[string]any)
+	return params
 }
 
 // ── dispatch tests ────────────────────────────────────────────────────────────
@@ -417,32 +453,17 @@ func TestFetchSignalAttachmentData_UsesDaemonRPC(t *testing.T) {
 	})
 
 	ch := NewSignalChannel("+12135550123", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
-	ch.addrMu.Lock()
-	ch.addr = fd.Addr()
-	ch.addrMu.Unlock()
+	connectChannel(ch, fd.Addr())
 
 	data, err := fetchSignalAttachmentData(context.Background(), ch, ch.phone, "SCQAxyYZxx3Bt8EqQMFx.png", "+15550001111", "", false)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("png-bytes"), data)
 
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		reqs := fd.Requests()
-		for _, req := range reqs {
-			method, _ := req["method"].(string)
-			if method != "getAttachment" {
-				continue
-			}
-			params, _ := req["params"].(map[string]any)
-			assert.Equal(t, "SCQAxyYZxx3Bt8EqQMFx.png", params["id"])
-			assert.Equal(t, "+15550001111", params["recipient"])
-			_, hasGroup := params["groupId"]
-			assert.False(t, hasGroup)
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	assert.Fail(t, "expected getAttachment rpc request")
+	params := requestParams(fd.waitRequest(t, "getAttachment", time.Second))
+	assert.Equal(t, "SCQAxyYZxx3Bt8EqQMFx.png", params["id"])
+	assert.Equal(t, "+15550001111", params["recipient"])
+	_, hasGroup := params["groupId"]
+	assert.False(t, hasGroup)
 }
 
 func TestDecodeSignalAttachmentResult_AcceptsObjectPayload(t *testing.T) {
@@ -494,32 +515,44 @@ func TestFormatSignalMarkup_StripsUnsupportedUnderline(t *testing.T) {
 	assert.Equal(t, []string{"10:4:BOLD"}, got.TextStyles)
 }
 
-func TestSignalChannel_Send_FormatsSignalMarkup(t *testing.T) {
-	fd := newFakeDaemon(t)
-	defer fd.Close()
-
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = fd.Addr()
-	ch.addrMu.Unlock()
-	err := ch.Send("+15550001111", "**bold** and *italic*")
-	assert.NoError(t, err)
-
-	deadline := time.Now().Add(time.Second)
-	got := ""
-	var styles []any
-	for time.Now().Before(deadline) {
-		reqs := fd.SentRequests()
-		if len(reqs) == 1 {
-			params, _ := reqs[0]["params"].(map[string]any)
-			got, _ = params["message"].(string)
-			styles, _ = params["textStyle"].([]any)
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+func TestSignalChannel_FormatsSignalMarkup(t *testing.T) {
+	tests := []struct {
+		name        string
+		send        func(ch *SignalChannel, text string) error
+		input       string
+		wantMessage string
+		wantStyles  []any
+	}{
+		{
+			name:        "send",
+			send:        func(ch *SignalChannel, text string) error { return ch.Send("+15550001111", text) },
+			input:       "**bold** and *italic*",
+			wantMessage: "bold and italic",
+			wantStyles:  []any{"0:4:BOLD", "9:6:ITALIC"},
+		},
+		{
+			name:        "sendMedia",
+			send:        func(ch *SignalChannel, text string) error { return ch.SendMedia("+15550001111", text, "/tmp/img.png") },
+			input:       "__bold__ ~~gone~~",
+			wantMessage: "bold gone",
+			wantStyles:  []any{"0:4:BOLD", "5:4:STRIKETHROUGH"},
+		},
 	}
-	assert.Equal(t, "bold and italic", got)
-	assert.Equal(t, []any{"0:4:BOLD", "9:6:ITALIC"}, styles)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fd := newFakeDaemon(t)
+			defer fd.Close()
+
+			ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
+			connectChannel(ch, fd.Addr())
+			assert.NoError(t, tt.send(ch, tt.input))
+
+			params := requestParams(fd.waitSentRequest(t, time.Second))
+			assert.Len(t, fd.SentRequests(), 1)
+			assert.Equal(t, tt.wantMessage, params["message"])
+			assert.Equal(t, tt.wantStyles, params["textStyle"])
+		})
+	}
 }
 
 func TestSignalChannel_SendWaitsForTypingInFlight(t *testing.T) {
@@ -528,9 +561,7 @@ func TestSignalChannel_SendWaitsForTypingInFlight(t *testing.T) {
 	fd.SetDelay("sendTyping", 100*time.Millisecond)
 
 	ch := NewSignalChannel("+1", "", nil, true, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = fd.Addr()
-	ch.addrMu.Unlock()
+	connectChannel(ch, fd.Addr())
 
 	typed := make(chan error, 1)
 	go func() { typed <- ch.SendTyping("+15550001111", false) }()
@@ -546,34 +577,6 @@ func TestSignalChannel_SendWaitsForTypingInFlight(t *testing.T) {
 	}, fd.Events(), "a typing start in flight lands before the reply")
 }
 
-func TestSignalChannel_SendMedia_FormatsSignalMarkup(t *testing.T) {
-	fd := newFakeDaemon(t)
-	defer fd.Close()
-
-	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = fd.Addr()
-	ch.addrMu.Unlock()
-	err := ch.SendMedia("+15550001111", "__bold__ ~~gone~~", "/tmp/img.png")
-	assert.NoError(t, err)
-
-	deadline := time.Now().Add(time.Second)
-	got := ""
-	var styles []any
-	for time.Now().Before(deadline) {
-		reqs := fd.SentRequests()
-		if len(reqs) == 1 {
-			params, _ := reqs[0]["params"].(map[string]any)
-			got, _ = params["message"].(string)
-			styles, _ = params["textStyle"].([]any)
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	assert.Equal(t, "bold gone", got)
-	assert.Equal(t, []any{"0:4:BOLD", "5:4:STRIKETHROUGH"}, styles)
-}
-
 func TestDispatch_NoHandlerRegistered(_ *testing.T) {
 	ch := NewSignalChannel("", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	// No handler — should not panic.
@@ -586,9 +589,7 @@ func TestDispatch_DoesNotSendReadReceiptWithoutHandler(t *testing.T) {
 	defer fd.Close()
 
 	ch := NewSignalChannel("+12135550123", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
-	ch.addrMu.Lock()
-	ch.addr = fd.Addr()
-	ch.addrMu.Unlock()
+	connectChannel(ch, fd.Addr())
 
 	line := `{"jsonrpc":"2.0","method":"receive","params":{"envelope":{"source":"+15550001111","timestamp":1773380083969,"dataMessage":{"message":"hi?"}}}}`
 	ch.dispatch([]byte(line))
@@ -602,9 +603,7 @@ func TestDispatch_SendsReadReceiptAfterHandler(t *testing.T) {
 	defer fd.Close()
 
 	ch := NewSignalChannel("+12135550123", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
-	ch.addrMu.Lock()
-	ch.addr = fd.Addr()
-	ch.addrMu.Unlock()
+	connectChannel(ch, fd.Addr())
 
 	msgs := make(chan IncomingMessage, 1)
 	ch.OnMessage(func(m IncomingMessage) { msgs <- m })
@@ -615,20 +614,11 @@ func TestDispatch_SendsReadReceiptAfterHandler(t *testing.T) {
 	msg := waitMsg(t, msgs, time.Second)
 	assert.Equal(t, "hi?", msg.Text)
 
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		reqs := fd.SentRequests()
-		if len(reqs) > 0 {
-			method, _ := reqs[0]["method"].(string)
-			assert.Equal(t, "sendReceipt", method)
-			params, _ := reqs[0]["params"].(map[string]any)
-			assert.Equal(t, "+15550001111", params["recipient"])
-			assert.Equal(t, "read", params["type"])
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	assert.Fail(t, "expected read receipt")
+	req := fd.waitSentRequest(t, time.Second)
+	assert.Equal(t, "sendReceipt", req["method"])
+	params := requestParams(req)
+	assert.Equal(t, "+15550001111", params["recipient"])
+	assert.Equal(t, "read", params["type"])
 }
 
 func TestDispatch_GroupMention_RespondToMentions(t *testing.T) {

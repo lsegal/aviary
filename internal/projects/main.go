@@ -1447,9 +1447,11 @@ func (r CommandRunner) recordUsage(issue Issue, spec agentSpec, recorder *transc
 	if usage.InputTokens == 0 && usage.OutputTokens == 0 && runErr == nil {
 		return
 	}
-	model := spec.Model
-	if model == "" {
-		model = spec.Name
+	// Record the provider/model form core's own prompts record (#1470), so
+	// System → Usage groups a Code Loop run's model with core's.
+	model := spec.Name
+	if spec.Model != "" {
+		model += "/" + spec.Model
 	}
 	r.RecordUsage(domain.UsageRecord{
 		Timestamp:        time.Now(),
@@ -1464,7 +1466,19 @@ func (r CommandRunner) recordUsage(issue Issue, spec agentSpec, recorder *transc
 		ToolCalls:        tools,
 		CostUSD:          usage.CostUSD,
 		HasError:         runErr != nil,
+		SessionName:      jobUsageName(issue),
+		SessionKind:      domain.UsageKindJob,
+		SessionOwner:     issueKey(issue),
 	})
+}
+
+// jobUsageName is the name Usage shows for a Code Loop job on issue: its
+// title, or its "owner/repo#number" key when the title is unknown.
+func jobUsageName(issue Issue) string {
+	if title := strings.TrimSpace(issue.Title); title != "" {
+		return title
+	}
+	return issueKey(issue)
 }
 
 func commandArgs(r CommandRunner, issue Issue) []string {

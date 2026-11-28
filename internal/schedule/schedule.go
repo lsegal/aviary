@@ -5,6 +5,7 @@ package schedule
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -80,10 +81,11 @@ func (c ClockTime) String() string { return fmt.Sprintf("%02d:%02d", c.Hour, c.M
 
 // HasTrigger reports whether f configures any time-based trigger.
 func (f Fields) HasTrigger() bool {
-	return strings.TrimSpace(f.Trigger) != "" || strings.TrimSpace(f.Schedule) != "" ||
-		strings.TrimSpace(f.Every) != "" || strings.TrimSpace(f.At) != "" ||
-		strings.TrimSpace(f.StartAt) != ""
+	return slices.ContainsFunc([]string{f.Trigger, f.Schedule, f.Every, f.At, f.StartAt}, isNotBlank)
 }
+
+// isNotBlank reports whether s has any non-whitespace content.
+func isNotBlank(s string) bool { return strings.TrimSpace(s) != "" }
 
 // InferKind returns the trigger kind f selects, inferring it from the
 // populated fields when Trigger is empty.

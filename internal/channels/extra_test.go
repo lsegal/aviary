@@ -254,9 +254,7 @@ func newSignalErrorTCPServer(t *testing.T, code int, message string) string {
 func TestSend_RPCError(t *testing.T) {
 	addr := newSignalErrorTCPServer(t, -1, "rate limited")
 	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
+	connectChannel(ch, addr)
 
 	err := ch.Send("+5551111111", "hi")
 	assert.Error(t, err)
@@ -267,9 +265,7 @@ func TestSend_RPCError(t *testing.T) {
 func TestSendTyping_RPCError(t *testing.T) {
 	addr := newSignalErrorTCPServer(t, -2, "bad request")
 	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = addr
-	ch.addrMu.Unlock()
+	connectChannel(ch, addr)
 
 	err := ch.SendTyping("+5551111111", false)
 	assert.Error(t, err)
@@ -318,23 +314,8 @@ func TestDispatch_ReactionMirror(t *testing.T) {
 	b, _ := json.Marshal(notif)
 	fd.Push(b)
 
-	// Give the sendReaction RPC a moment to be captured.
-	deadline := time.Now().Add(500 * time.Millisecond)
-	var found bool
-	for !found && time.Now().Before(deadline) {
-		fd.mu.Lock()
-		for _, req := range fd.sent {
-			if m, _ := req["method"].(string); m == "sendReaction" {
-				found = true
-			}
-		}
-		fd.mu.Unlock()
-		if !found {
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
 	// sendReaction is best-effort (uses a separate TCP connection from listen).
-	assert.True(t, found)
+	assert.NotNil(t, fd.waitRequest(t, "sendReaction", 500*time.Millisecond))
 
 	msg, ok := waitMsgTimeout(msgs, 200*time.Millisecond)
 	assert.True(t, ok)
@@ -456,9 +437,7 @@ func TestSend_WithLinkPreview(t *testing.T) {
 	defer fd.Close()
 
 	ch := NewSignalChannel("+1", "", nil, false, false, false, false, "m", nil)
-	ch.addrMu.Lock()
-	ch.addr = fd.Addr()
-	ch.addrMu.Unlock()
+	connectChannel(ch, fd.Addr())
 
 	msg := "Check out " + pageSrv.URL + " for details"
 	err := ch.Send("+5551111111", msg)

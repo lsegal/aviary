@@ -112,7 +112,8 @@ func parseToolInvocationArgs(tool internalmcp.ToolInfo, rawArgs []string) (map[s
 		if name == "args" {
 			consumedNext, err = mergeToolArgsFlag(payload, inlineValue, rawArgs, i)
 		} else {
-			consumedNext, err = setToolFieldFlag(payload, tool.Name, fields, name, inlineValue, rawArgs, i)
+			flag := toolFlagArg{name: name, inlineValue: inlineValue, rawArgs: rawArgs, index: i}
+			consumedNext, err = setToolFieldFlag(payload, tool.Name, fields, flag)
 		}
 		if err != nil {
 			return nil, err
@@ -158,18 +159,27 @@ func mergeToolArgsFlag(payload map[string]any, inlineValue *string, rawArgs []st
 	return consumedNext, nil
 }
 
-// setToolFieldFlag parses the value of the schema field flag --name at
-// rawArgs[i] into payload. It reports whether it consumed the next argument.
-func setToolFieldFlag(payload map[string]any, toolName string, fields map[string]toolField, name string, inlineValue *string, rawArgs []string, i int) (bool, error) {
-	field, ok := fields[name]
+// toolFlagArg is a --name flag found at rawArgs[index], with its value when
+// it was given inline as --name=value.
+type toolFlagArg struct {
+	name        string
+	inlineValue *string
+	rawArgs     []string
+	index       int
+}
+
+// setToolFieldFlag parses the value of the schema field flag into payload. It
+// reports whether it consumed the next argument.
+func setToolFieldFlag(payload map[string]any, toolName string, fields map[string]toolField, flag toolFlagArg) (bool, error) {
+	field, ok := fields[flag.name]
 	if !ok {
-		return false, fmt.Errorf("unknown flag --%s for tool %q", name, toolName)
+		return false, fmt.Errorf("unknown flag --%s for tool %q", flag.name, toolName)
 	}
-	value, consumedNext, err := parseToolFieldArg(field, inlineValue, rawArgs, i)
+	value, consumedNext, err := parseToolFieldArg(field, flag.inlineValue, flag.rawArgs, flag.index)
 	if err != nil {
 		return false, err
 	}
-	payload[name] = value
+	payload[flag.name] = value
 	return consumedNext, nil
 }
 

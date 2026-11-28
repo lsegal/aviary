@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"strings"
@@ -24,7 +25,8 @@ const (
 	speechPeak = 0.7
 	// maxGain caps that amplification (60 dB).
 	maxGain = 1000
-	// sampleRate is the rate ffmpeg resamples every input to.
+	// sampleRate is the rate whisper reads: ffmpeg resamples every input to
+	// it, and the web UI uploads WAV at it.
 	sampleRate = 16000
 )
 
@@ -121,6 +123,41 @@ const (
 	wavFloat      = 3
 	wavExtensible = 0xFFFE
 )
+
+// isSpeechWAV reports whether the file at path is already WAV that
+// prepareSpeech reads as is: 16 kHz, 16-bit PCM or 32-bit float. The web
+// UI's mic uploads 16 kHz mono 16-bit WAV, so it needs no ffmpeg.
+func isSpeechWAV(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close() //nolint:errcheck
+	head := make([]byte, 4096)
+	n, _ := io.ReadFull(f, head)
+	head = head[:n]
+	if len(head) < 12 || string(head[0:4]) != "RIFF" || string(head[8:12]) != "WAVE" {
+		return false
+	}
+	for off := 12; off+8 <= len(head); {
+		size := int(binary.LittleEndian.Uint32(head[off+4:]))
+		body := off + 8
+		if string(head[off:off+4]) == "fmt " {
+			if size < 16 || body+16 > len(head) {
+				return false
+			}
+			format := int(binary.LittleEndian.Uint16(head[body:]))
+			rate := binary.LittleEndian.Uint32(head[body+4:])
+			bits := int(binary.LittleEndian.Uint16(head[body+14:]))
+			if format == wavExtensible && size >= 26 && body+26 <= len(head) {
+				format = int(binary.LittleEndian.Uint16(head[body+24:]))
+			}
+			return rate == sampleRate && ((format == wavPCM && bits == 16) || (format == wavFloat && bits == 32))
+		}
+		off = body + size + size%2
+	}
+	return false
+}
 
 // decodeWAV returns each channel of a 16-bit PCM or 32-bit float WAV file
 // as samples in -1..1.

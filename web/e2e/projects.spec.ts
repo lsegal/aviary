@@ -1,4 +1,13 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import {
+	COLLAPSIBLE_HEADER_ITEMS,
+	expectHeaderOneLine,
+	headerItemPlaces,
+	headerSettled,
+	openBoardInfo,
+	openInstanceTag,
+} from "./helpers/boardHeader";
+import { boundingBoxOf } from "./helpers/box";
 import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
 
 // Fixtures follow the payloads internal/projects' Manager returns for
@@ -677,14 +686,20 @@ test("board shows status, ordered job cards and live output", async ({
 	);
 	await expect(repoLink).toHaveAttribute("target", "_blank");
 	await expect(page.getByTestId("delivery-status")).toHaveText("live");
-	await expect(page.getByTestId("instance-id")).toHaveText("Instance 7F3CA91B");
-	await expect(page.getByText("poll · checked")).toContainText("every 30s");
+	await expect(page.getByTestId("project-owner")).toHaveCount(0);
+	const tag = await openInstanceTag(page);
+	await expect(tag.getByTestId("instance-id")).toHaveText("7F3CA91B");
+	await page.keyboard.press("Escape");
+	await expect(tag).toBeHidden();
+	const info = await openBoardInfo(page);
+	await expect(info.getByTestId("board-delivery")).toHaveText("poll");
+	await expect(info.getByTestId("board-interval")).toHaveText("every 30s");
+	await expect(info.getByTestId("board-checked")).toContainText(/ago/);
 	// The header names the issue search pickup runs, never a ready label.
-	await expect(page.getByTestId("issue-filter")).toHaveText("assignee:@me");
-	await expect(page.getByText("poll · checked")).toContainText(
-		"Issues matching assignee:@me",
-	);
-	await expect(page.getByText("poll · checked")).not.toContainText("labeled");
+	await expect(info.getByTestId("issue-filter")).toHaveText("assignee:@me");
+	await expect(info).toContainText("Issues matching assignee:@me");
+	await expect(info).not.toContainText("labeled");
+	await page.keyboard.press("Escape");
 	const stats = page.getByRole("region", { name: "Job counts" });
 	await expect(stats).toContainText("2of 4 busy");
 	await expect(stats).toContainText("Merged (24h)3");
@@ -764,6 +779,7 @@ test("a board shown from the restart cache says it is refreshing until a live po
 	);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 
+	await openBoardInfo(page);
 	const indicator = page.getByTestId("stale-indicator");
 	await expect(indicator).toContainText("refreshing… last updated 3m ago");
 	// The cached board still renders its stats and cards meanwhile.
@@ -1218,19 +1234,17 @@ for (const [label, width] of [
 			await expect(agent).toHaveAttribute("title", /^gh-fix · /);
 			await expectRightAligned(card, time);
 			await expectRightAligned(card, agent);
-			const timeBox = await time.boundingBox();
-			const titleBox = await title.boundingBox();
-			const agentBox = await agent.boundingBox();
-			const retryBox = await card
-				.getByRole("button", { name: "Retry" })
-				.boundingBox();
+			const timeBox = await boundingBoxOf(time);
+			const titleBox = await boundingBoxOf(title);
+			const agentBox = await boundingBoxOf(agent);
+			const retryBox = await boundingBoxOf(
+				card.getByRole("button", { name: "Retry" }),
+			);
 			// The time stays in the header row above the title; the label sits
 			// in the footer beside the actions.
-			expect(timeBox!.y + timeBox!.height).toBeLessThanOrEqual(titleBox!.y);
-			expect(agentBox!.y).toBeGreaterThan(titleBox!.y + titleBox!.height);
-			expect(Math.abs(agentBox!.y - retryBox!.y)).toBeLessThan(
-				retryBox!.height,
-			);
+			expect(timeBox.y + timeBox.height).toBeLessThanOrEqual(titleBox.y);
+			expect(agentBox.y).toBeGreaterThan(titleBox.y + titleBox.height);
+			expect(Math.abs(agentBox.y - retryBox.y)).toBeLessThan(retryBox.height);
 		}
 	});
 }
@@ -1259,16 +1273,16 @@ test("a long agent label truncates inside the card with a tooltip (#756)", async
 	);
 	expect(truncated).toBe(true);
 	await expectRightAligned(card, agent);
-	const cardBox = await card.boundingBox();
-	const agentBox = await agent.boundingBox();
-	expect(agentBox!.x + agentBox!.width).toBeLessThanOrEqual(
-		cardBox!.x + cardBox!.width,
+	const cardBox = await boundingBoxOf(card);
+	const agentBox = await boundingBoxOf(agent);
+	expect(agentBox.x + agentBox.width).toBeLessThanOrEqual(
+		cardBox.x + cardBox.width,
 	);
 	// One line tall, and the title keeps the full header width.
-	expect(agentBox!.height).toBeLessThan(24);
+	expect(agentBox.height).toBeLessThan(24);
 	const title = card.getByRole("heading");
-	const titleBox = await title.boundingBox();
-	expect(titleBox!.width).toBeGreaterThan(cardBox!.width - 40);
+	const titleBox = await boundingBoxOf(title);
+	expect(titleBox.width).toBeGreaterThan(cardBox.width - 40);
 });
 
 test("retry, stop, filters and check now call project tools", async ({
@@ -1300,10 +1314,10 @@ test("retry, stop, filters and check now call project tools", async ({
 		)
 		.toBe(true);
 
-	const checkNow = page.getByRole("button", { name: "Check now" });
-	await expect(checkNow).toHaveAttribute("title", "Check now");
-	await expect(checkNow).toHaveText("");
-	await checkNow.click();
+	// Refresh lives in the header's "…" menu (#1488).
+	await expect(page.getByRole("button", { name: "Check now" })).toHaveCount(0);
+	await page.getByTestId("board-more-menu").click();
+	await page.getByRole("menuitem", { name: "Refresh" }).click();
 	await expect
 		.poll(() => calls.project_refresh?.[0])
 		.toEqual({ target: "lsegal/aviary" });
@@ -1324,13 +1338,18 @@ test("done and failed jobs clear from their card and in bulk (#1460)", async ({
 		.toEqual({ target: "lsegal/aviary", number: 200 });
 
 	// The header's menu clears the project's failed jobs after a confirmation.
-	await page.getByTestId("clear-jobs-menu").click();
-	await expect(page.getByTestId("clear-jobs-items")).toContainText(
-		"Running, queued and paused jobs are never cleared.",
+	// It lives in the "…" menu, not as a trash button (#1488).
+	await expect(page.getByTestId("clear-jobs-menu")).toHaveCount(0);
+	await page.getByTestId("board-more-menu").click();
+	await expect(page.getByTestId("board-more-items")).toContainText(
+		"Clear this project's jobs",
 	);
 	await page.getByTestId("clear-jobs-failed").click();
 	const confirm = page.getByTestId("clear-jobs-confirm");
 	await expect(confirm).toContainText("failed jobs of lsegal/aviary");
+	await expect(confirm).toContainText(
+		"Running, queued and paused jobs are never cleared.",
+	);
 	await page.getByTestId("clear-jobs-confirm-confirm").click();
 	await expect(confirm).toHaveCount(0);
 	await expect
@@ -1389,10 +1408,12 @@ test("an agent's Code Loop is one board of all its projects, with no settings", 
 	// agent's projects in Code Loop settings.
 	await expect(page.locator("[data-field]")).toHaveCount(0);
 	await expect(page.getByTestId("agent-projects")).toHaveCount(0);
+	await page.getByTestId("board-more-menu").click();
 	await expect(page.getByTestId("project-settings-link")).toHaveAttribute(
 		"href",
 		"/projects/settings?agent=coder",
 	);
+	await page.keyboard.press("Escape");
 
 	// Filters and search narrow the whole board, as on one project's.
 	await stateChip(page, "Running").click();
@@ -1403,7 +1424,8 @@ test("an agent's Code Loop is one board of all its projects, with no settings", 
 
 	// One check reads every project.
 	await page.getByLabel("Search jobs").fill("");
-	await page.getByRole("button", { name: "Check now" }).click();
+	await page.getByTestId("board-more-menu").click();
+	await page.getByRole("menuitem", { name: "Refresh" }).click();
 	await expect.poll(() => calls.project_refresh?.[0]).toEqual({});
 });
 
@@ -1422,9 +1444,9 @@ test("the Code Loop board's header starts with a blue + that adds a project (#73
 		.poll(() => add.evaluate(blue))
 		.toBe(await page.getByTestId("sidebar-add-project").evaluate(blue));
 	await expect(add).toHaveCSS("color", "rgb(255, 255, 255)");
-	await expect(icons.locator(":scope > *").nth(2)).toHaveAttribute(
-		"aria-label",
-		"Check now",
+	await expect(icons.locator(":scope > *").last()).toHaveAttribute(
+		"data-testid",
+		"board-more-menu",
 	);
 	await add.click();
 	await expect(page).toHaveURL(/\/agents\/coder\/projects\?add=1$/);
@@ -1434,7 +1456,7 @@ test("the Code Loop board's header starts with a blue + that adds a project (#73
 
 	// One project's board has no + in its header.
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
-	await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
+	await expect(page.getByTestId("board-more-menu")).toBeVisible();
 	await expect(page.getByTestId("board-add-project")).toHaveCount(0);
 });
 
@@ -1956,14 +1978,13 @@ test.describe("GitHub sign-in banner", () => {
 		await expect(banner).toContainText("GitHub answered 404");
 		await expect(banner).toContainText('This is not "no issues"');
 		await expect(page.getByTestId("delivery-status")).toHaveText("offline");
-		await expect(page.getByText("browser · checked")).toContainText(
-			"every 20s",
-		);
+		const info = await openBoardInfo(page);
+		await expect(info.getByTestId("board-delivery")).toHaveText("browser");
+		await expect(info.getByTestId("board-interval")).toHaveText("every 20s");
 		// Without a filter every open issue is picked up, with no label.
-		await expect(page.getByText("browser · checked")).toContainText(
-			"All open issues",
-		);
+		await expect(info).toContainText("All open issues");
 		await expect(page.getByTestId("issue-filter")).toHaveCount(0);
+		await page.keyboard.press("Escape");
 		// The page only reads status until the user acts.
 		expect(calls.project_github_signin).toBeUndefined();
 
@@ -2034,7 +2055,9 @@ test.describe("GitHub sign-in banner", () => {
 		status = browserStatus({ signed_out: false, signing_in: false });
 		await expect(page.getByTestId("github-signin-banner")).toHaveCount(0);
 		status = STATUS;
-		await expect(page.getByText("poll · checked")).toBeVisible();
+		await expect(
+			(await openBoardInfo(page)).getByTestId("board-delivery"),
+		).toHaveText("poll");
 		await expect(page.getByTestId("github-signin-banner")).toHaveCount(0);
 	});
 });
@@ -2397,8 +2420,8 @@ test("job details open under the project header, keeping the chat and logs panel
 	).toBeVisible();
 	await expect(page.getByTestId("settings-title")).toHaveText("#218");
 	await expect(page.getByTestId("delivery-status")).toHaveCount(0);
-	await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
-	await expect(page.getByTestId("project-settings-link")).toBeVisible();
+	await expect(page.getByTestId("board-more-menu")).toBeVisible();
+	await expect(page.getByTestId("logs-toggle")).toBeVisible();
 	// The open panels keep their content and the unsent draft.
 	await expect(chat).toContainText("Here is the failing run.");
 	await expect(input).toHaveValue("what about #218?");
@@ -2648,7 +2671,11 @@ test.describe("phone width", () => {
 	test("prompt chat opens as a bottom drawer", async ({ page }) => {
 		await setup(page, undefined, chatFixtures({}));
 		await page.goto("/agents/coder/projects/lsegal%2Faviary");
-		await page.getByTestId("prompt-chat-toggle").click();
+		// At 390px the chat toggle is in "…" to keep the header on one line
+		// (#1576).
+		await headerSettled(page);
+		await page.getByTestId("board-more-menu").click();
+		await page.getByRole("menuitemcheckbox", { name: "Prompt chat" }).click();
 		const chat = page.getByTestId("project-chat");
 		await expect(chat).toBeVisible();
 		const box = await chat.boundingBox();
@@ -2867,8 +2894,8 @@ test("the state chips multi-select and each board remembers its own", async ({
 	await stateChip(page, "Running").click();
 	await stateChip(page, "Failed").click();
 	await pressed(["Running", "Failed"]);
-	await expect(stateChip(page, "Running")).toHaveClass(/bg-blue-600/);
-	await expect(stateChip(page, "Done")).not.toHaveClass(/bg-green-600/);
+	await expect(stateChip(page, "Running")).toHaveClass(/bg-blue-100/);
+	await expect(stateChip(page, "Done")).not.toHaveClass(/bg-green-100/);
 	await expect(cards).toHaveCount(2);
 	await expect(cards.filter({ hasText: "#218" })).toHaveCount(1);
 	await expect(cards.filter({ hasText: "#209" })).toHaveCount(1);
@@ -3600,28 +3627,41 @@ for (const { name, width, height } of [
 	});
 }
 
-test("at 390px the Code Loop header wraps and the top nav hides its scrollbar (#1209)", async ({
+test("at 390px the Code Loop header is one chip row and the top nav hides its scrollbar (#1209, #1570)", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await setup(page);
 	await page.goto("/agents/coder/projects");
+	// The breadcrumb names the page, so the title is only for screen readers.
 	const title = page.getByTestId("settings-title");
 	await expect(title).toHaveText("Code Loop");
-	await expect(page.getByTestId("instance-id")).toBeVisible();
-
-	// The title is whole, and the chips wrap onto the line below it.
-	expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
-		true,
+	expect(await title.evaluate((el) => el.getBoundingClientRect().width)).toBe(
+		1,
 	);
-	const titleBox = await title.boundingBox();
-	for (const id of ["board-projects", "delivery-status", "instance-id"]) {
+	await expect(page.getByTestId("settings-current")).toHaveText("Code Loop");
+	await expect(page.getByTestId("settings-header-icon")).toHaveCount(0);
+
+	// The chips and the two icons share one row inside the screen.
+	const ids = [
+		"board-projects",
+		"delivery-status",
+		"instance-tag",
+		"board-info",
+	];
+	const boxes: Array<Awaited<ReturnType<Locator["boundingBox"]>>> = [];
+	for (const id of ids) {
 		const box = await page.getByTestId(id).boundingBox();
-		expect(box?.y, `${id} below the title`).toBeGreaterThanOrEqual(
-			(titleBox?.y ?? 0) + (titleBox?.height ?? 0) - 1,
-		);
-		expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
+		expect(box, id).not.toBeNull();
+		expect((box?.x ?? 0) + (box?.width ?? 0), id).toBeLessThanOrEqual(390);
+		boxes.push(box);
 	}
+	const mid = (b: (typeof boxes)[number]) => (b?.y ?? 0) + (b?.height ?? 0) / 2;
+	for (const b of boxes)
+		expect(Math.abs(mid(b) - mid(boxes[0]))).toBeLessThan(4);
+	// The chips and the toolbar share one line (#1576).
+	await headerSettled(page);
+	await expectHeaderOneLine(page);
 
 	// Nothing in the header is wider than the screen, so nothing scrolls.
 	const header = await page.getByTestId("settings-header").evaluate((root) => ({
@@ -3690,15 +3730,25 @@ for (const [label, width] of [
 		await setup(page);
 		await page.goto("/agents/coder/projects/lsegal%2Faviary");
 		const schedule = page.getByTestId("schedule-new");
+		await headerSettled(page);
+		if (label === "mobile" && !(await schedule.isVisible())) {
+			// On a narrow phone it moved into "…" to keep the header on one
+			// line (#1576).
+			await page.getByTestId("board-more-menu").click();
+			await expect(
+				page.getByRole("menuitem", { name: "Schedule task" }),
+			).toBeVisible();
+			return;
+		}
 		await expect(schedule).toBeVisible();
 		await expect(schedule).toHaveAccessibleName("Schedule task");
 		await expect(schedule).toHaveAttribute("title", "Schedule task");
 		const text = schedule.getByText("Schedule", { exact: true });
-		const check = page.getByRole("button", { name: "Check now" });
+		const check = page.getByTestId("board-more-menu");
 		const s = await schedule.boundingBox();
 		const c = await check.boundingBox();
 		if (label === "mobile") {
-			// The same square as the icon-only Check now beside it.
+			// The same square as the icon-only "…" button beside it.
 			await expect(text).toBeHidden();
 			expect(Math.abs((s?.width ?? 0) - (c?.width ?? 0))).toBeLessThanOrEqual(
 				1,
@@ -3720,91 +3770,726 @@ for (const [label, width] of [
 	});
 }
 
-test("only the breadcrumb bar stays pinned while the Code Loop board scrolls (#1437)", async ({
+// The compact Code Loop header is slim enough to stay pinned whole under
+// the breadcrumb bar, so its chips and toolbar stay in reach (#1572).
+for (const path of [
+	"/agents/coder/projects",
+	"/agents/coder/projects/lsegal%2Faviary",
+]) {
+	test(`the compact header stays pinned under the breadcrumb while ${path} scrolls (#1572)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width: 390, height: 700 });
+		await setup(page);
+		await page.goto(path);
+		const crumbs = page.getByTestId("settings-crumb-bar");
+		const titleRow = page.getByTestId("settings-title-row");
+		const body = page.getByTestId("page-body");
+		await expect(page.getByTestId("delivery-status")).toHaveText("live");
+		const content = page.getByRole("region", { name: "Job counts" });
+		await expect(content).toBeVisible();
+		const bar = await crumbs.boundingBox();
+		const row = await titleRow.boundingBox();
+		if (!bar || !row) throw new Error("no header");
+		// The header sits right under the breadcrumb bar, and the two stay
+		// slim: about two rows of controls.
+		expect(row.y).toBeCloseTo(bar.y + bar.height, 0);
+		expect(row.y + row.height - bar.y).toBeLessThanOrEqual(130);
+		const top = async (l: Locator) => (await l.boundingBox())?.y ?? 0;
+		const contentBefore = await top(content);
+		expect(await top(body)).toBeCloseTo(row.y + row.height, 0);
+
+		// Scrolling the board moves only the board.
+		await content.hover();
+		for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 100);
+		await expect
+			.poll(async () => contentBefore - (await top(content)))
+			.toBeGreaterThan(30);
+		expect(await top(crumbs)).toBeCloseTo(bar.y, 0);
+		expect(await top(titleRow)).toBeCloseTo(row.y, 0);
+		expect(await top(body)).toBeCloseTo(row.y + row.height, 0);
+		await expect(page.getByTestId("board-more-menu")).toBeInViewport();
+		await expect(page.getByTestId("delivery-status")).toBeInViewport();
+
+		// A wheel over the header itself doesn't move it either.
+		await crumbs.hover();
+		for (let i = 0; i < 4; i++) await page.mouse.wheel(0, 100);
+		await page.waitForTimeout(100);
+		expect(await top(titleRow)).toBeCloseTo(row.y, 0);
+	});
+}
+
+test("a job's full header still slides away under the breadcrumb bar (#1437)", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 390, height: 700 });
 	await setup(page);
-	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await page.goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
 	const crumbs = page.getByTestId("settings-crumb-bar");
 	const titleRow = page.getByTestId("settings-title-row");
-	const body = page.getByTestId("page-body");
-	await expect(page.getByTestId("delivery-status")).toHaveText("live");
-	const content = page.getByRole("region", { name: "Job counts" });
-	await expect(content).toBeVisible();
+	await expect(page.getByTestId("job-detail-title")).toBeVisible();
 	const bar = await crumbs.boundingBox();
 	const row = await titleRow.boundingBox();
 	if (!bar || !row) throw new Error("no header");
-	const barBottom = bar.y + bar.height;
-	const top = async (l: typeof body) => (await l.boundingBox())?.y ?? 0;
-	const contentBefore = await top(content);
-	expect(await top(body)).toBeCloseTo(row.y + row.height, 0);
-
-	// A small scroll moves the content and the title row together.
-	await content.hover();
-	await page.mouse.wheel(0, 30);
-	await expect
-		.poll(async () => contentBefore - (await top(content)))
-		.toBeCloseTo(30, 0);
-	expect(await top(titleRow)).toBeCloseTo(row.y - 30, 0);
-	expect(await top(crumbs)).toBeCloseTo(bar.y, 0);
-
-	// Scrolled further, the title row is gone under the breadcrumb bar, which
-	// stays, and the page fills what the bar leaves.
+	await crumbs.hover();
 	for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 100);
-	await expect.poll(() => top(body)).toBeCloseTo(barBottom, 0);
-	expect(await top(crumbs)).toBeCloseTo(bar.y, 0);
-	const hidden = await titleRow.boundingBox();
-	expect((hidden?.y ?? 0) + (hidden?.height ?? 0)).toBeCloseTo(barBottom, 0);
-	expect(
-		await page.evaluate(
-			([x, y]) =>
-				!!document
-					.elementFromPoint(x, y)
-					?.closest('[data-testid="settings-crumb-bar"]'),
-			[bar.x + 4, barBottom - 2],
-		),
-	).toBe(true);
-
-	// One flick back up past the board's top brings the header back.
-	for (let i = 0; i < 12; i++) await page.mouse.wheel(0, -100);
-	await expect.poll(() => top(titleRow)).toBeCloseTo(row.y, 0);
-	expect(await top(body)).toBeCloseTo(row.y + row.height, 0);
+	await expect
+		.poll(async () => (await titleRow.boundingBox())?.y)
+		.toBeLessThan(row.y - 10);
+	expect((await crumbs.boundingBox())?.y).toBeCloseTo(bar.y, 0);
+	// Tabbing to one of its actions brings the row back.
+	await titleRow.getByRole("button").first().focus();
+	await expect
+		.poll(async () => (await titleRow.boundingBox())?.y)
+		.toBeCloseTo(row.y, 0);
 });
 
-test("the page's own scrolls and focus leave the Code Loop header shown (#1437)", async ({
+// The filter row keeps search usable at every width: the state filters
+// show as one segmented control when they fit beside it and fold into a
+// "Filters" button otherwise, decided by the toolbar's own width (#1490).
+for (const { width, chat } of [
+	{ width: 1600, chat: false },
+	{ width: 1345, chat: false },
+	{ width: 1345, chat: true },
+	{ width: 1024, chat: false },
+	{ width: 768, chat: false },
+	{ width: 390, chat: false },
+])
+	test(`the filter row at ${width}px${chat ? " with the chat panel" : ""} keeps search usable (#1490)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		const toolbar = page.getByTestId("job-toolbar");
+		const search = toolbar.getByRole("searchbox", { name: "Search jobs" });
+		await expect(search).toBeVisible({ timeout: 15_000 });
+		if (chat) await page.getByTestId("prompt-chat-toggle").click();
+		const segments = page.getByTestId("state-filter-segments");
+		const toggle = page.getByTestId("filter-toggle");
+		await expect(segments.or(toggle)).toBeVisible();
+		const rowBox = await toolbar.boundingBox();
+		const searchBox = await search.boundingBox();
+		if (width < 640) {
+			// A phone's search takes its own full-width row.
+			expect(searchBox?.width ?? 0).toBeGreaterThan((rowBox?.width ?? 0) - 2);
+			await expect(toggle).toBeVisible();
+		} else {
+			expect(searchBox?.width ?? 0).toBeGreaterThanOrEqual(220);
+			expect(searchBox?.width ?? 0).toBeLessThanOrEqual(320);
+		}
+		if (width === 1345 && !chat) await expect(segments).toBeVisible();
+		if (chat) await expect(toggle).toBeVisible();
+
+		// Search, the filters, the layout toggle and the count share a line
+		// (below search on a phone), with nothing past the row's edge.
+		const mid = async (l: Locator) => {
+			const b = await l.boundingBox();
+			return (b?.y ?? 0) + (b?.height ?? 0) / 2;
+		};
+		const filterControl = (await segments.isVisible()) ? segments : toggle;
+		const line = await mid(filterControl);
+		expect(
+			Math.abs((await mid(page.getByTestId("kanban-toggle"))) - line),
+		).toBeLessThan(4);
+		expect(
+			Math.abs((await mid(page.getByTestId("job-total"))) - line),
+		).toBeLessThan(4);
+		if (width >= 640)
+			expect(Math.abs((await mid(search)) - line)).toBeLessThan(4);
+		const overflow = await toolbar.evaluate((row) => {
+			const right = row.getBoundingClientRect().right;
+			return {
+				row: row.scrollWidth - row.clientWidth,
+				page: document.documentElement.scrollWidth - window.innerWidth,
+				past: [...row.children].some(
+					(c) => c.getBoundingClientRect().right > right + 1,
+				),
+			};
+		});
+		expect(overflow).toEqual({ row: 0, page: 0, past: false });
+
+		// Either form lists the same options and counts and toggles alike.
+		const folded = await toggle.isVisible();
+		if (folded) await toggle.click();
+		const group = page.getByRole("group", { name: "Job filter" });
+		await expect(group.getByRole("button", { name: /^(?!Clear)/ })).toHaveText([
+			/^Scheduled/,
+			/^Starting/,
+			/^Paused/,
+			/^Running\s*1$/,
+			/^Done/,
+			/^Failed/,
+		]);
+		await stateChip(page, "Running").click();
+		await stateChip(page, "Done").click();
+		await expect(page).toHaveURL(/[?&]state=running%2Cdone|state=running,done/);
+		await expect(stateChip(page, "Running")).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		if (folded) await expect(toggle).toHaveText("Filters · 2");
+		await page.reload();
+		if (folded) {
+			await expect(toggle).toHaveText("Filters · 2");
+			await toggle.click();
+		}
+		await expect(stateChip(page, "Done")).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		await toolbar.getByRole("button", { name: "Clear" }).click();
+		await expect(page).not.toHaveURL(/state=/);
+	});
+
+test("the board header's … menu holds Refresh, Clear and Settings (#1488)", async ({
 	page,
 }) => {
-	await page.setViewportSize({ width: 390, height: 700 });
+	await page.setViewportSize({ width: 1440, height: 900 });
 	await setup(page);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
-	const titleRow = page.getByTestId("settings-title-row");
-	await expect(page.getByTestId("delivery-status")).toHaveText("live");
-	const row = await titleRow.boundingBox();
-	// A scroll the page makes itself, such as following new output, doesn't
-	// hide the header.
-	const scrolled = await page.getByTestId("page-body").evaluate((el) => {
-		const area = [...el.querySelectorAll<HTMLElement>("*")].find(
-			(e) =>
-				e.scrollHeight > e.clientHeight + 1 &&
-				["auto", "scroll"].includes(getComputedStyle(e).overflowY),
-		);
-		if (!area) return false;
-		area.scrollTop = 200;
-		return true;
-	});
-	expect(scrolled).toBe(true);
-	await page.waitForTimeout(100);
-	expect((await titleRow.boundingBox())?.y).toBeCloseTo(row?.y ?? 0, 0);
+	const actions = page.getByTestId("settings-actions");
+	// Wide, Logs and Watch stay buttons, and "…" ends the row.
+	await expect(actions.getByTestId("logs-toggle")).toBeVisible();
+	await expect(actions.getByTestId("project-mode-menu")).toBeVisible();
+	await expect(actions.locator("a, button").last()).toHaveAttribute(
+		"data-testid",
+		"board-more-menu",
+	);
+	for (const name of ["Check now", "Clear finished jobs…", "Settings"])
+		await expect(actions.getByRole("button", { name })).toHaveCount(0);
+	await expect(actions.getByRole("link", { name: "Settings" })).toHaveCount(0);
 
-	// Hidden by a scroll, the title row comes back when a key reaches its actions.
-	await page.getByTestId("settings-crumb-bar").hover();
-	for (let i = 0; i < 4; i++) await page.mouse.wheel(0, 100);
+	// Keyboard: the menu button opens with Enter and its items take focus.
+	const more = page.getByTestId("board-more-menu");
+	await expect(more).toHaveAttribute("aria-haspopup", "menu");
+	await expect(more).toHaveAttribute("aria-expanded", "false");
+	await expect(more).toHaveAttribute("title", "More board actions");
+	await more.focus();
+	await page.keyboard.press("Enter");
+	await expect(more).toHaveAttribute("aria-expanded", "true");
+	const menu = page.getByTestId("board-more-items");
+	await expect(menu.getByRole("menuitem")).toHaveText([
+		"Refresh",
+		/Clear done/,
+		/Clear failed/,
+		/Clear all finished/,
+		"Settings",
+	]);
+	// Logs and Watch are buttons, so they are not in the menu too.
+	await expect(menu.getByTestId("board-logs")).toHaveCount(0);
+	await expect(menu.getByRole("menuitemradio")).toHaveCount(0);
+	await expect(menu.getByRole("menuitem", { name: "Refresh" })).toBeFocused();
+	await page.keyboard.press("ArrowDown");
+	await page.keyboard.press("ArrowDown");
+	await expect(
+		menu.getByRole("menuitem", { name: /Clear failed/ }),
+	).toBeFocused();
+	await page.keyboard.press("Enter");
+	await expect(page.getByTestId("clear-jobs-confirm")).toContainText(
+		"failed jobs of lsegal/aviary",
+	);
+	await page.getByTestId("clear-jobs-confirm-cancel").click();
+});
+
+test("the board header moves Logs, then Watch, into … as it narrows (#1488)", async ({
+	page,
+}) => {
+	await setup(page);
+	const actions = page.getByTestId("settings-actions");
+	const more = page.getByTestId("board-more-menu");
+	let logsGone = false;
+	let watchGone = false;
+	for (const width of [1440, 1024, 900, 800, 700, 640]) {
+		await page.setViewportSize({ width, height: 800 });
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		await expect(more).toBeVisible();
+		// Wider than a phone, +, Schedule, Chat and the icons stay put.
+		for (const id of [
+			"queue-menu",
+			"schedule-new",
+			"prompt-chat-toggle",
+			"board-info",
+			"instance-tag",
+		])
+			await expect(page.getByTestId(id)).toBeVisible();
+		// The row never wraps or scrolls sideways.
+		await expect
+			.poll(() => actions.evaluate((el) => el.scrollWidth - el.clientWidth))
+			.toBeLessThanOrEqual(0);
+		const boxes = await actions
+			.locator(":scope > button, :scope > a")
+			.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
+		expect(new Set(boxes.map(Math.round)).size).toBe(1);
+
+		// Each of Logs and Watch is a button or a menu item, never both.
+		const { header, menu } = await headerItemPlaces(page);
+		for (const id of ["logs-toggle", "project-mode-menu"])
+			expect(header.includes(id) !== menu.includes(id), id).toBe(true);
+		// Logs goes first, then Watch; neither comes back as it narrows.
+		const logsItem = menu.includes("logs-toggle");
+		const watchItem = menu.includes("project-mode-menu");
+		if (logsGone) expect(logsItem).toBe(true);
+		if (watchGone) expect(watchItem).toBe(true);
+		if (watchItem) expect(logsItem).toBe(true);
+		logsGone ||= logsItem;
+		watchGone ||= watchItem;
+	}
+	expect(logsGone).toBe(true);
+});
+
+// On a phone the compact header is a single line (#1576): its items move
+// into "…" one at a time as it narrows, in priority order, until only the
+// chips the board can't do without and "…" are left.
+for (const [board, path, last] of [
+	["a project's", "/agents/coder/projects/lsegal%2Faviary", "board-issues"],
+	["the root", "/agents/coder/projects", "board-issues"],
+] as const) {
+	test(`${board} header collapses into … one item at a time on one line (#1576)`, async ({
+		page,
+	}) => {
+		await setup(page);
+		const order = COLLAPSIBLE_HEADER_ITEMS.map(({ header }) => header);
+		let moved = 0;
+		let reachedIcons = false;
+		for (const width of [
+			639, 560, 500, 470, 430, 400, 390, 375, 360, 340, 320, 300, 280, 260,
+		]) {
+			await page.setViewportSize({ width, height: 800 });
+			await page.goto(path);
+			await headerSettled(page);
+			await expect(page.getByTestId(last)).toBeVisible();
+			await expectHeaderOneLine(page);
+			const { header, menu } = await headerItemPlaces(page);
+			// Each item shows in the header or in "…", never both or neither.
+			for (const id of order) {
+				if (header.includes(id) || menu.includes(id))
+					expect(header.includes(id) !== menu.includes(id), id).toBe(true);
+			}
+			// The items in "…" are always the first ones in the order, and
+			// more move in as the header narrows; none come back.
+			const present = order.filter(
+				(id) => header.includes(id) || menu.includes(id),
+			);
+			expect(menu).toEqual(present.slice(0, menu.length));
+			expect(menu.length).toBeGreaterThanOrEqual(moved);
+			moved = menu.length;
+			// The icons go only once every toolbar action has.
+			if (menu.includes("board-info") || menu.includes("instance-tag")) {
+				reachedIcons = true;
+				for (const id of present.slice(0, present.indexOf("board-info")))
+					expect(menu).toContain(id);
+			}
+		}
+		// The narrowest header has every action and the details in "…".
+		expect(reachedIcons).toBe(true);
+		const row = page.getByTestId("settings-title-row");
+		for (const { header } of COLLAPSIBLE_HEADER_ITEMS.slice(0, -1))
+			await expect(row.getByTestId(header)).toHaveCount(0);
+	});
+}
+
+test("a larger text size collapses more of the phone header instead of wrapping it (#1576)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 430, height: 800 });
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await headerSettled(page);
+	await expectHeaderOneLine(page);
+	const normal = await headerItemPlaces(page);
+	// Raising the root font size, as a browser's text size setting does,
+	// re-measures the line without a reload.
+	await page.evaluate(() => {
+		document.documentElement.style.fontSize = "20px";
+	});
 	await expect
-		.poll(async () => (await titleRow.boundingBox())?.y)
-		.toBeLessThan((row?.y ?? 0) - 10);
-	await page.getByRole("button", { name: "Logs" }).focus();
+		.poll(async () => (await headerItemPlaces(page)).menu.length)
+		.toBeGreaterThan(normal.menu.length);
+	await expectHeaderOneLine(page);
+});
+
+test("the phone header's … menu runs the actions and shows the details it holds (#1576)", async ({
+	page,
+}) => {
+	await page.addInitScript(() => {
+		(window as unknown as { copied: string[] }).copied = [];
+		Object.defineProperty(navigator, "clipboard", {
+			value: {
+				writeText: async (t: string) => {
+					(window as unknown as { copied: string[] }).copied.push(t);
+				},
+			},
+		});
+	});
+	await page.setViewportSize({ width: 260, height: 800 });
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const more = page.getByTestId("board-more-menu");
+	const menu = page.getByTestId("board-more-items");
+	// The narrowest header: the chips and "…". A slightly larger text size
+	// leaves no room for the instance icon either.
+	await headerSettled(page);
+	await expectHeaderOneLine(page);
+	await page.evaluate(() => {
+		document.documentElement.style.fontSize = "18px";
+	});
+	await expect(page.getByTestId("board-issues")).toBeVisible();
+	for (const id of ["board-info", "instance-tag", "queue-menu"])
+		await expect(page.getByTestId(id)).toHaveCount(0);
+
+	// The details are a section of the menu, with a working filter editor.
+	await more.click();
+	const details = menu.getByTestId("board-more-info");
+	await expect(details).toContainText("Issues matching assignee:@me");
+	await expect(details.getByTestId("board-mode")).toHaveText("Watch");
+	await expect(details.getByTestId("board-interval")).toHaveText("every 30s");
+	await details
+		.getByRole("button", { name: "Edit issue filter for this project" })
+		.click();
+	const input = details.getByTestId("issue-filter-input");
+	await expect(input).toBeFocused();
+	// Typing goes into the editor, not to the menu's typeahead.
+	await input.fill("");
+	await page.keyboard.type("label:bug");
+	await expect(input).toHaveValue("label:bug");
+	await expect(input).toBeFocused();
+	// Esc cancels the edit first, then closes the menu.
+	await page.keyboard.press("Escape");
+	await expect(details.getByTestId("issue-filter-input")).toHaveCount(0);
+	await expect(menu).toBeVisible();
+
+	// The instance is a section too, and copies its ID.
+	const instance = menu.getByTestId("board-more-instance");
+	await expect(instance.getByTestId("board-more-instance-id")).toHaveText(
+		"7F3CA91B",
+	);
+	await instance.getByRole("menuitem", { name: "Copy instance ID" }).click();
+	await expect(
+		instance.getByTestId("board-more-instance-copy-status"),
+	).toHaveText("Copied");
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { copied: string[] }).copied,
+		),
+	).toEqual(["7F3CA91B"]);
+	await page.keyboard.press("Escape");
+	await expect(menu).toBeHidden();
+
+	// Queue's choices are a section; a choice opens its picker.
+	await more.click();
+	await menu
+		.getByTestId("board-more-queue")
+		.getByRole("menuitem", { name: "Fix issue" })
+		.click();
+	const dialog = page.getByTestId("queue-dialog");
+	await expect(dialog).toHaveAttribute("data-skill", "gh-fix");
+	await page.keyboard.press("Escape");
+	await expect(dialog).toBeHidden();
+
+	// Prompt chat opens from the menu, as a drawer on a phone.
+	await more.click();
+	await expect(
+		menu.getByRole("menuitemcheckbox", { name: "Prompt chat" }),
+	).toHaveAttribute("aria-checked", "false");
+	await menu.getByRole("menuitemcheckbox", { name: "Prompt chat" }).click();
+	await expect(page.getByTestId("project-chat")).toBeVisible();
+});
+
+test("Logs and Watch work from the … menu on a phone (#1488)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 360, height: 800 });
+	const updates: unknown[] = [];
+	await setup(page, undefined, {
+		project_update: (args?: Record<string, unknown>) => {
+			updates.push(args);
+			return { ok: true };
+		},
+	});
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const more = page.getByTestId("board-more-menu");
+	await more.click();
+	await page.getByRole("menuitemcheckbox", { name: "Logs" }).click();
+	await expect(page.getByTestId("project-logs")).toBeVisible();
+	await more.click();
+	await expect(
+		page.getByRole("menuitemcheckbox", { name: "Logs" }),
+	).toHaveAttribute("aria-checked", "true");
+	await page.getByTestId("board-mode-manual").click();
 	await expect
-		.poll(async () => (await titleRow.boundingBox())?.y)
-		.toBeCloseTo(row?.y ?? 0, 0);
+		.poll(() => updates[0])
+		.toEqual({ target: "lsegal/aviary", mode: "manual" });
+});
+
+for (const width of [360, 390, 430]) {
+	test(`at ${width}px a project's header is one line with no title, icon or agent chip (#1570, #1576)`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 800 });
+		await setup(page);
+		await page.goto("/agents/coder/projects/lsegal%2Faviary");
+		await expect(page.getByTestId("settings-current")).toHaveText(
+			"lsegal/aviary",
+		);
+		await expect(
+			page.getByRole("heading", { name: "lsegal/aviary" }),
+		).toBeAttached();
+		expect(
+			await page
+				.getByTestId("settings-title")
+				.evaluate((el) => el.getBoundingClientRect().width),
+		).toBe(1);
+		await expect(page.getByTestId("settings-header-icon")).toHaveCount(0);
+		await expect(page.getByTestId("project-owner")).toHaveCount(0);
+		await expect(page.getByTestId("board-subtitle")).toHaveCount(0);
+		const row: Array<Awaited<ReturnType<Locator["boundingBox"]>>> = [];
+		for (const id of [
+			"delivery-status",
+			"board-issues",
+			"instance-tag",
+			"board-info",
+		]) {
+			const box = await page.getByTestId(id).boundingBox();
+			expect(box, id).not.toBeNull();
+			row.push(box);
+		}
+		for (const b of row)
+			expect(Math.abs((b?.y ?? 0) - (row[0]?.y ?? 0))).toBeLessThan(6);
+		// The chips and the toolbar share one line, chips on the left (#1576).
+		await headerSettled(page);
+		await expectHeaderOneLine(page);
+		const titleRow = await page.getByTestId("settings-title-row").boundingBox();
+		const more = await page.getByTestId("board-more-menu").boundingBox();
+		expect(Math.abs((more?.y ?? 0) - (row[0]?.y ?? 0))).toBeLessThan(12);
+		expect(titleRow?.height ?? 99).toBeLessThanOrEqual(54);
+		// "…" holds exactly what the line has no room for.
+		const { header, menu } = await headerItemPlaces(page);
+		expect([...header, ...menu].sort()).toEqual(
+			[
+				"logs-toggle",
+				"project-mode-menu",
+				"prompt-chat-toggle",
+				"schedule-new",
+				"queue-menu",
+				"board-info",
+				"instance-tag",
+			].sort(),
+		);
+		const wide = await page
+			.getByTestId("settings-header")
+			.evaluate((root) =>
+				[root, ...root.querySelectorAll("*")]
+					.filter((el) => el.getBoundingClientRect().right > innerWidth + 1)
+					.map((el) => el.outerHTML.slice(0, 80)),
+			);
+		expect(wide).toEqual([]);
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= innerWidth,
+			),
+		).toBe(true);
+		// The details popover fits the screen too.
+		const info = await openBoardInfo(page, false);
+		const box = await info.boundingBox();
+		expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+		expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
+	});
+}
+
+test("on desktop a project's header keeps its title, with the icons and toolbar on one row (#1570)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	const title = page.getByTestId("settings-title");
+	await expect(title).toBeVisible();
+	await expect(page.getByTestId("settings-header-icon")).toHaveCount(0);
+	const titleBox = await title.boundingBox();
+	const more = await page.getByTestId("board-more-menu").boundingBox();
+	const info = await page.getByTestId("board-info").boundingBox();
+	expect(Math.abs((more?.y ?? 0) - (titleBox?.y ?? 0))).toBeLessThan(12);
+	expect(Math.abs((info?.y ?? 0) - (titleBox?.y ?? 0))).toBeLessThan(12);
+	// The row starts at the page's padding with no icon tile.
+	const main = await page.locator("main").boundingBox();
+	expect((titleBox?.x ?? 0) - (main?.x ?? 0)).toBeLessThanOrEqual(25);
+});
+
+test("on a phone the CLI providers move into the details popover, which warns while closed (#1580)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await setup(page);
+	for (const path of [
+		"/agents/coder/projects",
+		"/agents/coder/projects/lsegal%2Faviary",
+	]) {
+		await page.goto(path);
+		await headerSettled(page);
+		// No providers row: the board's toolbar follows the stats directly.
+		await expect(
+			page.getByRole("region", { name: "CLI providers" }),
+		).toHaveCount(0);
+		if (path.endsWith("projects"))
+			await expect(page.getByTestId("board-nav-row")).not.toContainText(
+				"CLI providers",
+			);
+		else await expect(page.getByTestId("board-nav-row")).toHaveCount(0);
+
+		// gemini is signed out, so the closed icon carries a described dot.
+		const info = page.getByRole("button", {
+			name: "Board details",
+			exact: true,
+		});
+		await expect(page.getByTestId("board-info-alert")).toBeVisible();
+		await expect(info).toHaveAccessibleDescription(
+			"CLI provider needs attention: gemini signed out",
+		);
+
+		// Enter opens the details with each provider's dot, model and quota.
+		await info.focus();
+		await page.keyboard.press("Enter");
+		const details = page.getByRole("dialog", { name: "Board details" });
+		const clis = details.getByRole("region", { name: "CLI providers" });
+		const rows = clis.getByTestId("cli-provider");
+		await expect(rows).toHaveText([
+			/claude\s*opus\s*38% of 5h quota left/,
+			/codex\s*gpt-5.6-terra\s*quota ok/,
+			/gemini\s*signed out/,
+		]);
+		await expect(rows.nth(0).locator("span").first()).toHaveClass(
+			/bg-green-500/,
+		);
+		await expect(rows.nth(2).locator("span").first()).toHaveClass(
+			/bg-gray-400/,
+		);
+		// The popover stays inside the screen.
+		const box = await details.boundingBox();
+		expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
+		expect(
+			await page.evaluate(
+				() => document.documentElement.scrollWidth <= window.innerWidth,
+			),
+		).toBe(true);
+		// Esc closes it and returns focus to the icon.
+		await page.keyboard.press("Escape");
+		await expect(details).toBeHidden();
+		await expect(info).toBeFocused();
+		// An outside tap closes it too.
+		await info.click();
+		await expect(details).toBeVisible();
+		await page.getByTestId("delivery-status").click();
+		await expect(details).toBeHidden();
+	}
+});
+
+test("with the details in … on a narrow phone, … carries the provider warning (#1580)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 260, height: 800 });
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await headerSettled(page);
+	await expect(page.getByTestId("board-info")).toHaveCount(0);
+	const more = page.getByTestId("board-more-menu");
+	await expect(page.getByTestId("board-more-menu-alert")).toBeVisible();
+	await expect(more).toHaveAccessibleDescription(
+		"CLI provider needs attention: gemini signed out",
+	);
+	await more.click();
+	const clis = page
+		.getByTestId("board-more-info")
+		.getByRole("region", { name: "CLI providers" });
+	await expect(clis.getByTestId("cli-provider")).toHaveCount(3);
+	await expect(clis).toContainText("38% of 5h quota left");
+});
+
+test("on desktop the CLI providers stay inline with no warning dot (#1580)", async ({
+	page,
+}) => {
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+	await expect(
+		page.getByRole("region", { name: "CLI providers" }),
+	).toContainText("signed out");
+	await expect(page.getByTestId("board-info")).toBeVisible();
+	await expect(page.getByTestId("board-info-alert")).toHaveCount(0);
+	await page.getByTestId("board-info").click();
+	await expect(page.getByTestId("board-info-clis")).toHaveCount(0);
+});
+
+test("the instance tag and details popovers work by keyboard, tap and hover (#1570)", async ({
+	page,
+}) => {
+	await page.addInitScript(() => {
+		(window as unknown as { copied: string[] }).copied = [];
+		Object.defineProperty(navigator, "clipboard", {
+			value: {
+				writeText: async (t: string) => {
+					(window as unknown as { copied: string[] }).copied.push(t);
+				},
+			},
+		});
+	});
+	await setup(page);
+	await page.goto("/agents/coder/projects/lsegal%2Faviary");
+
+	// Enter opens the tag's popover as a named dialog; Esc closes it and
+	// returns focus to the tag.
+	const tag = page.getByRole("button", { name: "Instance ID", exact: true });
+	await expect(tag).toHaveAttribute("aria-haspopup", "dialog");
+	await expect(tag).toHaveAttribute("aria-expanded", "false");
+	await tag.focus();
+	await page.keyboard.press("Enter");
+	const tagPopover = page.getByRole("dialog", { name: "Instance ID" });
+	await expect(tagPopover).toBeVisible();
+	await expect(tag).toHaveAttribute("aria-expanded", "true");
+	await expect(tagPopover.getByTestId("instance-id")).toHaveText("7F3CA91B");
+	await tagPopover.getByRole("button", { name: /Copy instance ID/ }).click();
+	await expect(tagPopover.getByTestId("instance-id-copy-status")).toHaveText(
+		"Copied",
+	);
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { copied: string[] }).copied,
+		),
+	).toEqual(["7F3CA91B"]);
+	await page.keyboard.press("Escape");
+	await expect(tagPopover).toBeHidden();
+	await expect(tag).toBeFocused();
+
+	// Space opens the details; a click outside closes them.
+	const info = page.getByRole("button", { name: "Board details", exact: true });
+	await info.focus();
+	await page.keyboard.press("Space");
+	const details = page.getByRole("dialog", { name: "Board details" });
+	await expect(details).toBeVisible();
+	await expect(details).toContainText("Issues matching assignee:@me");
+	await expect(details.getByTestId("board-mode")).toHaveText("Watch");
+	await expect(details.getByTestId("board-delivery")).toHaveText("poll");
+	await expect(details.getByTestId("board-interval")).toHaveText("every 30s");
+	await page.mouse.click(600, 600);
+	await expect(details).toBeHidden();
+
+	// Hovering shows the details as a tooltip, gone when the pointer leaves.
+	await info.hover();
+	await expect(details).toBeVisible();
+	await expect(info).not.toBeFocused();
+	await page.mouse.move(600, 600);
+	await expect(details).toBeHidden();
+
+	// The filter editor works from inside the popover; Esc cancels the edit
+	// first, then closes the popover.
+	await info.click();
+	await details
+		.getByRole("button", { name: "Edit issue filter for this project" })
+		.click();
+	const input = details.getByTestId("issue-filter-input");
+	await expect(input).toBeFocused();
+	await input.press("Escape");
+	await expect(details.getByTestId("issue-filter-editor")).toHaveCount(0);
+	await expect(details).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(details).toBeHidden();
 });

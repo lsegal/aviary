@@ -12,8 +12,10 @@ package browser
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
@@ -24,8 +26,10 @@ import (
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	cdptarget "github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/remote"
 )
 
 // Browser owns the single headless browser process a `Aviary watch` run drives,
@@ -82,7 +86,7 @@ func Start(ctx context.Context, config Config) (*Browser, error) {
 	}
 	// The endpoint reported by the browser is already a complete WebSocket URL,
 	// so chromedp is told not to rewrite it.
-	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, process.WSURL, chromedp.NoModifyURL)
+	allocCtx, cancelAlloc := remote.NewAllocator(ctx, process.WSURL, remote.NoModifyURL)
 	browser := &Browser{
 		ctx:         ctx,
 		config:      config,
@@ -145,7 +149,7 @@ func (b *Browser) relaunch() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(b.ctx, process.WSURL, chromedp.NoModifyURL)
+	allocCtx, cancelAlloc := remote.NewAllocator(b.ctx, process.WSURL, remote.NoModifyURL)
 	b.cmd, b.allocCtx, b.cancelAlloc = process, allocCtx, cancelAlloc
 	b.tabs = map[string]*Tab{}
 	b.used, b.resume = map[string]time.Time{}, map[string]string{}
@@ -575,12 +579,15 @@ func newTab(allocCtx context.Context, opts ...chromedp.ContextOption) (*Tab, err
 	// of them belong to the tab itself rather than to an embedded frame.
 	setup := make(chan error, 1)
 	go func() {
-		setup <- chromedp.Run(ctx, network.Enable(), chromedp.ActionFunc(func(ctx context.Context) error {
-			frame, err := page.GetFrameTree().Do(ctx)
+		setup <- chromedp.Do(ctx, chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+			if _, err := cdp.Call(ctx, t, network.Enable, network.EnableParams{}); err != nil {
+				return err
+			}
+			tree, err := cdp.Call(ctx, t, page.GetFrameTree, cdp.Empty{})
 			if err != nil {
 				return err
 			}
-			tab.setMainFrame(frame.Frame.ID)
+			tab.setMainFrame(tree.FrameTree.Frame.ID)
 			return nil
 		}))
 	}()
@@ -601,7 +608,10 @@ func newTab(allocCtx context.Context, opts ...chromedp.ContextOption) (*Tab, err
 		cancel()
 		return nil, err
 	}
-	chromedp.ListenTarget(ctx, tab.observe)
+	if err := chromedp.Listen(ctx, tab.observe); err != nil {
+		cancel()
+		return nil, err
+	}
 	return tab, nil
 }
 
@@ -701,17 +711,54 @@ func (t *Tab) resumeTarget() string {
 // Eval evaluates a JavaScript expression in the tab and decodes its result into
 // out, which may be nil when the result is not needed.
 func (t *Tab) Eval(js string, out any) error {
-	if out == nil {
-		var discard any
-		out = &discard
+	var result *runtime.RemoteObject
+	err := t.run(chromedp.Func(func(ctx context.Context, target *chromedp.Target) error {
+		var err error
+		result, err = chromedp.Evaluate[*runtime.RemoteObject](js, returnByValue)(ctx, target)
+		return err
+	}))
+	if err != nil || out == nil {
+		return err
 	}
-	return t.run(chromedp.Evaluate(js, out))
+	return decodeEvalResult(result, out)
+}
+
+// returnByValue asks for an evaluation's result as JSON rather than as a
+// handle to a remote object, which Eval decodes into the caller's value.
+func returnByValue(p *runtime.EvaluateParams) {
+	p.ReturnByValue = new(true)
+}
+
+// decodeEvalResult decodes an evaluation's JSON result into out. A null or
+// undefined result leaves a nillable out nil and fails for any other kind, so
+// a script that returned nothing is not mistaken for a zero value.
+func decodeEvalResult(result *runtime.RemoteObject, out any) error {
+	value := []byte(result.Value)
+	if value == nil {
+		if rv := reflect.ValueOf(out); rv.Kind() == reflect.Pointer {
+			switch rv.Elem().Kind() {
+			case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func, reflect.Interface:
+			default:
+				if result.Type == runtime.RemoteObjectTypeUndefined {
+					return chromedp.ErrJSUndefined
+				}
+				return chromedp.ErrJSNull
+			}
+		}
+		value = []byte("null")
+	}
+	return json.Unmarshal(value, out)
 }
 
 // Screenshot captures the full page as PNG bytes.
 func (t *Tab) Screenshot() ([]byte, error) {
 	var image []byte
-	if err := t.run(chromedp.FullScreenshot(&image, 90)); err != nil {
+	err := t.run(chromedp.Func(func(ctx context.Context, target *chromedp.Target) error {
+		var err error
+		image, err = chromedp.FullScreenshot(90)(ctx, target)
+		return err
+	}))
+	if err != nil {
 		return nil, err
 	}
 	return image, nil
@@ -787,7 +834,7 @@ func (t *Tab) acquire(timeout time.Duration) (func(), error) {
 // deadline. Without the deadline a page that never finishes loading, or a
 // renderer that stops answering, parks the caller forever; the caller is
 // usually the single goroutine that polls GitHub and dispatches work.
-func (t *Tab) run(actions ...chromedp.Action) error {
+func (t *Tab) run(steps ...chromedp.Action[chromedp.Void]) error {
 	timeout := t.commandTimeout()
 	release, err := t.acquire(timeout)
 	if err != nil {
@@ -800,7 +847,7 @@ func (t *Tab) run(actions ...chromedp.Action) error {
 	}
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	err = chromedp.Run(ctx, actions...)
+	err = chromedp.Do(ctx, steps...)
 	// A deadline reached while the run itself is still healthy is this tab
 	// failing, not the run shutting down, so the tab is retired and the read
 	// fails with a description of what happened rather than with a bare

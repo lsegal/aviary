@@ -138,6 +138,12 @@ export const EVENT_TYPES: EventTypeInfo[] = [
 		default: { enabled: true, delivery: "small" },
 	},
 	{
+		type: "task.script_failing",
+		section: "Scheduled tasks & workflows",
+		label: "Compiled script started failing",
+		default: { enabled: true, delivery: "small" },
+	},
+	{
 		type: "custom",
 		section: "Agents & API",
 		label: "Sent by an agent or the notify API",

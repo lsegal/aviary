@@ -185,12 +185,26 @@ var cloneProjectRepository = func(ctx context.Context, repository, dir string) e
 	return nil
 }
 
+// compiledProjectRun is the scheduled run runCompiledProjectTask runs.
+type compiledProjectRun struct {
+	// key is the job's key.
+	key string
+	run scheduler.ProjectRun
+	// repository is the repository to clone; empty uses the run's project.
+	repository string
+	// output is the job's log.
+	output io.Writer
+	// updateSession hears the checkout the script runs in.
+	updateSession func(AgentSession)
+}
+
 // runCompiledProjectTask runs a precompiled project task's script in a fresh
 // clone of its repository, under one of the engine's clone roots, writing its
 // output to the job's log. It reports whether the script completed, and
 // whether it failed so the run falls back to the model; when it did not
 // complete, the log says why and the caller runs the prompt on the agent.
-func (w *Engine) runCompiledProjectTask(ctx context.Context, key string, run scheduler.ProjectRun, repository string, output io.Writer, updateSession func(AgentSession)) (compiled, fellBack bool) {
+func (w *Engine) runCompiledProjectTask(ctx context.Context, task compiledProjectRun) (compiled, fellBack bool) {
+	key, run, repository, output, updateSession := task.key, task.run, task.repository, task.output, task.updateSession
 	logf := func(format string, args ...any) { _, _ = fmt.Fprintf(output, format+"\n", args...) }
 	var checkout string
 	defer func() {

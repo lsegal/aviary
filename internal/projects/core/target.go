@@ -40,26 +40,60 @@ func ParseTarget(value string) (Target, error) {
 		return Target{Repo: value}, nil
 	}
 	u, err := url.Parse(value)
-	if err != nil || u.Scheme != "https" || u.Host != "github.com" || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || !isBareGitHubURL(u) {
 		return Target{}, fmt.Errorf("target must be OWNER/REPO or a GitHub repository/project URL")
 	}
 	parts := strings.Split(strings.Trim(path.Clean(u.Path), "/"), "/")
-	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+	if len(parts) == 2 && nonEmpty(parts[0], parts[1]) {
 		return Target{Repo: parts[0] + "/" + strings.TrimSuffix(parts[1], ".git")}, nil
 	}
-	if len(parts) == 4 && (parts[0] == "users" || parts[0] == "orgs") && parts[2] == "projects" && parts[1] != "" && parts[3] != "" {
+	if isOwnerProjectPath(parts) {
 		return Target{Owner: parts[1], ProjectID: parts[3], ProjectOwnerType: parts[0], IsProject: true}, nil
 	}
-	if len(parts) == 4 && parts[2] == "projects" && parts[0] != "" && parts[1] != "" && parts[3] != "" {
+	if isRepoProjectPath(parts) {
 		return Target{Repo: parts[0] + "/" + parts[1], Owner: parts[0], ProjectID: parts[3], IsProject: true}, nil
 	}
-	if len(parts) == 3 && parts[0] != "" && parts[1] != "" && parts[2] == "discussions" {
+	if len(parts) == 3 && nonEmpty(parts[0], parts[1]) && parts[2] == "discussions" {
 		return Target{Repo: parts[0] + "/" + parts[1], IsDiscussion: true}, nil
 	}
-	if len(parts) == 5 && parts[0] != "" && parts[1] != "" && parts[2] == "discussions" && parts[3] == "categories" && parts[4] != "" {
+	if isDiscussionCategoryPath(parts) {
 		return Target{Repo: parts[0] + "/" + parts[1], IsDiscussion: true, DiscussionCategory: parts[4]}, nil
 	}
 	return Target{}, fmt.Errorf("target must be OWNER/REPO or a GitHub repository/project URL")
+}
+
+// isBareGitHubURL reports whether u is an https://github.com URL with no
+// query or fragment.
+func isBareGitHubURL(u *url.URL) bool {
+	return u.Scheme == "https" && u.Host == "github.com" && u.RawQuery == "" && u.Fragment == ""
+}
+
+// nonEmpty reports whether every value is non-empty.
+func nonEmpty(values ...string) bool {
+	return !slices.Contains(values, "")
+}
+
+// isOwnerProjectPath reports whether parts is users|orgs/OWNER/projects/ID.
+func isOwnerProjectPath(parts []string) bool {
+	if len(parts) != 4 || parts[2] != "projects" {
+		return false
+	}
+	ownerType := parts[0] == "users" || parts[0] == "orgs"
+	return ownerType && nonEmpty(parts[1], parts[3])
+}
+
+// isRepoProjectPath reports whether parts is OWNER/REPO/projects/ID.
+func isRepoProjectPath(parts []string) bool {
+	return len(parts) == 4 && parts[2] == "projects" && nonEmpty(parts[0], parts[1], parts[3])
+}
+
+// isDiscussionCategoryPath reports whether parts is
+// OWNER/REPO/discussions/categories/CATEGORY.
+func isDiscussionCategoryPath(parts []string) bool {
+	if len(parts) != 5 || parts[2] != "discussions" || parts[3] != "categories" {
+		return false
+	}
+	return nonEmpty(parts[0], parts[1], parts[4])
 }
 
 // IsProjectTarget reports whether a target names a Projects (v2) board.

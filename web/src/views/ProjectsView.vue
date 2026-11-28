@@ -1,13 +1,10 @@
 <template>
-	<AppLayout
+	<AppLayout :compact-header="!jobOpen"
 		:title-link="project && !jobOpen ? { href: targetURL(project), title: `Open ${project} on GitHub` } : null">
 		<template v-if="(project || aggregate) && !jobOpen" #header-status>
 				<span v-if="aggregate" data-testid="board-projects"
 					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
 					:title="targets.join(', ')">{{ targets.length }} {{ targets.length === 1 ? "project" : "projects" }}</span>
-				<router-link v-if="owner" :to="settingsPath" data-testid="project-owner"
-					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-					:title="`${project} belongs to agent ${owner}`">agent: {{ owner }}</router-link>
 				<span data-testid="delivery-status" class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
 					:class="online ? 'bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300'">
 					<span class="h-1.5 w-1.5 rounded-full" :class="online ? 'bg-green-500' : 'bg-red-500'" />
@@ -19,69 +16,54 @@
 				<span v-if="issueSummary" data-testid="board-issues"
 					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
 					:title="issueSummary.title">{{ issueSummary.label }}</span>
-				<span v-if="status?.instanceID" data-testid="instance-id"
-					class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-200"
-					:title="`This instance signs its GitHub claims as /aviary:${status.instanceID}`">
-					Instance <code class="font-mono text-sm font-bold tracking-wider">{{ status.instanceID }}</code>
-				</span>
-		</template>
-		<template v-if="(project || aggregate) && !jobOpen && status" #header>
-			<div class="break-words" :class="{ 'sm:truncate': !editingFilter }" data-testid="board-subtitle">
-				<template v-if="manual">Manual: no issue watching</template>
-				<IssueFilterEditor v-else-if="filterTarget" v-model:editing="editingFilter" :target="filterTarget"
-					:filter="status.issueFilters[filterTarget] ?? status.issueFilter"
-					:custom="status.customFilters.includes(filterTarget)" @saved="refresh" />
-				<template v-else-if="status.issueFilter">Issues matching <code data-testid="issue-filter" class="font-mono">{{ status.issueFilter }}</code></template>
-				<template v-else>All open issues</template>
-				<template v-if="status.delivery && !manual"> · {{ status.delivery }}</template>
-				<template v-if="status.lastChecked"> · checked {{ age(status.lastChecked, now) }} ago</template>
-				<span v-if="status.stale" data-testid="stale-indicator" class="text-gray-400 dark:text-gray-500"
-					title="Showing the state saved before the last restart until the first live poll confirms it">
-					· refreshing…<template v-if="status.cachedAt"> last updated {{ age(status.cachedAt, now) }} ago</template>
-				</span>
-				<template v-if="status.interval"> · every {{ status.interval }}</template>
-			</div>
+				<BoardHeaderInfo v-if="status" :status="status" :manual="manual" :filter-target="filterTarget" :now="now"
+					:hide-instance="inMenu.has('instance-tag')" :hide-info="inMenu.has('board-info')" :show-clis="!smUp"
+					@saved="refresh" />
 		</template>
 		<template v-if="project || aggregate" #header-actions>
 			<!-- With a job open on a phone, the job's own actions keep the row
 				and the board's move behind "…" (#1347). -->
 			<HeaderOverflow :collapsed="jobOpen && !smUp" label="Board actions">
-			<button v-if="aggregate" type="button" data-testid="board-add-project" aria-label="Add project" title="Add project"
+			<!-- On a phone the header is one line, so everything but "…" moves
+				into "…" one at a time until it fits: Logs, Watch, Chat,
+				Schedule, Queue and Add project, then the details and instance
+				icons (#1576). -->
+			<button v-if="aggregate && !inMenu.has('board-add-project')" type="button" data-testid="board-add-project" aria-label="Add project" title="Add project"
 				:class="HEADER_ADD_CLS" @click="openAdd">
 				<PlusIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
-			<!-- A watch session's board is one agent's, so it queues when it has one project. -->
-			<QueueMenu v-if="!aggregate || targets.length === 1" :no-merge="status?.noMerge"
+			<QueueMenu v-if="canQueue && !inMenu.has('queue-menu')" :no-merge="status?.noMerge"
 				@pick="openQueue($event, project || targets[0])" />
-			<button v-if="!aggregate" type="button" data-testid="schedule-new" aria-label="Schedule task"
+			<button v-if="!aggregate && !inMenu.has('schedule-new')" type="button" data-testid="schedule-new" aria-label="Schedule task"
 				title="Schedule task" :class="HEADER_COLLAPSE_CLS" :disabled="!scheduleAgent" @click="onNewSchedule">
 				<CalendarDaysIcon aria-hidden="true" :class="HEADER_COLLAPSE_ICON_CLS" />
 				<span :class="HEADER_COLLAPSE_LABEL_CLS">Schedule</span>
 			</button>
-			<button type="button" aria-label="Check now" title="Check now" :class="HEADER_ICON_CLS"
-				:disabled="checking" @click="onCheckNow">
-				<ArrowPathIcon aria-hidden="true" class="h-5 w-5" :class="{ 'animate-spin': checking }" />
-			</button>
-			<button type="button" data-testid="logs-toggle" :aria-pressed="logsOpen"
+			<!-- Logs, then Watch, move into "…" when the row is too narrow;
+				Refresh, Clear and Settings always live there (#1488). -->
+			<button v-if="!logsInMenu" type="button" data-testid="logs-toggle" :aria-pressed="logsOpen"
 				aria-label="Logs" title="Logs"
 				:class="logsOpen ? HEADER_ICON_ON_CLS : HEADER_ICON_CLS"
 				@click="logsOpen = !logsOpen">
 				<DocumentTextIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
-			<button type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
+			<button v-if="!inMenu.has('prompt-chat-toggle')" type="button" data-testid="prompt-chat-toggle" :aria-pressed="chatOpen"
 				aria-label="Prompt chat" title="Prompt chat"
 				:class="chatOpen ? HEADER_ICON_ON_CLS : HEADER_ICON_CLS"
 				@click="chatOpen = !chatOpen">
 				<ChatBubbleLeftRightIcon aria-hidden="true" class="h-5 w-5" />
 			</button>
-			<ClearJobsMenu v-if="targets.length" :targets="targets" :done="status?.states?.done ?? 0"
-				:failed="status?.states?.failed ?? 0" @cleared="refresh" />
-			<ProjectModeMenu v-if="filterTarget" :target="filterTarget" :manual="manual"
+			<ProjectModeMenu v-if="filterTarget && !watchInMenu" :target="filterTarget" :manual="manual"
 				:default-mode="status?.defaultMode ?? 'watch'" @changed="refresh" />
-			<router-link :to="settingsPath" data-testid="project-settings-link" aria-label="Settings" title="Settings"
-				:class="HEADER_ICON_CLS">
-				<Cog6ToothIcon aria-hidden="true" class="h-5 w-5" />
-			</router-link>
+			<BoardMoreMenu ref="moreMenu" :targets="targets" :done="status?.states?.done ?? 0"
+				:failed="status?.states?.failed ?? 0" :checking="checking" :settings-path="settingsPath"
+				:logs-in-menu="logsInMenu" v-model:logs-open="logsOpen"
+				:mode-target="watchInMenu ? filterTarget : null" :manual="manual"
+				:default-mode="status?.defaultMode ?? 'watch'"
+				:hidden="[...inMenu]" :status="status" :filter-target="filterTarget" :now="now" :show-clis="!smUp"
+				v-model:chat-open="chatOpen" :can-schedule="!!scheduleAgent"
+				@refresh="onCheckNow" @cleared="refresh" @mode-changed="refresh" @saved="refresh"
+				@add-project="openAdd" @queue="openQueue($event, project || targets[0])" @schedule="onNewSchedule" />
 			</HeaderOverflow>
 		</template>
 		<div class="flex min-h-0 flex-1">
@@ -106,7 +88,7 @@
 							{{ scheduleError }}
 						</p>
 
-						<UpNextStrip v-if="!aggregate" :runs="upcoming" :now="now" @open="openSchedule" />
+						<UpNextStrip :runs="upcoming" :now="now" :show-project="aggregate" @open="openSchedule" />
 
 						<!-- The counts show as full cards or as one compact row of chips, the
 							default below md, and a toggle switches between them. -->
@@ -130,64 +112,38 @@
 							</button>
 						</div>
 
-						<!-- The projects' pills lead into each project, left of the CLI providers. -->
-						<div v-if="(aggregate && targets.length) || status?.clis.length" class="flex min-w-0 flex-wrap items-center gap-2" data-testid="board-nav-row">
+						<!-- The projects' pills lead into each project, left of the CLI
+							providers, which move into the details popover on a phone (#1580). -->
+						<div v-if="(aggregate && targets.length) || inlineCLIs" class="flex min-w-0 flex-wrap items-center gap-2" data-testid="board-nav-row">
 						<ProjectNavRow v-if="aggregate && targets.length" :agent="routeAgent" :targets="targets" />
-						<section v-if="status?.clis.length" class="ml-auto flex max-w-full flex-wrap items-center gap-2 text-xs" aria-label="CLI providers">
-							<span class="font-medium text-gray-600 dark:text-gray-300">CLI providers</span>
-							<span v-for="cli in status.clis" :key="cli.name"
-								class="inline-flex max-w-full flex-wrap items-center gap-x-1.5 rounded-full border border-gray-200 px-2.5 py-1 dark:border-gray-700">
-								<span class="h-1.5 w-1.5 rounded-full" :class="cli.signedIn ? 'bg-green-500' : 'bg-gray-400'" />
-								<b class="text-gray-800 dark:text-gray-100">{{ cli.name }}</b>
-								<span v-if="cli.models.length" class="text-gray-600 dark:text-gray-300">{{ cli.models.join(", ") }}</span>
-								<span class="text-gray-500">{{ cli.quota || "no quota reported" }}</span>
-							</span>
-						</section>
+						<CLIProviderList v-if="inlineCLIs && status" class="ml-auto" :clis="status.clis" />
 						</div>
 
-						<div class="flex flex-wrap items-center gap-3 text-sm" data-testid="job-toolbar">
-							<div class="relative min-w-0 flex-1 max-sm:basis-full sm:max-w-xs">
+						<!-- Search keeps a usable width; the state filters fold into "Filters"
+							when the toolbar can't fit them beside it (#1490). -->
+						<div ref="toolbar" class="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm" data-testid="job-toolbar">
+							<div class="relative min-w-0" :class="toolbarStacked ? 'basis-full' : 'max-w-80 min-w-[220px] flex-[1_1_220px]'">
 								<span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400 dark:text-gray-500"
 									aria-hidden="true" data-testid="search-icon">
 									<MagnifyingGlassIcon class="h-4 w-4" />
 								</span>
 								<input v-model="search" type="search" aria-label="Search jobs" placeholder="Search jobs, logs, #issue, #PR, session…"
-									class="field-input pl-9!" />
+									class="field-input h-9 py-0! pl-9!" />
 							</div>
-								<!-- Below md the chips fold into a Filter button; md and up shows them inline as before. -->
-								<div ref="filterMenu" class="relative min-w-0 md:contents" @keydown.esc="closeFilter(true)">
-									<button ref="filterToggle" type="button" data-testid="filter-toggle" aria-controls="job-filter"
-										:aria-expanded="filterOpen"
-										class="flex max-w-full items-center gap-1.5 rounded-lg border px-2.5 py-1 md:hidden"
-										:class="filters.length ? 'border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'"
-										@click="filterOpen = !filterOpen">
-										<FunnelIcon aria-hidden="true" class="h-4 w-4 shrink-0" />
-										<span class="truncate" data-testid="filter-summary">Filter: {{ filterSummary }}</span>
-										<ChevronDownIcon aria-hidden="true" class="h-4 w-4 shrink-0 transition-transform" :class="filterOpen && 'rotate-180'" />
-									</button>
-									<div id="job-filter" role="group" aria-label="Job filter" class="max-w-full flex-wrap items-center gap-1.5 md:flex"
-										:class="filterOpen ? 'max-md:absolute max-md:left-0 max-md:top-full max-md:z-20 max-md:mt-1 max-md:flex max-md:w-64 max-md:rounded-xl max-md:border max-md:border-gray-200 max-md:bg-white max-md:p-2 max-md:shadow-lg dark:max-md:border-gray-700 dark:max-md:bg-gray-900' : 'max-md:hidden'">
-										<button v-for="state in BOARD_FILTERS" :key="state" type="button" :aria-pressed="filters.includes(state)"
-											class="shrink-0 rounded-full border px-3 py-1" :class="filters.includes(state) ? FILTER_ACTIVE[state] : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'"
-											@click="toggleState(state)">
-											{{ stateLabel(state) }}<span v-if="chipCount(state) !== null" class="ml-1.5 tabular-nums opacity-75">{{ chipCount(state) }}</span>
-										</button>
-										<button v-if="filters.length" type="button" class="px-1 text-gray-500 hover:text-gray-800 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
-											@click="setStates([])">Clear</button>
-									</div>
-								</div>
-								<button type="button" data-testid="kanban-toggle" :aria-pressed="kanban"
-									:aria-label="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
-									:title="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
-									class="rounded-lg border p-1.5"
-									:class="kanban ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
-									@click="kanban = !kanban">
-									<ViewColumnsIcon aria-hidden="true" class="h-5 w-5" />
-								</button>
-								<span v-if="searching" class="text-gray-500 dark:text-gray-400" data-testid="search-count">
+							<BoardStateFilter ref="stateFilter" :filters="filters" :counts="filterCounts" :collapsed="filtersCollapsed"
+								@toggle="toggleState" @clear="setStates([])" />
+							<button ref="kanbanButton" type="button" data-testid="kanban-toggle" :aria-pressed="kanban"
+								:aria-label="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
+								:title="kanban ? 'Show jobs as a list' : 'Show jobs as a kanban board'"
+								class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border"
+								:class="kanban ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800'"
+								@click="kanban = !kanban">
+								<ViewColumnsIcon aria-hidden="true" class="h-5 w-5" />
+							</button>
+								<span v-if="searching" ref="toolbarCount" class="shrink-0 whitespace-nowrap text-gray-500 dark:text-gray-400" data-testid="search-count">
 									{{ shownTotal }} of {{ unfilteredShown }} {{ unfilteredShown === 1 ? `${noun} matches` : `${noun}s match` }}
 								</span>
-								<span v-else class="text-gray-500 dark:text-gray-400" data-testid="job-total">
+								<span v-else ref="toolbarCount" class="shrink-0 whitespace-nowrap text-gray-500 dark:text-gray-400" data-testid="job-total">
 									<template v-if="filters.length">{{ shownTotal }} of {{ allItems }} {{ allItems === 1 ? noun : `${noun}s` }}</template>
 									<template v-else>{{ shownTotal }} {{ shownTotal === 1 ? noun : `${noun}s` }}</template>
 								</span>
@@ -246,16 +202,13 @@
 </template>
 
 <script setup lang="ts">
-import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import CalendarDaysIcon from "@heroicons/vue/24/outline/CalendarDaysIcon";
 import ChatBubbleLeftRightIcon from "@heroicons/vue/24/outline/ChatBubbleLeftRightIcon";
 import ChevronDownIcon from "@heroicons/vue/24/outline/ChevronDownIcon";
 import ChevronLeftIcon from "@heroicons/vue/24/outline/ChevronLeftIcon";
 import ChevronRightIcon from "@heroicons/vue/24/outline/ChevronRightIcon";
 import ChevronUpIcon from "@heroicons/vue/24/outline/ChevronUpIcon";
-import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import DocumentTextIcon from "@heroicons/vue/24/outline/DocumentTextIcon";
-import FunnelIcon from "@heroicons/vue/24/outline/FunnelIcon";
 import MagnifyingGlassIcon from "@heroicons/vue/24/outline/MagnifyingGlassIcon";
 import PlusIcon from "@heroicons/vue/24/outline/PlusIcon";
 import ViewColumnsIcon from "@heroicons/vue/24/outline/ViewColumnsIcon";
@@ -263,9 +216,11 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../components/AppLayout.vue";
 import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
-import ClearJobsMenu from "../components/projects/ClearJobsMenu.vue";
+import BoardHeaderInfo from "../components/projects/BoardHeaderInfo.vue";
+import BoardMoreMenu from "../components/projects/BoardMoreMenu.vue";
+import BoardStateFilter from "../components/projects/BoardStateFilter.vue";
+import CLIProviderList from "../components/projects/CLIProviderList.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
-import IssueFilterEditor from "../components/projects/IssueFilterEditor.vue";
 import JobCard from "../components/projects/JobCard.vue";
 import KanbanBoard from "../components/projects/KanbanBoard.vue";
 import ProjectChatPanel from "../components/projects/ProjectChatPanel.vue";
@@ -281,6 +236,11 @@ import StatChipRow, {
 import UpNextStrip from "../components/projects/UpNextStrip.vue";
 import HeaderOverflow from "../components/ui/HeaderOverflow.vue";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
+import { useFilterRowFit } from "../composables/useFilterRowFit";
+import {
+	type HeaderCollapseItem,
+	useHeaderCollapse,
+} from "../composables/useHeaderCollapse";
 import {
 	JOBS_PAGE_SIZE,
 	useProjectBoard,
@@ -288,6 +248,7 @@ import {
 	useProjectSchedules,
 } from "../composables/useProjects";
 import { useTaskPause } from "../composables/useTaskPause";
+import { filterCounts as countFilters } from "../lib/boardFilterRow";
 import {
 	HEADER_ADD_CLS,
 	HEADER_COLLAPSE_CLS,
@@ -303,8 +264,6 @@ import {
 	projectTargets,
 } from "../lib/projectSettings";
 import {
-	age,
-	BOARD_FILTERS,
 	BOARD_STATES,
 	type BoardFilter,
 	type BoardState,
@@ -323,16 +282,6 @@ import {
 	targetURL,
 } from "../lib/projects";
 import { taskSessionPath, useSettingsStore } from "../stores/settings";
-
-// A selected state chip fills with that state's color; Starting is orange.
-const FILTER_ACTIVE: Record<BoardFilter, string> = {
-	scheduled: "border-violet-600 bg-violet-600 text-white",
-	starting: "border-orange-500 bg-orange-500 text-white",
-	paused: "border-amber-500 bg-amber-500 text-white",
-	running: "border-blue-600 bg-blue-600 text-white",
-	done: "border-green-600 bg-green-600 text-white",
-	failed: "border-red-600 bg-red-600 text-white",
-};
 
 const route = useRoute();
 const router = useRouter();
@@ -392,32 +341,17 @@ function setStates(next: BoardFilter[]) {
 	else localStorage.removeItem(statesKey.value);
 	void router.replace({ query: { ...route.query, state: state || undefined } });
 }
-// Below md the chips fold into a Filter button whose label sums up the
-// selection; its panel closes on Esc or a tap outside it.
-const filterOpen = ref(false);
-const filterMenu = ref<HTMLElement | null>(null);
-const filterToggle = ref<HTMLButtonElement | null>(null);
-const filterSummary = computed(() => {
-	const active = BOARD_FILTERS.filter((s) => filters.value.includes(s));
-	if (!active.length) return "All";
-	return active
-		.map((s) => {
-			const n = chipCount(s);
-			return n === null ? stateLabel(s) : `${stateLabel(s)} ${n}`;
-		})
-		.join(", ");
-});
-function closeFilter(focus = false) {
-	if (!filterOpen.value) return;
-	filterOpen.value = false;
-	if (focus) filterToggle.value?.focus();
-}
-function onFilterOutside(e: PointerEvent) {
-	if (filterMenu.value && !filterMenu.value.contains(e.target as Node))
-		closeFilter();
-}
-onMounted(() => document.addEventListener("pointerdown", onFilterOutside));
-onUnmounted(() => document.removeEventListener("pointerdown", onFilterOutside));
+// The toolbar's layout follows its own width (#1490).
+const toolbar = ref<HTMLElement | null>(null);
+const stateFilter = ref<{ naturalWidth: number } | null>(null);
+const kanbanButton = ref<HTMLElement | null>(null);
+const toolbarCount = ref<HTMLElement | null>(null);
+const { stacked: toolbarStacked, collapsed: filtersCollapsed } =
+	useFilterRowFit(
+		toolbar,
+		computed(() => stateFilter.value?.naturalWidth ?? 0),
+		[kanbanButton, toolbarCount],
+	);
 function toggleState(state: BoardFilter) {
 	setStates(
 		filters.value.includes(state)
@@ -480,7 +414,6 @@ const {
 const filterTarget = computed(() =>
 	targets.value.length === 1 ? targets.value[0] : "",
 );
-const editingFilter = ref(false);
 // A manual project (#1307) is never searched for issues, so its header says
 // so in place of the issue filter.
 const manual = computed(
@@ -657,6 +590,7 @@ function chipCount(state: BoardFilter): number | null {
 	if (state === "scheduled") return schedules.value.length;
 	return status.value ? status.value.states[state] : null;
 }
+const filterCounts = computed(() => countFilters(chipCount));
 
 // Each board state's stat card, in its pill's colors; Starting is orange.
 const STATE_CARD: Record<BoardState, string> = {
@@ -728,6 +662,8 @@ function onSmChange(e: MediaQueryListEvent) {
 }
 onMounted(() => smQuery.addEventListener("change", onSmChange));
 onUnmounted(() => smQuery.removeEventListener("change", onSmChange));
+// A phone's CLI providers are in the details popover instead (#1580).
+const inlineCLIs = computed(() => smUp.value && !!status.value?.clis.length);
 const statsCompact = computed(() => statsChoice.value ?? !wide.value);
 
 const busyJob = ref("");
@@ -793,6 +729,52 @@ watch(logsOpen, (open) =>
 	localStorage.setItem(LOGS_OPEN_KEY, open ? "1" : "0"),
 );
 const chatPanel = ref<{ send: (text: string) => Promise<void> } | null>(null);
+
+// Logs moves into the "…" menu on a header row under 600px, then Watch
+// under 420px (a phone), and either sooner if the row would not fit (#1488).
+// On a phone the compact header is one line of chips and actions (#1576),
+// so Chat, Schedule, Queue and Add project follow, then the details and
+// instance icons, until the line fits; desktop keeps them all.
+const moreMenu = ref<{ trigger: HTMLElement | null } | null>(null);
+// A watch session's board is one agent's, so it queues when it has one project.
+const canQueue = computed(() => !aggregate.value || targets.value.length === 1);
+const singleLineHeader = computed(() => !smUp.value && !jobOpen.value);
+const collapseItems = computed((): HeaderCollapseItem[] => {
+	const items: HeaderCollapseItem[] = [{ id: "logs-toggle", below: 600 }];
+	if (filterTarget.value) items.push({ id: "project-mode-menu", below: 420 });
+	if (!singleLineHeader.value) return items;
+	items.push({ id: "prompt-chat-toggle" });
+	if (!aggregate.value) items.push({ id: "schedule-new" });
+	if (canQueue.value) items.push({ id: "queue-menu" });
+	if (aggregate.value) items.push({ id: "board-add-project" });
+	if (status.value) items.push({ id: "board-info" });
+	if (status.value?.instanceID) items.push({ id: "instance-tag" });
+	return items;
+});
+const headerCollapsed = useHeaderCollapse(
+	computed(() => moreMenu.value?.trigger),
+	() => collapseItems.value,
+	{
+		singleLine: () => singleLineHeader.value,
+		deps: [
+			aggregate,
+			targets,
+			smUp,
+			manual,
+			() => issueSummary.value?.label,
+			() => online.value,
+		],
+	},
+);
+// The items in the "…" menu instead of the header, never in both (#1486).
+const inMenu = computed(
+	() =>
+		new Set(
+			collapseItems.value.slice(0, headerCollapsed.value).map(({ id }) => id),
+		),
+);
+const logsInMenu = computed(() => inMenu.value.has("logs-toggle"));
+const watchInMenu = computed(() => inMenu.value.has("project-mode-menu"));
 
 async function onSummarize(job: ProjectJob) {
 	chatOpen.value = true;

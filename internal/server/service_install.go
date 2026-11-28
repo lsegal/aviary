@@ -37,74 +37,16 @@ type ServiceOptions struct {
 
 // InstallService installs and starts a simple service for common platforms.
 func InstallService(opts ServiceOptions) error {
-	// If User not provided (or explicitly set to "root"), try to infer a sensible non-root user to run the
-	// service as. This avoids writing units that run as root when the CLI was
-	// invoked via sudo by a normal user.
-	if opts.User == "root" {
-		// treat explicit root as unspecified so we don't force User=root in units
-		opts.User = ""
-	}
-	if opts.User == "" {
-		// Prefer SUDO_USER if present (user who invoked sudo).
-		if su := os.Getenv("SUDO_USER"); su != "" && su != "root" {
-			opts.User = su
-		}
-		// If still empty, try to infer from WorkingDir (e.g. /home/<user>/... or /Users/<user>/...)
-		if opts.User == "" && opts.WorkingDir != "" {
-			wd := opts.WorkingDir
-			if strings.HasPrefix(wd, "/home/") {
-				parts := strings.SplitN(strings.TrimPrefix(wd, "/home/"), "/", 2)
-				if len(parts) > 0 && parts[0] != "" {
-					opts.User = parts[0]
-				}
-			} else if strings.HasPrefix(wd, "/Users/") {
-				parts := strings.SplitN(strings.TrimPrefix(wd, "/Users/"), "/", 2)
-				if len(parts) > 0 && parts[0] != "" {
-					opts.User = parts[0]
-				}
-			}
-		}
-		// Finally fall back to the current user if one is available and not root.
-		if opts.User == "" {
-			if u, err := userHomeDir(); err == nil {
-				// try to parse home dir for username (best-effort)
-				if strings.HasPrefix(u, "/home/") {
-					parts := strings.SplitN(strings.TrimPrefix(u, "/home/"), "/", 2)
-					if len(parts) > 0 && parts[0] != "" && parts[0] != "root" {
-						opts.User = parts[0]
-					}
-				} else if strings.HasPrefix(u, "/Users/") {
-					parts := strings.SplitN(strings.TrimPrefix(u, "/Users/"), "/", 2)
-					if len(parts) > 0 && parts[0] != "" && parts[0] != "root" {
-						opts.User = parts[0]
-					}
-				}
-			}
-		}
-	}
+	opts.User = inferServiceUser(opts)
 	switch serviceGOOS {
 	case "linux":
-		// Guard: if dev helper detected but name left as default, prefer a dev service name
-		joined := strings.Join(opts.Args, " ")
-		if strings.Contains(joined, "pnpm docs:dev") && opts.Name == "aviary" {
-			opts.Name = "aviary-dev-docs"
-		} else if strings.Contains(joined, "pnpm dev") && opts.Name == "aviary" {
-			opts.Name = "aviary-dev"
-		}
-
+		opts.Name = devServiceName(opts)
 		if err := installSystemd(opts); err != nil {
 			return trySudoRetry("install", err)
 		}
 		return nil
 	case "darwin":
-		// Guard for dev helpers on mac as well
-		joined := strings.Join(opts.Args, " ")
-		if strings.Contains(joined, "pnpm docs:dev") && opts.Name == "aviary" {
-			opts.Name = "aviary-dev-docs"
-		} else if strings.Contains(joined, "pnpm dev") && opts.Name == "aviary" {
-			opts.Name = "aviary-dev"
-		}
-
+		opts.Name = devServiceName(opts)
 		if err := installLaunchd(opts); err != nil {
 			return trySudoRetry("install", err)
 		}
@@ -114,6 +56,64 @@ func InstallService(opts ServiceOptions) error {
 	default:
 		return fmt.Errorf("unsupported OS: %s", serviceGOOS)
 	}
+}
+
+// inferServiceUser returns the user the service should run as. If User is not
+// provided (or explicitly set to "root"), it tries to infer a sensible non-root
+// user. This avoids writing units that run as root when the CLI was invoked via
+// sudo by a normal user.
+func inferServiceUser(opts ServiceOptions) string {
+	if opts.User != "" && opts.User != "root" {
+		return opts.User
+	}
+	// Explicit root is treated as unspecified so we don't force User=root in units.
+	// Prefer SUDO_USER if present (user who invoked sudo).
+	if su := os.Getenv("SUDO_USER"); su != "" && su != "root" {
+		return su
+	}
+	// Try to infer from WorkingDir (e.g. /home/<user>/... or /Users/<user>/...).
+	if user := userFromHomePath(opts.WorkingDir); user != "" {
+		return user
+	}
+	// Finally fall back to the current user if one is available and not root.
+	home, err := userHomeDir()
+	if err != nil {
+		return ""
+	}
+	// Parse the home dir for the username (best-effort).
+	if user := userFromHomePath(home); user != "root" {
+		return user
+	}
+	return ""
+}
+
+// userFromHomePath returns the first path segment under /home/ or /Users/, or
+// "" if path is not inside either.
+func userFromHomePath(path string) string {
+	for _, prefix := range []string{"/home/", "/Users/"} {
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		user, _, _ := strings.Cut(strings.TrimPrefix(path, prefix), "/")
+		return user
+	}
+	return ""
+}
+
+// devServiceName prefers a dev service name when a dev helper is detected but
+// the name was left as the default.
+func devServiceName(opts ServiceOptions) string {
+	if opts.Name != "aviary" {
+		return opts.Name
+	}
+	joined := strings.Join(opts.Args, " ")
+	if strings.Contains(joined, "pnpm docs:dev") {
+		return "aviary-dev-docs"
+	}
+	if strings.Contains(joined, "pnpm dev") {
+		return "aviary-dev"
+	}
+	return opts.Name
 }
 
 // UninstallService removes the service registration.
@@ -138,41 +138,24 @@ func UninstallService(name string) error {
 
 // StartService starts the named service using the platform's service manager.
 func StartService(name string) error {
-	switch serviceGOOS {
-	case "linux":
-		if err := runCmd("systemctl", "--user", "start", name); err != nil {
-			return err
-		}
-		return nil
-	case "darwin":
-		label := "bot.aviary." + name
-		if err := runCmd("launchctl", "start", label); err != nil {
-			return err
-		}
-		return nil
-	case "windows":
-		return runCmd("sc", "start", name)
-	default:
-		return fmt.Errorf("unsupported OS: %s", serviceGOOS)
-	}
+	return controlService("start", name)
 }
 
 // StopService stops the named service using the platform's service manager.
 func StopService(name string) error {
+	return controlService("stop", name)
+}
+
+// controlService runs a start or stop action for the named service through the
+// platform's service manager.
+func controlService(action, name string) error {
 	switch serviceGOOS {
 	case "linux":
-		if err := runCmd("systemctl", "--user", "stop", name); err != nil {
-			return err
-		}
-		return nil
+		return runCmd("systemctl", "--user", action, name)
 	case "darwin":
-		label := "bot.aviary." + name
-		if err := runCmd("launchctl", "stop", label); err != nil {
-			return err
-		}
-		return nil
+		return runCmd("launchctl", action, "bot.aviary."+name)
 	case "windows":
-		return runCmd("sc", "stop", name)
+		return runCmd("sc", action, name)
 	default:
 		return fmt.Errorf("unsupported OS: %s", serviceGOOS)
 	}
@@ -188,9 +171,8 @@ func trySudoRetry(action string, origErr error) error {
 	if os.Getenv("AVIARY_TRIED_SUDO") == "1" {
 		return origErr
 	}
-	lower := strings.ToLower(origErr.Error())
 	// Retry on permission-like errors or common authentication prompts.
-	if !strings.Contains(lower, "permission") && !strings.Contains(lower, "permission denied") && !strings.Contains(lower, "access denied") && !strings.Contains(lower, "interactive authentication") && !strings.Contains(lower, "authentication required") && !strings.Contains(lower, "polkit") && !strings.Contains(lower, "authorization") {
+	if !isPrivilegeError(origErr) {
 		return origErr
 	}
 
@@ -215,6 +197,29 @@ func trySudoRetry(action string, origErr error) error {
 		return fmt.Errorf("%w; sudo retry failed: %v", origErr, err)
 	}
 	return nil
+}
+
+// privilegeErrorMarkers are lowercase substrings of errors that more
+// privileges (or an authentication prompt) could resolve.
+var privilegeErrorMarkers = []string{
+	"permission",
+	"access denied",
+	"interactive authentication",
+	"authentication required",
+	"polkit",
+	"authorization",
+}
+
+// isPrivilegeError reports whether err looks like a permission or
+// authentication failure.
+func isPrivilegeError(err error) bool {
+	lower := strings.ToLower(err.Error())
+	for _, marker := range privilegeErrorMarkers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func systemdUserDir(username string) (string, error) {

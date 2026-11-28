@@ -69,8 +69,6 @@ export interface ProjectSummary {
 	 * board's state counts count them: a schedule once however many of its
 	 * runs overlap (#1359). */
 	running: number;
-	/** Those entries, as the collapsed rail's Code Loop flyout lists them. */
-	runningJobs: RunningJob[];
 	waiting: number;
 	issues: number;
 	/** Manual mode: never searched for issues, so issues is not counted. */
@@ -82,24 +80,35 @@ export interface ProjectSummary {
 	loading?: boolean;
 }
 
-/** A running board entry: an issue job, or a schedule with runs in flight. */
-export interface RunningJob {
-	/** The engine's job key, `<target>#<number>`. */
-	id: string;
-	number: number;
-	/** `#<number> <title>` for an issue job, the task name for a schedule. */
-	label: string;
-	state: BoardState;
-	/** A schedule's overlapping runs in flight, shown as ×N past 1. */
-	runs: number;
-}
-
 /** One CLI provider: the models the board's jobs run on and its quota. */
 export interface CLIStatus {
 	name: string;
 	models: string[];
 	quota: string;
 	signedIn: boolean;
+}
+
+/**
+ * Why a CLI provider needs attention -- signed out, out of quota, or its
+ * quota reader failed -- or "" when it is fine. The narrow Code Loop header
+ * marks its details icon when any provider has a problem (#1580).
+ */
+export function cliProblem(cli: CLIStatus): string {
+	if (!cli.signedIn) return "signed out";
+	if (/(?<![\d.])0%[^,]*\bleft\b|exhausted|limit reached/i.test(cli.quota))
+		return "out of quota";
+	if (/^unavailable\b|\berror\b|\bfailed\b/i.test(cli.quota)) return "error";
+	return "";
+}
+
+/** One sentence naming each CLI provider with a problem, or "". */
+export function cliProblemSummary(clis: readonly CLIStatus[]): string {
+	const problems = clis
+		.map((cli) => [cli.name, cliProblem(cli)])
+		.filter(([, problem]) => problem)
+		.map(([name, problem]) => `${name} ${problem}`);
+	if (!problems.length) return "";
+	return `CLI provider needs attention: ${problems.join(", ")}`;
 }
 
 export interface ProjectTarget {
@@ -723,15 +732,11 @@ export function summarizeProjects(
 ): ProjectSummary[] {
 	return status.targets.map((t) => {
 		const mine = jobs.filter((j) => j.target === t.name);
-		const runningJobs = mine
-			.filter((j) => j.state === "running")
-			.map(runningJob);
 		return {
 			name: t.name,
 			issues: t.issues,
 			...(t.manual ? { manual: true } : {}),
-			running: runningJobs.length,
-			runningJobs,
+			running: mine.filter((j) => j.state === "running").length,
 			waiting: mine.filter((j) => isWaiting(j.status)).length,
 			...(t.loading ? { loading: true } : {}),
 			...(tasks === undefined
@@ -739,27 +744,6 @@ export function summarizeProjects(
 				: { scheduled: projectSchedules(tasks, t.name).length }),
 		};
 	});
-}
-
-function runningJob(j: ProjectJob): RunningJob {
-	if (!j.scheduleID)
-		return {
-			id: j.id,
-			number: j.number,
-			label: j.title ? `#${j.number} ${j.title}` : `#${j.number}`,
-			state: j.state,
-			runs: 1,
-		};
-	const inFlight = (j.schedule?.recentRuns ?? []).filter((r) =>
-		isRunning(r.status),
-	).length;
-	return {
-		id: j.id,
-		number: j.number,
-		label: j.scheduleID.slice(j.scheduleID.indexOf("/") + 1),
-		state: j.state,
-		runs: Math.max(1, inFlight),
-	};
 }
 
 /** How work reaches a project (#1307). */
@@ -1130,14 +1114,52 @@ export function projectSchedules(
 export interface UpcomingRun {
 	id: string;
 	name: string;
+	project: string;
 	at: string;
 }
 
-export function normalizeUpcoming(v: unknown): UpcomingRun[] {
-	return arr(v).map((u) => {
-		const raw = obj(u);
-		return { id: str(raw.task_id), name: str(raw.name), at: str(raw.at) };
+/**
+ * How far ahead the "Up next" strip looks: it lists only fires due within
+ * this window, so it shows what is about to run rather than the whole day.
+ */
+export const UP_NEXT_WINDOW_MS = 5 * 60_000;
+
+/**
+ * The runs the "Up next" strip shows at now: those due after now and within
+ * windowMs of it. Checked against a ticking clock, a run joins the strip as it
+ * enters the window and leaves once its time passes, between polls.
+ */
+export function upNextRuns(
+	runs: UpcomingRun[],
+	now: number,
+	windowMs = UP_NEXT_WINDOW_MS,
+): UpcomingRun[] {
+	return runs.filter((r) => {
+		const t = Date.parse(r.at);
+		return t > now && t - now <= windowMs;
 	});
+}
+
+/**
+ * The upcoming runs as the "Up next" strip shows them: each task's soonest
+ * fire only, soonest first, so a task that fires every minute takes one chip
+ * and leaves room for other tasks.
+ */
+export function normalizeUpcoming(v: unknown): UpcomingRun[] {
+	const runs = new Map<string, UpcomingRun>();
+	for (const u of arr(v)) {
+		const raw = obj(u);
+		const run = {
+			id: str(raw.task_id),
+			name: str(raw.name),
+			project: str(raw.project),
+			at: str(raw.at),
+		};
+		const prev = runs.get(run.id);
+		if (!prev || Date.parse(run.at) < Date.parse(prev.at))
+			runs.set(run.id, run);
+	}
+	return [...runs.values()].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
 
 /**

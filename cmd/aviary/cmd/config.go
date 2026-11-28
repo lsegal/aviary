@@ -31,10 +31,10 @@ Set a value:
 	RunE: runConfigGetSet,
 }
 
-var configConvertTaskToScriptCmd = &cobra.Command{
-	Use:   "convert-task-to-script [agent] <task>",
-	Short: "Precompile a prompt task, keeping its prompt to fall back to",
-	Long: `Turn precompile on for a prompt task, project task or prompt workflow and
+var configConvertTaskToScriptCmd = newAgentToolCmd(agentToolSpec{
+	use:   "convert-task-to-script [agent] <task>",
+	short: "Precompile a prompt task, keeping its prompt to fall back to",
+	long: `Turn precompile on for a prompt task, project task or prompt workflow and
 compile a fresh Lua script beside its prompt in the background, discarding any
 existing script. The task keeps its type and prompt: runs execute the script
 and fall back to the model if it fails. YAML-defined tasks stay in aviary.yaml
@@ -43,51 +43,27 @@ one agent exists.
 
 Example:
   aviary config convert-task-to-script myagent weather-check`,
-	Args: cobra.RangeArgs(1, 2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		agent, rest, err := splitAgentArg(cmd.Context(), args, 2)
-		if err != nil {
-			return err
-		}
-		out, err := dispatcher.CallTool(cmd.Context(), "config_task_convert_to_script", map[string]any{
-			"agent": agent,
-			"task":  rest[0],
-		})
-		if err != nil {
-			return err
-		}
-		fmt.Println(out)
-		return nil
-	},
-}
+	args:     cobra.RangeArgs(1, 2),
+	tool:     "config_task_convert_to_script",
+	agentKey: "agent",
+	restKeys: []string{"task"},
+})
 
-var configMoveTaskToFileCmd = &cobra.Command{
-	Use:   "move-task-to-file [agent] <task>",
-	Short: "Move a task from aviary.yaml to a markdown file in the agent's tasks/ directory",
-	Long: `Move a scheduled task that is currently defined inline in aviary.yaml to a
+var configMoveTaskToFileCmd = newAgentToolCmd(agentToolSpec{
+	use:   "move-task-to-file [agent] <task>",
+	short: "Move a task from aviary.yaml to a markdown file in the agent's tasks/ directory",
+	long: `Move a scheduled task that is currently defined inline in aviary.yaml to a
 markdown file inside the agent's tasks/ directory. The task is removed from
 aviary.yaml and written as <task-name>.md. The agent may be omitted when only
 one agent exists.
 
 Example:
   aviary config move-task-to-file myagent daily-report`,
-	Args: cobra.RangeArgs(1, 2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		agent, rest, err := splitAgentArg(cmd.Context(), args, 2)
-		if err != nil {
-			return err
-		}
-		out, err := dispatcher.CallTool(cmd.Context(), "config_task_move_to_file", map[string]any{
-			"agent": agent,
-			"task":  rest[0],
-		})
-		if err != nil {
-			return err
-		}
-		fmt.Println(out)
-		return nil
-	},
-}
+	args:     cobra.RangeArgs(1, 2),
+	tool:     "config_task_move_to_file",
+	agentKey: "agent",
+	restKeys: []string{"task"},
+})
 
 func init() {
 	configCmd.AddCommand(configConvertTaskToScriptCmd, configMoveTaskToFileCmd)

@@ -1021,7 +1021,9 @@ func (d Definition) validateProcessMode() error {
 	if d.Output != (Output{}) {
 		return fmt.Errorf(`field "output" is only meaningful when "inProcess" is false`)
 	}
-	if d.PromptStdin != nil || d.Wakeup != nil || len(d.Env) > 0 || d.ConfigHome != nil || d.MinVersion != "" {
+	promptOptionsSet := d.PromptStdin != nil || d.Wakeup != nil
+	environmentSet := len(d.Env) > 0 || d.ConfigHome != nil
+	if promptOptionsSet || environmentSet || d.MinVersion != "" {
 		return fmt.Errorf(`fields "promptStdin", "wakeup", "env", "configHome", and "minVersion" are only meaningful when "inProcess" is false`)
 	}
 	if d.Session.Assign != AssignNone {

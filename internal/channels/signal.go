@@ -1022,8 +1022,7 @@ func (c *SignalChannel) dispatch(line []byte) {
 	c.rememberName(env.Source, env.SourceName)
 
 	// Treat emoji reactions on the agent's own messages as direct prompts.
-	if r := env.ReactionMessage; r != nil && !r.IsRemove &&
-		c.reactToEmoji && c.phone != "" && r.TargetAuthor == c.phone {
+	if r := env.ReactionMessage; c.isPromptReaction(r) {
 		if err := c.sendReaction(env.Source, r.Emoji, r.TargetAuthor, r.TargetSentTimestamp); err != nil {
 			slog.Warn("signal: failed to mirror reaction", "err", err)
 		}
@@ -1036,12 +1035,30 @@ func (c *SignalChannel) dispatch(line []byte) {
 		dataMessage = env.EditMessage.DataMessage
 	}
 
-	isReplyToSelf := c.replyToReplies && c.phone != "" &&
-		dataMessage != nil &&
-		dataMessage.Quote != nil &&
-		dataMessage.Quote.Author == c.phone
+	c.dispatchEnvelope(env.Source, env.Timestamp, c.isMentioned(dataMessage), c.isReplyToSelf(dataMessage), dataMessage)
+}
 
-	c.dispatchEnvelope(env.Source, env.Timestamp, c.isMentioned(dataMessage), isReplyToSelf, dataMessage)
+// isPromptReaction reports whether r is a newly added emoji reaction on one of
+// the agent's own messages that should be treated as a direct prompt.
+func (c *SignalChannel) isPromptReaction(r *signalReactionMessage) bool {
+	if r == nil || r.IsRemove || !c.reactToEmoji {
+		return false
+	}
+	return c.isOwnAuthor(r.TargetAuthor)
+}
+
+// isReplyToSelf reports whether dataMessage quotes one of the agent's own
+// messages and replies to replies are enabled.
+func (c *SignalChannel) isReplyToSelf(dataMessage *signalDataMessage) bool {
+	if !c.replyToReplies || dataMessage == nil || dataMessage.Quote == nil {
+		return false
+	}
+	return c.isOwnAuthor(dataMessage.Quote.Author)
+}
+
+// isOwnAuthor reports whether author is the agent's own phone number.
+func (c *SignalChannel) isOwnAuthor(author string) bool {
+	return c.phone != "" && author == c.phone
 }
 
 // fetchUUID calls listAccounts on the signal-cli daemon to discover and store

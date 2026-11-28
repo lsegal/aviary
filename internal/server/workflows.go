@@ -77,6 +77,13 @@ func fromAgent(cc config.ChannelConfig, msg channels.IncomingMessage) bool {
 	return from != "" && strings.EqualFold(from, strings.TrimSpace(cc.ID))
 }
 
+// workflowReplySender is the part of *channels.Manager that delivers workflow
+// replies, so tests can substitute a channel without a real platform.
+type workflowReplySender interface {
+	SendOnConfiguredChannel(agentName, channelType, configuredID, channelID, text string) error
+	SendThreadOnConfiguredChannel(agentName, channelType, configuredID, channelID, threadTS, text string) error
+}
+
 // replyToWorkflowTrigger sends a workflow run's output to the conversation
 // whose message triggered it, through that conversation's channel session so
 // the reply also shows in its chat.
@@ -85,9 +92,9 @@ func (s *Server) replyToWorkflowTrigger(agentName string, tc domain.TriggerConte
 		return agent.AppendReplyToSession(agentName, tc.SessionID, text)
 	}
 	if tc.ThreadTS != "" {
-		return s.channels.SendThreadOnConfiguredChannel(agentName, tc.ChannelType, tc.ConfiguredID, tc.Entry, tc.ThreadTS, text)
+		return s.workflowChannels.SendThreadOnConfiguredChannel(agentName, tc.ChannelType, tc.ConfiguredID, tc.Entry, tc.ThreadTS, text)
 	}
-	return s.channels.SendOnConfiguredChannel(agentName, tc.ChannelType, tc.ConfiguredID, tc.Entry, text)
+	return s.workflowChannels.SendOnConfiguredChannel(agentName, tc.ChannelType, tc.ConfiguredID, tc.Entry, text)
 }
 
 // workflowMessagesAfter returns the messages that followed a workflow run's

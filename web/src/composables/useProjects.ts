@@ -348,13 +348,19 @@ export function useProjectJob(target: Ref<string>, number: Ref<number>) {
 	};
 }
 
-/** Next runs the board's "Up next" strip shows, and the most per schedule. */
-export const UP_NEXT_RUNS = 5;
-export const UP_NEXT_PER_SCHEDULE = 3;
+/**
+ * Next runs the board's "Up next" strip loads, and the most per schedule: one,
+ * so a task that fires often doesn't push every other task out of the strip.
+ * The strip shows only runs due within UP_NEXT_WINDOW_MS, which bounds it, so
+ * the limit is a generous cap that keeps a task due soon from being cut off
+ * by others due sooner.
+ */
+export const UP_NEXT_RUNS = 50;
+export const UP_NEXT_PER_SCHEDULE = 1;
 
 /**
  * The projects' scheduled prompts, kept live, with the next runs of the
- * board's one project; a board of several has no "Up next" strip.
+ * board's projects for its "Up next" strip.
  */
 export function useProjectSchedules(
 	project: Ref<string>,
@@ -380,13 +386,13 @@ export function useProjectSchedules(
 		try {
 			const [taskText, upcomingText, agentText] = await Promise.all([
 				callTool("task_list", {}),
-				target
-					? callTool("task_upcoming", {
-							project: target,
-							limit: UP_NEXT_RUNS,
-							per_task: UP_NEXT_PER_SCHEDULE,
-						})
-					: Promise.resolve(""),
+				// One project's board asks for that project's runs; a board of
+				// several asks for every task's and keeps its projects' below.
+				callTool("task_upcoming", {
+					...(target ? { project: target } : {}),
+					limit: UP_NEXT_RUNS,
+					per_task: UP_NEXT_PER_SCHEDULE,
+				}),
 				agents.value.length ? Promise.resolve("") : callTool("agent_list", {}),
 			]);
 			if (
@@ -397,9 +403,9 @@ export function useProjectSchedules(
 				return;
 			const tasks = parseToolJSON(taskText);
 			schedules.value = projects.flatMap((t) => projectSchedules(tasks, t));
-			upcoming.value = upcomingText
-				? normalizeUpcoming(parseToolJSON(upcomingText))
-				: [];
+			upcoming.value = normalizeUpcoming(parseToolJSON(upcomingText)).filter(
+				(r) => target || projects.includes(r.project),
+			);
 			if (agentText) {
 				const list = parseToolJSON(agentText);
 				agents.value = Array.isArray(list)

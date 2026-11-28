@@ -9,8 +9,10 @@ import (
 	"sync"
 
 	cdpbrowser "github.com/chromedp/cdproto/browser"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/remote"
 )
 
 // Session wraps a chromedp browser context for a single automation session.
@@ -26,14 +28,14 @@ type Session struct {
 // an existing tab by its CDP target ID. Closing this session only disconnects
 // Go from the tab — the tab itself remains open in Chrome.
 func newRemoteSessionForTab(ctx context.Context, wsURL, tabID string) (*Session, error) {
-	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, wsURL)
+	allocCtx, cancelAlloc := remote.NewAllocator(ctx, wsURL)
 	taskCtx, cancelTask := chromedp.NewContext(
 		allocCtx,
 		chromedp.WithTargetID(target.ID(tabID)),
 		chromedp.WithErrorf(FilteredChromeDPErrorf),
 	)
 
-	if err := chromedp.Run(taskCtx); err != nil {
+	if err := chromedp.Do(taskCtx); err != nil {
 		cancelTask()
 		cancelAlloc()
 		return nil, fmt.Errorf("attaching to tab %s: %w", tabID, err)
@@ -55,11 +57,18 @@ func (s *Session) TabID() string {
 	return ""
 }
 
-// Run executes a chromedp action within the session.
-func (s *Session) Run(actions ...chromedp.Action) error {
+// Run executes chromedp actions that return no value within the session.
+func (s *Session) Run(steps ...chromedp.Action[chromedp.Void]) error {
+	_, err := runValue(s, chromedp.Steps(steps...))
+	return err
+}
+
+// runValue executes a chromedp action within the session and returns its
+// value.
+func runValue[T any](s *Session, action chromedp.Action[T]) (T, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return chromedp.Run(s.taskCtx, actions...)
+	return chromedp.Run(s.taskCtx, action)
 }
 
 // Close tears down the session context and allocator.
@@ -106,15 +115,15 @@ func isIgnorableChromeDPError(msg string) bool {
 func (s *Session) ResizeWindow(width, height int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return chromedp.Run(s.taskCtx, chromedp.ActionFunc(func(ctx context.Context) error {
-		win, _, err := cdpbrowser.GetWindowForTarget().Do(ctx)
+	return chromedp.Do(s.taskCtx, chromedp.Func(func(ctx context.Context, t *chromedp.Target) error {
+		win, err := cdp.Call(ctx, t, cdpbrowser.GetWindowForTarget, cdpbrowser.GetWindowForTargetParams{})
 		if err != nil {
 			return err
 		}
-		bounds := &cdpbrowser.Bounds{
-			Width:  int64(width),
-			Height: int64(height),
-		}
-		return cdpbrowser.SetWindowBounds(win, bounds).Do(ctx)
+		_, err = cdp.Call(ctx, t, cdpbrowser.SetWindowBounds, cdpbrowser.SetWindowBoundsParams{
+			WindowID: win.WindowID,
+			Bounds:   &cdpbrowser.Bounds{Width: int64(width), Height: int64(height)},
+		})
+		return err
 	}))
 }

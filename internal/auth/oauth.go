@@ -383,34 +383,69 @@ func AnthropicRefresh(ctx context.Context, refreshToken string) (*OAuthToken, er
 //   - state is a separate random value independent of the PKCE verifier
 //   - after code exchange the id_token is swapped for a real OpenAI API key
 func StartOpenAILogin() (*BrowserLoginStart, error) {
-	cancelPendingBrowserLogin("openai")
+	return startBrowserLogin(browserLoginSpec{
+		provider: "openai",
+		port:     OpenAICallbackPort,
+		// Codex uses "localhost" (not 127.0.0.1) and the path "/auth/callback".
+		redirectURI: fmt.Sprintf("http://localhost:%d/auth/callback", OpenAICallbackPort),
+		// Codex registers the callback at /auth/callback.
+		callbackPattern: "/auth/callback",
+		// Build the authorize URL exactly as Codex does (server.rs build_authorize_url).
+		authorizeURL: OpenAIAuthorizeURL,
+		clientID:     OpenAIClientID,
+		scope:        OpenAIScope,
+		extraParams: map[string]string{
+			"id_token_add_organizations": "true",
+			"codex_cli_simplified_flow":  "true",
+			"originator":                 openAIOriginator,
+		},
+		exchange: openAIExchange,
+	})
+}
+
+// browserLoginSpec describes a provider's PKCE browser login: where its local
+// callback server listens and how its authorize URL and token exchange look.
+type browserLoginSpec struct {
+	provider        string
+	port            int
+	redirectURI     string
+	callbackPattern string
+	authorizeURL    string
+	clientID        string
+	scope           string
+	extraParams     map[string]string
+	exchange        func(ctx context.Context, code, verifier, redirectURI string) (*OAuthToken, error)
+}
+
+// startBrowserLogin starts spec's local callback server, opens the browser to
+// the provider's consent screen, and finishes the token exchange in the
+// background once the callback arrives.
+func startBrowserLogin(spec browserLoginSpec) (*BrowserLoginStart, error) {
+	cancelPendingBrowserLogin(spec.provider)
 
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return nil, err
 	}
 
-	// Generate an independent random state (Codex does not reuse the PKCE verifier as state).
+	// Generate an independent random state (the PKCE verifier is not reused as state).
 	stateBuf := make([]byte, 16)
 	if _, err := rand.Read(stateBuf); err != nil {
 		return nil, fmt.Errorf("generating OAuth state: %w", err)
 	}
 	state := base64.RawURLEncoding.EncodeToString(stateBuf)
 
-	// Codex uses "localhost" (not 127.0.0.1) and the path "/auth/callback".
-	redirectURI := fmt.Sprintf("http://localhost:%d/auth/callback", OpenAICallbackPort)
-
 	// In sandboxed/containerized environments we bind to 0.0.0.0 so published
 	// ports can reach the callback listener from outside the container.
-	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", browserLoginListenHost(), OpenAICallbackPort))
+	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", browserLoginListenHost(), spec.port))
 	if err != nil {
-		return nil, fmt.Errorf("starting OAuth callback server on port %d: %w", OpenAICallbackPort, err)
+		return nil, fmt.Errorf("starting OAuth callback server on port %d: %w", spec.port, err)
 	}
 
 	codeCh := make(chan browserOAuthCallbackResult, 1)
 	errCh := make(chan error, 1)
 	flow := &pendingBrowserLogin{
-		callbackURL: redirectURI,
+		callbackURL: spec.redirectURI,
 		expiresAt:   time.Now().Add(BrowserLoginTimeout),
 		done:        make(chan struct{}),
 	}
@@ -421,8 +456,7 @@ func StartOpenAILogin() (*BrowserLoginStart, error) {
 		_ = srv.Shutdown(context.Background())
 		_ = ln.Close()
 	}
-	// Codex registers the callback at /auth/callback.
-	mux.HandleFunc("/auth/callback", browserOAuthCallbackHandler(state, codeCh, errCh))
+	mux.HandleFunc(spec.callbackPattern, browserOAuthCallbackHandler(state, codeCh, errCh))
 
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
@@ -433,22 +467,21 @@ func StartOpenAILogin() (*BrowserLoginStart, error) {
 		}
 	}()
 
-	// Build the authorize URL exactly as Codex does (server.rs build_authorize_url).
-	u, _ := url.Parse(OpenAIAuthorizeURL)
+	u, _ := url.Parse(spec.authorizeURL)
 	q := u.Query()
 	q.Set("response_type", "code")
-	q.Set("client_id", OpenAIClientID)
-	q.Set("redirect_uri", redirectURI)
-	q.Set("scope", OpenAIScope)
+	q.Set("client_id", spec.clientID)
+	q.Set("redirect_uri", spec.redirectURI)
+	q.Set("scope", spec.scope)
 	q.Set("code_challenge", pkce.Challenge)
 	q.Set("code_challenge_method", "S256")
-	q.Set("id_token_add_organizations", "true")
-	q.Set("codex_cli_simplified_flow", "true")
 	q.Set("state", state)
-	q.Set("originator", openAIOriginator)
+	for key, value := range spec.extraParams {
+		q.Set(key, value)
+	}
 	u.RawQuery = q.Encode()
 	flow.authorizeURL = u.String()
-	storePendingBrowserLogin("openai", flow)
+	storePendingBrowserLogin(spec.provider, flow)
 
 	go func() {
 		defer flow.shutdown()
@@ -457,11 +490,11 @@ func StartOpenAILogin() (*BrowserLoginStart, error) {
 		case <-flow.done:
 			return
 		case <-time.After(time.Until(flow.expiresAt)):
-			flow.setResult(nil, fmt.Errorf("openai OAuth login timed out after %s", BrowserLoginTimeout))
+			flow.setResult(nil, fmt.Errorf("%s OAuth login timed out after %s", spec.provider, BrowserLoginTimeout))
 		case err := <-errCh:
 			flow.setResult(nil, err)
 		case cb := <-codeCh:
-			token, err := openAIExchange(context.Background(), cb.code, pkce.Verifier, redirectURI)
+			token, err := spec.exchange(context.Background(), cb.code, pkce.Verifier, spec.redirectURI)
 			flow.setResult(token, err)
 		}
 	}()
@@ -469,7 +502,7 @@ func StartOpenAILogin() (*BrowserLoginStart, error) {
 	openErr := OpenBrowser(flow.authorizeURL)
 	start := &BrowserLoginStart{
 		AuthorizeURL:  flow.authorizeURL,
-		CallbackURL:   redirectURI,
+		CallbackURL:   spec.redirectURI,
 		BrowserOpened: openErr == nil,
 		ExpiresAt:     flow.expiresAt,
 	}
@@ -804,93 +837,20 @@ const (
 // complete the flow. The token exchange is finished by CompleteGeminiLogin.
 // Matches the google-gemini/gemini-cli authentication flow.
 func StartGeminiLogin() (*BrowserLoginStart, error) {
-	cancelPendingBrowserLogin("gemini")
-
-	pkce, err := GeneratePKCE()
-	if err != nil {
-		return nil, err
-	}
-
-	stateBuf := make([]byte, 16)
-	if _, err := rand.Read(stateBuf); err != nil {
-		return nil, fmt.Errorf("generating OAuth state: %w", err)
-	}
-	state := base64.RawURLEncoding.EncodeToString(stateBuf)
-
-	redirectURI := fmt.Sprintf("http://localhost:%d", GeminiCallbackPort)
-
-	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", browserLoginListenHost(), GeminiCallbackPort))
-	if err != nil {
-		return nil, fmt.Errorf("starting OAuth callback server on port %d: %w", GeminiCallbackPort, err)
-	}
-
-	codeCh := make(chan browserOAuthCallbackResult, 1)
-	errCh := make(chan error, 1)
-	flow := &pendingBrowserLogin{
-		callbackURL: redirectURI,
-		expiresAt:   time.Now().Add(BrowserLoginTimeout),
-		done:        make(chan struct{}),
-	}
-
-	mux := http.NewServeMux()
-	srv := &http.Server{Handler: mux}
-	flow.stop = func() {
-		_ = srv.Shutdown(context.Background())
-		_ = ln.Close()
-	}
-	mux.HandleFunc("GET /{$}", browserOAuthCallbackHandler(state, codeCh, errCh))
-
-	go func() {
-		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			select {
-			case errCh <- err:
-			default:
-			}
-		}
-	}()
-
-	u, _ := url.Parse(GeminiAuthorizeURL)
-	q := u.Query()
-	q.Set("response_type", "code")
-	q.Set("client_id", GeminiClientID)
-	q.Set("redirect_uri", redirectURI)
-	q.Set("scope", GeminiScope)
-	q.Set("code_challenge", pkce.Challenge)
-	q.Set("code_challenge_method", "S256")
-	q.Set("state", state)
-	q.Set("access_type", "offline") // request refresh token
-	q.Set("prompt", "consent")      // force consent to always get refresh token
-	u.RawQuery = q.Encode()
-	flow.authorizeURL = u.String()
-	storePendingBrowserLogin("gemini", flow)
-
-	go func() {
-		defer flow.shutdown()
-
-		select {
-		case <-flow.done:
-			return
-		case <-time.After(time.Until(flow.expiresAt)):
-			flow.setResult(nil, fmt.Errorf("gemini OAuth login timed out after %s", BrowserLoginTimeout))
-		case err := <-errCh:
-			flow.setResult(nil, err)
-		case cb := <-codeCh:
-			token, err := geminiExchange(context.Background(), cb.code, pkce.Verifier, redirectURI)
-			flow.setResult(token, err)
-		}
-	}()
-
-	openErr := OpenBrowser(flow.authorizeURL)
-	start := &BrowserLoginStart{
-		AuthorizeURL:  flow.authorizeURL,
-		CallbackURL:   redirectURI,
-		BrowserOpened: openErr == nil,
-		ExpiresAt:     flow.expiresAt,
-	}
-	if openErr != nil {
-		start.BrowserOpenErr = openErr.Error()
-	}
-	return start, nil
+	return startBrowserLogin(browserLoginSpec{
+		provider:        "gemini",
+		port:            GeminiCallbackPort,
+		redirectURI:     fmt.Sprintf("http://localhost:%d", GeminiCallbackPort),
+		callbackPattern: "GET /{$}",
+		authorizeURL:    GeminiAuthorizeURL,
+		clientID:        GeminiClientID,
+		scope:           GeminiScope,
+		extraParams: map[string]string{
+			"access_type": "offline", // request refresh token
+			"prompt":      "consent", // force consent to always get refresh token
+		},
+		exchange: geminiExchange,
+	})
 }
 
 // CompleteGeminiLogin waits for a previously started Gemini OAuth flow to

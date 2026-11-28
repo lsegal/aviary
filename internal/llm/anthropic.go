@@ -117,20 +117,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 				continue
 			}
 			if len(m.MediaURLs) > 0 {
-				blocks := make([]anthropic.ContentBlockParamUnion, 0, 1+len(m.MediaURLs))
-				if strings.TrimSpace(m.Content) != "" {
-					blocks = append(blocks, anthropic.NewTextBlock(m.Content))
-				}
-				for _, mediaURL := range m.MediaURLs {
-					if mimeType, data, ok := ParseImageDataURL(mediaURL); ok {
-						blocks = append(blocks, anthropic.NewImageBlockBase64(mimeType, data))
-					} else if _, data, ok := ParseDocumentDataURL(mediaURL); ok {
-						blocks = append(blocks, anthropic.NewDocumentBlock(anthropic.Base64PDFSourceParam{Data: data}))
-					} else if !strings.HasPrefix(mediaURL, "data:") && !strings.HasPrefix(mediaURL, "file:") {
-						blocks = append(blocks, anthropic.NewImageBlock(anthropic.URLImageSourceParam{URL: mediaURL}))
-					}
-				}
-				appendMsg(anthropic.NewUserMessage(blocks...))
+				appendMsg(anthropic.NewUserMessage(anthropicUserBlocks(m)...))
 				continue
 			}
 			appendMsg(anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
@@ -197,13 +184,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 	go func() {
 		defer close(ch)
 		var usageData *Usage
-		type pendingToolCall struct {
-			ID           string
-			Name         string
-			JSON         strings.Builder
-			HasJSONDelta bool
-		}
-		pendingCalls := map[int64]*pendingToolCall{}
+		pendingCalls := pendingToolCalls{}
 		for stream.Next() {
 			event := stream.Current()
 			switch e := event.AsAny().(type) {
@@ -219,7 +200,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 				if block, ok := e.ContentBlock.AsAny().(anthropic.ToolUseBlock); ok {
 					call := &pendingToolCall{ID: block.ID, Name: block.Name}
 					if len(block.Input) > 0 {
-						call.JSON.Write(block.Input)
+						call.Arguments.Write(block.Input)
 					}
 					pendingCalls[e.Index] = call
 				}
@@ -229,16 +210,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 					continue
 				}
 				if delta, ok := e.Delta.AsAny().(anthropic.InputJSONDelta); ok {
-					call := pendingCalls[e.Index]
-					if call == nil {
-						call = &pendingToolCall{}
-						pendingCalls[e.Index] = call
-					}
-					if !call.HasJSONDelta {
-						call.JSON.Reset()
-						call.HasJSONDelta = true
-					}
-					call.JSON.WriteString(delta.PartialJSON)
+					pendingCalls.at(e.Index).appendStreamedArguments(delta.PartialJSON)
 				}
 			case anthropic.MessageDeltaEvent:
 				// MessageDeltaEvent carries cumulative totals; input and cache
@@ -262,28 +234,8 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 			ch <- Event{Type: EventTypeError, Error: fmt.Errorf("anthropic stream: %w", err)}
 			return
 		}
-		if len(pendingCalls) > 0 {
-			indexes := make([]int, 0, len(pendingCalls))
-			for idx := range pendingCalls {
-				indexes = append(indexes, int(idx))
-			}
-			sortInts(indexes)
-			for _, idx := range indexes {
-				call := pendingCalls[int64(idx)]
-				if call == nil || strings.TrimSpace(call.Name) == "" {
-					continue
-				}
-				args, err := parseToolArguments(call.JSON.String())
-				if err != nil {
-					ch <- Event{Type: EventTypeError, Error: fmt.Errorf("anthropic tool arguments for %q: %w", call.Name, err)}
-					return
-				}
-				ch <- Event{Type: EventTypeToolCall, ToolCall: &ToolCall{
-					ID:        call.ID,
-					Name:      call.Name,
-					Arguments: args,
-				}}
-			}
+		if !pendingCalls.emit(ch, "anthropic") {
+			return
 		}
 		if usageData != nil {
 			ch <- Event{Type: EventTypeUsage, Usage: usageData}
@@ -292,6 +244,37 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req Request) (<-chan Eve
 	}()
 
 	return ch, nil
+}
+
+// anthropicUserBlocks converts a user message with media into content blocks:
+// the text (if any), then each image, PDF, or remote image URL. Other local
+// data and file URLs are dropped.
+func anthropicUserBlocks(m Message) []anthropic.ContentBlockParamUnion {
+	blocks := make([]anthropic.ContentBlockParamUnion, 0, 1+len(m.MediaURLs))
+	if strings.TrimSpace(m.Content) != "" {
+		blocks = append(blocks, anthropic.NewTextBlock(m.Content))
+	}
+	for _, mediaURL := range m.MediaURLs {
+		if block, ok := anthropicMediaBlock(mediaURL); ok {
+			blocks = append(blocks, block)
+		}
+	}
+	return blocks
+}
+
+// anthropicMediaBlock converts one media URL into a content block.
+func anthropicMediaBlock(mediaURL string) (anthropic.ContentBlockParamUnion, bool) {
+	if mimeType, data, ok := ParseImageDataURL(mediaURL); ok {
+		return anthropic.NewImageBlockBase64(mimeType, data), true
+	}
+	if _, data, ok := ParseDocumentDataURL(mediaURL); ok {
+		return anthropic.NewDocumentBlock(anthropic.Base64PDFSourceParam{Data: data}), true
+	}
+	isLocal := strings.HasPrefix(mediaURL, "data:") || strings.HasPrefix(mediaURL, "file:")
+	if isLocal {
+		return anthropic.ContentBlockParamUnion{}, false
+	}
+	return anthropic.NewImageBlock(anthropic.URLImageSourceParam{URL: mediaURL}), true
 }
 
 // newSessionID returns a random UUIDv4 for the X-Claude-Code-Session-Id

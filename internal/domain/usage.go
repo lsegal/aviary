@@ -32,6 +32,32 @@ type UsageRecord struct {
 	// Delivery is set instead of token counts on a record that logs where a
 	// task's or workflow's output was delivered.
 	Delivery *JobDelivery `json:"delivery,omitempty"`
+	// SessionName, SessionKind and SessionOwner snapshot the session as it
+	// was when the tokens were spent, so Usage still names it after the
+	// session is deleted. Kind is one of the UsageKind values; Owner is
+	// what the session belongs to, such as the issue a Code Loop job worked
+	// on, a task's "agent/task" key, or a channel.
+	SessionName  string `json:"session_name,omitempty"`
+	SessionKind  string `json:"session_kind,omitempty"`
+	SessionOwner string `json:"session_owner,omitempty"`
+}
+
+// The kinds of session a usage record's SessionKind names.
+const (
+	UsageKindChat     = "chat"
+	UsageKindJob      = "job"
+	UsageKindTask     = "task"
+	UsageKindWorkflow = "workflow"
+)
+
+// DeletedSession is the tombstone of a deleted session, kept so Usage can
+// show when the session behind its records was deleted and what it was
+// called.
+type DeletedSession struct {
+	AgentID   string    `json:"agent_id"`
+	SessionID string    `json:"session_id"`
+	Name      string    `json:"name,omitempty"`
+	DeletedAt time.Time `json:"deleted_at"`
 }
 
 // UsageSourceTaskEditor marks the tokens a task editor's live determinism

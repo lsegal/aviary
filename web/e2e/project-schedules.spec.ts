@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { boundingBoxOf } from "./helpers/box";
 import { clickCardAt } from "./helpers/cards";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 import { chooseOption, optionLabels } from "./helpers/select";
@@ -346,24 +347,136 @@ async function setup(
 	return calls;
 }
 
+// A task's next fires, each task listed as task_upcoming lists it.
+const upcomingRun = (
+	name: string,
+	minutes: number,
+	project = "lsegal/aviary",
+) => ({
+	task_id: `assistant/${name}`,
+	name,
+	project,
+	at: minutesFromNow(minutes),
+});
+
 test("a project board shows the up next strip", async ({ page }) => {
-	const calls = await setup(page);
+	const calls = await setup(page, {
+		upcoming: [
+			upcomingRun("nightly-triage", 3),
+			upcomingRun("nightly-triage", 3 + 1440),
+		],
+	});
 	await page.goto("/system/watches/lsegal%2Faviary");
 
 	const strip = page.getByTestId("up-next");
-	await expect(strip.getByTestId("up-next-run")).toHaveCount(2);
+	// One chip per task: the second nightly fire isn't listed.
+	await expect(strip.getByTestId("up-next-run")).toHaveCount(1);
 	await expect(strip.getByTestId("up-next-run").first()).toContainText(
 		"nightly-triage",
 	);
 	expect(calls.task_upcoming?.[0]).toEqual({
 		project: "lsegal/aviary",
-		limit: 5,
-		per_task: 3,
+		limit: 50,
+		per_task: 1,
 	});
 
 	// A run in the strip opens its task's page, as its card does.
 	await strip.getByTestId("up-next-run").first().click();
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/nightly-triage$/);
+});
+
+test("up next lists only runs due within five minutes, as time passes (#1577)", async ({
+	page,
+}) => {
+	await page.clock.install();
+	await setup(page, {
+		upcoming: [upcomingRun("soon", 3), upcomingRun("later", 10)],
+	});
+	await page.goto("/system/watches/lsegal%2Faviary");
+
+	const chips = page.getByTestId("up-next").getByTestId("up-next-run");
+	await expect(chips).toHaveText([/soon/]);
+
+	// Six minutes on, the 10-minute run is within the window and the 3-minute
+	// one has fired, with no reload.
+	await page.clock.fastForward("06:00");
+	await expect(chips).toHaveText([/later/]);
+
+	// Once the later run fires too, nothing is due and the strip goes.
+	await page.clock.fastForward("05:00");
+	await expect(page.getByTestId("up-next")).toHaveCount(0);
+});
+
+test("up next is hidden on a phone when nothing is due within five minutes (#1577)", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 375, height: 812 });
+	await setup(page, { upcoming: [upcomingRun("later", 10)] });
+	await page.goto("/system/watches/lsegal%2Faviary");
+	await expect(page.getByTestId("scheduled-card")).toHaveCount(2);
+	await expect(page.getByTestId("up-next")).toHaveCount(0);
+});
+
+// Fires of a task every 30 seconds, every minute, and nightly, interleaved
+// the way a server listing several fires per task returns them.
+const FREQUENT_UPCOMING = [
+	["assistant/every-30s", "every-30s", 0.5],
+	["assistant/every-minute", "every-minute", 0.8],
+	["assistant/every-30s", "every-30s", 1],
+	["assistant/every-minute", "every-minute", 1.8],
+	["assistant/every-30s", "every-30s", 1.5],
+	["assistant/every-minute", "every-minute", 2.8],
+	["assistant/nightly-triage", "nightly-triage", 4],
+].map(([task_id, name, m]) => ({
+	task_id,
+	name,
+	project: "lsegal/aviary",
+	at: minutesFromNow(m as number),
+}));
+
+test("up next shows one chip per task, soonest first (#1574)", async ({
+	page,
+}) => {
+	await setup(page, { upcoming: FREQUENT_UPCOMING });
+	await page.goto("/system/watches/lsegal%2Faviary");
+
+	const chips = page.getByTestId("up-next").getByTestId("up-next-run");
+	await expect(chips).toHaveCount(3);
+	await expect(chips.nth(0)).toContainText("every-30s");
+	await expect(chips.nth(1)).toContainText("every-minute");
+	await expect(chips.nth(2)).toContainText("nightly-triage");
+});
+
+test("up next stays one row on a phone (#1574)", async ({ page }) => {
+	await page.setViewportSize({ width: 375, height: 812 });
+	await setup(page, {
+		upcoming: [
+			...FREQUENT_UPCOMING,
+			...["weekly-report", "dependency-sweep", "stale-issues"].map(
+				(name, i) => ({
+					task_id: `assistant/${name}`,
+					name,
+					project: "lsegal/aviary",
+					at: minutesFromNow(3.2 + i / 5),
+				}),
+			),
+		],
+	});
+	await page.goto("/system/watches/lsegal%2Faviary");
+
+	const strip = page.getByTestId("up-next");
+	const chips = strip.getByTestId("up-next-run");
+	await expect(chips).toHaveCount(6);
+	// Every chip sits on the strip's one row; extra chips scroll sideways
+	// rather than wrapping the strip onto more rows.
+	const tops = new Set<number>();
+	for (const chip of await chips.all()) {
+		tops.add(Math.round((await boundingBoxOf(chip)).y));
+	}
+	expect(tops.size).toBe(1);
+	const box = await boundingBoxOf(strip);
+	const chipBox = await boundingBoxOf(chips.first());
+	expect(box.height).toBeLessThan(chipBox.height * 2);
 });
 
 test("board lists scheduled tasks as their own boxes with run details", async ({
@@ -522,13 +635,13 @@ test("scheduled cards are compact: trigger and next run share one line (#875)", 
 	await page.goto("/system/watches/lsegal%2Faviary");
 	const weekly = page.getByTestId("scheduled-card").nth(1);
 	await expect(weekly.getByTestId("scheduled-trigger")).toBeVisible();
-	const details = await weekly
-		.getByTestId("scheduled-run-details")
-		.boundingBox();
-	const trigger = await weekly.getByTestId("scheduled-trigger").boundingBox();
-	const next = await weekly.getByTestId("scheduled-next").boundingBox();
-	expect(details!.height).toBeLessThan(24);
-	expect(Math.abs(trigger!.y - next!.y)).toBeLessThan(4);
+	const details = await boundingBoxOf(
+		weekly.getByTestId("scheduled-run-details"),
+	);
+	const trigger = await boundingBoxOf(weekly.getByTestId("scheduled-trigger"));
+	const next = await boundingBoxOf(weekly.getByTestId("scheduled-next"));
+	expect(details.height).toBeLessThan(24);
+	expect(Math.abs(trigger.y - next.y)).toBeLessThan(4);
 });
 
 for (const viewport of [
@@ -550,8 +663,8 @@ for (const viewport of [
 		await expect(job).toHaveCount(1);
 		// A never-run schedule still has the output area, with its empty state.
 		await expect(scheduled.getByTestId("scheduled-empty")).toBeVisible();
-		const s = (await scheduled.boundingBox())!;
-		const j = (await job.boundingBox())!;
+		const s = await boundingBoxOf(scheduled);
+		const j = await boundingBoxOf(job);
 		if (viewport.name === "desktop") {
 			expect(Math.abs(s.y - j.y)).toBeLessThan(1);
 			expect(Math.abs(s.height - j.height)).toBeLessThan(1);
@@ -566,7 +679,7 @@ for (const viewport of [
 			role: "button" | "link",
 			name: string,
 		) => {
-			const b = (await card.getByRole(role, { name }).boundingBox())!;
+			const b = await boundingBoxOf(card.getByRole(role, { name }));
 			return b.y + b.height;
 		};
 		const sBottom = await footerBottom(scheduled, "button", "Task settings");
@@ -916,8 +1029,7 @@ test("a scheduled card's menu duplicates its task through the shared create form
 	});
 	await page.goto("/system/watches/lsegal%2Faviary");
 	const nightly = page.getByTestId("scheduled-card").first();
-	await nightly.getByTestId("scheduled-more").click();
-	await page.getByTestId("scheduled-duplicate").click();
+	await nightly.getByRole("button", { name: "Duplicate…" }).click();
 
 	const dialog = page.getByRole("dialog", { name: "Duplicate nightly-triage" });
 	await expect(dialog.getByLabel("Task name")).toHaveValue("nightly-triage-2");
@@ -1351,6 +1463,28 @@ const AGENT_BOARD = {
 	},
 };
 
+test("the agent board shows its projects' runs due within five minutes in up next (#1577)", async ({
+	page,
+}) => {
+	const calls = await setup(page, {
+		...AGENT_BOARD,
+		upcoming: [
+			upcomingRun("zvid-bench", 2, "lsegal/zvidlib"),
+			upcomingRun("nightly-triage", 4),
+			upcomingRun("elsewhere", 1, "someone/else"),
+			upcomingRun("weekly-deps", 30),
+		],
+	});
+	await page.goto("/agents/coder/projects");
+
+	const chips = page.getByTestId("up-next").getByTestId("up-next-run");
+	// Only the board's projects' runs, and only those due within the window.
+	await expect(chips).toHaveText([/zvid-bench/, /nightly-triage/]);
+	await expect(chips.first()).toHaveAttribute("title", /^lsegal\/zvidlib · /);
+	// A board of several projects asks for every task's runs.
+	expect(calls.task_upcoming?.[0]).toEqual({ limit: 50, per_task: 1 });
+});
+
 test.describe("the agent board's scheduled items (#1107)", () => {
 	test("shows every project's schedules as one card each, with its project", async ({
 		page,
@@ -1577,7 +1711,7 @@ test("the Scheduled chip counts, filters and persists with the job state chips",
 	// Scheduled alone shows only the scheduled items.
 	await chip(page, "Scheduled").click();
 	await expect(page).toHaveURL(/[?&]state=scheduled$/);
-	await expect(chip(page, "Scheduled")).toHaveClass(/bg-violet-600/);
+	await expect(chip(page, "Scheduled")).toHaveClass(/bg-violet-100/);
 	await expect(scheduled).toHaveCount(2);
 	await expect(jobs).toHaveCount(0);
 	await expect(total).toHaveText(/^2 of \d+ items$/);
@@ -1630,7 +1764,7 @@ test("a mobile board folds the filter chips into a Filter button", async ({
 	).toBeVisible();
 	await expect(toggle).toBeVisible();
 	await expect(toggle).toHaveAttribute("aria-expanded", "false");
-	await expect(toggle).toHaveText("Filter: All");
+	await expect(toggle).toHaveText("Filters");
 	await expect(group).toBeHidden();
 	await expect(page.getByTestId("kanban-toggle")).toBeVisible();
 	await expect(page.getByTestId("job-total")).toHaveText("3 items");
@@ -1656,7 +1790,7 @@ test("a mobile board folds the filter chips into a Filter button", async ({
 	await expect(page).toHaveURL(/[?&]state=running$/);
 	await expect(chip(page, "Running")).toHaveAttribute("aria-pressed", "true");
 	await chip(page, "Scheduled").click();
-	await expect(toggle).toHaveText(/^Filter: Scheduled 2, Running \d+$/);
+	await expect(toggle).toHaveText("Filters · 2");
 
 	// Esc closes the panel and returns focus to the button.
 	await page.keyboard.press("Escape");
@@ -1669,7 +1803,7 @@ test("a mobile board folds the filter chips into a Filter button", async ({
 	await expect(group).toBeVisible();
 	await group.getByRole("button", { name: "Clear" }).click();
 	await expect(page).not.toHaveURL(/state=/);
-	await expect(toggle).toHaveText("Filter: All");
+	await expect(toggle).toHaveText("Filters");
 
 	// A tap outside closes it.
 	await page.getByTestId("job-total").click();
@@ -1679,7 +1813,7 @@ test("a mobile board folds the filter chips into a Filter button", async ({
 	await toggle.click();
 	await chip(page, "Running").click();
 	await page.reload();
-	await expect(toggle).toHaveText(/^Filter: Running \d+$/);
+	await expect(toggle).toHaveText("Filters · 1");
 
 	// Desktop widths show the inline chips and no Filter button.
 	await page.setViewportSize({ width: 1280, height: 720 });
@@ -2183,13 +2317,13 @@ test.describe("a running scheduled card keeps its size (#1157)", () => {
 		const cards = page.getByTestId("scheduled-card");
 		const boxes = [];
 		for (let i = 0; i < (await cards.count()); i++)
-			boxes.push((await cards.nth(i).boundingBox())!);
+			boxes.push(await boundingBoxOf(cards.nth(i)));
 		const footerTops = await footerButtonTops(
 			cards.nth(1).getByTestId("scheduled-footer"),
 		);
-		const grid = (await page
-			.getByRole("region", { name: "Jobs" })
-			.boundingBox())!;
+		const grid = await boundingBoxOf(
+			page.getByRole("region", { name: "Jobs" }),
+		);
 		return { cards: boxes, footerTops, gridHeight: grid.height };
 	}
 	function expectSameLayout(actual: Layout, expected: Layout) {
@@ -2260,55 +2394,59 @@ test.describe("a running scheduled card keeps its size (#1157)", () => {
 		});
 	}
 
-	test("a narrow card folds Settings and Pause into a menu instead of wrapping", async ({
-		page,
-	}) => {
-		await page.setViewportSize({ width: 390, height: 844 });
-		const calls = await setup(page, {
-			tasks: TASKS_1157,
-			entries: [runningEntry],
-		});
-		await page.goto("/system/watches/lsegal%2Faviary");
-		const release = page.getByTestId("scheduled-card").nth(1);
-		await expect(release.getByTestId("scheduled-running")).toBeVisible();
-		const footer = release.getByTestId("scheduled-footer");
-		await expect(
-			footer.getByRole("button", { name: "Task settings" }),
-		).toBeVisible();
-		await expect(release.getByTestId("scheduled-more")).toBeVisible();
+	for (const width of [1280, 390]) {
+		test(`the footer shows each action once as a button, with no menu, at ${width}px (#1486)`, async ({
+			page,
+		}) => {
+			await page.setViewportSize({ width, height: 844 });
+			const calls = await setup(page, {
+				tasks: TASKS_1157,
+				entries: [runningEntry],
+			});
+			await page.goto("/system/watches/lsegal%2Faviary");
+			const release = page.getByTestId("scheduled-card").nth(1);
+			await expect(release.getByTestId("scheduled-running")).toBeVisible();
+			const footer = release.getByTestId("scheduled-footer");
+			const actions = ["Run now", "Pause", "Duplicate…", "Task settings"];
+			const check = async () => {
+				for (const name of actions) {
+					await expect(footer.getByRole("button", { name })).toBeVisible();
+				}
+				await expect(
+					release.getByRole("button", { name: "More actions" }),
+				).toHaveCount(0);
+				await expect(release.getByTestId("scheduled-more")).toHaveCount(0);
+				const tops = await footerButtonTops(footer);
+				// One row: Run now, Pause, Duplicate and the gear, always last.
+				expect(tops.length).toBe(4);
+				expect(new Set(tops).size).toBe(1);
+				const footerBox = await boundingBoxOf(footer);
+				const cardBox = await boundingBoxOf(release);
+				expect(footerBox.x + footerBox.width).toBeLessThanOrEqual(
+					cardBox.x + cardBox.width + 1,
+				);
+				const gear = await boundingBoxOf(
+					footer.getByRole("button", { name: "Task settings" }),
+				);
+				expect(gear.x + gear.width).toBeLessThanOrEqual(
+					cardBox.x + cardBox.width,
+				);
+			};
+			await check();
 
-		// Squeeze the card below the footer's width.
-		await release.evaluate((el) => {
-			(el as HTMLElement).style.width = "240px";
-		});
-		await expect(release.getByTestId("scheduled-more")).toBeVisible();
-		await expect(
-			footer.getByRole("button", { name: "Task settings" }),
-		).toBeHidden();
-		await expect(footer.getByRole("button", { name: "Pause" })).toBeHidden();
-		const tops = await footerButtonTops(footer);
-		// Run now and More actions; the gear folds into the menu.
-		expect(tops.length).toBe(2);
-		expect(new Set(tops).size).toBe(1);
-		const footerBox = (await footer.boundingBox())!;
-		const cardBox = (await release.boundingBox())!;
-		expect(footerBox.x + footerBox.width).toBeLessThanOrEqual(
-			cardBox.x + cardBox.width + 1,
-		);
+			// Squeezed narrower than any board column, every action stays a
+			// button on one row instead of folding into a menu.
+			await release.evaluate((el) => {
+				(el as HTMLElement).style.width = "220px";
+			});
+			await check();
 
-		await release.getByTestId("scheduled-more").click();
-		// Task settings stays the last action in the folded menu (#1165).
-		await expect(
-			page.getByTestId("scheduled-more-items").getByRole("menuitem"),
-		).toHaveText(["Duplicate…", "Pause", "Task settings"]);
-		await page
-			.getByTestId("scheduled-more-items")
-			.getByRole("menuitem", { name: "Pause" })
-			.click();
-		await expect.poll(() => calls.task_update?.length ?? 0).toBe(1);
-		expect(calls.task_update[0]).toMatchObject({
-			name: "assistant/aviary-release",
-			enabled: false,
+			await footer.getByRole("button", { name: "Pause" }).click();
+			await expect.poll(() => calls.task_update?.length ?? 0).toBe(1);
+			expect(calls.task_update[0]).toMatchObject({
+				name: "assistant/aviary-release",
+				enabled: false,
+			});
 		});
-	});
+	}
 });

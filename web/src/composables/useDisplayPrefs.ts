@@ -6,6 +6,11 @@ import {
 	defaultDisplayPrefs,
 	normalizeDisplayPrefs,
 } from "../lib/displayPrefs";
+import {
+	clearPreferencesLocally,
+	requestPreferences,
+	storePreferencesLocally,
+} from "../lib/preferencesApi";
 import { useAuthStore } from "../stores/auth";
 
 // The user's display preferences (#1093). As with the navigation
@@ -38,46 +43,16 @@ function apply() {
 systemDark.addEventListener("change", apply);
 apply();
 
-function storeLocally(value: DisplayPrefs) {
-	try {
-		localStorage.setItem(DISPLAY_STORAGE_KEY, JSON.stringify(value));
-	} catch {
-		// Private browsing can refuse storage; the server copy still applies.
-	}
-}
-
-/** The server's reply to a display preferences request, as sent. */
-async function request(
-	method: "GET" | "PUT" | "DELETE",
-	body?: DisplayPrefs,
-): Promise<unknown> {
-	const token = useAuthStore().getToken();
-	try {
-		const res = await fetch(ENDPOINT, {
-			method,
-			headers: {
-				...(token ? { Authorization: `Bearer ${token}` } : {}),
-				...(body ? { "Content-Type": "application/json" } : {}),
-			},
-			body: body ? JSON.stringify(body) : undefined,
-		});
-		if (!res.ok) return undefined;
-		return await res.json();
-	} catch {
-		return undefined;
-	}
-}
-
 function show(next: DisplayPrefs) {
 	prefs.value = next;
-	storeLocally(next);
+	storePreferencesLocally(DISPLAY_STORAGE_KEY, next);
 	apply();
 }
 
 export function useDisplayPrefs() {
 	if (!loaded && useAuthStore().isLoggedIn) {
 		loaded = true;
-		void request("GET").then((remote) => {
+		void requestPreferences(ENDPOINT, "GET").then((remote) => {
 			if (remote) show(normalizeDisplayPrefs(remote));
 		});
 	}
@@ -87,17 +62,13 @@ export function useDisplayPrefs() {
 		set(change: Partial<DisplayPrefs>) {
 			const next = { ...prefs.value, ...change };
 			show(next);
-			void request("PUT", next);
+			void requestPreferences(ENDPOINT, "PUT", next);
 		},
 		/** Restores the default display, here and on the server. */
 		reset() {
 			show(defaultDisplayPrefs());
-			try {
-				localStorage.removeItem(DISPLAY_STORAGE_KEY);
-			} catch {
-				// Nothing stored.
-			}
-			void request("DELETE");
+			clearPreferencesLocally(DISPLAY_STORAGE_KEY);
+			void requestPreferences(ENDPOINT, "DELETE");
 		},
 	};
 }

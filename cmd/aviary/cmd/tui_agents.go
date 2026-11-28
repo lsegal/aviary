@@ -549,21 +549,28 @@ func (m agentMgrModel) updateChannels(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m agentMgrModel) updateChannelEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m.updateFieldEditor(msg, agentModeChannels, len(m.channelFieldLabels()), agentMgrModel.activateChannelField)
+}
+
+// updateFieldEditor handles navigation keys for a field list editor: esc
+// returns to backMode, arrows move between fieldCount fields, and enter or
+// space runs activate on the selected field.
+func (m agentMgrModel) updateFieldEditor(msg tea.KeyMsg, backMode agentMgrMode, fieldCount int, activate func(agentMgrModel) (tea.Model, tea.Cmd)) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "esc":
-		m.mode = agentModeChannels
+		m.mode = backMode
 	case "up", "k", "shift+tab":
 		if m.fieldCursor > 0 {
 			m.fieldCursor--
 		}
 	case "down", "j", "tab":
-		if m.fieldCursor < len(m.channelFieldLabels())-1 {
+		if m.fieldCursor < fieldCount-1 {
 			m.fieldCursor++
 		}
 	case "enter", " ":
-		return m.activateChannelField()
+		return activate(m)
 	}
 	return m, nil
 }
@@ -645,23 +652,7 @@ func (m agentMgrModel) updateTasks(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m agentMgrModel) updateTaskEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
-		return m, tea.Quit
-	case "esc":
-		m.mode = agentModeTasks
-	case "up", "k", "shift+tab":
-		if m.fieldCursor > 0 {
-			m.fieldCursor--
-		}
-	case "down", "j", "tab":
-		if m.fieldCursor < len(m.taskFieldLabels())-1 {
-			m.fieldCursor++
-		}
-	case "enter", " ":
-		return m.activateTaskField()
-	}
-	return m, nil
+	return m.updateFieldEditor(msg, agentModeTasks, len(m.taskFieldLabels()), agentMgrModel.activateTaskField)
 }
 
 func (m agentMgrModel) activateTaskField() (tea.Model, tea.Cmd) {
@@ -955,20 +946,31 @@ func (m *agentMgrModel) compactDraftPermissions() {
 		if len(perms.Exec.AllowedCommands) == 0 {
 			perms.Exec.AllowedCommands = nil
 		}
-		if len(perms.Exec.AllowedCommands) == 0 && !perms.Exec.ShellInterpolate && strings.TrimSpace(perms.Exec.Shell) == "" {
+		if execPermissionsEmpty(perms.Exec) {
 			perms.Exec = nil
 		}
 	}
 	if config.EffectivePermissionsPreset(perms) == config.PermissionsPresetStandard {
 		perms.Preset = ""
 	}
-	if len(perms.Tools) == 0 &&
-		len(perms.DisabledTools) == 0 &&
-		perms.Filesystem == nil &&
-		perms.Exec == nil &&
-		perms.Preset == "" {
+	if permissionsEmpty(perms) {
 		m.draft.Permissions = nil
 	}
+}
+
+// execPermissionsEmpty reports whether exec permissions grant nothing beyond
+// the defaults.
+func execPermissionsEmpty(exec *config.ExecPermissionsConfig) bool {
+	noCommands := len(exec.AllowedCommands) == 0
+	defaultShell := !exec.ShellInterpolate && strings.TrimSpace(exec.Shell) == ""
+	return noCommands && defaultShell
+}
+
+// permissionsEmpty reports whether perms carries no settings at all.
+func permissionsEmpty(perms *config.PermissionsConfig) bool {
+	noToolLists := len(perms.Tools) == 0 && len(perms.DisabledTools) == 0
+	noSandbox := perms.Filesystem == nil && perms.Exec == nil
+	return noToolLists && noSandbox && perms.Preset == ""
 }
 
 func (m agentMgrModel) channelFieldLabels() []string {

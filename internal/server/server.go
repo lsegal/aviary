@@ -56,6 +56,7 @@ type Server struct {
 	sched             *scheduler.Scheduler
 	channels          *channels.Manager
 	daemonChannels    daemonChannelSource // s.channels; replaced in tests
+	workflowChannels  workflowReplySender // s.channels; replaced in tests
 	brw               *browser.Manager
 	sampler           *ProcSampler
 	watcher           *config.Watcher
@@ -131,6 +132,7 @@ func New(cfg *config.Config, token string) *Server {
 
 	s.channels = channels.NewManager()
 	s.daemonChannels = s.channels
+	s.workflowChannels = s.channels
 	if s.sched != nil {
 		s.sched.SetTaskOutputDelivery(s.deliverOutput)
 		s.sched.SetWorkflowHooks(s.replyToWorkflowTrigger, workflowMessagesAfter)
@@ -176,7 +178,7 @@ func New(cfg *config.Config, token string) *Server {
 		s.sched.SetTaskCompiler(func(ctx context.Context, agentName, taskName string) (string, error) {
 			return mcp.EnsureTaskCompiled(ctx, agentName, taskName, "run")
 		})
-		s.sched.SetTaskScriptReporter(mcp.RecordTaskScriptResult)
+		s.sched.SetTaskScriptReporter(s.recordTaskScriptResult)
 	}
 
 	// Inject deps into MCP tool handlers.
@@ -192,6 +194,11 @@ func New(cfg *config.Config, token string) *Server {
 		Notifier:      s.notifier,
 	})
 	agent.SetToolClientFactory(mcp.NewAgentToolClient)
+	if restored, err := mcp.MigrateAutoDisabledPrecompile(); err != nil {
+		slog.Warn("server: failed to restore precompile on tasks changed after script failures", "err", err)
+	} else if len(restored) > 0 {
+		slog.Info("server: restored precompile on tasks changed after script failures", "tasks", restored)
+	}
 	replies := newChatReplies(func(e notify.Event) { s.emit(e) })
 	agent.SetSessionMessageObserver(func(agentID, sessionID, role string) {
 		wsBroadcast(wsEvent{Type: "session_message", AgentID: agentID, SessionID: sessionID, Role: role})
@@ -1165,11 +1172,12 @@ func tlsConfigChanged(a, b config.TLSConfig) bool {
 // serverSettingsChanged reports whether a config change affects server-level
 // settings that require a restart (port, TLS mode, bind address).
 func serverSettingsChanged(oldCfg, newCfg *config.Config) bool {
-	return oldCfg.Server.Port != newCfg.Server.Port ||
-		config.EffectiveServerExternalAccess(oldCfg.Server) != config.EffectiveServerExternalAccess(newCfg.Server) ||
-		config.EffectiveServerNoTLS(oldCfg.Server) != config.EffectiveServerNoTLS(newCfg.Server) ||
-		oldCfg.Server.DisableTokenAuth != newCfg.Server.DisableTokenAuth ||
+	listenerChanged := oldCfg.Server.Port != newCfg.Server.Port ||
+		config.EffectiveServerExternalAccess(oldCfg.Server) != config.EffectiveServerExternalAccess(newCfg.Server)
+	tlsChanged := config.EffectiveServerNoTLS(oldCfg.Server) != config.EffectiveServerNoTLS(newCfg.Server) ||
 		tlsConfigChanged(config.EffectiveServerTLS(oldCfg.Server), config.EffectiveServerTLS(newCfg.Server))
+	authChanged := oldCfg.Server.DisableTokenAuth != newCfg.Server.DisableTokenAuth
+	return listenerChanged || tlsChanged || authChanged
 }
 
 // Addr returns the server address string.

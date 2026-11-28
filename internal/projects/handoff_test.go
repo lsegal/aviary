@@ -653,7 +653,7 @@ func TestAuthorizedDirectMentionRequiresLastCommentMentionAndAllowedAuthor(t *te
 	comments := newFakeCommentClient()
 	comments.inject("o/r", 1, Comment{Body: "Please retry @/aviary:SELF", Author: "lsegal", CreatedAt: time.Now()})
 
-	authorized, err := authorizedDirectMention(ctx, comments, "o/r", 1, func(body string) bool { return mentionedIdentity(body, "SELF") }, nil)
+	authorized, err := authorizedDirectMention(ctx, comments, "o/r", 1, mentionPolicy{addressed: func(body string) bool { return mentionedIdentity(body, "SELF") }, allowed: nil})
 	if err != nil {
 		t.Fatalf("authorizedDirectMention: %v", err)
 	}
@@ -661,7 +661,7 @@ func TestAuthorizedDirectMentionRequiresLastCommentMentionAndAllowedAuthor(t *te
 		t.Fatal("expected the mention to authorize when it is the last comment and no allow list is set")
 	}
 
-	authorized, err = authorizedDirectMention(ctx, comments, "o/r", 1, func(body string) bool { return mentionedIdentity(body, "SELF") }, []string{"someone-else"})
+	authorized, err = authorizedDirectMention(ctx, comments, "o/r", 1, mentionPolicy{addressed: func(body string) bool { return mentionedIdentity(body, "SELF") }, allowed: []string{"someone-else"}})
 	if err != nil {
 		t.Fatalf("authorizedDirectMention: %v", err)
 	}
@@ -670,7 +670,7 @@ func TestAuthorizedDirectMentionRequiresLastCommentMentionAndAllowedAuthor(t *te
 	}
 
 	comments.inject("o/r", 1, Comment{Body: "unrelated follow-up", Author: "lsegal", CreatedAt: time.Now()})
-	authorized, err = authorizedDirectMention(ctx, comments, "o/r", 1, func(body string) bool { return mentionedIdentity(body, "SELF") }, nil)
+	authorized, err = authorizedDirectMention(ctx, comments, "o/r", 1, mentionPolicy{addressed: func(body string) bool { return mentionedIdentity(body, "SELF") }, allowed: nil})
 	if err != nil {
 		t.Fatalf("authorizedDirectMention: %v", err)
 	}

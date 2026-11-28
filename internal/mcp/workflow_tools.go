@@ -126,7 +126,10 @@ func recentChannelMessages(a config.AgentConfig, idx int, entry string, limit in
 // with the message trigger, which runs when a matching message arrives on
 // the channel instead of on a schedule.
 func createWorkflow(args taskScheduleArgs) (*sdkmcp.CallToolResult, struct{}, error) {
-	if strings.TrimSpace(args.In) != "" || strings.TrimSpace(args.Schedule) != "" || args.Every != "" || args.At != "" || args.Days != "" || args.StartAt != "" || args.RunOnce || args.Missed != "" {
+	hasTiming := strings.TrimSpace(args.In) != "" || strings.TrimSpace(args.Schedule) != "" || args.StartAt != ""
+	hasRecurrence := args.Every != "" || args.At != "" || args.Days != ""
+	hasOptions := args.RunOnce || args.Missed != ""
+	if hasTiming || hasRecurrence || hasOptions {
 		return nil, struct{}{}, fmt.Errorf("workflows are triggered by messages and take no schedule, in, every, at, days, start_at, run_once or missed")
 	}
 	taskType := strings.ToLower(strings.TrimSpace(args.Type))

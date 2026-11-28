@@ -32,7 +32,7 @@ func TestCommandRunnerRecordsJobUsage(t *testing.T) {
 		RecordUsage: func(rec domain.UsageRecord) { records = append(records, rec) },
 	}
 	session := AgentSession{ID: "session-7", Agent: "claude/opus", Resume: true}
-	if err := runner.RunSession(context.Background(), Issue{Number: 7, Target: "o/r"}, session, ignoreSessionUpdate); err != nil {
+	if err := runner.RunSession(context.Background(), Issue{Number: 7, Target: "o/r", Title: "Fix the parser"}, session, ignoreSessionUpdate); err != nil {
 		t.Fatalf("RunSession() error = %v", err)
 	}
 	if len(records) != 1 {
@@ -41,10 +41,19 @@ func TestCommandRunnerRecordsJobUsage(t *testing.T) {
 	got := records[0]
 	got.Timestamp = time.Time{}
 	want := domain.UsageRecord{
-		SessionID: "o/r#7", AgentID: UsageAgentID, Model: "opus", Provider: "claude",
+		SessionID: "o/r#7", AgentID: UsageAgentID, Model: "claude/opus", Provider: "claude",
 		InputTokens: 10, OutputTokens: 4, CacheReadTokens: 30, CacheWriteTokens: 2, ToolCalls: 1, CostUSD: 0.25,
+		// The job's issue names its session in Usage, even once the job is
+		// cleared.
+		SessionName: "Fix the parser", SessionKind: domain.UsageKindJob, SessionOwner: "o/r#7",
 	}
 	if got != want {
 		t.Fatalf("usage record = %+v, want %+v", got, want)
+	}
+}
+
+func TestJobUsageNameFallsBackToIssueKey(t *testing.T) {
+	if got := jobUsageName(Issue{Number: 3, Target: "o/r"}); got != "o/r#3" {
+		t.Fatalf("jobUsageName() = %q, want the issue key", got)
 	}
 }

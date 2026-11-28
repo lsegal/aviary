@@ -42,6 +42,16 @@ Exits with status 1 if any errors are found.`,
 	RunE: runDoctor,
 }
 
+// newDoctorCLIProbe builds the doctor that probes CLI backends, and
+// doctorPingModel checks one provider model's credentials. Tests replace
+// them so the doctor's output can be checked without real CLIs or network.
+var (
+	newDoctorCLIProbe = clidoctor.New
+	doctorPingModel   = func(ctx context.Context, factory *llm.Factory, model string) error {
+		return factory.PingModel(ctx, model)
+	}
+)
+
 func init() {
 	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "Archive orphaned sessions as regular chats")
 	doctorCmd.Flags().BoolVar(&doctorDisableVersion, "disable-version-check", false, "Skip the GitHub release version check and upgrade prompt")
@@ -238,7 +248,7 @@ func writeDoctorModelCredentials(cfg *config.Config, getSecret func(string) (str
 	for provider, model := range providerModels {
 		_, _ = fmt.Fprintf(os.Stdout, "  %-12s ", provider)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		pingErr := factory.PingModel(ctx, model)
+		pingErr := doctorPingModel(ctx, factory, model)
 		cancel()
 		if pingErr != nil {
 			_, _ = fmt.Fprintf(os.Stdout, "[ERROR] %v\n", pingErr)
@@ -258,7 +268,7 @@ func writeDoctorCLIBackends(cfg *config.Config, registry *clidefs.Registry) int 
 		return 0
 	}
 	writeDoctorSection("CLI backends", "────────────")
-	doctor := clidoctor.New(registry)
+	doctor := newDoctorCLIProbe(registry)
 	nerrs := 0
 	for _, b := range backends {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

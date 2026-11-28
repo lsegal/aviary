@@ -218,13 +218,24 @@ func (s *Server) transcriptionHandler(w http.ResponseWriter, r *http.Request) {
 	writeTranscriptionJSON(w, http.StatusOK, resp)
 }
 
+// mediaRelPath returns path relative to root, and whether it names an audio
+// file inside root.
+func mediaRelPath(root, path string) (string, bool) {
+	rel, err := filepath.Rel(root, filepath.Clean(path))
+	if err != nil {
+		return "", false
+	}
+	escapesRoot := rel == "." || strings.Contains(rel, "..") || filepath.IsAbs(rel)
+	return rel, !escapesRoot && channels.LooksLikeAudioFile(rel)
+}
+
 // mediaHandler handles GET /api/media?path=…, serving saved incoming audio
 // so chat history can play voice messages. Only audio files under the
 // media directory are served.
 func mediaHandler(w http.ResponseWriter, r *http.Request) {
 	root := filepath.Clean(store.MediaDir())
-	rel, err := filepath.Rel(root, filepath.Clean(r.URL.Query().Get("path")))
-	if err != nil || rel == "." || strings.Contains(rel, "..") || filepath.IsAbs(rel) || !channels.LooksLikeAudioFile(rel) {
+	rel, ok := mediaRelPath(root, r.URL.Query().Get("path"))
+	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}

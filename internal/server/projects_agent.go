@@ -52,6 +52,7 @@ func (s *Server) runProjectsJobTurn(ctx context.Context, run projects.AviaryAgen
 		return fmt.Errorf("opening agent %q's session: %w", run.Agent, err)
 	}
 	ctx = agent.WithSessionID(ctx, sess.ID)
+	ctx = agent.WithUsageSession(ctx, run.Usage)
 	if run.Workdir != "" {
 		ctx = agent.WithFilesystemGrant(ctx, run.Workdir)
 	}

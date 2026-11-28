@@ -284,3 +284,219 @@ func TestSignInGuardRecordsAndStillFailsThePoll(t *testing.T) {
 		t.Fatal("a successful read left the banner up")
 	}
 }
+
+// fakeHandover records the order the recovery hands the profile over in.
+type fakeHandover struct {
+	events     *[]string
+	suspendErr error
+	resumeErr  error
+}
+
+func (h fakeHandover) Suspend() error { *h.events = append(*h.events, "suspend"); return h.suspendErr }
+func (h fakeHandover) Resume() error  { *h.events = append(*h.events, "resume"); return h.resumeErr }
+
+func TestNewSignInRecoveryWiresHandoverLoginAndTimeout(t *testing.T) {
+	var events, logs []string
+	var gotConfig Config
+	var gotTimeout time.Duration
+	recovery := NewSignInRecovery(fakeHandover{events: &events}, Config{Profile: "/tmp/wired"}, SignIn{
+		Login: func(_ context.Context, config Config, out io.Writer, timeout time.Duration) (string, error) {
+			events = append(events, "login")
+			gotConfig, gotTimeout = config, timeout
+			// The flow's progress line lands in the run's log; blank chunks do not.
+			_, _ = fmt.Fprint(out, "  \n")
+			_, _ = fmt.Fprint(out, "waiting for the sign-in to finish\n")
+			return "octocat", nil
+		},
+		Headed:  func() error { return nil },
+		Timeout: 3 * time.Minute,
+	}, func(format string, args ...interface{}) { logs = append(logs, fmt.Sprintf(format, args...)) })
+
+	login, err := recovery.SignIn(context.Background())
+	if err != nil || login != "octocat" {
+		t.Fatalf("SignIn() = %q, %v; want octocat, nil", login, err)
+	}
+	if got := strings.Join(events, ","); got != "suspend,login,resume" {
+		t.Fatalf("handover order = %s, want suspend,login,resume", got)
+	}
+	if gotConfig.Profile != "/tmp/wired" || gotTimeout != 3*time.Minute {
+		t.Fatalf("login got profile %q timeout %v, want /tmp/wired 3m", gotConfig.Profile, gotTimeout)
+	}
+	progress := 0
+	for _, line := range logs {
+		if strings.TrimSpace(strings.TrimPrefix(line, "browser:")) == "" {
+			t.Fatalf("blank progress chunk reached the log: %q", line)
+		}
+		if line == "browser: waiting for the sign-in to finish" {
+			progress++
+		}
+	}
+	if progress != 1 {
+		t.Fatalf("progress line logged %d times, want 1: %q", progress, logs)
+	}
+
+	// The clock is the real one: a signed-out read is stamped with now.
+	before := time.Now()
+	recovery.attempt(context.Background(), ErrSignedOut)
+	if since := recovery.State().Since; since.Before(before) || since.After(time.Now()) {
+		t.Fatalf("signed-out spell stamped %v, want between %v and now", since, before)
+	}
+}
+
+func TestNewSignInRecoveryReportsHandoverFailures(t *testing.T) {
+	var events, logs []string
+	logf := func(format string, args ...interface{}) { logs = append(logs, fmt.Sprintf(format, args...)) }
+	signIn := SignIn{
+		Login: func(context.Context, Config, io.Writer, time.Duration) (string, error) {
+			events = append(events, "login")
+			return "octocat", nil
+		},
+		Headed: func() error { return nil },
+	}
+
+	recovery := NewSignInRecovery(fakeHandover{events: &events, suspendErr: errors.New("chrome busy")}, Config{}, signIn, logf)
+	if _, err := recovery.SignIn(context.Background()); err == nil || !strings.Contains(err.Error(), "chrome busy") {
+		t.Fatalf("SignIn() error = %v, want the suspend failure", err)
+	}
+	if got := strings.Join(events, ","); got != "suspend" {
+		t.Fatalf("a failed suspend still ran %s", got)
+	}
+	if !strings.Contains(recovery.State().LastError, "chrome busy") {
+		t.Fatalf("banner error = %q, want the suspend failure", recovery.State().LastError)
+	}
+
+	events, logs = nil, nil
+	recovery = NewSignInRecovery(fakeHandover{events: &events, resumeErr: errors.New("relaunch failed")}, Config{}, signIn, logf)
+	if login, err := recovery.SignIn(context.Background()); err != nil || login != "octocat" {
+		t.Fatalf("SignIn() = %q, %v; a resume failure must not fail the sign-in", login, err)
+	}
+	found := false
+	for _, line := range logs {
+		if strings.Contains(line, "could not restart the headless browser") && strings.Contains(line, "relaunch failed") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("resume failure not logged: %q", logs)
+	}
+}
+
+func TestNewSignInRecoveryReportsAMissingWindow(t *testing.T) {
+	var events []string
+	recovery := NewSignInRecovery(fakeHandover{events: &events}, Config{}, SignIn{
+		Headed: func() error { return errors.New("no display") },
+	}, func(string, ...interface{}) {})
+	if got := recovery.State().WindowUnavailable; got != "no display" {
+		t.Fatalf("WindowUnavailable = %q, want no display", got)
+	}
+	if _, err := recovery.SignIn(context.Background()); !errors.Is(err, ErrSignInWindowUnavailable) {
+		t.Fatalf("SignIn() error = %v, want ErrSignInWindowUnavailable", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("handover ran %v on a machine with no window", events)
+	}
+}
+
+func TestSignInRecoveryLogWriter(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		chunk string
+		want  []string
+	}{
+		{name: "empty chunk logs nothing", chunk: "", want: nil},
+		{name: "whitespace chunk logs nothing", chunk: " \t\r\n", want: nil},
+		{name: "text is trimmed and prefixed", chunk: "  opened the sign-in page\n", want: []string{"browser: opened the sign-in page"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var logs []string
+			recovery := &SignInRecovery{logf: func(format string, args ...interface{}) { logs = append(logs, fmt.Sprintf(format, args...)) }}
+			var out io.Writer = recovery.logWriter()
+			n, err := out.Write([]byte(test.chunk))
+			if err != nil || n != len(test.chunk) {
+				t.Fatalf("Write() = %d, %v; want %d, nil", n, err, len(test.chunk))
+			}
+			if strings.Join(logs, "|") != strings.Join(test.want, "|") {
+				t.Fatalf("logged %q, want %q", logs, test.want)
+			}
+		})
+	}
+}
+
+// capableIssueSource implements every optional interface the guard forwards.
+type capableIssueSource struct {
+	guardedIssueSource
+	err error
+}
+
+func (s *capableIssueSource) OriginatingWorkState(_ context.Context, repo string, number int) (core.OriginatingWorkState, error) {
+	return core.OriginatingWorkState{IssueState: fmt.Sprintf("%s#%d", repo, number)}, s.err
+}
+
+func (s *capableIssueSource) StacksEnabled(_ context.Context, repo string) (bool, error) {
+	return repo == "lsegal/stacked", s.err
+}
+
+func (s *capableIssueSource) HydrateIssue(_ context.Context, repo string, issue *core.Issue) error {
+	issue.Title = "hydrated from " + repo
+	return s.err
+}
+
+func TestSignInGuardForwardsOptionalReads(t *testing.T) {
+	ctx := context.Background()
+	source := &capableIssueSource{}
+	guard := NewSignInGuard(source, nil)
+
+	state, err := guard.OriginatingWorkState(ctx, "lsegal/aviary", 7)
+	if err != nil || state.IssueState != "lsegal/aviary#7" {
+		t.Fatalf("OriginatingWorkState() = %+v, %v; want the wrapped source's answer", state, err)
+	}
+	if enabled, err := guard.StacksEnabled(ctx, "lsegal/stacked"); err != nil || !enabled {
+		t.Fatalf("StacksEnabled(stacked) = %v, %v; want true, nil", enabled, err)
+	}
+	if enabled, err := guard.StacksEnabled(ctx, "lsegal/plain"); err != nil || enabled {
+		t.Fatalf("StacksEnabled(plain) = %v, %v; want false, nil", enabled, err)
+	}
+	issue := &core.Issue{Number: 7}
+	if err := guard.HydrateIssue(ctx, "lsegal/aviary", issue); err != nil || issue.Title != "hydrated from lsegal/aviary" {
+		t.Fatalf("HydrateIssue() = %v, title %q; want the wrapped source's answer", err, issue.Title)
+	}
+
+	// Errors from the wrapped source come back unchanged.
+	source.err = errors.New("api down")
+	if _, err := guard.OriginatingWorkState(ctx, "lsegal/aviary", 7); !errors.Is(err, source.err) {
+		t.Fatalf("OriginatingWorkState() error = %v, want api down", err)
+	}
+	if _, err := guard.StacksEnabled(ctx, "lsegal/aviary"); !errors.Is(err, source.err) {
+		t.Fatalf("StacksEnabled() error = %v, want api down", err)
+	}
+	if err := guard.HydrateIssue(ctx, "lsegal/aviary", issue); !errors.Is(err, source.err) {
+		t.Fatalf("HydrateIssue() error = %v, want api down", err)
+	}
+}
+
+func TestSignInGuardWithoutOptionalReads(t *testing.T) {
+	ctx := context.Background()
+	guard := NewSignInGuard(&guardedIssueSource{}, nil)
+
+	if _, err := guard.OriginatingWorkState(ctx, "lsegal/aviary", 7); err == nil || !strings.Contains(err.Error(), "#7") || !strings.Contains(err.Error(), "cannot report work state") {
+		t.Fatalf("OriginatingWorkState() error = %v, want a cannot-report error naming #7", err)
+	}
+	// A source with no stacks support reads as "not enabled", not a failure.
+	if enabled, err := guard.StacksEnabled(ctx, "lsegal/aviary"); err != nil || enabled {
+		t.Fatalf("StacksEnabled() = %v, %v; want false, nil", enabled, err)
+	}
+	if err := guard.HydrateIssue(ctx, "lsegal/aviary", &core.Issue{Number: 9}); err == nil || !strings.Contains(err.Error(), "#9") || !strings.Contains(err.Error(), "cannot read issues") {
+		t.Fatalf("HydrateIssue() error = %v, want a cannot-read error naming #9", err)
+	}
+}
+
+func TestNilSignInRecoveryIsANoOp(t *testing.T) {
+	// Modes without a browser profile have no recovery; the guard and the
+	// board still call through it.
+	var recovery *SignInRecovery
+	recovery.attempt(context.Background(), ErrSignedOut)
+	recovery.clear()
+	if state := recovery.State(); state != (core.GitHubSession{}) {
+		t.Fatalf("nil recovery State() = %+v, want the zero session", state)
+	}
+}

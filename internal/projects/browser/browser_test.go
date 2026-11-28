@@ -13,6 +13,8 @@ import (
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
+	"github.com/chromedp/chromedp"
 )
 
 // documentResponse is a main-frame document response as the browser reports it.
@@ -704,4 +706,29 @@ func TestTabAdmitsAWaitingCommandOnceThePreviousOneFinishes(t *testing.T) {
 		t.Fatalf("acquire: %v", err)
 	}
 	release()
+}
+
+func TestDecodeEvalResult(t *testing.T) {
+	var rows []struct {
+		Title string `json:"title"`
+	}
+	if err := decodeEvalResult(&runtime.RemoteObject{Type: runtime.RemoteObjectTypeObject, Value: []byte(`[{"title":"a"}]`)}, &rows); err != nil {
+		t.Fatalf("decode rows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Title != "a" {
+		t.Fatalf("rows = %+v, want one row titled a", rows)
+	}
+
+	undefined := &runtime.RemoteObject{Type: runtime.RemoteObjectTypeUndefined}
+	var anything any = "stale"
+	if err := decodeEvalResult(undefined, &anything); err != nil || anything != nil {
+		t.Fatalf("undefined into any = %v, %v; want nil, nil", anything, err)
+	}
+	var text string
+	if err := decodeEvalResult(undefined, &text); !errors.Is(err, chromedp.ErrJSUndefined) {
+		t.Fatalf("undefined into string err = %v, want ErrJSUndefined", err)
+	}
+	if err := decodeEvalResult(&runtime.RemoteObject{Type: runtime.RemoteObjectTypeObject, Subtype: runtime.RemoteObjectSubtypeNull}, &text); !errors.Is(err, chromedp.ErrJSNull) {
+		t.Fatalf("null into string err = %v, want ErrJSNull", err)
+	}
 }

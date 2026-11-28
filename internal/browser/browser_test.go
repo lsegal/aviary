@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -116,16 +117,10 @@ func parseCDPPort(t *testing.T, srvURL string) int {
 // --- PageTargets ---
 
 func TestPageTargets_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/json/list" {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]ChromeTab{ //nolint:errcheck
-				{ID: "tab1", Type: "page", URL: "https://example.com", Title: "Example"},
-				{ID: "tab2", Type: "background_page", URL: "chrome://newtab"},
-			})
-		}
-	}))
-	defer srv.Close()
+	srv := newFakeCDPServer(t, fakeCDPOptions{Tabs: []ChromeTab{
+		{ID: "tab1", Type: "page", URL: "https://example.com", Title: "Example"},
+		{ID: "tab2", Type: "background_page", URL: "chrome://newtab"},
+	}})
 
 	tabs, err := PageTargets(context.Background(), srv.URL)
 	assert.NoError(t, err)
@@ -156,21 +151,14 @@ func TestPageTargets_InvalidJSON(t *testing.T) {
 // --- createTab ---
 
 func TestCreateTab_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/json/new") {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(ChromeTab{ //nolint:errcheck
-				ID:   "newtab1",
-				Type: "page",
-				URL:  "https://example.com",
-			})
-		}
-	}))
-	defer srv.Close()
+	srv := newFakeCDPServer(t, fakeCDPOptions{
+		NewTab: ChromeTab{ID: "newtab1", Type: "page", URL: "https://example.com"},
+	})
 
 	tab, err := createTab(context.Background(), srv.URL, "https://example.com")
 	assert.NoError(t, err)
 	assert.Equal(t, "newtab1", tab.ID)
+	assert.Equal(t, 1, srv.NewTabCalls())
 
 }
 
@@ -212,19 +200,11 @@ func TestCreateTab_InvalidJSON(t *testing.T) {
 // --- WebSocketURL ---
 
 func TestWebSocketURL_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/json/version" {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
-				WebSocketDebuggerURL: "ws://localhost:9222/devtools/browser/abc123",
-			})
-		}
-	}))
-	defer srv.Close()
+	srv := newFakeCDPServer(t, fakeCDPOptions{})
 
 	wsURL, err := WebSocketURL(context.Background(), srv.URL)
 	assert.NoError(t, err)
-	assert.True(t, strings.HasPrefix(wsURL, "ws://"))
+	assert.Equal(t, fakeCDPWebSocketURL, wsURL)
 
 }
 
@@ -260,20 +240,14 @@ func TestWebSocketURL_InvalidJSON(t *testing.T) {
 // --- waitForChrome ---
 
 func TestWaitForChrome_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
-			WebSocketDebuggerURL: "ws://localhost:9222/devtools/browser/ready",
-		})
-	}))
-	defer srv.Close()
+	srv := newFakeCDPServer(t, fakeCDPOptions{})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	wsURL, err := waitForChrome(ctx, srv.URL)
 	assert.NoError(t, err)
-	assert.NotEqual(t, "", wsURL)
+	assert.Equal(t, fakeCDPWebSocketURL, wsURL)
 
 }
 
@@ -294,18 +268,12 @@ func TestWaitForChrome_Timeout(t *testing.T) {
 // --- Manager.Tabs ---
 
 func TestManager_Tabs_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]ChromeTab{ //nolint:errcheck
-			{ID: "tab1", Type: "page", URL: "https://example.com"},
-			{ID: "tab2", Type: "background_page", URL: "chrome://newtab"},
-			{ID: "tab3", Type: "page", URL: "https://google.com"},
-		})
-	}))
-	defer srv.Close()
-
-	port := parseCDPPort(t, srv.URL)
-	m := NewManager("", port, "", false)
+	srv := newFakeCDPServer(t, fakeCDPOptions{Tabs: []ChromeTab{
+		{ID: "tab1", Type: "page", URL: "https://example.com"},
+		{ID: "tab2", Type: "background_page", URL: "chrome://newtab"},
+		{ID: "tab3", Type: "page", URL: "https://google.com"},
+	}})
+	m := NewManager("", srv.port(t), "", false)
 
 	tabs, err := m.Tabs()
 	assert.NoError(t, err)
@@ -377,22 +345,12 @@ func TestShouldAutoLaunchHeadless_UnixRequiresDisplay(t *testing.T) {
 // --- Manager.CloseTab ---
 
 func TestManager_CloseTab(t *testing.T) {
-	var closedTabID string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/json/close/") {
-			closedTabID = strings.TrimPrefix(r.URL.Path, "/json/close/")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Target is closing")) //nolint:errcheck
-		}
-	}))
-	defer srv.Close()
-
-	port := parseCDPPort(t, srv.URL)
-	m := NewManager("", port, "", false)
+	srv := newFakeCDPServer(t, fakeCDPOptions{})
+	m := NewManager("", srv.port(t), "", false)
 
 	err := m.CloseTab("tab-xyz")
 	assert.NoError(t, err)
-	assert.Equal(t, "tab-xyz", closedTabID)
+	assert.Equal(t, []string{"tab-xyz"}, srv.ClosedTabs())
 
 }
 
@@ -496,7 +454,7 @@ func TestSession_TabID_NoTarget(t *testing.T) {
 
 func TestSession_Run_CancelledContext(t *testing.T) {
 	s := makeTestSession()
-	err := s.Run(chromedp.ActionFunc(func(_ context.Context) error { return nil }))
+	err := s.Run(chromedp.Func(func(context.Context, *chromedp.Target) error { return nil }))
 	assert.
 		// With a cancelled context, chromedp.Run returns an error.
 		Error(t, err)
@@ -607,42 +565,94 @@ func TestNewRemoteSessionForTab_InvalidWS(t *testing.T) {
 
 // --- ensureChrome when chrome is already running ---
 
-// mockCDPServer returns an httptest.Server that answers /json/version with a
-// fake (but non-empty) WebSocket debugger URL so ensureChrome short-circuits.
-func mockCDPServer(t *testing.T) *httptest.Server {
+// fakeCDPWebSocketURL is the WebSocket debugger URL the fake CDP server
+// reports. Nothing listens on it, so ensureChrome short-circuits but any
+// session attach fails.
+const fakeCDPWebSocketURL = "ws://127.0.0.1:1/devtools/browser/fake"
+
+// fakeCDPOptions configures newFakeCDPServer.
+type fakeCDPOptions struct {
+	// Tabs is what /json/list returns.
+	Tabs []ChromeTab
+	// NewTab is what PUT /json/new returns.
+	NewTab ChromeTab
+}
+
+// fakeCDPServer is a fake Chrome DevTools HTTP endpoint. It answers
+// /json/version, /json/list, PUT /json/new and /json/close/<id>, counting
+// /json/new calls and recording closed tab IDs.
+type fakeCDPServer struct {
+	*httptest.Server
+
+	mu          sync.Mutex
+	newTabCalls int
+	closedTabs  []string
+}
+
+func newFakeCDPServer(t *testing.T, opts fakeCDPOptions) *fakeCDPServer {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/json/version":
+	f := &fakeCDPServer{}
+	tabs := opts.Tabs
+	if tabs == nil {
+		tabs = []ChromeTab{}
+	}
+	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/json/version":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
-				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
-			})
-		case "/json/list":
+			json.NewEncoder(w).Encode(versionInfo{WebSocketDebuggerURL: fakeCDPWebSocketURL}) //nolint:errcheck
+		case r.URL.Path == "/json/list":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]ChromeTab{ //nolint:errcheck
-				{ID: "tab1", Type: "page", URL: "https://example.com"},
-			})
+			json.NewEncoder(w).Encode(tabs) //nolint:errcheck
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/json/new"):
+			f.mu.Lock()
+			f.newTabCalls++
+			f.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(opts.NewTab) //nolint:errcheck
+		case strings.HasPrefix(r.URL.Path, "/json/close/"):
+			f.mu.Lock()
+			f.closedTabs = append(f.closedTabs, strings.TrimPrefix(r.URL.Path, "/json/close/"))
+			f.mu.Unlock()
+			w.Write([]byte("Target is closing")) //nolint:errcheck
 		default:
 			http.NotFound(w, r)
 		}
 	}))
+	t.Cleanup(f.Close)
+	return f
+}
+
+// port returns the TCP port the fake server listens on.
+func (f *fakeCDPServer) port(t *testing.T) int {
+	t.Helper()
+	return parseCDPPort(t, f.URL)
+}
+
+// NewTabCalls returns how many times PUT /json/new was called.
+func (f *fakeCDPServer) NewTabCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.newTabCalls
+}
+
+// ClosedTabs returns the tab IDs passed to /json/close/, in order.
+func (f *fakeCDPServer) ClosedTabs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.closedTabs...)
 }
 
 func TestEnsureChrome_AlreadyRunning(t *testing.T) {
-	srv := mockCDPServer(t)
-	defer srv.Close()
-
-	port := parseCDPPort(t, srv.URL)
-	m := NewManager("", port, "", false)
+	srv := newFakeCDPServer(t, fakeCDPOptions{})
+	m := NewManager("", srv.port(t), "", false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	wsURL, err := m.ensureChrome(ctx)
 	assert.NoError(t, err)
-	assert.NotEqual(t, "", wsURL)
-
+	assert.Equal(t, fakeCDPWebSocketURL, wsURL)
 }
 
 func TestEnsureChrome_CancelledContext(t *testing.T) {
@@ -691,158 +701,78 @@ func TestEnsureChrome_FallsBackToHeadlessWhenHeadedLaunchDoesNotBecomeReady(t *t
 
 // --- Manager.Open via mock CDP ---
 
-func TestManager_Open_ChromeAlreadyRunning(t *testing.T) {
-	// Serve both /json/version (for ensureChrome) and /json/new (for createTab).
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/json/version":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
-				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
-			})
-		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/json/new"):
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(ChromeTab{ //nolint:errcheck
-				ID: "opened-tab-1", Type: "page", URL: "https://example.com",
-			})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-
-	port := parseCDPPort(t, srv.URL)
-	m := NewManager("", port, "", false)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	tabID, err := m.Open(ctx, "https://example.com")
-	assert.NoError(t, err)
-	assert.Equal(t, "opened-tab-1", tabID)
-
-}
-
-func TestManager_Open_ReusesExactURLMatch(t *testing.T) {
-	newTabCalls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/json/version":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
-				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
-			})
-		case r.URL.Path == "/json/list":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]ChromeTab{ //nolint:errcheck
+func TestManager_Open(t *testing.T) {
+	tests := []struct {
+		name            string
+		tabs            []ChromeTab
+		newTab          ChromeTab
+		reuseTabs       bool
+		url             string
+		wantTabID       string
+		wantNewTabCalls int
+		wantClosedTabs  []string
+	}{
+		{
+			name:            "no existing tab",
+			newTab:          ChromeTab{ID: "opened-tab-1", Type: "page", URL: "https://example.com"},
+			reuseTabs:       true,
+			url:             "https://example.com",
+			wantTabID:       "opened-tab-1",
+			wantNewTabCalls: 1,
+		},
+		{
+			name: "exact URL match reused",
+			tabs: []ChromeTab{
 				{ID: "existing-tab", Type: "page", URL: "https://example.com"},
 				{ID: "other-tab", Type: "page", URL: "https://example.com/about"},
-			})
-		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/json/new"):
-			newTabCalls++
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(ChromeTab{ //nolint:errcheck
-				ID: "new-tab", Type: "page", URL: "https://example.com",
-			})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-
-	port := parseCDPPort(t, srv.URL)
-	m := NewManager("", port, "", false, true)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	tabID, err := m.Open(ctx, "https://example.com")
-	assert.NoError(t, err)
-	assert.Equal(t, "existing-tab", tabID)
-	assert.Equal(t, 0, newTabCalls)
-}
-
-func TestManager_Open_DoesNotReuseWhenDisabled(t *testing.T) {
-	newTabCalls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/json/version":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
-				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
-			})
-		case r.URL.Path == "/json/list":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]ChromeTab{ //nolint:errcheck
+			},
+			newTab:          ChromeTab{ID: "new-tab", Type: "page", URL: "https://example.com"},
+			reuseTabs:       true,
+			url:             "https://example.com",
+			wantTabID:       "existing-tab",
+			wantNewTabCalls: 0,
+		},
+		{
+			name: "reuse turned off",
+			tabs: []ChromeTab{
 				{ID: "existing-tab", Type: "page", URL: "https://example.com"},
-			})
-		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/json/new"):
-			newTabCalls++
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(ChromeTab{ //nolint:errcheck
-				ID: "new-tab", Type: "page", URL: "https://example.com",
-			})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-
-	port := parseCDPPort(t, srv.URL)
-	m := NewManager("", port, "", false, false)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	tabID, err := m.Open(ctx, "https://example.com")
-	assert.NoError(t, err)
-	assert.Equal(t, "new-tab", tabID)
-	assert.Equal(t, 1, newTabCalls)
-}
-
-func TestManager_Open_ReusesRedirectedURLAfterOpen(t *testing.T) {
-	newTabCalls := 0
-	closedTabID := ""
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/json/version":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(versionInfo{ //nolint:errcheck
-				WebSocketDebuggerURL: "ws://127.0.0.1:1/devtools/browser/fake",
-			})
-		case r.URL.Path == "/json/list":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]ChromeTab{ //nolint:errcheck
+			},
+			newTab:          ChromeTab{ID: "new-tab", Type: "page", URL: "https://example.com"},
+			reuseTabs:       false,
+			url:             "https://example.com",
+			wantTabID:       "new-tab",
+			wantNewTabCalls: 1,
+		},
+		{
+			name: "redirected URL reused and duplicate tab closed",
+			tabs: []ChromeTab{
 				{ID: "existing-tab", Type: "page", URL: "https://www.google.com/"},
 				{ID: "new-tab", Type: "page", URL: "https://www.google.com/"},
-			})
-		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/json/new"):
-			newTabCalls++
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(ChromeTab{ //nolint:errcheck
-				ID: "new-tab", Type: "page", URL: "https://google.com",
-			})
-		case strings.HasPrefix(r.URL.Path, "/json/close/"):
-			closedTabID = strings.TrimPrefix(r.URL.Path, "/json/close/")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Target is closing")) //nolint:errcheck
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
+			},
+			newTab:          ChromeTab{ID: "new-tab", Type: "page", URL: "https://google.com"},
+			reuseTabs:       true,
+			url:             "https://google.com",
+			wantTabID:       "existing-tab",
+			wantNewTabCalls: 1,
+			wantClosedTabs:  []string{"new-tab"},
+		},
+	}
 
-	port := parseCDPPort(t, srv.URL)
-	m := NewManager("", port, "", false, true)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newFakeCDPServer(t, fakeCDPOptions{Tabs: tt.tabs, NewTab: tt.newTab})
+			m := NewManager("", srv.port(t), "", false, tt.reuseTabs)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
 
-	tabID, err := m.Open(ctx, "https://google.com")
-	assert.NoError(t, err)
-	assert.Equal(t, "existing-tab", tabID)
-	assert.Equal(t, 1, newTabCalls)
-	assert.Equal(t, "new-tab", closedTabID)
+			tabID, err := m.Open(ctx, tt.url)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantTabID, tabID)
+			assert.Equal(t, tt.wantNewTabCalls, srv.NewTabCalls())
+			assert.Equal(t, tt.wantClosedTabs, srv.ClosedTabs())
+		})
+	}
 }
 
 func TestURLsEquivalent_NormalizesDefaultSlashAndHostCase(t *testing.T) {
@@ -871,11 +801,8 @@ func TestManager_Close_IsNoOp(_ *testing.T) {
 func TestManager_withTab_AttachFails(t *testing.T) {
 	// The mock CDP server answers /json/version (Chrome "running") but the
 	// returned ws:// URL is invalid so newRemoteSessionForTab will fail.
-	srv := mockCDPServer(t)
-	defer srv.Close()
-
-	port := parseCDPPort(t, srv.URL)
-	m := NewManager("", port, "", false)
+	srv := newFakeCDPServer(t, fakeCDPOptions{})
+	m := NewManager("", srv.port(t), "", false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -887,11 +814,8 @@ func TestManager_withTab_AttachFails(t *testing.T) {
 }
 
 func TestManager_withTab_ReusesCachedSession(t *testing.T) {
-	srv := mockCDPServer(t)
-	defer srv.Close()
-
-	port := parseCDPPort(t, srv.URL)
-	m := NewManager("", port, "", false)
+	srv := newFakeCDPServer(t, fakeCDPOptions{})
+	m := NewManager("", srv.port(t), "", false)
 
 	// Inject a pre-built (cancelled) session into the cache.
 	s := makeTestSession()
@@ -937,18 +861,8 @@ func TestLaunchChrome_BinaryNotFound(t *testing.T) {
 // --- Manager.CloseTab removes session from cache ---
 
 func TestManager_CloseTab_RemovesCachedSession(t *testing.T) {
-	var closedTabID string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/json/close/") {
-			closedTabID = strings.TrimPrefix(r.URL.Path, "/json/close/")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Target is closing")) //nolint:errcheck
-		}
-	}))
-	defer srv.Close()
-
-	port := parseCDPPort(t, srv.URL)
-	m := NewManager("", port, "", false)
+	srv := newFakeCDPServer(t, fakeCDPOptions{})
+	m := NewManager("", srv.port(t), "", false)
 
 	// Seed a cached session.
 	s := makeTestSession()
@@ -958,7 +872,7 @@ func TestManager_CloseTab_RemovesCachedSession(t *testing.T) {
 
 	err := m.CloseTab("tab-cache")
 	assert.NoError(t, err)
-	assert.Equal(t, "tab-cache", closedTabID)
+	assert.Equal(t, []string{"tab-cache"}, srv.ClosedTabs())
 
 	m.mu.Lock()
 	_, still := m.sessions["tab-cache"]

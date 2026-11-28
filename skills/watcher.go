@@ -48,6 +48,8 @@ func (w *Watcher) Start() error {
 	}
 	defer fw.Close() //nolint:errcheck
 
+	// watched is shared by the event loop and the debounce timer goroutine.
+	var watchedMu sync.Mutex
 	watched := make(map[string]struct{})
 	for _, dir := range w.dirs {
 		if err := addWatchRoots(fw, watched, dir); err != nil {
@@ -61,11 +63,13 @@ func (w *Watcher) Start() error {
 			debounceTimer.Stop()
 		}
 		debounceTimer = time.AfterFunc(watchDebounce, func() {
+			watchedMu.Lock()
 			for _, dir := range w.dirs {
 				if err := addWatchRoots(fw, watched, dir); err != nil {
 					slog.Warn("skills watcher: refresh failed", "dir", dir, "err", err)
 				}
 			}
+			watchedMu.Unlock()
 			w.notify()
 		})
 	}
@@ -86,13 +90,11 @@ func (w *Watcher) Start() error {
 				continue
 			}
 			if event.Has(fsnotify.Create) {
-				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-					if err := addWatchTree(fw, watched, event.Name); err != nil {
-						slog.Warn("skills watcher: could not watch created dir", "dir", event.Name, "err", err)
-					}
-				}
+				watchedMu.Lock()
+				watchCreatedDir(fw, watched, event.Name)
+				watchedMu.Unlock()
 			}
-			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+			if event.Has(fsnotify.Write | fsnotify.Create | fsnotify.Remove | fsnotify.Rename) {
 				trigger()
 			}
 
@@ -102,6 +104,18 @@ func (w *Watcher) Start() error {
 			}
 			slog.Warn("skills watcher error", "err", err)
 		}
+	}
+}
+
+// watchCreatedDir adds a newly created directory tree at path to fw, if path
+// is a directory.
+func watchCreatedDir(fw *fsnotify.Watcher, watched map[string]struct{}, path string) {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return
+	}
+	if err := addWatchTree(fw, watched, path); err != nil {
+		slog.Warn("skills watcher: could not watch created dir", "dir", path, "err", err)
 	}
 }
 
@@ -153,11 +167,8 @@ func normalizeWatchDirs(dirs []string) []string {
 }
 
 func addWatchRoots(fw *fsnotify.Watcher, watched map[string]struct{}, dir string) error {
-	parent := filepath.Dir(dir)
-	if parent == "" {
-		parent = "."
-	}
-	if err := addWatchDir(fw, watched, parent); err != nil {
+	// filepath.Dir never returns "", so the parent is always a usable path.
+	if err := addWatchDir(fw, watched, filepath.Dir(dir)); err != nil {
 		return err
 	}
 	return addWatchTree(fw, watched, dir)

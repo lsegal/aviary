@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { boundingBoxOf } from "./helpers/box";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 interface Task {
@@ -15,7 +16,7 @@ interface Task {
 	compiled?: string;
 	compiled_key?: string;
 	script_failures?: number;
-	precompile_note?: string;
+	script_last_error?: string;
 }
 
 const NOW = new Date().toISOString();
@@ -190,7 +191,12 @@ test("workflow rows show each compiled state in the shared chip", async ({
 		COMPILED,
 		{ ...COMPILED, name: "vague", compiled: "", compiled_key: "k2" },
 		{ ...COMPILED, name: "fresh", compiled: "", compiled_key: "" },
-		{ ...COMPILED, name: "flaky", script_failures: 2 },
+		{
+			...COMPILED,
+			name: "flaky",
+			script_failures: 2,
+			script_last_error: "gh 404",
+		},
 		{ ...COMPILED, name: "off", precompile: false, compiled: "" },
 	]);
 	await page.goto(
@@ -205,7 +211,9 @@ test("workflow rows show each compiled state in the shared chip", async ({
 	await expect(chip("vague")).toHaveAttribute("data-state", "not-compiled");
 	await expect(chip("vague")).toHaveText("Not compiled");
 	await expect(chip("fresh")).toHaveAttribute("data-state", "compiling");
-	await expect(chip("flaky")).toHaveText("Falling back to model");
+	await expect(chip("flaky")).toHaveAttribute("data-state", "failing");
+	await expect(chip("flaky")).toHaveText("Script failing");
+	await expect(chip("flaky")).toHaveAttribute("title", /last error: gh 404/);
 	await expect(chip("off")).toHaveCount(0);
 });
 
@@ -270,9 +278,9 @@ test("the compiled panel shows the script beside the prompt, goes stale on edit,
 	await expect(panel).toBeVisible();
 
 	// Beside the prompt on a wide screen.
-	const promptBox = await form.getByTestId("workflow-content").boundingBox();
-	const panelBox = await panel.boundingBox();
-	expect(panelBox!.x).toBeGreaterThan(promptBox!.x + promptBox!.width - 1);
+	const promptBox = await boundingBoxOf(form.getByTestId("workflow-content"));
+	const panelBox = await boundingBoxOf(panel);
+	expect(panelBox.x).toBeGreaterThan(promptBox.x + promptBox.width - 1);
 
 	// The current script, numbered, with the compiler's notes.
 	const lines = panel.getByTestId("compiled-panel-line");
@@ -349,9 +357,9 @@ test("on a phone the compiled panel stacks below the prompt without overflow", a
 	await form.getByTestId("workflow-compiled-toggle").click();
 	const panel = form.getByTestId("compiled-panel");
 	await expect(panel).toBeVisible();
-	const promptBox = await form.getByTestId("workflow-content").boundingBox();
-	const panelBox = await panel.boundingBox();
-	expect(panelBox!.y).toBeGreaterThan(promptBox!.y + promptBox!.height - 1);
+	const promptBox = await boundingBoxOf(form.getByTestId("workflow-content"));
+	const panelBox = await boundingBoxOf(panel);
+	expect(panelBox.y).toBeGreaterThan(promptBox.y + promptBox.height - 1);
 	const overflow = await page.evaluate(
 		() => document.documentElement.scrollWidth - window.innerWidth,
 	);

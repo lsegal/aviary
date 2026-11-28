@@ -78,7 +78,7 @@ func TestWorkflowPrecompileSavesAndCompiles(t *testing.T) {
 	assert.Contains(t, out, "script tasks have no prompt to compile")
 }
 
-func TestWorkflowScriptFailureIsFlagged(t *testing.T) {
+func TestWorkflowScriptFailuresKeepPrecompile(t *testing.T) {
 	on := true
 	cfg := workflowCompileConfig()
 	cfg.Agents[0].Tasks = []config.TaskConfig{{
@@ -90,17 +90,43 @@ func TestWorkflowScriptFailureIsFlagged(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, `print(trigger.message.text)`, got)
 
-	// A script that fails its first run is set aside, with a note saying so,
-	// and the workflow runs on the model without compiling the same prompt
-	// again.
-	require.NoError(t, RecordTaskScriptResult("bot", "echo", errors.New("attempt to index a nil value")))
+	// A failing script stays compiled and precompile stays on, run after
+	// run: each run falls back to the model, and only the first failure
+	// starts a streak.
+	for i := 1; i <= 4; i++ {
+		result, err := RecordTaskScriptOutcome("bot", "echo", errors.New("<string>:1: attempt to index a nil value"))
+		require.NoError(t, err)
+		assert.True(t, result.Workflow)
+		assert.Equal(t, i == 1, result.StreakStarted)
+	}
 	task := loadedTask(t, "echo")
-	assert.Empty(t, task.Compiled)
-	assert.Contains(t, task.PrecompileNote, "failed on its first run")
+	assert.Equal(t, `print(trigger.message.text)`, task.Compiled)
+	assert.True(t, EffectiveTaskPrecompile(task))
+	assert.Equal(t, 4, task.ScriptFailures)
+	assert.Equal(t, "attempt to index a nil value", task.ScriptLastError)
 	got, err = EnsureTaskCompiled(context.Background(), "bot", "echo", "run")
 	require.NoError(t, err)
-	assert.Empty(t, got)
+	assert.Equal(t, `print(trigger.message.text)`, got)
 	assert.Len(t, *prompts, 1)
+}
+
+func TestPromptTaskScriptFailuresKeepPrecompile(t *testing.T) {
+	on := true
+	cfg := workflowCompileConfig()
+	cfg.Agents[0].Tasks = []config.TaskConfig{{
+		Name: "digest", Type: "prompt", Trigger: "interval", Every: "1h", Prompt: "Post the digest", Precompile: &on,
+	}}
+	setupProjectTaskCompile(t, cfg, compiledScript(`print("digest")`))
+	_, err := EnsureTaskCompiled(context.Background(), "bot", "digest", "run")
+	require.NoError(t, err)
+
+	for range 5 {
+		require.NoError(t, RecordTaskScriptResult("bot", "digest", errors.New("boom")))
+	}
+	task := loadedTask(t, "digest")
+	assert.Equal(t, `print("digest")`, task.Compiled)
+	assert.True(t, EffectiveTaskPrecompile(task))
+	assert.Equal(t, 5, task.ScriptFailures)
 }
 
 func TestTaskAnalyzeWorkflowAddsTriggerContext(t *testing.T) {

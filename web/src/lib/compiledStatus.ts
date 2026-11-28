@@ -19,7 +19,7 @@ export type CompiledState =
 	| "stale"
 	| "not-compiled"
 	| "failed"
-	| "fallback"
+	| "failing"
 	| "compiling"
 	| "";
 
@@ -77,16 +77,7 @@ export function compiledStatus(
 	if (!precompilesBesidePrompt(task)) return null;
 	const failures = task.script_failures ?? 0;
 	const last = input.attempts?.[0];
-	if (task.precompile !== true) {
-		return task.precompile_note
-			? {
-					state: "fallback",
-					label: "Falling back to model",
-					title: task.precompile_note,
-					tone: "amber",
-				}
-			: null;
-	}
+	if (task.precompile !== true) return null;
 	if (task.compiled?.trim()) {
 		if (isStale(task, input))
 			return {
@@ -96,13 +87,7 @@ export function compiledStatus(
 					"The prompt changed since its script was compiled; saving compiles it again.",
 				tone: "amber",
 			};
-		if (failures)
-			return {
-				state: "fallback",
-				label: "Falling back to model",
-				title: `The compiled script failed its last ${failures === 1 ? "run" : `${failures} runs`}, which fell back to the model.`,
-				tone: "amber",
-			};
+		if (failures) return scriptFailingStatus(task);
 		return {
 			state: "compiled",
 			label: "Compiled",
@@ -111,13 +96,6 @@ export function compiledStatus(
 			tone: "green",
 		};
 	}
-	if (task.precompile_note)
-		return {
-			state: "fallback",
-			label: "Falling back to model",
-			title: task.precompile_note,
-			tone: "amber",
-		};
 	if (last?.status === "failed")
 		return {
 			state: "failed",
@@ -141,6 +119,29 @@ export function compiledStatus(
 			"Its script is compiled in the background; runs until then compile first.",
 		tone: "gray",
 	};
+}
+
+/**
+ * The status of a task whose compiled script failed its last runs: each fell
+ * back to the model, and the script stays until the user recompiles it.
+ */
+export function scriptFailingStatus(task: AgentTask): CompiledStatus {
+	const failures = task.script_failures ?? 0;
+	const runs = failures === 1 ? "run" : `${failures} runs`;
+	const last = task.script_last_error
+		? ` (last error: ${task.script_last_error})`
+		: "";
+	return {
+		state: "failing",
+		label: "Script failing",
+		title: `The compiled script failed its last ${runs}${last}, which fell back to the model. Use Recompile to compile a fresh script.`,
+		tone: "red",
+	};
+}
+
+/** Whether a task's compiled script is failing, so Recompile is offered. */
+export function isScriptFailing(task: AgentTask): boolean {
+	return compiledStatus(task)?.state === "failing";
 }
 
 /** The line a Lua error such as `<string>:52: …` points at, or 0. */

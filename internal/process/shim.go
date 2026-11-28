@@ -14,6 +14,12 @@ import (
 // program it launches. npm, pnpm and Yarn shims are a few hundred bytes.
 const shimMaxSize = 64 << 10
 
+// goos and lookPath let tests exercise ShimArgv's Windows handling on every OS.
+var (
+	goos     = runtime.GOOS
+	lookPath = exec.LookPath
+)
+
 // Command is exec.CommandContext for a CLI provider such as claude or codex,
 // started through ShimArgv. When the provider cannot be started without
 // losing an argument, Start reports why, so the caller fails loudly instead
@@ -40,10 +46,10 @@ func Command(ctx context.Context, binary string, args ...string) *exec.Cmd {
 // models.cli_definitions.<name>.binary as the way to point aviary at the real
 // executable.
 func ShimArgv(binary string, args []string) (string, []string, error) {
-	if runtime.GOOS != "windows" {
+	if goos != "windows" {
 		return binary, args, nil
 	}
-	path, err := exec.LookPath(binary)
+	path, err := lookPath(binary)
 	if err != nil || !isBatchFile(path) {
 		return binary, args, nil
 	}

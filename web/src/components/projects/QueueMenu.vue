@@ -28,10 +28,7 @@
 // gh-discuss. Each choice opens that skill's picker. Its trigger is a neutral
 // icon button like the header's refresh, logs, chat and settings (#1305).
 
-import ArrowsRightLeftIcon from "@heroicons/vue/24/outline/ArrowsRightLeftIcon";
-import ChatBubbleLeftEllipsisIcon from "@heroicons/vue/24/outline/ChatBubbleLeftEllipsisIcon";
 import PlusIcon from "@heroicons/vue/24/outline/PlusIcon";
-import WrenchScrewdriverIcon from "@heroicons/vue/24/outline/WrenchScrewdriverIcon";
 import {
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -42,6 +39,7 @@ import {
 import { computed } from "vue";
 import { HEADER_ICON_CLS } from "../../lib/headerActions";
 import type { QueueSkill } from "../../lib/projects";
+import { queueOptions } from "./queueOptions";
 
 const props = defineProps<{
 	/** no_merge leaves pull requests for a human, so safe merge is off. */
@@ -52,29 +50,5 @@ const emit = defineEmits<{ pick: [skill: QueueSkill] }>();
 const itemClass =
 	"flex cursor-pointer items-start gap-2 rounded-lg px-3 py-2 text-sm text-gray-700 outline-none data-[disabled]:cursor-not-allowed data-[highlighted]:bg-gray-100 data-[disabled]:opacity-50 dark:text-gray-200 dark:data-[highlighted]:bg-gray-800";
 
-const options = computed(() => [
-	{
-		skill: "gh-fix" as const,
-		label: "Fix issue",
-		icon: WrenchScrewdriverIcon,
-		disabled: false,
-		title: "Have gh-fix fix issues",
-	},
-	{
-		skill: "gh-safe-merge" as const,
-		label: "Safe merge PR",
-		icon: ArrowsRightLeftIcon,
-		disabled: props.noMerge,
-		title: props.noMerge
-			? "Safe merge is off: the project's no_merge setting leaves pull requests for a human to merge"
-			: "Queue pull requests for gh-safe-merge; they verify and merge side by side, starting in the order picked",
-	},
-	{
-		skill: "gh-discuss" as const,
-		label: "Discuss",
-		icon: ChatBubbleLeftEllipsisIcon,
-		disabled: false,
-		title: "Queue Discussion threads for gh-discuss",
-	},
-]);
+const options = computed(() => queueOptions(props.noMerge));
 </script>

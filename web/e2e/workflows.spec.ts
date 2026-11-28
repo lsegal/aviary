@@ -23,7 +23,7 @@ interface Task {
 	compiled?: string;
 	compiled_key?: string;
 	script_failures?: number;
-	precompile_note?: string;
+	script_last_error?: string;
 }
 
 const NOW = new Date().toISOString();
@@ -821,8 +821,7 @@ test("workflow cards and the detail view show the compiled state and fallback ru
 				compiled: 'print("ok")',
 				compiled_key: "k",
 				script_failures: 1,
-				precompile_note:
-					"The compiled script failed on its first run (lookup failed), so it was set aside and the task runs on the model.",
+				script_last_error: "lookup failed",
 			},
 		],
 		[
@@ -845,7 +844,7 @@ test("workflow cards and the detail view show the compiled state and fallback ru
 	await page.goto("/agents/assistant/channels/Team%20Slack");
 	const card = page.getByTestId("workflow-card");
 	await expect(card.getByTestId("compiled-status-chip")).toHaveText(
-		"Falling back to model",
+		"Script failing",
 	);
 	await expect(card.getByTestId("compiled-status-chip")).toHaveAttribute(
 		"title",
@@ -863,9 +862,9 @@ test("workflow cards and the detail view show the compiled state and fallback ru
 	await expect(page).toHaveURL(/\/agents\/assistant\/tasks\/triage$/);
 	await expect(
 		page.getByTestId("settings-header").getByTestId("compiled-status-chip"),
-	).toHaveAttribute("data-state", "fallback");
-	await expect(page.getByTestId("task-precompile-note")).toContainText(
-		"failed on its first run",
+	).toHaveAttribute("data-state", "failing");
+	await expect(page.getByTestId("task-script-failing")).toContainText(
+		"last error: lookup failed",
 	);
 	const stats = page.getByTestId("stat-row");
 	await expect(stats).toContainText("2compile attempts · last succeeded");

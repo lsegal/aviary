@@ -10,6 +10,7 @@
 </template>
 
 <script setup lang="ts">
+import ArrowPathIcon from "@heroicons/vue/24/outline/ArrowPathIcon";
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
 import DocumentDuplicateIcon from "@heroicons/vue/24/outline/DocumentDuplicateIcon";
 import ListBulletIcon from "@heroicons/vue/24/outline/ListBulletIcon";
@@ -17,10 +18,12 @@ import PauseIcon from "@heroicons/vue/24/outline/PauseIcon";
 import PlayCircleIcon from "@heroicons/vue/24/outline/PlayCircleIcon";
 import PlayIcon from "@heroicons/vue/24/outline/PlayIcon";
 import { computed } from "vue";
+import { isScriptFailing } from "../../lib/compiledStatus";
 import type { TaskAction, TaskRow } from "./types";
 
-// A task's quick actions: run now, pause or resume, view its runs,
-// duplicate it, and its settings, always last.
+// A task's quick actions: run now, pause or resume, Recompile while its
+// compiled script is failing, view its runs, duplicate it, and its
+// settings, always last.
 const props = defineProps<{ row: TaskRow; busy: boolean }>();
 const emit = defineEmits<{ action: [action: TaskAction] }>();
 
@@ -30,6 +33,15 @@ const actions = computed(
 		props.row.enabled
 			? { key: "toggle", label: "Pause", icon: PauseIcon }
 			: { key: "toggle", label: "Resume", icon: PlayCircleIcon },
+		...(isScriptFailing(props.row.task)
+			? [
+					{
+						key: "recompile" as const,
+						label: "Recompile the failing script",
+						icon: ArrowPathIcon,
+					},
+				]
+			: []),
 		{ key: "runs", label: "View runs", icon: ListBulletIcon },
 		{ key: "duplicate", label: "Duplicate…", icon: DocumentDuplicateIcon },
 		{ key: "settings", label: "Task settings", icon: Cog6ToothIcon },

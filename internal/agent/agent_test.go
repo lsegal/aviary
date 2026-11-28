@@ -1443,7 +1443,7 @@ func TestAppendSessionMessageWithSender_PersistsSender(t *testing.T) {
 	)
 
 	sender := domain.NewMessageSender("u123", "Alice", true)
-	runner.appendSessionMessageWithSender("sess-sender", domain.MessageRoleUser, "Hello, world!", nil, "", sender)
+	runner.appendSessionMessageWithSender("sess-sender", sessionMessage{role: domain.MessageRoleUser, content: "Hello, world!", sender: sender})
 
 	// The new session file starts with its header, then the message.
 	lines, err := store.ReadJSONL[domain.Message](store.SessionPath("agent_sender", "sess-sender"))
@@ -1856,10 +1856,10 @@ func TestLoadSessionConversation_UsesSenderMetadata(t *testing.T) {
 	sess, err := NewSessionManager().Create(runner.agent.ID)
 	assert.NoError(t, err)
 
-	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "opening question", nil, "", domain.NewMessageSender("u1", "Alice", true))
+	runner.appendSessionMessageWithSender(sess.ID, sessionMessage{role: domain.MessageRoleUser, content: "opening question", sender: domain.NewMessageSender("u1", "Alice", true)})
 	runner.appendSessionMessage(sess.ID, domain.MessageRoleAssistant, "opening answer", nil, "")
-	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "side chatter", nil, "", domain.NewMessageSender("u2", "Bob", false))
-	runner.appendSessionMessageWithSender(sess.ID, domain.MessageRoleUser, "actual follow-up", nil, "", domain.NewMessageSender("u1", "Alice", true))
+	runner.appendSessionMessageWithSender(sess.ID, sessionMessage{role: domain.MessageRoleUser, content: "side chatter", sender: domain.NewMessageSender("u2", "Bob", false)})
+	runner.appendSessionMessageWithSender(sess.ID, sessionMessage{role: domain.MessageRoleUser, content: "actual follow-up", sender: domain.NewMessageSender("u1", "Alice", true)})
 
 	history := runner.loadSessionConversation(sess.ID, 10)
 	// Prior messages are collapsed into a single assistant message followed by

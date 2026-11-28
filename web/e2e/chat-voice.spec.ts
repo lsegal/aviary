@@ -114,6 +114,8 @@ test("records, transcribes, and inserts the transcript for review", async ({
 	await expect(composer.getByTestId("voice-transcribing")).toHaveCount(0);
 	await expect(mic).toBeEnabled();
 	await expect(send).toBeEnabled();
+	// The fake recording can't be decoded, so it is uploaded as recorded
+	// for the server's ffmpeg path.
 	expect(uploads).toEqual([
 		{ type: "audio/webm;codecs=opus", body: "fake-voice" },
 	]);
@@ -124,6 +126,28 @@ test("records, transcribes, and inserts the transcript for review", async ({
 			() => (window as unknown as { __micStops: number }).__micStops,
 		),
 	).toBe(1);
+});
+
+test("stops and transcribes a recording that reaches the 10 minute limit", async ({
+	page,
+}) => {
+	await page.clock.install();
+	await fakeMicrophone(page);
+	let uploads = 0;
+	await page.route("**/api/transcribe", (route) => {
+		uploads += 1;
+		return route.fulfill({ json: { text: "a long note" } });
+	});
+	const { composer, mic, input } = await openChat(page);
+	await mic.click();
+	await expect(composer.getByTestId("voice-recording")).toBeVisible();
+	await page.clock.runFor("09:59");
+	await expect(composer.getByTestId("voice-recording")).toBeVisible();
+	expect(uploads).toBe(0);
+	await page.clock.runFor("00:02");
+	await expect(input).toHaveValue("a long note");
+	await expect(composer.getByTestId("voice-recording")).toHaveCount(0);
+	expect(uploads).toBe(1);
 });
 
 test("inserts the transcript at the caret", async ({ page }) => {
