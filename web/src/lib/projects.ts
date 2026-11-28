@@ -114,6 +114,10 @@ export function cliProblemSummary(clis: readonly CLIStatus[]): string {
 export interface ProjectTarget {
 	name: string;
 	issues: number;
+	/** Board entries in the Running state, a schedule once (#1359). */
+	running?: number;
+	/** Jobs waiting, paused or queued. */
+	waiting?: number;
 	/** Manual mode: never searched for issues, so issues is not counted. */
 	manual?: boolean;
 	/** Not read from GitHub yet, so issues is not known. */
@@ -539,6 +543,59 @@ export function normalizeJobList(v: unknown): {
 	};
 }
 
+/**
+ * A job list as a board last read it (#1661): its revision, its entries in
+ * order and by key, and its counts. A later read applies only what changed.
+ */
+export interface JobListState {
+	revision: string;
+	keys: string[];
+	byKey: Map<string, ProjectJob>;
+	jobs: ProjectJob[];
+	total: number;
+	unfilteredTotal: number;
+}
+
+/**
+ * Applies a project_job_list response to the list it was read against. An
+ * unchanged list returns last itself. A delta replaces only the entries it
+ * carries and drops the keys it removes, so every other entry keeps its
+ * object and its card doesn't re-render. A full list replaces everything.
+ */
+export function applyJobListRead(
+	last: JobListState | undefined,
+	v: unknown,
+): JobListState {
+	const raw = obj(v);
+	if (raw.unchanged === true && last) return last;
+	const delta = raw.delta === true && last !== undefined;
+	const byKey = new Map(delta ? last.byKey : []);
+	for (const key of arr(raw.removed)) byKey.delete(str(key));
+	const read: string[] = [];
+	for (const entry of arr(raw.jobs)) {
+		const job = normalizeJob(entry);
+		byKey.set(job.id, job);
+		read.push(job.id);
+	}
+	const keys =
+		raw.keys !== undefined
+			? arr(raw.keys).map(str)
+			: delta
+				? last.keys.filter((key) => byKey.has(key))
+				: read;
+	const jobs = keys.flatMap((key) => byKey.get(key) ?? []);
+	const total = num(raw.total) || jobs.length;
+	return {
+		revision: str(raw.revision),
+		keys,
+		byKey,
+		jobs,
+		total,
+		unfilteredTotal:
+			raw.unfiltered_total === undefined ? total : num(raw.unfiltered_total),
+	};
+}
+
 function normalizeEvent(v: unknown): JobEvent | null {
 	const raw = obj(v);
 	const time = str(raw.time);
@@ -673,6 +730,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 	const modes = obj(raw.modes);
 	const states = obj(raw.states);
 	const loading = arr(raw.loading_targets).map(str);
+	const targetJobs = obj(raw.target_jobs);
 	return {
 		instanceID: str(raw.identity),
 		running: raw.running !== false,
@@ -702,6 +760,8 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		targets: arr(raw.targets).map((t) => ({
 			name: str(t),
 			issues: num(counts[str(t)]),
+			running: num(obj(targetJobs[str(t)]).running),
+			waiting: num(obj(targetJobs[str(t)]).waiting),
 			...(modes[str(t)] === "manual" ? { manual: true } : {}),
 			...(loading.includes(str(t)) ? { loading: true } : {}),
 		})),
@@ -722,28 +782,26 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 }
 
 /**
- * Per-target live counts for the sidebar, from status plus the job list, and
+ * Per-target live counts for the sidebar, from status, and
  * each target's scheduled tasks when a task_list response is given.
  */
 export function summarizeProjects(
 	status: ProjectStatus,
-	jobs: ProjectJob[],
 	tasks?: unknown,
 ): ProjectSummary[] {
-	return status.targets.map((t) => {
-		const mine = jobs.filter((j) => j.target === t.name);
-		return {
-			name: t.name,
-			issues: t.issues,
-			...(t.manual ? { manual: true } : {}),
-			running: mine.filter((j) => j.state === "running").length,
-			waiting: mine.filter((j) => isWaiting(j.status)).length,
-			...(t.loading ? { loading: true } : {}),
-			...(tasks === undefined
-				? {}
-				: { scheduled: projectSchedules(tasks, t.name).length }),
-		};
-	});
+	// project_status counts each project's running and waiting entries, so
+	// the list never reads every job to count them (#1657).
+	return status.targets.map((t) => ({
+		name: t.name,
+		issues: t.issues,
+		...(t.manual ? { manual: true } : {}),
+		running: t.running ?? 0,
+		waiting: t.waiting ?? 0,
+		...(t.loading ? { loading: true } : {}),
+		...(tasks === undefined
+			? {}
+			: { scheduled: projectSchedules(tasks, t.name).length }),
+	}));
 }
 
 /** How work reaches a project (#1307). */

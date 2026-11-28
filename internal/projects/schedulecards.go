@@ -18,12 +18,20 @@ type boardEntry struct {
 	job core.JobSnapshot
 	// state is job's board state, or the schedule's; see scheduleState.
 	state string
-	// runs are a schedule's runs, newest first; nil for any other job.
+	// runs are a schedule's newest runs, at most recentScheduleRuns of them,
+	// newest first; nil for any other job.
 	runs []core.JobSnapshot
+	// lastFinished is a schedule's newest finished run, which can be older
+	// than every run in runs.
+	lastFinished *core.JobSnapshot
 }
 
 // boardEntries collapses each schedule's runs in jobs into one entry, placed
-// where its first run is, and keeps every other job as its own entry.
+// where its first run is, and keeps every other job as its own entry. A
+// schedule that has fired thousands of times keeps only its newest
+// recentScheduleRuns runs and its newest finished run while the jobs are
+// scanned, so building its entry never holds or sorts its whole history
+// (issue #1657).
 func boardEntries(jobs []core.JobSnapshot) []boardEntry {
 	var entries []boardEntry
 	index := map[string]int{}
@@ -35,11 +43,11 @@ func boardEntries(jobs []core.JobSnapshot) []boardEntry {
 		key := job.Target + "|" + job.ScheduleID
 		i, ok := index[key]
 		if !ok {
-			index[key] = len(entries)
-			entries = append(entries, boardEntry{job: job, runs: []core.JobSnapshot{job}})
-			continue
+			i = len(entries)
+			index[key] = i
+			entries = append(entries, boardEntry{job: job, runs: make([]core.JobSnapshot, 0, recentScheduleRuns)})
 		}
-		entries[i].runs = append(entries[i].runs, job)
+		entries[i].addRun(job)
 	}
 	for i := range entries {
 		if entries[i].runs == nil {
@@ -50,6 +58,28 @@ func boardEntries(jobs []core.JobSnapshot) []boardEntry {
 		entries[i].job, entries[i].state = runs[0], scheduleState(runs)
 	}
 	return entries
+}
+
+// addRun records one run of a schedule entry: it keeps the newest
+// recentScheduleRuns runs, replacing the oldest kept run once that many are
+// held, and the newest finished run.
+func (e *boardEntry) addRun(run core.JobSnapshot) {
+	if runFinished(run) && (e.lastFinished == nil || run.Number > e.lastFinished.Number) {
+		e.lastFinished = &run
+	}
+	if len(e.runs) < recentScheduleRuns {
+		e.runs = append(e.runs, run)
+		return
+	}
+	oldest := 0
+	for i, kept := range e.runs {
+		if kept.Number < e.runs[oldest].Number {
+			oldest = i
+		}
+	}
+	if run.Number > e.runs[oldest].Number {
+		e.runs[oldest] = run
+	}
 }
 
 // runFinished reports whether a scheduled run has ended.
@@ -113,20 +143,17 @@ func scheduleRun(run core.JobSnapshot) map[string]any {
 // addScheduleRuns adds a schedule entry's last_run, recent_runs and, when
 // tasks has its schedule, next_run to summary.
 func addScheduleRuns(summary map[string]any, entry boardEntry, tasks map[string]domain.ScheduledTask) {
-	recent := make([]map[string]any, 0, min(len(entry.runs), recentScheduleRuns))
-	for _, run := range entry.runs[:min(len(entry.runs), recentScheduleRuns)] {
+	recent := make([]map[string]any, 0, len(entry.runs))
+	for _, run := range entry.runs {
 		recent = append(recent, scheduleRun(run))
 	}
 	summary["recent_runs"] = recent
-	for _, run := range entry.runs {
-		if runFinished(run) {
-			last := scheduleRun(run)
-			if run.Dismissed {
-				last["dismissed"] = true
-			}
-			summary["last_run"] = last
-			break
+	if run := entry.lastFinished; run != nil {
+		last := scheduleRun(*run)
+		if run.Dismissed {
+			last["dismissed"] = true
 		}
+		summary["last_run"] = last
 	}
 	if task, ok := tasks[entry.job.ScheduleID]; ok {
 		summary["next_run"] = scheduleNextRun(task)
