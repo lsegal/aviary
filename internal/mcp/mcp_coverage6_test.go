@@ -229,14 +229,14 @@ func TestFileWrite_RefusesBlindOverwriteForAgentRuns(t *testing.T) {
 func setupSearchTree(t *testing.T, root string) {
 	t.Helper()
 	writeTestFile(t, filepath.Join(root, ".gitignore"), "build/\n*.log\n")
-	writeTestFile(t, filepath.Join(root, "main.go"), "package main\n\nfunc main() {\n\tTODO()\n}\n")
-	writeTestFile(t, filepath.Join(root, "pkg", "util.go"), "package pkg\n// TODO: one\n// todo: two\n")
+	writeTestFile(t, filepath.Join(root, "main.go"), "package main\n\nfunc main() {\n\tMARKER()\n}\n")
+	writeTestFile(t, filepath.Join(root, "pkg", "util.go"), "package pkg\n// MARKER: one\n// marker: two\n")
 	writeTestFile(t, filepath.Join(root, "pkg", "util_test.go"), "package pkg\n")
 	writeTestFile(t, filepath.Join(root, "pkg", ".gitignore"), "generated.go\n")
-	writeTestFile(t, filepath.Join(root, "pkg", "generated.go"), "// TODO generated\n")
-	writeTestFile(t, filepath.Join(root, "build", "out.go"), "// TODO build\n")
-	writeTestFile(t, filepath.Join(root, "debug.log"), "TODO log\n")
-	writeTestFile(t, filepath.Join(root, ".git", "HEAD"), "TODO git\n")
+	writeTestFile(t, filepath.Join(root, "pkg", "generated.go"), "// MARKER generated\n")
+	writeTestFile(t, filepath.Join(root, "build", "out.go"), "// MARKER build\n")
+	writeTestFile(t, filepath.Join(root, "debug.log"), "MARKER log\n")
+	writeTestFile(t, filepath.Join(root, ".git", "HEAD"), "MARKER git\n")
 }
 
 func TestFileGlobAndGrep_InRepositoryClone(t *testing.T) {
@@ -251,14 +251,14 @@ func TestFileGlobAndGrep_InRepositoryClone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []any{"build/out.go", "main.go", "pkg/generated.go", "pkg/util.go", "pkg/util_test.go"}, decodeToolJSON(t, out)["files"])
 
-	out, err = d.CallTool(ctx, "file_grep", map[string]any{"pattern": "TODO", "path": "./repo"})
+	out, err = d.CallTool(ctx, "file_grep", map[string]any{"pattern": "MARKER", "path": "./repo"})
 	require.NoError(t, err)
 	matches := decodeToolJSON(t, out)["matches"].([]any)
 	require.Len(t, matches, 2)
 	assert.Equal(t, "main.go", matches[0].(map[string]any)["file"])
 	assert.Equal(t, float64(4), matches[0].(map[string]any)["line"])
 
-	out, err = d.CallTool(ctx, "file_grep", map[string]any{"pattern": "todo", "path": "./repo", "case_insensitive": true, "mode": "count"})
+	out, err = d.CallTool(ctx, "file_grep", map[string]any{"pattern": "marker", "path": "./repo", "case_insensitive": true, "mode": "count"})
 	require.NoError(t, err)
 	assert.Equal(t, []any{
 		map[string]any{"file": "main.go", "count": float64(1)},
@@ -269,13 +269,13 @@ func TestFileGlobAndGrep_InRepositoryClone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []any{"pkg/util.go", "pkg/util_test.go"}, decodeToolJSON(t, out)["files"])
 
-	out, err = d.CallTool(ctx, "file_grep", map[string]any{"pattern": "TODO", "path": "./repo/main.go", "context": 1})
+	out, err = d.CallTool(ctx, "file_grep", map[string]any{"pattern": "MARKER", "path": "./repo/main.go", "context": 1})
 	require.NoError(t, err)
 	match := decodeToolJSON(t, out)["matches"].([]any)[0].(map[string]any)
 	assert.Equal(t, []any{"func main() {"}, match["before"])
 	assert.Equal(t, []any{"}"}, match["after"])
 
-	out, err = d.CallTool(ctx, "file_grep", map[string]any{"pattern": "TODO", "path": "./repo", "limit": 1})
+	out, err = d.CallTool(ctx, "file_grep", map[string]any{"pattern": "MARKER", "path": "./repo", "limit": 1})
 	require.NoError(t, err)
 	assert.Equal(t, true, decodeToolJSON(t, out)["truncated"])
 
@@ -290,21 +290,21 @@ func TestFileGlobAndGrep_InRepositoryClone(t *testing.T) {
 
 func TestNewFileTools_RefuseOutsideAllowlistAndConfigDir(t *testing.T) {
 	d, ctx, workspace := setupMCPWithFilesystemAgent(t, []string{"./sandbox/**", "!./sandbox/private/**"})
-	writeTestFile(t, filepath.Join(workspace, "sandbox", "private", "secret.txt"), "TODO secret\n")
-	writeTestFile(t, filepath.Join(workspace, "sandbox", "ok.txt"), "TODO ok\n")
+	writeTestFile(t, filepath.Join(workspace, "sandbox", "private", "secret.txt"), "MARKER secret\n")
+	writeTestFile(t, filepath.Join(workspace, "sandbox", "ok.txt"), "MARKER ok\n")
 	outside := t.TempDir()
-	writeTestFile(t, filepath.Join(outside, "x.txt"), "TODO outside\n")
+	writeTestFile(t, filepath.Join(outside, "x.txt"), "MARKER outside\n")
 
 	calls := []struct {
 		tool string
 		args map[string]any
 	}{
-		{"file_edit", map[string]any{"path": filepath.Join(outside, "x.txt"), "old_string": "TODO", "new_string": "x"}},
-		{"file_edit", map[string]any{"path": "./sandbox/private/secret.txt", "old_string": "TODO", "new_string": "x"}},
-		{"file_multi_edit", map[string]any{"path": filepath.Join(outside, "x.txt"), "edits": []map[string]any{{"old_string": "TODO", "new_string": "x"}}}},
+		{"file_edit", map[string]any{"path": filepath.Join(outside, "x.txt"), "old_string": "MARKER", "new_string": "x"}},
+		{"file_edit", map[string]any{"path": "./sandbox/private/secret.txt", "old_string": "MARKER", "new_string": "x"}},
+		{"file_multi_edit", map[string]any{"path": filepath.Join(outside, "x.txt"), "edits": []map[string]any{{"old_string": "MARKER", "new_string": "x"}}}},
 		{"file_read", map[string]any{"path": filepath.Join(outside, "x.txt"), "offset": 1}},
 		{"file_glob", map[string]any{"pattern": "*", "path": outside}},
-		{"file_grep", map[string]any{"pattern": "TODO", "path": outside}},
+		{"file_grep", map[string]any{"pattern": "MARKER", "path": outside}},
 	}
 	for _, c := range calls {
 		out, err := d.CallTool(ctx, c.tool, c.args)
@@ -324,7 +324,7 @@ func TestNewFileTools_RefuseOutsideAllowlistAndConfigDir(t *testing.T) {
 		assert.Contains(t, out, "Aviary config directory", tool)
 	}
 
-	out, err := d.CallTool(ctx, "file_grep", map[string]any{"pattern": "TODO", "path": "./sandbox", "mode": "files"})
+	out, err := d.CallTool(ctx, "file_grep", map[string]any{"pattern": "MARKER", "path": "./sandbox", "mode": "files"})
 	require.NoError(t, err)
 	assert.Equal(t, []any{"ok.txt"}, decodeToolJSON(t, out)["files"], "denied files are skipped")
 }
@@ -341,7 +341,7 @@ func TestFilesystemGrant_GivesJobAccessToItsCloneOnly(t *testing.T) {
 
 	out, err = d.CallTool(jobCtx, "file_edit", map[string]any{"path": "pkg/util.go", "old_string": "one", "new_string": "uno"})
 	require.NoError(t, err)
-	assert.Contains(t, decodeToolJSON(t, out)["diff"], "+// TODO: uno")
+	assert.Contains(t, decodeToolJSON(t, out)["diff"], "+// MARKER: uno")
 
 	out, err = d.CallTool(jobCtx, "file_grep", map[string]any{"pattern": "uno", "mode": "files"})
 	require.NoError(t, err)

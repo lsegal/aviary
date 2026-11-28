@@ -136,20 +136,35 @@ export function planCollapse({
 	return plan;
 }
 
+/** A row to fit by moving whole items into the menu, for `collapsedCount`. */
+export interface CollapsedCountInput {
+	/** The row's width now, with `dropped` items already moved. */
+	width: number;
+	/** How many items are already in the menu. */
+	dropped: number;
+	available: number;
+	/** Each item's width, in the order items move into the menu. */
+	widths: readonly number[];
+	/** The i-th item also moves on a row narrower than `thresholds[i]`. */
+	thresholds?: readonly (number | undefined)[];
+	/** The gap each item takes besides its width. */
+	gap?: number;
+}
+
 /**
  * The number of items to move into the menu so that a row now `width`
  * wide, with `dropped` items already moved, fits in `available`. Each
  * item takes `widths[i]` plus `gap`, and the i-th one also moves below
  * `thresholds[i]` pixels of row; earlier items always move first.
  */
-export function collapsedCount(
-	width: number,
-	dropped: number,
-	available: number,
-	widths: readonly number[],
-	thresholds: readonly (number | undefined)[] = [],
+export function collapsedCount({
+	width,
+	dropped,
+	available,
+	widths,
+	thresholds = [],
 	gap = 8,
-): number {
+}: CollapsedCountInput): number {
 	return planCollapse({
 		width,
 		taken: widths.map((_, i) => i < dropped),

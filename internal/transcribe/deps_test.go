@@ -95,7 +95,9 @@ func TestInstallPackages_BrewFailureReportsFirstLine(t *testing.T) {
 func TestInstallPackages_WingetInstallsEachPackageByID(t *testing.T) {
 	useGOOS(t, "windows")
 	args := fakeTool(t, "winget", "ok", 0)
-	err := installPackages(context.Background(), []string{"whisper-cpp", "ffmpeg"}, func(string) {})
+	err := installPackages(context.Background(), []string{"whisper-cpp", "ffmpeg"}, func(string) {
+		// no-op: this test does not inspect installer progress output
+	})
 	require.NoError(t, err)
 	assert.Equal(t, []string{
 		"install --silent --accept-package-agreements --accept-source-agreements --id ggerganov.whisper.cpp",
@@ -106,7 +108,9 @@ func TestInstallPackages_WingetInstallsEachPackageByID(t *testing.T) {
 func TestInstallPackages_WingetFailureReportsFirstLine(t *testing.T) {
 	useGOOS(t, "windows")
 	fakeTool(t, "winget", "No package found\nmore", 1)
-	err := installPackages(context.Background(), []string{"ffmpeg"}, func(string) {})
+	err := installPackages(context.Background(), []string{"ffmpeg"}, func(string) {
+		// no-op: this test does not inspect installer progress output
+	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "winget install Gyan.FFmpeg failed")
 	assert.Contains(t, err.Error(), "No package found")

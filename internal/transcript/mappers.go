@@ -99,7 +99,7 @@ func (m *claudeMapper) Map(line []byte) []Event {
 }
 
 // claudeToolUse maps one tool_use block: shell tools become commands, edits
-// become file changes, todo and task tools become plans, and everything else
+// become file changes, checklist and task tools become plans, and everything else
 // stays a tool call.
 func claudeToolUse(block claudeBlock) Event {
 	input := block.Input
@@ -216,7 +216,7 @@ func claudeToolResultContent(raw json.RawMessage) (string, []string) {
 
 // codexMapper maps `codex exec --json`: item.started and item.completed
 // events carry agent messages, reasoning, command executions, file changes,
-// tool calls and todo lists, and turn.completed carries usage.
+// tool calls and task checklists, and turn.completed carries usage.
 type codexMapper struct {
 	// started remembers the web searches whose call was already mapped, so a
 	// search that never reported item.started still gets one.

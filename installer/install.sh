@@ -1,4 +1,8 @@
 #!/usr/bin/env sh
+# The script works both executed and sourced, so it stops with
+# `return N 2>/dev/null || exit N`: return when sourced, exit otherwise.
+# ShellCheck reads that exit as unreachable after the return (SC2317).
+# shellcheck disable=SC2317
 set -eu
 
 REPO="${AVIARY_REPO:-lsegal/aviary}"
@@ -120,12 +124,14 @@ trap cleanup EXIT INT TERM
 
 mkdir -p "$BIN_DIR"
 ARCHIVE_PATH="$TMP_DIR/$ASSET"
+# POSIX sh has no arrays, so the progress flags go in the positional
+# parameters, which the argument loop above has already consumed.
 if [ -t 1 ]; then
-	CURL_PROGRESS_ARG="--progress-bar"
+	set -- --progress-bar
 else
-	CURL_PROGRESS_ARG="--silent --show-error"
+	set -- --silent --show-error
 fi
-curl --fail --location $CURL_PROGRESS_ARG "$DOWNLOAD_URL/$ASSET" -o "$ARCHIVE_PATH"
+curl --fail --location "$@" "$DOWNLOAD_URL/$ASSET" -o "$ARCHIVE_PATH"
 curl -fsSL "$DOWNLOAD_URL/checksums.txt" -o "$TMP_DIR/checksums.txt"
 EXPECTED_SHA="$(awk -v asset="$ASSET" '$2 == asset {print $1}' "$TMP_DIR/checksums.txt")"
 if [ -z "$EXPECTED_SHA" ]; then
@@ -191,14 +197,14 @@ fi
 PROFILE_DISPLAY="$PROFILE_FILE"
 case "$PROFILE_DISPLAY" in
 "$HOME"/*)
-	PROFILE_DISPLAY="~${PROFILE_DISPLAY#$HOME}"
+	PROFILE_DISPLAY="~${PROFILE_DISPLAY#"$HOME"}"
 	;;
 esac
 
 BIN_DISPLAY="$BIN_DIR/aviary"
 case "$BIN_DISPLAY" in
 "$HOME"/*)
-	BIN_DISPLAY="~${BIN_DISPLAY#$HOME}"
+	BIN_DISPLAY="~${BIN_DISPLAY#"$HOME"}"
 	;;
 esac
 

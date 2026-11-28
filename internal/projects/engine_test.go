@@ -2921,7 +2921,7 @@ func TestShouldDispatchIssueUsesProjectStatusForRecovery(t *testing.T) {
 			t.Fatalf("new %s project issue was dispatched", status)
 		}
 	}
-	for _, status := range []string{"Todo", "TODO", "Ready", "ready"} {
+	for _, status := range []string{"Todo", "toDo", "Ready", "ready"} {
 		if !shouldDispatchIssue(project, Issue{ProjectStatus: status}, false, false, false, false, "") {
 			t.Fatalf("new %s project issue was not dispatched", status)
 		}
@@ -3063,7 +3063,7 @@ func TestEngineRedispatchesProjectItemMovedBackToTodoAfterCompletion(t *testing.
 
 	awaitDispatch("initial dispatch")
 	// Let the first run complete so the item's local state becomes
-	// "completed" while the project item remains in the Todo column.
+	// "completed" while the project item remains in its ready column.
 	r.allow <- struct{}{}
 	awaitDispatch("redispatch after completion")
 
@@ -3236,7 +3236,7 @@ func TestEngineDispatchesProjectBoardChangeBeforeFallbackPoll(t *testing.T) {
 	dir := t.TempDir()
 	src := &fakeSource{batches: [][]Issue{
 		{}, // initial poll: nothing on the board yet
-		{{Number: 9, ProjectStatus: "Todo", State: "OPEN"}}, // card moved into Todo
+		{{Number: 9, ProjectStatus: "Todo", State: "OPEN"}}, // card moved into the ready column
 	}}
 	r := &fakeRunner{release: make(chan struct{}), dispatched: make(chan int, 1)}
 	// The board changes on the second probe, and the fallback poll is an hour

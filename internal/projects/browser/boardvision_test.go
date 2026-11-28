@@ -241,8 +241,8 @@ func TestBoardVisionSkipsAPageThatCannotScreenshot(t *testing.T) {
 
 // Recovering a board is only worth anything if the issues it recovers can
 // actually be dispatched. The Status column the agent reads off the screenshot
-// is what the ready-state gate matches, so an item the board shows as "Todo"
-// passes that gate under the default ready state exactly like an item the DOM
+// is what the ready-state gate matches, so an item the board shows in its
+// default ready column passes that gate under the default ready state exactly like an item the DOM
 // extractor read (issue #398).
 func TestBoardVisionRecoveredItemsDispatchUnderTheDefaultReadyState(t *testing.T) {
 	clock := &visionClock{step: DefaultWatchInterval}
@@ -261,7 +261,7 @@ func TestBoardVisionRecoveredItemsDispatchUnderTheDefaultReadyState(t *testing.T
 	if len(issues) != 2 {
 		t.Fatalf("recovered %d issues, want 2: %+v", len(issues), issues)
 	}
-	// The default ready state is Todo/Ready, so the first item dispatches and
+	// The first item sits in a default ready column, so it dispatches and
 	// the finished one does not.
 	if !core.ShouldDispatchIssue(boardTarget, issues[0], false, false, false, false, "") {
 		t.Fatalf("a recovered %q item is not a dispatch candidate", issues[0].ProjectStatus)
