@@ -485,9 +485,7 @@ describe("ProjectsView header", () => {
 		// The row shows the list inline when it fits the measured width (#1585).
 		expect(
 			testid(w, "board-nav-row").findComponent(CLIProviderList).props("clis"),
-		).toEqual([
-			{ name: "codex" },
-		]);
+		).toEqual([{ name: "codex" }]);
 	});
 
 	it("ticks the clock every second", async () => {
