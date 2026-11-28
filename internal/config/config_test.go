@@ -282,6 +282,12 @@ func TestValidate(t *testing.T) {
 
 	})
 
+	t.Run("task name with slash", func(t *testing.T) {
+		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "bad name/slash", Prompt: "p", Every: "1h", Trigger: "interval"}}}}}
+		issues := Validate(cfg, nil)
+		assert.True(t, hasIssue(issues, `cannot contain "/"`))
+	})
+
 	t.Run("invalid task prompt", func(t *testing.T) {
 		cfg := &Config{Agents: []AgentConfig{{Name: "bot", Tasks: []TaskConfig{{Name: "t1"}}}}}
 		issues := Validate(cfg, nil)

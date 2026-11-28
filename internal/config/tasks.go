@@ -263,6 +263,16 @@ func mergeTasksByName(base []TaskConfig, fileTasks []TaskConfig) []TaskConfig {
 	return result
 }
 
+// ValidateTaskName rejects task names that task lookups cannot resolve:
+// "/" separates the agent from the task in task IDs (<agent>/<task>), so a
+// name containing it could only ever be addressed by its full ID.
+func ValidateTaskName(name string) error {
+	if strings.Contains(name, "/") {
+		return fmt.Errorf("task name %q cannot contain \"/\", which separates the agent from the task in task IDs", name)
+	}
+	return nil
+}
+
 // taskNameToFilename converts a task name to a safe filename component by
 // lower-casing and replacing whitespace and path-unsafe characters with hyphens.
 func taskNameToFilename(name string) string {
