@@ -1,14 +1,19 @@
 // @vitest-environment happy-dom
-import { flushPromises, mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, ref } from "vue";
 
 const callTool = vi.fn();
+enableAutoUnmount(afterEach);
 vi.mock("./useMCP", () => ({ useMCP: () => ({ callTool }) }));
 
 const { CARD_OUTPUT_EVENTS, CARD_OUTPUT_LINES, useProjectBoard } = await import(
 	"./useProjects"
 );
+const { applyProjectEvent, PROJECT_EVENT_BATCH_MS } = await import(
+	"./projectListStore"
+);
+const { BOARD_LOAD_MEASURES } = await import("../lib/boardTiming");
 
 // #1657: a board load costs a fixed number of requests however many cards it
 // shows, carries card summaries and their output in the list itself, and a
@@ -29,7 +34,17 @@ function job(n: number) {
 }
 
 let revision = "r1";
+// A delta the next jobs poll returns against revision r1, if set.
+let delta: Record<string, unknown> | null = null;
 function respond(tool: string, args: Record<string, unknown> = {}) {
+	if (
+		tool === "project_job_list" &&
+		delta &&
+		args.revision === "r1" &&
+		args.delta === true &&
+		!(args.kinds as string[] | undefined)?.includes("schedule")
+	)
+		return JSON.stringify(delta);
 	if (tool === "project_status")
 		return JSON.stringify({ targets: ["o/r"], states: {} });
 	if (tool === "project_job_list") {
@@ -68,6 +83,7 @@ const calls = (tool: string) =>
 describe("useProjectBoard", () => {
 	beforeEach(() => {
 		revision = "r1";
+		delta = null;
 		callTool.mockReset();
 		callTool.mockImplementation(async (tool: string, args) =>
 			respond(tool, args),
@@ -116,5 +132,95 @@ describe("useProjectBoard", () => {
 			expect(args.output_events).toBeUndefined();
 		}
 		expect(callTool).toHaveBeenCalledTimes(3);
+	});
+
+	// #1661: a changed list is read as a delta and applied in place.
+	it("applies a delta in place so unchanged cards keep their objects and don't re-render", async () => {
+		const renders = new Map<string, number>();
+		const Card = defineComponent({
+			props: { job: { type: Object, required: true } },
+			setup(props) {
+				return () => {
+					const id = (props.job as { id: string }).id;
+					renders.set(id, (renders.get(id) ?? 0) + 1);
+					return h("div", (props.job as { title: string }).title);
+				};
+			},
+		});
+		let board!: ReturnType<typeof useProjectBoard>;
+		mount(
+			defineComponent({
+				setup() {
+					board = useProjectBoard(
+						ref(["o/r"]),
+						ref([]),
+						ref(""),
+						ref(false),
+						ref(true),
+					);
+					return () =>
+						h(
+							"div",
+							board.jobs.value.map((job) => h(Card, { key: job.id, job })),
+						);
+				},
+			}),
+		);
+		await flushPromises();
+		const first = new Map(board.jobs.value.map((job) => [job.id, job]));
+		expect(first.size).toBe(CARDS);
+		expect([...renders.values()].every((n) => n === 1)).toBe(true);
+
+		revision = "r2";
+		delta = {
+			delta: true,
+			jobs: [{ ...job(5), title: "Job 5 changed" }],
+			removed: ["o/r#12"],
+			total: CARDS - 1,
+			revision: "r2",
+		};
+		await board.refresh();
+		await flushPromises();
+		expect(calls("project_job_list").at(-2)?.[1]).toMatchObject({
+			revision: "r1",
+			delta: true,
+		});
+		const now = board.jobs.value;
+		expect(now).toHaveLength(CARDS - 1);
+		expect(board.total.value).toBe(CARDS - 1);
+		expect(now.some((j) => j.id === "o/r#12")).toBe(false);
+		for (const j of now) {
+			if (j.id === "o/r#5") {
+				expect(j.title).toBe("Job 5 changed");
+				expect(j).not.toBe(first.get(j.id));
+			} else expect(j).toBe(first.get(j.id));
+		}
+		expect(renders.get("o/r#5")).toBe(2);
+		for (const [id, n] of renders) if (id !== "o/r#5") expect(n).toBe(1);
+	});
+
+	it("reads the board at once on a project-updated event for its project", async () => {
+		const board = mountBoard();
+		await flushPromises();
+		const before = calls("project_job_list").length;
+		applyProjectEvent({ type: "project-updated", target: "other/repo" });
+		applyProjectEvent({ type: "project-updated", target: "o/r" });
+		applyProjectEvent({ type: "project-updated", target: "o/r" });
+		await new Promise((r) => setTimeout(r, PROJECT_EVENT_BATCH_MS + 50));
+		await flushPromises();
+		// One batched read of the board's two lists.
+		expect(calls("project_job_list").length - before).toBe(2);
+		expect(board().jobs.value).toHaveLength(CARDS);
+	});
+
+	it("records board-load timing for the request, parse and render", async () => {
+		performance.clearMeasures();
+		mountBoard();
+		await flushPromises();
+		for (const name of Object.values(BOARD_LOAD_MEASURES)) {
+			const entries = performance.getEntriesByName(name, "measure");
+			expect(entries, name).toHaveLength(1);
+			expect(entries[0].duration).toBeGreaterThanOrEqual(0);
+		}
 	});
 });

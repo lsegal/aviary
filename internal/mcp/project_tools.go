@@ -44,6 +44,7 @@ type projectJobListArgs struct {
 	OutputLines  int    `json:"output_lines,omitempty" jsonschema:"Add each listed job's last this many output lines, as scrollback; a schedule's entry only while its run is starting or running"`
 	OutputEvents int    `json:"output_events,omitempty" jsonschema:"Add each listed job's latest this many transcript events; a schedule's entry only while its run is starting or running"`
 	Revision     string `json:"revision,omitempty" jsonschema:"new to get the list's revision back, or the revision an earlier identical call returned; when nothing changed since, only unchanged and the revision come back"`
+	Delta        bool   `json:"delta,omitempty" jsonschema:"With revision, return only the entries added or changed since it as jobs, the keys removed as removed, and keys, the new order, when it changed; delta is set on such a list, and a revision too old to diff gets the full list"`
 }
 
 // jobListTargets is the projects a job list covers: target plus targets.
@@ -301,7 +302,7 @@ func registerProjectTools(s *sdkmcp.Server) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
 			return m.ListJobsPage(projects.JobListQuery{
 				Targets: jobListTargets(args), Status: args.Status, States: args.States, Kinds: args.Kinds, Query: args.Query,
-				Offset: args.Offset, Limit: args.Limit, OutputLines: args.OutputLines, OutputEvents: args.OutputEvents, Revision: args.Revision,
+				Offset: args.Offset, Limit: args.Limit, OutputLines: args.OutputLines, OutputEvents: args.OutputEvents, Revision: args.Revision, Delta: args.Delta,
 			}), nil
 		})
 	})

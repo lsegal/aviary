@@ -161,6 +161,22 @@ export interface ProjectEvent {
 
 let updateTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** How long project-updated events are batched before a read, in ms. */
+export const PROJECT_EVENT_BATCH_MS = 250;
+
+const updateListeners = new Set<(target: string) => void>();
+
+/**
+ * Calls listener with the project of every project-updated event, so an open
+ * board can read what changed at once (#1661). It returns the unsubscribe.
+ */
+export function onProjectUpdated(listener: (target: string) => void) {
+	updateListeners.add(listener);
+	return () => {
+		updateListeners.delete(listener);
+	};
+}
+
 /**
  * Applies a live project event: an added or removed project shows or goes
  * at once, then the list is read for its counts. Updates, which a busy
@@ -178,11 +194,12 @@ export function applyProjectEvent(ev: ProjectEvent): boolean {
 			void refreshProjectList();
 			return true;
 		case "project-updated":
+			for (const listener of updateListeners) listener(target);
 			if (updateTimer) return true;
 			updateTimer = setTimeout(() => {
 				updateTimer = null;
 				void refreshProjectList();
-			}, 250);
+			}, PROJECT_EVENT_BATCH_MS);
 			return true;
 	}
 	return false;

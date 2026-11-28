@@ -1,11 +1,13 @@
-import { onMounted, onUnmounted, type Ref, ref, watch } from "vue";
+import { nextTick, onMounted, onUnmounted, type Ref, ref, watch } from "vue";
+import { markBoardLoad } from "../lib/boardTiming";
 import {
+	applyJobListRead,
 	BOARD_JOB_KINDS,
 	BOARD_STATES,
 	type BoardState,
 	type JobDetail,
+	type JobListState,
 	normalizeJobDetail,
-	normalizeJobList,
 	normalizeStatus,
 	normalizeUpcoming,
 	type ProjectJob,
@@ -18,6 +20,8 @@ import {
 } from "../lib/projects";
 import { useSettingsStore } from "../stores/settings";
 import {
+	onProjectUpdated,
+	PROJECT_EVENT_BATCH_MS,
 	projectList,
 	projectListAvailable,
 	readProjectListFrom,
@@ -104,39 +108,45 @@ export function useProjectBoard(
 	const scheduleEntries = ref<ProjectJob[]>([]);
 
 	// A poll that finds a list unchanged since its last read keeps what it
-	// shows rather than re-reading and re-rendering it (#1657): each list
-	// passes back the revision its last identical request returned.
-	const revisions = new Map<string, { revision: string; value: unknown }>();
-	async function readList<T>(
+	// shows rather than re-reading and re-rendering it (#1657). A poll that
+	// finds it changed reads only the entries added or changed and the keys
+	// removed since, and applies them in place, so the cards of unchanged
+	// jobs keep their objects and don't re-render (#1661).
+	const lists = new Map<string, JobListState>();
+	type ListRead = { key: string; raw: Record<string, unknown> | null };
+	async function fetchList(
 		name: string,
 		args: Record<string, unknown>,
-		parse: (raw: unknown) => T,
-	): Promise<{ value: T; changed: boolean }> {
+	): Promise<ListRead> {
 		const key = `${name} ${JSON.stringify(args)}`;
-		const last = revisions.get(key);
 		const parsed = parseToolJSON(
 			await callTool("project_job_list", {
 				...args,
-				revision: last?.revision ?? "new",
+				revision: lists.get(key)?.revision ?? "new",
+				delta: true,
 			}),
 		);
-		const raw = (parsed && typeof parsed === "object" ? parsed : {}) as Record<
-			string,
-			unknown
-		>;
-		if (raw.unchanged === true && last)
-			return { value: last.value as T, changed: false };
-		const value = parse(raw);
-		revisions.delete(key);
-		if (typeof raw.revision === "string" && raw.revision)
-			revisions.set(key, { revision: raw.revision, value });
+		return {
+			key,
+			raw: parsed && typeof parsed === "object" ? (parsed as never) : {},
+		};
+	}
+	// Applies a read to its list's state, returning the list when it
+	// changed and null when it didn't.
+	function applyList({ key, raw }: ListRead): JobListState | null {
+		if (!raw) return null;
+		const last = lists.get(key);
+		const next = applyJobListRead(last, raw);
+		if (next === last) return null;
+		lists.delete(key);
+		if (next.revision) lists.set(key, next);
 		// Only the latest filter's lists are kept.
-		while (revisions.size > 4) {
-			const oldest = revisions.keys().next().value;
+		while (lists.size > 4) {
+			const oldest = lists.keys().next().value;
 			if (oldest === undefined) break;
-			revisions.delete(oldest);
+			lists.delete(oldest);
 		}
-		return { value, changed: true };
+		return next;
 	}
 
 	function listJobs(projects: string[]) {
@@ -146,46 +156,30 @@ export function useProjectBoard(
 		// request however many cards it shows (#1657); kanban cards show
 		// none.
 		const all = kanban.value;
-		return readList(
-			"jobs",
-			{
-				targets: projects,
-				// Naming every job state leaves out schedules between runs.
-				states: states.value.length ? states.value : BOARD_STATES,
-				kinds: withSchedules.value ? BOARD_JOB_KINDS : undefined,
-				query: search.value.trim() || undefined,
-				offset: all ? 0 : page.value * JOBS_PAGE_SIZE,
-				limit: all ? ALL_JOBS_LIMIT : JOBS_PAGE_SIZE,
-				output_lines: all ? undefined : CARD_OUTPUT_LINES,
-				output_events: all ? undefined : CARD_OUTPUT_EVENTS,
-			},
-			(raw) => {
-				const list = normalizeJobList(raw);
-				return {
-					jobs: sortJobs(list.jobs),
-					total: list.total,
-					unfilteredTotal: list.unfilteredTotal,
-				};
-			},
-		);
+		return fetchList("jobs", {
+			targets: projects,
+			// Naming every job state leaves out schedules between runs.
+			states: states.value.length ? states.value : BOARD_STATES,
+			kinds: withSchedules.value ? BOARD_JOB_KINDS : undefined,
+			query: search.value.trim() || undefined,
+			offset: all ? 0 : page.value * JOBS_PAGE_SIZE,
+			limit: all ? ALL_JOBS_LIMIT : JOBS_PAGE_SIZE,
+			output_lines: all ? undefined : CARD_OUTPUT_LINES,
+			output_events: all ? undefined : CARD_OUTPUT_EVENTS,
+		});
 	}
 
-	async function listScheduleEntries(projects: string[]) {
-		if (!withSchedules.value)
-			return { value: [] as ProjectJob[], changed: true };
+	async function listScheduleEntries(projects: string[]): Promise<ListRead> {
+		if (!withSchedules.value) return { key: "", raw: null };
 		// A scheduled card shows its run's output only while it runs; the
 		// list carries it for those entries alone.
-		return readList(
-			"schedules",
-			{
-				targets: projects,
-				kinds: ["schedule"],
-				limit: ALL_JOBS_LIMIT,
-				output_lines: kanban.value ? undefined : CARD_OUTPUT_LINES,
-				output_events: kanban.value ? undefined : CARD_OUTPUT_EVENTS,
-			},
-			(raw) => normalizeJobList(raw).jobs,
-		);
+		return fetchList("schedules", {
+			targets: projects,
+			kinds: ["schedule"],
+			limit: ALL_JOBS_LIMIT,
+			output_lines: kanban.value ? undefined : CARD_OUTPUT_LINES,
+			output_events: kanban.value ? undefined : CARD_OUTPUT_EVENTS,
+		});
 	}
 
 	// Typing fires a load per keystroke, so only the latest one may land.
@@ -203,21 +197,31 @@ export function useProjectBoard(
 			return;
 		}
 		try {
-			const [statusText, list, entries] = await Promise.all([
+			markBoardLoad("start");
+			const [statusText, jobRead, entryRead] = await Promise.all([
 				// The stat cards count the board's own projects, like its filters.
 				callTool("project_status", { targets: projects }),
 				listJobs(projects),
 				listScheduleEntries(projects),
 			]);
 			if (key !== targets.value.join(" ") || call !== latest) return;
+			markBoardLoad("response");
 			status.value = normalizeStatus(parseToolJSON(statusText));
-			if (list.changed) {
-				jobs.value = list.value.jobs;
-				total.value = list.value.total;
-				unfilteredTotal.value = list.value.unfilteredTotal;
+			const list = applyList(jobRead);
+			if (list) {
+				jobs.value = sortJobs(list.jobs);
+				total.value = list.total;
+				unfilteredTotal.value = list.unfilteredTotal;
 			}
-			if (entries.changed) scheduleEntries.value = entries.value;
+			if (!withSchedules.value) scheduleEntries.value = [];
+			else {
+				const entries = applyList(entryRead);
+				if (entries) scheduleEntries.value = entries.jobs;
+			}
 			error.value = "";
+			markBoardLoad("parsed");
+			await nextTick();
+			markBoardLoad("rendered");
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -226,6 +230,22 @@ export function useProjectBoard(
 	}
 
 	const { refresh } = usePoll(load, PROJECTS_POLL_MS);
+
+	// A job that changes in one of the board's projects shows at once rather
+	// than at the next poll: /api/ws project-updated events, batched, read
+	// the board's lists again, which costs only what changed (#1661).
+	let liveTimer: ReturnType<typeof setTimeout> | null = null;
+	const stopLive = onProjectUpdated((target) => {
+		if (liveTimer || (target && !targets.value.includes(target))) return;
+		liveTimer = setTimeout(() => {
+			liveTimer = null;
+			void refresh();
+		}, PROJECT_EVENT_BATCH_MS);
+	});
+	onUnmounted(() => {
+		stopLive();
+		if (liveTimer) clearTimeout(liveTimer);
+	});
 
 	watch(
 		[
