@@ -24,16 +24,17 @@
     </div>
     <ul :aria-label="label">
       <li v-for="item in items" :key="item.key">
-        <!-- The open item is shaded with an accent edge rather than bold,
-             which reads as unread (#1319). -->
+        <!-- The open item is a shaded pill with darker text, like the
+             expanded sidebar's open page. Not bold, which reads as unread
+             (#1319), and no accent edge, which looked out of place (#1652). -->
         <router-link :to="item.to" data-testid="sidebar-rail-flyout-item" :aria-current="item.active ? 'page' : undefined"
           :data-running="item.badge ?? undefined"
-          class="flex min-w-0 items-center gap-2 rounded-lg border-l-2 px-2 py-1.5 text-sm transition-colors"
+          class="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 dark:focus-visible:ring-blue-400"
           :class="item.active
-            ? 'border-blue-600 bg-gray-100 text-gray-950 dark:border-blue-400 dark:bg-gray-800 dark:text-white'
+            ? 'bg-gray-100 text-gray-950 dark:bg-gray-800 dark:text-white'
             : item.dimmed
-              ? 'border-transparent text-gray-400 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-white'
-              : 'border-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'"
+              ? 'text-gray-400 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-500 dark:hover:bg-gray-800/60 dark:hover:text-white'
+              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800/60 dark:hover:text-white'"
           @click="hide"><span class="min-w-0 flex-1 truncate">{{ item.label }}</span><span v-if="item.badge"
             data-testid="sidebar-rail-flyout-count" :aria-label="runningLabel(item.badge)"
             class="shrink-0 rounded-full bg-gray-200 px-1.5 text-xs font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">{{ item.badge }}</span></router-link>
