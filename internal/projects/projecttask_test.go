@@ -73,7 +73,7 @@ func TestEngineRunsProjectTaskAsBoardJob(t *testing.T) {
 	w, ctx := startScheduledEngine(t, runner)
 	fire := time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)
 
-	summary, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: "bot/triage", Name: "triage", Project: "o/r", Prompt: "Triage new issues", Fire: fire}, "o/r", AgentSession{})
+	summary, err := w.runProjectTask(ctx, scheduler.ProjectRun{TaskID: "bot/triage", JobID: "job_triage", Name: "triage", Project: "o/r", Prompt: "Triage new issues", Fire: fire}, "o/r", AgentSession{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestEngineRunsProjectTaskAsBoardJob(t *testing.T) {
 	if !ok {
 		t.Fatal("the project task has no board job numbered by its fire time")
 	}
-	if job.Kind != core.JobKindSchedule || job.ScheduleID != "bot/triage" || job.Title != "triage" || job.Status != "complete" {
+	if job.Kind != core.JobKindSchedule || job.ScheduleID != "bot/triage" || job.RunID != "job_triage" || job.Title != "triage" || job.Status != "complete" {
 		t.Fatalf("job = %+v", job)
 	}
 	if job.Summary != "Opened issue #12 for the stale lockfile" || job.Finished.IsZero() || job.Fallback {
@@ -627,5 +627,37 @@ func TestEnginePrecompiledProjectTaskCloneFailureFallsBack(t *testing.T) {
 	}
 	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
 		t.Fatalf("clone root holds %v (%v), want the failed checkout removed", entries, err)
+	}
+}
+
+// A scheduled run's output is found by the scheduler job it ran as, from the
+// live board and, after a restart, from the job store, which keeps the tail
+// of a long log and says it was cut (issue #1646).
+func TestManagerScheduledRunLog(t *testing.T) {
+	dir := t.TempDir()
+	long := strings.Repeat("Running: gh issue view 1656\n", 2*jobStoreLogBytes/28) + "Filed #1656, #1657 and #1658.\n"
+	run := func(number int, started time.Time, log string) JobSnapshot {
+		return JobSnapshot{Target: "o/a", Number: number, Kind: core.JobKindSchedule, ScheduleID: "bot/qa", RunID: "job_qa", Status: "complete", Started: started, Log: log}
+	}
+	started := time.Now().Add(-25 * time.Minute)
+	m := cacheTestManager(t, dir, "o/a")
+	m.Snapshot(core.Snapshot{Targets: []string{"o/a"}, LastPoll: time.Now(), Jobs: []JobSnapshot{
+		run(1, started, "interrupted run\n"),
+		run(2, started.Add(time.Minute), long),
+		{Target: "o/a", Number: 3, Kind: core.JobKindSchedule, ScheduleID: "bot/qa", RunID: "job_other", Status: "complete", Started: started, Log: "another run\n"},
+	}})
+	log, truncated, found := m.ScheduledRunLog("job_qa")
+	if !found || truncated || log != long {
+		t.Fatalf("live run log: found %v, truncated %v, %d bytes", found, truncated, len(log))
+	}
+	if _, _, found := m.ScheduledRunLog("job_missing"); found {
+		t.Fatal("found a run for a job no run records")
+	}
+	m.Shutdown()
+
+	restarted := cacheTestManager(t, dir, "o/a")
+	log, truncated, found = restarted.ScheduledRunLog("job_qa")
+	if !found || !truncated || len(log) > jobStoreLogBytes || !strings.HasSuffix(log, "Filed #1656, #1657 and #1658.\n") || !strings.HasPrefix(log, "Running:") {
+		t.Fatalf("stored run log after a restart: found %v, truncated %v, %d bytes, starts %q", found, truncated, len(log), log[:min(len(log), 40)])
 	}
 }
