@@ -43,7 +43,7 @@ func TestChannelToolsLifecycle(t *testing.T) {
 	assert.Equal(t, "team-slack", ch.ID)
 	assert.False(t, config.BoolOr(ch.Enabled, true), "a new channel starts disabled")
 	toolCallContains(t, d, "channel_create", map[string]any{"agent": "bot", "name": "team slack", "type": "slack"}, "already has a channel")
-	toolCallContains(t, d, "channel_create", map[string]any{"agent": "bot", "name": "X", "type": "irc"}, "type must be")
+	toolCallContains(t, d, "channel_create", map[string]any{"agent": "bot", "name": "X", "type": "irc"}, "does not equal any of")
 
 	// Its session lives under the channel, not Chats.
 	own := callList(t, d, "channel_sessions", map[string]any{"agent": "bot", "channel": "Team Slack"})

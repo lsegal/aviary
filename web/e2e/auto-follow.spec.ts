@@ -386,6 +386,7 @@ test("the system log pane follows, pauses with the pill, and keeps its place loa
 		level: "info",
 		component: "server",
 		msg: `log line ${seq}`,
+		off: seq * 100,
 	});
 	await page.route(/\/api\/logs\/history\?/, (route) =>
 		route.fulfill({

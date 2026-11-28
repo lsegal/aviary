@@ -1,5 +1,5 @@
 <template>
-	<AppLayout :compact-header="!jobOpen"
+	<AppLayout :compact-header="!jobOpen" :header-title-hidden="taken.has(TITLE_STEP)"
 		:title-link="project && !jobOpen ? { href: targetURL(project), title: `Open ${project} on GitHub` } : null">
 		<template v-if="(project || aggregate) && !jobOpen" #header-status>
 				<span v-if="aggregate" data-testid="board-projects"
@@ -17,17 +17,19 @@
 					class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
 					:title="issueSummary.title">{{ issueSummary.label }}</span>
 				<BoardHeaderInfo v-if="status" :status="status" :manual="manual" :filter-target="filterTarget" :now="now"
-					:hide-instance="inMenu.has('instance-tag')" :hide-info="inMenu.has('board-info')" :show-clis="!smUp"
+					:hide-instance="inMenu.has('instance-tag')" :hide-info="inMenu.has('board-info')" :show-clis="!inlineCLIs"
+					:instance-inline="!taken.has(INSTANCE_STEP)" :info-inline="!taken.has(INFO_STEP)"
 					@saved="refresh" />
 		</template>
 		<template v-if="project || aggregate" #header-actions>
 			<!-- With a job open on a phone, the job's own actions keep the row
 				and the board's move behind "…" (#1347). -->
 			<HeaderOverflow :collapsed="jobOpen && !smUp" label="Board actions">
-			<!-- On a phone the header is one line, so everything but "…" moves
-				into "…" one at a time until it fits: Logs, Watch, Chat,
-				Schedule, Queue and Add project, then the details and instance
-				icons (#1576). -->
+			<!-- The header is one line, so once the title is hidden and the
+				badge and details are icons, everything but "…" moves into "…"
+				one at a time until it fits: Logs, Watch, Chat, Schedule, Queue
+				and Add project, then the details and instance icons (#1576,
+				#1584). -->
 			<button v-if="aggregate && !inMenu.has('board-add-project')" type="button" data-testid="board-add-project" aria-label="Add project" title="Add project"
 				:class="HEADER_ADD_CLS" @click="openAdd">
 				<PlusIcon aria-hidden="true" class="h-5 w-5" />
@@ -60,7 +62,7 @@
 				:logs-in-menu="logsInMenu" v-model:logs-open="logsOpen"
 				:mode-target="watchInMenu ? filterTarget : null" :manual="manual"
 				:default-mode="status?.defaultMode ?? 'watch'"
-				:hidden="[...inMenu]" :status="status" :filter-target="filterTarget" :now="now" :show-clis="!smUp"
+				:hidden="[...inMenu]" :status="status" :filter-target="filterTarget" :now="now" :show-clis="!inlineCLIs"
 				v-model:chat-open="chatOpen" :can-schedule="!!scheduleAgent"
 				@refresh="onCheckNow" @cleared="refresh" @mode-changed="refresh" @saved="refresh"
 				@add-project="openAdd" @queue="openQueue($event, project || targets[0])" @schedule="onNewSchedule" />
@@ -71,7 +73,7 @@
 			<div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
 				<template v-if="project || aggregate">
 					<router-view v-if="jobOpen" />
-					<div v-else class="space-y-4 px-4 py-4 sm:px-6">
+					<div v-else ref="boardBody" data-testid="board-body" class="relative space-y-4 px-4 py-4 sm:px-6">
 						<GitHubSignInBanner v-if="status?.github" :session="status.github" :busy="signingIn"
 							@signin="onGitHub(signInToGitHub)" @use-polling="onGitHub(switchToPolling)"
 							@import="onGitHub(() => importProfile($event))" />
@@ -114,14 +116,16 @@
 
 						<!-- The projects' pills lead into each project, left of the agent
 							models and quota, which show in the details popover (or "…")
-							below sm instead (#1580). The same CSS breakpoint hides one and
-							shows the other, so they always show in exactly one place (#1582). -->
-						<div v-if="navPills || status?.clis.length" class="min-w-0 flex-wrap items-center gap-2"
-							:class="navPills ? 'flex' : 'hidden sm:flex'" data-testid="board-nav-row">
-						<ProjectNavRow v-if="navPills" :agent="routeAgent" :targets="targets" />
-						<div v-if="status?.clis.length" class="ml-auto hidden max-w-full sm:block">
-							<CLIProviderList :clis="status.clis" />
+							instead when they don't fit on one line (#1580, #1584). One
+							measured decision picks the place, so they always show in
+							exactly one (#1582); the hidden copy measures them. -->
+						<div v-if="status?.clis.length" aria-hidden="true"
+							class="pointer-events-none invisible absolute top-0 left-0 h-0 w-0 overflow-hidden">
+							<div class="absolute top-0 right-0 w-max"><CLIProviderList ref="cliMeasure" testid="board-clis-measure" :clis="status.clis" /></div>
 						</div>
+						<div v-if="navPills || inlineCLIs" class="flex min-w-0 flex-wrap items-center gap-2" data-testid="board-nav-row">
+						<ProjectNavRow v-if="navPills" :agent="routeAgent" :targets="targets" />
+						<CLIProviderList v-if="inlineCLIs && status" class="ml-auto" :clis="status.clis" />
 						</div>
 
 						<!-- Search keeps a usable width; the state filters fold into "Filters"
@@ -242,6 +246,7 @@ import UpNextStrip from "../components/projects/UpNextStrip.vue";
 import HeaderOverflow from "../components/ui/HeaderOverflow.vue";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { useFilterRowFit } from "../composables/useFilterRowFit";
+import { useFitsWidth } from "../composables/useFitsWidth";
 import {
 	type HeaderCollapseItem,
 	useHeaderCollapse,
@@ -671,6 +676,15 @@ onMounted(() => {
 	smQuery.addEventListener("change", onSmChange);
 });
 onUnmounted(() => smQuery.removeEventListener("change", onSmChange));
+// The agent models and quota show under the stats when they fit there on one line,
+// and in the details popover otherwise (#1580, #1584).
+const boardBody = ref<HTMLElement | null>(null);
+const cliMeasure = ref<{ $el: HTMLElement } | null>(null);
+const cliFits = useFitsWidth(
+	boardBody,
+	computed(() => cliMeasure.value?.$el),
+);
+const inlineCLIs = computed(() => cliFits.value && !!status.value?.clis.length);
 const navPills = computed(() => aggregate.value && targets.value.length > 0);
 const statsCompact = computed(() => statsChoice.value ?? !wide.value);
 
@@ -739,35 +753,79 @@ watch(logsOpen, (open) =>
 const chatPanel = ref<{ send: (text: string) => Promise<void> } | null>(null);
 
 // Logs moves into the "…" menu on a header row under 600px, then Watch
-// under 420px (a phone), and either sooner if the row would not fit (#1488).
-// On a phone the compact header is one line of chips and actions (#1576),
-// so Chat, Schedule, Queue and Add project follow, then the details and
-// instance icons, until the line fits; desktop keeps them all.
+// under 420px, and either sooner if the row would not fit (#1488). A board's
+// compact header is one line at every width, filled by priority (#1576,
+// #1584): the title goes first and needs room to spare, then the instance
+// badge and the details shrink to icons, then Logs, Watch, Chat, Schedule,
+// Queue and Add project move into "…", then the details and instance icons,
+// until the line fits; the thresholds give way to the fit. The badge and
+// details come back on their own, then the title, whenever they fit again
+// in the room left, which is how the badge can show inline beside the
+// details icon.
 const moreMenu = ref<{ trigger: HTMLElement | null } | null>(null);
 // A watch session's board is one agent's, so it queues when it has one project.
 const canQueue = computed(() => !aggregate.value || targets.value.length === 1);
-const singleLineHeader = computed(() => !smUp.value && !jobOpen.value);
+const singleLineHeader = computed(() => !jobOpen.value);
+const TITLE_STEP = "title-hidden";
+const INSTANCE_STEP = "instance-icon";
+const INFO_STEP = "info-icon";
+const ICON = "header-icon-measure";
 const collapseItems = computed((): HeaderCollapseItem[] => {
-	const items: HeaderCollapseItem[] = [{ id: "logs-toggle", below: 600 }];
-	if (filterTarget.value) items.push({ id: "project-mode-menu", below: 420 });
-	if (!singleLineHeader.value) return items;
+	const single = singleLineHeader.value;
+	const items: HeaderCollapseItem[] = [];
+	if (single) {
+		items.push({
+			id: TITLE_STEP,
+			measure: ["settings-title"],
+			saves: (m) => m.width("settings-title") + m.titleGap,
+			refill: true,
+			spare: 48,
+		});
+		if (status.value?.instanceID)
+			items.push(shrink(INSTANCE_STEP, "instance-badge-measure", "instance"));
+		if (status.value)
+			items.push(shrink(INFO_STEP, "board-meta-measure", "info"));
+	}
+	items.push({ id: "logs-toggle", below: single ? undefined : 600 });
+	if (filterTarget.value)
+		items.push({ id: "project-mode-menu", below: single ? undefined : 420 });
+	if (!single) return items;
 	items.push({ id: "prompt-chat-toggle" });
 	if (!aggregate.value) items.push({ id: "schedule-new" });
 	if (canQueue.value) items.push({ id: "queue-menu" });
 	if (aggregate.value) items.push({ id: "board-add-project" });
-	if (status.value) items.push({ id: "board-info" });
-	if (status.value?.instanceID) items.push({ id: "instance-tag" });
+	if (status.value) items.push(iconToMenu("board-info", "info"));
+	if (status.value?.instanceID)
+		items.push(iconToMenu("instance-tag", "instance"));
 	return items;
 });
-const headerCollapsed = useHeaderCollapse(
+// A badge or summary shrinking to its icon saves their measured difference.
+function shrink(id: string, wide: string, group: string): HeaderCollapseItem {
+	return {
+		id,
+		measure: [wide, ICON],
+		saves: (m) => m.width(wide) - m.width(ICON),
+		refill: true,
+		group,
+	};
+}
+function iconToMenu(id: string, group: string): HeaderCollapseItem {
+	return {
+		id,
+		measure: [ICON],
+		saves: (m) => m.width(ICON) + m.statusGap,
+		group,
+	};
+}
+const taken = useHeaderCollapse(
 	computed(() => moreMenu.value?.trigger),
 	() => collapseItems.value,
 	{
 		singleLine: () => singleLineHeader.value,
+		title: TITLE_STEP,
 		deps: [
 			aggregate,
 			targets,
-			smUp,
 			manual,
 			() => issueSummary.value?.label,
 			() => online.value,
@@ -775,11 +833,9 @@ const headerCollapsed = useHeaderCollapse(
 	},
 );
 // The items in the "…" menu instead of the header, never in both (#1486).
+const FORM_STEPS = new Set([TITLE_STEP, INSTANCE_STEP, INFO_STEP]);
 const inMenu = computed(
-	() =>
-		new Set(
-			collapseItems.value.slice(0, headerCollapsed.value).map(({ id }) => id),
-		),
+	() => new Set([...taken.value].filter((id) => !FORM_STEPS.has(id))),
 );
 const logsInMenu = computed(() => inMenu.value.has("logs-toggle"));
 const watchInMenu = computed(() => inMenu.value.has("project-mode-menu"));

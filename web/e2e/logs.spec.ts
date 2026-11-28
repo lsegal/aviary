@@ -16,17 +16,21 @@ interface Entry {
 	component: string;
 	msg: string;
 	attrs?: Record<string, string>;
+	off: number;
 }
 
 const NOW = new Date().toISOString();
 
 let nextSeq = 1;
+/** A log line; lines made later sit later in the log (a higher offset). */
 function entry(
 	msg: string,
-	opts: Partial<Omit<Entry, "msg" | "seq" | "ts">> = {},
+	opts: Partial<Omit<Entry, "msg" | "seq" | "ts" | "off">> = {},
 ): Entry {
+	const seq = nextSeq++;
 	return {
-		seq: nextSeq++,
+		seq,
+		off: seq * 100,
 		ts: NOW,
 		level: "info",
 		component: "server",
@@ -265,14 +269,15 @@ test("the text filter matches component, message and attrs, and combines with th
 	await expect(page.getByText("No log entries yet.")).toBeVisible();
 });
 
-test("Clear empties the list and Load previous brings older history back once", async ({
+test("Clear empties the list and Load previous brings back only older history", async ({
 	page,
 }) => {
 	const older = [entry("older-1"), entry("older-2"), entry("older-3")];
 	const history = await routeHistory(page, [
 		{ entries: older, hasMore: false },
 	]);
-	await gotoLogs(page, [entry("tail-1"), entry("tail-2")]);
+	const tail = [entry("tail-1"), entry("tail-2")];
+	await gotoLogs(page, tail);
 	await expect.poll(() => messages(page)).toEqual(["tail-1", "tail-2"]);
 
 	await page.getByRole("button", { name: "Clear" }).click();
@@ -280,31 +285,40 @@ test("Clear empties the list and Load previous brings older history back once", 
 	await expect(page.getByText("No log entries yet.")).toBeVisible();
 	await expect(chip(page, "server")).toHaveCount(0);
 
-	// Lines that arrive after Clear still show.
-	await sendLines(page, [entry("after-clear")]);
-	await expect.poll(() => messages(page)).toEqual(["after-clear"]);
-
+	// History pages back from where the cleared lines started, so the
+	// cleared tail does not come back.
 	await page.getByRole("button", { name: /Load previous/ }).click();
 	await expect
 		.poll(() => messages(page))
-		.toEqual(["older-1", "older-2", "older-3", "after-clear"]);
+		.toEqual(["older-1", "older-2", "older-3"]);
 	expect(history).toHaveLength(1);
+	expect(new URL(history[0]).searchParams.get("before")).toBe(
+		String(tail[0].off),
+	);
 	// No more history: the button goes away.
 	await expect(page.getByRole("button", { name: /Load previous/ })).toHaveCount(
 		0,
 	);
+
+	// Lines that arrive afterwards still show, below the history.
+	await sendLines(page, [entry("after-clear")]);
+	await expect
+		.poll(() => messages(page))
+		.toEqual(["older-1", "older-2", "older-3", "after-clear"]);
 });
 
 test("Load previous after live growth prepends older pages in order", async ({
 	page,
 }) => {
-	const page1 = Array.from({ length: 3 }, (_, i) => entry(`hist-b${i}`));
+	// Made oldest first, so offsets increase down the log.
 	const page2 = Array.from({ length: 3 }, (_, i) => entry(`hist-a${i}`));
+	const page1 = Array.from({ length: 3 }, (_, i) => entry(`hist-b${i}`));
 	const history = await routeHistory(page, [
 		{ entries: page1, hasMore: true },
 		{ entries: page2, hasMore: false },
 	]);
-	await gotoLogs(page, [entry("tail-1"), entry("tail-2")]);
+	const tail = [entry("tail-1"), entry("tail-2")];
+	await gotoLogs(page, tail);
 	await sendLines(page, [entry("live-1"), entry("live-2")]);
 	await expect
 		.poll(() => messages(page))
@@ -343,7 +357,11 @@ test("Load previous after live growth prepends older pages in order", async ({
 			"live-2",
 			"live-3",
 		]);
-	expect(history).toHaveLength(2);
+	// Each page asks for the lines before the oldest one shown.
+	expect(history.map((u) => new URL(u).searchParams.get("before"))).toEqual([
+		String(tail[0].off),
+		String(page1[0].off),
+	]);
 	await expect(loadPrevious).toHaveCount(0);
 });
 
@@ -398,4 +416,142 @@ test("long entries truncate with a +N bytes button that expands and collapses", 
 	const short = rows(page).filter({ hasText: "short-entry" });
 	await expect(short).toHaveCount(1);
 	await expect(short.getByRole("button")).toHaveCount(0);
+});
+
+const LINE_BYTES = 100;
+
+interface FakeLine {
+	seq: number;
+	ts: string;
+	level: "info";
+	component: string;
+	msg: string;
+	off: number;
+}
+
+// A log file: every line carries its byte offset, as the server sends it.
+function fakeLog(messages: string[]): FakeLine[] {
+	return messages.map((msg, i) => ({
+		seq: i + 1,
+		ts: NOW,
+		level: "info",
+		component: "server",
+		msg,
+		off: i * LINE_BYTES,
+	}));
+}
+
+function range(prefix: string, from: number, to: number): string[] {
+	return Array.from(
+		{ length: to - from + 1 },
+		(_, i) => `${prefix} ${from + i}`,
+	);
+}
+
+// Serves the SSE tail of the log as it stood when the page connected, then
+// the lines appended since, and /api/logs/history the way the server pages
+// it: the latest limit lines before the given offset, or before the current
+// end of the log without one.
+async function mockLogs(
+	page: Page,
+	log: FakeLine[],
+	tailed: number,
+	grown: number,
+) {
+	await page.route(/\/api\/logs\/history\?/, (route) => {
+		const url = new URL(route.request().url());
+		const limit = Number(url.searchParams.get("limit") ?? 500);
+		const raw = url.searchParams.get("before");
+		const before = raw === null ? Number.POSITIVE_INFINITY : Number(raw);
+		const older = log.filter((l) => l.off < before);
+		const entries = older.slice(-limit);
+		return route.fulfill({
+			contentType: "application/json",
+			body: JSON.stringify({
+				entries,
+				hasMore: older.length > entries.length,
+			}),
+		});
+	});
+	// One stream; a reconnect waits forever so the tail is not re-sent.
+	let streams = 0;
+	await page.route(/\/api\/logs\?/, (route) => {
+		if (streams++) return;
+		const live = log.slice(log.length - grown - tailed);
+		return route.fulfill({
+			contentType: "text/event-stream",
+			body: live.map((l) => `data: ${JSON.stringify(l)}\n\n`).join(""),
+		});
+	});
+	await setAuthToken(page);
+	await mockMCP(page, { config_validate: [], agent_list: [] });
+}
+
+function shownMessages(page: Page): Promise<string[]> {
+	return page
+		.getByTestId("logs-scroll")
+		.locator(":scope > div.border-b > span:last-child")
+		.allTextContents()
+		.then((texts) => texts.map((t) => t.trim()));
+}
+
+function expectNoDuplicates(messages: string[]) {
+	const seen = new Set<string>();
+	const dupes = messages.filter((m) => seen.size === seen.add(m).size);
+	expect(dupes).toEqual([]);
+}
+
+test("Load previous adds only older lines after the log grows (#1624)", async ({
+	page,
+}) => {
+	// 1,000 lines when the page opens (the tail shows the last 200), then 300
+	// more stream in.
+	const log = fakeLog([...range("OLD", 1, 1000), ...range("GROW", 1, 300)]);
+	await mockLogs(page, log, 200, 300);
+	await page.goto("/system/logs");
+	const scroller = page.getByTestId("logs-scroll");
+	await expect(scroller.getByText("GROW 300", { exact: true })).toBeAttached();
+	await expect.poll(async () => (await shownMessages(page)).length).toBe(500);
+
+	await scroller.getByRole("button", { name: /Load previous/ }).click();
+	await expect.poll(async () => (await shownMessages(page)).length).toBe(700);
+	const messages = await shownMessages(page);
+	expectNoDuplicates(messages);
+	expect(messages).toEqual([
+		...range("OLD", 601, 1000),
+		...range("GROW", 1, 300),
+	]);
+});
+
+test("Load previous keeps older pages once the buffer is trimmed (#1624)", async ({
+	page,
+}) => {
+	// 1,900 live lines push the buffer past its cap, so it keeps the newest
+	// 1,800 (BULK 101 onward).
+	const log = fakeLog([...range("OLD", 1, 1000), ...range("BULK", 1, 1900)]);
+	await mockLogs(page, log, 200, 1900);
+	await page.goto("/system/logs");
+	const scroller = page.getByTestId("logs-scroll");
+	await expect(scroller.getByText("BULK 1900", { exact: true })).toBeAttached();
+	await expect
+		.poll(async () => (await shownMessages(page))[0])
+		.toBe("BULK 101");
+
+	const loadPrevious = scroller.getByRole("button", { name: /Load previous/ });
+	await loadPrevious.click();
+	await expect.poll(async () => (await shownMessages(page)).length).toBe(2000);
+	let messages = await shownMessages(page);
+	expectNoDuplicates(messages);
+	expect(messages).toEqual([
+		...range("OLD", 901, 1000),
+		...range("BULK", 1, 1900),
+	]);
+
+	// A second page is kept too, rather than trimmed straight back off.
+	await loadPrevious.click();
+	await expect.poll(async () => (await shownMessages(page)).length).toBe(2200);
+	messages = await shownMessages(page);
+	expectNoDuplicates(messages);
+	expect(messages.slice(0, 3)).toEqual(["OLD 701", "OLD 702", "OLD 703"]);
+	expect(messages.at(-1)).toBe("BULK 1900");
 });
