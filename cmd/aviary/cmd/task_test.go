@@ -35,6 +35,9 @@ func setupCLIWithModel(t *testing.T, factory *llm.Factory, model string, names .
 	t.Helper()
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
+	// Task files live under the config base dir, which TestMain shares
+	// across the package; give each test its own.
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", base+"/aviary")
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
 	require.NoError(t, store.EnsureDirs())
