@@ -114,6 +114,10 @@ export function cliProblemSummary(clis: readonly CLIStatus[]): string {
 export interface ProjectTarget {
 	name: string;
 	issues: number;
+	/** Board entries in the Running state, a schedule once (#1359). */
+	running?: number;
+	/** Jobs waiting, paused or queued. */
+	waiting?: number;
 	/** Manual mode: never searched for issues, so issues is not counted. */
 	manual?: boolean;
 	/** Not read from GitHub yet, so issues is not known. */
@@ -673,6 +677,7 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 	const modes = obj(raw.modes);
 	const states = obj(raw.states);
 	const loading = arr(raw.loading_targets).map(str);
+	const targetJobs = obj(raw.target_jobs);
 	return {
 		instanceID: str(raw.identity),
 		running: raw.running !== false,
@@ -702,6 +707,8 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 		targets: arr(raw.targets).map((t) => ({
 			name: str(t),
 			issues: num(counts[str(t)]),
+			running: num(obj(targetJobs[str(t)]).running),
+			waiting: num(obj(targetJobs[str(t)]).waiting),
 			...(modes[str(t)] === "manual" ? { manual: true } : {}),
 			...(loading.includes(str(t)) ? { loading: true } : {}),
 		})),
@@ -722,28 +729,26 @@ export function normalizeStatus(v: unknown): ProjectStatus {
 }
 
 /**
- * Per-target live counts for the sidebar, from status plus the job list, and
+ * Per-target live counts for the sidebar, from status, and
  * each target's scheduled tasks when a task_list response is given.
  */
 export function summarizeProjects(
 	status: ProjectStatus,
-	jobs: ProjectJob[],
 	tasks?: unknown,
 ): ProjectSummary[] {
-	return status.targets.map((t) => {
-		const mine = jobs.filter((j) => j.target === t.name);
-		return {
-			name: t.name,
-			issues: t.issues,
-			...(t.manual ? { manual: true } : {}),
-			running: mine.filter((j) => j.state === "running").length,
-			waiting: mine.filter((j) => isWaiting(j.status)).length,
-			...(t.loading ? { loading: true } : {}),
-			...(tasks === undefined
-				? {}
-				: { scheduled: projectSchedules(tasks, t.name).length }),
-		};
-	});
+	// project_status counts each project's running and waiting entries, so
+	// the list never reads every job to count them (#1657).
+	return status.targets.map((t) => ({
+		name: t.name,
+		issues: t.issues,
+		...(t.manual ? { manual: true } : {}),
+		running: t.running ?? 0,
+		waiting: t.waiting ?? 0,
+		...(t.loading ? { loading: true } : {}),
+		...(tasks === undefined
+			? {}
+			: { scheduled: projectSchedules(tasks, t.name).length }),
+	}));
 }
 
 /** How work reaches a project (#1307). */

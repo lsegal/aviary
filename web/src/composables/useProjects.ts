@@ -103,41 +103,85 @@ export function useProjectBoard(
 	/** The board entries of the projects' schedules, one per schedule. */
 	const scheduleEntries = ref<ProjectJob[]>([]);
 
-	async function listJobs(projects: string[]) {
-		// The kanban view lays every job out in its state's column, so it
-		// reads them all instead of one page.
-		const all = kanban.value;
-		const list = normalizeJobList(
-			parseToolJSON(
-				await callTool("project_job_list", {
-					targets: projects,
-					// Naming every job state leaves out schedules between runs.
-					states: states.value.length ? states.value : BOARD_STATES,
-					kinds: withSchedules.value ? BOARD_JOB_KINDS : undefined,
-					query: search.value.trim() || undefined,
-					offset: all ? 0 : page.value * JOBS_PAGE_SIZE,
-					limit: all ? ALL_JOBS_LIMIT : JOBS_PAGE_SIZE,
-				}),
-			),
+	// A poll that finds a list unchanged since its last read keeps what it
+	// shows rather than re-reading and re-rendering it (#1657): each list
+	// passes back the revision its last identical request returned.
+	const revisions = new Map<string, { revision: string; value: unknown }>();
+	async function readList<T>(
+		name: string,
+		args: Record<string, unknown>,
+		parse: (raw: unknown) => T,
+	): Promise<{ value: T; changed: boolean }> {
+		const key = `${name} ${JSON.stringify(args)}`;
+		const last = revisions.get(key);
+		const parsed = parseToolJSON(
+			await callTool("project_job_list", { ...args, revision: last?.revision }),
 		);
-		return {
-			jobs: sortJobs(list.jobs),
-			total: list.total,
-			unfilteredTotal: list.unfilteredTotal,
-		};
+		const raw = (
+			parsed && typeof parsed === "object" ? parsed : {}
+		) as Record<string, unknown>;
+		if (raw.unchanged === true && last)
+			return { value: last.value as T, changed: false };
+		const value = parse(raw);
+		revisions.delete(key);
+		if (typeof raw.revision === "string" && raw.revision)
+			revisions.set(key, { revision: raw.revision, value });
+		// Only the latest filter's lists are kept.
+		while (revisions.size > 4) {
+			const oldest = revisions.keys().next().value;
+			if (oldest === undefined) break;
+			revisions.delete(oldest);
+		}
+		return { value, changed: true };
+	}
+
+	function listJobs(projects: string[]) {
+		// The kanban view lays every job out in its state's column, so it
+		// reads them all instead of one page. A list card shows its job's
+		// latest output, which the list carries, so a board load is one
+		// request however many cards it shows (#1657); kanban cards show
+		// none.
+		const all = kanban.value;
+		return readList(
+			"jobs",
+			{
+				targets: projects,
+				// Naming every job state leaves out schedules between runs.
+				states: states.value.length ? states.value : BOARD_STATES,
+				kinds: withSchedules.value ? BOARD_JOB_KINDS : undefined,
+				query: search.value.trim() || undefined,
+				offset: all ? 0 : page.value * JOBS_PAGE_SIZE,
+				limit: all ? ALL_JOBS_LIMIT : JOBS_PAGE_SIZE,
+				output_lines: all ? undefined : CARD_OUTPUT_LINES,
+				output_events: all ? undefined : CARD_OUTPUT_EVENTS,
+			},
+			(raw) => {
+				const list = normalizeJobList(raw);
+				return {
+					jobs: sortJobs(list.jobs),
+					total: list.total,
+					unfilteredTotal: list.unfilteredTotal,
+				};
+			},
+		);
 	}
 
 	async function listScheduleEntries(projects: string[]) {
-		if (!withSchedules.value) return [];
-		return normalizeJobList(
-			parseToolJSON(
-				await callTool("project_job_list", {
-					targets: projects,
-					kinds: ["schedule"],
-					limit: ALL_JOBS_LIMIT,
-				}),
-			),
-		).jobs;
+		if (!withSchedules.value)
+			return { value: [] as ProjectJob[], changed: true };
+		// A scheduled card shows its run's output only while it runs; the
+		// list carries it for those entries alone.
+		return readList(
+			"schedules",
+			{
+				targets: projects,
+				kinds: ["schedule"],
+				limit: ALL_JOBS_LIMIT,
+				output_lines: kanban.value ? undefined : CARD_OUTPUT_LINES,
+				output_events: kanban.value ? undefined : CARD_OUTPUT_EVENTS,
+			},
+			(raw) => normalizeJobList(raw).jobs,
+		);
 	}
 
 	// Typing fires a load per keystroke, so only the latest one may land.
@@ -161,40 +205,14 @@ export function useProjectBoard(
 				listJobs(projects),
 				listScheduleEntries(projects),
 			]);
-			// Every visible list card shows its job's latest transcript events
-			// and terminal output, which stream while the job runs; a
-			// scheduled card shows its run's only while it runs. Kanban cards
-			// show none.
-			const running = entries.filter(
-				(e) =>
-					e.schedule?.state === "starting" || e.schedule?.state === "running",
-			);
-			await Promise.all(
-				(kanban.value ? [] : [...list.jobs, ...running]).map(async (j) => {
-					try {
-						const detail = normalizeJobDetail(
-							parseToolJSON(
-								await callTool("project_job_get", {
-									target: j.target,
-									number: j.number,
-									lines: CARD_OUTPUT_LINES,
-									events: CARD_OUTPUT_EVENTS,
-								}),
-							),
-						);
-						j.output = detail.job.output;
-						j.events = detail.events;
-					} catch {
-						// Keep the card without output until the next poll.
-					}
-				}),
-			);
 			if (key !== targets.value.join(" ") || call !== latest) return;
 			status.value = normalizeStatus(parseToolJSON(statusText));
-			jobs.value = list.jobs;
-			scheduleEntries.value = entries;
-			total.value = list.total;
-			unfilteredTotal.value = list.unfilteredTotal;
+			if (list.changed) {
+				jobs.value = list.value.jobs;
+				total.value = list.value.total;
+				unfilteredTotal.value = list.value.unfilteredTotal;
+			}
+			if (entries.changed) scheduleEntries.value = entries.value;
 			error.value = "";
 		} catch (e) {
 			error.value = e instanceof Error ? e.message : String(e);

@@ -59,7 +59,7 @@
 				<span class="ml-auto font-normal tabular-nums text-gray-400">{{ col.jobs.length }}</span>
 			</h3>
 			<div class="flex flex-col gap-2 p-2">
-				<article v-for="job in col.jobs" :key="job.id" data-testid="kanban-card"
+				<article v-for="job in col.shown" :key="job.id" data-testid="kanban-card"
 					class="min-w-0 space-y-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-900">
 					<router-link :to="runPath(job)" :title="job.title || job.id"
 						class="block truncate text-sm font-medium text-gray-900 hover:underline dark:text-white">
@@ -86,6 +86,14 @@
 						{{ job.summary }}
 					</p>
 				</article>
+				<!-- A long column, such as Done on a busy project, renders a page of
+					cards at a time rather than hundreds at once (#1657). -->
+				<button v-if="col.jobs.length > col.shown.length" type="button" data-testid="kanban-show-more"
+					class="rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-white dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900"
+					@click="showMore(col.state)">
+					Show {{ Math.min(KANBAN_COLUMN_PAGE, col.jobs.length - col.shown.length) }} more
+					<span class="text-gray-400">({{ col.jobs.length - col.shown.length }} hidden)</span>
+				</button>
 				<p v-if="!col.jobs.length" class="px-1 py-3 text-center text-gray-400">No jobs</p>
 			</div>
 		</div>
@@ -94,7 +102,7 @@
 
 <script setup lang="ts">
 import Cog6ToothIcon from "@heroicons/vue/24/outline/Cog6ToothIcon";
-import { computed } from "vue";
+import { computed, reactive } from "vue";
 import { projectOwner } from "../../lib/projectSettings";
 import {
 	age,
@@ -166,12 +174,23 @@ const DOTS: Record<BoardState, string> = {
 const showScheduled = computed(
 	() => !props.filters.length || props.filters.includes("scheduled"),
 );
+// Cards each column renders before its "Show more" button.
+const KANBAN_COLUMN_PAGE = 50;
+const shownCounts = reactive<Partial<Record<BoardState, number>>>({});
+function showMore(state: BoardState) {
+	shownCounts[state] =
+		(shownCounts[state] ?? KANBAN_COLUMN_PAGE) + KANBAN_COLUMN_PAGE;
+}
 const columns = computed(() =>
 	(props.filters.length ? jobStates(props.filters) : BOARD_STATES).map(
-		(state) => ({
-			state,
-			jobs: props.jobs.filter((j) => j.state === state),
-		}),
+		(state) => {
+			const jobs = props.jobs.filter((j) => j.state === state);
+			return {
+				state,
+				jobs,
+				shown: jobs.slice(0, shownCounts[state] ?? KANBAN_COLUMN_PAGE),
+			};
+		},
 	),
 );
 
