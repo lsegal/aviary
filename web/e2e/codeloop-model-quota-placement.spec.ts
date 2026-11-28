@@ -6,10 +6,14 @@ import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 // the ⓘ Board details popover, or in "…" when the details moved there
 // (#1580, #1582, #1584).
 // Fixtures follow the payloads of project_status and project_job_list.
+// The width sweeps moved to
+// web/src/scenarios/codeloop-model-quota-placement.component.test.ts (#1636);
+// the browser font size cases stay here because they set the browser's
+// default font size through CDP, which a component test cannot reach (media
+// queries in rem follow that setting, not the page's root font size).
 
 const QUOTA = "week 65% left";
 const TARGETS = ["lsegal/aviary", "lsegal/forgo"];
-const WIDTHS = [639, 640, 641, 700, 768, 900, 1024];
 
 async function setup(page: Page, collapsed: boolean) {
 	await setAuthToken(page);
@@ -87,40 +91,6 @@ async function quotaFits(page: Page) {
 			Number.parseFloat(style.paddingLeft) -
 			Number.parseFloat(style.paddingRight);
 		return (copy?.getBoundingClientRect().width ?? 0) <= room + 0.5;
-	});
-}
-
-async function sweep(page: Page, path: string, collapsed: boolean) {
-	for (const width of WIDTHS) {
-		await page.setViewportSize({ width, height: 900 });
-		await page.goto(path);
-		await expect(page.getByTestId("stats-toggle")).toBeVisible();
-		if (width >= 1024)
-			await expect(
-				page.getByTestId(collapsed ? "sidebar-rail" : "sidebar"),
-			).toBeVisible();
-		const fits = await quotaFits(page);
-		const places = await placesShowingQuota(page);
-		expect(places, `${width}px`).toHaveLength(1);
-		if (fits) expect(places[0], `${width}px`).toBe("inline");
-		else expect(places[0], `${width}px`).not.toBe("inline");
-	}
-}
-
-for (const collapsed of [false, true]) {
-	const sidebar = collapsed ? "collapsed" : "open";
-	test(`a project board shows the models and quota in exactly one place at every width, sidebar ${sidebar} (#1582)`, async ({
-		page,
-	}) => {
-		await setup(page, collapsed);
-		await sweep(page, "/agents/coder/projects/lsegal%2Faviary", collapsed);
-	});
-
-	test(`the all-projects board shows the models and quota in exactly one place at every width, sidebar ${sidebar} (#1582)`, async ({
-		page,
-	}) => {
-		await setup(page, collapsed);
-		await sweep(page, "/agents/coder/projects", collapsed);
 	});
 }
 
