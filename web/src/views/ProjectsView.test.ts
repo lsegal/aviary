@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import AddProjectDialog from "../components/projects/AddProjectDialog.vue";
 import BoardMoreMenu from "../components/projects/BoardMoreMenu.vue";
 import BoardStateFilter from "../components/projects/BoardStateFilter.vue";
+import CLIProviderList from "../components/projects/CLIProviderList.vue";
 import GitHubSignInBanner from "../components/projects/GitHubSignInBanner.vue";
 import JobCard from "../components/projects/JobCard.vue";
 import KanbanBoard from "../components/projects/KanbanBoard.vue";
@@ -222,7 +223,7 @@ beforeEach(() => {
 	media = {};
 	vi.stubGlobal("matchMedia", (query: string) => {
 		media[query] ??= {
-			matches: query.includes("640"),
+			matches: query.includes("40rem"),
 			listeners: new Set(),
 		};
 		const entry = media[query];
@@ -461,7 +462,7 @@ describe("ProjectsView header", () => {
 			(fn as (e: { matches: boolean }) => void)({ matches: true });
 		await flushPromises();
 		expect(w.findComponent(StatChipRow).exists()).toBe(false);
-		const sm = media["(min-width: 640px)"];
+		const sm = media["(width >= 40rem)"];
 		for (const fn of sm.listeners)
 			(fn as (e: { matches: boolean }) => void)({ matches: false });
 		await flushPromises();
@@ -476,12 +477,18 @@ describe("ProjectsView header", () => {
 		expect(again.w.findComponent(StatChipRow).exists()).toBe(true);
 	});
 
-	it("shows CLI providers inline from sm up", async () => {
+	it("shows the agent models and quota row when the board has CLIs", async () => {
 		board.status.value = makeStatus({
 			clis: [{ name: "codex" }] as ProjectStatus["clis"],
 		});
 		const { w } = await render("/agents/bot/projects/o%2Fr");
-		expect(testid(w, "board-nav-row").exists()).toBe(true);
+		// Below sm the row hides and the details popover shows them (#1582).
+		expect(testid(w, "board-nav-row").classes()).toEqual(
+			expect.arrayContaining(["hidden", "sm:flex"]),
+		);
+		expect(w.findComponent(CLIProviderList).props("clis")).toEqual([
+			{ name: "codex" },
+		]);
 	});
 
 	it("ticks the clock every second", async () => {
