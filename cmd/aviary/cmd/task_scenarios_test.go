@@ -17,14 +17,13 @@ import (
 	"github.com/lsegal/aviary/internal/scheduler"
 )
 
-// taskReply is everything a task command told the user: its output and its
-// error. Tool errors currently print with a nil error (#1663), so assertions
-// on rejected input check the message the user sees rather than the error.
-func taskReply(out string, err error) string {
-	if err != nil {
-		return out + err.Error()
-	}
-	return out
+// requireTaskError requires a task command to fail with want in its error
+// and print nothing as a result, so the command exits non-zero (#1663).
+func requireTaskError(t *testing.T, out string, err error, want string) {
+	t.Helper()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), want)
+	assert.Empty(t, out, "a failed command prints no result")
 }
 
 // taskListRow is the task list table row for id.
@@ -104,7 +103,8 @@ func TestTaskCLI_RejectsInvalidInput(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Contains(t, taskReply(tc.cmd()), tc.want)
+			out, err := tc.cmd()
+			requireTaskError(t, out, err, tc.want)
 		})
 	}
 
@@ -177,7 +177,7 @@ func TestTaskCLI_UpdateSemantics(t *testing.T) {
 	_, err = runTaskCmd(t, taskAddCmd, "bot", "hourly", "x", "--every", "1h")
 	require.NoError(t, err)
 	out, err := runTaskCmd(t, taskUpdateCmd, "hourly", "--every", "")
-	assert.Contains(t, taskReply(out, err), "needs a schedule trigger")
+	requireTaskError(t, out, err, "needs a schedule trigger")
 	assert.Equal(t, "1h", listTasksJSON(t)["bot/hourly"].Every, "a refused update leaves the task alone")
 
 	// --days/--at alone on an interval task are ignored today; #1665 tracks
@@ -329,5 +329,5 @@ func TestTaskCLI_PreviewLimits(t *testing.T) {
 	assert.Len(t, previewFires(out), 3, "a zero count falls back to the default")
 
 	out, err = runTaskCmd(t, taskPreviewCmd)
-	assert.Contains(t, taskReply(out, err), "no schedule trigger to preview")
+	requireTaskError(t, out, err, "no schedule trigger to preview")
 }
