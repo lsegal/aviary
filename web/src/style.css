@@ -38,15 +38,24 @@
 	font-size: 125%;
 }
 
+/* The document itself never scrolls; only the panes inside #app do (#1656).
+   On phones 100vh is the viewport with the address bar hidden, so anything
+   sized by it overflows by the toolbar's height while the bar shows, which
+   let the whole shell scroll and left an empty band under it. */
 html,
 body,
 #app {
 	height: 100%;
 }
 
+html,
+body {
+	overflow: hidden;
+	overscroll-behavior: none;
+}
+
 body {
 	margin: 0;
-	min-height: 100vh;
 	@apply bg-white dark:bg-gray-950;
 }
 
@@ -61,8 +70,14 @@ body {
 
 /* The installed app draws edge to edge (viewport-fit=cover), so keep the UI
    clear of notches, status bars, and home indicators. Views fill #app with
-   h-full rather than 100dvh so the insets aren't counted twice. */
+   h-full rather than 100dvh so the insets aren't counted twice. #app also
+   clips: an absolutely positioned element with no positioned ancestor, such
+   as the hidden native <select> a radix Select renders, would otherwise sit
+   at its in-pane offset and stretch the document past the screen (#1656). */
 #app {
+	position: relative;
+	overflow: clip;
+	height: 100vh;
 	height: 100dvh;
 	padding: env(safe-area-inset-top) env(safe-area-inset-right)
 		env(safe-area-inset-bottom) env(safe-area-inset-left);
