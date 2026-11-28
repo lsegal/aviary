@@ -381,6 +381,7 @@
 		"target"
 	],
 	"project_job_list": [
+		"delta",
 		"kinds",
 		"limit",
 		"offset",

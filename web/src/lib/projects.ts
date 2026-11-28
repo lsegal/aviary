@@ -543,6 +543,59 @@ export function normalizeJobList(v: unknown): {
 	};
 }
 
+/**
+ * A job list as a board last read it (#1661): its revision, its entries in
+ * order and by key, and its counts. A later read applies only what changed.
+ */
+export interface JobListState {
+	revision: string;
+	keys: string[];
+	byKey: Map<string, ProjectJob>;
+	jobs: ProjectJob[];
+	total: number;
+	unfilteredTotal: number;
+}
+
+/**
+ * Applies a project_job_list response to the list it was read against. An
+ * unchanged list returns last itself. A delta replaces only the entries it
+ * carries and drops the keys it removes, so every other entry keeps its
+ * object and its card doesn't re-render. A full list replaces everything.
+ */
+export function applyJobListRead(
+	last: JobListState | undefined,
+	v: unknown,
+): JobListState {
+	const raw = obj(v);
+	if (raw.unchanged === true && last) return last;
+	const delta = raw.delta === true && last !== undefined;
+	const byKey = new Map(delta ? last.byKey : []);
+	for (const key of arr(raw.removed)) byKey.delete(str(key));
+	const read: string[] = [];
+	for (const entry of arr(raw.jobs)) {
+		const job = normalizeJob(entry);
+		byKey.set(job.id, job);
+		read.push(job.id);
+	}
+	const keys =
+		raw.keys !== undefined
+			? arr(raw.keys).map(str)
+			: delta
+				? last.keys.filter((key) => byKey.has(key))
+				: read;
+	const jobs = keys.flatMap((key) => byKey.get(key) ?? []);
+	const total = num(raw.total) || jobs.length;
+	return {
+		revision: str(raw.revision),
+		keys,
+		byKey,
+		jobs,
+		total,
+		unfilteredTotal:
+			raw.unfiltered_total === undefined ? total : num(raw.unfiltered_total),
+	};
+}
+
 function normalizeEvent(v: unknown): JobEvent | null {
 	const raw = obj(v);
 	const time = str(raw.time);
