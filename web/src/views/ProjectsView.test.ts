@@ -246,7 +246,10 @@ afterEach(() => {
 });
 
 const Slot = defineComponent({
-	setup: (_, { slots }) => () => h("div", slots.default?.()),
+	setup:
+		(_, { slots }) =>
+		() =>
+			h("div", slots.default?.()),
 });
 const AppLayoutStub = defineComponent({
 	props: { compactHeader: Boolean, titleLink: Object },
@@ -254,8 +257,16 @@ const AppLayoutStub = defineComponent({
 		(_, { slots }) =>
 		() =>
 			h("div", [
-				h("header", { "data-testid": "status-slot" }, slots["header-status"]?.()),
-				h("nav", { "data-testid": "actions-slot" }, slots["header-actions"]?.()),
+				h(
+					"header",
+					{ "data-testid": "status-slot" },
+					slots["header-status"]?.(),
+				),
+				h(
+					"nav",
+					{ "data-testid": "actions-slot" },
+					slots["header-actions"]?.(),
+				),
 				h("main", slots.default?.()),
 			]),
 });
@@ -330,6 +341,9 @@ const text = (w: VueWrapper) => w.text().replace(/\s+/g, " ");
 
 describe("ProjectsView header", () => {
 	it("shows a project's live status, issue count and stat cards", async () => {
+		// The wide viewport defaults to full cards.
+		window.matchMedia("(min-width: 768px)");
+		media["(min-width: 768px)"].matches = true;
 		const { w } = await render("/agents/bot/projects/o%2Fr");
 		expect(testid(w, "delivery-status").text()).toBe("live");
 		expect(testid(w, "board-issues").text()).toBe("3 open issues");
@@ -337,8 +351,6 @@ describe("ProjectsView header", () => {
 		expect(testid(w, "board-projects").exists()).toBe(false);
 		// The useProjectBoard arguments are the project's own target.
 		expect((m.boardArgs[0] as Ref<string[]>).value).toEqual(["o/r"]);
-		// The wide viewport defaults to full cards.
-		media["(min-width: 768px)"].matches = true;
 		const labels = w
 			.findAll('[data-testid="stat-label"]')
 			.map((el) => el.text());
@@ -425,7 +437,15 @@ describe("ProjectsView header", () => {
 		const chips = w.findComponent(StatChipRow).props("cards") as {
 			chip: string;
 		}[];
-		expect(chips.map((c) => c.chip)).toEqual(["1/4", "1", "0", "2", "3", "1", "5"]);
+		expect(chips.map((c) => c.chip)).toEqual([
+			"1/4",
+			"1",
+			"0",
+			"2",
+			"3",
+			"1",
+			"5",
+		]);
 		await testid(w, "stats-toggle").trigger("click");
 		expect(w.findComponent(StatChipRow).exists()).toBe(false);
 		expect(w.findAll('[data-testid="stat-card"]')).toHaveLength(7);
@@ -451,7 +471,7 @@ describe("ProjectsView header", () => {
 		expect(sm.listeners.size).toBe(0);
 
 		localStorage.setItem("aviary.projects.statsCompact", "1");
-		media["(min-width: 768px)"].matches = true;
+		wide.matches = true;
 		const again = await render("/agents/bot/projects/o%2Fr");
 		expect(again.w.findComponent(StatChipRow).exists()).toBe(true);
 	});
@@ -523,7 +543,9 @@ describe("ProjectsView filters and search", () => {
 		const { router } = await render("/agents/bot/projects/o%2Fr?tab=schedules");
 		expect(router.currentRoute.value.query).toEqual({ state: "scheduled" });
 		const view = await render("/agents/bot/projects/o%2Fr?view=schedules");
-		expect(view.router.currentRoute.value.query).toEqual({ state: "scheduled" });
+		expect(view.router.currentRoute.value.query).toEqual({
+			state: "scheduled",
+		});
 	});
 
 	it("hides jobs when only Scheduled is selected", async () => {
@@ -531,7 +553,7 @@ describe("ProjectsView filters and search", () => {
 		const { w } = await render("/agents/bot/projects/o%2Fr?state=scheduled");
 		expect(w.findAllComponents(JobCard)).toHaveLength(0);
 		expect(w.findAllComponents(ScheduledCard)).toHaveLength(1);
-		expect(testid(w, "job-total").text()).toBe("1 of 7 items");
+		expect(testid(w, "job-total").text()).toBe("1 of 8 items");
 	});
 
 	it("keeps a running schedule under its job state's filter", async () => {
@@ -550,9 +572,9 @@ describe("ProjectsView filters and search", () => {
 		];
 		const { w } = await render("/agents/bot/projects/o%2Fr?state=running");
 		const cards = w.findAllComponents(ScheduledCard);
-		expect(cards.map((c) => (c.props("schedule") as ProjectSchedule).name)).toEqual([
-			"nightly",
-		]);
+		expect(
+			cards.map((c) => (c.props("schedule") as ProjectSchedule).name),
+		).toEqual(["nightly"]);
 		expect(cards[0].props("job")).toMatchObject({ number: 9 });
 		// The running schedule is one item, not a job and a schedule.
 		expect(testid(w, "job-total").text()).toBe("3 of 8 items");
