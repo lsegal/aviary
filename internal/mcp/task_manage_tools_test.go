@@ -223,3 +223,63 @@ func TestConfigSaveRegistersTaskTriggersImmediately(t *testing.T) {
 	require.NotNil(t, tasks[0].NextRun)
 	assert.True(t, tasks[0].NextRun.After(time.Now()))
 }
+
+func TestTaskSchedule_RefusesConflictingTriggerFields(t *testing.T) {
+	d, _ := setupDispatcherWithScheduler(t)
+	call := func(args map[string]any) string {
+		args["agent"], args["content"], args["precompile"] = "bot", "x", false
+		return toolErrorText(d.CallTool(context.Background(), "task_schedule", args))
+	}
+
+	assert.Contains(t, call(map[string]any{"name": "a", "every": "1h", "schedule": "0 9 * * *"}),
+		"every does not apply to the cron trigger that schedule selects")
+	assert.Contains(t, call(map[string]any{"name": "b", "every": "1h", "at": "09:00"}),
+		"at does not apply to the interval trigger that every selects")
+	assert.Contains(t, call(map[string]any{"name": "c", "trigger": "daily", "at": "09:00", "days": "mon"}),
+		"days does not apply to trigger=daily")
+	assert.Contains(t, call(map[string]any{"name": "d", "start_at": "2020-01-01T00:00"}),
+		"start_at 2020-01-01 00:00 is in the past")
+
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Agents[0].Tasks, "refused tasks are not saved")
+}
+
+func TestTaskUpdate_InfersTriggerKindFromNewFields(t *testing.T) {
+	d, s := setupDispatcherWithScheduler(t)
+	_, err := d.CallTool(context.Background(), "task_schedule", map[string]any{
+		"agent": "bot", "name": "digest", "content": "send digest", "every": "2h", "precompile": false,
+	})
+	require.NoError(t, err)
+
+	_, err = d.CallTool(context.Background(), "task_update", map[string]any{"name": "digest", "days": "mon", "at": "10:00"})
+	require.NoError(t, err)
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	task := cfg.Agents[0].Tasks[0]
+	assert.Empty(t, task.Every, "the interval period no longer applies")
+	assert.Equal(t, "mon", task.Days)
+	assert.Equal(t, "10:00", task.At)
+	assert.Equal(t, "weekly on Mon at 10:00 (Local)", s.ListTasks()[0].Description)
+
+	// A field the current kind uses keeps it.
+	_, err = d.CallTool(context.Background(), "task_update", map[string]any{"name": "digest", "at": "11:00"})
+	require.NoError(t, err)
+	assert.Equal(t, "weekly on Mon at 11:00 (Local)", s.ListTasks()[0].Description)
+
+	// An explicit trigger drops the fields it does not use.
+	_, err = d.CallTool(context.Background(), "task_update", map[string]any{"name": "digest", "trigger": "cron", "schedule": "0 8 * * *"})
+	require.NoError(t, err)
+	cfg, err = config.Load("")
+	require.NoError(t, err)
+	task = cfg.Agents[0].Tasks[0]
+	assert.Empty(t, task.Days)
+	assert.Empty(t, task.At)
+	assert.Equal(t, "cron 0 8 * * * (Local)", s.ListTasks()[0].Description)
+
+	// Fields passed together that conflict are still refused.
+	assert.Contains(t, toolErrorText(d.CallTool(context.Background(), "task_update", map[string]any{"name": "digest", "every": "1h", "at": "09:00"})),
+		"at does not apply to")
+	assert.Contains(t, toolErrorText(d.CallTool(context.Background(), "task_update", map[string]any{"name": "digest", "trigger": "once", "start_at": "2020-01-01T00:00"})),
+		"is in the past")
+}
