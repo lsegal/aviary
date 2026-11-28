@@ -36,7 +36,7 @@
 									<tr v-for="s in sessions" :key="s.id"
 										class="border-b border-gray-100 text-gray-700 dark:border-gray-800 dark:text-gray-300">
 										<td class="px-3 py-2">{{ chatDisplayName(s) }}</td>
-										<td class="px-3 py-2 text-xs">{{ formatDate(s.updated_at) }}</td>
+										<td class="px-3 py-2 text-xs" data-testid="session-updated">{{ formatDate(sessionActivityAt(s)) }}</td>
 										<td class="px-3 py-2">
 											<div class="flex items-center gap-2">
 												<button type="button" class="danger-btn" :disabled="!s.is_processing"
