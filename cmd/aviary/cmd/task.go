@@ -111,9 +111,6 @@ func taskTrigger(t domain.ScheduledTask) string {
 	if trigger == "" && t.Watch != "" {
 		trigger = "watch " + t.Watch
 	}
-	if t.Schedule != "" && t.TriggerType == domain.TriggerTypeCron {
-		trigger = strings.Replace(trigger, "cron", "cron "+t.Schedule, 1)
-	}
 	if t.Project != "" {
 		trigger = t.Project + ": " + trigger
 	}

@@ -838,6 +838,8 @@ func TestConfigTaskRenameTool(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, strings.Contains(out, "renamed") || strings.Contains(out, "new-inline"))
 
+	toolCallContains(t, d, "config_task_rename", map[string]any{"agent": "bot", "task": "new-inline", "new_name": "bad/name"}, `cannot contain "/"`)
+
 	savedCfg, err := config.Load("")
 	assert.NoError(t, err)
 	require.Len(t, savedCfg.Agents, 1)
@@ -1087,6 +1089,29 @@ func TestTaskSchedule_InvalidInDuration(t *testing.T) {
 		"content": "run this",
 		"in":      "not-a-duration",
 	}, "invalid duration")
+}
+
+func TestTaskSchedule_RejectsSlashInName(t *testing.T) {
+	d, _ := setupDispatcherWithScheduler(t)
+	toolCallContains(t, d, "task_schedule", map[string]any{
+		"agent":   "bot",
+		"name":    "bad name/slash",
+		"content": "run this",
+		"every":   "1h",
+		"trigger": "interval",
+	}, `cannot contain "/"`)
+	toolCallContains(t, d, "task_schedule", map[string]any{
+		"agent":   "bot",
+		"name":    "bad/workflow",
+		"content": "run this",
+		"trigger": "message",
+		"channel": "slack",
+	}, `cannot contain "/"`)
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	for _, a := range cfg.Agents {
+		assert.Empty(t, a.Tasks)
+	}
 }
 
 func TestTaskSchedule_InvalidCronSchedule(t *testing.T) {

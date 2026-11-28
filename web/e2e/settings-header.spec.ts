@@ -173,6 +173,27 @@ test("task, agent, project and System settings show crumbs to their own parents"
 	}
 });
 
+test("System Sessions shows no config Reload or Save Changes (#1671)", async ({
+	page,
+}) => {
+	await mockSettings(page);
+	// Nothing on Sessions is config, and Refresh Sessions reloads the table.
+	await page.goto("/system/sessions");
+	await expect(
+		page.getByRole("button", { name: "Refresh Sessions" }),
+	).toBeVisible();
+	await expect(page.getByRole("button", { name: "Save Changes" })).toHaveCount(
+		0,
+	);
+	await expect(page.getByRole("button", { name: "Reload" })).toHaveCount(0);
+	// System Settings still edits config, so it keeps both.
+	await page.goto("/system/settings");
+	await expect(
+		page.getByRole("button", { name: "Save Changes" }),
+	).toBeVisible();
+	await expect(page.getByRole("button", { name: "Reload" })).toBeVisible();
+});
+
 test("settings pages' agent crumb opens the first page the user's sidebar shows", async ({
 	page,
 }) => {
