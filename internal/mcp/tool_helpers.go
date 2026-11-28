@@ -17,6 +17,7 @@ import (
 	"github.com/lsegal/aviary/internal/browser"
 	"github.com/lsegal/aviary/internal/config"
 	"github.com/lsegal/aviary/internal/domain"
+	"github.com/lsegal/aviary/internal/projects"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/store"
 )
@@ -285,4 +286,42 @@ func writeFileBackedTasks(agentCfg *config.AgentConfig) error {
 	}
 	agentCfg.Tasks = filtered
 	return nil
+}
+
+// projectRunLog is what job_logs shows for a project task's job: the output
+// of the Code Loop run it ran as, from the board or its job store, ending
+// with the run's summary (issue #1646). A log the store cut down to its tail
+// says so, and a finished run with no log says why. ok is false while the run
+// is still waiting for Code Loop to start it, so the caller shows what the
+// job has.
+func projectRunLog(job domain.Job, runs *projects.Manager) (string, bool) {
+	summary := strings.TrimSpace(job.Output)
+	withSummary := func(text string) string {
+		if summary == "" || strings.Contains(text, summary) {
+			return text
+		}
+		return strings.TrimRight(text, "\n") + "\n\nSummary: " + summary
+	}
+	notCaptured := func(reason string) (string, bool) {
+		return withSummary("No transcript for this run: " + reason + "."), true
+	}
+	if runs == nil {
+		return notCaptured("Code Loop is not running on this server")
+	}
+	log, truncated, found := runs.ScheduledRunLog(job.ID)
+	active := job.Status == domain.JobStatusPending || job.Status == domain.JobStatusInProgress
+	switch {
+	case !found && active:
+		return "", false
+	case !found:
+		return notCaptured("Code Loop has no record of its run, which was cleared, expired under the project's finished_ttl, or never started")
+	case strings.TrimSpace(log) == "" && active:
+		return "", false
+	case strings.TrimSpace(log) == "":
+		return notCaptured("its Code Loop run recorded no output")
+	}
+	if truncated {
+		log = "[Earlier output was truncated; showing the most recent output.]\n" + log
+	}
+	return withSummary(log), true
 }

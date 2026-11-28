@@ -276,6 +276,14 @@ import { AppSelect } from "../components/ui/select";
 import { Skeleton } from "../components/ui/skeleton";
 import { type MCPToolInfo, useMCP } from "../composables/useMCP";
 import { HEADER_ACTION_CLS } from "../lib/headerActions";
+import {
+	buildToolFields,
+	initialFieldValue,
+	parseToolFieldValue,
+	readStoredToolRunState,
+	type ToolField,
+	writeStoredToolRunState,
+} from "../lib/systemToolFields";
 import { groupTools, toolCategoryLabel } from "../lib/toolPermissions";
 
 interface InstalledSkill {
@@ -292,21 +300,6 @@ interface ToolGroup {
 	tools: MCPToolInfo[];
 }
 
-interface ToolFieldOption {
-	label: string;
-	value: string;
-}
-
-interface ToolField {
-	name: string;
-	kind: "text" | "boolean" | "enum" | "json";
-	placeholder: string;
-	helpText: string;
-	required: boolean;
-	enumOptions: ToolFieldOption[];
-	schema: Record<string, unknown>;
-}
-
 interface RunModalState {
 	tool: MCPToolInfo;
 	fields: ToolField[];
@@ -317,11 +310,6 @@ interface RunModalState {
 	showingStaleOutput: boolean;
 }
 
-interface StoredToolRunState {
-	values?: Record<string, string>;
-	output?: string;
-}
-
 const { callTool, listTools } = useMCP();
 
 const loading = ref(false);
@@ -329,7 +317,6 @@ const errorMessage = ref("");
 const availableTools = ref<MCPToolInfo[]>([]);
 const installedSkills = ref<InstalledSkill[]>([]);
 const runModal = ref<RunModalState | null>(null);
-const TOOL_RUN_STORAGE_PREFIX = "aviary:system-tools:runner:";
 
 const groupedTools = computed<ToolGroup[]>(() => {
 	return groupTools(availableTools.value)
@@ -349,146 +336,12 @@ const enabledSkills = computed(() =>
 		.sort((a, b) => a.name.localeCompare(b.name)),
 );
 
-function toolSchemaProperties(
-	tool: MCPToolInfo,
-): Record<string, Record<string, unknown>> {
-	const properties = tool.inputSchema?.properties;
-	return properties && typeof properties === "object" ? properties : {};
-}
-
-function toolFieldKind(schema: Record<string, unknown>): ToolField["kind"] {
-	if (Array.isArray(schema.enum) && schema.enum.length > 0) return "enum";
-	const rawType = schema.type;
-	const types = Array.isArray(rawType) ? rawType : rawType ? [rawType] : [];
-	const normalized = types.filter(
-		(value): value is string => typeof value === "string" && value !== "null",
-	);
-	if (normalized.includes("boolean")) return "boolean";
-	if (normalized.includes("object") || normalized.includes("array"))
-		return "json";
-	return "text";
-}
-
-function formatSchemaValue(value: unknown): string {
-	if (typeof value === "string") return value;
-	try {
-		return JSON.stringify(value);
-	} catch {
-		return String(value);
-	}
-}
-
-function toolFieldPlaceholder(
-	name: string,
-	schema: Record<string, unknown>,
-): string {
-	if (schema.default !== undefined) {
-		return `Default: ${formatSchemaValue(schema.default)}`;
-	}
-	if (Array.isArray(schema.enum) && schema.enum.length > 0) {
-		return `Choose ${name}`;
-	}
-	const rawType = schema.type;
-	const types = Array.isArray(rawType) ? rawType : rawType ? [rawType] : [];
-	const normalized = types.filter(
-		(value): value is string => typeof value === "string" && value !== "null",
-	);
-	if (normalized.includes("boolean")) return "Select true or false";
-	if (normalized.includes("object") || normalized.includes("array")) {
-		return `Enter ${normalized.includes("array") ? "a JSON array" : "a JSON object"}`;
-	}
-	if (
-		typeof schema.description === "string" &&
-		schema.description.trim().length > 0
-	) {
-		return schema.description.trim();
-	}
-	if (normalized.includes("integer")) return "Enter an integer";
-	if (normalized.includes("number")) return "Enter a number";
-	return `Enter ${name}`;
-}
-
-function toolFieldHelpText(schema: Record<string, unknown>): string {
-	const parts: string[] = [];
-	if (
-		typeof schema.description === "string" &&
-		schema.description.trim().length > 0
-	) {
-		parts.push(schema.description.trim());
-	}
-	const rawType = schema.type;
-	const types = Array.isArray(rawType) ? rawType : rawType ? [rawType] : [];
-	const normalized = types.filter(
-		(value): value is string => typeof value === "string" && value !== "null",
-	);
-	if (normalized.length > 0) {
-		parts.push(`Type: ${normalized.join(" | ")}`);
-	}
-	return parts.join(" ");
-}
-
-function buildToolFields(tool: MCPToolInfo): ToolField[] {
-	const required = new Set(tool.inputSchema?.required ?? []);
-	return Object.entries(toolSchemaProperties(tool))
-		.sort((a, b) => a[0].localeCompare(b[0]))
-		.map(([name, schema]) => ({
-			name,
-			kind: toolFieldKind(schema),
-			placeholder: toolFieldPlaceholder(name, schema),
-			helpText: toolFieldHelpText(schema),
-			required: required.has(name),
-			enumOptions: Array.isArray(schema.enum)
-				? schema.enum.map((choice) => ({
-						label: formatSchemaValue(choice),
-						value: formatSchemaValue(choice),
-					}))
-				: [],
-			schema,
-		}));
-}
-
-function initialFieldValue(field: ToolField): string {
-	if (field.schema.default === undefined) return "";
-	if (field.kind === "json") {
-		try {
-			return JSON.stringify(field.schema.default, null, 2);
-		} catch {
-			return "";
-		}
-	}
-	return formatSchemaValue(field.schema.default);
-}
-
-function toolRunStorageKey(toolName: string): string {
-	return `${TOOL_RUN_STORAGE_PREFIX}${toolName}`;
-}
-
-function readStoredToolRunState(toolName: string): StoredToolRunState {
-	if (typeof window === "undefined") return {};
-	try {
-		const raw = window.sessionStorage.getItem(toolRunStorageKey(toolName));
-		if (!raw) return {};
-		const parsed = JSON.parse(raw) as StoredToolRunState | null;
-		if (!parsed || typeof parsed !== "object") return {};
-		return parsed;
-	} catch {
-		return {};
-	}
-}
-
 function persistRunModalState() {
-	if (!runModal.value || typeof window === "undefined") return;
-	try {
-		window.sessionStorage.setItem(
-			toolRunStorageKey(runModal.value.tool.name),
-			JSON.stringify({
-				values: runModal.value.values,
-				output: runModal.value.output,
-			} satisfies StoredToolRunState),
-		);
-	} catch {
-		// Ignore storage failures and keep the modal functional.
-	}
+	if (!runModal.value) return;
+	writeStoredToolRunState(runModal.value.tool.name, {
+		values: runModal.value.values,
+		output: runModal.value.output,
+	});
 }
 
 function openRunModal(tool: MCPToolInfo) {
@@ -526,48 +379,6 @@ watch(
 	},
 	{ deep: true },
 );
-
-function parseToolFieldValue(field: ToolField, value: string): unknown {
-	switch (field.kind) {
-		case "boolean":
-			if (value === "true") return true;
-			if (value === "false") return false;
-			throw new Error(`${field.name} must be true or false.`);
-		case "enum":
-			return value;
-		case "json":
-			try {
-				return JSON.parse(value);
-			} catch (error) {
-				throw new Error(
-					`${field.name} must be valid JSON: ${error instanceof Error ? error.message : String(error)}`,
-				);
-			}
-		case "text": {
-			const rawType = field.schema.type;
-			const types = Array.isArray(rawType) ? rawType : rawType ? [rawType] : [];
-			const normalized = types.filter(
-				(entry): entry is string =>
-					typeof entry === "string" && entry !== "null",
-			);
-			if (normalized.includes("integer")) {
-				const parsed = Number(value);
-				if (!Number.isInteger(parsed)) {
-					throw new Error(`${field.name} must be an integer.`);
-				}
-				return parsed;
-			}
-			if (normalized.includes("number")) {
-				const parsed = Number(value);
-				if (!Number.isFinite(parsed)) {
-					throw new Error(`${field.name} must be a number.`);
-				}
-				return parsed;
-			}
-			return value;
-		}
-	}
-}
 
 async function submitToolRun() {
 	if (!runModal.value) return;

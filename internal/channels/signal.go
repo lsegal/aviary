@@ -3,7 +3,6 @@ package channels
 import (
 	"bufio"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -13,8 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,8 +23,6 @@ import (
 
 	"github.com/lsegal/aviary/internal/config"
 )
-
-var signalAttachmentFetcher = fetchSignalAttachmentData
 
 var (
 	urlRegex               = regexp.MustCompile(`https?://[^\s<>"{}|\\^\x60\[\]]+`)
@@ -490,7 +487,7 @@ func (c *SignalChannel) Send(channel, text string) error {
 
 	// Read response line.
 	var resp jsonrpcResponse
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+	if err := readRPCResponse(conn, req.ID, &resp); err != nil {
 		return fmt.Errorf("signal: read response: %w", err)
 	}
 	slog.Debug("signal: send response", "result", string(resp.Result))
@@ -548,7 +545,7 @@ func (c *SignalChannel) SendTyping(channel string, stop bool) error {
 	}
 
 	var resp jsonrpcResponse
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+	if err := readRPCResponse(conn, req.ID, &resp); err != nil {
 		return fmt.Errorf("signal: read response: %w", err)
 	}
 	if resp.Error != nil {
@@ -607,7 +604,7 @@ func (c *SignalChannel) sendReaction(channel, emoji, targetAuthor string, target
 	}
 
 	var resp jsonrpcResponse
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+	if err := readRPCResponse(conn, req.ID, &resp); err != nil {
 		return fmt.Errorf("signal: read response: %w", err)
 	}
 	if resp.Error != nil {
@@ -667,7 +664,7 @@ func (c *SignalChannel) SendMedia(channel, caption, filePath string) error {
 		return fmt.Errorf("signal: write: %w", err)
 	}
 	var resp jsonrpcResponse
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+	if err := readRPCResponse(conn, req.ID, &resp); err != nil {
 		return fmt.Errorf("signal: read response: %w", err)
 	}
 	if resp.Error != nil {
@@ -719,7 +716,7 @@ func (c *SignalChannel) sendReadReceipt(recipient string, msgTimestamp int64) er
 	}
 
 	var resp jsonrpcResponse
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+	if err := readRPCResponse(conn, req.ID, &resp); err != nil {
 		return fmt.Errorf("signal: read response: %w", err)
 	}
 	if resp.Error != nil {
@@ -728,7 +725,7 @@ func (c *SignalChannel) sendReadReceipt(recipient string, msgTimestamp int64) er
 	return nil
 }
 
-func (c *SignalChannel) rpcCallContext(ctx context.Context, body []byte, resp *jsonrpcResponse) error {
+func (c *SignalChannel) rpcCallContext(ctx context.Context, id int64, body []byte, resp *jsonrpcResponse) error {
 	addr := c.getAddr()
 	if addr == "" {
 		return fmt.Errorf("signal: daemon not ready")
@@ -749,10 +746,48 @@ func (c *SignalChannel) rpcCallContext(ctx context.Context, body []byte, resp *j
 	if _, err := conn.Write(body); err != nil {
 		return fmt.Errorf("signal: write: %w", err)
 	}
-	if err := json.NewDecoder(conn).Decode(resp); err != nil {
+	if err := readRPCResponse(conn, id, resp); err != nil {
 		return fmt.Errorf("signal: read response: %w", err)
 	}
 	return nil
+}
+
+// readRPCResponse reads JSON-RPC messages from r until the response to
+// request id arrives. signal-cli pushes notifications such as receive to
+// every connection, so they can arrive ahead of the response and are skipped,
+// as are responses to other requests. A response with neither a result nor an
+// error is rejected rather than decoded as empty.
+func readRPCResponse(r io.Reader, id int64, resp *jsonrpcResponse) error {
+	want := strconv.FormatInt(id, 10)
+	dec := json.NewDecoder(r)
+	for {
+		var msg struct {
+			jsonrpcResponse
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		if err := dec.Decode(&msg); err != nil {
+			return err
+		}
+		if msg.Method != "" || !rpcIDMatches(msg.ID, want) {
+			continue
+		}
+		if msg.Error == nil && len(msg.Result) == 0 {
+			return fmt.Errorf("signal: response to request %d has no result", id)
+		}
+		*resp = msg.jsonrpcResponse
+		return nil
+	}
+}
+
+// rpcIDMatches reports whether a response id, a JSON number or string,
+// equals want.
+func rpcIDMatches(raw json.RawMessage, want string) bool {
+	got := strings.TrimSpace(string(raw))
+	if unquoted, err := strconv.Unquote(got); err == nil {
+		got = unquoted
+	}
+	return got == want
 }
 
 // Start connects to signal-cli and listens for incoming messages.
@@ -1075,7 +1110,7 @@ func (c *SignalChannel) fetchUUID(ctx context.Context) {
 		return
 	}
 	var resp jsonrpcResponse
-	if err := c.rpcCallContext(ctx, body, &resp); err != nil {
+	if err := c.rpcCallContext(ctx, req.ID, body, &resp); err != nil {
 		slog.Debug("signal: listAccounts failed", "err", err)
 		return
 	}
@@ -1238,176 +1273,6 @@ func (c *SignalChannel) handOff(fn func(IncomingMessage), im IncomingMessage, so
 			slog.Warn("signal: failed to send read receipt", "err", err)
 		}
 	}
-}
-
-func (c *SignalChannel) signalAttachments(attachments []signalAttachment, source, channelID string, isGroup bool) []Attachment {
-	var out []Attachment
-	for _, attachment := range attachments {
-		out = append(out, c.ingestSignalAttachment(attachment, source, channelID, isGroup))
-	}
-	return out
-}
-
-func (c *SignalChannel) ingestSignalAttachment(attachment signalAttachment, source, channelID string, isGroup bool) Attachment {
-	name := signalAttachmentName(attachment.fileName(), attachment.storedPath(), attachment.localPath(), attachment.remoteURL())
-	contentType := attachment.mimeType()
-	lastErr := fmt.Errorf("no attachment source")
-	for _, localPath := range []string{attachment.localPath(), attachment.storedPath()} {
-		localPath = strings.TrimSpace(localPath)
-		if localPath == "" {
-			continue
-		}
-		att, err := ingestLocalMedia("signal", localPath, name, contentType)
-		if err == nil {
-			return att
-		}
-		lastErr = err
-	}
-	if sourceURL := strings.TrimSpace(attachment.remoteURL()); sourceURL != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		att, err := ingestRemoteMedia(ctx, "signal", sourceURL, name, contentType, nil)
-		cancel()
-		if err == nil {
-			return att
-		}
-		lastErr = err
-		slog.Warn("signal: failed to ingest remote attachment", "url", sourceURL, "err", err)
-	}
-	if attachmentID := attachment.id(); attachmentID != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		att, err := c.ingestSignalAttachmentByID(ctx, attachmentID, source, channelID, isGroup, name, contentType)
-		cancel()
-		if err == nil {
-			return att
-		}
-		lastErr = err
-		slog.Warn("signal: failed to ingest attachment by id", "id", attachmentID, "err", err)
-	}
-	return failedAttachment(name, contentType, attachment.Size, lastErr)
-}
-
-func (a signalAttachment) mimeType() string {
-	return firstMeaningfulString(a.ContentType, a.ContentTypeAlt)
-}
-
-func (a signalAttachment) id() string {
-	return firstMeaningfulString(a.ID, a.AttachmentID)
-}
-
-func (a signalAttachment) fileName() string {
-	return firstMeaningfulString(a.Filename, a.FileName)
-}
-
-func (a signalAttachment) storedPath() string {
-	return firstMeaningfulString(a.StoredFilename, a.StoredFileName)
-}
-
-func (a signalAttachment) localPath() string {
-	return firstMeaningfulString(a.Path, a.File, a.LocalPath)
-}
-
-func (a signalAttachment) remoteURL() string {
-	return firstMeaningfulString(a.URL, a.RemoteURL, a.RemoteURLAlt, a.DownloadURL)
-}
-
-func signalAttachmentName(values ...string) string {
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if parsed, err := url.Parse(value); err == nil && parsed.Path != "" {
-			value = parsed.Path
-		}
-		base := filepath.Base(value)
-		if strings.TrimSpace(base) != "" && base != "." && base != string(filepath.Separator) {
-			return base
-		}
-	}
-	return "attachment"
-}
-
-func firstMeaningfulString(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
-func (c *SignalChannel) ingestSignalAttachmentByID(ctx context.Context, attachmentID, source, channelID string, isGroup bool, fileName, contentType string) (Attachment, error) {
-	if strings.TrimSpace(c.phone) == "" {
-		return Attachment{}, fmt.Errorf("signal account phone is required")
-	}
-	data, err := signalAttachmentFetcher(ctx, c, c.phone, attachmentID, source, channelID, isGroup)
-	if err != nil {
-		return Attachment{}, err
-	}
-	return persistIncomingMedia("signal", fileName, contentType, data)
-}
-
-func fetchSignalAttachmentData(ctx context.Context, c *SignalChannel, phone, attachmentID, source, channelID string, isGroup bool) ([]byte, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
-		defer cancel()
-	}
-	_ = phone
-	type attachmentParams struct {
-		ID        string `json:"id"`
-		Recipient string `json:"recipient,omitempty"`
-		GroupID   string `json:"groupId,omitempty"`
-	}
-	req := jsonrpcRequest[attachmentParams]{
-		JSONRPC: "2.0",
-		Method:  "getAttachment",
-		Params:  attachmentParams{ID: attachmentID},
-		ID:      c.idSeq.Add(1),
-	}
-	if isGroup {
-		req.Params.GroupID = channelID
-	} else {
-		req.Params.Recipient = source
-	}
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("signal: marshal getAttachment request: %w", err)
-	}
-	var resp jsonrpcResponse
-	if err := c.rpcCallContext(ctx, body, &resp); err != nil {
-		return nil, err
-	}
-	if resp.Error != nil {
-		return nil, fmt.Errorf("signal: rpc error: %d %s", resp.Error.Code, resp.Error.Message)
-	}
-	encoded, err := decodeSignalAttachmentResult(resp.Result)
-	if err != nil {
-		return nil, err
-	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
-	if err != nil {
-		return nil, fmt.Errorf("decoding attachment %s: %w", attachmentID, err)
-	}
-	return decoded, nil
-}
-
-func decodeSignalAttachmentResult(raw json.RawMessage) (string, error) {
-	var encoded string
-	if err := json.Unmarshal(raw, &encoded); err == nil && strings.TrimSpace(encoded) != "" {
-		return encoded, nil
-	}
-
-	var payload struct {
-		Data string `json:"data"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return "", fmt.Errorf("signal: decode getAttachment result: %w", err)
-	}
-	if strings.TrimSpace(payload.Data) == "" {
-		return "", fmt.Errorf("signal: decode getAttachment result: empty attachment data")
-	}
-	return payload.Data, nil
 }
 
 func (c *SignalChannel) dispatchReactionEnvelope(source string, msgTimestamp int64, reactionMessage *signalReactionMessage) {

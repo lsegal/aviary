@@ -4316,7 +4316,7 @@ func (w *Engine) Run(ctx context.Context) error {
 			session.Agent = w.newJobAgent(target)
 		}
 		spec, _ := parseAgentSpec(session.Agent)
-		jobs[key] = JobSnapshot{Kind: core.JobKindSchedule, ScheduleID: run.TaskID, Number: number, Target: target, Repository: request.repository, Title: run.Name, Status: "queued", Agent: spec.Name, Model: spec.Model, Effort: spec.Level, Started: time.Now()}
+		jobs[key] = JobSnapshot{Kind: core.JobKindSchedule, ScheduleID: run.TaskID, RunID: run.JobID, Number: number, Target: target, Repository: request.repository, Title: run.Name, Status: "queued", Agent: spec.Name, Model: spec.Model, Effort: spec.Level, Started: time.Now()}
 		jobMu.Unlock()
 		issue := Issue{Number: number, Target: target, Repository: request.repository, Title: run.Name, Prompt: run.Prompt, ScheduleID: run.TaskID}
 		runCtx, cancelRun := context.WithCancelCause(ctx)

@@ -428,6 +428,7 @@ func TestDispatch_TextMessageStillProcessesWhenAttachmentFetchTimesOut(t *testin
 		}
 	}
 	t.Cleanup(func() { signalAttachmentFetcher = origFetcher })
+	useSignalAttachmentRetry(t, time.Second, 100*time.Millisecond, nil)
 
 	ch := NewSignalChannel("+12135550123", "", []config.AllowFromEntry{{From: "*"}}, true, true, true, true, "test", nil)
 	msgs := make(chan IncomingMessage, 1)

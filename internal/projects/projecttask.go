@@ -302,3 +302,25 @@ func lastLine(log string) string {
 	}
 	return ""
 }
+
+// ScheduledRunLog returns the output of the Code Loop run that scheduler job
+// jobID ran as, from the live board or the job store, and whether the store
+// cut it down to its tail. found is false when no run records jobID: it was
+// cleared or expired, or never started. A requeued run keeps its job ID, so
+// the latest run is the one returned.
+func (m *Manager) ScheduledRunLog(jobID string) (log string, truncated, found bool) {
+	if m == nil || strings.TrimSpace(jobID) == "" {
+		return "", false, false
+	}
+	jobs := m.display().Jobs
+	var latest *JobSnapshot
+	for i, job := range jobs {
+		if job.Kind == core.JobKindSchedule && job.RunID == jobID && (latest == nil || job.Started.After(latest.Started)) {
+			latest = &jobs[i]
+		}
+	}
+	if latest == nil {
+		return "", false, false
+	}
+	return latest.Log, latest.LogTruncated, true
+}
