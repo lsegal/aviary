@@ -34,14 +34,18 @@ to messaging channels, set up scheduled tasks, and let your agents work for you.
 // dispatcher is the global MCP dispatcher used by all subcommands.
 var dispatcher *mcp.Dispatcher
 
+// logToFile makes flag initialization open Aviary's log file. Execute sets
+// it for every command except `aviary watch`, so tests running rootCmd
+// directly keep logging to stderr.
+var logToFile bool
+
 // Execute runs the root command.
 func Execute() {
 	// A watch session logs into its own temporary directory once it has
 	// one, never into the user's.
+	// The log file opens once flags are parsed, so it lands in --data-dir.
 	if cmd, _, err := rootCmd.Find(os.Args[1:]); err != nil || cmd != watchCmd {
-		if err := logging.Init(); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to initialize logging: %v\n", err)
-		}
+		logToFile = true
 	}
 
 	// Wire server package into MCP dispatcher.
@@ -73,12 +77,21 @@ Version: {{.Version}}
 	}
 
 	// Initialize the dispatcher after flags are parsed.
-	cobra.OnInitialize(func() {
-		if dataDir != "" {
-			store.SetDataDir(dataDir)
+	cobra.OnInitialize(initFromFlags)
+}
+
+// initFromFlags applies the parsed persistent flags: it sets the data
+// directory, opens the log file in it, and creates the dispatcher.
+func initFromFlags() {
+	if dataDir != "" {
+		store.SetDataDir(dataDir)
+	}
+	if logToFile {
+		if err := logging.Init(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to initialize logging: %v\n", err)
 		}
-		dispatcher = mcp.NewDispatcher(resolvedServerURL(), token)
-	})
+	}
+	dispatcher = mcp.NewDispatcher(resolvedServerURL(), token)
 }
 
 // resolvedServerURL returns the --server URL, or else the local server's URL
