@@ -211,7 +211,7 @@ func TestTaskCLI_AddReplacesTaskAndResetsOmittedPolicies(t *testing.T) {
 // the model is released.
 type blockingModel struct{ started, release chan struct{} }
 
-func (m *blockingModel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (m *blockingModel) ServeHTTP(_ http.ResponseWriter, r *http.Request) {
 	select {
 	case m.started <- struct{}{}:
 	default:
