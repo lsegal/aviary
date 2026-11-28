@@ -95,6 +95,9 @@ type GHCLI struct {
 	// callers that must answer quickly set a shorter one.
 	Timeout    time.Duration
 	runCommand func(context.Context, ...string) ([]byte, error)
+	// apiCommand overrides the `gh api` invocation behind api and apiList,
+	// receiving the arguments and any request body. Nil runs Binary.
+	apiCommand func(ctx context.Context, args []string, body ...string) ([]byte, error)
 	// publicAPI overrides the unauthenticated public GitHub API request used
 	// to poll public repositories without spending the authenticated gh
 	// token's rate limit. Nil uses the real network implementation.
