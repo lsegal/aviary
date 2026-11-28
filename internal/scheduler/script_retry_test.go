@@ -83,7 +83,9 @@ func TestRetryTransientScriptStopsWhenTheRunStops(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = retryTransientScript(ctx, func(string, ...any) {}, func() (string, error) {
+		_, _ = retryTransientScript(ctx, func(string, ...any) {
+			// no-op: this test does not inspect retry log output
+		}, func() (string, error) {
 			calls++
 			return "", errors.New("gh: rate limit (HTTP 429)")
 		})

@@ -3,8 +3,8 @@ FROM node:25-bookworm AS web-builder
 WORKDIR /src
 
 COPY package.json pnpm-lock.yaml ./
-RUN npm install -g pnpm@8.6.0
-RUN pnpm install --frozen-lockfile
+RUN npm install -g pnpm@8.6.0 \
+  && pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm build:web
@@ -48,7 +48,8 @@ ARG TARGETARCH
 # and picks the best one at runtime. Bookworm's gcc cannot build ggml's armv9
 # variants, so arm64 gets one baseline armv8-a backend that runs on any arm64
 # host. whisper-cli finds its shared libraries and CPU backend next to itself
-# through $ORIGIN.
+# through $ORIGIN, which stays single-quoted so cmake, not the shell, sees it.
+# hadolint ignore=SC2016
 RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
     amd64) cpu_variants=ON ;; \
     *) cpu_variants=OFF ;; \
@@ -128,9 +129,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   libxrandr2 \
   sudo \
   xdg-utils \
-  && rm -rf /var/lib/apt/lists/*
-
-RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+  && case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
     amd64) \
       curl -fsSLo /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
       && apt-get update \
@@ -148,19 +147,22 @@ RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
       && exit 1 \
       ;; \
   esac \
-  && rm -rf /var/lib/apt/lists/*
-
-RUN useradd -m linuxbrew -d /home/linuxbrew -s /bin/bash \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd -g 1000 linuxbrew \
+  && useradd -m -u 1000 -g 1000 linuxbrew -d /home/linuxbrew -s /bin/bash \
   && echo "linuxbrew ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/linuxbrew \
   && chmod 0440 /etc/sudoers.d/linuxbrew
 
-USER linuxbrew
-RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-RUN /home/linuxbrew/.linuxbrew/bin/brew install gogcli himalaya
-RUN chmod 777 /home/linuxbrew /home/linuxbrew/.linuxbrew
+# Numeric IDs keep USER in sync with the accounts created above: linuxbrew is
+# 1000:1000 and bot is 1001:1001, the IDs these accounts always had.
+USER 1000:1000
+RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+  && /home/linuxbrew/.linuxbrew/bin/brew install gogcli himalaya \
+  && chmod 777 /home/linuxbrew /home/linuxbrew/.linuxbrew
 
-USER root
-RUN useradd -m bot -d /home/bot -s /bin/bash \
+USER 0:0
+RUN groupadd -g 1001 bot \
+  && useradd -m -u 1001 -g 1001 bot -d /home/bot -s /bin/bash \
   && mkdir -p /home/bot/.local/bin /home/bot/.config/aviary \
   && chown -R bot:bot /home/bot/.local /home/bot/.config
 
@@ -171,7 +173,7 @@ RUN ln -s /opt/whisper.cpp/whisper-cli /usr/local/bin/whisper-cli
 
 COPY --from=go-builder /out/aviary /usr/local/bin/aviary
 
-USER bot
+USER 1001:1001
 ENV PATH="/home/bot/.local/bin:/home/linuxbrew/.linuxbrew/bin:${PATH}"
 ENV AVIARY_SANDBOX=true
 ENV AVIARY_CONFIG_SERVER_EXTERNAL_ACCESS=true

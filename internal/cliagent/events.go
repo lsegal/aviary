@@ -66,7 +66,7 @@ func (t *toolTranslator) translateOne(e transcript.Event) {
 	case transcript.KindToolCall:
 		t.start(e.CallID, e.Name, e.Input)
 	case transcript.KindPlan:
-		// Codex's todo list is its own running plan, not a tool call.
+		// Codex's task checklist is its own running plan, not a tool call.
 		if e.Name != "" {
 			t.start(e.CallID, e.Name, e.Input)
 		}

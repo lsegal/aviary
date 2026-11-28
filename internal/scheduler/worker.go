@@ -60,7 +60,10 @@ type WorkerPool struct {
 type ProjectRun struct {
 	// TaskID is the task's "agent/task" key, which a board Retry passes back
 	// to Trigger.
-	TaskID  string
+	TaskID string
+	// JobID is the scheduler job the fire runs as, which the board job
+	// records so the task's run pages can show its output (issue #1646).
+	JobID   string
 	Name    string
 	Project string
 	// Model overrides the project agent's model for the run; empty runs it
@@ -506,7 +509,7 @@ func (p *WorkerPool) executeProjectJob(ctx context.Context, job *domain.Job, cfg
 	if p.projectRunner == nil {
 		return errors.New("project tasks need the Code Loop engine, which is not running")
 	}
-	run := ProjectRun{TaskID: job.TaskID, Name: jobSessionName(job), Prompt: job.Prompt, Fire: time.Now()}
+	run := ProjectRun{TaskID: job.TaskID, JobID: job.ID, Name: jobSessionName(job), Prompt: job.Prompt, Fire: time.Now()}
 	precompile := false
 	if cfg != nil {
 		for _, task := range cfg.Tasks {

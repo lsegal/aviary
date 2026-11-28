@@ -671,7 +671,7 @@ test("long Tasks and Files lists show five items plus More", async () => {
 		name: `task-${i + 1}`,
 	}));
 	const files = Object.fromEntries(
-		Array.from({ length: 7 }, (_, i) => [`NOTE${i + 1}.md`, ""]),
+		Array.from({ length: 7 }, (_, i) => [`DOC${i + 1}.md`, ""]),
 	);
 	mockAgent(tasks, files);
 

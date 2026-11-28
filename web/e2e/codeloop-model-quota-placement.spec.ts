@@ -2,8 +2,9 @@ import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
 
 // The Code Loop board's agent models and quota show in exactly one place at
-// every width: inline under the stats from sm up, or in the ⓘ Board details
-// popover, or in "…" when the details moved there, below it (#1580, #1582).
+// every width: inline under the stats when they fit there on one line, or in
+// the ⓘ Board details popover, or in "…" when the details moved there
+// (#1580, #1582, #1584).
 // Fixtures follow the payloads of project_status and project_job_list.
 // The width sweeps moved to
 // web/src/scenarios/codeloop-model-quota-placement.component.test.ts (#1636);
@@ -79,9 +80,22 @@ async function placesShowingQuota(page: Page) {
 	return places;
 }
 
-// Tailwind's sm is 40rem, so with a larger or smaller browser font size the
-// board's layout switches elsewhere than 640px, and the models and quota
-// switch with it, still in exactly one place.
+// Whether the models and quota fit on one line in the board's content box,
+// measured from the board's hidden one-line copy (#1584).
+async function quotaFits(page: Page) {
+	return page.getByTestId("board-body").evaluate((body) => {
+		const copy = body.querySelector('[data-testid="board-clis-measure"]');
+		const style = getComputedStyle(body);
+		const room =
+			body.clientWidth -
+			Number.parseFloat(style.paddingLeft) -
+			Number.parseFloat(style.paddingRight);
+		return (copy?.getBoundingClientRect().width ?? 0) <= room + 0.5;
+	});
+}
+
+// With a larger or smaller browser font size the models and quota take more
+// or less room, and still show in exactly one place, chosen by measured fit.
 for (const fontSize of [12, 20]) {
 	test(`with a ${fontSize}px browser font the models and quota still show in exactly one place (#1582)`, async ({
 		page,
@@ -98,10 +112,11 @@ for (const fontSize of [12, 20]) {
 			await page.setViewportSize({ width, height: 900 });
 			await page.goto("/agents/coder/projects/lsegal%2Faviary");
 			await expect(page.getByTestId("stats-toggle")).toBeVisible();
+			const fits = await quotaFits(page);
 			const places = await placesShowingQuota(page);
 			expect(places, `${width}px`).toHaveLength(1);
-			// Below sm a narrow header may move the details into "…".
-			if (width >= breakpoint) expect(places[0], `${width}px`).toBe("inline");
+			// When they don't fit, a narrow header may move the details into "…".
+			if (fits) expect(places[0], `${width}px`).toBe("inline");
 			else expect(places[0], `${width}px`).not.toBe("inline");
 		}
 	});

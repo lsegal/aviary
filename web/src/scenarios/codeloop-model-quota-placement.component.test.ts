@@ -8,8 +8,9 @@ import {
 } from "../composables/useSidebarLayout";
 
 // The Code Loop board's agent models and quota show in exactly one place at
-// every width: inline under the stats from sm up, or in the ⓘ Board details
-// popover, or in "…" when the details moved there, below it (#1580, #1582).
+// every width: inline under the stats when they fit there on one line, or in
+// the ⓘ Board details popover, or in "…" when the details moved there
+// (#1580, #1582, #1584).
 // Fixtures follow the payloads of project_status and project_job_list.
 // The browser font size cases stay in web/e2e (they set it through CDP).
 
@@ -61,6 +62,19 @@ function isVisible(loc: Locator): boolean {
 	});
 }
 
+// Whether the models and quota fit on one line in the board's content box,
+// measured from the board's hidden one-line copy (#1584).
+function quotaFits(): boolean {
+	const body = page.getByTestId("board-body").element();
+	const copy = body.querySelector('[data-testid="board-clis-measure"]');
+	const style = getComputedStyle(body);
+	const room =
+		body.clientWidth -
+		Number.parseFloat(style.paddingLeft) -
+		Number.parseFloat(style.paddingRight);
+	return (copy?.getBoundingClientRect().width ?? 0) <= room + 0.5;
+}
+
 // Where the models and quota are actually visible, opening the details
 // popover and "…" to look inside them.
 async function placesShowingQuota() {
@@ -103,9 +117,11 @@ async function sweep(path: string, collapsed: boolean) {
 			await expect
 				.element(page.getByTestId(collapsed ? "sidebar-rail" : "sidebar"))
 				.toBeVisible();
+		const fits = quotaFits();
 		const places = await placesShowingQuota();
 		expect(places, `${width}px`).toHaveLength(1);
-		expect(places[0], `${width}px`).toBe(width >= 640 ? "inline" : "popover");
+		if (fits) expect(places[0], `${width}px`).toBe("inline");
+		else expect(places[0], `${width}px`).not.toBe("inline");
 	}
 }
 

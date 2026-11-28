@@ -81,13 +81,19 @@ export function useLogs() {
 	let destroyed = false;
 	let pendingEntries: LogEntry[] = [];
 	let flushTimer: ReturnType<typeof setTimeout> | null = null;
+	// Set when a connection opens: every connection re-sends the tail, so its
+	// first flush replaces what's shown instead of appending a second copy.
+	let replaceOnFlush = false;
 
 	function scheduleFlush() {
 		if (flushTimer !== null) return;
 		flushTimer = setTimeout(() => {
 			flushTimer = null;
 			if (pendingEntries.length === 0) return;
-			const next = entries.value.concat(pendingEntries);
+			const next = replaceOnFlush
+				? pendingEntries
+				: entries.value.concat(pendingEntries);
+			replaceOnFlush = false;
 			pendingEntries = [];
 			entries.value =
 				next.length > maxEntries
@@ -107,6 +113,13 @@ export function useLogs() {
 			connected.value = true;
 			error.value = null;
 			reconnectDelay = 1_000;
+			// The tail is sent again on every connection, and its seq numbers
+			// start over, so it replaces the shown entries (and any history
+			// loaded before) rather than being appended to them.
+			pendingEntries = [];
+			replaceOnFlush = true;
+			historyCursor = null;
+			maxEntries = MAX_ENTRIES;
 			// Optimistically assume there may be history before the tail.
 			hasMore.value = true;
 		};

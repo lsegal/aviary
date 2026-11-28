@@ -45,9 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ripgrep \
   sudo \
   xdg-utils \
-  && rm -rf /var/lib/apt/lists/*
-
-RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+  && case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
     amd64) \
       curl -fsSLo /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
       && apt-get update \
@@ -79,24 +77,27 @@ RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
     *) \
       echo "skipping forgo install: no release for ${TARGETARCH:-$(dpkg --print-architecture)}" \
       ;; \
-  esac
-
-RUN useradd -m -s /bin/bash dev \
+  esac \
+  && groupadd -g 1001 dev \
+  && useradd -m -u 1001 -g 1001 -s /bin/bash dev \
   && echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev \
   && chmod 0440 /etc/sudoers.d/dev \
   && mkdir -p /src /pnpm /home/dev/.config/aviary "${GOPATH}" \
-  && chown -R dev:dev /src /pnpm /home/dev
-
-RUN useradd -m linuxbrew -d /home/linuxbrew -s /bin/bash \
+  && chown -R dev:dev /src /pnpm /home/dev \
+  && groupadd -g 1002 linuxbrew \
+  && useradd -m -u 1002 -g 1002 linuxbrew -d /home/linuxbrew -s /bin/bash \
   && echo "linuxbrew ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/linuxbrew \
   && chmod 0440 /etc/sudoers.d/linuxbrew
 
-USER linuxbrew
-RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-RUN /home/linuxbrew/.linuxbrew/bin/brew install gogcli himalaya
-RUN chmod 777 /home/linuxbrew /home/linuxbrew/.linuxbrew
+# Numeric IDs keep USER in sync with the accounts created above. The base
+# image's node user holds 1000, so dev is 1001:1001 and linuxbrew 1002:1002,
+# the IDs these accounts always had.
+USER 1002:1002
+RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+  && /home/linuxbrew/.linuxbrew/bin/brew install gogcli himalaya \
+  && chmod 777 /home/linuxbrew /home/linuxbrew/.linuxbrew
 
-USER root
+USER 0:0
 
 RUN npm install -g pnpm@8.6.0
 # The coding agent CLIs, pinned so rebuilds are reproducible; bump them here
@@ -108,8 +109,8 @@ RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "@openai/c
 COPY package.json pnpm-lock.yaml ./
 COPY docs/package.json docs/pnpm-lock.yaml ./docs/
 
-RUN pnpm install --frozen-lockfile
-RUN pnpm --dir docs install --frozen-lockfile
+RUN pnpm install --frozen-lockfile \
+  && pnpm --dir docs install --frozen-lockfile
 
 COPY . .
 
@@ -118,6 +119,6 @@ RUN mkdir -p /home/dev/.local/bin \
 
 EXPOSE 1455 45289 5173 5174 16677
 
-USER dev
+USER 1001:1001
 
 CMD ["pnpm", "dev"]

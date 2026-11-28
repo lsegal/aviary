@@ -112,7 +112,7 @@ it("counts the chips on a single line and moves items until it fits", async () =
 	el.value = anchor;
 	await settle();
 	// Logs goes below its 600px threshold anyway, which is enough.
-	expect(collapsed?.value).toBe(1);
+	expect([...(collapsed?.value ?? [])]).toEqual(["logs-toggle"]);
 
 	// Logs left the row, using its remembered 36px width, and the row
 	// narrows to 310px (278px inside): Chat and Queue go too.
@@ -123,10 +123,14 @@ it("counts the chips on a single line and moves items until it fits", async () =
 	single.value = false;
 	await settle();
 	// Off a single line only the actions count: 124px fits in 278px.
-	expect(collapsed?.value).toBe(1);
+	expect(collapsed?.value.size).toBe(1);
 	single.value = true;
 	await settle();
-	expect(collapsed?.value).toBe(3);
+	expect([...(collapsed?.value ?? [])]).toEqual([
+		"logs-toggle",
+		"prompt-chat-toggle",
+		"queue-menu",
+	]);
 });
 
 it("collapses nothing outside a header row", async () => {
@@ -134,5 +138,5 @@ it("collapses nothing outside a header row", async () => {
 	const collapsed = scope.run(() => useHeaderCollapse(el, () => ITEMS));
 	el.value = { closest: () => null } as unknown as HTMLElement;
 	await settle();
-	expect(collapsed?.value).toBe(0);
+	expect(collapsed?.value.size).toBe(0);
 });

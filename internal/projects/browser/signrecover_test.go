@@ -385,7 +385,9 @@ func TestNewSignInRecoveryReportsAMissingWindow(t *testing.T) {
 	var events []string
 	recovery := NewSignInRecovery(fakeHandover{events: &events}, Config{}, SignIn{
 		Headed: func() error { return errors.New("no display") },
-	}, func(string, ...interface{}) {})
+	}, func(string, ...interface{}) {
+		// no-op: this test does not inspect recovery log output
+	})
 	if got := recovery.State().WindowUnavailable; got != "no display" {
 		t.Fatalf("WindowUnavailable = %q, want no display", got)
 	}

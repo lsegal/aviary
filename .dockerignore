@@ -2,6 +2,9 @@
 .github
 node_modules
 docs
+# Dockerfile.dev installs the docs dependencies, so it needs their manifests.
+!docs/package.json
+!docs/pnpm-lock.yaml
 dist
 web/dist
 internal/server/webdist
