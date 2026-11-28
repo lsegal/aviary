@@ -131,7 +131,7 @@ test("a long chat scrolls inside its pane, not the document", async ({
 	);
 	expect(scrollers).toBeGreaterThan(0);
 	const overflow = await page.evaluate(
-		() => document.scrollingElement!.scrollHeight - window.innerHeight,
+		() => document.documentElement.scrollHeight - window.innerHeight,
 	);
 	expect(overflow).toBeLessThanOrEqual(0);
 	await context.close();
