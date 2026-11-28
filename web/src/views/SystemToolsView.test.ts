@@ -28,7 +28,7 @@ const AppLayoutStub = defineComponent({
 	},
 });
 
-// A native <select> standing in for the radix AppSelect.
+// A native select element standing in for the radix AppSelect.
 const AppSelectStub = defineComponent({
 	props: {
 		modelValue: { type: String, default: "" },
