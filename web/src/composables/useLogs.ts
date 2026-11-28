@@ -8,6 +8,8 @@ export interface LogEntry {
 	component: string;
 	msg: string;
 	attrs?: Record<string, string>;
+	/** Where the line starts in the log; history pages back from it. */
+	off?: number;
 }
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
@@ -23,6 +25,7 @@ const INITIAL_TAIL = 200;
 const HISTORY_PAGE = 200;
 const MAX_ENTRIES = 2000;
 const TRIM_TO = 1800;
+const TRIM_HEADROOM = MAX_ENTRIES - TRIM_TO;
 
 export function useLogs() {
 	const auth = useAuthStore();
@@ -32,8 +35,10 @@ export function useLogs() {
 	const error = ref<string | null>(null);
 	const hasMore = ref(false);
 	const loadingMore = ref(false);
-	// How many lines from the end of the file we've already loaded via SSE tail.
-	let historySkip = INITIAL_TAIL;
+	// Log offset to page back from once nothing shown carries one (after Clear).
+	let historyCursor: number | null = null;
+	// Loading history raises the cap so live lines do not trim it right away.
+	let maxEntries = MAX_ENTRIES;
 
 	// Filter state.
 	const filterComponents = ref<Set<string>>(new Set());
@@ -84,7 +89,10 @@ export function useLogs() {
 			if (pendingEntries.length === 0) return;
 			const next = entries.value.concat(pendingEntries);
 			pendingEntries = [];
-			entries.value = next.length > MAX_ENTRIES ? next.slice(-TRIM_TO) : next;
+			entries.value =
+				next.length > maxEntries
+					? next.slice(-(maxEntries - TRIM_HEADROOM))
+					: next;
 		}, 32);
 	}
 
@@ -99,8 +107,6 @@ export function useLogs() {
 			connected.value = true;
 			error.value = null;
 			reconnectDelay = 1_000;
-			// Reset skip counter; the SSE tail re-sends the last INITIAL_TAIL lines.
-			historySkip = INITIAL_TAIL;
 			// Optimistically assume there may be history before the tail.
 			hasMore.value = true;
 		};
@@ -147,13 +153,25 @@ export function useLogs() {
 		es = null;
 	}
 
+	// The offset of the oldest line shown. Paging from it, not from the end of
+	// the log, keeps lines appended since the page opened out of history.
+	function oldestOffset(): number | null {
+		const shown = entries.value.find((e) => e.off !== undefined);
+		return shown?.off ?? historyCursor;
+	}
+
 	async function loadPrevious() {
 		if (loadingMore.value) return;
+		const before = oldestOffset();
+		if (before === null) {
+			hasMore.value = false;
+			return;
+		}
 		loadingMore.value = true;
 		try {
 			const tok = auth.getToken();
 			const qs = new URLSearchParams({
-				skip: String(historySkip),
+				before: String(before),
 				limit: String(HISTORY_PAGE),
 			});
 			if (tok) qs.set("token", tok);
@@ -164,7 +182,6 @@ export function useLogs() {
 				hasMore: boolean;
 			};
 			if (data.entries && data.entries.length > 0) {
-				historySkip += data.entries.length;
 				// Prepend with negative seq values to keep them before live entries.
 				const offset =
 					entries.value.length > 0
@@ -172,7 +189,9 @@ export function useLogs() {
 						: -data.entries.length;
 				const prepend = data.entries.map((e, i) => ({ ...e, seq: offset + i }));
 				const next = [...prepend, ...entries.value];
-				entries.value = next.length > MAX_ENTRIES ? next.slice(-TRIM_TO) : next;
+				// Keep what was asked for; live lines trim it only past headroom.
+				maxEntries = Math.max(maxEntries, next.length + TRIM_HEADROOM);
+				entries.value = next;
 			}
 			hasMore.value = data.hasMore;
 		} catch {
@@ -183,8 +202,9 @@ export function useLogs() {
 	}
 
 	function clearLogs() {
+		historyCursor = oldestOffset();
 		entries.value = [];
-		historySkip = INITIAL_TAIL;
+		maxEntries = MAX_ENTRIES;
 		hasMore.value = true;
 	}
 

@@ -757,54 +757,63 @@ func TestProcSampler_Sample(t *testing.T) {
 
 }
 
-func TestLogsHistoryHandler_SkipAndLimit(t *testing.T) {
+func TestLogsHistoryHandler_BeforeAndLimit(t *testing.T) {
 	setupServerDataDir(t)
 
 	logDir := filepath.Join(store.DataDir(), "logs")
 	_ = os.MkdirAll(logDir, 0o700)
 	logFile := filepath.Join(logDir, "aviary.log")
-	// Write 10 lines.
-	var sb strings.Builder
-	for i := 0; i < 10; i++ {
-		sb.WriteString(`{"time":"2024-01-01T00:00:00Z","level":"info","msg":"line"}` + "\n")
+	writeLines := func(prefix string, n int) {
+		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if !assert.NoError(t, err) {
+			return
+		}
+		defer f.Close() //nolint:errcheck
+		for i := 1; i <= n; i++ {
+			_, _ = fmt.Fprintf(f, `{"time":"2024-01-01T00:00:00Z","level":"info","msg":"%s %d"}`+"\n", prefix, i)
+		}
 	}
-	_ = os.WriteFile(logFile, []byte(sb.String()), 0o600)
-
-	// skip=5 should return last 5 (limit=500 default).
-	req := httptest.NewRequest(http.MethodGet, "/api/logs/history?skip=5", nil)
-	rr := httptest.NewRecorder()
-	logsHistoryHandler(rr, req)
-
-	var resp struct {
+	type response struct {
 		Entries []logEntry `json:"entries"`
 		HasMore bool       `json:"hasMore"`
 	}
-	err := json.NewDecoder(rr.Body).Decode(&resp)
-	assert.NoError(t, err)
-
-	assert.Equal(t, 5, len(resp.Entries))
-
-	// skip > total returns empty.
-	req2 := httptest.NewRequest(http.MethodGet, "/api/logs/history?skip=20", nil)
-	rr2 := httptest.NewRecorder()
-	logsHistoryHandler(rr2, req2)
-	var resp2 struct {
-		Entries []logEntry `json:"entries"`
+	get := func(query string) response {
+		rr := httptest.NewRecorder()
+		logsHistoryHandler(rr, httptest.NewRequest(http.MethodGet, "/api/logs/history?"+query, nil))
+		var resp response
+		assert.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))
+		return resp
 	}
-	_ = json.NewDecoder(rr2.Body).Decode(&resp2)
-	assert.Equal(t, 0, len(resp2.Entries))
-
-	// limit=2 with hasMore=true.
-	req3 := httptest.NewRequest(http.MethodGet, "/api/logs/history?limit=2", nil)
-	rr3 := httptest.NewRecorder()
-	logsHistoryHandler(rr3, req3)
-	var resp3 struct {
-		Entries []logEntry `json:"entries"`
-		HasMore bool       `json:"hasMore"`
+	messages := func(entries []logEntry) []string {
+		out := make([]string, len(entries))
+		for i, e := range entries {
+			out[i] = e.Message
+		}
+		return out
 	}
-	_ = json.NewDecoder(rr3.Body).Decode(&resp3)
-	assert.True(t, resp3.HasMore)
 
+	writeLines("old", 10)
+	tail := get("limit=4")
+	assert.True(t, tail.HasMore)
+	assert.Equal(t, []string{"old 7", "old 8", "old 9", "old 10"}, messages(tail.Entries))
+	if !assert.NotNil(t, tail.Entries[0].Offset) {
+		return
+	}
+
+	// Lines appended since the tail was read do not shift the next page.
+	writeLines("new", 50)
+	page := get(fmt.Sprintf("before=%d&limit=4", *tail.Entries[0].Offset))
+	assert.True(t, page.HasMore)
+	assert.Equal(t, []string{"old 3", "old 4", "old 5", "old 6"}, messages(page.Entries))
+
+	last := get(fmt.Sprintf("before=%d&limit=4", *page.Entries[0].Offset))
+	assert.False(t, last.HasMore)
+	assert.Equal(t, []string{"old 1", "old 2"}, messages(last.Entries))
+
+	// Nothing comes before the start of the log.
+	none := get("before=0")
+	assert.False(t, none.HasMore)
+	assert.Empty(t, none.Entries)
 }
 
 func TestParseLogLine_MissingTimestamp(t *testing.T) {
@@ -1177,8 +1186,8 @@ func TestFmtUptime_NegativeDuration(t *testing.T) {
 
 func TestLogsHistoryHandler_InvalidParams(t *testing.T) {
 	setupServerDataDir(t)
-	// Invalid skip and limit values should silently default.
-	req := httptest.NewRequest(http.MethodGet, "/api/logs/history?skip=notanumber&limit=notanumber", nil)
+	// Invalid before and limit values should silently default.
+	req := httptest.NewRequest(http.MethodGet, "/api/logs/history?before=notanumber&limit=notanumber", nil)
 	rr := httptest.NewRecorder()
 	logsHistoryHandler(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
@@ -1958,7 +1967,7 @@ func TestLogsHistoryHandler_HasMoreTrue(t *testing.T) {
 	}
 	_ = os.WriteFile(logFile, []byte(sb.String()), 0o600)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/logs/history?limit=2&skip=0", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/logs/history?limit=2", nil)
 	rr := httptest.NewRecorder()
 	logsHistoryHandler(rr, req)
 
@@ -1972,7 +1981,7 @@ func TestLogsHistoryHandler_HasMoreTrue(t *testing.T) {
 
 }
 
-func TestReadLogLinesFromEnd_SkipLimitWithoutTrailingNewline(t *testing.T) {
+func TestReadLogLinesBefore_LimitWithoutTrailingNewline(t *testing.T) {
 	setupServerDataDir(t)
 
 	logDir := filepath.Join(store.DataDir(), "logs")
@@ -1986,12 +1995,24 @@ func TestReadLogLinesFromEnd_SkipLimitWithoutTrailingNewline(t *testing.T) {
 	}, "\n")
 	_ = os.WriteFile(logFile, []byte(content), 0o600)
 
-	lines, hasMore, err := readLogLinesFromEnd(logFile, 1, 2)
+	line4 := int64(strings.LastIndex(content, "\n") + 1)
+	lines, hasMore, err := readLogLinesBefore(logFile, line4, 2)
 	assert.NoError(t, err)
 	assert.True(t, hasMore)
-	assert.Equal(t, 2, len(lines))
-	assert.True(t, strings.Contains(string(lines[0]), "line-2"))
-	assert.True(t, strings.Contains(string(lines[1]), "line-3"))
+	if assert.Equal(t, 2, len(lines)) {
+		assert.Contains(t, string(lines[0].text), "line-2")
+		assert.Contains(t, string(lines[1].text), "line-3")
+		assert.Equal(t, int64(strings.Index(content, `{"time":"2024-01-01T00:00:01Z"`)), lines[0].offset)
+	}
+
+	// Without a cursor the latest lines come back, the unterminated last one
+	// included.
+	lines, _, err = readLogLinesBefore(logFile, -1, 1)
+	assert.NoError(t, err)
+	if assert.Equal(t, 1, len(lines)) {
+		assert.Contains(t, string(lines[0].text), "line-4")
+		assert.Equal(t, line4, lines[0].offset)
+	}
 
 }
 

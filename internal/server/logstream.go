@@ -24,6 +24,9 @@ type logEntry struct {
 	Component string            `json:"component"`
 	Message   string            `json:"msg"`
 	Attrs     map[string]string `json:"attrs,omitempty"`
+	// Offset is where the line starts in the log, for lines read from it.
+	// The history endpoint pages from it, so it stays put as the log grows.
+	Offset *int64 `json:"off,omitempty"`
 }
 
 // logHub captures slog records into a ring buffer per component and fans them
@@ -256,14 +259,15 @@ func (g *hubGroup) Handle(ctx context.Context, r slog.Record) error {
 // ── REST history endpoint ─────────────────────────────────────────────────────
 
 // logsHistoryHandler returns a JSON array of historical log entries from the
-// log file.  Query params: skip (lines from end already seen), limit (max to
-// return, capped at 1000).  Response: {"entries":[...],"hasMore":bool}
+// log file.  Query params: before (log offset to read up to, normally the
+// "off" of the oldest entry shown; the end of the log when absent), limit
+// (max to return, capped at 1000).  Response: {"entries":[...],"hasMore":bool}
 func logsHistoryHandler(w http.ResponseWriter, r *http.Request) {
-	skip := 0
+	before := int64(-1)
 	limit := 500
-	if v := r.URL.Query().Get("skip"); v != "" {
-		if n, err := fmt.Sscanf(v, "%d", &skip); n == 0 || err != nil {
-			skip = 0
+	if v := r.URL.Query().Get("before"); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &before); n == 0 || err != nil || before < 0 {
+			before = -1
 		}
 	}
 	if v := r.URL.Query().Get("limit"); v != "" {
@@ -275,7 +279,7 @@ func logsHistoryHandler(w http.ResponseWriter, r *http.Request) {
 		limit = 1000
 	}
 
-	entries, hasMore, err := readHistoricalLogEntries(skip, limit)
+	entries, hasMore, err := readHistoricalLogEntries(before, limit)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"entries":[],"hasMore":false}`)
@@ -335,7 +339,7 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 		tail = 1000
 	}
 
-	initialEntries, _, err := readHistoricalLogEntries(0, tail)
+	initialEntries, _, err := readHistoricalLogEntries(-1, tail)
 	if err == nil {
 		for _, e := range initialEntries {
 			sendEntry(e)
@@ -363,15 +367,22 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
+			// The chunk ends at next, and the held partial line sits just
+			// before it.
+			pos := next - int64(len(chunk)) - int64(len(remainder))
 			text := remainder + string(chunk)
 			parts := strings.Split(text, "\n")
 			remainder = parts[len(parts)-1]
 			for _, part := range parts[:len(parts)-1] {
+				start := pos
+				pos += int64(len(part)) + 1
 				line := strings.TrimSpace(part)
 				if line == "" {
 					continue
 				}
-				sendEntry(parseLogLine(line))
+				entry := parseLogLine(line)
+				entry.Offset = &start
+				sendEntry(entry)
 			}
 		}
 	}
@@ -422,18 +433,20 @@ func readLogAppends(offset int64) (chunk []byte, next int64, reset bool) {
 	return chunk, offset + int64(len(chunk)), reset
 }
 
-// readHistoricalLogEntries reads the latest log entries, from memory when
-// logs are kept there, else from the log file.
-func readHistoricalLogEntries(skip, limit int) ([]logEntry, bool, error) {
+// readHistoricalLogEntries reads the latest limit log entries that start
+// before log offset before (the end of the log when before is below zero),
+// from memory when logs are kept there, else from the log file. Each entry
+// carries its offset, so the next page can ask for the lines before it.
+func readHistoricalLogEntries(before int64, limit int) ([]logEntry, bool, error) {
 	var (
-		lines   [][]byte
+		lines   []logLine
 		hasMore bool
 		err     error
 	)
-	if data, _, ok := logging.MemoryLog(); ok {
-		lines, hasMore, err = readLinesFromEnd(bytes.NewReader(data), int64(len(data)), skip, limit)
+	if data, end, ok := logging.MemoryLog(); ok {
+		lines, hasMore, err = readLinesBefore(bytes.NewReader(data), end-int64(len(data)), end, before, limit)
 	} else {
-		lines, hasMore, err = readLogLinesFromEnd(logging.LogFilePath(), skip, limit)
+		lines, hasMore, err = readLogLinesBefore(logging.LogFilePath(), before, limit)
 	}
 	if err != nil {
 		return nil, false, err
@@ -442,19 +455,26 @@ func readHistoricalLogEntries(skip, limit int) ([]logEntry, bool, error) {
 	entries := make([]logEntry, 0, len(lines))
 	var seq int64
 	for _, line := range lines {
-		text := strings.TrimSpace(string(line))
+		text := strings.TrimSpace(string(line.text))
 		if text == "" {
 			continue
 		}
 		seq++
 		entry := parseLogLine(text)
 		entry.Seq = seq
+		entry.Offset = &line.offset
 		entries = append(entries, entry)
 	}
 	return entries, hasMore, nil
 }
 
-func readLogLinesFromEnd(path string, skip, limit int) ([][]byte, bool, error) {
+// logLine is one line of the log and the offset it starts at.
+type logLine struct {
+	text   []byte
+	offset int64
+}
+
+func readLogLinesBefore(path string, before int64, limit int) ([]logLine, bool, error) {
 	if limit <= 0 {
 		return nil, false, nil
 	}
@@ -469,18 +489,23 @@ func readLogLinesFromEnd(path string, skip, limit int) ([][]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	return readLinesFromEnd(f, st.Size(), skip, limit)
+	return readLinesBefore(f, 0, st.Size(), before, limit)
 }
 
-// readLinesFromEnd reads the last limit lines of the size bytes in r, after
-// skipping skip lines from the end.
-func readLinesFromEnd(r io.ReaderAt, size int64, skip, limit int) ([][]byte, bool, error) {
-	if limit <= 0 || size == 0 {
+// readLinesBefore reads the last limit lines that start before log offset
+// before from r, which holds the log from offset base to end. A before
+// below zero, or past end (the log started over), reads from end.
+func readLinesBefore(r io.ReaderAt, base, end, before int64, limit int) ([]logLine, bool, error) {
+	if before < 0 || before > end {
+		before = end
+	}
+	size := before - base
+	if limit <= 0 || size <= 0 {
 		return nil, false, nil
 	}
 
 	const chunkSize int64 = 64 * 1024
-	targetLines := skip + limit + 1
+	targetLines := limit + 1
 	var (
 		pos       = size
 		buf       []byte
@@ -504,24 +529,26 @@ func readLinesFromEnd(r io.ReaderAt, size int64, skip, limit int) ([][]byte, boo
 		}
 	}
 
-	lines := bytes.Split(buf, []byte("\n"))
-	for len(lines) > 0 && len(bytes.TrimSpace(lines[len(lines)-1])) == 0 {
+	parts := bytes.Split(buf, []byte("\n"))
+	lines := make([]logLine, 0, len(parts))
+	off := base + pos
+	for _, part := range parts {
+		lines = append(lines, logLine{text: part, offset: off})
+		off += int64(len(part)) + 1
+	}
+	for len(lines) > 0 && len(bytes.TrimSpace(lines[len(lines)-1].text)) == 0 {
 		lines = lines[:len(lines)-1]
 	}
 	if len(lines) == 0 {
 		return nil, false, nil
 	}
 
-	end := len(lines) - skip
-	if end <= 0 {
-		return nil, false, nil
-	}
-	start := end - limit
+	start := len(lines) - limit
 	if start < 0 {
 		start = 0
 	}
 	hasMore := pos > 0 || start > 0
-	return lines[start:end], hasMore, nil
+	return lines[start:], hasMore, nil
 }
 
 func parseLogLine(line string) logEntry {
