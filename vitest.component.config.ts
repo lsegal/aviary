@@ -1,7 +1,9 @@
 import { globSync, readFileSync } from "node:fs";
+import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import vue from "@vitejs/plugin-vue";
 import { playwright } from "@vitest/browser-playwright";
+import type { Plugin } from "vite";
 import { configDefaults, defineConfig } from "vitest/config";
 import {
 	emulateMedia,
@@ -46,8 +48,49 @@ const PREBUNDLED = [
 	),
 ].sort();
 
+// The router's lazy page imports, hidden from the module graph so a test
+// depends only on the pages it imports itself, not on every page the router
+// can load; see web/src/component-test/routes.ts. Every .vue module also
+// notes that it evaluated, which is how routes.ts tells a declared page from
+// an undeclared one.
+const ROUTER_FILES = /\/web\/src\/router\/(index|settingsView)\.ts$/;
+function routePagesAsDeclared(): Plugin {
+	let root = process.cwd();
+	return {
+		name: "aviary:route-pages-as-declared",
+		enforce: "post",
+		configResolved(config) {
+			root = config.root;
+		},
+		transform(code, id) {
+			const file = id.split("?")[0];
+			if (ROUTER_FILES.test(file)) {
+				return code.replace(
+					/\bimport\(\s*(["'])(\.{1,2}\/[^"']+\.vue)\1\s*\)/g,
+					(_, _quote, spec) => {
+						const target = path.resolve(path.dirname(file), spec);
+						const url = `/${path.relative(root, target)}`;
+						return `globalThis.__aviaryRoute(${JSON.stringify(target)}, ${JSON.stringify(url)})`;
+					},
+				);
+			}
+			if (file.endsWith(".vue") && !id.includes("?")) {
+				return `${code}\n(globalThis.__aviaryEvaluated ??= new Set()).add(${JSON.stringify(file)});\n`;
+			}
+		},
+	};
+}
+
 export default defineConfig({
-	plugins: [vue(), tailwindcss()],
+	plugins: [vue(), tailwindcss(), routePagesAsDeclared()],
+	define: {
+		"import.meta.env.COMPONENT_TEST_RECORD_ROUTES": JSON.stringify(
+			process.env.COMPONENT_TEST_RECORD_ROUTES ?? "",
+		),
+		"import.meta.env.COMPONENT_TEST_ROUTES_DIR": JSON.stringify(
+			`${import.meta.dirname}/.vitest/routes`,
+		),
+	},
 	server: {
 		// Vitest picks the browser server's port and moves past one in use.
 		strictPort: false,
