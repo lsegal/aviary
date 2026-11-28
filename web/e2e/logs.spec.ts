@@ -207,9 +207,7 @@ test("component chips filter rows by one or several components", async ({
 	await expect.poll(() => messages(page)).toEqual(["agent-line"]);
 
 	await chip(page, "scheduler").click();
-	await expect
-		.poll(() => messages(page))
-		.toEqual(["agent-line", "sched-line"]);
+	await expect.poll(() => messages(page)).toEqual(["agent-line", "sched-line"]);
 
 	await chip(page, "agent").click();
 	await expect.poll(() => messages(page)).toEqual(["sched-line"]);
