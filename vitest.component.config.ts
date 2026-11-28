@@ -71,7 +71,10 @@ export default defineConfig({
 		// Playwright waits up to 5 s for an expectation; Vitest's 1 s poll
 		// gives up too soon on a busy runner.
 		expect: { poll: { timeout: 5_000 } },
+		// Playwright's per-test timeout and CI retries, which the scenarios
+		// had as specs: a busy runner can slow a long round trip past it.
 		testTimeout: 30_000,
+		retry: process.env.CI ? 2 : 0,
 		browser: {
 			enabled: true,
 			headless: true,
