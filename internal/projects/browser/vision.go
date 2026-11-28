@@ -365,7 +365,7 @@ type visionAnswer struct {
 }
 
 // visionStatusLimit is the longest status a board column can plausibly
-// be. A status is a short label a person reads at a glance ("Todo", "In
+// be. A status is a short label a person reads at a glance ("Ready", "In
 // Progress", "Ready for review"), so anything longer is prose that arrived in
 // the status field rather than a column value.
 const visionStatusLimit = 40

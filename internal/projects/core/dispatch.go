@@ -101,7 +101,8 @@ func RemoteIssueAllowsDispatch(target string, issue Issue, readyState string) bo
 }
 
 // ProjectStatusAllowsDispatch reports whether a board item's status marks it
-// ready, matching readyState or, when it is empty, Todo or Ready.
+// ready, matching readyState or, when it is empty, the default ready column
+// names below.
 func ProjectStatusAllowsDispatch(status, readyState string) bool {
 	status = strings.TrimSpace(status)
 	readyState = strings.TrimSpace(readyState)

@@ -8,7 +8,7 @@ import (
 // museMapper maps `muse exec --json`. Every line is a runtime record named by
 // payload_type: run.output.delta streams the assistant's words, tool.result
 // reports a finished tool call with its name, outcome and output text (muse
-// never records a call's arguments), todo.snapshot.updated carries the plan,
+// never records a call's arguments), the plan snapshot record carries the plan,
 // run.usage the run's token use and run.terminal.failed a run that failed.
 type museMapper struct {
 	// pending holds the deltas of the assistant message being streamed; it
