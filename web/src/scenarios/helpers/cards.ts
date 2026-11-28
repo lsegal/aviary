@@ -1,4 +1,4 @@
-// Mirrors web/e2e/helpers/cards.ts for component tests (#1636).
+// Component-test helper, ported from the Playwright helper of the same name (#1636).
 import type { Locator } from "vitest/browser";
 import { boundingBoxOf } from "./box";
 

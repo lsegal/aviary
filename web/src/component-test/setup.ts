@@ -73,7 +73,6 @@ function normalize(text: string): string {
 declare module "vitest" {
 	interface Matchers<
 		R extends void | Promise<void> = void | Promise<void>,
-		// biome-ignore lint/correctness/noUnusedVariables: matches Vitest's own declaration.
 		T = unknown,
 	> {
 		/** The element's whole text, whitespace collapsed, equals `expected`

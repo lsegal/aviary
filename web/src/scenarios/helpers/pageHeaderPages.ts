@@ -1,4 +1,4 @@
-// Mirrors web/e2e/helpers/pageHeaderPages.ts for component tests (#1636).
+// Component-test helper, ported from the Playwright helper of the same name (#1636).
 import { setAuthToken } from "../../component-test/app";
 import { mockMCP, type ToolFixtures } from "../../component-test/server";
 
