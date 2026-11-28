@@ -22,7 +22,7 @@ func TestLaunchChromeWithModeReportsAMissingBinary(t *testing.T) {
 	m := NewManager(missing, 19876, t.TempDir(), true)
 
 	err := launchChromeWithMode(m, true)
-	if err == nil || !strings.Contains(err.Error(), "not found or not executable") || !strings.Contains(err.Error(), missing) {
+	if err == nil || !strings.Contains(err.Error(), "not found or not executable") || !strings.Contains(err.Error(), strconv.Quote(missing)) {
 		t.Fatalf("launchChromeWithMode() error = %v, want the missing binary %q reported", err, missing)
 	}
 }
