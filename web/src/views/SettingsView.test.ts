@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentEntry } from "../stores/settings";
 import {
 	FakeWebSocket,
 	fakes,
 	makeConfig,
 	mountSettings,
 	resetFakes,
+	unmountAll,
 } from "./settingsViewHarness";
 
 vi.mock("../composables/useMCP", () => ({
@@ -54,25 +56,20 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	unmountAll();
 	document.body.innerHTML = "";
 	vi.unstubAllGlobals();
 	vi.useRealTimers();
 });
 
-
-const agent = (name: string, extra: Record<string, unknown> = {}) => ({
-	name,
-	model: "anthropic/claude",
-	...extra,
-});
+const agent = (name: string, extra: Record<string, unknown> = {}) =>
+	({ name, model: "anthropic/claude", ...extra }) as unknown as AgentEntry;
 
 function buttonByText(
 	wrapper: Awaited<ReturnType<typeof mountSettings>>["wrapper"],
 	text: string,
 ) {
-	const button = wrapper
-		.findAll("button")
-		.find((b) => b.text().includes(text));
+	const button = wrapper.findAll("button").find((b) => b.text().includes(text));
 	if (!button) throw new Error(`no button "${text}"`);
 	return button;
 }
@@ -138,9 +135,10 @@ describe("loading and saving", () => {
 		fakes.auth.minimal = true;
 		fakes.auth.getToken = () => null;
 		const m = await mountSettings("/system/display");
-		expect(
-			m.wrapper.findAll('[role="tab"]').map((t) => t.text()),
-		).toEqual(["Display", "Notifications"]);
+		expect(m.wrapper.findAll('[role="tab"]').map((t) => t.text())).toEqual([
+			"Display",
+			"Notifications",
+		]);
 		expect(fakes.sockets[0].url).not.toContain("token");
 		// Display has no Save.
 		expect(m.wrapper.text()).not.toContain("Save Changes");
@@ -260,12 +258,16 @@ describe("loading and saving", () => {
 
 	it("saves with Ctrl+S only when the draft changed", async () => {
 		const m = await mountSettings("/system/settings");
-		window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true }));
+		window.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "s", ctrlKey: true }),
+		);
 		await m.settle();
 		expect(fakes.settings.saveConfig).not.toHaveBeenCalled();
 		window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
 		m.ctx.draft.server.port = 7000;
-		window.dispatchEvent(new KeyboardEvent("keydown", { key: "S", metaKey: true }));
+		window.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "S", metaKey: true }),
+		);
 		await m.settle();
 		expect(fakes.settings.saveConfig).toHaveBeenCalledTimes(1);
 		m.wrapper.unmount();
@@ -340,7 +342,9 @@ describe("loading and saving", () => {
 			m.ctx.draft.agents[0].tasks.map((t: { name: string }) => t.name),
 		).toEqual(["t1", "t2"]);
 		// Already saved, so no unsaved change and Ctrl+S has nothing to do.
-		window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true }));
+		window.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "s", ctrlKey: true }),
+		);
 		await m.settle();
 		expect(fakes.settings.saveConfig).not.toHaveBeenCalled();
 		m.wrapper.unmount();
@@ -379,7 +383,10 @@ describe("providers and secrets", () => {
 		expect(options).not.toContain("anthropic:oauth");
 		expect(options).toContain("anthropic:apikey");
 		expect(options).toContain("vllm:endpoint");
-		expect(m.ctx.extraSecrets).toEqual(["brave_search_api_key", "custom:oauth"]);
+		expect(m.ctx.extraSecrets).toEqual([
+			"brave_search_api_key",
+			"custom:oauth",
+		]);
 		expect(m.ctx.webSearchSecretOptions).toEqual(["brave_search_api_key"]);
 
 		// Picking an endpoint provider fills in its base URI.
@@ -548,7 +555,10 @@ describe("providers and secrets", () => {
 	});
 
 	it("adds a web search secret from its modal", async () => {
-		fakes.credentials.value = ["brave_search_api_key", "brave_search_api_key_2"];
+		fakes.credentials.value = [
+			"brave_search_api_key",
+			"brave_search_api_key_2",
+		];
 		const m = await mountSettings("/system/settings");
 		m.ctx.openWebSearchSecretModal();
 		await m.settle();
@@ -650,7 +660,12 @@ describe("providers and secrets", () => {
 		await m.settle();
 		expect(m.wrapper.text()).toContain("GitHub Copilot step 2 is ready below.");
 
-		for (const provider of ["anthropic", "openai", "google", "github-copilot"]) {
+		for (const provider of [
+			"anthropic",
+			"openai",
+			"google",
+			"github-copilot",
+		]) {
 			await m.ctx.reauthorizeProvider(provider);
 		}
 		await m.ctx.reauthorizeProvider("unknown");
@@ -717,12 +732,12 @@ describe("providers and secrets", () => {
 		expect(await errorAfter(() => m.ctx.addProviderOAuth())).toContain(
 			"a-start",
 		);
-		expect(await errorAfter(() => m.ctx.reauthorizeProvider("openai"))).toContain(
-			"o-start",
-		);
-		expect(await errorAfter(() => m.ctx.reauthorizeProvider("google"))).toContain(
-			"g-start",
-		);
+		expect(
+			await errorAfter(() => m.ctx.reauthorizeProvider("openai")),
+		).toContain("o-start");
+		expect(
+			await errorAfter(() => m.ctx.reauthorizeProvider("google")),
+		).toContain("g-start");
 		expect(await errorAfter(() => m.ctx.startCopilot())).toContain("c-start");
 		m.ctx.anthropicCode = "c";
 		expect(await errorAfter(() => m.ctx.completeAnthropic())).toContain(
@@ -962,7 +977,10 @@ describe("agent pages", () => {
 		expect(m.ctx.draft.agents).toHaveLength(3);
 		expect(m.ctx.selectedAgentIdx).toBe(2);
 		expect(m.router.currentRoute.value.path).toBe("/agents/_2/settings");
-		expect(crumbs(m).map((c) => c.label)).toEqual(["New agent", "Agent Settings"]);
+		expect(crumbs(m).map((c) => c.label)).toEqual([
+			"New agent",
+			"Agent Settings",
+		]);
 		m.ctx.draft.agents[2].name = "gamma";
 		await m.settle();
 		expect(m.router.currentRoute.value.path).toBe("/agents/gamma/settings");
@@ -1085,7 +1103,10 @@ describe("agent pages", () => {
 	});
 
 	it("opens a task's editor from ?task", async () => {
-		const m = await mountSettings("/agents/alpha/tasks?task=weekly", twoAgents());
+		const m = await mountSettings(
+			"/agents/alpha/tasks?task=weekly",
+			twoAgents(),
+		);
 		expect(m.ctx.selectedTaskIdx).toBe(1);
 		expect(m.ctx.selectedTask.name).toBe("weekly");
 		expect(crumbs(m)).toEqual([
@@ -1119,7 +1140,10 @@ describe("agent pages", () => {
 			});
 			return "ok";
 		};
-		const m = await mountSettings("/agents/alpha/tasks?task=weekly", twoAgents());
+		const m = await mountSettings(
+			"/agents/alpha/tasks?task=weekly",
+			twoAgents(),
+		);
 		await m.ctx.onTaskNameBlur();
 		m.ctx.onTaskNameFocus();
 		await m.ctx.onTaskNameBlur();
@@ -1147,7 +1171,10 @@ describe("agent pages", () => {
 		fakes.tools.config_task_rename = () => {
 			throw new Error("taken");
 		};
-		const m = await mountSettings("/agents/alpha/tasks?task=daily", twoAgents());
+		const m = await mountSettings(
+			"/agents/alpha/tasks?task=daily",
+			twoAgents(),
+		);
 		m.ctx.onTaskNameFocus();
 		m.ctx.selectedTask.name = "weekly2";
 		await m.ctx.onTaskNameBlur();
@@ -1170,7 +1197,10 @@ describe("agent pages", () => {
 	});
 
 	it("moves a task into its own file", async () => {
-		const m = await mountSettings("/agents/alpha/tasks?task=daily", twoAgents());
+		const m = await mountSettings(
+			"/agents/alpha/tasks?task=daily",
+			twoAgents(),
+		);
 		fakes.tools.config_task_move_to_file = () => "Moved to tasks/daily.md";
 		await m.ctx.moveTaskToFile(0, 0, "alpha", "daily");
 		expect(m.ctx.draft.agents[0].tasks[0].file).toBe("tasks/daily.md");
@@ -1294,9 +1324,9 @@ describe("agent files", () => {
 		await m.router.push("/agents/alpha/files?file=notes.md");
 		await m.settle();
 		expect(state.selectedFile).toBe("notes.md");
-		expect(
-			m.wrapper.find('[data-testid="agent-file-builtin"]').exists(),
-		).toBe(false);
+		expect(m.wrapper.find('[data-testid="agent-file-builtin"]').exists()).toBe(
+			false,
+		);
 		m.wrapper.unmount();
 	});
 
@@ -1344,7 +1374,8 @@ describe("agent files", () => {
 		state.content = "unsaved again";
 		await m.ctx.refreshAgentFiles("alpha");
 		await m.settle();
-		const onCancel = dialog(m, "discard-file-dialog").onCancel as () => Promise<void>;
+		const onCancel = dialog(m, "discard-file-dialog")
+			.onCancel as () => Promise<void>;
 		await onCancel();
 		expect(state.content).toBe("unsaved again");
 		state.content = state.savedContent;
@@ -1374,7 +1405,9 @@ describe("agent files", () => {
 		await m.ctx.selectAgentFile("alpha", "notes.md");
 		expect(state.error).toBe("read failed");
 		await m.ctx.selectAgentFile("", "x");
-		fakes.agentFiles.syncTemplates.mockRejectedValueOnce(new Error("sync failed"));
+		fakes.agentFiles.syncTemplates.mockRejectedValueOnce(
+			new Error("sync failed"),
+		);
 		await m.ctx.syncAgentTemplates("alpha");
 		expect(state.error).toBe("sync failed");
 		fakes.agentFiles.load.mockRejectedValueOnce("load failed");
@@ -1386,7 +1419,10 @@ describe("agent files", () => {
 	it("follows the sidebar's file list", async () => {
 		fakes.agentFiles.lists = { alpha: ["a.md", "b.md"] };
 		fakes.tools.agent_file_read = (args) => String(args?.file);
-		const m = await mountSettings("/agents/alpha/files?file=b.md", filesConfig());
+		const m = await mountSettings(
+			"/agents/alpha/files?file=b.md",
+			filesConfig(),
+		);
 		await m.settle();
 		const state = m.ctx.getAgentFileState("alpha");
 		expect(state.selectedFile).toBe("b.md");
@@ -1431,5 +1467,554 @@ describe("agent files", () => {
 		expect(fakes.agentFiles.load).toHaveBeenCalledWith("alpha");
 		expect(m.ctx.getAgentFileState("alpha").selectedFile).toBe("");
 		m.wrapper.unmount();
+	});
+});
+
+describe("tool permissions", () => {
+	const tools = ["browser_open", "browser_click", "memory_get", "exec"].map(
+		(name) => ({ name, description: "" }),
+	);
+	const permsConfig = () =>
+		makeConfig({
+			agents: [
+				agent("alpha", {
+					permissions: { tools: ["memory_get", "exec"] },
+					channels: [
+						{
+							type: "slack",
+							id: "c",
+							disabled_tools: ["exec", "memory_get"],
+							allow_from: [
+								{ from: "U1", restrict_tools: ["exec", "browser_open"] },
+							],
+						},
+					],
+				}),
+			],
+		});
+
+	it("clamps saved selections to the agent's preset", async () => {
+		fakes.listTools.mockResolvedValue(tools);
+		const m = await mountSettings("/agents/alpha/settings", permsConfig());
+		const a = m.ctx.draft.agents[0];
+		// exec is outside the standard preset, so it is dropped on load.
+		expect(a.permissions.tools).toEqual(["memory_get"]);
+		expect(a.channels[0].disabled_tools).toEqual(["memory_get"]);
+		expect(a.channels[0].allow_from[0].restrict_tools).toEqual([
+			"browser_open",
+		]);
+		expect(a.channels[0].enabled).toBe(true);
+		expect(a.channels[0].allow_from[0].respond_to_mentions).toBe(true);
+		expect(m.ctx.agentPermissionsPreset(a)).toBe("standard");
+		expect(m.ctx.toolGroupEntries.map(([g]: [string]) => g)).toContain(
+			"browser",
+		);
+		expect(m.ctx.availableToolNamesForAgent(a)).toEqual([
+			"browser_click",
+			"browser_open",
+			"memory_get",
+		]);
+		expect(m.ctx.isAgentCategoryAccessible(a, "exec")).toBe(false);
+
+		m.ctx.updateAgentPermissionsPreset(a, "full");
+		expect(a.permissions.preset).toBe("full");
+		expect(m.ctx.isAgentToolAccessible(a, "exec")).toBe(true);
+		m.ctx.updateAgentPermissionsPreset(a, 7);
+		expect(a.permissions.preset).toBeUndefined();
+		m.ctx.updateAgentPermissionsPreset(a, "minimal");
+		expect(a.permissions.tools).toEqual(["memory_get"]);
+		m.wrapper.unmount();
+	});
+
+	it("toggles an agent's tools and groups", async () => {
+		fakes.listTools.mockResolvedValue(tools);
+		const m = await mountSettings("/agents/alpha/settings", permsConfig());
+		const a = m.ctx.draft.agents[0];
+		expect(m.ctx.hasToolRestriction(a)).toBe(true);
+		expect(m.ctx.isToolEnabled(a, "memory_get")).toBe(true);
+		expect(m.ctx.isToolEnabled(a, "browser_open")).toBe(false);
+		expect(m.ctx.isToolEnabled(a, "exec")).toBe(false);
+		expect(m.ctx.isCategoryFullyEnabled(a, "memory")).toBe(true);
+		expect(m.ctx.isCategoryFullyEnabled(a, "exec")).toBe(false);
+		m.ctx.toggleTool(a, "browser_open", true);
+		expect(m.ctx.isCategoryPartiallyEnabled(a, "browser")).toBe(true);
+		m.ctx.toggleCategory(a, "browser", true);
+		expect(m.ctx.isCategoryFullyEnabled(a, "browser")).toBe(true);
+		m.ctx.toggleCategory(a, "browser", false);
+		expect(a.permissions.tools).toEqual(["memory_get"]);
+		m.ctx.toggleTool(a, "exec", true);
+		expect(a.permissions.tools).toEqual(["memory_get"]);
+		m.ctx.toggleCategory(a, "exec", true);
+
+		m.ctx.setToolRestriction(a, false);
+		expect(a.permissions.tools).toBeUndefined();
+		expect(m.ctx.isToolEnabled(a, "exec")).toBe(true);
+		m.ctx.setToolRestriction(a, true);
+		expect(a.permissions.tools).toEqual([
+			"browser_open",
+			"browser_click",
+			"memory_get",
+		]);
+		const bare = agent("bare") as never as { permissions?: unknown };
+		m.ctx.setToolRestriction(bare, false);
+		expect(bare.permissions).toBeUndefined();
+		m.ctx.toggleTool(bare, "memory_get", true);
+		expect(bare.permissions).toEqual({ tools: ["memory_get"] });
+		m.wrapper.unmount();
+	});
+
+	it("restricts a sender's tools within the agent's", async () => {
+		fakes.listTools.mockResolvedValue(tools);
+		const m = await mountSettings("/agents/alpha/settings", permsConfig());
+		const entry = m.ctx.draft.agents[0].channels[0].allow_from[0];
+		expect(m.ctx.hasEntryToolRestriction(entry)).toBe(true);
+		expect(m.ctx.isEntryToolEnabled(entry, "browser_open")).toBe(true);
+		expect(m.ctx.isEntryToolEnabled(entry, "exec")).toBe(false);
+		expect(m.ctx.isEntryCategoryPartiallyEnabled(entry, "browser")).toBe(true);
+		m.ctx.toggleEntryCategory(entry, "browser", true);
+		expect(m.ctx.isEntryCategoryFullyEnabled(entry, "browser")).toBe(true);
+		expect(m.ctx.isEntryCategoryFullyEnabled(entry, "exec")).toBe(false);
+		m.ctx.toggleEntryTool(entry, "exec", true);
+		m.ctx.toggleEntryTool(entry, "browser_click", false);
+		expect(entry.restrict_tools).toEqual(["browser_open"]);
+		m.ctx.setEntryToolRestriction(entry, false);
+		expect(entry.restrict_tools).toBeUndefined();
+		expect(m.ctx.isEntryToolEnabled(entry, "exec")).toBe(true);
+		m.ctx.setEntryToolRestriction(entry, true);
+		expect(entry.restrict_tools).toEqual([
+			"browser_open",
+			"browser_click",
+			"memory_get",
+		]);
+
+		// A sender that belongs to no agent sees every tool.
+		const loose = { from: "x" };
+		m.ctx.setEntryToolRestriction(loose, true);
+		expect(loose).toMatchObject({ restrict_tools: tools.map((t) => t.name) });
+		expect(m.ctx.isEntryCategoryFullyEnabled(loose, "exec")).toBe(true);
+		expect(m.ctx.isEntryCategoryPartiallyEnabled(loose, "exec")).toBe(false);
+		const fresh = { from: "y" } as { from: string; restrict_tools?: string[] };
+		m.ctx.toggleEntryTool(fresh, "exec", true);
+		m.ctx.toggleEntryCategory(fresh, "browser", true);
+		expect(fresh.restrict_tools).toEqual([
+			"exec",
+			"browser_open",
+			"browser_click",
+		]);
+		m.wrapper.unmount();
+	});
+
+	it("inspects how permissions resolve", async () => {
+		fakes.listTools.mockResolvedValue(tools);
+		const m = await mountSettings("/agents/alpha/settings", permsConfig());
+		const a = m.ctx.draft.agents[0];
+		const ch = a.channels[0];
+		const entry = ch.allow_from[0];
+		const resolution = m.ctx.agentToolResolution(a);
+		expect(resolution.finalTools).toEqual(["memory_get"]);
+		expect(m.ctx.channelToolResolution(a, ch).finalTools).toEqual([]);
+		expect(m.ctx.entryToolResolution(a, ch, entry).restrictionSource).toBe(
+			"override",
+		);
+		expect(m.ctx.agentInspectionTitle(a, 0)).toBe("Agent: alpha");
+		expect(m.ctx.agentInspectionTitle(agent(""), 1)).toBe("Agent: Agent 2");
+		expect(m.ctx.channelInspectionTitle(a, 0, ch, 0)).toBe(
+			"Agent: alpha / slack 1",
+		);
+		expect(m.ctx.entryInspectionTitle(a, 0, ch, 0, entry, 0)).toBe(
+			"Agent: alpha / slack 1 / U1",
+		);
+		expect(m.ctx.entryInspectionTitle(a, 0, ch, 0, { from: "" }, 2)).toBe(
+			"Agent: alpha / slack 1 / Entry 3",
+		);
+
+		m.ctx.openToolInspectionModal("Agent: alpha", resolution);
+		await m.settle();
+		const output = m.wrapper.find(
+			'[data-testid="tool-permissions-inspector-output"]',
+		);
+		expect(JSON.parse(output.text()).finalTools).toEqual(["memory_get"]);
+		expect(m.wrapper.text()).toContain("Inspect Tool Permissions");
+		await buttonByText(m.wrapper, "Close").trigger("click");
+		expect(m.wrapper.text()).not.toContain("Inspect Tool Permissions");
+		m.ctx.openToolInspectionModal("again", resolution);
+		await m.settle();
+		window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+		await m.settle();
+		expect(m.wrapper.text()).not.toContain("Inspect Tool Permissions");
+		window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+		m.wrapper.unmount();
+	});
+
+	it("edits filesystem and exec permissions", async () => {
+		const m = await mountSettings("/agents/alpha/settings", permsConfig());
+		const a = m.ctx.draft.agents[0];
+		const area = document.createElement("textarea");
+		area.value = "/tmp\n\n /home \r\n";
+		m.ctx.setAgentFilesystemAllowedPaths(a, { target: area });
+		expect(m.ctx.agentFilesystemAllowedPaths(a)).toBe("/tmp\n/home");
+		area.value = "";
+		m.ctx.setAgentFilesystemAllowedPaths(a, { target: area });
+		expect(a.permissions.filesystem).toBeUndefined();
+
+		area.value = "git\nls";
+		m.ctx.setAgentExecAllowedCommands(a, { target: area });
+		expect(m.ctx.agentExecAllowedCommands(a)).toBe("git\nls");
+		m.ctx.setAgentExecShellInterpolate(a, true);
+		expect(a.permissions.exec.shell_interpolate).toBe(true);
+		const input = document.createElement("input");
+		input.value = " /bin/zsh ";
+		m.ctx.setAgentExecShell(a, { target: input });
+		expect(a.permissions.exec.shell).toBe("/bin/zsh");
+		area.value = "";
+		m.ctx.setAgentExecAllowedCommands(a, { target: area });
+		expect(a.permissions.exec).toEqual({
+			allowed_commands: undefined,
+			shell_interpolate: true,
+			shell: "/bin/zsh",
+		});
+		input.value = "";
+		m.ctx.setAgentExecShell(a, { target: input });
+		m.ctx.setAgentExecShellInterpolate(a, false);
+		expect(a.permissions.exec).toBeUndefined();
+		m.ctx.setAgentExecAllowedCommands(a, { target: area });
+		m.ctx.setAgentExecShell(a, { target: input });
+		expect(a.permissions.exec).toBeUndefined();
+		const bare = agent("bare") as never as { permissions?: { exec?: unknown } };
+		m.ctx.setAgentExecShellInterpolate(bare, true);
+		expect(bare.permissions?.exec).toEqual({
+			allowed_commands: undefined,
+			shell_interpolate: true,
+			shell: undefined,
+		});
+		m.wrapper.unmount();
+	});
+});
+
+describe("channels and tasks", () => {
+	it("labels channels by type", async () => {
+		const m = await mountSettings("/system/settings");
+		const types = ["slack", "signal", "discord", "matrix"];
+		expect(types.map((type) => m.ctx.channelPrimaryLabel({ type }))).toEqual([
+			"Primary Slack Sender ID (optional)",
+			"Primary Signal Sender ID (optional)",
+			"Primary Discord Sender ID (optional)",
+			"Primary Sender ID (optional)",
+		]);
+		expect(
+			types.map((type) => m.ctx.channelPrimaryPlaceholder({ type })),
+		).toEqual([
+			"e.g. U0123456789",
+			"e.g. +15551234567",
+			"e.g. 123456789012345678",
+			"Enter a user ID",
+		]);
+		for (const type of types)
+			expect(m.ctx.channelPrimaryHelp({ type })).toContain("primary person");
+		expect(m.ctx.channelPrimaryHelp({ type: "slack" })).toContain("Slack");
+		expect(m.ctx.channelPrimaryHelp({ type: "signal" })).toContain("Signal");
+		expect(m.ctx.channelPrimaryHelp({ type: "discord" })).toContain("Discord");
+		expect(
+			["SLACK", "discord", "signal", "irc", ""].map((type) =>
+				m.ctx.channelTypeLabel({ type }),
+			),
+		).toEqual(["Slack", "Discord", "Signal", "irc", "Channel"]);
+		m.wrapper.unmount();
+	});
+
+	it("styles enabled and disabled items", async () => {
+		const m = await mountSettings("/system/settings");
+		const on = { type: "slack" };
+		const off = { type: "slack", enabled: false };
+		expect(m.ctx.isChannelEnabled(on)).toBe(true);
+		expect(m.ctx.isChannelEnabled(off)).toBe(false);
+		expect(m.ctx.channelTypeIconClass(on, true)).toContain("text-white");
+		expect(m.ctx.channelTypeIconClass(off, true)).toContain("text-gray-500");
+		expect(m.ctx.channelTypeIconClass(on)).toContain("text-blue-700");
+		expect(m.ctx.channelTypeIconClass(off)).toContain("text-gray-500");
+		expect(m.ctx.channelListButtonClass(on, true)).toContain("bg-gray-900");
+		expect(m.ctx.channelListButtonClass(off, true)).toContain("ring-1");
+		expect(m.ctx.channelListButtonClass(on, false)).toContain("text-gray-700");
+		expect(m.ctx.channelListButtonClass(off, false)).toContain("text-gray-400");
+		expect(m.ctx.channelCardClass(on)).toContain("bg-white");
+		expect(m.ctx.channelCardClass(off)).toContain("opacity-75");
+		expect(m.ctx.allowFromCardClass({ from: "a" })).toContain("bg-white");
+		expect(m.ctx.allowFromCardClass({ from: "a", enabled: false })).toContain(
+			"opacity-75",
+		);
+		expect(m.ctx.statusBadgeClass(true)).toContain("emerald");
+		expect(m.ctx.statusBadgeClass(false)).toContain("bg-gray-200");
+		m.ctx.setChannelEnabled(on, false);
+		expect(on).toMatchObject({ enabled: false });
+		const entry = { from: "a" };
+		m.ctx.setAllowFromEnabled(entry, false);
+		expect(m.ctx.isAllowFromEnabled(entry)).toBe(false);
+		m.wrapper.unmount();
+	});
+
+	it("picks where a task's output goes", async () => {
+		const m = await mountSettings("/system/settings");
+		const options = m.ctx.configuredTaskChannelOptions({
+			name: "a",
+			channels: [
+				{ type: "slack", id: "team", name: "Team" },
+				{ type: "slack" },
+			],
+		});
+		expect(options.map((o: { value: string }) => o.value)).toEqual([
+			"session",
+			"codeloop",
+			"notify",
+			"notify?failures",
+			"channel:Team",
+		]);
+		expect(m.ctx.configuredTaskChannelOptions({ name: "b" })).toHaveLength(4);
+
+		const task: { name: string; target?: string } = { name: "t" };
+		expect(m.ctx.taskChannelSelection(task)).toBe("");
+		m.ctx.setTaskChannelSelection(task, "session");
+		expect(task.target).toBe("session:");
+		m.ctx.setSelectedTaskTarget(task, " main ");
+		expect(task.target).toBe("session:main");
+		expect(m.ctx.selectedTaskTarget(task)).toBe("main");
+		expect(m.ctx.taskChannelSelection(task)).toBe("session");
+		m.ctx.setTaskChannelSelection(task, "codeloop");
+		expect(task.target).toBe("codeloop:");
+		m.ctx.setSelectedTaskTarget(task, " codeloop:x ");
+		expect(task.target).toBe("codeloop:x");
+		m.ctx.setTaskChannelSelection(task, "codeloop");
+		expect(task.target).toBe("codeloop:x");
+		m.ctx.setTaskChannelSelection(task, "NOTIFY");
+		expect(m.ctx.taskChannelSelection(task)).toBe("notify");
+		m.ctx.setSelectedTaskTarget(task, "ignored");
+		expect(task.target).toBe("NOTIFY");
+		m.ctx.setTaskChannelSelection(task, "channel:Team");
+		expect(m.ctx.taskChannelSelection(task)).toBe("channel:Team");
+		expect(m.ctx.selectedTaskTarget(task)).toBe("");
+		m.wrapper.unmount();
+	});
+
+	it("names where a task is defined", async () => {
+		const m = await mountSettings("/system/settings");
+		expect(m.ctx.taskDefinedIn(null)).toBe("");
+		expect(m.ctx.taskDefinedIn({ name: "t", file: "tasks/x.md" })).toBe(
+			"tasks/x.md",
+		);
+		expect(m.ctx.taskDefinedIn({ name: "Daily run", from_file: true })).toBe(
+			"tasks/Daily-run.md",
+		);
+		expect(m.ctx.taskDefinedIn({ name: " ", from_file: true })).toBe(
+			"tasks/*.md",
+		);
+		expect(m.ctx.taskDefinedIn({ name: "t" })).toBe("aviary.yaml");
+		expect(m.ctx.formatDate("")).toBe("—");
+		expect(m.ctx.formatDate("soon")).toBe("soon");
+		expect(m.ctx.formatDate("2026-01-02T03:04:05Z")).toBe(
+			new Date("2026-01-02T03:04:05Z").toLocaleString(),
+		);
+		expect(m.ctx.formatCountdown(null)).toBe("");
+		expect(m.ctx.formatCountdown(125)).toBe("2:05");
+		const task = { name: "t", schedule: "0 * * * *" };
+		const fields = m.ctx.taskTrigger(task);
+		expect(fields.trigger).toBe("cron");
+		// The editor's fields stick to the task until replaced.
+		fields.extra = "kept";
+		expect(m.ctx.taskTrigger(task).extra).toBe("kept");
+		m.ctx.setTaskTrigger(task, { ...fields, extra: undefined });
+		expect(m.ctx.taskTrigger(task).extra).toBeUndefined();
+		expect(task.schedule).toBe("0 * * * *");
+		m.wrapper.unmount();
+	});
+
+	it("edits a channel's senders", async () => {
+		const m = await mountSettings(
+			"/system/settings",
+			makeConfig({ agents: [agent("a", { channels: [{ type: "slack" }] })] }),
+		);
+		m.ctx.addAllowFrom(0, 0);
+		m.ctx.addAllowFrom(0, 0);
+		const ch = m.ctx.draft.agents[0].channels[0];
+		expect(ch.allow_from).toHaveLength(2);
+		const entry = ch.allow_from[0];
+		const input = document.createElement("input");
+		input.value = "@bot, , hey";
+		m.ctx.setEntryMentionPrefixes(entry, { target: input });
+		expect(m.ctx.entryMentionPrefixes(entry)).toBe("@bot, hey");
+		input.value = "!x";
+		m.ctx.setEntryExcludePrefixes(entry, { target: input });
+		expect(m.ctx.entryExcludePrefixes(entry)).toBe("!x");
+		expect(m.ctx.entryMentionPrefixes({ from: "" })).toBe("");
+		expect(m.ctx.entryExcludePrefixes({ from: "" })).toBe("");
+		m.ctx.removeAllowFrom(0, 0, 1);
+		expect(ch.allow_from).toHaveLength(1);
+		m.wrapper.unmount();
+	});
+
+	it("browses a Slack workspace's channels", async () => {
+		const m = await mountSettings("/system/settings");
+		const channel = { type: "slack", token: "auth:slack" };
+		fakes.tools.slack_channels_list = (args) => {
+			expect(args).toEqual({ bot_token: "auth:slack" });
+			return JSON.stringify({
+				team_name: "T",
+				channels: [
+					{ id: "1", name: "general" },
+					{ id: "2", name: "old", is_archived: true },
+				],
+			});
+		};
+		await m.ctx.browseSlackChannels(0, 0, channel);
+		expect(m.ctx.slackWorkspaceState(0, 0).result.team_name).toBe("T");
+		expect(
+			m.ctx.slackVisibleChannels(0, 0).map((c: { name: string }) => c.name),
+		).toEqual(["general"]);
+		fakes.tools.slack_channels_list = () => JSON.stringify({ channels: 5 });
+		await m.ctx.browseSlackChannels(0, 1, { type: "slack" });
+		expect(m.ctx.slackWorkspaceState(0, 1).result.channels).toEqual([]);
+		fakes.tools.slack_channels_list = () => {
+			throw new Error("invalid_auth");
+		};
+		await m.ctx.browseSlackChannels(0, 0, channel);
+		expect(m.ctx.slackWorkspaceState(0, 0)).toMatchObject({
+			result: null,
+			error: "invalid_auth",
+			loading: false,
+		});
+		expect(m.ctx.slackVisibleChannels(1, 1)).toEqual([]);
+		m.wrapper.unmount();
+	});
+
+	it("normalizes channels, tasks and permissions on save", async () => {
+		const m = await mountSettings(
+			"/system/settings",
+			makeConfig({
+				agents: [
+					agent(" alpha ", {
+						rules: " ",
+						fallbacks: [" f ", ""],
+						projects: [],
+						permissions: {
+							preset: "full",
+							disabled_tools: [" exec ", ""],
+							filesystem: { allowed_paths: [" /tmp "] },
+							exec: { allowed_commands: [" git "], shell: " sh " },
+						},
+						channels: [
+							{
+								type: " slack ",
+								enabled: false,
+								token: " ",
+								show_typing: false,
+								separate_top_level_sessions: true,
+								reply_to_replies: false,
+								react_to_emoji: false,
+								send_read_receipts: false,
+								group_chat_history: 5,
+								fallbacks: [" g "],
+								allow_from: [
+									{
+										from: " U1 ",
+										enabled: false,
+										allowed_groups: " ",
+										mention_prefix_group_only: false,
+										fallbacks: [" h "],
+									},
+									{ from: " " },
+								],
+							},
+						],
+						tasks: [
+							{
+								name: " p ",
+								type: "project",
+								project: " r ",
+								model: " m ",
+								enabled: false,
+								run_once: 1,
+							},
+							{ name: "w", trigger: "message", model: " wm " },
+							{ name: "s", type: "script", project: "x", model: "y" },
+						],
+					}),
+				],
+			}),
+		);
+		m.ctx.draft.server.port = 1;
+		await buttonByText(m.wrapper, "Save Changes").trigger("click");
+		await m.settle();
+		const [a] = fakes.settings.saveConfig.mock.calls[0][0].agents;
+		expect(a.name).toBe("alpha");
+		expect(a.rules).toBeUndefined();
+		expect(a.fallbacks).toEqual(["f"]);
+		expect(a.projects).toBeUndefined();
+		expect(a.permissions).toEqual({
+			preset: "full",
+			tools: [],
+			disabled_tools: ["exec"],
+			filesystem: { allowed_paths: ["/tmp"] },
+			exec: {
+				allowed_commands: ["git"],
+				shell_interpolate: undefined,
+				shell: "sh",
+			},
+		});
+		const [ch] = a.channels;
+		expect(ch).toMatchObject({
+			type: "slack",
+			enabled: false,
+			show_typing: false,
+			separate_top_level_sessions: true,
+			reply_to_replies: false,
+			react_to_emoji: false,
+			send_read_receipts: false,
+			group_chat_history: 5,
+			fallbacks: ["g"],
+		});
+		expect(ch.token).toBeUndefined();
+		expect(ch.allow_from).toHaveLength(1);
+		expect(ch.allow_from[0]).toMatchObject({
+			from: "U1",
+			enabled: false,
+			mention_prefix_group_only: false,
+			fallbacks: ["h"],
+		});
+		expect(a.tasks[0]).toMatchObject({
+			name: "p",
+			type: "project",
+			project: "r",
+			model: "m",
+			enabled: false,
+			run_once: true,
+		});
+		expect(a.tasks[1].model).toBe("wm");
+		expect(a.tasks[2]).toMatchObject({ type: "script" });
+		expect(a.tasks[2].project).toBeUndefined();
+		expect(a.tasks[2].model).toBeUndefined();
+		m.wrapper.unmount();
+	});
+});
+
+describe("code loop settings", () => {
+	it("builds the Code Loop header from the query", async () => {
+		const m = await mountSettings(
+			"/projects/settings?agent=alpha&project=lsegal/aviary",
+			makeConfig({ agents: [agent("beta")] }),
+		);
+		expect(m.ctx.activeTab).toBe("projects");
+		expect(crumbs(m).map((c) => c.label)).toEqual([
+			"Code Loop",
+			"lsegal/aviary",
+			"Settings",
+		]);
+		await m.router.push("/projects/settings");
+		await m.settle();
+		expect(crumbs(m)).toEqual([
+			{ label: "Code Loop", to: "/agents/beta/projects" },
+			{ label: "Settings" },
+		]);
+		m.wrapper.unmount();
+		const n = await mountSettings("/projects/settings", makeConfig());
+		expect(crumbs(n)).toEqual([{ label: "Code Loop" }, { label: "Settings" }]);
+		n.wrapper.unmount();
 	});
 });

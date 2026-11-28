@@ -7,6 +7,7 @@ import { defineComponent, h, inject, reactive, ref } from "vue";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import { settingsViewContextKey } from "../components/settings/context";
 import type { AppConfig } from "../stores/settings";
+import SettingsView from "./SettingsView.vue";
 
 type ToolHandler = (args?: Record<string, unknown>) => unknown;
 
@@ -27,7 +28,7 @@ export const fakes = {
 	agentFiles: reactive({
 		lists: {} as Record<string, string[]>,
 		load: vi.fn(),
-		files: (agent: string): string[] => [],
+		files: (_agent: string): string[] => [],
 		syncTemplates: vi.fn(),
 	}),
 	auth: reactive({ minimal: false, getToken: () => "tok" as string | null }),
@@ -101,7 +102,8 @@ export function resetFakes() {
 		fakes.settings.config = JSON.parse(JSON.stringify(cfg));
 	});
 	fakes.agentFiles.lists = {};
-	fakes.agentFiles.files = (agent: string) => fakes.agentFiles.lists[agent] ?? [];
+	fakes.agentFiles.files = (agent: string) =>
+		fakes.agentFiles.lists[agent] ?? [];
 	fakes.agentFiles.load.mockReset();
 	fakes.agentFiles.load.mockImplementation(
 		async (agent: string) => fakes.agentFiles.lists[agent] ?? [],
@@ -195,6 +197,16 @@ export interface Mounted {
 	settle: () => Promise<void>;
 }
 
+const mounted = new Set<VueWrapper>();
+
+/** Unmounts every view a test left mounted, so none keeps listening. */
+export function unmountAll() {
+	for (const wrapper of mounted) {
+		if (wrapper.vm.$.isMounted && !wrapper.vm.$.isUnmounted) wrapper.unmount();
+	}
+	mounted.clear();
+}
+
 /** Mounts SettingsView at path once the server holds config. */
 export async function mountSettings(
 	path: string,
@@ -226,7 +238,6 @@ export async function mountSettings(
 					]);
 			},
 		});
-	const { default: SettingsView } = await import("./SettingsView.vue");
 	const wrapper = mount(SettingsView, {
 		attachTo: document.body,
 		global: {
@@ -249,6 +260,7 @@ export async function mountSettings(
 			},
 		},
 	});
+	mounted.add(wrapper);
 	const settle = async () => {
 		for (let i = 0; i < 4; i++) {
 			await flushPromises();
