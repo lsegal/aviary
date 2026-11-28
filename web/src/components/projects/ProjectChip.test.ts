@@ -1,8 +1,9 @@
+// @vitest-environment happy-dom
 import { createPinia } from "pinia";
 import { expect, it } from "vitest";
 import { type Component, createSSRApp, h } from "vue";
-import { createMemoryHistory, createRouter } from "vue-router";
 import { renderToString } from "vue/server-renderer";
+import { createMemoryHistory, createRouter } from "vue-router";
 import { normalizeJob, shortProjectName } from "../../lib/projects";
 import JobCard from "./JobCard.vue";
 import KanbanBoard from "./KanbanBoard.vue";
@@ -51,7 +52,7 @@ it("shows each board-mode card's short project with the full name in its tooltip
 		showProject: true,
 	});
 	expect(html.match(/data-testid="kanban-project"/g)).toHaveLength(2);
-	expect(html).toMatch(/data-testid="kanban-project"[^>]*>zvid</);
+	expect(html).toMatch(/data-testid="kanban-project"[^>]*>(<!--\[-->)?zvid</);
 	expect(html).toContain('title="lsegal/zvid · open its Code Loop board"');
 	expect(html).toContain('href="/system/watches/lsegal%2Fzvid"');
 });
@@ -65,15 +66,14 @@ it("leaves the project off a single project's board-mode cards", async () => {
 	expect(html).not.toContain('data-testid="kanban-project"');
 });
 
-it("shows a list-mode card's full project, shortened at phone widths", async () => {
+it("shows a list-mode card's full project", async () => {
 	const html = await render(JobCard, {
 		job: job("lsegal/zvid", 1656),
 		now: Date.now(),
 		showProject: true,
 	});
 	expect(html).toContain('data-testid="job-project"');
-	expect(html).toContain('<span class="sm:hidden">zvid</span>');
-	expect(html).toContain('<span class="hidden sm:inline">lsegal/zvid</span>');
+	expect(html).toMatch(/data-testid="job-project"[^>]*>lsegal\/zvid</);
 	const single = await render(JobCard, {
 		job: job("lsegal/zvid", 1656),
 		now: Date.now(),

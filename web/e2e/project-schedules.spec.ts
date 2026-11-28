@@ -1554,14 +1554,15 @@ test.describe("the agent board's scheduled items (#1107)", () => {
 		// from a project's board.
 		await expect(page.getByTestId("schedule-new")).toHaveCount(0);
 
-		// The kanban's Scheduled column names each card's project too.
+		// The kanban's Scheduled column names each card's project too, by its
+		// short name in the narrow column (#1647).
 		await page.getByTestId("kanban-toggle").click();
 		const boxes = page.getByTestId("kanban-scheduled-card");
 		await expect(boxes).toHaveCount(3);
 		await expect(boxes.getByTestId("kanban-scheduled-project")).toHaveText([
-			"lsegal/zvidlib",
-			"lsegal/aviary",
-			"lsegal/aviary",
+			"zvidlib",
+			"aviary",
+			"aviary",
 		]);
 		await page.getByTestId("kanban-toggle").click();
 

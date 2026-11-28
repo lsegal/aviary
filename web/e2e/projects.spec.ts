@@ -1423,6 +1423,18 @@ test("an agent's Code Loop is one board of all its projects, with no settings", 
 	await expect(cards).toHaveCount(1);
 	await expect(cards).toContainText("lsegal/zvidlib");
 
+	// Board mode names each card's project too, by its short name with the
+	// full one in its tooltip, linking to its board (#1647).
+	await page.getByTestId("kanban-toggle").click();
+	const chip = page.getByTestId("kanban-card").getByTestId("kanban-project");
+	await expect(chip).toHaveText("zvidlib");
+	await expect(chip).toHaveAttribute("title", /^lsegal\/zvidlib /);
+	await expect(chip).toHaveAttribute(
+		"href",
+		"/agents/coder/projects/lsegal%2Fzvidlib",
+	);
+	await page.getByTestId("kanban-toggle").click();
+
 	// One check reads every project.
 	await page.getByLabel("Search jobs").fill("");
 	await page.getByTestId("board-more-menu").click();
@@ -1466,6 +1478,9 @@ test("one project's board leaves its cards unlabelled", async ({ page }) => {
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	await expect(page.getByTestId("job-card")).toHaveCount(5);
 	await expect(page.getByTestId("job-project")).toHaveCount(0);
+	await page.getByTestId("kanban-toggle").click();
+	await expect(page.getByTestId("kanban-card").first()).toBeVisible();
+	await expect(page.getByTestId("kanban-project")).toHaveCount(0);
 });
 
 test("job actions are icon buttons with tooltips", async ({ page }) => {
