@@ -1,12 +1,12 @@
 import { nextTick, onMounted, onUnmounted, type Ref, ref, watch } from "vue";
 import { markBoardLoad } from "../lib/boardTiming";
 import {
+	applyJobListRead,
 	BOARD_JOB_KINDS,
 	BOARD_STATES,
 	type BoardState,
-	applyJobListRead,
-	type JobListState,
 	type JobDetail,
+	type JobListState,
 	normalizeJobDetail,
 	normalizeStatus,
 	normalizeUpcoming,
