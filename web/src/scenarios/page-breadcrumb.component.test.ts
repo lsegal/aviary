@@ -348,6 +348,30 @@ test("the rail marks the open chat without looking unread", async () => {
 		.elements()
 		.map((el) => getComputedStyle(el).fontWeight);
 	expect(weights).toEqual(["400", "400"]);
+
+	// The open item is a shaded pill, with no accent edge on any item, and
+	// every item has the same box, so changing the open one shifts nothing
+	// (#1652).
+	const boxes = flyout
+		.getByTestId("sidebar-rail-flyout-item")
+		.elements()
+		.map((el) => {
+			const s = getComputedStyle(el);
+			return {
+				current: el.getAttribute("aria-current"),
+				border: s.borderLeftWidth,
+				background: s.backgroundColor,
+				height: el.getBoundingClientRect().height,
+				padding: s.paddingLeft,
+			};
+		});
+	expect(boxes.map((b) => b.border)).toEqual(["0px", "0px"]);
+	const [active] = boxes.filter((b) => b.current === "page");
+	const [idle] = boxes.filter((b) => b.current !== "page");
+	expect(active.background).not.toBe("rgba(0, 0, 0, 0)");
+	expect(idle.background).toBe("rgba(0, 0, 0, 0)");
+	expect(active.height).toBe(idle.height);
+	expect(active.padding).toBe(idle.padding);
 });
 
 test("collapsed rail icons list their items in a flyout on hover and focus", async () => {

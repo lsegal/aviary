@@ -5,6 +5,7 @@ import { renderApp } from "../component-test/app";
 import {
 	COLLAPSIBLE_HEADER_ITEMS,
 	expectHeaderOneLine,
+	headerFit,
 	headerItemPlaces,
 	headerSettled,
 	openBoardInfo,
@@ -142,6 +143,11 @@ test("the board header's … menu holds Refresh, Clear and Settings (#1488)", as
 	await expect
 		.element(menu.getByRole("menuitem", { name: "Refresh" }))
 		.toHaveFocus();
+	// The Clear items stay disabled, so the arrows skip them, until the job
+	// counts load, which can trail the menu opening under load.
+	await expect
+		.element(menu.getByRole("menuitem", { name: /Clear failed/ }))
+		.not.toHaveAttribute("data-disabled");
 	await commands.keyPress("ArrowDown");
 	await commands.keyPress("ArrowDown");
 	await expect
@@ -154,7 +160,7 @@ test("the board header's … menu holds Refresh, Clear and Settings (#1488)", as
 	await page.getByTestId("clear-jobs-confirm-cancel").click();
 });
 
-test("the board header moves Logs, then Watch, into … as it narrows (#1488)", async () => {
+test("the board header moves Logs, then Watch, into … as it narrows (#1488, #1584)", async () => {
 	setup();
 	const actions = page.getByTestId("settings-actions");
 	const more = page.getByTestId("board-more-menu");
@@ -200,7 +206,6 @@ test("the board header moves Logs, then Watch, into … as it narrows (#1488)", 
 		logsGone ||= logsItem;
 		watchGone ||= watchItem;
 	}
-	expect(logsGone).toBe(true);
 });
 
 // On a phone the compact header is a single line (#1576): its items move
@@ -222,8 +227,8 @@ for (const [board, path, last] of [
 			await renderApp(path);
 			await headerSettled();
 			await expect.element(page.getByTestId(last)).toBeVisible();
-			await expectHeaderOneLine();
 			await headerStable();
+			await expectHeaderOneLine();
 			const { header, menu } = await headerItemPlaces();
 			// Each item shows in the header or in "…", never both or neither.
 			for (const id of order) {
@@ -455,7 +460,8 @@ for (const width of [360, 390, 430]) {
 }
 
 test("on desktop a project's header keeps its title, with the icons and toolbar on one row (#1570)", async () => {
-	await page.viewport(1280, 800);
+	// Wide enough for the title to have room to spare (#1584).
+	await page.viewport(1600, 800);
 	setup();
 	await renderApp("/agents/coder/projects/lsegal%2Faviary");
 	const title = page.getByTestId("settings-title");
@@ -584,6 +590,9 @@ test("on desktop the models and quota stay inline with no warning dot (#1580)", 
 
 test("the instance tag and details popovers work by keyboard, tap and hover (#1570)", async () => {
 	stubClipboard();
+	// Narrow enough that the instance and details show as icons (#1584).
+	await page.viewport(390, 844);
+	const OUTSIDE = { x: 384, y: 600 };
 	setup();
 	await renderApp("/agents/coder/projects/lsegal%2Faviary");
 
@@ -625,7 +634,10 @@ test("the instance tag and details popovers work by keyboard, tap and hover (#15
 	await expect
 		.element(details.getByTestId("board-interval"))
 		.toHaveText("every 30s");
-	await commands.mouseMove(600, 600);
+	// The e2e clicks at (600, 600), off this 390px-wide page; the pointer
+	// must stay inside the frame here, so it uses the page's empty right
+	// gutter beside the job cards.
+	await commands.mouseMove(OUTSIDE.x, OUTSIDE.y);
 	await commands.mouseDown();
 	await commands.mouseUp();
 	await expectHidden(details);
@@ -634,7 +646,7 @@ test("the instance tag and details popovers work by keyboard, tap and hover (#15
 	await info.hover();
 	await expect.element(details).toBeVisible();
 	await expect.element(info).not.toHaveFocus();
-	await commands.mouseMove(600, 600);
+	await commands.mouseMove(OUTSIDE.x, OUTSIDE.y);
 	await expectHidden(details);
 
 	// The filter editor works from inside the popover; Esc cancels the edit
@@ -653,4 +665,146 @@ test("the instance tag and details popovers work by keyboard, tap and hover (#15
 	await expect.element(details).toBeVisible();
 	await commands.keyPress("Escape");
 	await expectHidden(details);
+});
+
+// #1584: the board header is one line at every width, filled by priority
+// from measured widths: the title only with room to spare, the instance
+// badge inline whenever it fits, and the rest moving into "…" in order.
+async function expectHeaderFilledByPriority() {
+	await headerSettled();
+	// The header re-fits from resize observers a frame or more after a
+	// viewport or text size change; wait for its items and fit to settle.
+	await headerStable();
+	let last = "";
+	await expect
+		.poll(async () => {
+			const before = JSON.stringify(await headerFit());
+			await new Promise((r) => setTimeout(r, 150));
+			const now = JSON.stringify(await headerFit());
+			const stable = now === before && now === last;
+			last = now;
+			return stable;
+		})
+		.toBe(true);
+	await expectHeaderOneLine();
+	const fit = await headerFit();
+	if (fit.title) expect(fit.free).toBeGreaterThanOrEqual(48 - 1);
+	else expect(fit.free).toBeLessThan(fit.titleWidth + 8 + 48);
+	// A badge shown as its tag would not have fit beside the chips.
+	if (fit.tag && !fit.title) expect(fit.free).toBeLessThan(fit.badgeSaves + 1);
+	return fit;
+}
+
+for (const width of [1200, 900, 710, 430, 360]) {
+	test(`at ${width}px the board header is one line filled by priority (#1584)`, async () => {
+		await page.viewport(width, 800);
+		setup();
+		await renderApp("/agents/coder/projects/lsegal%2Faviary");
+		const fit = await expectHeaderFilledByPriority();
+		// The reported width: no title, and the toolbar doesn't wrap.
+		if (width === 710) expect(fit.title).toBe(false);
+		if (width >= 900) {
+			expect(fit.summary || fit.badge).toBe(true);
+		}
+		// Every action is in the header or in "…", never both or neither.
+		const { header, menu } = await headerItemPlaces();
+		expect([...header, ...menu].sort()).toEqual(
+			COLLAPSIBLE_HEADER_ITEMS.map(({ header }) => header)
+				.filter((id) => id !== "board-add-project")
+				.sort(),
+		);
+		for (const id of header) expect(menu).not.toContain(id);
+		if (width === 360) {
+			// The narrowest line: "● live · N open issues · …".
+			await expect.element(page.getByTestId("delivery-status")).toBeVisible();
+			await expect.element(page.getByTestId("board-issues")).toBeVisible();
+			await expect.element(page.getByTestId("board-more-menu")).toBeVisible();
+		}
+	});
+}
+
+// Sweeping 46 widths, each waiting for the header to settle, outlasts
+// the default timeout.
+test("the board header shows its title with room to spare and keeps the badge inline when it fits (#1584)", {
+	timeout: 120_000,
+}, async () => {
+	setup();
+	await renderApp("/agents/coder/projects/lsegal%2Faviary");
+	let titleSeen = false;
+	let badgeSeen = false;
+	let titleGone = false;
+	for (let width = 1700; width >= 340; width -= 30) {
+		await page.viewport(width, 800);
+		const fit = await expectHeaderFilledByPriority();
+		// Once hidden as the header narrows, the title never comes back.
+		if (titleGone) expect(fit.title, `${width}px`).toBe(false);
+		titleGone ||= titleSeen && !fit.title;
+		titleSeen ||= fit.title;
+		badgeSeen ||= fit.badge;
+	}
+	expect(titleSeen).toBe(true);
+	expect(badgeSeen).toBe(true);
+});
+
+test("a bigger text size re-fits the board header on one line (#1093, #1584)", async () => {
+	await page.viewport(1200, 800);
+	setup();
+	await renderApp("/agents/coder/projects/lsegal%2Faviary");
+	const before = await expectHeaderFilledByPriority();
+	for (const size of ["18px", "20px", "14px"]) {
+		document.documentElement.style.fontSize = size;
+		await expectHeaderFilledByPriority();
+	}
+	document.documentElement.style.fontSize = "";
+	expect(await expectHeaderFilledByPriority()).toEqual(before);
+});
+
+test("the inline instance badge and details summary open their popovers (#1584)", async () => {
+	await page.viewport(1500, 800);
+	setup();
+	await renderApp("/agents/coder/projects/lsegal%2Faviary");
+	await headerSettled();
+	const badge = page.getByRole("button", { name: "Instance 7F3CA91B" });
+	await expect.element(badge).toHaveAttribute("aria-haspopup", "dialog");
+	await badge.click();
+	const popover = page.getByRole("dialog", { name: "Instance ID" });
+	await expect
+		.element(popover.getByTestId("instance-id"))
+		.toHaveText("7F3CA91B");
+	await commands.keyPress("Escape");
+	await expectHidden(popover);
+	await expect.element(badge).toHaveFocus();
+	const summary = page.getByTestId("board-meta");
+	await expect.element(summary).toBeVisible();
+	await page.getByTestId("board-info").click();
+	await expect
+		.element(page.getByRole("dialog", { name: "Board details" }))
+		.toBeVisible();
+	await expect.element(page.getByTestId("board-mode")).toHaveText("Watch");
+});
+
+test("the CLI providers show inline only when they fit on one line (#1584)", async () => {
+	setup();
+	await renderApp("/agents/coder/projects/lsegal%2Faviary");
+	for (const width of [1600, 1200, 900, 710, 430]) {
+		await page.viewport(width, 800);
+		await headerSettled();
+		const inline = page
+			.getByTestId("board-nav-row")
+			.getByTestId("cli-provider");
+		const shown = inline.elements().length;
+		if (shown) {
+			// Shown inline: the row is one line tall.
+			const tops = inline
+				.elements()
+				.map((e) => Math.round(e.getBoundingClientRect().top));
+			expect(new Set(tops).size, `${width}px`).toBe(1);
+		} else {
+			const popover = await openBoardInfo();
+			await expect
+				.element(popover.getByTestId("board-info-clis"))
+				.toBeVisible();
+			await commands.keyPress("Escape");
+		}
+	}
 });

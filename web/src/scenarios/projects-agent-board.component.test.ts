@@ -75,6 +75,19 @@ test("an agent's Code Loop is one board of all its projects, with no settings", 
 	await expect.poll(() => cards.elements().length).toBe(1);
 	await expect.element(cards).toMatchTextContent("lsegal/zvidlib");
 
+	// Board mode names each card's project too, by its short name with the
+	// full one in its tooltip, linking to its board (#1647).
+	await page.getByTestId("kanban-toggle").click();
+	const chip = page.getByTestId("kanban-card").getByTestId("kanban-project");
+	await expect.element(chip).toHaveText("zvidlib");
+	await expect
+		.element(chip)
+		.toHaveAttribute("title", expect.stringMatching(/^lsegal\/zvidlib /));
+	await expect
+		.element(chip)
+		.toHaveAttribute("href", "/agents/coder/projects/lsegal%2Fzvidlib");
+	await page.getByTestId("kanban-toggle").click();
+
 	// One check reads every project.
 	await page.getByLabelText("Search jobs").fill("");
 	await page.getByTestId("board-more-menu").click();
@@ -122,6 +135,11 @@ test("one project's board leaves its cards unlabelled", async () => {
 		.toBe(5);
 	await expect
 		.poll(() => page.getByTestId("job-project").elements().length)
+		.toBe(0);
+	await page.getByTestId("kanban-toggle").click();
+	await expect.element(page.getByTestId("kanban-card").first()).toBeVisible();
+	await expect
+		.poll(() => page.getByTestId("kanban-project").elements().length)
 		.toBe(0);
 });
 

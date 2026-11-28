@@ -108,8 +108,8 @@ export async function headerItemPlaces() {
 }
 
 /**
- * Checks that the compact Code Loop header is a single line on a phone
- * (#1576): the chips start at the row's left padding, the toolbar ends at
+ * Checks that the compact Code Loop header is a single line (#1576, #1584):
+ * the title or chips start at the row's left padding, the toolbar ends at
  * its right padding, everything shares one row, and nothing sticks out.
  */
 export async function expectHeaderOneLine() {
@@ -131,6 +131,11 @@ export async function expectHeaderOneLine() {
 	const actions = el
 		.querySelector('[data-testid="settings-actions"]')
 		?.getBoundingClientRect();
+	// A title shown beside the chips starts the line (#1584).
+	const title = el
+		.querySelector('[data-testid="settings-title"]')
+		?.getBoundingClientRect();
+	const first = title && title.width > 1 ? title : status;
 	const layout = {
 		height: box.height,
 		paddingY:
@@ -138,7 +143,7 @@ export async function expectHeaderOneLine() {
 			Number.parseFloat(style.paddingBottom),
 		mids: kids.map((b) => b.top + b.height / 2),
 		tallest: Math.max(...kids.map((b) => b.height)),
-		left: (status?.left ?? 0) - box.left - Number.parseFloat(style.paddingLeft),
+		left: (first?.left ?? 0) - box.left - Number.parseFloat(style.paddingLeft),
 		right:
 			box.right - (actions?.right ?? 0) - Number.parseFloat(style.paddingRight),
 		gap: (actions?.left ?? 0) - (status?.right ?? 0),
@@ -159,4 +164,31 @@ export async function expectHeaderOneLine() {
 	// Nothing scrolls sideways (#997, #1209).
 	expect(layout.wide).toBe(false);
 	expect(layout.page).toBe(true);
+}
+
+/**
+ * How the compact Code Loop header filled its line (#1584): whether the
+ * title, instance badge and details summary show, the room left between
+ * the chips and the toolbar, and what the title and badge would need.
+ */
+export async function headerFit() {
+	const row = page.getByTestId("settings-title-row");
+	await expect.element(row).toBeInTheDocument();
+	const el = row.element();
+	const q = (id: string) =>
+		el.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+	const w = (id: string) => q(id)?.getBoundingClientRect().width ?? 0;
+	const title = q("settings-title");
+	const status = q("settings-status")?.getBoundingClientRect();
+	const actions = q("settings-actions")?.getBoundingClientRect();
+	return {
+		title: (title?.getBoundingClientRect().width ?? 0) > 1,
+		titleWidth: title?.scrollWidth ?? 0,
+		badge: !!q("instance-badge"),
+		tag: !!q("instance-tag") && !q("instance-badge"),
+		summary: !!q("board-meta"),
+		badgeSaves: w("instance-badge-measure") - w("header-icon-measure"),
+		// The room between the chips and the toolbar, less their 8px gap.
+		free: (actions?.left ?? 0) - (status?.right ?? 0) - 8,
+	};
 }
