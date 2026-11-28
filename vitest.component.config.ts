@@ -129,6 +129,10 @@ export default defineConfig({
 		// had as specs: a busy runner can slow a long round trip past it.
 		testTimeout: 30_000,
 		retry: process.env.CI ? 2 : 0,
+		// One test file at a time, as zvid's headed runs: input commands drive
+		// Playwright's page keyboard and mouse, which test files running side
+		// by side would race for. CI splits the files across shards instead.
+		fileParallelism: false,
 		browser: {
 			enabled: true,
 			headless: true,
