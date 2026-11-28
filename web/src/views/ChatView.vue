@@ -181,6 +181,23 @@ import { useAutoFollow } from "../composables/useAutoFollow";
 import { useMCP } from "../composables/useMCP";
 import { useStream } from "../composables/useStream";
 import {
+	dedupeToolMessages,
+	extractCompleteToolPayload,
+	formatDateLabel,
+	formatTime,
+	isAudioMedia,
+	isErrorMessage,
+	isImageMedia,
+	isVideoMedia,
+	type Message,
+	type MessageWorkflow,
+	type ToolData,
+	parseToolChunk,
+	parseToolMessage,
+	savedAudioURL,
+	toolName,
+} from "../lib/chatMessages";
+import {
 	renderLinkedText,
 	renderMarkdown,
 	renderUserMarkdown,
@@ -193,45 +210,6 @@ import {
 	useChatSessionsStore,
 } from "../stores/chatSessions";
 import { taskRunPath, taskSessionPath } from "../stores/settings";
-
-interface ToolData {
-	/** Ties a streamed call to its result; the two share one block. */
-	id?: string;
-	name: string;
-	args?: Record<string, unknown>;
-	result?: string;
-	error?: string;
-	/** Set on the streamed result of a call. */
-	done?: boolean;
-}
-
-interface Message {
-	id?: string;
-	localKey?: string;
-	role: "user" | "assistant" | "tool";
-	text: string;
-	mediaURLs?: string[];
-	toolData?: ToolData;
-	/** A streamed tool call that has not reported its result yet. */
-	toolPending?: boolean;
-	/** When this client saw a pending tool call start, in epoch ms. */
-	toolStartedAt?: number;
-	toolFinishedAt?: number;
-	timestamp?: string;
-	model?: string;
-	isError?: boolean;
-	/** The key of the user message whose turn this error failed. */
-	errorFor?: string;
-	/** The workflows that handled this channel message instead of the agent. */
-	workflows?: MessageWorkflow[];
-}
-
-/** A workflow that handled a channel message, and its run. */
-interface MessageWorkflow {
-	task_id: string;
-	name: string;
-	job_id?: string;
-}
 
 type MessageItem = {
 	type: "message";
@@ -301,195 +279,6 @@ const { streamAgent } = useStream();
 function chatPath(agent: string, sessionId?: string): string {
 	const base = `/agents/${encodeURIComponent(agent)}/chat`;
 	return sessionId ? `${base}/${sessionId}` : base;
-}
-
-/** Returns true if an assistant message text looks like an error. */
-function isErrorMessage(text: string): boolean {
-	return text.startsWith("Error:") || text.startsWith("[no LLM provider");
-}
-
-/** Parse a "[tool] ..." content string into a Message. */
-function parseToolMessage(
-	content: string,
-	timestamp?: string,
-	model?: string,
-	id?: string,
-): Message {
-	const raw = content.slice("[tool] ".length);
-	try {
-		const d = JSON.parse(raw) as ToolData;
-		if (d.name)
-			return { id, role: "tool", text: d.name, toolData: d, timestamp, model };
-	} catch {
-		/* legacy: just a bare name */
-	}
-	return { id, role: "tool", text: raw, timestamp, model };
-}
-
-/**
- * Collapse stored tool records that share a tool-use ID into one entry, the
- * latest, so a call stored more than once shows once (#740). Records without
- * an ID are distinct calls and are all kept.
- */
-function dedupeToolMessages(list: Message[]): Message[] {
-	const last = new Map<string, number>();
-	list.forEach((m, i) => {
-		if (m.role === "tool" && m.toolData?.id) last.set(m.toolData.id, i);
-	});
-	return list.filter(
-		(m, i) =>
-			m.role !== "tool" || !m.toolData?.id || last.get(m.toolData.id) === i,
-	);
-}
-
-function parseToolChunk(
-	content: string,
-	timestamp?: string,
-	id?: string,
-): Message {
-	try {
-		const d = JSON.parse(content) as ToolData;
-		if (d.name)
-			return { id, role: "tool", text: d.name, toolData: d, timestamp };
-	} catch {
-		// Fall through to a raw tool message.
-	}
-	return { id, role: "tool", text: content, timestamp };
-}
-
-function extractCompleteToolPayload(
-	buffer: string,
-): { payload: string; rest: string } | null {
-	if (!buffer.startsWith("[tool] ")) return null;
-	const raw = buffer.slice("[tool] ".length);
-	if (!raw) return null;
-
-	const first = raw[0];
-	if (first !== "{") {
-		const newline = raw.indexOf("\n");
-		if (newline === -1) return null;
-		return {
-			payload: raw.slice(0, newline),
-			rest: raw.slice(newline + 1),
-		};
-	}
-
-	let depth = 0;
-	let inString = false;
-	let escaped = false;
-	for (let i = 0; i < raw.length; i++) {
-		const ch = raw[i];
-		if (inString) {
-			if (escaped) {
-				escaped = false;
-				continue;
-			}
-			if (ch === "\\") {
-				escaped = true;
-				continue;
-			}
-			if (ch === '"') {
-				inString = false;
-			}
-			continue;
-		}
-		if (ch === '"') {
-			inString = true;
-			continue;
-		}
-		if (ch === "{") {
-			depth++;
-			continue;
-		}
-		if (ch === "}") {
-			depth--;
-			if (depth === 0) {
-				return {
-					payload: raw.slice(0, i + 1),
-					rest: raw.slice(i + 1),
-				};
-			}
-		}
-	}
-
-	return null;
-}
-
-/** Tool name shown in the collapsed pill; details stay inside the expansion. */
-function toolName(msg: Message): string {
-	return msg.toolData?.name || msg.text;
-}
-
-function formatDateLabel(d: Date): string {
-	const now = new Date();
-	const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-	const yesterday = new Date(today.getTime() - 86_400_000);
-	const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-	if (msgDay.getTime() === today.getTime()) return "Today";
-	if (msgDay.getTime() === yesterday.getTime()) return "Yesterday";
-	const opts: Intl.DateTimeFormatOptions = {
-		weekday: "short",
-		month: "short",
-		day: "numeric",
-	};
-	if (d.getFullYear() !== now.getFullYear()) opts.year = "numeric";
-	return d.toLocaleDateString(undefined, opts);
-}
-
-function formatTime(timestamp: string): string {
-	return new Date(timestamp).toLocaleTimeString(undefined, {
-		hour: "numeric",
-		minute: "2-digit",
-	});
-}
-
-const SAVED_AUDIO_PREFIX = "/api/media?";
-
-/** Maps a saved channel audio file:// URL to a URL the browser can play. */
-function savedAudioURL(mediaURL: string): string {
-	if (!mediaURL.startsWith("file:")) return mediaURL;
-	let path: string;
-	try {
-		// Windows paths come through as /C:/...
-		path = decodeURIComponent(new URL(mediaURL).pathname).replace(
-			/^\/([A-Za-z]:)/,
-			"$1",
-		);
-	} catch {
-		return mediaURL;
-	}
-	if (!/\.(ogg|oga|opus|m4a|aac|mp3|wav|webm|flac|amr|caf)$/i.test(path))
-		return mediaURL;
-	const params = new URLSearchParams({ path });
-	const token = authStore.getToken();
-	if (token) params.set("token", token);
-	return SAVED_AUDIO_PREFIX + params.toString();
-}
-
-function mediaTypeFromURL(mediaURL: string): string {
-	const s = mediaURL.trim().toLowerCase();
-	if (s.startsWith(SAVED_AUDIO_PREFIX)) return "audio/*";
-	if (s.startsWith("data:")) {
-		const end = s.indexOf(";");
-		return end > 5 ? s.slice(5, end) : "";
-	}
-	if (/\.(png|apng|jpg|jpeg|gif|webp|bmp|svg)(\?|#|$)/.test(s))
-		return "image/*";
-	if (/\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/.test(s)) return "video/*";
-	if (/\.(mp3|wav|ogg|m4a|aac|flac)(\?|#|$)/.test(s)) return "audio/*";
-	return "";
-}
-
-function isImageMedia(mediaURL: string): boolean {
-	return mediaTypeFromURL(mediaURL).startsWith("image/");
-}
-
-function isVideoMedia(mediaURL: string): boolean {
-	return mediaTypeFromURL(mediaURL).startsWith("video/");
-}
-
-function isAudioMedia(mediaURL: string): boolean {
-	return mediaTypeFromURL(mediaURL).startsWith("audio/");
 }
 
 const { callTool } = useMCP();
@@ -1070,7 +859,7 @@ async function loadSessionMessages(force = false) {
 						// which the browser can't open; the message text names them.
 						// Voice messages play through the server's media endpoint.
 						mediaURLs: m.media_urls
-							?.map(savedAudioURL)
+							?.map((u) => savedAudioURL(u, authStore.getToken()))
 							.filter((u) => !u.startsWith("file:")),
 						timestamp: m.timestamp,
 						model: m.model,
