@@ -52,7 +52,7 @@ it("has no tag without an instance ID", async () => {
 	expect(html).toContain('data-testid="board-info"');
 });
 
-// #1580: on a phone the CLI providers live in the details popover, and the
+// #1580: on a phone the agent models and quota live in the details popover, and the
 // closed icon warns, with a description, when one of them has a problem.
 const CLIS = [
 	{ name: "claude", models: ["opus"], quota: "week 70% left", signedIn: true },
