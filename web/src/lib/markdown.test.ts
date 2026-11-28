@@ -1,9 +1,9 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "vitest";
 import {
 	renderLinkedText,
 	renderMarkdown,
 	renderUserMarkdown,
-} from "../src/lib/markdown";
+} from "./markdown";
 
 const newTab = 'target="_blank" rel="noopener noreferrer"';
 

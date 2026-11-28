@@ -1,8 +1,8 @@
-import { expect, test } from "@playwright/test";
-import { undeclaredArguments } from "./helpers/mockMCP";
+import { expect, test } from "vitest";
+import { undeclaredArguments } from "../component-test/server";
 
 // The mock server rejects what the real one would, so a page that sends a
-// tool an argument its schema lacks fails its e2e test (#617).
+// tool an argument its schema lacks fails its test (#617).
 test("the mock server rejects arguments a tool does not declare", () => {
 	expect(
 		undeclaredArguments("project_job_list", {

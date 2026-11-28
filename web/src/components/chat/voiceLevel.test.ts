@@ -1,11 +1,11 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "vitest";
 import {
 	analyserSize,
 	dBFS,
 	isSilent,
 	measureChannels,
 	peakAcross,
-} from "../src/components/chat/voiceLevel";
+} from "./voiceLevel";
 
 /** A second of a 440 Hz sine at amplitude, as float32 samples. */
 function sine(rate: number, amplitude: number): Float32Array {
