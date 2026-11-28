@@ -2963,6 +2963,9 @@ func scheduleTask(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskSched
 			return nil, struct{}{}, fmt.Errorf("agent %q not found; use agent_list to see available agents", args.Agent)
 		}
 	}
+	if err := config.ValidateTaskName(strings.TrimSpace(args.Name)); err != nil {
+		return nil, struct{}{}, err
+	}
 	if strings.EqualFold(strings.TrimSpace(args.Trigger), config.TriggerMessage) {
 		return createWorkflow(args)
 	}
@@ -3174,6 +3177,9 @@ func renameTask(_ context.Context, _ *sdkmcp.CallToolRequest, args configTaskRen
 	slog.Info("mcp: tool call", "component", "settings", "tool", "config_task_rename", "agent", args.Agent, "task", args.Task, "new", args.NewName)
 	if strings.TrimSpace(args.NewName) == "" {
 		return nil, struct{}{}, fmt.Errorf("new name must be provided")
+	}
+	if err := config.ValidateTaskName(args.NewName); err != nil {
+		return nil, struct{}{}, err
 	}
 
 	cfg, err := config.Load("")
