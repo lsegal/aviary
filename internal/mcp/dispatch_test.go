@@ -169,6 +169,23 @@ func TestDispatcher_HandlerErrorIsReportedAsToolError(t *testing.T) {
 	assert.Contains(t, text, "handler exploded")
 }
 
+// CallToolChecked turns a result marked as an error into a Go error.
+func TestDispatcherCallToolChecked(t *testing.T) {
+	d := useRemoteDispatch(t, HTTPHandler(progressTestServer()))
+	ctx := context.Background()
+
+	text, err := d.CallToolChecked(ctx, "fail", map[string]any{})
+	assert.Empty(t, text)
+	assert.ErrorContains(t, err, "handler exploded")
+
+	text, err = d.CallToolChecked(ctx, "count", map[string]any{})
+	require.NoError(t, err)
+	assert.Equal(t, "done", text)
+
+	_, err = d.CallToolChecked(ctx, "no_such_tool", map[string]any{})
+	assert.ErrorContains(t, err, `calling tool "no_such_tool"`)
+}
+
 func TestDispatcherListTools_RemoteListErrorIsWrapped(t *testing.T) {
 	mcpHandler := HTTPHandler(progressTestServer())
 	d := useRemoteDispatch(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
