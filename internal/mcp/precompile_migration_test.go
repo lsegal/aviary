@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lsegal/aviary/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/lsegal/aviary/internal/config"
 )
 
 func TestMigrateDropsUnknownPrecompileNote(t *testing.T) {
