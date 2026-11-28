@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { targetJobs } from "./helpers/targetJobs";
 
 // The Code Loop board's project pills lead into each project and its
 // scheduled tasks, so they stay reachable with the sidebar collapsed (#1044).
@@ -83,7 +84,7 @@ async function setup(
 			for (const j of jobs())
 				states[j.state as keyof typeof states] =
 					(states[j.state as keyof typeof states] ?? 0) + 1;
-			return { states, ...STATUS };
+			return { states, target_jobs: targetJobs(jobs()), ...STATUS };
 		},
 		project_job_list: (args?: Record<string, unknown>) => {
 			const list = (args?.kinds as string[] | undefined)?.includes("schedule")

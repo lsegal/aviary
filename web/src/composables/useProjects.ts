@@ -115,7 +115,10 @@ export function useProjectBoard(
 		const key = `${name} ${JSON.stringify(args)}`;
 		const last = revisions.get(key);
 		const parsed = parseToolJSON(
-			await callTool("project_job_list", { ...args, revision: last?.revision }),
+			await callTool("project_job_list", {
+				...args,
+				revision: last?.revision ?? "new",
+			}),
 		);
 		const raw = (
 			parsed && typeof parsed === "object" ? parsed : {}

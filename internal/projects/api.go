@@ -249,9 +249,12 @@ type JobListQuery struct {
 	// only while its latest run is starting or running.
 	OutputLines  int
 	OutputEvents int
-	// Revision is the revision a previous identical request returned; when
-	// the page has not changed since, the list carries only unchanged and
-	// the revision, so a polling board neither reads nor renders it again.
+	// Revision asks for the list's revision: NewRevision on a first
+	// request, then the revision the previous identical request returned.
+	// When the page has not changed since, the list carries only unchanged
+	// and the revision, so a polling board neither reads nor renders it
+	// again. Without it no revision is computed, which costs a second
+	// serialization of the page.
 	Revision string
 }
 
@@ -267,7 +270,8 @@ func (m *Manager) ListJobs(targets []string, status string, states, kinds []stri
 // schedule's last_run, next_run and recent_runs, rather than a job per fire.
 // No targets means every project. total counts the jobs that match them all;
 // with a query, unfiltered_total counts those matching all but the query.
-// Every list carries a revision that changes whenever its content does.
+// Asked for one, a list carries a revision that changes whenever its content
+// does.
 func (m *Manager) ListJobsPage(q JobListQuery) map[string]any {
 	limit := q.Limit
 	if limit <= 0 {
@@ -325,32 +329,33 @@ func (m *Manager) ListJobsPage(q JobListQuery) map[string]any {
 	if query != "" {
 		list["unfiltered_total"] = unfiltered
 	}
+	if q.Revision == "" {
+		return list
+	}
 	revision := listRevision(list)
-	if q.Revision != "" && q.Revision == revision {
+	if q.Revision == revision {
 		return map[string]any{"unchanged": true, "revision": revision}
 	}
 	list["revision"] = revision
 	return list
 }
 
-// addCardOutput adds a job's last lines of output, as scrollback, and its
-// latest transcript events to its summary, as a board card shows them.
+// addCardOutput adds a job's last lines of scrollback and its latest
+// transcript events to its summary, as a board card shows them.
 func (m *Manager) addCardOutput(summary map[string]any, job core.JobSnapshot, lines, events int) {
-	log := m.transcripts.For(jobKey(job))
 	if lines > 0 {
-		output := log.Raw(cardRawBytes)
-		if output == "" {
-			output = job.Log
-		}
-		summary["scrollback"] = lastLogLines(output, lines)
+		summary["scrollback"] = lastLogLines(job.Log, lines)
 	}
 	if events > 0 {
-		summary["events"] = log.Events(events)
+		summary["events"] = m.transcripts.For(jobKey(job)).Events(events)
 	}
 }
 
-// cardRawBytes is how much of a job's raw output is read for a card's or a
-// paged job's last lines.
+// NewRevision is the Revision a first job list request passes to get the
+// list's revision back.
+const NewRevision = "new"
+
+// cardRawBytes is how much of a job's raw output project_job_get returns.
 const cardRawBytes = 64 * 1024
 
 // listRevision is a hash of a job list's content, which changes whenever

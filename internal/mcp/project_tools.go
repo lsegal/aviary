@@ -43,7 +43,7 @@ type projectJobListArgs struct {
 	// the list instead of one project_job_get per card (issue #1657).
 	OutputLines  int    `json:"output_lines,omitempty" jsonschema:"Add each listed job's last this many output lines, as scrollback; a schedule's entry only while its run is starting or running"`
 	OutputEvents int    `json:"output_events,omitempty" jsonschema:"Add each listed job's latest this many transcript events; a schedule's entry only while its run is starting or running"`
-	Revision     string `json:"revision,omitempty" jsonschema:"The revision an earlier identical call returned; when nothing changed since, only unchanged and the revision come back"`
+	Revision     string `json:"revision,omitempty" jsonschema:"new to get the list's revision back, or the revision an earlier identical call returned; when nothing changed since, only unchanged and the revision come back"`
 }
 
 // jobListTargets is the projects a job list covers: target plus targets.
