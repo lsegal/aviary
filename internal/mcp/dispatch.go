@@ -105,6 +105,7 @@ func ensureInProcessDeps() error {
 }
 
 // CallTool is a convenience wrapper: resolves client, calls tool, closes client.
+// A result the tool marked as an error comes back as a *ToolError.
 func (d *Dispatcher) CallTool(ctx context.Context, name string, args any) (string, error) {
 	c, err := d.Resolve(ctx)
 	if err != nil {
@@ -117,7 +118,23 @@ func (d *Dispatcher) CallTool(ctx context.Context, name string, args any) (strin
 		return "", fmt.Errorf("calling tool %q: %w", name, err)
 	}
 
-	return extractText(result), nil
+	text := extractText(result)
+	if result != nil && result.IsError {
+		return "", &ToolError{Tool: name, Text: text}
+	}
+	return text, nil
+}
+
+// ToolError is the error CallTool returns when a tool reports a failure: the
+// call itself went through, but the tool marked its result as an error.
+// Text is the tool's message, unchanged.
+type ToolError struct {
+	Tool string
+	Text string
+}
+
+func (e *ToolError) Error() string {
+	return e.Text
 }
 
 // CallToolChecked is CallTool that returns a result the tool marked as an

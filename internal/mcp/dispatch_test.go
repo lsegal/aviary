@@ -165,8 +165,12 @@ func TestDispatcher_HandlerErrorIsReportedAsToolError(t *testing.T) {
 	assert.Contains(t, text, "handler exploded")
 
 	text, err = d.CallTool(ctx, "fail", map[string]any{})
-	require.NoError(t, err)
-	assert.Contains(t, text, "handler exploded")
+	assert.Empty(t, text)
+	var toolErr *ToolError
+	require.ErrorAs(t, err, &toolErr)
+	assert.Equal(t, "fail", toolErr.Tool)
+	assert.Contains(t, toolErr.Text, "handler exploded")
+	assert.Equal(t, toolErr.Text, err.Error())
 }
 
 // CallToolChecked turns a result marked as an error into a Go error.
@@ -229,4 +233,26 @@ func TestEnsureInProcessDeps_KeepsInjectedDeps(t *testing.T) {
 
 	require.NoError(t, ensureInProcessDeps())
 	assert.Same(t, injected, GetDeps())
+}
+
+// toolText calls a tool and returns its text. A result the tool marked as an
+// error is returned as its message; any other error fails the test.
+func toolText(ctx context.Context, t *testing.T, d *Dispatcher, tool string, args any) string {
+	t.Helper()
+	out, err := d.CallTool(ctx, tool, args)
+	var toolErr *ToolError
+	if errors.As(err, &toolErr) {
+		return toolErr.Text
+	}
+	require.NoError(t, err, tool)
+	return out
+}
+
+// requireToolErrorText requires err to be a tool's reported error and returns its
+// message.
+func requireToolErrorText(t *testing.T, err error, msgAndArgs ...any) string {
+	t.Helper()
+	var toolErr *ToolError
+	require.ErrorAs(t, err, &toolErr, msgAndArgs...)
+	return toolErr.Text
 }

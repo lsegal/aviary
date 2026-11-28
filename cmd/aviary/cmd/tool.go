@@ -42,7 +42,7 @@ var toolCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		out, err := activeDispatcher().CallTool(cmd.Context(), tool.Name, payload)
+		out, err := callTool(cmd, activeDispatcher(), tool.Name, payload)
 		if err != nil {
 			return err
 		}

@@ -1,15 +1,41 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/lsegal/aviary/internal/mcp"
 )
+
+// cliToolHints maps the MCP tool names that tool error messages point to onto
+// the CLI commands that do the same thing.
+var cliToolHints = strings.NewReplacer(
+	"use agent_list", "run `aviary agent list`",
+	"use task_list", "run `aviary task list`",
+)
+
+// callTool calls an MCP tool through d for cmd. A result the tool marked as an
+// error comes back as an error, so the command exits non-zero and Execute
+// prints the message to stderr. The error is a runtime failure, not misuse,
+// so cobra prints neither its own copy of it nor the usage block.
+func callTool(cmd *cobra.Command, d *mcp.Dispatcher, tool string, args any) (string, error) {
+	out, err := d.CallTool(cmd.Context(), tool, args)
+	var toolErr *mcp.ToolError
+	if errors.As(err, &toolErr) {
+		cmd.SilenceErrors = true
+		cmd.SilenceUsage = true
+		return "", &mcp.ToolError{Tool: toolErr.Tool, Text: cliToolHints.Replace(toolErr.Text)}
+	}
+	return out, err
+}
 
 // printToolResult calls an MCP tool through the dispatcher and prints its
 // output followed by a newline.
 func printToolResult(cmd *cobra.Command, tool string, args any) error {
-	out, err := dispatcher.CallTool(cmd.Context(), tool, args)
+	out, err := callTool(cmd, dispatcher, tool, args)
 	if err != nil {
 		return err
 	}

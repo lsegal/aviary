@@ -59,7 +59,7 @@ func TestNotifyToolsSendThroughTheServiceAndEditSettings(t *testing.T) {
 
 func TestNotifyToolNeedsTheServer(t *testing.T) {
 	d, _ := setupScriptedAgent(t)
-	out, err := d.CallTool(context.Background(), "notify", map[string]any{"title": "x"})
-	require.NoError(t, err)
+	_, err := d.CallTool(context.Background(), "notify", map[string]any{"title": "x"})
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, "running Aviary server")
 }

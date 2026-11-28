@@ -43,11 +43,11 @@ func tcCall(t *testing.T, d *Dispatcher, tool string, args map[string]any) strin
 	return tcCallCtx(context.Background(), t, d, tool, args)
 }
 
+// tcCallCtx returns a tool's text, including the message of a result the
+// tool marked as an error.
 func tcCallCtx(ctx context.Context, t *testing.T, d *Dispatcher, tool string, args map[string]any) string {
 	t.Helper()
-	out, err := d.CallTool(ctx, tool, args)
-	require.NoError(t, err, tool)
-	return out
+	return toolText(ctx, t, d, tool, args)
 }
 
 // tcCorruptConfig replaces aviary.yaml with text that does not parse.
