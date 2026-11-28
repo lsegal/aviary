@@ -23,7 +23,7 @@
 				<PlusIcon aria-hidden="true" class="h-4 w-4" />
 				New task
 			</button>
-			<template v-if="!tasksRoot && activeTab !== 'display' && activeTab !== 'notifications'">
+			<template v-if="!tasksRoot && activeTab !== 'display' && activeTab !== 'notifications' && activeTab !== 'sessions'">
 			<!-- On phones Revert and Reload show only their icons, so the
 				actions fit one row (#1347). -->
 			<button v-if="revertAvailable" type="button" :class="HEADER_COLLAPSE_CLS"
