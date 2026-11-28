@@ -31,6 +31,9 @@ type JobSnapshot struct {
 	Effort            string
 	Started           time.Time
 	Log               string
+	// LogTruncated marks a Log the job store cut down to its tail, so the
+	// views say earlier output was dropped (issue #1646).
+	LogTruncated bool
 	// WaitReason and WakeAt describe a job whose agent scheduled a wakeup and
 	// is waiting for it, with Status "waiting". WaitReason also
 	// says what a job with Status "paused" waits on.
@@ -56,9 +59,11 @@ type JobSnapshot struct {
 	Progress   int
 	// Kind is JobKindIssue, JobKindDiscussion, JobKindSchedule, JobKindMerge,
 	// or JobKindDiscuss, and ScheduleID names the schedule a scheduled run
-	// fired from.
+	// fired from. RunID is the scheduler job a scheduled run runs as, which
+	// the task's run pages look its output up by (issue #1646).
 	Kind       string
 	ScheduleID string
+	RunID      string
 	// QueuePosition is a merge job's priority among its repository's merges
 	// still waiting for a slot, from 1 for the next to start, and 0 for
 	// running merges and every other job. Merges run concurrently, so it
