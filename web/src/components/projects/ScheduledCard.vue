@@ -22,9 +22,7 @@
 					class="shrink-0 rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">
 					Scheduled
 				</span>
-				<router-link v-if="showProject" :to="projectBoardPath" data-testid="scheduled-project"
-					class="relative z-10 min-w-0 truncate rounded-full bg-gray-100 px-2 py-0.5 font-mono text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-					:title="`Open ${schedule.project}'s board`">{{ schedule.project }}</router-link>
+				<ProjectChip v-if="showProject" :project="schedule.project" data-testid="scheduled-project" class="relative z-10" />
 				<PausedChip v-if="next.kind === 'paused'" />
 				<span v-if="failed" data-testid="scheduled-failed"
 					class="shrink-0 rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-700 dark:bg-red-950/50 dark:text-red-300">
@@ -147,7 +145,6 @@ import {
 	nextRunText,
 	type ProjectJob,
 	type ProjectSchedule,
-	projectPath,
 	type RunResult,
 	runResultClass,
 	runResultIcon,
@@ -163,6 +160,7 @@ import { taskSessionPath, useSettingsStore } from "../../stores/settings";
 import PausedChip from "../tasks/PausedChip.vue";
 import JobOutputPane from "./JobOutputPane.vue";
 import JobOutputToggle from "./JobOutputToggle.vue";
+import ProjectChip from "./ProjectChip.vue";
 
 // A scheduled task's board box, built like a job card so the two share a
 // grid row's height: header, output area and action footer.
@@ -236,12 +234,6 @@ const taskTo = computed(() =>
 );
 
 const settings = useSettingsStore();
-const projectBoardPath = computed(() =>
-	projectPath(
-		projectOwner(settings.config, props.schedule.project),
-		props.schedule.project,
-	),
-);
 // The last run's line opens that run's view when the board has it.
 const lastTo = computed(() => {
 	const job = props.job;

@@ -1003,6 +1003,21 @@ export function targetURL(target: string): string {
 		: `https://github.com/${target}`;
 }
 
+/**
+ * A watch target's short name, for a card with little room (#1647): an
+ * OWNER/REPO target's repository name, or the repository or owner a GitHub
+ * URL target names. The full target goes in the card's tooltip.
+ */
+export function shortProjectName(target: string): string {
+	const parts = target
+		.replace(/^https:\/\/github\.com\//, "")
+		.split("/")
+		.filter(Boolean);
+	if (parts[0] === "orgs" || parts[0] === "users")
+		return parts[1] && parts[3] ? `${parts[1]} #${parts[3]}` : target;
+	return parts[1] || parts[0] || target;
+}
+
 export function encodeProject(name: string): string {
 	return encodeURIComponent(name);
 }
