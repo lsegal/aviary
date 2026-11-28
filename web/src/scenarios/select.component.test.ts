@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { commands, type Locator, page } from "vitest/browser";
+import { cdp, commands, type Locator, page } from "vitest/browser";
 import { renderApp, setAuthToken } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import { expectValue, listbox, optionLabels } from "./helpers/select";
@@ -294,4 +294,33 @@ test("comboboxes search timezones and models", async () => {
 	await commands.keyPress("ArrowDown");
 	await commands.keyPress("Enter");
 	await expect.element(model).toHaveValue("codex/gpt-5.5-mini");
+});
+
+test("dropdowns fit a phone screen with touch-sized targets", async () => {
+	// The spec's touch context (hasTouch/isMobile): Chromium's touch
+	// emulation makes `@media (pointer: coarse)` match, which sizes the
+	// targets. Turned off again after, as the spec closed its context.
+	await page.viewport(390, 844);
+	await cdp().send("Emulation.setTouchEmulationEnabled", {
+		enabled: true,
+		maxTouchPoints: 5,
+	});
+	try {
+		expect(matchMedia("(pointer: coarse)").matches).toBe(true);
+		await openSettings();
+		const trigger = page.getByTestId("approval-mode");
+		const t = await box(trigger);
+		expect(t.bottom - t.top).toBeGreaterThanOrEqual(44);
+		await trigger.click();
+		const content = page.getByTestId("select-content");
+		await expect.element(content).toBeVisible();
+		await settled(content);
+		const popover = await box(content);
+		expect(popover.left).toBeGreaterThanOrEqual(0);
+		expect(popover.right).toBeLessThanOrEqual(390);
+		const option = await box(content.getByRole("option").first());
+		expect(option.bottom - option.top).toBeGreaterThanOrEqual(40);
+	} finally {
+		await cdp().send("Emulation.setTouchEmulationEnabled", { enabled: false });
+	}
 });
