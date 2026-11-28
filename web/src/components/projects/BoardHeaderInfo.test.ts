@@ -41,9 +41,40 @@ it("renders a named tag and info icon that open dialogs", async () => {
 	expect(html).toContain('aria-label="Board details"');
 	expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(2);
 	expect(html.match(/aria-expanded="false"/g)).toHaveLength(2);
-	// Neither the badge nor the subtitle shows inline any more.
-	expect(html).not.toContain("7F3CA91B");
-	expect(html).not.toContain("assignee:@me");
+	// The icon forms show neither the badge nor the summary.
+	expect(html).not.toContain('data-testid="instance-badge"');
+	expect(html).not.toContain('data-testid="board-meta"');
+});
+
+// #1584: where the header has room, the same popovers open from the inline
+// badge and summary, named by their text, and hidden copies of both are
+// always rendered for the header to measure.
+it("renders the inline badge and summary as the popovers' triggers", async () => {
+	const html = await renderToString(
+		createSSRApp({
+			render: () =>
+				h(BoardHeaderInfo, {
+					status: STATUS,
+					manual: false,
+					filterTarget: "o/r",
+					now: Date.now(),
+					instanceInline: true,
+					infoInline: true,
+				}),
+		}),
+	);
+	expect(html).toContain('data-testid="instance-badge"');
+	expect(html).toContain('data-testid="board-meta"');
+	expect(html).not.toContain('aria-label="Instance ID"');
+	expect(html).not.toContain('aria-label="Board details"');
+	expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(2);
+	expect(html).toContain("Issues matching assignee:@me · poll · every 30s");
+	for (const id of [
+		"instance-badge-measure",
+		"board-meta-measure",
+		"header-icon-measure",
+	])
+		expect(html).toContain(`data-testid="${id}"`);
 });
 
 it("has no tag without an instance ID", async () => {

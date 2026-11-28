@@ -91,7 +91,7 @@
 						<div class="px-3 py-1.5" @keydown="onDetailsKeydown">
 							<BoardDetailsList v-model:editing="editingFilter" :status="status" :manual="manual"
 								:filter-target="filterTarget" :now="now" @saved="emit('saved')" />
-							<div v-if="status.clis.length" class="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700 sm:hidden">
+							<div v-if="showClis && status.clis.length" class="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
 								<CLIProviderList stacked testid="board-more-clis" :clis="status.clis" />
 							</div>
 						</div>
@@ -234,7 +234,8 @@ const props = defineProps<{
 	now?: number;
 	chatOpen?: boolean;
 	canSchedule?: boolean;
-	/** A phone's header: "…" warns about the agent models' problems (#1580). */
+	/** The agent models and quota don't fit inline, so the details list them
+	 * and "…" warns about their problems (#1580, #1584). */
 	showClis?: boolean;
 }>();
 const emit = defineEmits<{

@@ -363,7 +363,7 @@
     <main ref="mainEl" data-testid="page-main" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <SettingsPageHeader v-if="headerCrumbs.length" :crumbs="headerCrumbs" :back="back" :title-link="titleLink"
         :switcher="leafSwitcher" :identity="pageIdentity(route.path)" :collapsed="headerOffset"
-        :compact="compactHeader">
+        :compact="compactHeader" :title-hidden="headerTitleHidden">
         <template v-if="$slots['header-icon']" #icon><slot name="header-icon" /></template>
         <template v-if="$slots['header-status']" #status><slot name="header-status" /></template>
         <template v-if="$slots['header-actions']" #actions><slot name="header-actions" /></template>
@@ -532,8 +532,10 @@ const props = defineProps<{
 	trail?: { from: RouteLocationRaw; crumbs: SettingsCrumb[] } | null;
 	/** An outside page the header's title opens in a new tab. */
 	titleLink?: { href: string; title: string } | null;
-	/** The header's compact look, with no icon tile or phone title (#1570). */
+	/** The header's compact one-line look, with no icon tile (#1570). */
 	compactHeader?: boolean;
+	/** A compact header's title is for screen readers only (#1584). */
+	headerTitleHidden?: boolean;
 }>();
 const auth = useAuthStore();
 // An `aviary watch` session shows only Code Loop and Scheduled Tasks.
