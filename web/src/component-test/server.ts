@@ -73,6 +73,20 @@ let wsRoutes: { matcher: URLMatcher; handler: WebSocketHandler }[] = [];
 let sockets: FakeWebSocket[] = [];
 let eventSources: FakeEventSource[] = [];
 let requests: { url: string; method: string; body: string | null }[] = [];
+let inFlight = 0;
+
+const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** Waits until no request is in flight and the work its responses started
+ * has run, or `timeout` ms pass: a route a test holds open never answers. */
+export async function whenIdle(timeout = 1_000): Promise<void> {
+	const deadline = performance.now() + timeout;
+	let quiet = 0;
+	while (quiet < 3 && performance.now() < deadline) {
+		await nextTask();
+		quiet = inFlight === 0 ? quiet + 1 : 0;
+	}
+}
 
 function matches(matcher: URLMatcher, url: URL): boolean {
 	if (typeof matcher === "function") return matcher(url);
@@ -190,10 +204,16 @@ async function fakeFetch(
 	const body =
 		req.method === "GET" || req.method === "HEAD" ? null : await req.text();
 	requests.push({ url: url.href, method: req.method, body });
-	const outcome = await dispatch(
-		makeRequest(url, req.method, req.headers, body),
-		url,
-	);
+	inFlight += 1;
+	let outcome: Outcome;
+	try {
+		outcome = await dispatch(
+			makeRequest(url, req.method, req.headers, body),
+			url,
+		);
+	} finally {
+		inFlight -= 1;
+	}
 	if (outcome.kind === "abort") throw new TypeError("Failed to fetch");
 	if (outcome.kind === "fulfill") return toResponse(outcome.options);
 	return new Response(JSON.stringify({ error: "not found" }), {
@@ -504,6 +524,7 @@ export function resetServer(): void {
 	sockets = [];
 	eventSources = [];
 	requests = [];
+	inFlight = 0;
 }
 
 /** Restores the browser's own fetch, WebSocket and EventSource. */

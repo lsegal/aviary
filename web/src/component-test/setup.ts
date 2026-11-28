@@ -5,7 +5,7 @@
 import "../style.css";
 import { afterEach, beforeEach, expect } from "vitest";
 import { commands, locators, page } from "vitest/browser";
-import { unmountApp } from "./app";
+import { settleAndUnmount } from "./app";
 // Before ./app: the router it loads sends its page imports to routes.ts.
 import { writeRecordedRoutes } from "./routes";
 import { installServer, resetServer } from "./server";
@@ -124,7 +124,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
 	await writeRecordedRoutes(expect.getState().testPath ?? "");
-	unmountApp();
+	await settleAndUnmount();
 	resetServer();
 	// Dialogs and toasts teleport to the body; drop whatever outlived the app.
 	document.body.replaceChildren();

@@ -12,6 +12,7 @@ import { createPinia } from "pinia";
 import { createApp, nextTick, type App as VueApp } from "vue";
 import App from "../App.vue";
 import router from "../router";
+import { whenIdle } from "./server";
 
 let app: VueApp | null = null;
 let container: HTMLElement | null = null;
@@ -46,7 +47,7 @@ export async function renderApp(
 	url = "/",
 	options: RenderOptions = {},
 ): Promise<void> {
-	unmountApp();
+	await settleAndUnmount();
 	if (options.token !== undefined || options.onboarding !== undefined) {
 		setAuthToken(options.token === undefined ? "test-token" : options.token, {
 			onboarding: options.onboarding,
@@ -54,7 +55,9 @@ export async function renderApp(
 	} else if (!localStorage.getItem("aviary_token")) {
 		setAuthToken();
 	}
-	history.replaceState(history.state, "", url);
+	// A fresh page has no history state; the last mount's (vue-router's
+	// back and forward entries among it) would leak into this one.
+	history.replaceState(null, "", url);
 	container = document.createElement("div");
 	container.id = "app";
 	document.body.appendChild(container);
@@ -105,6 +108,28 @@ export async function goForward(): Promise<void> {
 	router.forward();
 	await Promise.race([done, new Promise((r) => setTimeout(r, 1000))]);
 	await nextTick();
+}
+
+/**
+ * Lets the mounted app finish what it started, then unmounts it. A page's
+ * answering requests, lazy pages and redirects can still navigate the router
+ * every mount shares, as a page.goto or a closed page would have discarded;
+ * this runs them on the old app, until no request is in flight and the
+ * route has held still for a moment.
+ */
+export async function settleAndUnmount(): Promise<void> {
+	if (app) {
+		const deadline = performance.now() + 3_000;
+		let route = router.currentRoute.value.fullPath;
+		while (performance.now() < deadline) {
+			await whenIdle();
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			const now = router.currentRoute.value.fullPath;
+			if (now === route) break;
+			route = now;
+		}
+	}
+	unmountApp();
 }
 
 /** Unmounts the app, if one is mounted. */
