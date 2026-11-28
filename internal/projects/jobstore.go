@@ -184,10 +184,12 @@ func mergeStoredJob(stored storedJob, job JobSnapshot, now time.Time) storedJob 
 			job.Started = stored.Job.Started
 		}
 		if job.Log == "" {
-			job.Log = stored.Job.Log
+			job.Log, job.LogTruncated = stored.Job.Log, stored.Job.LogTruncated
 		}
 	}
-	job.Log = tailBytes(job.Log, jobStoreLogBytes)
+	if len(job.Log) > jobStoreLogBytes {
+		job.Log, job.LogTruncated = tailBytes(job.Log, jobStoreLogBytes), true
+	}
 	finishedAt := time.Time{}
 	if jobFinished(job) {
 		switch {

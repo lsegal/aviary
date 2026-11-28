@@ -1737,6 +1737,16 @@ func registerJobTools(s *sdkmcp.Server) {
 		if err != nil {
 			return nil, struct{}{}, fmt.Errorf("reading job %s: %w", args.ID, err)
 		}
+		if job.TaskType == "project" {
+			// A project task's job records only the run's summary; its
+			// output is the Code Loop run's (issue #1646).
+			if out, ok := projectRunLog(job, GetDeps().Projects); ok {
+				if scriptErr := strings.TrimSpace(job.ScriptError); scriptErr != "" {
+					out = "Precompiled script failed, so the model ran the task:\n" + scriptErr + "\n\n" + out
+				}
+				return text(out)
+			}
+		}
 		if strings.TrimSpace(job.Output) == "" {
 			// If no explicit job output was captured, attempt to show the
 			// session message log for the job's session (includes tool
