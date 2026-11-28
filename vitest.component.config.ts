@@ -75,7 +75,7 @@ function routePagesAsDeclared(): Plugin {
 				);
 			}
 			if (file.endsWith(".vue") && !id.includes("?")) {
-				return `${code}\n(globalThis.__aviaryEvaluated ??= new Set()).add(${JSON.stringify(file)});\n`;
+				return `${code}\n;(globalThis.__aviaryEvaluated ??= new Set()).add(${JSON.stringify(file)});\n`;
 			}
 		},
 	};
