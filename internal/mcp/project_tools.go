@@ -39,6 +39,11 @@ type projectJobListArgs struct {
 	Query   string   `json:"query,omitempty" jsonschema:"Only list jobs with this text, case-insensitively, in any field: number, pull request, title, repository, status, skill, agent, session, schedule, or output"`
 	Offset  int      `json:"offset,omitempty" jsonschema:"Index of the first job to return"`
 	Limit   int      `json:"limit,omitempty" jsonschema:"Most jobs to return; defaults to 50"`
+	// OutputLines and OutputEvents let a board read its cards' output with
+	// the list instead of one project_job_get per card (issue #1657).
+	OutputLines  int    `json:"output_lines,omitempty" jsonschema:"Add each listed job's last this many output lines, as scrollback; a schedule's entry only while its run is starting or running"`
+	OutputEvents int    `json:"output_events,omitempty" jsonschema:"Add each listed job's latest this many transcript events; a schedule's entry only while its run is starting or running"`
+	Revision     string `json:"revision,omitempty" jsonschema:"The revision an earlier identical call returned; when nothing changed since, only unchanged and the revision come back"`
 }
 
 // jobListTargets is the projects a job list covers: target plus targets.
@@ -294,7 +299,10 @@ func registerProjectTools(s *sdkmcp.Server) {
 		Annotations: readOnlyTool,
 	}, func(_ context.Context, _ *sdkmcp.CallToolRequest, args projectJobListArgs) (*sdkmcp.CallToolResult, struct{}, error) {
 		return projectResult(func(m *projects.Manager) (map[string]any, error) {
-			return m.ListJobs(jobListTargets(args), args.Status, args.States, args.Kinds, args.Query, args.Offset, args.Limit), nil
+			return m.ListJobsPage(projects.JobListQuery{
+				Targets: jobListTargets(args), Status: args.Status, States: args.States, Kinds: args.Kinds, Query: args.Query,
+				Offset: args.Offset, Limit: args.Limit, OutputLines: args.OutputLines, OutputEvents: args.OutputEvents, Revision: args.Revision,
+			}), nil
 		})
 	})
 
