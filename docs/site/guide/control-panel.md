@@ -167,7 +167,13 @@ The **Looking for more skills?** card at the top is the skills browser: Aviary d
 
 ### Sessions (`/system/sessions`)
 
-Session administration across all agents: list sessions, stop active work, and delete sessions. Useful for cleanup without opening each agent's Chat.
+Session administration for one agent at a time, useful for cleanup without opening the agent's Chat:
+
+- **Agent** picks whose sessions are listed. It defaults to the first agent and isn't kept across reloads or in the URL.
+- **+ Create Session** adds an empty "New chat" session to that agent. **Refresh Sessions** reloads the list, which also updates on its own while chats run.
+- Each row shows the session's name and when it was last updated.
+- **Stop** cancels the session's active work. It is enabled only while the session is processing.
+- **Remove** deletes the session and all its messages. **Main Chat** can't be removed: its button is **Clear**, which deletes its messages and keeps the chat. Both ask for confirmation and can't be undone.
 
 ### Models (`/system/models`)
 

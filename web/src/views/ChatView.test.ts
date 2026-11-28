@@ -899,6 +899,65 @@ describe("session socket", () => {
 		expect(ws().closed).toBe(true);
 	});
 
+	it("leaves a chat removed in another tab for Main Chat", async () => {
+		server.messages["s-main"] = [{ role: "user", content: "main question" }];
+		server.messages["s-other"] = [{ role: "user", content: "other question" }];
+		const w = await mountChat({}, "/agents/bot/chat/s-other");
+		expect(w.text()).toContain("other question");
+		const store = useChatSessionsStore();
+
+		// Another agent's removal and a chat that isn't open change nothing here.
+		await ws().emit({
+			type: "session_removed",
+			agent_id: "other",
+			session_id: "s-other",
+		});
+		expect(router.currentRoute.value.path).toBe("/agents/bot/chat/s-other");
+
+		server.sessions.bot = server.sessions.bot.filter((s) => s.id !== "s-other");
+		await ws().emit({
+			type: "session_removed",
+			agent_id: "bot",
+			session_id: "s-other",
+		});
+		expect(store.sessions("bot").map((s) => s.id)).toEqual(["s-main"]);
+		expect(router.currentRoute.value.path).toBe("/agents/bot/chat/s-main");
+		expect(w.text()).toContain("main question");
+		expect(w.text()).not.toContain("other question");
+	});
+
+	it("forgets a removed pinned chat's messages", async () => {
+		server.messages.prompt = [{ role: "user", content: "pinned" }];
+		const w = await mountChat({ agent: "bot", session: "prompt" });
+		expect(w.text()).toContain("pinned");
+		await ws().emit({
+			type: "session_removed",
+			agent_id: "bot",
+			session_id: "prompt",
+		});
+		expect(w.text()).not.toContain("pinned");
+	});
+
+	it("clears the running state when a send to a removed chat fails", async () => {
+		const w = await mountChat();
+		fake.streamAgent.mockImplementationOnce(async () => {
+			// The chat is gone, so the server lists it no more.
+			server.sessions.bot = server.sessions.bot.filter(
+				(s) => s.id !== "s-main",
+			);
+			throw new Error('session "s-main" not found for agent "bot"');
+		});
+		await (w.vm as unknown as { sendText(t: string): Promise<void> }).sendText(
+			"into the void",
+		);
+		await settle();
+		expect(w.find('[data-testid="chat-message-error"]').text()).toContain(
+			"not found",
+		);
+		expect(composer(w).props("running")).toBe(false);
+		expect(w.find('[data-testid="chat-typing"]').exists()).toBe(false);
+	});
+
 	it("ignores session events when no chat is selected", async () => {
 		server.sessions.bot = [];
 		await mountChat();

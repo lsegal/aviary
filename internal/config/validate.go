@@ -220,6 +220,9 @@ func (v *validator) checkAgents(agents []AgentConfig, models ModelsConfig) {
 			if t.Name == "" {
 				v.errorf(tf+".name", "task name is required")
 			} else {
+				if err := ValidateTaskName(t.Name); err != nil {
+					v.errorf(tf+".name", "%s", err)
+				}
 				if prev, seen := taskNames[t.Name]; seen {
 					v.errorf(tf+".name", "duplicate task name %q within agent %q (also at tasks[%d])", t.Name, a.Name, prev)
 				} else {

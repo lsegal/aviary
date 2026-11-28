@@ -2963,6 +2963,9 @@ func scheduleTask(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskSched
 			return nil, struct{}{}, fmt.Errorf("agent %q not found; use agent_list to see available agents", args.Agent)
 		}
 	}
+	if err := config.ValidateTaskName(strings.TrimSpace(args.Name)); err != nil {
+		return nil, struct{}{}, err
+	}
 	if strings.EqualFold(strings.TrimSpace(args.Trigger), config.TriggerMessage) {
 		return createWorkflow(args)
 	}
@@ -3032,8 +3035,14 @@ func scheduleTask(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskSched
 	}
 	normalizedSchedule := strings.TrimSpace(triggerFields.Schedule)
 	if recurring {
+		if err := triggerFields.CheckApplicable(); err != nil {
+			return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
+		}
 		spec, err := schedule.Parse(triggerFields)
 		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
+		}
+		if err := spec.CheckFuture(time.Now()); err != nil {
 			return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
 		}
 		scheduleKey := normalizedSchedule
@@ -3127,9 +3136,6 @@ func scheduleTask(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskSched
 			compileTaskInBackground(args.Agent, taskName, "schedule")
 			compileNote = " Precompiling: when its prompt is deterministic, runs execute the compiled script and fall back to the model if it fails."
 		}
-		if nextTask.Schedule != "" {
-			return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.%s", taskName, action, args.Agent, nextTask.Schedule, compileNote))
-		}
 		return text(fmt.Sprintf("Scheduled task %q %s for agent %q: %s.%s", taskName, action, args.Agent, spec.Describe(), compileNote))
 	}
 	agentID := args.Agent
@@ -3174,6 +3180,9 @@ func renameTask(_ context.Context, _ *sdkmcp.CallToolRequest, args configTaskRen
 	slog.Info("mcp: tool call", "component", "settings", "tool", "config_task_rename", "agent", args.Agent, "task", args.Task, "new", args.NewName)
 	if strings.TrimSpace(args.NewName) == "" {
 		return nil, struct{}{}, fmt.Errorf("new name must be provided")
+	}
+	if err := config.ValidateTaskName(args.NewName); err != nil {
+		return nil, struct{}{}, err
 	}
 
 	cfg, err := config.Load("")

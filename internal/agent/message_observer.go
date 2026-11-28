@@ -16,3 +16,21 @@ func notifySessionMessage(agentID, sessionID, role string) {
 		sessionMessageObserver(agentID, sessionID, role)
 	}
 }
+
+// SessionRemovedObserver is invoked whenever a session's files are removed,
+// either by deleting it or by moving it to a new ID.
+type SessionRemovedObserver func(agentID, sessionID string)
+
+var sessionRemovedObserver SessionRemovedObserver
+
+// SetSessionRemovedObserver registers an optional observer for removed
+// sessions.
+func SetSessionRemovedObserver(obs SessionRemovedObserver) {
+	sessionRemovedObserver = obs
+}
+
+func notifySessionRemoved(agentID, sessionID string) {
+	if sessionRemovedObserver != nil {
+		sessionRemovedObserver(agentID, sessionID)
+	}
+}

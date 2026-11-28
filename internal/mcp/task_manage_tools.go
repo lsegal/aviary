@@ -259,6 +259,7 @@ func updateTask(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpdateArg
 	if err != nil {
 		return nil, struct{}{}, err
 	}
+	oldKind := scheduler.TaskFields(task).InferKind()
 	set := func(dst *string, v *string) {
 		if v != nil {
 			*dst = strings.TrimSpace(*v)
@@ -307,6 +308,7 @@ func updateTask(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpdateArg
 	task.Trigger = strings.ToLower(task.Trigger)
 	task.Overlap = strings.ToLower(task.Overlap)
 	task.Missed = strings.ToLower(task.Missed)
+	retargetTrigger(&task, args, oldKind)
 
 	if _, err := config.ParseTaskTarget(task.Target); err != nil {
 		return nil, struct{}{}, err
@@ -339,8 +341,17 @@ func updateTask(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpdateArg
 	case fields.HasTrigger() && task.Watch != "":
 		return nil, struct{}{}, fmt.Errorf("a task cannot have both a schedule trigger and watch")
 	case fields.HasTrigger():
-		if _, err := schedule.Parse(fields); err != nil {
+		if err := fields.CheckApplicable(); err != nil {
 			return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
+		}
+		spec, err := schedule.Parse(fields)
+		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
+		}
+		if args.StartAt != nil || args.Trigger != nil {
+			if err := spec.CheckFuture(time.Now()); err != nil {
+				return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
+			}
 		}
 	case task.Watch == "":
 		return nil, struct{}{}, fmt.Errorf("task needs a schedule trigger or watch")
@@ -366,6 +377,55 @@ func updateTask(_ context.Context, _ *sdkmcp.CallToolRequest, args taskUpdateArg
 		compileTaskInBackground(agentCfg.Name, task.Name, "update")
 	}
 	return text(fmt.Sprintf("Task %q updated for agent %q.", task.Name, agentCfg.Name))
+}
+
+// retargetTrigger settles task's trigger kind after an update and drops the
+// kind-specific fields that kind ignores. Without an explicit trigger, fields
+// that the current kind does not use switch the task to the kind they select,
+// the way task_schedule infers it: --days and --at turn an interval task into
+// a weekly one. Fields passed in args are kept, so CheckApplicable still
+// refuses fields that conflict with each other or with an explicit trigger.
+func retargetTrigger(task *config.TaskConfig, args taskUpdateArgs, oldKind schedule.Kind) {
+	if task.IsWorkflow() {
+		return
+	}
+	given := func(v *string) string {
+		if v == nil {
+			return ""
+		}
+		return *v
+	}
+	passed := schedule.Fields{Schedule: normalizeTaskSchedule(given(args.Schedule)), Every: given(args.Every), At: given(args.At), Days: given(args.Days)}
+	kind := scheduler.TaskFields(*task).InferKind()
+	if args.Trigger == nil && passed.InferKind() != "" {
+		current := passed
+		current.Trigger = string(oldKind)
+		if oldKind == "" || len(current.Inapplicable()) > 0 {
+			kind = passed.InferKind()
+			if task.Trigger != "" {
+				task.Trigger = string(kind)
+			}
+		} else {
+			kind = oldKind
+		}
+	}
+	if kind == "" {
+		return
+	}
+	for _, f := range []struct {
+		name string
+		arg  *string
+		dst  *string
+	}{
+		{"schedule", args.Schedule, &task.Schedule},
+		{"every", args.Every, &task.Every},
+		{"at", args.At, &task.At},
+		{"days", args.Days, &task.Days},
+	} {
+		if f.arg == nil && !schedule.Applies(f.name, kind) {
+			*f.dst = ""
+		}
+	}
 }
 
 // deleteTask is task_delete, which project_task_delete also deletes through.

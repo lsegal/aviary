@@ -134,7 +134,7 @@ If you are coming from a more traditional chat tool, the biggest adjustment is t
 You can work with sessions from several places:
 
 - **Chat** for everyday conversation flow, switching threads, and stopping active runs
-- **Settings -> Sessions** for cross-agent session administration
+- **System → Sessions** for per-agent session administration: create, stop, remove, or clear sessions
 - **MCP session tools** for programmatic control, listing, deletion, history reads, and explicit cancellation
 
 For the exact MCP tool shapes, see the [Session Tools reference](/reference/mcp/sessions).

@@ -618,7 +618,7 @@ func TestTaskScheduleRecurringCreatesConfiguredTask(t *testing.T) {
 		"schedule": "0 0 10 * * *",
 	})
 	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "Recurring task"))
+	assert.True(t, strings.Contains(out, "Scheduled task"))
 
 	loaded, err := config.Load("")
 	assert.NoError(t, err)
@@ -679,7 +679,7 @@ func TestTaskScheduleRecurringAcceptsStandardCron(t *testing.T) {
 		"schedule": "*/5 * * * *",
 	})
 	assert.NoError(t, err)
-	assert.True(t, strings.Contains(out, "Recurring task"))
+	assert.True(t, strings.Contains(out, "Scheduled task"))
 
 	loaded, err := config.Load("")
 	assert.NoError(t, err)
@@ -749,7 +749,7 @@ func TestTaskSchedule_PrecompilesPromptTaskBesidePrompt(t *testing.T) {
 		"schedule": "0 */10 * * * *",
 	})
 	assert.NoError(t, err)
-	assert.Contains(t, out, "Recurring task")
+	assert.Contains(t, out, "Scheduled task")
 	assert.Contains(t, out, "Precompiling")
 	backgroundCompiles.Wait()
 
@@ -781,7 +781,7 @@ func TestTaskSchedule_AutoCompileFallbackKeepsPromptTask(t *testing.T) {
 		"schedule": "0 0 * * * *",
 	})
 	assert.NoError(t, err)
-	assert.Contains(t, out, "Recurring task")
+	assert.Contains(t, out, "Scheduled task")
 	backgroundCompiles.Wait()
 
 	loaded, err := config.Load("")
@@ -824,7 +824,7 @@ func TestTaskSchedule_AutoCompileReceivesExplicitTaskTarget(t *testing.T) {
 		"target":   "channel:Phone",
 	})
 	assert.NoError(t, err)
-	assert.Contains(t, out, "Recurring task")
+	assert.Contains(t, out, "Scheduled task")
 	backgroundCompiles.Wait()
 	assert.True(t, called)
 }
@@ -865,7 +865,7 @@ func TestTaskSchedule_PrecompileDisabledSkipsCompilation(t *testing.T) {
 
 			out, err := d.CallTool(context.Background(), "task_schedule", tt.args)
 			assert.NoError(t, err)
-			assert.Contains(t, out, "Recurring task")
+			assert.Contains(t, out, "Scheduled task")
 			backgroundCompiles.Wait()
 			assert.False(t, called)
 
@@ -2717,7 +2717,7 @@ func TestTaskCompileScriptIsNotExposedAndTaskScheduleStillPrecomputes(t *testing
 		"schedule": "0 */10 * * * *",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, out, "Recurring task")
+	assert.Contains(t, out, "Scheduled task")
 	backgroundCompiles.Wait()
 
 	loaded, err := config.Load("")
@@ -2749,7 +2749,7 @@ func TestTaskScheduleUnnamedRecurringTaskUpdatesStableGeneratedName(t *testing.T
 
 	firstOut, err := d.CallTool(context.Background(), "task_schedule", args)
 	require.NoError(t, err)
-	assert.Contains(t, firstOut, "Recurring task")
+	assert.Contains(t, firstOut, "Scheduled task")
 	backgroundCompiles.Wait()
 	secondOut, err := d.CallTool(context.Background(), "task_schedule", args)
 	require.NoError(t, err)

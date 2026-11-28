@@ -86,6 +86,15 @@ func TestTaskCLI_AddListPreviewRunRemove(t *testing.T) {
 	assert.Contains(t, out, "bot/standup")
 	assert.Contains(t, out, "weekly on Mon")
 
+	_, err = runTaskCmd(t, taskAddCmd, "bot", "weekly", "x", "--schedule", "0 9 * * 1", "--timezone", "UTC")
+	require.NoError(t, err)
+	out, err = runTaskCmd(t, taskListCmd)
+	require.NoError(t, err)
+	assert.Contains(t, out, "cron 0 9 * * 1 (UTC)")
+	assert.NotContains(t, out, "0 9 * * 1 0 9 * * 1")
+	_, err = runTaskCmd(t, taskRmCmd, "bot/weekly")
+	require.NoError(t, err)
+
 	out, err = runTaskCmd(t, taskPreviewCmd, "standup")
 	require.NoError(t, err)
 	assert.Contains(t, out, "09:00 UTC")
