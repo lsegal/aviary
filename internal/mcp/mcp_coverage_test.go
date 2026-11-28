@@ -277,12 +277,9 @@ func TestBrowserTools_WithManager_TabsAndErrors(t *testing.T) {
 
 	d := NewDispatcher("https://localhost:16677", "")
 
-	// browser_tabs succeeds (returns empty list when no Chrome running)
-	out, err := d.CallTool(context.Background(), "browser_tabs", nil)
-	assert.NoError(t, err)
-
-	// Should return JSON array or error
-	_ = out
+	// browser_tabs returns a list, or reports an error when Chrome is not
+	// running; either way the call itself goes through.
+	toolText(t, d, context.Background(), "browser_tabs", nil)
 
 	// browser_eval missing tab_id
 	toolCallContains(t, d, "browser_eval", map[string]any{"javascript": "1"}, "tab_id")

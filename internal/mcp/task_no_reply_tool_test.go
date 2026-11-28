@@ -18,8 +18,8 @@ import (
 
 func TestTaskNoReplyNeedsARun(t *testing.T) {
 	d, _ := setupScriptedAgent(t)
-	out, err := d.CallTool(context.Background(), TaskNoReplyTool, map[string]any{"reason": "nothing to say"})
-	require.NoError(t, err)
+	_, err := d.CallTool(context.Background(), TaskNoReplyTool, map[string]any{"reason": "nothing to say"})
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, "only works in a scheduled task or workflow run")
 }
 

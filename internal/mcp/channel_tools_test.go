@@ -90,9 +90,9 @@ func TestChannelToolsLifecycle(t *testing.T) {
 	assert.Contains(t, titles, "Ops (archived)")
 }
 
+// callText returns a tool's text, including the message of a result the
+// tool marked as an error.
 func callText(t *testing.T, d *Dispatcher, tool string, args map[string]any) string {
 	t.Helper()
-	out, err := d.CallTool(context.Background(), tool, args)
-	require.NoError(t, err)
-	return out
+	return toolText(t, d, context.Background(), tool, args)
 }

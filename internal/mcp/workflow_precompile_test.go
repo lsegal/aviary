@@ -73,8 +73,8 @@ func TestWorkflowPrecompileSavesAndCompiles(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Nil(t, loadedTask(t, "lua").Precompile)
-	out, err = d.CallTool(ctx, "task_update", map[string]any{"name": "bot/lua", "precompile": true})
-	require.NoError(t, err)
+	_, err = d.CallTool(ctx, "task_update", map[string]any{"name": "bot/lua", "precompile": true})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "script tasks have no prompt to compile")
 }
 
@@ -216,9 +216,8 @@ func TestConfigSaveAcceptsPrecompiledPromptTasks(t *testing.T) {
 		assert.Contains(t, out, "saved")
 	}
 
-	// The dispatcher returns a tool's error as its text.
-	out, err := save(`{"name":"lua","type":"script","every":"1h","prompt":"print(1)","precompile":true}`)
-	require.NoError(t, err)
+	_, err := save(`{"name":"lua","type":"script","every":"1h","prompt":"print(1)","precompile":true}`)
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, "script tasks have no prompt to compile")
 	assert.NotContains(t, out, "saved")
 }

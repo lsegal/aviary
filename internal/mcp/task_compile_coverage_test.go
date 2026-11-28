@@ -604,17 +604,17 @@ func TestTaskCompileCovSessionSendUsesSessionContext(t *testing.T) {
 	assert.Equal(t, []string{"from context"}, delivered)
 	mu.Unlock()
 
-	out, err = d.CallTool(inSession, "session_send", map[string]any{"content": "   "})
-	require.NoError(t, err)
+	_, err = d.CallTool(inSession, "session_send", map[string]any{"content": "   "})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "content is required")
 
 	agentOnly := agent.WithSessionAgentID(context.Background(), "bot")
-	out, err = d.CallTool(agentOnly, "session_send", map[string]any{"content": "hi"})
-	require.NoError(t, err)
+	_, err = d.CallTool(agentOnly, "session_send", map[string]any{"content": "hi"})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "session_id is required")
 
-	out, err = d.CallTool(context.Background(), "session_send", map[string]any{"agent": "bot", "session_id": "missing-session", "content": "hi"})
-	require.NoError(t, err)
+	_, err = d.CallTool(context.Background(), "session_send", map[string]any{"agent": "bot", "session_id": "missing-session", "content": "hi"})
+	out = requireToolErrorText(t, err)
 	assert.NotContains(t, out, "sent message")
 	mu.Lock()
 	assert.Len(t, delivered, 1, "nothing is delivered for an unknown session")

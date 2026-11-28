@@ -254,9 +254,7 @@ func TestCFPCovFileToolsReportFilesystemErrors(t *testing.T) {
 
 	call := func(tool string, args map[string]any) string {
 		t.Helper()
-		out, err := d.CallTool(ctx, tool, args)
-		require.NoError(t, err)
-		return out
+		return toolText(t, d, ctx, tool, args)
 	}
 
 	assert.Contains(t, call("file_read", map[string]any{"path": "./sandbox/missing.txt"}), "reading file metadata")
@@ -345,15 +343,15 @@ func TestCFPCovFileToolsResolveAgentAndWorkingDir(t *testing.T) {
 	d, ctx, _ := setupMCPWithFilesystemAgent(t, []string{"./sandbox/**"})
 
 	ghost := agent.WithSessionAgentID(context.Background(), "ghost")
-	out, err := d.CallTool(ghost, "file_read", map[string]any{"path": "./sandbox/x.txt"})
-	require.NoError(t, err)
+	_, err := d.CallTool(ghost, "file_read", map[string]any{"path": "./sandbox/x.txt"})
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, `agent "ghost" not found`)
 
 	prev := GetDeps()
 	SetDeps(&Deps{})
-	out, err = d.CallTool(ctx, "file_read", map[string]any{"path": "./sandbox/x.txt"})
+	_, err = d.CallTool(ctx, "file_read", map[string]any{"path": "./sandbox/x.txt"})
 	SetDeps(prev)
-	require.NoError(t, err)
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "agent manager not initialized")
 
 	// An agent with a working directory resolves relative paths against it.

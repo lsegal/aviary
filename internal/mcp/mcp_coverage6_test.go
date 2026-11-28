@@ -65,20 +65,20 @@ func TestFileEdit_RefusesMissingAndAmbiguousStrings(t *testing.T) {
 	path := filepath.Join(workspace, "sandbox", "dup.txt")
 	writeTestFile(t, path, "foo\nbar\nfoo\n")
 
-	out, err := d.CallTool(ctx, "file_edit", map[string]any{"path": "./sandbox/dup.txt", "old_string": "baz", "new_string": "qux"})
-	require.NoError(t, err)
+	_, err := d.CallTool(ctx, "file_edit", map[string]any{"path": "./sandbox/dup.txt", "old_string": "baz", "new_string": "qux"})
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, "old_string not found")
 
-	out, err = d.CallTool(ctx, "file_edit", map[string]any{"path": "./sandbox/dup.txt", "old_string": "foo", "new_string": "qux"})
-	require.NoError(t, err)
+	_, err = d.CallTool(ctx, "file_edit", map[string]any{"path": "./sandbox/dup.txt", "old_string": "foo", "new_string": "qux"})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "old_string appears 2 times")
 
-	out, err = d.CallTool(ctx, "file_edit", map[string]any{"path": "./sandbox/dup.txt", "old_string": "foo", "new_string": "foo"})
-	require.NoError(t, err)
+	_, err = d.CallTool(ctx, "file_edit", map[string]any{"path": "./sandbox/dup.txt", "old_string": "foo", "new_string": "foo"})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "identical")
 
-	out, err = d.CallTool(ctx, "file_edit", map[string]any{"path": "./sandbox/dup.txt", "old_string": "", "new_string": "x"})
-	require.NoError(t, err)
+	_, err = d.CallTool(ctx, "file_edit", map[string]any{"path": "./sandbox/dup.txt", "old_string": "", "new_string": "x"})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "must not be empty")
 
 	data, _ := os.ReadFile(path)
@@ -118,8 +118,8 @@ func TestFileEdit_PreservesCRLFModeAndBOM(t *testing.T) {
 func TestFileEdit_RefusesBinaryFiles(t *testing.T) {
 	d, ctx, workspace := setupMCPWithFilesystemAgent(t, []string{"./sandbox/**"})
 	writeTestFile(t, filepath.Join(workspace, "sandbox", "bin.dat"), "\xff\xfe\x00a")
-	out, err := d.CallTool(ctx, "file_edit", map[string]any{"path": "./sandbox/bin.dat", "old_string": "a", "new_string": "b"})
-	require.NoError(t, err)
+	_, err := d.CallTool(ctx, "file_edit", map[string]any{"path": "./sandbox/bin.dat", "old_string": "a", "new_string": "b"})
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, "not utf-8 text")
 }
 
@@ -128,14 +128,14 @@ func TestFileMultiEdit_AllOrNothing(t *testing.T) {
 	path := filepath.Join(workspace, "sandbox", "multi.go")
 	writeTestFile(t, path, "alpha\nbeta\ngamma\n")
 
-	out, err := d.CallTool(ctx, "file_multi_edit", map[string]any{
+	_, err := d.CallTool(ctx, "file_multi_edit", map[string]any{
 		"path": "./sandbox/multi.go",
 		"edits": []map[string]any{
 			{"old_string": "alpha", "new_string": "ALPHA"},
 			{"old_string": "missing", "new_string": "x"},
 		},
 	})
-	require.NoError(t, err)
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, "edit 2 of 2")
 	assert.Contains(t, out, "no edits were applied")
 	data, _ := os.ReadFile(path)
@@ -153,8 +153,8 @@ func TestFileMultiEdit_AllOrNothing(t *testing.T) {
 	data, _ = os.ReadFile(path)
 	assert.Equal(t, "ALPHA\nBETA\ngamma\n", string(data))
 
-	out, err = d.CallTool(ctx, "file_multi_edit", map[string]any{"path": "./sandbox/multi.go", "edits": []map[string]any{}})
-	require.NoError(t, err)
+	_, err = d.CallTool(ctx, "file_multi_edit", map[string]any{"path": "./sandbox/multi.go", "edits": []map[string]any{}})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "edits is required")
 }
 
@@ -187,13 +187,13 @@ func TestFileRead_OffsetLimitAndSizeCap(t *testing.T) {
 	assert.Contains(t, res["note"], "call file_read with offset")
 	assert.True(t, strings.HasPrefix(res["content"].(string), "     1\t"))
 
-	out, err = d.CallTool(ctx, "file_read", map[string]any{"path": "./sandbox/lines.txt", "offset": -1})
-	require.NoError(t, err)
+	_, err = d.CallTool(ctx, "file_read", map[string]any{"path": "./sandbox/lines.txt", "offset": -1})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "must be >= 0")
 
 	writeTestFile(t, filepath.Join(workspace, "sandbox", "bin.dat"), "\xff\xfe")
-	out, err = d.CallTool(ctx, "file_read", map[string]any{"path": "./sandbox/bin.dat", "limit": 1})
-	require.NoError(t, err)
+	_, err = d.CallTool(ctx, "file_read", map[string]any{"path": "./sandbox/bin.dat", "limit": 1})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "binary")
 }
 
@@ -203,8 +203,8 @@ func TestFileWrite_RefusesBlindOverwriteForAgentRuns(t *testing.T) {
 	path := filepath.Join(workspace, "sandbox", "existing.txt")
 	writeTestFile(t, path, "old\n")
 
-	out, err := d.CallTool(ctx, "file_write", map[string]any{"path": "./sandbox/existing.txt", "content": "new\n"})
-	require.NoError(t, err)
+	_, err := d.CallTool(ctx, "file_write", map[string]any{"path": "./sandbox/existing.txt", "content": "new\n"})
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, "read it with file_read first")
 
 	_, err = d.CallTool(ctx, "file_read", map[string]any{"path": "./sandbox/existing.txt"})
@@ -217,8 +217,8 @@ func TestFileWrite_RefusesBlindOverwriteForAgentRuns(t *testing.T) {
 
 	future := time.Now().Add(time.Hour)
 	require.NoError(t, os.Chtimes(path, future, future))
-	out, err = d.CallTool(ctx, "file_write", map[string]any{"path": "./sandbox/existing.txt", "content": "newer\n"})
-	require.NoError(t, err)
+	_, err = d.CallTool(ctx, "file_write", map[string]any{"path": "./sandbox/existing.txt", "content": "newer\n"})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "changed since it was last read")
 
 	out, err = d.CallTool(ctx, "file_write", map[string]any{"path": "./sandbox/brand-new.txt", "content": "hi\n"})
@@ -279,12 +279,12 @@ func TestFileGlobAndGrep_InRepositoryClone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, true, decodeToolJSON(t, out)["truncated"])
 
-	out, err = d.CallTool(ctx, "file_grep", map[string]any{"pattern": "(", "path": "./repo"})
-	require.NoError(t, err)
+	_, err = d.CallTool(ctx, "file_grep", map[string]any{"pattern": "(", "path": "./repo"})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "invalid pattern")
 
-	out, err = d.CallTool(ctx, "file_grep", map[string]any{"pattern": "x", "path": "./repo", "mode": "bogus"})
-	require.NoError(t, err)
+	_, err = d.CallTool(ctx, "file_grep", map[string]any{"pattern": "x", "path": "./repo", "mode": "bogus"})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "unsupported mode")
 }
 
@@ -307,8 +307,8 @@ func TestNewFileTools_RefuseOutsideAllowlistAndConfigDir(t *testing.T) {
 		{"file_grep", map[string]any{"pattern": "MARKER", "path": outside}},
 	}
 	for _, c := range calls {
-		out, err := d.CallTool(ctx, c.tool, c.args)
-		require.NoError(t, err)
+		_, err := d.CallTool(ctx, c.tool, c.args)
+		out := requireToolErrorText(t, err)
 		assert.Contains(t, out, "refused by Aviary: the agent's Filesystem Allowed Paths", c.tool)
 	}
 	configCalls := map[string]map[string]any{
@@ -319,8 +319,8 @@ func TestNewFileTools_RefuseOutsideAllowlistAndConfigDir(t *testing.T) {
 		"file_grep":       {"path": "@", "pattern": "x"},
 	}
 	for tool, args := range configCalls {
-		out, err := d.CallTool(ctx, tool, args)
-		require.NoError(t, err)
+		_, err := d.CallTool(ctx, tool, args)
+		out := requireToolErrorText(t, err)
 		assert.Contains(t, out, "Aviary config directory", tool)
 	}
 
@@ -351,13 +351,13 @@ func TestFilesystemGrant_GivesJobAccessToItsCloneOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []any{"main.go"}, decodeToolJSON(t, out)["files"])
 
-	out, err = d.CallTool(jobCtx, "file_read", map[string]any{"path": "../escape.txt"})
-	require.NoError(t, err)
+	_, err = d.CallTool(jobCtx, "file_read", map[string]any{"path": "../escape.txt"})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "outside the job's granted directory")
 
 	// Once the job's context is gone, the agent's own context has no access.
-	out, err = d.CallTool(baseCtx, "file_read", map[string]any{"path": filepath.Join(clone, "main.go")})
-	require.NoError(t, err)
+	_, err = d.CallTool(baseCtx, "file_read", map[string]any{"path": filepath.Join(clone, "main.go")})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "no filesystem allowedPaths configured")
 }
 

@@ -164,10 +164,10 @@ func TestAgentRun_RejectsInvalidWorkdir(t *testing.T) {
 		file:                                  "is not a directory",
 		filepath.Join(t.TempDir(), "missing"): "does not exist",
 	} {
-		out, err := d.CallTool(context.Background(), "agent_run", map[string]any{
+		_, err := d.CallTool(context.Background(), "agent_run", map[string]any{
 			"name": "bot", "message": "hi", "workdir": workdir,
 		})
-		require.NoError(t, err, workdir)
+		out := requireToolErrorText(t, err, workdir)
 		assert.Contains(t, out, want, workdir)
 	}
 }

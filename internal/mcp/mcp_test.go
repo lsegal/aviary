@@ -129,9 +129,8 @@ func TestDispatcherCallTool_PingAndToolError(t *testing.T) {
 	assert.Equal(t, "pong", out)
 
 	out, err = d.CallTool(context.Background(), "agent_list", map[string]any{})
-	assert.NoError(t, err)
-	assert.NotEqual(t, "", strings.TrimSpace(out))
-
+	assert.Empty(t, out)
+	assert.NotEqual(t, "", strings.TrimSpace(requireToolErrorText(t, err)))
 }
 
 func TestInProcessClientWithRegisteredTools(t *testing.T) {
@@ -1989,11 +1988,11 @@ func TestFileToolsLifecycleAndAllowlist(t *testing.T) {
 	_, err = os.Stat(filepath.Join(workspace, "sandbox", "moved.txt"))
 	assert.Error(t, err)
 
-	out, err = d.CallTool(ctx, "file_write", map[string]any{
+	_, err = d.CallTool(ctx, "file_write", map[string]any{
 		"path":    "./sandbox/private/nope.txt",
 		"content": "blocked",
 	})
-	require.NoError(t, err)
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, `refused by Aviary: the agent's Filesystem Allowed Paths deny it with rule "!./sandbox/private/**"`)
 
 	out, err = d.CallTool(ctx, "file_write", map[string]any{
@@ -2007,11 +2006,11 @@ func TestFileToolsLifecycleAndAllowlist(t *testing.T) {
 func TestFileToolsRejectTraversalAndSymlinkEscape(t *testing.T) {
 	d, ctx, workspace := setupMCPWithFilesystemAgent(t, []string{"./sandbox/**"})
 
-	out, err := d.CallTool(ctx, "file_write", map[string]any{
+	_, err := d.CallTool(ctx, "file_write", map[string]any{
 		"path":    "./sandbox/../../escape.txt",
 		"content": "blocked",
 	})
-	require.NoError(t, err)
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, "refused by Aviary: the agent's Filesystem Allowed Paths have no rule allowing it")
 
 	outside := t.TempDir()
@@ -2020,37 +2019,37 @@ func TestFileToolsRejectTraversalAndSymlinkEscape(t *testing.T) {
 		t.Skipf("symlink setup unavailable: %v", err)
 	}
 
-	out, err = d.CallTool(ctx, "file_write", map[string]any{
+	_, err = d.CallTool(ctx, "file_write", map[string]any{
 		"path":    "./sandbox-link/evil.txt",
 		"content": "blocked",
 	})
-	require.NoError(t, err)
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "refused by Aviary: the agent's Filesystem Allowed Paths have no rule allowing it")
 }
 
 func TestFileToolsRequireFilesystemAllowlistAndAgentContext(t *testing.T) {
 	d, _, _ := setupMCPWithFilesystemAgent(t, nil)
 
-	out, err := d.CallTool(context.Background(), "file_read", map[string]any{"path": "./x.txt"})
-	require.NoError(t, err)
+	_, err := d.CallTool(context.Background(), "file_read", map[string]any{"path": "./x.txt"})
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, "agent session context")
 
 	ctx := agent.WithSessionAgentID(context.Background(), "bot")
-	out, err = d.CallTool(ctx, "file_read", map[string]any{"path": "./x.txt"})
-	require.NoError(t, err)
+	_, err = d.CallTool(ctx, "file_read", map[string]any{"path": "./x.txt"})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "allowedPaths")
 }
 
 func TestExecTool_RequiresAgentContextAndAllowlist(t *testing.T) {
 	d, _ := setupMCPWithExecAgent(t, &config.ExecPermissionsConfig{AllowedCommands: []string{"go env *"}})
 
-	out, err := d.CallTool(context.Background(), "exec", map[string]any{"command": "go env GOOS"})
-	require.NoError(t, err)
+	_, err := d.CallTool(context.Background(), "exec", map[string]any{"command": "go env GOOS"})
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, "agent session context")
 
 	d2, ctx2 := setupMCPWithExecAgent(t, nil)
-	out, err = d2.CallTool(ctx2, "exec", map[string]any{"command": "go env GOOS"})
-	require.NoError(t, err)
+	_, err = d2.CallTool(ctx2, "exec", map[string]any{"command": "go env GOOS"})
+	out = requireToolErrorText(t, err)
 	assert.Contains(t, out, "allowedCommands")
 }
 
@@ -2158,8 +2157,8 @@ func TestExecTool_OrderedAllowlist(t *testing.T) {
 		AllowedCommands: []string{"*", "!go env *", "go env GOOS"},
 	})
 
-	out, err := d.CallTool(ctx, "exec", map[string]any{"command": "go env GOARCH"})
-	require.NoError(t, err)
+	_, err := d.CallTool(ctx, "exec", map[string]any{"command": "go env GOARCH"})
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, `Allowed Exec Commands deny it with rule "!go env *"`)
 
 	out, err = d.CallTool(ctx, "exec", map[string]any{"command": "go env GOOS"})
@@ -2674,11 +2673,11 @@ func TestSessionSendTool_RequiresAgent(t *testing.T) {
 	require.NoError(t, err)
 
 	d := NewDispatcher("https://localhost:16677", "")
-	out, err := d.CallTool(context.Background(), "session_send", map[string]any{
+	_, err = d.CallTool(context.Background(), "session_send", map[string]any{
 		"session_id": shortSessionID,
 		"content":    "hello from ambiguous short session id",
 	})
-	require.NoError(t, err)
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, "agent is required")
 }
 
@@ -2859,11 +2858,11 @@ func TestAgentRunScript_RespectsDisabledToolPermissions(t *testing.T) {
 	SetDeps(&Deps{Agents: mgr})
 
 	d := NewDispatcher("https://localhost:16677", "")
-	out, err := d.CallTool(context.Background(), "agent_run_script", map[string]any{
+	_, err = d.CallTool(context.Background(), "agent_run_script", map[string]any{
 		"agent":  "bot",
 		"script": "tool.session_list({})\n",
 	})
-	require.NoError(t, err)
+	out := requireToolErrorText(t, err)
 	assert.Contains(t, out, `tool "session_list" is not enabled for this agent`)
 }
 
