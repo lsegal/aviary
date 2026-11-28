@@ -38,6 +38,8 @@ export interface HeaderMeasure {
 	statusGap: number;
 	/** The gap between the actions. */
 	actionsGap: number;
+	/** The gap between the title and the chips. */
+	titleGap: number;
 }
 
 /**
@@ -67,6 +69,12 @@ export interface HeaderCollapseItem {
 	 * spare, as the title does (#1584).
 	 */
 	spare?: number;
+	/**
+	 * Steps sharing a group act on one item, such as shrinking a badge to
+	 * an icon and then moving the icon into the menu: a step is not undone
+	 * while a later one in its group is taken.
+	 */
+	group?: string;
 }
 
 /** What to fit: each step's saving, threshold, refill and spare room. */
@@ -79,12 +87,14 @@ export interface CollapsePlanInput {
 	thresholds?: readonly (number | undefined)[];
 	refill?: readonly boolean[];
 	spare?: readonly number[];
+	group?: readonly (string | undefined)[];
 }
 
 /**
  * Which steps to take so the line fits in `available`: steps are taken in
  * order until it fits, then any taken step marked `refill` is undone again,
- * the last taken first, when the line still fits without it. A step is
+ * the last taken first, when the line still fits without it and no later
+ * taken step in its group depends on it. A step is
  * also taken whenever `available` is below its threshold, along with every
  * step before it.
  */
@@ -96,6 +106,7 @@ export function planCollapse({
 	thresholds = [],
 	refill = [],
 	spare = [],
+	group = [],
 }: CollapsePlanInput): boolean[] {
 	const n = savings.length;
 	let full = width;
@@ -108,8 +119,7 @@ export function planCollapse({
 	const plan = savings.map((_, i) => i < forced);
 	const room = () => {
 		let need = full;
-		for (let i = 0; i < n; i++)
-			need += plan[i] ? -savings[i] : (spare[i] ?? 0);
+		for (let i = 0; i < n; i++) need += plan[i] ? -savings[i] : (spare[i] ?? 0);
 		return need;
 	};
 	// Half a pixel absorbs the rounding of scrollWidth.
@@ -117,6 +127,9 @@ export function planCollapse({
 	while (count < n && room() > available + 0.5) plan[count++] = true;
 	for (let i = count - 1; i >= forced; i--) {
 		if (!refill[i]) continue;
+		const g = group[i];
+		if (g !== undefined && plan.some((t, j) => t && j > i && group[j] === g))
+			continue;
 		plan[i] = false;
 		if (room() > available + 0.5) plan[i] = true;
 	}
@@ -211,19 +224,20 @@ export function useHeaderCollapse(
 		);
 		const statusGap = status ? px(getComputedStyle(status).columnGap) : 0;
 		const single = options.singleLine?.() ?? false;
+		const titleEl = titleRow.querySelector<HTMLElement>(
+			'[data-testid="settings-title"]',
+		);
 		if (single && status) {
 			width += status.scrollWidth + px(style.columnGap);
 			watched.push(status);
-			const title = titleRow.querySelector<HTMLElement>(
-				'[data-testid="settings-title"]',
-			);
-			if (title && options.title && !taken.value.has(options.title))
-				width += title.scrollWidth + titleGap(title);
+			if (titleEl && options.title && !taken.value.has(options.title))
+				width += titleEl.scrollWidth + titleGap(titleEl);
 		}
 		const m: HeaderMeasure = {
 			width: (id) => widths.get(id) ?? HEADER_ITEM_PX,
 			statusGap,
 			actionsGap,
+			titleGap: titleEl ? titleGap(titleEl) : 0,
 		};
 		const plan = planCollapse({
 			width,
@@ -235,6 +249,7 @@ export function useHeaderCollapse(
 			thresholds: list.map(({ below }) => below),
 			refill: list.map(({ refill }) => !!refill),
 			spare: list.map(({ spare }) => spare ?? 0),
+			group: list.map(({ group }) => group),
 		});
 		const next = new Set(list.filter((_, i) => plan[i]).map(({ id }) => id));
 		if (
@@ -248,7 +263,9 @@ export function useHeaderCollapse(
 	// The gap between the title and the chips beside it.
 	function titleGap(title: HTMLElement): number {
 		const parent = title.parentElement;
-		return parent ? Number.parseFloat(getComputedStyle(parent).columnGap) || 0 : 0;
+		return parent
+			? Number.parseFloat(getComputedStyle(parent).columnGap) || 0
+			: 0;
 	}
 
 	function observe(els: Element[]) {

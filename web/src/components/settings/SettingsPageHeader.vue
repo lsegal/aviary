@@ -36,15 +36,15 @@
 			</nav>
 		</div>
 		<!-- The title row: the section's icon tile, the title with its status
-			and subtitle, and the page's actions on the right. On phones a
-			compact header is one line: its chips on the left and its toolbar
-			on the right, never wrapping; the page moves what doesn't fit into
-			its "…" menu (#1576). -->
+			and subtitle, and the page's actions on the right. A compact header
+			is one line at every width: its chips on the left and its toolbar
+			on the right, never wrapping; the page hides the title and moves
+			what doesn't fit into its "…" menu (#1576, #1584). -->
 		<div data-testid="settings-title-row" :style="collapsed ? { marginTop: `-${collapsed}px` } : undefined"
 			class="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 sm:px-6 dark:border-gray-800"
-			:class="{ 'relative max-sm:flex-nowrap max-sm:gap-x-2 max-sm:py-2': compact }">
+			:class="{ 'relative flex-nowrap gap-x-2 py-2': compact }">
 			<div class="flex min-w-0 items-center gap-3"
-				:class="compact ? 'flex-[1_1_auto] max-sm:flex-[0_1_auto]' : 'flex-[1_1_14rem]'">
+				:class="compact ? 'flex-[0_1_auto]' : 'flex-[1_1_14rem]'">
 				<span v-if="!compact" data-testid="settings-header-icon" aria-hidden="true"
 					class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" :class="identity.tileClass">
 					<slot name="icon">
@@ -54,15 +54,15 @@
 				<div class="min-w-0 flex-1">
 					<!-- The status chips wrap below the title rather than squeeze it
 						(#1209); only a title wider than the row truncates. -->
-					<div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" :class="{ 'max-sm:flex-nowrap': compact }">
+					<div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" :class="{ 'flex-nowrap': compact }">
 						<h2 data-testid="settings-title" class="max-w-full min-w-0 truncate text-lg font-bold text-gray-900 dark:text-white"
-							:class="{ 'max-sm:sr-only max-sm:left-0 max-sm:top-0': compact }">
+							:class="{ 'sr-only left-0 top-0': compact && titleHidden, 'shrink-0': compact }">
 							<a v-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
 								class="hover:underline" :title="titleLink.title">{{ title }}</a>
 							<template v-else>{{ title }}</template>
 						</h2>
 						<div id="page-header-status" data-testid="settings-status" class="flex min-w-0 max-w-full flex-wrap items-center gap-2 empty:hidden"
-							:class="{ 'max-sm:flex-nowrap': compact }">
+							:class="{ 'flex-nowrap': compact }">
 							<slot name="status" />
 						</div>
 					</div>
@@ -132,11 +132,16 @@ const props = defineProps<{
 	/** How far the title row has slid up under the breadcrumb bar (#1437). */
 	collapsed?: number;
 	/**
-	 * Drops the icon tile, and below sm shows the title only to screen
-	 * readers, since the breadcrumb names the page (#1570), and keeps the
-	 * chips and toolbar on one line (#1576).
+	 * Drops the icon tile and keeps the title, chips and toolbar on one
+	 * line at every width (#1570, #1576, #1584).
 	 */
 	compact?: boolean;
+	/**
+	 * In a compact header, shows the title only to screen readers, since
+	 * the breadcrumb names the page; the page hides it when the line has
+	 * no room to spare for it (#1584).
+	 */
+	titleHidden?: boolean;
 }>();
 
 const BACK_CLS =
