@@ -11,6 +11,7 @@ import (
 
 	"github.com/lsegal/aviary/internal/agent"
 	"github.com/lsegal/aviary/internal/config"
+	"github.com/lsegal/aviary/internal/llm"
 	internalmcp "github.com/lsegal/aviary/internal/mcp"
 	"github.com/lsegal/aviary/internal/scheduler"
 	"github.com/lsegal/aviary/internal/store"
@@ -25,11 +26,17 @@ func setupTaskCLI(t *testing.T) *scheduler.Scheduler {
 // named agents configured.
 func setupAgentsCLI(t *testing.T, names ...string) *scheduler.Scheduler {
 	t.Helper()
+	return setupCLIWithModel(t, nil, "test/x", names...)
+}
+
+// setupCLIWithModel is setupAgentsCLI with agents on model, built by factory
+// (nil for the default factory).
+func setupCLIWithModel(t *testing.T, factory *llm.Factory, model string, names ...string) *scheduler.Scheduler {
+	t.Helper()
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
-	// TestMain points AVIARY_CONFIG_BASE_DIR at a directory shared by the
-	// whole package, and config.BaseDir prefers it, so agent task files
-	// would outlive this test without a per-test override.
+	// Task files live under the config base dir, which TestMain shares
+	// across the package; give each test its own.
 	t.Setenv("AVIARY_CONFIG_BASE_DIR", base+"/aviary")
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
@@ -37,10 +44,11 @@ func setupAgentsCLI(t *testing.T, names ...string) *scheduler.Scheduler {
 
 	cfg := &config.Config{}
 	for _, name := range names {
-		cfg.Agents = append(cfg.Agents, config.AgentConfig{Name: name, Model: "test/x"})
+		cfg.Agents = append(cfg.Agents, config.AgentConfig{Name: name, Model: model})
 	}
 	require.NoError(t, config.Save("", cfg))
-	mgr := agent.NewManager(nil)
+	mgr := agent.NewManager(factory)
+	t.Cleanup(mgr.Stop)
 	mgr.Reconcile(cfg)
 	s, err := scheduler.New(mgr, 1)
 	require.NoError(t, err)
