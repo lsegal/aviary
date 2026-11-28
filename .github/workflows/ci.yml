@@ -5,8 +5,14 @@ on:
     branches: [main]
   pull_request:
   # A merge whose commit message skipped the push run is checked by hand
-  # (#1176).
+  # (#1176). A manual run tests every web component test and Playwright spec
+  # unless full-suite is turned off (#1636).
   workflow_dispatch:
+    inputs:
+      full-suite:
+        description: Run every web component test and Playwright spec
+        type: boolean
+        default: true
 
 permissions: {}
 
@@ -334,20 +340,35 @@ jobs:
           files: web/coverage/lcov.info
           total-parts-count: 4
 
-  web-e2e:
-    name: "Test: Web E2E"
+  # Picks the web tests to run (#1636). A pull request compares against its
+  # merge base with main, a push to main against the commit main pointed at
+  # before it, and a manual run with full-suite runs everything.
+  #
+  # Component tests (pnpm test:component) are picked by `vitest list
+  # --changed`, which follows each test's imports and CSS, so a change runs
+  # only the tests it reaches. Playwright specs (web/e2e) are picked by
+  # `playwright test --only-changed`: the specs that changed or import a
+  # changed file. They load the app by URL, so they can't see the app code
+  # they cover; that is the component tests' job. A change to the Playwright
+  # config, the lockfile or the e2e helpers runs every spec. See
+  # ARCHITECTURE.md (Testing).
+  web-select:
+    name: "Select: Web Tests"
     permissions:
       contents: read
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      since: ${{ steps.since.outputs.since }}
+      e2e-since: ${{ steps.e2e.outputs.since }}
+      components: ${{ steps.components.outputs.selected }}
+      shards: ${{ steps.components.outputs.shards }}
+      e2e: ${{ steps.e2e.outputs.selected }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -355,10 +376,200 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build:web
-      - run: node scripts/build-go.mjs --output aviary
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e
+      - id: since
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          FULL: ${{ inputs.full-suite }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          since=""
+          case "$EVENT" in
+            pull_request)
+              since=$(git merge-base "origin/$BASE_REF" HEAD) ;;
+            push)
+              # A new branch has no before commit, and a force-push's may be
+              # gone; run everything then.
+              if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+                since=$BEFORE
+              fi ;;
+            workflow_dispatch)
+              if [ "$FULL" != "true" ]; then
+                since=$(git merge-base origin/main HEAD)
+              fi ;;
+          esac
+          echo "since=$since" >> "$GITHUB_OUTPUT"
+      - id: components
+        name: Select component tests
+        shell: bash
+        env:
+          SINCE: ${{ steps.since.outputs.since }}
+        run: |
+          if [ -n "$SINCE" ]; then
+            echo "Selecting the component tests affected since $SINCE"
+          else
+            echo "Selecting every component test"
+          fi
+          pnpm exec vitest list -c vitest.component.config.ts ${SINCE:+--changed "$SINCE"} \
+            --filesOnly --passWithNoTests --json="$RUNNER_TEMP/selected.json"
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { componentTestShards } from "./scripts/component-tests.mjs";
+            const files = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            for (const { file } of files) console.error(file);
+            const shards = componentTestShards(files.length);
+            console.error(files.length + " files in " + shards.length + " shards");
+            console.log("selected=" + files.length);
+            console.log("shards=" + JSON.stringify(shards));
+          ' "$RUNNER_TEMP/selected.json" >> "$GITHUB_OUTPUT"
+      - id: e2e
+        name: Select Playwright specs
+        shell: bash
+        env:
+          SINCE: ${{ steps.since.outputs.since }}
+        run: |
+          since=$SINCE
+          if [ -n "$since" ] && ! git diff --quiet "$since" HEAD -- playwright.config.ts pnpm-lock.yaml web/e2e/helpers; then
+            echo "The Playwright config, the lockfile or the e2e helpers changed"
+            since=""
+          fi
+          if [ -n "$since" ]; then
+            echo "Selecting the Playwright specs affected since $since"
+          else
+            echo "Selecting every Playwright spec"
+          fi
+          list=$(pnpm exec playwright test --list ${since:+--only-changed="$since"} | tee /dev/stderr)
+          count=$(sed -nE 's/^Total: ([0-9]+) tests? .*/\1/p' <<< "$list")
+          {
+            echo "since=$since"
+            echo "selected=${count:-0}"
+          } >> "$GITHUB_OUTPUT"
+
+  # Runs the selected component tests, split across parallel shards: each
+  # test file mounts the app in Chromium, several seconds each. When none
+  # are selected, one shard passes without running any.
+  component-tests:
+    name: "Test: Web Components (${{ matrix.shard }}/${{ strategy.job-total }})"
+    needs: web-select
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.web-select.outputs.shards) }}
+    env:
+      SINCE: ${{ needs.web-select.outputs.since }}
+      SELECTED: ${{ needs.web-select.outputs.components }}
+      SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+    steps:
+      - name: No tests selected
+        if: env.SELECTED == '0'
+        run: echo "No component test is affected by this change."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.SELECTED != '0'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        if: env.SELECTED != '0'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: env.SELECTED != '0'
+        with:
+          node-version-file: package.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - if: env.SELECTED != '0'
+        run: pnpm install --frozen-lockfile
+      - if: env.SELECTED != '0'
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Component tests
+        if: env.SELECTED != '0'
+        shell: bash
+        run: |
+          echo "Running shard $SHARD of the component tests${SINCE:+ affected since $SINCE}"
+          # Without a base commit, --all runs the whole suite.
+          select=(--all)
+          if [ -n "$SINCE" ]; then select=(--changed "$SINCE"); fi
+          pnpm test:component "${select[@]}" --shard "$SHARD" --passWithNoTests
+      - name: Upload failure screenshots
+        if: failure() && env.SELECTED != '0'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: component-test-failures-${{ matrix.shard }}
+          path: .vitest/attachments/failure-screenshots
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+  # One stable check for the component-test shards, whose names change with
+  # their count: it fails unless every shard passed, and passes when no test
+  # was selected, so branch rules can require it.
+  component-tests-result:
+    name: "Test: Web Components"
+    needs: [web-select, component-tests]
+    if: always()
+    permissions: {}
+    runs-on: ubuntu-latest
+    steps:
+      - shell: bash
+        env:
+          SELECT: ${{ needs.web-select.result }}
+          TESTS: ${{ needs.component-tests.result }}
+        run: |
+          echo "Select: $SELECT, component tests: $TESTS"
+          [ "$SELECT" = success ] && [ "$TESTS" = success ]
+
+  web-e2e:
+    name: "Test: Web E2E"
+    needs: web-select
+    if: always()
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      SELECT: ${{ needs.web-select.result }}
+      SINCE: ${{ needs.web-select.outputs.e2e-since }}
+      SELECTED: ${{ needs.web-select.outputs.e2e }}
+    steps:
+      # Reports a real result for branch rules: a failed selection fails,
+      # and no selected spec passes without building anything.
+      - name: Selection
+        shell: bash
+        run: |
+          [ "$SELECT" = success ] || { echo "Selecting the Playwright specs failed"; exit 1; }
+          if [ "$SELECTED" = 0 ]; then echo "No Playwright spec is affected by this change."; fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.SELECTED != '0'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: env.SELECTED != '0'
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        if: env.SELECTED != '0'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: env.SELECTED != '0'
+        with:
+          node-version-file: package.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - if: env.SELECTED != '0'
+        run: pnpm install --frozen-lockfile
+      - if: env.SELECTED != '0'
+        run: pnpm build:web
+      - if: env.SELECTED != '0'
+        run: node scripts/build-go.mjs --output aviary
+      - if: env.SELECTED != '0'
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Playwright specs
+        if: env.SELECTED != '0'
+        shell: bash
+        run: pnpm exec playwright test ${SINCE:+--only-changed="$SINCE"}
 
   docker:
     name: Docker
@@ -373,6 +584,7 @@ jobs:
       - release-smoke
       - web-lint
       - web-e2e
+      - component-tests-result
     if: needs.changes.outputs.docker == 'true'
     uses: $/.github/workflows/docker.yml
     with:
