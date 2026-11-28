@@ -247,7 +247,6 @@ export async function mountSettings(
 				DeleteDataOption: true,
 				Skeleton: true,
 				ConfirmDialog: slotStub("ConfirmDialog"),
-				transition: false,
 			},
 		},
 	});
