@@ -74,7 +74,7 @@ function setup(
 	return { store, wrapper };
 }
 
-function buttonByText(w: VueWrapper, text: string) {
+function buttonByText(w: Pick<VueWrapper, "findAll">, text: string) {
 	const b = w.findAll("button").find((x) => x.text() === text);
 	if (!b) throw new Error(`no button "${text}"`);
 	return b;
@@ -139,7 +139,9 @@ describe("TaskAnalytics jobs by day", () => {
 		expect(heights).toEqual(["20px", "20px", "20px"]);
 		// 2026-11-20 has a third of the peak, all completed.
 		expect(
-			days[2].findAll(".w-full").map((d) => (d.element as HTMLElement).style.height),
+			days[2]
+				.findAll(".w-full")
+				.map((d) => (d.element as HTMLElement).style.height),
 		).toEqual(["20px"]);
 		expect(days[0].findAll(".w-full")).toHaveLength(0);
 		// Few days, so every date is labelled.
@@ -156,23 +158,23 @@ describe("TaskAnalytics jobs by day", () => {
 		expect(days[1].find(".pointer-events-none").exists()).toBe(false);
 	});
 
-	it("labels only some dates in a long range", () => {
-		const store = useJobsStore();
-		setup({ jobs: [job({ created_at: "2026-12-05T00:00:00Z" })] });
+	it("labels only some dates in a long range", async () => {
+		const { store, wrapper } = setup({
+			jobs: [job({ created_at: "2026-12-05T00:00:00Z" })],
+		});
 		store.startDate = "2026-12-01";
 		store.endDate = "2026-12-20";
-		return wrapper!.vm.$nextTick().then(() => {
-			const labels = wrapper!
-				.find('[data-testid="jobs-by-day"]')
-				.findAll("span.flex-1")
-				.map((s) => s.text());
-			expect(labels).toHaveLength(20);
-			// Step of 3: first, last and every third day (December avoids DST).
-			expect(labels[0]).toBe("12-01");
-			expect(labels[1]).toBe("");
-			expect(labels[3]).toBe("12-04");
-			expect(labels[19]).toBe("12-20");
-		});
+		await flushPromises();
+		const labels = wrapper
+			.find('[data-testid="jobs-by-day"]')
+			.findAll("span.flex-1")
+			.map((s) => s.text());
+		expect(labels).toHaveLength(20);
+		// Step of 3: first, last and every third day (December avoids DST).
+		expect(labels[0]).toBe("12-01");
+		expect(labels[1]).toBe("");
+		expect(labels[3]).toBe("12-04");
+		expect(labels[19]).toBe("12-20");
 	});
 });
 
@@ -188,11 +190,19 @@ describe("TaskAnalytics job queue", () => {
 	it("renders status labels, classes, durations and schedule times", () => {
 		const { wrapper } = setup({
 			jobs: [
-				job({ id: "p", status: "pending", scheduled_for: "2026-11-21T08:00:00Z" }),
+				job({
+					id: "p",
+					status: "pending",
+					scheduled_for: "2026-11-21T08:00:00Z",
+				}),
 				job({ id: "r", status: "in_progress" }),
 				job({ id: "c", status: "completed" }),
 				job({ id: "f", status: "failed", updated_at: "2026-11-20T10:03:12Z" }),
-				job({ id: "x", status: "canceled", updated_at: "2026-11-20T10:00:00.850Z" }),
+				job({
+					id: "x",
+					status: "canceled",
+					updated_at: "2026-11-20T10:00:00.850Z",
+				}),
 			],
 		});
 		const rows = jobRows(wrapper);
@@ -238,7 +248,9 @@ describe("TaskAnalytics job queue", () => {
 		await failed.trigger("click");
 		expect(failed.attributes("aria-pressed")).toBe("true");
 		expect(failed.classes()).toContain("bg-blue-600");
-		expect(buttonByText(wrapper, "All").attributes("aria-pressed")).toBe("false");
+		expect(buttonByText(wrapper, "All").attributes("aria-pressed")).toBe(
+			"false",
+		);
 		expect(wrapper.find('[data-testid="job-count"]').text()).toBe("10 jobs");
 		expect(wrapper.text()).toContain("Page 1 of 1");
 		expect(wrapper.text()).toContain("Showing 1-10 of 10");
@@ -303,7 +315,9 @@ describe("TaskAnalytics job queue", () => {
 		expect(wrapper.emitted("update:task")).toEqual([[""]]);
 
 		await wrapper.setProps({ task: "" });
-		expect(wrapper.find('[data-testid="job-task-filter"]').exists()).toBe(false);
+		expect(wrapper.find('[data-testid="job-task-filter"]').exists()).toBe(
+			false,
+		);
 		expect(wrapper.find('[data-testid="job-count"]').text()).toBe("2 jobs");
 	});
 
@@ -311,7 +325,8 @@ describe("TaskAnalytics job queue", () => {
 		let release!: () => void;
 		tools.job_run_now = () =>
 			new Promise((r) => {
-				release = () => r(JSON.stringify(job({ id: "p", status: "in_progress" })));
+				release = () =>
+					r(JSON.stringify(job({ id: "p", status: "in_progress" })));
 			});
 		tools.job_query = () =>
 			JSON.stringify([job({ id: "p", status: "in_progress" })]);
@@ -354,7 +369,9 @@ describe("TaskAnalytics job queue", () => {
 			});
 		tools.job_query = () =>
 			JSON.stringify([job({ id: "r", status: "failed", error: "stopped" })]);
-		const { wrapper } = setup({ jobs: [job({ id: "r", status: "in_progress" })] });
+		const { wrapper } = setup({
+			jobs: [job({ id: "r", status: "in_progress" })],
+		});
 		const stop = buttonByText(wrapper, "Stop");
 		await stop.trigger("click");
 		expect(callTool).toHaveBeenCalledWith("job_stop", { id: "r" });
@@ -370,7 +387,9 @@ describe("TaskAnalytics job queue", () => {
 			throw new Error("nope");
 		};
 		const errors: unknown[] = [];
-		const { wrapper } = setup({ jobs: [job({ id: "r", status: "in_progress" })] });
+		const { wrapper } = setup({
+			jobs: [job({ id: "r", status: "in_progress" })],
+		});
 		wrapper.vm.$.appContext.config.errorHandler = (e) => {
 			errors.push(e);
 		};
@@ -451,11 +470,26 @@ describe("TaskAnalytics job details", () => {
 				release = () =>
 					r(
 						JSON.stringify([
-							{ id: "m1", role: "user", content: "hi", timestamp: "2026-11-20T10:00:00Z" },
+							{
+								id: "m1",
+								role: "user",
+								content: "hi",
+								timestamp: "2026-11-20T10:00:00Z",
+							},
 							{ id: "m2", role: "assistant", content: "y".repeat(210) },
 							{ role: "tool", content: '{"ok":true}' },
-							{ id: "m4", role: "system", content: "", media_urls: ["/media/a.png"] },
-							{ id: "m5", role: "assistant", content: "pic", media_urls: ["/media/b.png"] },
+							{
+								id: "m4",
+								role: "system",
+								content: "",
+								media_urls: ["/media/a.png"],
+							},
+							{
+								id: "m5",
+								role: "assistant",
+								content: "pic",
+								media_urls: ["/media/b.png"],
+							},
 							{ id: "m6", role: "tool", content: "not json" },
 							{ id: "m7", role: "tool" },
 						]),
@@ -539,14 +573,37 @@ describe("TaskAnalytics job details", () => {
 		expect(p.text()).toContain("Live Output");
 		expect(p.text()).toContain("Waiting for output…");
 		expect(p.text()).toContain("A run with no output for 5m is stopped");
-		expect(p.findAll("button").some((b) => b.text() === "↺ Reload")).toBe(false);
+		expect(p.findAll("button").some((b) => b.text() === "↺ Reload")).toBe(
+			false,
+		);
 
 		const scroll = vi.mocked(Element.prototype.scrollIntoView);
 		scroll.mockClear();
 		logEntries.value = [
-			{ seq: 1, ts: "", level: "info", component: "job", msg: "m", attrs: { job_id: "r", chunk: "hello" } },
-			{ seq: 2, ts: "", level: "info", component: "job", msg: "plain", attrs: { job_id: "r" } },
-			{ seq: 3, ts: "", level: "info", component: "job", msg: "other", attrs: { job_id: "z" } },
+			{
+				seq: 1,
+				ts: "",
+				level: "info",
+				component: "job",
+				msg: "m",
+				attrs: { job_id: "r", chunk: "hello" },
+			},
+			{
+				seq: 2,
+				ts: "",
+				level: "info",
+				component: "job",
+				msg: "plain",
+				attrs: { job_id: "r" },
+			},
+			{
+				seq: 3,
+				ts: "",
+				level: "info",
+				component: "job",
+				msg: "other",
+				attrs: { job_id: "z" },
+			},
 		];
 		await flushPromises();
 		expect(panel(wrapper).text()).toContain("hello");
@@ -556,18 +613,19 @@ describe("TaskAnalytics job details", () => {
 	});
 
 	it("uses the default idle timeout and hides it when disabled", async () => {
-		const { store, wrapper } = setup({
+		const { wrapper } = setup({
 			jobs: [job({ id: "r", status: "in_progress" })],
 		});
 		await jobRows(wrapper)[0].trigger("click");
 		expect(panel(wrapper).text()).toContain("no output for 15m");
 
 		useSettingsStore().config = {
-			agents: [{ name: "Aviary", tasks: [{ name: "nightly", idle_timeout: "0s" }] }],
+			agents: [
+				{ name: "Aviary", tasks: [{ name: "nightly", idle_timeout: "0s" }] },
+			],
 		} as unknown as AppConfig;
 		await flushPromises();
 		expect(panel(wrapper).text()).not.toContain("is stopped and marked failed");
-		void store;
 	});
 
 	it("loads the output once the open run finishes", async () => {
@@ -614,7 +672,13 @@ describe("TaskAnalytics compile attempts", () => {
 	it("lists the five newest attempts with status labels", () => {
 		const { wrapper } = setup({
 			compiles: [
-				compile({ id: "c1", task_name: "nightly", reason: "ok", requested_task_type: "prompt", result_task_type: "script" }),
+				compile({
+					id: "c1",
+					task_name: "nightly",
+					reason: "ok",
+					requested_task_type: "prompt",
+					result_task_type: "script",
+				}),
 				compile({ id: "c2", status: "skipped", prompt: "do it" }),
 				compile({ id: "c3", status: "failed" }),
 				compile({ id: "c4", status: "weird" as TaskCompile["status"] }),
@@ -657,9 +721,25 @@ describe("TaskAnalytics compile attempts", () => {
 			deterministic_steps: 3,
 			script: "print('hi')",
 			stages: [
-				{ name: "plan", status: "succeeded", started_at: "2026-11-20T09:00:00Z", system_prompt: "SYS", user_prompt: "USR", response: "RESP" },
-				{ name: "verify", status: "failed", started_at: "2026-11-20T09:00:01Z", error: "ERR" },
-				{ name: "write", status: "started", started_at: "2026-11-20T09:00:02Z" },
+				{
+					name: "plan",
+					status: "succeeded",
+					started_at: "2026-11-20T09:00:00Z",
+					system_prompt: "SYS",
+					user_prompt: "USR",
+					response: "RESP",
+				},
+				{
+					name: "verify",
+					status: "failed",
+					started_at: "2026-11-20T09:00:01Z",
+					error: "ERR",
+				},
+				{
+					name: "write",
+					status: "started",
+					started_at: "2026-11-20T09:00:02Z",
+				},
 				{ name: "other", status: "queued", started_at: "" },
 			],
 		} as Partial<TaskCompile>);
@@ -693,18 +773,25 @@ describe("TaskAnalytics compile attempts", () => {
 		expect(dl).toContain("Validatedyes");
 		expect(dl).toContain("Needs discoveryyes");
 		expect(dl).toContain("Deterministic steps3");
-		for (const s of ["SYS", "USR", "RESP", "ERR", "Generated Script", "print('hi')"]) {
+		for (const s of [
+			"SYS",
+			"USR",
+			"RESP",
+			"ERR",
+			"Generated Script",
+			"print('hi')",
+		]) {
 			expect(p.text()).toContain(s);
 		}
 		const stageBadges = p.findAll("span.inline-flex.rounded-full.px-2");
-		expect(stageBadges.slice(1).map((b) => b.classes().find((c) => c.startsWith("bg-")))).toEqual([
-			"bg-emerald-100",
-			"bg-red-100",
-			"bg-blue-100",
-			"bg-gray-100",
-		]);
+		expect(
+			stageBadges
+				.slice(1)
+				.map((b) => b.classes().find((c) => c.startsWith("bg-"))),
+		).toEqual(["bg-emerald-100", "bg-red-100", "bg-blue-100", "bg-gray-100"]);
 
-		tools.task_compile_get = () => JSON.stringify({ ...full, stages: [], script: "" });
+		tools.task_compile_get = () =>
+			JSON.stringify({ ...full, stages: [], script: "" });
 		await buttonByText(p, "↺ Reload").trigger("click");
 		await flushPromises();
 		expect(panel(wrapper).text()).toContain("No stage logs captured.");
@@ -723,7 +810,9 @@ describe("TaskAnalytics compile attempts", () => {
 		const { store, wrapper } = setup({
 			compiles: [compile({ id: "c1", task_name: "nightly" })],
 		});
-		await wrapper.find('[data-testid="compile-attempts"] tbody tr').trigger("click");
+		await wrapper
+			.find('[data-testid="compile-attempts"] tbody tr')
+			.trigger("click");
 		await flushPromises();
 		expect(store.error).toBe("gone");
 		const p = panel(wrapper);
