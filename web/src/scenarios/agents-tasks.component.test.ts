@@ -6,6 +6,16 @@ import { page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import {
+	type Args,
+	ASSISTANT,
+	agentFileFixtures,
+	CONFIG,
+	count,
+	mockDefault,
+	TOOLS,
+	texts,
+} from "./agents.fixtures";
+import {
 	chooseOption,
 	expectValue,
 	optionLabels,
@@ -16,16 +26,6 @@ import {
 	openAgentPage,
 	openTaskSettings,
 } from "./helpers/sidebar";
-import {
-	type Args,
-	ASSISTANT,
-	agentFileFixtures,
-	CONFIG,
-	count,
-	mockDefault,
-	TOOLS,
-	texts,
-} from "./agents.fixtures";
 
 beforeEach(() => {
 	mockDefault();
@@ -167,7 +167,9 @@ test("agent files editor opens the file picked in the sidebar", async () => {
 	);
 	// Without a ?file the page opens the first file.
 	await expect.element(editor).toHaveValue("# Agents");
-	await expect.element(page.getByTestId("settings-title")).toHaveText("AGENTS.md");
+	await expect
+		.element(page.getByTestId("settings-title"))
+		.toHaveText("AGENTS.md");
 	await expect.element(page.getByTestId("agent-file-builtin")).toBeVisible();
 
 	await files.filter({ hasText: "IDENTITY.md" }).getByRole("link").click();
@@ -270,9 +272,7 @@ test("a task can target one of its agent's projects and keeps it when saved", as
 	await expectValue(project, "o/gone");
 	expect(await optionLabels(project)).toEqual(["o/r", "o/other", "o/gone"]);
 	const model = page.getByTestId("task-model");
-	await expect
-		.element(model.getByRole("combobox"))
-		.toHaveValue("cli/codex");
+	await expect.element(model.getByRole("combobox")).toHaveValue("cli/codex");
 	await expect
 		.poll(() => count(page.getByPlaceholder("./docs/**/*.md")))
 		.toBe(0);

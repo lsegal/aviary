@@ -63,19 +63,19 @@ test("upgrade dialog lists the running jobs it will stop", async () => {
 
 	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
 	const dialog = page.getByRole("dialog");
-	await expect.element(dialog).toHaveTextContent("these 2 running jobs");
+	await expect.element(dialog).toMatchTextContent("these 2 running jobs");
 	await expect.element(dialog.getByText("Fix the parser")).toBeVisible();
 	await expect.element(dialog.getByText("Add dark mode")).toBeVisible();
 	await expect
 		.element(dialog)
-		.toHaveTextContent("Waiting jobs aren't touched.");
+		.toMatchTextContent("Waiting jobs aren't touched.");
 
 	await dialog.getByRole("button", { name: "Now" }).click();
 	await expect.element(dialog).not.toBeInTheDocument();
 	expect(upgrades).toEqual([{ version: "v0.7.0", when: "now" }]);
 	await expect
 		.element(page.getByRole("status"))
-		.toHaveTextContent("Updating to v0.7.0");
+		.toMatchTextContent("Updating to v0.7.0");
 });
 
 test("upgrading when no jobs are running holds new jobs and can be canceled", async () => {
@@ -106,14 +106,14 @@ test("upgrading when no jobs are running holds new jobs and can be canceled", as
 	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
 	await expect
 		.element(page.getByRole("dialog"))
-		.toHaveTextContent("this running job");
+		.toMatchTextContent("this running job");
 	await page.getByRole("button", { name: "When no jobs are running" }).click();
 
 	const status = page.getByRole("status");
 	await expect
 		.element(status)
-		.toHaveTextContent("Upgrade to v0.7.0 waits for 1 running job.");
-	await expect.element(status).toHaveTextContent("New jobs are held");
+		.toMatchTextContent("Upgrade to v0.7.0 waits for 1 running job.");
+	await expect.element(status).toMatchTextContent("New jobs are held");
 	await expect
 		.element(page.getByRole("button", { name: "Upgrade", exact: true }))
 		.toBeDisabled();
@@ -155,7 +155,7 @@ test("an upgrade waiting on in-flight MCP calls says so and can be canceled", as
 	const status = page.getByRole("status");
 	await expect
 		.element(status)
-		.toHaveTextContent("Upgrade to v0.7.0 pending: waiting on 2 MCP calls.");
+		.toMatchTextContent("Upgrade to v0.7.0 pending: waiting on 2 MCP calls.");
 	await status.getByRole("button", { name: "Cancel" }).click();
 	await expect.element(status).not.toBeInTheDocument();
 	expect(calls).toEqual(["upgrade", "restart:cancel=true"]);
@@ -172,7 +172,7 @@ test("upgrade dialog says nothing will stop when no jobs run", async () => {
 	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
 	await expect
 		.element(page.getByRole("dialog"))
-		.toHaveTextContent("No jobs are running, so nothing will be stopped.");
+		.toMatchTextContent("No jobs are running, so nothing will be stopped.");
 });
 
 function gitCheck(
@@ -228,9 +228,9 @@ test("unsupervised dev checkout pulls from git and says to restart", async () =>
 	const dialog = page.getByRole("dialog");
 	await expect
 		.element(dialog)
-		.toHaveTextContent("Update this checkout to origin/main (abc1234)");
-	await expect.element(dialog).toHaveTextContent("git pull --ff-only");
-	await expect.element(dialog).toHaveTextContent("restart Aviary afterwards");
+		.toMatchTextContent("Update this checkout to origin/main (abc1234)");
+	await expect.element(dialog).toMatchTextContent("git pull --ff-only");
+	await expect.element(dialog).toMatchTextContent("restart Aviary afterwards");
 	await expect
 		.poll(
 			count(dialog.getByRole("button", { name: "When no jobs are running" })),
@@ -244,7 +244,7 @@ test("unsupervised dev checkout pulls from git and says to restart", async () =>
 	]);
 	await expect
 		.element(page.getByTestId("update-notice").first())
-		.toHaveTextContent("Restart Aviary to run the new code.");
+		.toMatchTextContent("Restart Aviary to run the new code.");
 	await expect.poll(count(page.getByRole("status"))).toBe(0);
 });
 
@@ -274,12 +274,12 @@ test("supervised dev checkout pulls, then safely restarts onto the pulled code",
 	const dialog = page.getByRole("dialog");
 	await expect
 		.element(dialog)
-		.toHaveTextContent(
+		.toMatchTextContent(
 			"Aviary then restarts and rebuilds from the pulled sources.",
 		);
 	await expect
 		.element(dialog)
-		.toHaveTextContent("resumes each one in its own session");
+		.toMatchTextContent("resumes each one in its own session");
 	await dialog
 		.getByRole("button", { name: "When no jobs are running" })
 		.click();
@@ -290,10 +290,10 @@ test("supervised dev checkout pulls, then safely restarts onto the pulled code",
 	]);
 	await expect
 		.element(page.getByRole("status"))
-		.toHaveTextContent("waits for 1 running job");
+		.toMatchTextContent("waits for 1 running job");
 	await expect
 		.element(page.getByTestId("update-notice").first())
-		.toHaveTextContent("Aviary restarts to build and run the new code.");
+		.toMatchTextContent("Aviary restarts to build and run the new code.");
 });
 
 test("dev checkout under forgo hot-reloads the pulled code without restarting", async () => {
@@ -321,12 +321,12 @@ test("dev checkout under forgo hot-reloads the pulled code without restarting", 
 	const dialog = page.getByRole("dialog");
 	await expect
 		.element(dialog)
-		.toHaveTextContent(
+		.toMatchTextContent(
 			"hot-reloads the pulled code in place, so running jobs keep running",
 		);
 	await expect
 		.element(dialog)
-		.toHaveTextContent(
+		.toMatchTextContent(
 			"If a change can't be hot-reloaded, the restart stops this running job",
 		);
 	await dialog.getByRole("button", { name: "Now" }).click();
@@ -337,7 +337,7 @@ test("dev checkout under forgo hot-reloads the pulled code without restarting", 
 	]);
 	await expect
 		.element(page.getByTestId("update-notice").first())
-		.toHaveTextContent("The backend hot-reloads the new code");
+		.toMatchTextContent("The backend hot-reloads the new code");
 	await expect.poll(count(page.getByRole("status"))).toBe(0);
 });
 
@@ -355,7 +355,7 @@ test("dev checkout with local changes blocks the update and says why", async () 
 		.toBeDisabled();
 	await expect
 		.element(page.getByTestId("version-message").first())
-		.toHaveTextContent("uncommitted changes");
+		.toMatchTextContent("uncommitted changes");
 });
 
 test("auto update applies with jobs running", async () => {
@@ -380,10 +380,10 @@ test("auto update applies with jobs running", async () => {
 
 	await expect
 		.element(page.getByTestId("auto-update-status").first())
-		.toHaveTextContent("Auto update is pulling the checkout…");
+		.toMatchTextContent("Auto update is pulling the checkout…");
 	await expect
 		.element(page.getByTestId("auto-update-status").first())
-		.not.toHaveTextContent("running job");
+		.not.toMatchTextContent("running job");
 	await expect.poll(count(page.getByTestId("auto-update-error"))).toBe(0);
 });
 
@@ -410,7 +410,7 @@ test("auto update shows why its last attempt failed", async () => {
 
 	await expect
 		.element(page.getByTestId("auto-update-error").first())
-		.toHaveTextContent(
+		.toMatchTextContent(
 			"Auto update failed: git pull --ff-only --quiet: exit status 1",
 		);
 	await expect.poll(count(page.getByTestId("auto-update-status"))).toBe(0);
@@ -463,10 +463,10 @@ test("auto update deferred by a busy checkout says so and retries", async () => 
 	const notice = page.locator('[data-testid="auto-update-error"]:visible');
 	await expect
 		.element(notice)
-		.toHaveTextContent(
+		.toMatchTextContent(
 			"Update deferred: another git operation is running, retrying.",
 		);
-	await expect.element(notice).not.toHaveTextContent("Auto update failed");
+	await expect.element(notice).not.toMatchTextContent("Auto update failed");
 	await notice.getByRole("button", { name: "Retry" }).click();
 	await expect
 		.poll(() => upgrades)
@@ -492,7 +492,7 @@ test("auto update blocked by a stale index.lock offers to remove it", async () =
 	const notice = page.locator('[data-testid="auto-update-error"]:visible');
 	await expect
 		.element(notice)
-		.toHaveTextContent(
+		.toMatchTextContent(
 			"Update blocked: a stale git lock (/src/aviary/.git/index.lock, 42m0s old) is blocking updates.",
 		);
 	await notice
@@ -526,7 +526,7 @@ test("the gear menu's Restart safely restarts and reports progress", async () =>
 	await expect.poll(() => restarts).toEqual([{}]);
 	await expect
 		.element(page.getByRole("status"))
-		.toHaveTextContent("Restarting…");
+		.toMatchTextContent("Restarting…");
 	await page
 		.getByTestId("sidebar-footer")
 		.getByTestId("gear-menu-button")
@@ -598,7 +598,7 @@ test("dev build shows its commit SHA as the version", async () => {
 	await page.getByRole("button", { name: "Upgrade", exact: true }).click();
 	await expect
 		.element(page.getByRole("dialog"))
-		.toHaveTextContent("Update this checkout to origin/main (abc1234)");
+		.toMatchTextContent("Update this checkout to origin/main (abc1234)");
 });
 
 test("dev build without a checkout says so instead of looking up to date", async () => {
@@ -621,8 +621,8 @@ test("dev build without a checkout says so instead of looking up to date", async
 	const notice = page.locator('[data-testid="update-no-checkout"]:visible');
 	await expect
 		.element(notice)
-		.toHaveTextContent("Dev build — no checkout found");
-	await expect.element(notice).toHaveTextContent("found no source checkout");
+		.toMatchTextContent("Dev build — no checkout found");
+	await expect.element(notice).toMatchTextContent("found no source checkout");
 	await expect
 		.poll(count(page.getByRole("button", { name: "Upgrade", exact: true })))
 		.toBe(0);

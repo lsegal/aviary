@@ -126,6 +126,11 @@ async function expectTexts(loc: Locator, expected: (string | RegExp)[]) {
 		.toBe(true);
 }
 
+/** Matches text containing `s`, as Playwright's toContainText does. */
+function containing(s: string): RegExp {
+	return new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+}
+
 /** As Playwright's toBeHidden: absent, or present without a box. */
 async function expectHidden(loc: Locator) {
 	await expect
@@ -277,7 +282,7 @@ test("the … menu renames and deletes a chat after confirmation", async () => {
 	await row.getByTestId("chat-menu-button").click();
 	await page.getByRole("menuitem", { name: "Delete" }).click();
 	const dialog = page.getByRole("alertdialog");
-	await expect.element(dialog).toHaveTextContent("Pantry");
+	await expect.element(dialog).toHaveTextContent(containing("Pantry"));
 	await dialog.getByRole("button", { name: "Delete" }).click();
 
 	await expectTexts(chatRows(), [/Main Chat/]);
@@ -341,7 +346,9 @@ test("clearing Main Chat after confirmation empties it and keeps it in the list"
 	await expect
 		.element(dialog)
 		.toHaveTextContent(
-			"This removes all messages in this chat. The chat itself stays.",
+			containing(
+				"This removes all messages in this chat. The chat itself stays.",
+			),
 		);
 	await expectTexts(dialog.getByRole("button"), ["Cancel", "Clear"]);
 	await expect

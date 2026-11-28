@@ -1,7 +1,8 @@
 import { beforeEach, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
-import { currentURL, goto, reload, renderApp } from "../component-test/app";
-import { mockMCP, route } from "../component-test/server";
+import { currentURL, renderApp } from "../component-test/app";
+import { mockMCP } from "../component-test/server";
+import { useSidebarLayout } from "../composables/useSidebarLayout";
 import { expectSettingsHeader } from "./helpers/settingsHeader";
 
 // Every nested page shows where it is, from its agent or System down, with a
@@ -62,7 +63,14 @@ async function expectTexts(loc: Locator, expected: string[]) {
 
 beforeEach(() => {
 	mockAviary();
+	// The collapsed sidebar is module state, read from localStorage once; a
+	// spec's fresh page starts with it expanded.
+	useSidebarLayout().collapsed.value = false;
 });
+
+// "the agent crumb opens the first page the user's sidebar shows" is in
+// page-breadcrumb-nav-prefs: navigation preferences are fetched once per
+// page load, so it needs a fresh page.
 
 test("each nested page shows the shared header with its crumbs and parent link", async () => {
 	const cases: Array<{
@@ -228,7 +236,7 @@ test("an agent page links no crumb back to itself", async () => {
 		.toBe(0);
 	await expectSettingsHeader(false);
 	// The System overview is a top-level page with nothing above it.
-	await goto("/system/overview");
+	await renderApp("/system/overview");
 	await expectTexts(breadcrumb().getByRole("listitem"), ["System", "Overview"]);
 	await expectSettingsHeader(false);
 });
@@ -260,57 +268,6 @@ test("with the sidebar collapsed the breadcrumb and back link lead to the parent
 	await expect.poll(currentURL).toMatch(/\/agents\/Aviary\/chat/);
 });
 
-test("the agent crumb opens the first page the user's sidebar shows", async () => {
-	route("/api/preferences/navigation", (r) =>
-		r.fulfill({
-			status: 200,
-			contentType: "application/json",
-			body: JSON.stringify({
-				order: {
-					agentPages: [
-						"tasks",
-						"chat",
-						"projects",
-						"channels",
-						"files",
-						"settings",
-					],
-				},
-				hidden: { agentPages: ["tasks"] },
-			}),
-		}),
-	);
-	await renderApp("/agents/Aviary/channels/signal");
-	// Scheduled Tasks comes first but is hidden, so Chats is the first shown.
-	await expect
-		.element(breadcrumb().getByRole("link", { name: "Aviary" }))
-		.toHaveAttribute("href", "/agents/Aviary/chat");
-	route("/api/preferences/navigation", (r) =>
-		r.fulfill({
-			status: 200,
-			contentType: "application/json",
-			body: JSON.stringify({
-				order: { agentPages: ["projects", "chat"] },
-				hidden: {},
-			}),
-		}),
-	);
-	await reload();
-	await expect
-		.element(breadcrumb().getByRole("link", { name: "Aviary" }))
-		.toHaveAttribute("href", "/agents/Aviary/projects");
-	// Settings pages' agent crumb and back link follow the same order (#1091).
-	for (const url of ["/agents/Aviary/settings", "/agents/Aviary/tasks"]) {
-		await goto(url);
-		await expect
-			.element(breadcrumb().getByRole("link", { name: "Aviary" }))
-			.toHaveAttribute("href", "/agents/Aviary/projects");
-		await expect
-			.element(page.getByTestId("settings-back"))
-			.toHaveAttribute("href", "/agents/Aviary/projects");
-	}
-});
-
 test("on a phone the breadcrumb collapses to the parent and the page (#1147)", async () => {
 	await page.viewport(375, 740);
 	await renderApp(
@@ -331,8 +288,7 @@ test("on a phone the breadcrumb collapses to the parent and the page (#1147)", a
 			right: li.getBoundingClientRect().right,
 		};
 	});
-	const pageOverflow =
-		document.documentElement.scrollWidth - window.innerWidth;
+	const pageOverflow = document.documentElement.scrollWidth - window.innerWidth;
 	expect(pageOverflow).toBeLessThanOrEqual(0);
 	for (const item of items)
 		expect(item.right).toBeLessThanOrEqual(window.innerWidth);
@@ -341,18 +297,24 @@ test("on a phone the breadcrumb collapses to the parent and the page (#1147)", a
 	expect(truncated[2]).toBe(true);
 	expect(truncated[3]).toBe(false);
 	// The title row's actions wrap below the title instead of scrolling.
-	const el = page.getByTestId("settings-title-row").element();
-	const row = {
-		overflow: el.scrollWidth - el.clientWidth,
-		title: el
-			.querySelector('[data-testid="settings-title"]')
-			?.getBoundingClientRect().bottom,
-		actions: el
-			.querySelector('[data-testid="settings-actions"]')
-			?.getBoundingClientRect().top,
+	const titleRow = () => {
+		const el = page.getByTestId("settings-title-row").element();
+		return {
+			overflow: el.scrollWidth - el.clientWidth,
+			title:
+				el
+					.querySelector('[data-testid="settings-title"]')
+					?.getBoundingClientRect().bottom ?? 0,
+			actions:
+				el
+					.querySelector('[data-testid="settings-actions"]')
+					?.getBoundingClientRect().top ?? 0,
+		};
 	};
-	expect(row.overflow).toBeLessThanOrEqual(0);
-	expect(row.actions ?? 0).toBeGreaterThanOrEqual(row.title ?? 0);
+	await expect.poll(() => titleRow().overflow).toBeLessThanOrEqual(0);
+	await expect
+		.poll(() => titleRow().actions - titleRow().title)
+		.toBeGreaterThanOrEqual(0);
 });
 
 test("the rail marks the open chat without looking unread", async () => {

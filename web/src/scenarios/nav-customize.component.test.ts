@@ -1,107 +1,30 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
-import { currentURL, goto, reload, renderApp } from "../component-test/app";
-import { mockMCP, requestLog, route } from "../component-test/server";
-
-// Harness gap (#1636): setup.ts's locators.extend({ locator }) replaces the
-// Locator prototype's own `locator`, which chained getBy* calls use, so any
-// chained locator recurses forever. Restore Playwright chaining here.
-{
-	const proto = Object.getPrototypeOf(page.getByTestId("probe")) as {
-		locator(selector: string): Locator;
-	};
-	proto.locator = function (
-		this: { selector: string; _container?: Element },
-		selector: string,
-	) {
-		const Ctor = (this as object).constructor as new (
-			s: string,
-			c?: Element,
-		) => Locator;
-		return new Ctor(`${this.selector} >> ${selector}`, this._container);
-	};
-}
+import { goto, reload, renderApp } from "../component-test/app";
+import { requestLog } from "../component-test/server";
+import { useNavPrefs } from "../composables/useNavPrefs";
+import {
+	DEFAULT_PAGES,
+	editRow,
+	mobileRowKeys,
+	mockAgents,
+	openEditor,
+	rowKeys,
+	sidebarPages,
+	systemPages,
+} from "./helpers/navCustomize";
 
 // Customizing the navigation (#1003): the sidebar editor, in Settings →
 // Display (#1093), reorders and hides pages, the result persists on the
 // server with a localStorage fallback, and Reset restores the built-in
-// order. Touch dragging stays in web/e2e/nav-customize.spec.ts: it needs
-// real touch input.
-
-const DEFAULT_PAGES = [
-	"chat",
-	"projects",
-	"channels",
-	"tasks",
-	"files",
-	"settings",
-];
-
-function mockAgents(names: string[]) {
-	mockMCP({
-		agent_list: [],
-		job_list: [],
-		config_validate: [],
-		session_list: [],
-		config_get: {
-			agents: names.map((name) => ({
-				name,
-				model: "anthropic/claude-sonnet-4-5",
-				fallbacks: [],
-			})),
-		},
-	});
-}
-
-function testIds(selector: string, prefix: string): string[] {
-	return Array.from(document.querySelectorAll(selector)).map(
-		(el) => el.getAttribute("data-testid")?.replace(prefix, "") ?? "",
-	);
-}
-
-/** The sole agent's sidebar page rows, by key, in order. */
-async function sidebarPages(): Promise<string[]> {
-	const rows = page
-		.getByTestId("sidebar-sole-agent")
-		.locator('[data-testid^="sidebar-row-"]');
-	await expect.element(rows.first()).toBeVisible();
-	return rows
-		.elements()
-		.map(
-			(el) => el.getAttribute("data-testid")?.replace("sidebar-row-", "") ?? "",
-		);
-}
-
-async function systemPages(): Promise<string[]> {
-	const links = page
-		.getByTestId("sidebar-system-list")
-		.locator('[data-testid^="sidebar-system-"]');
-	await expect.element(links.first()).toBeVisible();
-	return testIds(
-		'[data-testid="sidebar-system-list"] [data-testid^="sidebar-system-"]',
-		"sidebar-system-",
-	);
-}
-
-async function openEditor() {
-	await page.getByTestId("sidebar").getByTestId("gear-menu-button").click();
-	await page.getByTestId("gear-menu-edit-nav").click();
-	await expect.poll(currentURL).toBe("/system/display#sidebar");
-	await expect.element(page.getByTestId("nav-edit-agentPages")).toBeVisible();
-}
-
-function editRow(list: string, key: string) {
-	return page.getByTestId(`nav-edit-${list}`).locator(`[data-key="${key}"]`);
-}
-
-/** A section's rows in the sidebar editor, by key, in order. */
-function rowKeys(list: string): string[] {
-	return page
-		.getByTestId(`nav-edit-${list}`)
-		.getByTestId("nav-edit-row")
-		.elements()
-		.map((el) => el.getAttribute("data-key") ?? "");
-}
+// order.
+//
+// The preferences live in module state, read from this browser's copy when
+// the module loads and from the server's on first use; both outlast a test
+// and reload(). So the scenarios that need that first load have their own
+// files (nav-customize-*.component.test.ts), and here each test starts from
+// the built-in order. Touch dragging stays in web/e2e/nav-customize.spec.ts:
+// it needs real touch input.
 
 function box(loc: Locator): DOMRect {
 	return loc.element().getBoundingClientRect();
@@ -122,6 +45,12 @@ beforeEach(async () => {
 	await page.viewport(1280, 900);
 });
 
+afterEach(() => {
+	const nav = useNavPrefs();
+	nav.reset();
+	nav.showHidden.value = false;
+});
+
 test("pages reorder by keyboard and hide, and persist on the server", async () => {
 	mockAgents(["assistant"]);
 	await renderApp("/system/overview");
@@ -134,7 +63,9 @@ test("pages reorder by keyboard and hide, and persist on the server", async () =
 	// Focus follows the moved row, so the key repeats.
 	await expect.element(up).toHaveFocus();
 	await commands.keyPress("Enter");
-	await editRow("agentPages", "files").getByTestId("nav-edit-visibility").click();
+	await editRow("agentPages", "files")
+		.getByTestId("nav-edit-visibility")
+		.click();
 	await expect
 		.element(editRow("agentPages", "files"))
 		.toHaveAttribute("data-hidden", "true");
@@ -142,7 +73,12 @@ test("pages reorder by keyboard and hide, and persist on the server", async () =
 	const arranged = ["chat", "tasks", "projects", "channels", "settings"];
 	await expect.poll(sidebarPages).toEqual(arranged);
 
-	// A fresh browser on another device reads the server's copy.
+	// A fresh browser on another device reads the server's copy. reload()
+	// keeps the module's copy, so check the server holds the same prefs;
+	// nav-customize-server-copy shows a first load applies them.
+	const server = await (await fetch("/api/preferences/navigation")).json();
+	expect(server).toEqual(JSON.parse(JSON.stringify(useNavPrefs().prefs.value)));
+	expect(server.hidden.agentPages).toEqual(["files"]);
 	localStorage.removeItem("aviary.nav.prefs");
 	await reload();
 	await expect.poll(sidebarPages).toEqual(arranged);
@@ -203,7 +139,9 @@ test("Reset to default restores the order on the server and locally", async () =
 	const reset = page.getByTestId("nav-edit-reset");
 	await expect.element(reset).toBeDisabled();
 	await editRow("agentPages", "settings").getByTestId("nav-edit-up").click();
-	await editRow("agentPages", "chat").getByTestId("nav-edit-visibility").click();
+	await editRow("agentPages", "chat")
+		.getByTestId("nav-edit-visibility")
+		.click();
 	await expect.element(reset).toBeEnabled();
 
 	await reset.click();
@@ -219,57 +157,6 @@ test("Reset to default restores the order on the server and locally", async () =
 	await expect.poll(sidebarPages).toEqual(DEFAULT_PAGES);
 });
 
-test("without the server's preferences, localStorage keeps them", async () => {
-	mockAgents(["assistant"]);
-	route("/api/preferences/navigation", (r) =>
-		r.fulfill({ status: 500, body: "unavailable" }),
-	);
-	await renderApp("/system/overview");
-	await openEditor();
-	await editRow("agentPages", "channels")
-		.getByTestId("nav-edit-visibility")
-		.click();
-	await expect
-		.element(editRow("agentPages", "channels"))
-		.toHaveAttribute("data-hidden", "true");
-
-	await reload();
-	await expect
-		.poll(sidebarPages)
-		.toEqual(DEFAULT_PAGES.filter((k) => k !== "channels"));
-});
-
-test("a page missing from a saved order takes its default place", async () => {
-	mockAgents(["assistant"]);
-	// Saved by an older version: no Files page, plus one since removed.
-	const saved = {
-		order: {
-			agentPages: ["settings", "tasks", "gone", "chat", "projects", "channels"],
-		},
-		hidden: {},
-	};
-	route("/api/preferences/navigation", (r) =>
-		r.fulfill({
-			status: 200,
-			contentType: "application/json",
-			body: JSON.stringify(saved),
-		}),
-	);
-	await renderApp("/system/overview");
-	await expect
-		.poll(sidebarPages)
-		.toEqual(["settings", "tasks", "files", "chat", "projects", "channels"]);
-});
-
-/** The narrow-screen main row's keys, in order. */
-function mobileRowKeys() {
-	return page
-		.getByTestId("mobile-main-nav")
-		.locator("a")
-		.elements()
-		.map((el) => el.getAttribute("data-key"));
-}
-
 describe("the top row", () => {
 	beforeEach(async () => {
 		await page.viewport(390, 844);
@@ -282,9 +169,7 @@ describe("the top row", () => {
 
 		await page.locator("header").getByTestId("gear-menu-button").click();
 		await page.getByTestId("gear-menu-edit-nav").click();
-		await expect
-			.element(page.getByTestId("nav-edit-agentPages"))
-			.toBeVisible();
+		await expect.element(page.getByTestId("nav-edit-agentPages")).toBeVisible();
 		await expect
 			.element(page.getByTestId("nav-edit-top"))
 			.not.toBeInTheDocument();
@@ -303,69 +188,6 @@ describe("the top row", () => {
 		await expect
 			.poll(sidebarPages)
 			.toEqual(["chat", "projects", "files", "tasks", "settings"]);
-	});
-
-	test("drops a saved top-button order in favor of the Pages order", async () => {
-		mockAgents(["assistant", "coder"]);
-		// Saved before the top row followed the Pages order (#1015).
-		let saved: unknown = {
-			order: {
-				agentPages: ["tasks", "chat"],
-				top: ["system", "agent:coder", "agent:assistant"],
-			},
-			hidden: { agentPages: ["files"], top: ["agent:coder"] },
-		};
-		const puts: unknown[] = [];
-		route("/api/preferences/navigation", async (r) => {
-			if (r.request().method() === "PUT") {
-				saved = r.request().postDataJSON();
-				puts.push(saved);
-			}
-			await r.fulfill({
-				status: 200,
-				contentType: "application/json",
-				body: JSON.stringify(saved),
-			});
-		});
-		localStorage.setItem("aviary.nav.prefs", JSON.stringify(saved));
-		const errors: string[] = [];
-		const onError = (e: ErrorEvent) => errors.push(e.message);
-		const onRejection = (e: PromiseRejectionEvent) =>
-			errors.push(String(e.reason));
-		window.addEventListener("error", onError);
-		window.addEventListener("unhandledrejection", onRejection);
-
-		try {
-			await renderApp("/agents/assistant/chat");
-			// Agents keep their configured order, and System stays last.
-			await expect
-				.poll(mobileRowKeys)
-				.toEqual(["agent:assistant", "agent:coder", "system"]);
-			// The agent's own pages still follow its saved Pages order.
-			await expect
-				.poll(() =>
-					page
-						.getByTestId("mobile-sub-nav")
-						.locator("a")
-						.elements()
-						.map((el) => el.getAttribute("href")?.split("/").pop()),
-				)
-				// Settings and the hidden Files, missing from the saved order,
-				// follow Scheduled Tasks as they do by default.
-				.toEqual(["tasks", "settings", "chat", "projects", "channels"]);
-			await expect.poll(() => puts.length).toBe(1);
-			expect(puts[0]).toEqual({
-				order: { agentPages: ["tasks", "chat"] },
-				hidden: { agentPages: ["files"] },
-			});
-			expect(
-				JSON.parse(localStorage.getItem("aviary.nav.prefs") ?? "{}"),
-			).toEqual(puts[0]);
-			expect(errors).toEqual([]);
-		} finally {
-			window.removeEventListener("error", onError);
-			window.removeEventListener("unhandledrejection", onRejection);
-		}
 	});
 });
 
@@ -428,9 +250,7 @@ describe("dragging", () => {
 		mockAgents(["assistant"]);
 		await renderApp("/system/overview");
 		await openEditor();
-		const handle = editRow("agentPages", "chat").getByTestId(
-			"nav-edit-handle",
-		);
+		const handle = editRow("agentPages", "chat").getByTestId("nav-edit-handle");
 		focus(handle);
 		await commands.keyPress("ArrowDown");
 		await commands.keyPress("ArrowDown");

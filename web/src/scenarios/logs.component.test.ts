@@ -1,11 +1,7 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
-import {
-	eventSourcesOpened,
-	mockMCP,
-	route,
-} from "../component-test/server";
+import { eventSourcesOpened, mockMCP, route } from "../component-test/server";
 
 const NOW = new Date().toISOString();
 const LINE_BYTES = 100;
@@ -75,8 +71,8 @@ async function streamLog(log: FakeLine[], tailed: number, grown: number) {
 
 function shownMessages(): string[] {
 	return page
-		// A chained .locator() recurses in the harness, so one selector.
-		.locator('[data-testid="logs-scroll"] > div.border-b > span:last-child')
+		.getByTestId("logs-scroll")
+		.locator(":scope > div.border-b > span:last-child")
 		.elements()
 		.map((el) => (el.textContent ?? "").trim());
 }

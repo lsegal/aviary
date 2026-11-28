@@ -244,10 +244,10 @@ test("a failed compile shows Compile failed in the editor", async () => {
 	await form.getByTestId("workflow-compiled-toggle").click();
 	await expect
 		.element(form.getByTestId("compiled-panel-empty"))
-		.toHaveTextContent("last compile attempt failed");
+		.toMatchTextContent("last compile attempt failed");
 	await expect
 		.element(form.getByTestId("compiled-panel-notes"))
-		.toHaveTextContent("model unavailable");
+		.toMatchTextContent("model unavailable");
 });
 
 test("the compiled panel shows the script beside the prompt, goes stale on edit, and Recompile updates it", async () => {
@@ -271,7 +271,7 @@ test("the compiled panel shows the script beside the prompt, goes stale on edit,
 	const form = await openWorkflowEditor();
 	const chip = form.getByTestId("compiled-status-chip").first();
 	await expect.element(chip).toHaveAttribute("data-state", "compiled");
-	await expect.element(chip).toHaveTextContent("Compiled · vabc1234");
+	await expect.element(chip).toMatchTextContent("Compiled · vabc1234");
 
 	const toggle = form.getByTestId("workflow-compiled-toggle");
 	await expect.element(toggle).toHaveText(/Show compiled/);
@@ -291,11 +291,11 @@ test("the compiled panel shows the script beside the prompt, goes stale on edit,
 	await expect.element(lines.nth(1)).toHaveAttribute("data-line", "2");
 	await expect
 		.element(lines.nth(1))
-		.toHaveTextContent("2local id = string.match");
+		.toMatchTextContent("2local id = string.match");
 	await expect.element(lines.nth(1)).toHaveClass(/bg-red-50/);
 	await expect
 		.element(panel.getByTestId("compiled-panel-notes"))
-		.toHaveTextContent("Every step is deterministic.");
+		.toMatchTextContent("Every step is deterministic.");
 	await expect.element(panel.getByTestId("compiled-panel-copy")).toBeVisible();
 	await expect
 		.element(panel.getByTestId("compiled-panel-last-failed"))
@@ -307,7 +307,7 @@ test("the compiled panel shows the script beside the prompt, goes stale on edit,
 	await expect.element(chip).toHaveAttribute("data-state", "stale");
 	await expect
 		.element(chip)
-		.toHaveTextContent("Compiled (stale: prompt changed)");
+		.toMatchTextContent("Compiled (stale: prompt changed)");
 	const stale = panel.getByTestId("compiled-panel-stale");
 	await expect.element(stale).toBeVisible();
 	await expect
@@ -319,18 +319,18 @@ test("the compiled panel shows the script beside the prompt, goes stale on edit,
 	// Live analysis of the edited prompt predicts it no longer compiles.
 	await expect
 		.element(stale.getByTestId("compiled-panel-prediction"))
-		.toHaveTextContent("would not compile (nondeterministic: needs judgment)");
+		.toMatchTextContent("would not compile (nondeterministic: needs judgment)");
 
 	// Back to the saved prompt, then Recompile updates the chip and the panel.
 	await form.getByTestId("workflow-content").fill("Reply with the crash ID.");
 	await expect.element(chip).toHaveAttribute("data-state", "compiled");
 	await panel.getByTestId("compiled-panel-recompile").click();
 	await expect.poll(count(lines)).toBe(1);
-	await expect.element(lines.first()).toHaveTextContent('print("fresh")');
-	await expect.element(chip).toHaveTextContent("vfff0000");
+	await expect.element(lines.first()).toMatchTextContent('print("fresh")');
+	await expect.element(chip).toMatchTextContent("vfff0000");
 	await expect
 		.element(panel.getByTestId("compiled-panel-notes"))
-		.toHaveTextContent("Recompiled.");
+		.toMatchTextContent("Recompiled.");
 	expect(calls.config_task_convert_to_script).toEqual([
 		{ agent: "assistant", task: "triage" },
 	]);
@@ -390,7 +390,7 @@ test("the task editor and task page header use the same compiled chip and panel"
 	const header = page.getByTestId("settings-header");
 	const chip = header.getByTestId("compiled-status-chip");
 	await expect.element(chip).toHaveAttribute("data-state", "compiled");
-	await expect.element(chip).toHaveTextContent("v1234567");
+	await expect.element(chip).toMatchTextContent("v1234567");
 	// The chip opens the task's editor with its compiled script shown.
 	await chip.click();
 	await expect

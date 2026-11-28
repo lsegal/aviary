@@ -27,7 +27,9 @@ test("Notifications is a Settings tab after Display, under the shared header, so
 	await expect
 		.element(page.getByTestId("settings-notifications"))
 		.toBeVisible();
-	await expect.element(page.getByTestId("settings-title")).toHaveText("Settings");
+	await expect
+		.element(page.getByTestId("settings-title"))
+		.toHaveText("Settings");
 	expect(
 		page.getByRole("button", { name: "Save Changes" }).elements(),
 	).toHaveLength(0);

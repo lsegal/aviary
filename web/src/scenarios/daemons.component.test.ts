@@ -57,9 +57,7 @@ test("daemon cards show restart controls and call restart API", async () => {
 
 	const cards = cardsLocator();
 	await expect.poll(() => cards.elements().length).toBe(2);
-	await expect
-		.element(cards.nth(1).getByText("bot (signal 0)"))
-		.toBeVisible();
+	await expect.element(cards.nth(1).getByText("bot (signal 0)")).toBeVisible();
 	await expect
 		.element(cards.nth(0).getByRole("button", { name: "Restart" }))
 		.toBeVisible();
@@ -94,9 +92,7 @@ test("non-managed channels do not show empty logs panels or NaN labels", async (
 	await renderApp("/system/daemons");
 
 	const card = cardsLocator().first();
-	await expect
-		.element(card.getByText("ony (slack slack-main)"))
-		.toBeVisible();
+	await expect.element(card.getByText("ony (slack slack-main)")).toBeVisible();
 	expect(card.getByText("#NaN").elements()).toHaveLength(0);
 	await expect
 		.element(card.getByRole("button", { name: "Logs" }))

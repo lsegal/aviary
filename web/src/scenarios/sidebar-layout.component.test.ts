@@ -1,31 +1,12 @@
 import { beforeEach, describe, expect, test } from "vitest";
+import { commands, page } from "vitest/browser";
 import { nextTick } from "vue";
-import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, reload, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import {
 	SIDEBAR_DEFAULT_WIDTH,
 	useSidebarLayout,
 } from "../composables/useSidebarLayout";
-
-// Harness gap (#1636): setup.ts's locators.extend({ locator }) replaces the
-// Locator prototype's own `locator`, which chained getBy* calls use, so any
-// chained locator recurses forever. Restore Playwright chaining here.
-{
-	const proto = Object.getPrototypeOf(page.getByTestId("probe")) as {
-		locator(selector: string): Locator;
-	};
-	proto.locator = function (
-		this: { selector: string; _container?: Element },
-		selector: string,
-	) {
-		const Ctor = (this as object).constructor as new (
-			s: string,
-			c?: Element,
-		) => Locator;
-		return new Ctor(`${this.selector} >> ${selector}`, this._container);
-	};
-}
 
 // The desktop sidebar collapses to an icon rail and resizes from its right
 // edge, and remembers both per browser (#724).
@@ -146,7 +127,10 @@ test("rail icons navigate and name their page in a tooltip", async () => {
 	// The footer's connection and gear menu stay reachable.
 	await expect
 		.element(rail.getByTestId("connection-status"))
-		.toHaveAttribute("aria-label", /Connected|Connecting|Disconnected/);
+		.toHaveAttribute(
+			"aria-label",
+			expect.stringMatching(/Connected|Connecting|Disconnected/),
+		);
 	await rail.getByTestId("gear-menu-button").click();
 	const items = page.getByTestId("gear-menu").getByRole("menuitem");
 	await expect
@@ -299,6 +283,9 @@ test("resting on the collapsed rail peeks the full sidebar as an overlay", async
 	await expect.element(sidebar).toBeVisible();
 	await commands.keyPress("Escape");
 	await expect.element(sidebar).not.toBeInTheDocument();
+	// The pointer still rests on the rail, which would peek again after its
+	// delay; in Playwright the next hover beats that, so move off first.
+	await commands.mouseMove(800, 400);
 
 	// Resting on an icon shows its tooltip instead of the overlay.
 	await page.getByTestId("sidebar-rail-files").hover();

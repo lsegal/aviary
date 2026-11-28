@@ -157,11 +157,16 @@ const TASKS = [
 ];
 
 test("the populated Channels overview summarizes channels, workflows and recent messages", async () => {
-	const { calls } = mockOverview([{ ...SLACK }, { ...SIGNAL }, { ...DISCORD }], TASKS);
+	const { calls } = mockOverview(
+		[{ ...SLACK }, { ...SIGNAL }, { ...DISCORD }],
+		TASKS,
+	);
 	await renderApp("/agents/assistant/channels");
 
 	const overview = page.getByTestId("channels-overview");
-	await expect.element(page.getByTestId("settings-title")).toHaveText("Channels");
+	await expect
+		.element(page.getByTestId("settings-title"))
+		.toHaveText("Channels");
 	await expect
 		.poll(() => paragraphs(overview.getByTestId("channels-stats")))
 		.toEqual([
@@ -189,7 +194,9 @@ test("the populated Channels overview summarizes channels, workflows and recent 
 	await expect
 		.element(slack.getByTestId("channel-card-last-activity"))
 		.toHaveText("5m ago");
-	await expect.element(slack.getByTestId("channel-card-messages")).toHaveText("7");
+	await expect
+		.element(slack.getByTestId("channel-card-messages"))
+		.toHaveText("7");
 	await expect
 		.element(slack.getByTestId("channel-card-workflows"))
 		.toHaveText("1");
@@ -202,7 +209,10 @@ test("the populated Channels overview summarizes channels, workflows and recent 
 		.toHaveText("None yet");
 	await expect
 		.element(slack.getByTestId("channel-card-settings"))
-		.toHaveAttribute("href", "/agents/assistant/channels/Team%20Slack/settings");
+		.toHaveAttribute(
+			"href",
+			"/agents/assistant/channels/Team%20Slack/settings",
+		);
 	await discord.getByTestId("channel-card-enabled").click();
 	await expect
 		.poll(() => calls.channel_update)
@@ -243,7 +253,7 @@ test("the populated Channels overview summarizes channels, workflows and recent 
 	expect(page.getByText("+15551112222").elements()).toHaveLength(0);
 	await expect
 		.element(groups.filter({ hasText: "Ops Discord" }))
-		.toHaveTextContent("No messages yet.");
+		.toMatchTextContent("No messages yet.");
 
 	// Long text fits one line, with the rest in a tooltip and on click.
 	const long = signalMessages.getByTestId("message-text").nth(1);
@@ -258,9 +268,11 @@ test("the populated Channels overview summarizes channels, workflows and recent 
 	// Searching filters the messages across channels.
 	await overview.getByTestId("channels-overview-search").fill("crash");
 	await expect
-		.poll(() => overview.getByTestId("channels-overview-message").elements().length)
+		.poll(
+			() => overview.getByTestId("channels-overview-message").elements().length,
+		)
 		.toBe(1);
-	await expect.element(signalMessages).toHaveTextContent("No messages match.");
+	await expect.element(signalMessages).toMatchTextContent("No messages match.");
 	await overview.getByTestId("channels-overview-search").fill("");
 
 	expect(calls.channel_activity).toContainEqual({
@@ -308,10 +320,12 @@ test("the empty Channels overview offers to add a channel and a workflow", async
 		.toBeVisible();
 	await expect
 		.element(overview.getByTestId("workflows-empty"))
-		.toHaveTextContent("No workflows yet");
+		.toMatchTextContent("No workflows yet");
 	// A workflow watches a channel, so there is none to pick yet.
 	await expect
-		.element(overview.getByTestId("workflows-empty").getByTestId("add-workflow"))
+		.element(
+			overview.getByTestId("workflows-empty").getByTestId("add-workflow"),
+		)
 		.toBeDisabled();
 	expect(
 		overview.getByTestId("channels-overview-recent").elements(),
@@ -326,11 +340,13 @@ test("with one channel and no workflows, Add workflow opens that channel's Workf
 	await renderApp("/agents/assistant/channels");
 
 	const empty = page.getByTestId("workflows-empty");
-	await expect.element(empty).toHaveTextContent("No workflows yet");
+	await expect.element(empty).toMatchTextContent("No workflows yet");
 	await empty.getByTestId("add-workflow").click();
 	await expect
 		.poll(currentURL)
-		.toMatch(/\/agents\/assistant\/channels\/Team%20Slack\/settings\?tab=workflows$/);
+		.toMatch(
+			/\/agents\/assistant\/channels\/Team%20Slack\/settings\?tab=workflows$/,
+		);
 });
 
 for (const [label, width] of [
@@ -345,7 +361,10 @@ for (const [label, width] of [
 
 		const overview = page.getByTestId("channels-overview");
 		await expect
-			.poll(() => overview.getByTestId("channels-overview-message").elements().length)
+			.poll(
+				() =>
+					overview.getByTestId("channels-overview-message").elements().length,
+			)
 			.toBe(4);
 		const el = overview.element();
 		const box = el.getBoundingClientRect();

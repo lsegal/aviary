@@ -1,7 +1,12 @@
 import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, renderApp } from "../component-test/app";
-import { mockMCP } from "../component-test/server";
+import {
+	type Channel,
+	type Config,
+	mockChannels,
+	TEAM,
+} from "./helpers/channelsServer";
 import {
 	chooseOption,
 	chooseValue,
@@ -16,163 +21,6 @@ function texts(locator: Locator): string[] {
 		.elements()
 		.map((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim());
 }
-
-interface Channel {
-	type: string;
-	id: string;
-	name?: string;
-	enabled?: boolean;
-	deliver_to?: string;
-}
-
-interface Task {
-	name: string;
-	schedule?: string;
-	prompt?: string;
-	target?: string;
-}
-
-interface Config {
-	agents: Array<{
-		name: string;
-		model: string;
-		channels?: Channel[];
-		tasks?: Task[];
-	}>;
-}
-
-const NOW = new Date().toISOString();
-
-/**
- * Mocks one agent with `channels`, keeping them as the channel tools change
- * them. Each channel's own session is named after its type and ID, as the
- * server names it, and lands in `sessions`.
- */
-function mockChannels(
-	channels: Channel[],
-	opts: { tasks?: Task[]; agents?: string[] } = {},
-) {
-	const config: Config = {
-		agents: [
-			{
-				name: "assistant",
-				model: "x/y",
-				// A copy, so the channel tools never change the shared fixtures.
-				channels: structuredClone(channels),
-				tasks: opts.tasks ?? [],
-			},
-			...(opts.agents ?? []).map((name) => ({ name, model: "x/y" })),
-		],
-	};
-	const calls: Record<string, Record<string, unknown>[]> = {};
-	// While fail is set, channel_update fails.
-	const failUpdates = { fail: false };
-	const record = (tool: string, args?: Record<string, unknown>) => {
-		calls[tool] ??= [];
-		calls[tool].push(args ?? {});
-	};
-	const sessionOf = (c: Channel) => ({
-		id: `channel:${c.type}:${c.id}`,
-		agent_id: "assistant",
-		name: `channel:${c.type}:${c.id}`,
-		created_at: NOW,
-		own: true,
-	});
-	const find = (name: unknown) => {
-		const ch = config.agents[0].channels ?? [];
-		const i = ch.findIndex(
-			(c) =>
-				(c.name || c.id).toLowerCase() === String(name ?? "").toLowerCase(),
-		);
-		if (i < 0)
-			throw new Error(`agent "assistant" has no channel named ${name}`);
-		return i;
-	};
-	const messages: Record<string, unknown[]> = {
-		"channel:slack:team-slack": [
-			{
-				role: "assistant",
-				content: "Daily report: all green",
-				timestamp: NOW,
-			},
-		],
-	};
-	mockMCP({
-		agent_list: opts.agents?.length
-			? [
-					{ id: "assistant", name: "assistant", model: "x/y", state: "idle" },
-					...opts.agents.map((name) => ({
-						id: name,
-						name,
-						model: "x/y",
-						state: "idle",
-					})),
-				]
-			: [{ id: "assistant", name: "assistant", model: "x/y", state: "idle" }],
-		config_get: () => config,
-		config_save: (args?: Record<string, unknown>) => {
-			record("config_save", { ...args });
-			Object.assign(config, JSON.parse(String(args?.config ?? "{}")));
-			return "ok";
-		},
-		config_validate: [],
-		job_list: [],
-		auth_list: [],
-		tool_list: [],
-		session_list: [
-			{ id: "main", agent_id: "assistant", name: "main", created_at: NOW },
-		],
-		session_messages: (args?: Record<string, unknown>) =>
-			messages[String(args?.session_id)] ?? [],
-		channel_sessions: (args?: Record<string, unknown>) => {
-			record("channel_sessions", args);
-			return [
-				sessionOf((config.agents[0].channels ?? [])[find(args?.channel)]),
-			];
-		},
-		channel_create: (args?: Record<string, unknown>) => {
-			record("channel_create", args);
-			const name = String(args?.name);
-			const ch: Channel = {
-				type: String(args?.type),
-				id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-				name,
-				enabled: false,
-			};
-			config.agents[0].channels = [...(config.agents[0].channels ?? []), ch];
-			return { channel: ch, session_id: sessionOf(ch).id };
-		},
-		channel_rename: (args?: Record<string, unknown>) => {
-			record("channel_rename", args);
-			const ch = config.agents[0].channels ?? [];
-			ch[find(args?.channel)].name = String(args?.new_name);
-			return "renamed";
-		},
-		channel_update: (args?: Record<string, unknown>) => {
-			record("channel_update", args);
-			if (failUpdates.fail) throw new Error("disk is read-only");
-			const ch = config.agents[0].channels ?? [];
-			ch[find(args?.channel)].enabled = Boolean(args?.enabled);
-			return "updated";
-		},
-		channel_remove: (args?: Record<string, unknown>) => {
-			record("channel_remove", args);
-			const i = find(args?.channel);
-			config.agents[0].channels = (config.agents[0].channels ?? []).filter(
-				(_, j) => j !== i,
-			);
-			return "removed";
-		},
-	});
-	return { config, calls, failUpdates };
-}
-
-const TEAM: Channel = {
-	type: "slack",
-	id: "team-slack",
-	name: "Team Slack",
-	deliver_to: "C123",
-};
 
 function sidebarRows() {
 	return page.locator(
@@ -198,28 +46,7 @@ test("the Channels section sits directly below Code Loop", async () => {
 	// It lists the channels, not their sessions, which stay out of Chats.
 	await expect
 		.element(page.getByTestId("sidebar-chats"))
-		.not.toHaveTextContent("channel:slack");
-});
-
-test("the Channels section works in the collapsed rail and the mobile nav", async () => {
-	mockChannels([TEAM]);
-	await renderApp("/agents/assistant/chat");
-	await page.getByTestId("sidebar-collapse").click();
-	const rail = page.getByTestId("sidebar-rail-channels");
-	await expect.element(rail).toBeVisible();
-	await rail.click();
-	await expect.poll(currentURL).toMatch(/\/agents\/assistant\/channels$/);
-
-	await page.viewport(390, 800);
-	await goto("/agents/assistant/channels");
-	await expect
-		.element(page.getByTestId("mobile-row-action"))
-		.toHaveAccessibleName("Add channel");
-	await expect
-		.element(
-			page.getByRole("link", { name: "Team Slack", exact: true }).first(),
-		)
-		.toBeVisible();
+		.not.toMatchTextContent("channel:slack");
 });
 
 test("+ adds a channel, creating its session, and opens its settings", async () => {
@@ -227,7 +54,7 @@ test("+ adds a channel, creating its session, and opens its settings", async () 
 	await renderApp("/agents/assistant/channels");
 	await expect
 		.element(page.getByTestId("channels-empty"))
-		.toHaveTextContent("No channels yet");
+		.toMatchTextContent("No channels yet");
 
 	await page.getByTestId("sidebar-row-channels").hover();
 	await page.getByRole("button", { name: "Add channel" }).first().click();
@@ -275,7 +102,7 @@ test("a channel's view shows its conversation and its gear opens its settings", 
 		.toHaveText("Team Slack");
 	await expect
 		.element(page.getByTestId("settings-header"))
-		.toHaveTextContent("delivers to C123");
+		.toMatchTextContent("delivers to C123");
 	await expect.element(page.getByText("Daily report: all green")).toBeVisible();
 
 	await page.getByTestId("channel-settings-link").click();
@@ -341,7 +168,7 @@ test("… Rename, Settings and Delete act on a channel", async () => {
 	// Delete confirms and offers to delete the sessions, checked by default.
 	await menu("Ops Slack", "Delete");
 	const confirm = page.getByTestId("channel-remove-dialog");
-	await expect.element(confirm).toHaveTextContent("Remove channel?");
+	await expect.element(confirm).toMatchTextContent("Remove channel?");
 	await expect
 		.element(confirm.getByTestId("channel-remove-data-checkbox"))
 		.toBeChecked();
@@ -408,7 +235,7 @@ test("Agent Settings has no Channels section and its old address redirects", asy
 	await renderApp("/agents/assistant/settings");
 	await expect
 		.element(page.getByTestId("settings-title"))
-		.toHaveTextContent("Agent Settings");
+		.toMatchTextContent("Agent Settings");
 	expect(page.getByTestId("channel-settings").elements()).toHaveLength(0);
 	expect(
 		page.getByRole("heading", { name: "Channels", exact: true }).elements(),
@@ -539,8 +366,8 @@ test("a failed channel toggle rolls back and shows an error toast", async () => 
 	const toast = page.getByTestId("toast");
 	await expect
 		.element(toast.first())
-		.toHaveTextContent("Couldn't disable Team Slack");
-	await expect.element(toast.first()).toHaveTextContent("disk is read-only");
+		.toMatchTextContent("Couldn't disable Team Slack");
+	await expect.element(toast.first()).toMatchTextContent("disk is read-only");
 	await expect.element(toast.first()).toHaveAttribute("data-tone", "error");
 	await expect
 		.element(channelRow("Team Slack"))
@@ -548,7 +375,9 @@ test("a failed channel toggle rolls back and shows an error toast", async () => 
 
 	await openChannelMenu("Phone");
 	await page.getByRole("menuitem", { name: "Enable" }).click();
-	await expect.element(toast.last()).toHaveTextContent("Couldn't enable Phone");
+	await expect
+		.element(toast.last())
+		.toMatchTextContent("Couldn't enable Phone");
 	await expect
 		.element(channelRow("Phone"))
 		.toHaveAttribute("data-disabled", "true");

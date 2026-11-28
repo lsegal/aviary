@@ -179,7 +179,7 @@ test("the workflow form sends its output to a Code Loop job picked from a groupe
 	await expect.poll(() => list.getByRole("option").elements().length).toBe(3);
 	await expect
 		.element(list.getByRole("option", { name: /^#15 Flaky upload/ }))
-		.toHaveTextContent("paused");
+		.toMatchTextContent("paused");
 	await commands.keyPress("Escape");
 
 	await searchOption(
@@ -211,13 +211,13 @@ test("the workflow form warns when its Code Loop job no longer exists", async ()
 	);
 	await expect
 		.element(page.getByTestId("workflow-row"))
-		.toHaveTextContent("sends to Code Loop o/r#99");
+		.toMatchTextContent("sends to Code Loop o/r#99");
 	await page.getByTestId("workflow-edit").click();
 	await expect
 		.element(
 			page.getByTestId("workflow-form").getByTestId("codeloop-job-warning"),
 		)
-		.toHaveTextContent("o/r#99 no longer exists");
+		.toMatchTextContent("o/r#99 no longer exists");
 });
 
 test("the workflow form shows its Code Loop job's label once the jobs load", async () => {
@@ -315,7 +315,7 @@ test("the task view links its Code Loop target and the run log records the deliv
 	await expect.element(delivery).toHaveAttribute("data-status", "delivered");
 	await expect
 		.element(delivery)
-		.toHaveTextContent("delivered to Code Loop o/r#12");
+		.toMatchTextContent("delivered to Code Loop o/r#12");
 	await expect
 		.element(page.getByTestId("task-run-log-delivery-link"))
 		.toHaveAttribute("href", "/agents/assistant/projects/o%2Fr/jobs/12");
@@ -333,7 +333,7 @@ test("the task view warns when its Code Loop job no longer exists", async () => 
 	await renderApp("/agents/assistant/tasks/digest");
 	await expect
 		.element(page.getByTestId("codeloop-target-warning"))
-		.toHaveTextContent("job no longer exists");
+		.toMatchTextContent("job no longer exists");
 });
 
 test("the job picker lists Discussion jobs and schedules alongside issue jobs", async () => {
@@ -351,11 +351,11 @@ test("the job picker lists Discussion jobs and schedules alongside issue jobs", 
 	await expect.poll(() => list.getByRole("option").elements().length).toBe(5);
 	await expect
 		.element(list.getByRole("option", { name: /^#8 How do I deploy\?/ }))
-		.toHaveTextContent("discussion · active");
+		.toMatchTextContent("discussion · active");
 	// A schedule is named by its title; its number is a fire time.
 	await expect
 		.element(list.getByRole("option", { name: /^Nightly digest/ }))
-		.toHaveTextContent("schedule · complete");
+		.toMatchTextContent("schedule · complete");
 	await commands.keyPress("Escape");
 	expect(calls.project_job_list.at(-1)?.kinds).toEqual([
 		"issue",

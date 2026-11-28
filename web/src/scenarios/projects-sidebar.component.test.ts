@@ -48,14 +48,14 @@ test("an agent's Code Loop in the sidebar list its projects with live counts", a
 	await expect.element(badge).toHaveAttribute("aria-label", "1 running job");
 	await expect.element(badge).toHaveAttribute("title", "1 running job");
 	await expect.element(badge).toHaveClass(/\bbg-gray-200\b/);
-	await expect.element(aviary).not.toHaveTextContent("running");
+	await expect.element(aviary).not.toMatchTextContent("running");
 	// An idle project shows nothing beside its name.
 	const zvidlib = projects.getByRole("link", { name: /lsegal\/zvidlib/ });
 	await expect.element(zvidlib).toHaveText("lsegal/zvidlib");
 	await expect
 		.poll(() => zvidlib.getByTestId("project-running-badge").elements().length)
 		.toBe(0);
-	await expect.element(zvidlib).not.toHaveTextContent("idle");
+	await expect.element(zvidlib).not.toMatchTextContent("idle");
 	await expect
 		.element(page.getByTestId("sidebar-add-project"))
 		.toHaveAttribute("href", "/agents/coder/projects?add=1");

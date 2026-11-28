@@ -1,7 +1,8 @@
-import { expect, test } from "vitest";
+import { afterEach, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { goto, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
+import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 
 // Fixtures follow task_analyze's result (internal/mcp/task_analyze.go).
 //
@@ -11,6 +12,12 @@ import { mockMCP } from "../component-test/server";
 // "Check https://example.com" live in task-cost-feedback-errors, and the
 // cached-analysis scenario, which needs a real page reload to drop that
 // cache, stays in web/e2e/task-cost-feedback.spec.ts.
+
+// The Add task dialog's open state is module state, which outlives a test's
+// app; close it after each test, as a new page would start with it closed.
+afterEach(() => {
+	useAgentItemDialogs().close();
+});
 
 type Analysis = Record<string, unknown>;
 
@@ -147,7 +154,7 @@ test("typing analyzes the prompt once after a pause and shows a deterministic ve
 		await sleep(30);
 	}
 	await expect.element(feedback).toHaveAttribute("data-state", "checking");
-	await expect.element(feedback).toHaveTextContent("Checking…");
+	await expect.element(feedback).toMatchTextContent("Checking…");
 	await expect.element(feedback).toHaveAttribute("data-state", "ready");
 	await expect
 		.element(feedback.getByTestId("task-cost-verdict"))
@@ -155,7 +162,7 @@ test("typing analyzes the prompt once after a pause and shows a deterministic ve
 	await expect
 		.element(feedback.getByTestId("task-cost-estimate"))
 		.toHaveText("≈ 0 tokens/run");
-	await expect.element(feedback).toHaveTextContent("✔");
+	await expect.element(feedback).toMatchTextContent("✔");
 	// No request per keystroke: one analysis of the final text.
 	expect(calls).toHaveLength(1);
 	expect(calls[0]).toMatchObject({
@@ -256,7 +263,7 @@ test("each verdict shows its icon, text and token estimate", async () => {
 	await expect
 		.element(feedback.getByTestId("task-cost-verdict"))
 		.toHaveText("Partially deterministic");
-	await expect.element(feedback).toHaveTextContent("◐");
+	await expect.element(feedback).toMatchTextContent("◐");
 	await expect
 		.element(feedback.getByTestId("task-cost-estimate"))
 		.toHaveText("≈ 4.6k–12k tokens/run ($0.014–$0.050)");
@@ -270,7 +277,7 @@ test("each verdict shows its icon, text and token estimate", async () => {
 	await expect
 		.element(feedback.getByTestId("task-cost-verdict"))
 		.toHaveText("Not deterministic");
-	await expect.element(feedback).toHaveTextContent("✖");
+	await expect.element(feedback).toMatchTextContent("✖");
 	await expect
 		.element(feedback.getByTestId("task-cost-estimate"))
 		.toHaveText("≈ 2.3k tokens/run");
@@ -297,7 +304,7 @@ test("the task editor shows script tasks without calling the analyzer", async ()
 	await expect.element(feedback).toHaveAttribute("data-state", "script");
 	await expect
 		.element(feedback)
-		.toHaveTextContent("Runs a script · 0 tokens/run");
+		.toMatchTextContent("Runs a script · 0 tokens/run");
 	await sleep(1500);
 	expect(calls).toHaveLength(0);
 
@@ -333,7 +340,7 @@ test("the task editor analyzes a project task as its script runs, in the project
 		.toHaveText("≈ 0 tokens/run");
 	await expect
 		.element(feedback.getByTestId("task-cost-note"))
-		.toHaveTextContent("runs in a clone of the project with no model calls");
+		.toMatchTextContent("runs in a clone of the project with no model calls");
 	expect(calls).toHaveLength(1);
 	expect(calls[0]).toMatchObject({
 		type: "project",

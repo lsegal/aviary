@@ -3,25 +3,6 @@ import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 
-// Harness gap (#1636): setup.ts's locators.extend({ locator }) replaces the
-// Locator prototype's own `locator`, which chained getBy* calls use, so any
-// chained locator recurses forever. Restore Playwright chaining here.
-{
-	const proto = Object.getPrototypeOf(page.getByTestId("probe")) as {
-		locator(selector: string): Locator;
-	};
-	proto.locator = function (
-		this: { selector: string; _container?: Element },
-		selector: string,
-	) {
-		const Ctor = (this as object).constructor as new (
-			s: string,
-			c?: Element,
-		) => Locator;
-		return new Ctor(`${this.selector} >> ${selector}`, this._container);
-	};
-}
-
 /** Mocks one agent whose root files live in a store the UI reads and writes. */
 function mockFiles(files: Record<string, string>) {
 	const store = new Map(Object.entries(files));
@@ -110,7 +91,9 @@ test("the Files page is the shared page header over a full-page editor (#1147)",
 	// The file's name is the header's title; the built-in badge is its status.
 	const header = page.getByTestId("settings-header");
 	const bar = page.getByTestId("agent-file-bar");
-	await expect.element(page.getByTestId("settings-title")).toHaveText("AGENTS.md");
+	await expect
+		.element(page.getByTestId("settings-title"))
+		.toHaveText("AGENTS.md");
 	await expect.element(header.getByTestId("agent-file-builtin")).toBeVisible();
 	await expect
 		.element(header.getByTestId("agent-file-hint"))
@@ -175,8 +158,12 @@ test("the Files page is the shared page header over a full-page editor (#1147)",
 		.getByTestId("file-row")
 		.filter({ hasText: "PROFILE.md" })
 		.click();
-	await expect.element(page.getByTestId("settings-title")).toHaveText("PROFILE.md");
-	await expect.poll(() => count(page.getByTestId("agent-file-builtin"))).toBe(0);
+	await expect
+		.element(page.getByTestId("settings-title"))
+		.toHaveText("PROFILE.md");
+	await expect
+		.poll(() => count(page.getByTestId("agent-file-builtin")))
+		.toBe(0);
 });
 
 test("the header's Save, Cmd/Ctrl+S, Refresh and Sync Templates work", async () => {
@@ -237,12 +224,10 @@ test("Refresh re-reads the open file and asks before discarding edits", async ()
 	await editor.fill("# My unsaved edit");
 	const prompt = page.getByTestId("discard-file-dialog");
 	await refresh.click();
+	await expect.element(prompt).toHaveAccessibleName("Discard unsaved changes?");
 	await expect
 		.element(prompt)
-		.toHaveAccessibleName("Discard unsaved changes?");
-	await expect
-		.element(prompt)
-		.toHaveTextContent(
+		.toMatchTextContent(
 			"Discard unsaved changes to MEMORY.md and reload it from disk?",
 		);
 	await prompt.getByRole("button", { name: "Keep editing" }).click();
@@ -289,7 +274,9 @@ test("the menu renames and deletes the open file", async () => {
 	await dialog.getByRole("button", { name: "Save" }).click();
 	await expect.element(dialog).not.toBeInTheDocument();
 	await expect.poll(currentURL).toMatch(/\?file=IDEAS\.md$/);
-	await expect.element(page.getByTestId("settings-title")).toHaveText("IDEAS.md");
+	await expect
+		.element(page.getByTestId("settings-title"))
+		.toHaveText("IDEAS.md");
 	await expect.element(editor).toHaveValue("# Notes");
 	await expect.poll(() => texts(rows)).toEqual(["AGENTS.md", "IDEAS.md"]);
 	expect(store.has("NOTES.md")).toBe(false);
@@ -297,7 +284,7 @@ test("the menu renames and deletes the open file", async () => {
 	// Delete confirms with the file's name, then empties the editor.
 	await fileMenu("Delete");
 	const confirm = page.getByRole("alertdialog", { name: "Delete file?" });
-	await expect.element(confirm).toHaveTextContent("IDEAS.md");
+	await expect.element(confirm).toMatchTextContent("IDEAS.md");
 	await confirm.getByRole("button", { name: "Delete" }).click();
 	await expect.element(confirm).not.toBeInTheDocument();
 	await expect.poll(() => texts(rows)).toEqual(["AGENTS.md"]);
@@ -380,9 +367,7 @@ test("a Markdown file opens with a live rendered Preview beside the editor", asy
 		.poll(() => texts(md.getByRole("listitem")))
 		.toEqual(["one", "two"]);
 	expect(count(md.locator("script"))).toBe(0);
-	await expect
-		.element(md)
-		.toHaveTextContent("<script>alert(1)</script>");
+	await expect.element(md).toMatchTextContent("<script>alert(1)</script>");
 
 	// Editor left, preview right.
 	const e = editor.element().getBoundingClientRect();
@@ -395,9 +380,7 @@ test("a Markdown file opens with a live rendered Preview beside the editor", asy
 		.element(md.getByRole("heading", { level: 2 }))
 		.toHaveText("Edited heading");
 	await expect.element(md.locator("em")).toHaveText("live");
-	await expect
-		.poll(() => count(md.getByRole("heading", { level: 1 })))
-		.toBe(0);
+	await expect.poll(() => count(md.getByRole("heading", { level: 1 }))).toBe(0);
 });
 
 test("dragging the divider resizes the panes within their minimums and is remembered", async () => {
@@ -480,7 +463,10 @@ test("a file with no previewer has no Preview toggle and a full-width editor", a
 	expect(count(page.getByTestId("file-preview-toggle"))).toBe(0);
 	expect(count(page.getByTestId("file-preview"))).toBe(0);
 	expect(count(page.getByTestId("file-preview-divider"))).toBe(0);
-	const bar = page.getByTestId("settings-header").element().getBoundingClientRect();
+	const bar = page
+		.getByTestId("settings-header")
+		.element()
+		.getBoundingClientRect();
 	const ed = editor.element().getBoundingClientRect();
 	expect(ed.width).toBeCloseTo(bar.width, 0);
 });

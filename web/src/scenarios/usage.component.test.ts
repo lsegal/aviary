@@ -54,13 +54,15 @@ const count = (loc: ReturnType<typeof page.getByTestId>) =>
 /** Playwright's toHaveText with an array: every match's whole text, in order. */
 const texts = (loc: ReturnType<typeof page.getByTestId>, innerText = false) =>
 	expect.poll(() =>
-		loc
-			.elements()
-			.map((el) =>
-				(innerText ? (el as HTMLElement).innerText : (el.textContent ?? ""))
-					.replace(/\s+/g, " ")
-					.trim(),
-			),
+		loc.elements().map((el) =>
+			(innerText
+				? // biome-ignore lint/performance/useDomNodeTextContent: Playwright's useInnerText, which renders the gap between +N and −N.
+					(el as HTMLElement).innerText
+				: (el.textContent ?? "")
+			)
+				.replace(/\s+/g, " ")
+				.trim(),
+		),
 	);
 
 test("shows CLI-reported cost for mixed records", async () => {

@@ -3,16 +3,8 @@
 // agents-tasks.component.test.ts.
 import { beforeEach, expect, test } from "vitest";
 import { page } from "vitest/browser";
-import { currentURL, goto, renderApp } from "../component-test/app";
+import { currentURL, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
-import {
-	agentPageLink,
-	openAgentPage,
-	openChannelSettings,
-	openGearMenuItem,
-	openTaskSettings,
-	systemList,
-} from "./helpers/sidebar";
 import {
 	type Args,
 	ASSISTANT,
@@ -23,6 +15,14 @@ import {
 	TOOLS,
 	texts,
 } from "./agents.fixtures";
+import {
+	agentPageLink,
+	openAgentPage,
+	openChannelSettings,
+	openGearMenuItem,
+	openTaskSettings,
+	systemList,
+} from "./helpers/sidebar";
 
 beforeEach(() => {
 	mockDefault();
@@ -176,7 +176,7 @@ test("switching agents preserves subtab and loads that agent file state", async 
 	await expect.poll(() => texts(page.getByTestId("task-card")).length).toBe(1);
 	await expect
 		.element(page.getByTestId("task-card"))
-		.toHaveTextContent(/repo-check/);
+		.toMatchTextContent(/repo-check/);
 
 	await agentPageLink("Files").click();
 	await expect.poll(currentURL).toMatch(/\/agents\/coder\/files$/);
@@ -202,8 +202,8 @@ test("general tab shows web search settings", async () => {
 		.toBeVisible();
 	const secret = page.getByTestId("web-search-secret");
 	await expect.element(secret).toBeVisible();
-	await expect.element(secret).toHaveTextContent("brave_api_key");
-	await expect.element(secret).toHaveTextContent("Secret");
+	await expect.element(secret).toMatchTextContent("brave_api_key");
+	await expect.element(secret).toMatchTextContent("Secret");
 });
 
 test("model dropdown hides models from unauthenticated providers", async () => {
@@ -237,9 +237,7 @@ test("model dropdown shows Gemini models when gemini auth is present", async () 
 	await page.locator(".cursor-text").first().click();
 
 	await expect
-		.element(
-			page.getByText("google-gemini/gemini-2.5-flash", { exact: true }),
-		)
+		.element(page.getByText("google-gemini/gemini-2.5-flash", { exact: true }))
 		.toBeVisible();
 });
 
@@ -365,13 +363,11 @@ test("each channel has its own settings page", async () => {
 	// One channel, with no list of the others and no delete button: a
 	// channel is removed from its sidebar entry.
 	await expect.element(page.getByTestId("channel-settings")).toBeVisible();
+	await expect.poll(() => count(page.getByLabelText("Delete channel"))).toBe(0);
+	await expect.poll(() => count(page.getByLabelText("Remove channel"))).toBe(0);
 	await expect
-		.poll(() => count(page.getByLabelText("Delete channel")))
-		.toBe(0);
-	await expect
-		.poll(() => count(page.getByLabelText("Remove channel")))
-		.toBe(0);
-	await expect.element(page.getByTestId("channel-owner")).toHaveText("assistant");
+		.element(page.getByTestId("channel-owner"))
+		.toHaveText("assistant");
 	await expect
 		.element(page.locator('input[placeholder="+15551234567"]').first())
 		.toBeVisible();
@@ -385,8 +381,8 @@ test("each channel has its own settings page", async () => {
 	await expect
 		.element(page.locator('input[placeholder="server-bot"]').first())
 		.toHaveValue("server-bot");
-	await expect.element(discordToken).toHaveTextContent("discord_bot_token");
-	await expect.element(discordToken).toHaveTextContent("Secret");
+	await expect.element(discordToken).toMatchTextContent("discord_bot_token");
+	await expect.element(discordToken).toMatchTextContent("Secret");
 	await expect
 		.poll(() =>
 			count(page.getByText("auth:discord_bot_token", { exact: true })),
@@ -396,10 +392,10 @@ test("each channel has its own settings page", async () => {
 	await openChannelSettings("workspace-bot");
 	const slackURL = page.getByTestId("channel-secret-assistant-2-url");
 	const slackToken = page.getByTestId("channel-secret-assistant-2-token");
-	await expect.element(slackURL).toHaveTextContent("slack_app_token");
-	await expect.element(slackToken).toHaveTextContent("slack_bot_token");
-	await expect.element(slackURL).toHaveTextContent("Secret");
-	await expect.element(slackToken).toHaveTextContent("Secret");
+	await expect.element(slackURL).toMatchTextContent("slack_app_token");
+	await expect.element(slackToken).toMatchTextContent("slack_bot_token");
+	await expect.element(slackURL).toMatchTextContent("Secret");
+	await expect.element(slackToken).toMatchTextContent("Secret");
 	await expect
 		.poll(() => count(page.getByText("auth:slack_app_token", { exact: true })))
 		.toBe(0);
@@ -441,8 +437,8 @@ test("raw configured channel tokens are masked in dropdowns", async () => {
 
 	await openChannelSettings("server-bot");
 	const discordToken = page.getByTestId("channel-secret-assistant-0-token");
-	await expect.element(discordToken).toHaveTextContent("discord****");
-	await expect.element(discordToken).toHaveTextContent("Inline");
+	await expect.element(discordToken).toMatchTextContent("discord****");
+	await expect.element(discordToken).toMatchTextContent("Inline");
 	await expect
 		.poll(() =>
 			count(page.getByText("discord-plaintext-token", { exact: true })),
@@ -452,10 +448,10 @@ test("raw configured channel tokens are masked in dropdowns", async () => {
 	await openChannelSettings("workspace-bot");
 	const slackURL = page.getByTestId("channel-secret-assistant-1-url");
 	const slackToken = page.getByTestId("channel-secret-assistant-1-token");
-	await expect.element(slackURL).toHaveTextContent("xapp-pl****");
-	await expect.element(slackToken).toHaveTextContent("xoxb-pl****");
-	await expect.element(slackURL).toHaveTextContent("Inline");
-	await expect.element(slackToken).toHaveTextContent("Inline");
+	await expect.element(slackURL).toMatchTextContent("xapp-pl****");
+	await expect.element(slackToken).toMatchTextContent("xoxb-pl****");
+	await expect.element(slackURL).toMatchTextContent("Inline");
+	await expect.element(slackToken).toMatchTextContent("Inline");
 	await expect
 		.poll(() => count(page.getByText("xapp-plaintext-token", { exact: true })))
 		.toBe(0);
@@ -491,14 +487,14 @@ test("missing auth secrets are highlighted in secret dropdowns", async () => {
 
 	await renderApp("/system/settings");
 	const webSearch = page.getByTestId("web-search-secret");
-	await expect.element(webSearch).toHaveTextContent("missing_brave_key");
-	await expect.element(webSearch).toHaveTextContent("Missing Secret");
+	await expect.element(webSearch).toMatchTextContent("missing_brave_key");
+	await expect.element(webSearch).toMatchTextContent("Missing Secret");
 	await expect.element(webSearch).toHaveClass(/border-red-300/);
 
 	await openChannelSettings("server-bot");
 	const token = page.getByTestId("channel-secret-assistant-0-token");
-	await expect.element(token).toHaveTextContent("missing_discord_token");
-	await expect.element(token).toHaveTextContent("Missing Secret");
+	await expect.element(token).toMatchTextContent("missing_discord_token");
+	await expect.element(token).toMatchTextContent("Missing Secret");
 	await expect.element(token).toHaveClass(/border-red-300/);
 });
 
@@ -506,12 +502,14 @@ test("permissions preset disables inaccessible tool groups and tools", async () 
 	await openAgentPage("settings/permissions");
 
 	const presetTrigger = page.locator("#tool-preset-assistant");
-	await expect.element(presetTrigger).toHaveTextContent("Minimal");
+	await expect.element(presetTrigger).toMatchTextContent("Minimal");
 	await presetTrigger.click();
 	await expect
 		.element(page.getByRole("option", { name: /Minimal/ }))
 		.toBeVisible();
-	const authGroup = page.getByTestId("agent-tool-group-checkbox-assistant-auth");
+	const authGroup = page.getByTestId(
+		"agent-tool-group-checkbox-assistant-auth",
+	);
 	await expect.element(authGroup).toBeDisabled();
 	await expect.element(authGroup).not.toBeChecked();
 	const authSet = page.getByTestId("agent-tool-checkbox-assistant-auth_set");
@@ -537,9 +535,7 @@ test("tool permissions inspector shows resolved final tool set", async () => {
 	const output = page.getByTestId("tool-permissions-inspector-output");
 	await expect
 		.element(output)
-		.toHaveTextContent('"finalTools": [\n    "task_run"\n  ]', {
-			normalizeWhitespace: false,
-		});
+		.toMatchTextContent('"finalTools": [ "task_run" ]');
 	await page.getByRole("button", { name: "Close" }).click();
 
 	// A channel's allow-from entries inspect from the channel's settings.
@@ -549,13 +545,11 @@ test("tool permissions inspector shows resolved final tool set", async () => {
 		.click();
 	await expect
 		.element(output)
-		.toHaveTextContent('"restrictionSource": "override"');
+		.toMatchTextContent('"restrictionSource": "override"');
 	await expect
 		.element(output)
-		.toHaveTextContent('"effectiveDisabledTools": [\n    "task_run"\n  ]', {
-			normalizeWhitespace: false,
-		});
-	await expect.element(output).toHaveTextContent('"finalTools": []');
+		.toMatchTextContent('"effectiveDisabledTools": [ "task_run" ]');
+	await expect.element(output).toMatchTextContent('"finalTools": []');
 });
 
 test("saving settings preserves default-on signal channel checkboxes", async () => {
@@ -597,14 +591,15 @@ test("settings deep links scroll to their section", async () => {
 	await expect.element(heading("General")).not.toBeInViewport();
 
 	// The old tab query params land on the same sections.
-	await goto("/agents/assistant/settings?tab=permissions");
+	// page.goto loaded the page afresh, so this mounts the app anew too.
+	await renderApp("/agents/assistant/settings?tab=permissions");
 	await expect
 		.poll(currentURL)
 		.toMatch(/\/agents\/assistant\/settings\/permissions$/);
 	await expect.element(heading("Permissions")).toBeInViewport();
 
 	// Channels moved to their own sidebar section; the old address goes there.
-	await goto("/agents/assistant/settings/channels");
+	await renderApp("/agents/assistant/settings/channels");
 	await expect.poll(currentURL).toMatch(/\/agents\/assistant\/channels$/);
 	await expect.element(page.getByTestId("channels-overview")).toBeVisible();
 	await expect.poll(() => count(page.getByTestId("channel-settings"))).toBe(0);
@@ -662,14 +657,14 @@ test("Remove Agent sits in the danger zone and asks for confirmation", async () 
 		.getByRole("button", { name: "Remove Agent", exact: true })
 		.click();
 	const dialog = page.getByRole("alertdialog");
-	await expect.element(dialog).toHaveTextContent("Remove agent?");
+	await expect.element(dialog).toMatchTextContent("Remove agent?");
 	const checkbox = page.getByTestId("remove-agent-data-checkbox");
 	await expect.element(checkbox).toBeChecked();
 	await checkbox.click();
 	await expect.element(checkbox).not.toBeChecked();
 	await expect
 		.element(page.getByTestId("remove-agent-data-summary"))
-		.toHaveTextContent("Only removes the agent from the configuration");
+		.toMatchTextContent("Only removes the agent from the configuration");
 	await dialog.getByRole("button", { name: "Cancel" }).click();
 	await expect.poll(() => count(dialog)).toBe(0);
 	await expect

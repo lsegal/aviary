@@ -5,6 +5,11 @@ import { mockMCP, setAuthToken } from "./helpers/mockMCP";
  * A chat's running turn lives on the server, so a client that opens or
  * returns to the chat mid-turn shows the same "…" indicator, tool calls and
  * partial text as the one that sent the message (#764).
+ *
+ * The single-client scenarios are component tests in
+ * web/src/scenarios/chat-live-turn.component.test.ts. This one stays a
+ * Playwright spec: it needs two clients live at once, and a component test
+ * mounts one app per page.
  */
 
 interface TurnTool {
@@ -146,20 +151,6 @@ async function newPage(browser: Browser, server: Server) {
 	return page;
 }
 
-test("navigating away mid-turn and back restores the indicator and tool calls", async ({
-	page,
-}) => {
-	const server = new Server();
-	await server.attach(page);
-	await page.goto("/agents/assistant/chat");
-	await expectLiveTurn(page);
-
-	await page.goto("/system/overview");
-	await expect(page.getByTestId("chat-typing")).toHaveCount(0);
-	await page.goto("/agents/assistant/chat");
-	await expectLiveTurn(page);
-});
-
 test("a second client mid-turn shows the same state and live updates, then the reply once", async ({
 	browser,
 }) => {
@@ -203,33 +194,4 @@ test("a second client mid-turn shows the same state and live updates, then the r
 		await expect(toolCalls(page)).toHaveCount(3);
 		await expect(page.locator("[data-pending]")).toHaveCount(0);
 	}
-});
-
-test("a tab made visible again mid-turn shows the current turn", async ({
-	page,
-}) => {
-	const server = new Server();
-	const running = server.turn;
-	server.turn = { ...running, processing: false, items: [] };
-	await server.attach(page);
-	await page.goto("/agents/assistant/chat");
-	await expect(page.getByText("Check the build")).toBeVisible();
-	await expect(page.getByTestId("chat-typing")).toHaveCount(0);
-
-	// The turn started while the tab was hidden and its events were missed.
-	server.turn = running;
-	await page.evaluate(() =>
-		document.dispatchEvent(new Event("visibilitychange")),
-	);
-	await expectLiveTurn(page);
-});
-
-test("restoring a turn already partly stored shows each tool call once", async ({
-	page,
-}) => {
-	const server = new Server();
-	server.messages.push(toolRecord("call_1", "exec", new Date().toISOString()));
-	await server.attach(page);
-	await page.goto("/agents/assistant/chat");
-	await expectLiveTurn(page);
 });

@@ -63,6 +63,8 @@ async function openChat() {
 		.toBe(3);
 }
 
+const bubbles = () => page.getByTestId("chat-message-bubble");
+
 /** Reads each bubble's box, its content's box, and its scroll container's width. */
 function measure() {
 	return page
@@ -110,9 +112,7 @@ for (const viewport of [
 
 		// Wide code blocks and tables scroll inside the bubble.
 		for (const selector of ["pre", "table"]) {
-			const el = page
-				.locator(`[data-testid=chat-message-bubble] >> nth=1 >> ${selector}`)
-				.element();
+			const el = bubbles().nth(1).locator(selector).element();
 			expect(el.scrollWidth).toBeGreaterThan(el.clientWidth);
 		}
 	});
@@ -120,10 +120,7 @@ for (const viewport of [
 
 test("inline code renders without literal backticks", async () => {
 	await openChat();
-	// A chained .locator() recurses in the harness, so one selector.
-	const code = page
-		.locator("[data-testid=chat-message-bubble] >> nth=1 >> p code, li code")
-		.last();
+	const code = bubbles().nth(1).locator("p code, li code").last();
 	await expect.element(code).toHaveText("gh");
 	const el = code.element();
 	expect([

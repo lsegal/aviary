@@ -156,7 +156,7 @@ test("edit → save sets the project's own filter only", async () => {
 	await expect
 		.element(page.getByTestId("issue-filter-custom"))
 		.toHaveText("custom");
-	await expect.element(subtitle).toHaveTextContent("browser");
+	await expect.element(subtitle).toMatchTextContent("browser");
 
 	// The other project keeps the shared filter.
 	await goto(boardURL("lsegal/zvidlib"));
@@ -204,7 +204,7 @@ test("an invalid filter is rejected inline and never saved", async () => {
 	await input.fill("assignee:nosuchuser");
 	await expect
 		.element(status)
-		.toHaveTextContent("The listed users cannot be searched");
+		.toMatchTextContent("The listed users cannot be searched");
 	await expect.element(page.getByTestId("issue-filter-save")).toBeDisabled();
 	expect(calls.project_update).toBeUndefined();
 

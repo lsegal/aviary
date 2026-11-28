@@ -51,7 +51,7 @@ test("a small notification is a toast and a big one a banner; clicking opens the
 		}),
 	);
 	const toast = page.getByTestId("notification-toast");
-	await expect.element(toast).toHaveTextContent("bot replied");
+	await expect.element(toast).toMatchTextContent("bot replied");
 	await expect
 		.element(page.getByTestId("notification-unread").first())
 		.toHaveText("1");
@@ -67,7 +67,7 @@ test("a small notification is a toast and a big one a banner; clicking opens the
 		}),
 	);
 	const banner = page.getByTestId("notification-banner");
-	await expect.element(banner).toHaveTextContent("Failed: acme/app#7");
+	await expect.element(banner).toMatchTextContent("Failed: acme/app#7");
 	await banner.getByRole("button", { name: /Failed/ }).click();
 	await expect.poll(currentURL).toBe("/system/notifications");
 	await expect.poll(() => banner.elements().length).toBe(0);
@@ -120,7 +120,7 @@ test("when the browser denies permission the settings say so and in-app delivery
 	await expect.element(permission).toHaveAttribute("data-state", "denied");
 	await expect
 		.element(permission)
-		.toHaveTextContent("Blocked in this browser");
+		.toMatchTextContent("Blocked in this browser");
 	expect(page.getByTestId("notifications-allow").elements()).toHaveLength(0);
 
 	await goto("/system/overview");
@@ -129,7 +129,7 @@ test("when the browser denies permission the settings say so and in-app delivery
 	);
 	await expect
 		.element(page.getByTestId("notification-toast"))
-		.toHaveTextContent("Falls back to a toast");
+		.toMatchTextContent("Falls back to a toast");
 });
 
 test("unsupported system notifications are reported", async () => {
@@ -153,15 +153,13 @@ test("the bell shows the unread count and history, with mark-read and clear", as
 		.getByTestId("sidebar-footer")
 		.getByTestId("notification-bell");
 	await expect.element(bell.getByTestId("notification-unread")).toHaveText("2");
-	await expect
-		.element(bell)
-		.toHaveAccessibleName("Notifications, 2 unread");
+	await expect.element(bell).toHaveAccessibleName("Notifications, 2 unread");
 
 	await bell.click();
 	const center = page.getByTestId("notification-center");
 	const items = center.getByTestId("notification-item");
 	await expect.poll(() => items.elements().length).toBe(3);
-	await expect.element(items.nth(1)).toHaveTextContent("×3");
+	await expect.element(items.nth(1)).toMatchTextContent("×3");
 	await center.getByTestId("notification-mark-all-read").click();
 	await expect
 		.poll(() => bell.getByTestId("notification-unread").elements().length)
@@ -173,9 +171,7 @@ test("the bell shows the unread count and history, with mark-read and clear", as
 
 	await bell.click();
 	await center.getByTestId("notification-clear").click();
-	await expect
-		.element(center.getByTestId("notification-empty"))
-		.toBeVisible();
+	await expect.element(center.getByTestId("notification-empty")).toBeVisible();
 });
 
 test("quiet notifications reach the bell only", async () => {
@@ -214,7 +210,7 @@ test("a task failing many times in a row offers Pause in its banner and the bell
 	await expect.poll(() => banner.elements().length).toBe(0);
 	await expect
 		.element(page.getByTestId("notification-paused"))
-		.toHaveTextContent("Paused assistant/release");
+		.toMatchTextContent("Paused assistant/release");
 
 	const bell = page
 		.getByTestId("sidebar-footer")

@@ -4,7 +4,6 @@
 // Shared by notifications*.component.test.ts, which are split by how much
 // fresh module state (useNotifications loads preferences once) they need.
 
-import { createPinia, setActivePinia } from "pinia";
 import { expect } from "vitest";
 import { page } from "vitest/browser";
 import {
@@ -14,7 +13,6 @@ import {
 	type ToolFixtures,
 	type WebSocketRoute,
 } from "../../component-test/server";
-import { useNotifications } from "../../composables/useNotifications";
 import { useToasts } from "../../composables/useToasts";
 
 const health = JSON.stringify({ type: "health", ok: true, version: "v1" });
@@ -66,13 +64,10 @@ export function setup(
 		tools?: ToolFixtures;
 	} = {},
 ) {
-	// Toasts and banners are app-wide module state; a page load starts
-	// without any, so clear what an earlier test in the file left.
-	// (useNotifications needs a store before the app mounts its own.)
-	setActivePinia(createPinia());
-	const { toasts } = useToasts();
-	toasts.value = [];
-	useNotifications().banners.value = [];
+	// Toasts are app-wide module state; a page load starts without any, so
+	// clear what an earlier test in the file left. (Each test that shows a
+	// banner dismisses it.)
+	useToasts().toasts.value = [];
 
 	mockMCP({
 		agent_list: [],

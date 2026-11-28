@@ -1,7 +1,8 @@
-import { expect, test } from "vitest";
+import { afterEach, expect, test } from "vitest";
 import { type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
+import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 
 // Fixtures follow task_analyze's result (internal/mcp/task_analyze.go).
 //
@@ -10,6 +11,12 @@ import { mockMCP } from "../component-test/server";
 // module-level cache that outlives a test, so they get their own page, and
 // run in an order where no test sees an analysis an earlier one cached:
 // only the last one ever answers that input successfully.
+
+// The Add task dialog's open state is module state, which outlives a test's
+// app; close it after each test, as a new page would start with it closed.
+afterEach(() => {
+	useAgentItemDialogs().close();
+});
 
 type Analysis = Record<string, unknown>;
 
@@ -147,10 +154,11 @@ test("an analyzer failure shows Couldn't analyze, and Retry re-runs the check", 
 	await expect.element(retry).toBeVisible();
 	// The message and the Retry control are separate, so they never read as
 	// one phrase such as "Couldn't analyze Retry".
-	await expect.element(feedback).not.toHaveTextContent(/analyze\s*Retry/i);
-	expect(feedback.locator("p").filter({ has: retry }).elements()).toHaveLength(
-		0,
-	);
+	await expect.element(feedback).not.toMatchTextContent(/analyze\s*Retry/i);
+	const retryButton = page.getByRole("button", { name: "Retry analysis" });
+	expect(
+		feedback.locator("p").filter({ has: retryButton }).elements(),
+	).toHaveLength(0);
 
 	fail = false;
 	await feedback.getByTestId("task-cost-retry").click();
