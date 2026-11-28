@@ -371,6 +371,7 @@ func (m *SessionManager) remove(agentID, sessionID string, tombstone bool) error
 			return fmt.Errorf("deleting session %q: %w", sessionID, err)
 		}
 	}
+	notifySessionRemoved(agentID, sessionID)
 	return nil
 }
 

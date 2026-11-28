@@ -838,7 +838,7 @@ func TestToolsCoreScheduleTaskScripts(t *testing.T) {
 	assert.True(t, strings.HasPrefix(job.TaskID, "print-hi-"), job.TaskID)
 
 	out = tcCall(t, d, "task_schedule", map[string]any{"agent": "bot", "content": script, "type": "script", "name": "greeter", "schedule": "every 5 minutes"})
-	assert.Equal(t, `Recurring task "greeter" created for agent "bot" with schedule "0 */5 * * * *".`, out)
+	assert.Equal(t, `Scheduled task "greeter" created for agent "bot": cron 0 */5 * * * * (Local).`, out)
 	cfg, err := config.Load("")
 	require.NoError(t, err)
 	require.Len(t, cfg.Agents[0].Tasks, 1)
@@ -859,7 +859,7 @@ func TestToolsCoreScheduleTaskGeneratedNames(t *testing.T) {
 	}}})
 
 	out := tcCall(t, d, "task_schedule", map[string]any{"agent": "bot", "content": "!!!", "schedule": "0 0 9 * * *", "precompile": false})
-	require.Contains(t, out, `Recurring task "scheduled-`, "content without letters or digits gets a generic name")
+	require.Contains(t, out, `Scheduled task "scheduled-`, "content without letters or digits gets a generic name")
 	assert.Contains(t, out, " created ")
 
 	out = tcCall(t, d, "task_schedule", map[string]any{"agent": "bot", "content": "Run 42 now", "in": "1h"})

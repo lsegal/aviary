@@ -331,15 +331,91 @@ aviary task <subcommand>
 
 ### aviary task list
 
-List all tasks, their trigger type, and last run status.
+List scheduled tasks with their trigger, next run, and last result.
 
 ```
-aviary task list
+aviary task list [--json]
 ```
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--json` | `false` | Print the raw task list as JSON |
+
+### aviary task add
+
+Add a scheduled task for an agent, or replace the task with the same name. The agent may be omitted when only one agent exists. A trigger is required: pass `--schedule`, `--every`, `--at`, `--days`, or `--start-at`.
+
+```
+aviary task add [agent] <name> <prompt> [flags]
+```
+
+```sh
+aviary task add assistant standup "Summarize yesterday" --days mon-fri --at 09:00
+aviary task add assistant digest "Send the digest" --every 2h --overlap skip
+aviary task add assistant triage "Triage new issues" --project lsegal/aviary --at 02:00
+```
+
+Trigger flags, shared by `add`, `update`, and `preview`:
+
+| Flag | Description |
+| --- | --- |
+| `--schedule <cron>` | Cron expression (5 fields, or 6 with leading seconds) |
+| `--trigger <kind>` | Trigger kind: `once`, `interval`, `daily`, `weekly`, or `cron` |
+| `--every <period>` | Interval period, such as `30m`, `2h`, or `1d` |
+| `--at <HH:MM>` | Daily or weekly time of day; comma-separate several |
+| `--days <days>` | Weekly days, such as `mon,wed,fri`; ranges such as `mon-fri` are expanded |
+| `--timezone <zone>` | IANA timezone the trigger is evaluated in (default: local) |
+| `--start-at <time>` | Time of a `once` trigger, or the earliest fire (RFC 3339 or `YYYY-MM-DDTHH:MM`) |
+| `--overlap <policy>` | While a run is still active: `queue` (default) or `skip` |
+| `--missed <policy>` | Fires missed while stopped or asleep: `skip` (default) or `run_once` |
+
+Other flags:
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--target <target>` | | Output delivery: `silent`, `session:<name>`, or `channel:<channel name>` |
+| `--type <type>` | `prompt` | Task type: `prompt`, `script`, or `project` |
+| `--project <owner/repo>` | | Watched project to run the prompt on as a Code Loop job; implies `--type project` |
+| `--model <provider/model>` | | Model override for a project task (default: the project agent's model) |
+| `--run-once` | `false` | Fire only once |
+
+### aviary task update
+
+Change fields of a scheduled task. Only the flags you pass change; pass an empty value (such as `--target ""`) to clear a field.
+
+```
+aviary task update <name> [flags]
+```
+
+Takes the trigger flags listed under [`aviary task add`](#aviary-task-add), plus:
+
+| Flag | Description |
+| --- | --- |
+| `--prompt <text>` | New task prompt |
+| `--target <target>` | Output delivery |
+| `--watch <glob>` | File glob that triggers the task |
+| `--run-once` | Fire only once |
+| `--enabled` | Enable or disable the task (`--enabled=false` pauses it) |
+| `--project <owner/repo>` | Watched project of a project task |
+| `--model <provider/model>` | Model override for a project task (empty: the project agent's model) |
+
+### aviary task preview
+
+Show the next fires of a saved task, or of the trigger flags given without saving anything.
+
+```
+aviary task preview [name] [flags]
+```
+
+Takes the trigger flags listed under [`aviary task add`](#aviary-task-add), plus:
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--count <n>` | `3` | Number of fires to show (at most 20) |
 
 ### aviary task run
 
-Manually trigger a task immediately.
+Run a scheduled task right now, ignoring its overlap policy.
 
 ```
 aviary task run <name>
@@ -347,15 +423,15 @@ aviary task run <name>
 
 ### aviary task stop
 
-Stop all currently running scheduled task jobs.
+Stop running scheduled task jobs. Without an argument it stops every pending and running job; with one it stops only that task's jobs, named as `<agent>/<task>` or by task name.
 
 ```
-aviary task stop
+aviary task stop [name]
 ```
 
 ### aviary task rm
 
-Delete a scheduled task. Its session becomes a regular chat titled `<name> (archived)` and its run history stays on disk, unless `--delete-data` deletes both.
+Delete a scheduled task. Its session becomes a regular chat titled `<name> (archived)` and its run history stays on disk, unless `--delete-data` deletes both. Aliases: `remove`, `delete`.
 
 ```
 aviary task rm <name> [--delete-data]
@@ -417,7 +493,7 @@ aviary job <subcommand>
 
 ### aviary job list
 
-Show job history across all tasks.
+Show job history across all tasks, newest first, with each job's ID, task, status, trigger, and creation time.
 
 ```
 aviary job list [flags]
@@ -425,11 +501,12 @@ aviary job list [flags]
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--task <name>` | | Filter results to a specific task name |
+| `--task <name>` | | Only show runs of this task (`<agent>/<task>` or task name) |
+| `--json` | `false` | Print the raw job list as JSON |
 
 ### aviary job logs
 
-Stream logs for a specific job run.
+Show the captured output of a job run. For a project task's job this is its Code Loop run's log. Exits non-zero when the job does not exist.
 
 ```
 aviary job logs <job-id>

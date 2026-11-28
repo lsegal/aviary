@@ -108,6 +108,76 @@ func (f Fields) InferKind() Kind {
 	return ""
 }
 
+// fieldKinds lists, for each kind-specific trigger field, the trigger kinds
+// it applies to. start_at applies to every kind, as the once trigger's fire
+// time and the earliest fire of the others.
+var fieldKinds = []struct {
+	name  string
+	value func(Fields) string
+	kinds []Kind
+}{
+	{"schedule", func(f Fields) string { return f.Schedule }, []Kind{KindCron}},
+	{"every", func(f Fields) string { return f.Every }, []Kind{KindInterval}},
+	{"at", func(f Fields) string { return f.At }, []Kind{KindDaily, KindWeekly}},
+	{"days", func(f Fields) string { return f.Days }, []Kind{KindWeekly}},
+}
+
+// Applies reports whether the named kind-specific trigger field (schedule,
+// every, at or days) is used by a trigger of kind k. Other names always apply.
+func Applies(field string, k Kind) bool {
+	for _, fk := range fieldKinds {
+		if fk.name == field {
+			return slices.Contains(fk.kinds, k)
+		}
+	}
+	return true
+}
+
+// Inapplicable returns the set kind-specific fields of f that its trigger
+// kind would ignore, such as every on a cron trigger.
+func (f Fields) Inapplicable() []string {
+	k := f.InferKind()
+	var out []string
+	for _, fk := range fieldKinds {
+		if isNotBlank(fk.value(f)) && !Applies(fk.name, k) {
+			out = append(out, fk.name)
+		}
+	}
+	return out
+}
+
+// CheckApplicable returns an error naming the set fields of f that its
+// trigger kind would ignore, so conflicting settings are refused rather than
+// silently dropped.
+func (f Fields) CheckApplicable() error {
+	bad := f.Inapplicable()
+	if len(bad) == 0 {
+		return nil
+	}
+	k := f.InferKind()
+	verb, pronoun := "do", "them"
+	if len(bad) == 1 {
+		verb, pronoun = "does", "it"
+	}
+	trigger := "trigger=" + string(k)
+	if strings.TrimSpace(f.Trigger) == "" {
+		trigger = fmt.Sprintf("the %s trigger that %s selects", k, f.selector())
+	}
+	return fmt.Errorf("%s %s not apply to %s; remove %s or choose a different trigger", strings.Join(bad, " and "), verb, trigger, pronoun)
+}
+
+// selector names the field InferKind chose f's kind from.
+func (f Fields) selector() string {
+	for _, c := range []struct{ name, value string }{
+		{"schedule", f.Schedule}, {"every", f.Every}, {"days", f.Days}, {"at", f.At}, {"start_at", f.StartAt},
+	} {
+		if isNotBlank(c.value) {
+			return c.name
+		}
+	}
+	return "trigger"
+}
+
 // Parse validates f and returns its Spec.
 func Parse(f Fields) (Spec, error) {
 	spec := Spec{Kind: f.InferKind(), RunOnce: f.RunOnce, Location: time.Local}
@@ -223,6 +293,15 @@ func (s Spec) Next(after time.Time) time.Time {
 		return s.Cron.Next(local)
 	}
 	return time.Time{}
+}
+
+// CheckFuture returns an error when s is a once trigger whose fire time is
+// not after now, since it would never fire.
+func (s Spec) CheckFuture(now time.Time) error {
+	if s.Kind == KindOnce && !s.StartAt.After(now) {
+		return fmt.Errorf("start_at %s is in the past, so this once trigger would never fire", s.StartAt.In(s.Location).Format("2006-01-02 15:04"))
+	}
+	return nil
 }
 
 // Preview returns up to n upcoming fires after after.

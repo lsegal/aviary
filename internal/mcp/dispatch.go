@@ -2,8 +2,10 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -133,6 +135,26 @@ type ToolError struct {
 
 func (e *ToolError) Error() string {
 	return e.Text
+}
+
+// CallToolChecked is CallTool that returns a result the tool marked as an
+// error as an error, so CLI commands can exit non-zero on it.
+func (d *Dispatcher) CallToolChecked(ctx context.Context, name string, args any) (string, error) {
+	c, err := d.Resolve(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer c.Close() //nolint:errcheck
+
+	result, err := c.CallTool(ctx, name, args)
+	if err != nil {
+		return "", fmt.Errorf("calling tool %q: %w", name, err)
+	}
+	text := extractText(result)
+	if result != nil && result.IsError {
+		return "", errors.New(strings.TrimSpace(text))
+	}
+	return text, nil
 }
 
 // progressClient is a Client that can hand a call's progress messages back.

@@ -160,6 +160,8 @@ Instead of a cron expression, a task can pick its trigger with `trigger` (inferr
 
 Every trigger is evaluated in `timezone`, an IANA zone such as `America/Toronto` (default: the host's local zone). A wall-clock time skipped by a daylight-saving change fires at the first time after the jump. `start_at` also delays the first fire of a recurring trigger, and `run_once: true` makes any trigger fire once.
 
+A task uses one trigger's fields. `task_schedule` and `task_update` refuse fields the trigger would ignore, such as `every` together with `schedule`, and a `once` trigger whose `start_at` is in the past. When `task_update` gets another trigger's fields without `trigger`, it switches the task to that trigger and drops the fields it no longer uses: `--days mon --at 10:00` turns an interval task into a weekly one.
+
 Three settings control what happens when things do not go to plan:
 
 - **`overlap`**: what a fire does while the previous run is still pending or running. `queue` (default) queues another run; `skip` drops the fire.
@@ -194,7 +196,6 @@ A running job streams its output, a line at a time, into the **Live Output** pan
 | `task_run` | `aviary task run <name>` | Run now, ignoring the overlap policy |
 | `task_delete` | `aviary task rm <name>` | Delete a task file; `delete_data` (`--delete-data`) also deletes its session and run history |
 | `task_session` | | The task's session, which every run shares, titled with the task's name |
-
 | `task_upcoming` | | Next fires across enabled tasks (default 5, at most 1 per task), optionally for one project |
 
 `aviary task add` and `update` take every trigger field as a flag (`--schedule`, `--trigger`, `--every`, `--at`, `--days`, `--timezone`, `--start-at`, `--overlap`, `--missed`); `--days` also accepts ranges such as `mon-fri`. The agent may be omitted when only one agent exists.

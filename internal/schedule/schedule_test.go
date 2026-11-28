@@ -181,3 +181,33 @@ func TestRunsIn(t *testing.T) {
 		})
 	}
 }
+
+func wantErr(t *testing.T, err error, want string) {
+	t.Helper()
+	got := "<nil>"
+	if err != nil {
+		got = err.Error()
+	}
+	if got != want {
+		t.Errorf("error = %q, want %q", got, want)
+	}
+}
+
+func TestCheckApplicable(t *testing.T) {
+	wantErr(t, Fields{Every: "1h", StartAt: "2026-01-01T00:00"}.CheckApplicable(), "<nil>")
+	wantErr(t, Fields{Days: "mon", At: "09:00"}.CheckApplicable(), "<nil>")
+	wantErr(t, Fields{Schedule: "0 9 * * *", Every: "1h", At: "09:00"}.CheckApplicable(),
+		"every and at do not apply to the cron trigger that schedule selects; remove them or choose a different trigger")
+	wantErr(t, Fields{Trigger: "once", StartAt: "2099-01-01T00:00", Days: "mon"}.CheckApplicable(),
+		"days does not apply to trigger=once; remove it or choose a different trigger")
+}
+
+func TestCheckFuture(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	once := Spec{Kind: KindOnce, StartAt: now.Add(-time.Minute), Location: time.UTC}
+	wantErr(t, once.CheckFuture(now), "start_at 2026-06-01 11:59 is in the past, so this once trigger would never fire")
+	once.StartAt = now.Add(time.Minute)
+	wantErr(t, once.CheckFuture(now), "<nil>")
+	// Recurring triggers may start in the past.
+	wantErr(t, Spec{Kind: KindInterval, StartAt: now.Add(-time.Hour)}.CheckFuture(now), "<nil>")
+}
