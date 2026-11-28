@@ -3032,8 +3032,14 @@ func scheduleTask(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskSched
 	}
 	normalizedSchedule := strings.TrimSpace(triggerFields.Schedule)
 	if recurring {
+		if err := triggerFields.CheckApplicable(); err != nil {
+			return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
+		}
 		spec, err := schedule.Parse(triggerFields)
 		if err != nil {
+			return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
+		}
+		if err := spec.CheckFuture(time.Now()); err != nil {
 			return nil, struct{}{}, fmt.Errorf("invalid schedule: %w", err)
 		}
 		scheduleKey := normalizedSchedule
@@ -3126,9 +3132,6 @@ func scheduleTask(ctx context.Context, _ *sdkmcp.CallToolRequest, args taskSched
 			// background; a run that comes first compiles before it starts.
 			compileTaskInBackground(args.Agent, taskName, "schedule")
 			compileNote = " Precompiling: when its prompt is deterministic, runs execute the compiled script and fall back to the model if it fails."
-		}
-		if nextTask.Schedule != "" {
-			return text(fmt.Sprintf("Recurring task %q %s for agent %q with schedule %q.%s", taskName, action, args.Agent, nextTask.Schedule, compileNote))
 		}
 		return text(fmt.Sprintf("Scheduled task %q %s for agent %q: %s.%s", taskName, action, args.Agent, spec.Describe(), compileNote))
 	}
