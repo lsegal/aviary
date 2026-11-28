@@ -32,8 +32,9 @@
 		</template>
 		<BoardDetailsList v-model:editing="editing" :status="status" :manual="manual" :filter-target="filterTarget"
 			:now="now" @saved="emit('saved')" />
-		<CLIProviderList v-if="showClis && status.clis.length" stacked testid="board-info-clis"
-			class="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700" :clis="status.clis" />
+		<div v-if="showClis && status.clis.length" class="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+			<CLIProviderList stacked testid="board-info-clis" :clis="status.clis" />
+		</div>
 	</HeaderInfoPopover>
 	<!-- Hidden copies of the inline forms and an icon, measured so the header
 		knows what fits before showing them (#1584). -->
@@ -59,9 +60,10 @@
 // header has room, they show as the inline `Instance <ID>` badge and a
 // one-line summary instead, which open the same popovers; the header decides
 // from their hidden copies' widths (#1584). On a narrow phone either icon can
-// move into the header's "…" menu (#1576). On a phone
-// the details also list the CLI providers, and the icon carries a warning dot
-// while one of them is signed out, out of quota or failing (#1580).
+// move into the header's "…" menu (#1576). When the board's agent models and
+// quota don't fit inline on one line, the details list them instead (#1582,
+// #1584), and the icon carries a warning dot while one of them is signed
+// out, out of quota or failing (#1580).
 import ClipboardDocumentIcon from "@heroicons/vue/24/outline/ClipboardDocumentIcon";
 import InformationCircleIcon from "@heroicons/vue/24/outline/InformationCircleIcon";
 import TagIcon from "@heroicons/vue/24/outline/TagIcon";
@@ -82,7 +84,10 @@ const props = defineProps<{
 	hideInstance?: boolean;
 	/** The details icon is in the header's "…" menu instead (#1576). */
 	hideInfo?: boolean;
-	/** The CLI providers show in the details instead of under the stats (#1580). */
+	/**
+	 * The agent models and quota don't fit inline, so the details list them
+	 * and the icon warns about their problems (#1580, #1584).
+	 */
 	showClis?: boolean;
 	/** The instance shows as its inline badge rather than the tag (#1584). */
 	instanceInline?: boolean;

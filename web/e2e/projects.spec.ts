@@ -719,7 +719,7 @@ test("board shows status, ordered job cards and live output", async ({
 		await expect(page.getByTestId("job-card")).toHaveCount(count);
 		await chip.click();
 	}
-	const clis = page.getByRole("region", { name: "CLI providers" });
+	const clis = page.getByRole("region", { name: "Models and quota" });
 	await expect(clis).toContainText("38% of 5h quota left");
 	await expect(clis).toContainText("signed out");
 	// A provider/model agent is its provider running a model, not a second
@@ -3142,7 +3142,7 @@ test("job count stat boxes reflow without wrapping mid-value", async ({
 					overflow: overflows(card) || overflows(label) || overflows(value),
 				};
 			});
-			const clis = document.querySelector("[aria-label='CLI providers']");
+			const clis = document.querySelector("[aria-label='Models and quota']");
 			return {
 				cards,
 				pageOverflow:
@@ -4317,7 +4317,7 @@ test("on desktop a project's header keeps its title, with the icons and toolbar 
 	expect((titleBox?.x ?? 0) - (main?.x ?? 0)).toBeLessThanOrEqual(25);
 });
 
-test("on a phone the CLI providers move into the details popover, which warns while closed (#1580)", async ({
+test("on a phone the models and quota move into the details popover, which warns while closed (#1580)", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -4330,13 +4330,14 @@ test("on a phone the CLI providers move into the details popover, which warns wh
 		await headerSettled(page);
 		// No providers row: the board's toolbar follows the stats directly.
 		await expect(
-			page.getByRole("region", { name: "CLI providers" }),
+			page.getByRole("region", { name: "Models and quota" }),
 		).toHaveCount(0);
 		if (path.endsWith("projects"))
 			await expect(page.getByTestId("board-nav-row")).not.toContainText(
-				"CLI providers",
+				"Models & quota",
+				{ useInnerText: true },
 			);
-		else await expect(page.getByTestId("board-nav-row")).toHaveCount(0);
+		else await expect(page.getByTestId("board-nav-row")).toBeHidden();
 
 		// gemini is signed out, so the closed icon carries a described dot.
 		const info = page.getByRole("button", {
@@ -4352,7 +4353,7 @@ test("on a phone the CLI providers move into the details popover, which warns wh
 		await info.focus();
 		await page.keyboard.press("Enter");
 		const details = page.getByRole("dialog", { name: "Board details" });
-		const clis = details.getByRole("region", { name: "CLI providers" });
+		const clis = details.getByRole("region", { name: "Models and quota" });
 		const rows = clis.getByTestId("cli-provider");
 		await expect(rows).toHaveText([
 			/claude\s*opus\s*38% of 5h quota left/,
@@ -4401,23 +4402,23 @@ test("with the details in … on a narrow phone, … carries the provider warnin
 	await more.click();
 	const clis = page
 		.getByTestId("board-more-info")
-		.getByRole("region", { name: "CLI providers" });
+		.getByRole("region", { name: "Models and quota" });
 	await expect(clis.getByTestId("cli-provider")).toHaveCount(3);
 	await expect(clis).toContainText("38% of 5h quota left");
 });
 
-test("on desktop the CLI providers stay inline with no warning dot (#1580)", async ({
+test("on desktop the models and quota stay inline with no warning dot (#1580)", async ({
 	page,
 }) => {
 	await setup(page);
 	await page.goto("/agents/coder/projects/lsegal%2Faviary");
 	await expect(
-		page.getByRole("region", { name: "CLI providers" }),
+		page.getByRole("region", { name: "Models and quota" }),
 	).toContainText("signed out");
 	await expect(page.getByTestId("board-info")).toBeVisible();
 	await expect(page.getByTestId("board-info-alert")).toHaveCount(0);
 	await page.getByTestId("board-info").click();
-	await expect(page.getByTestId("board-info-clis")).toHaveCount(0);
+	await expect(page.getByTestId("board-info-clis")).toBeHidden();
 });
 
 test("the instance tag and details popovers work by keyboard, tap and hover (#1570)", async ({

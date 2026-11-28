@@ -105,10 +105,10 @@ test("with the sidebar collapsed, the board's pills open every project and its s
 	await page.goto("/agents/coder/projects");
 	await page.getByTestId("sidebar-collapse").click();
 
-	// The pills sit left of the CLI providers, in the same row.
+	// The pills sit left of the models and quota, in the same row.
 	const nav = page.getByRole("navigation", { name: "Projects" });
 	await expect(nav.getByTestId("project-nav-item")).toHaveCount(2);
-	const providers = page.getByRole("region", { name: "CLI providers" });
+	const providers = page.getByRole("region", { name: "Models and quota" });
 	const navBox = await nav.boundingBox();
 	const providersBox = await providers.boundingBox();
 	expect(navBox && providersBox).toBeTruthy();

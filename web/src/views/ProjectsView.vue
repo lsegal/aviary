@@ -73,7 +73,7 @@
 			<div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
 				<template v-if="project || aggregate">
 					<router-view v-if="jobOpen" />
-					<div v-else ref="boardBody" class="relative space-y-4 px-4 py-4 sm:px-6">
+					<div v-else ref="boardBody" data-testid="board-body" class="relative space-y-4 px-4 py-4 sm:px-6">
 						<GitHubSignInBanner v-if="status?.github" :session="status.github" :busy="signingIn"
 							@signin="onGitHub(signInToGitHub)" @use-polling="onGitHub(switchToPolling)"
 							@import="onGitHub(() => importProfile($event))" />
@@ -114,15 +114,17 @@
 							</button>
 						</div>
 
-						<!-- The projects' pills lead into each project, left of the CLI
-							providers, which move into the details popover when they don't
-							fit on one line (#1580, #1584); the hidden copy measures them. -->
+						<!-- The projects' pills lead into each project, left of the agent
+							models and quota, which show in the details popover (or "…")
+							instead when they don't fit on one line (#1580, #1584). One
+							measured decision picks the place, so they always show in
+							exactly one (#1582); the hidden copy measures them. -->
 						<div v-if="status?.clis.length" aria-hidden="true"
 							class="pointer-events-none invisible absolute top-0 left-0 h-0 w-0 overflow-hidden">
-							<div class="absolute top-0 right-0 w-max"><CLIProviderList ref="cliMeasure" :clis="status.clis" /></div>
+							<div class="absolute top-0 right-0 w-max"><CLIProviderList ref="cliMeasure" testid="board-clis-measure" :clis="status.clis" /></div>
 						</div>
-						<div v-if="(aggregate && targets.length) || inlineCLIs" class="flex min-w-0 flex-wrap items-center gap-2" data-testid="board-nav-row">
-						<ProjectNavRow v-if="aggregate && targets.length" :agent="routeAgent" :targets="targets" />
+						<div v-if="navPills || inlineCLIs" class="flex min-w-0 flex-wrap items-center gap-2" data-testid="board-nav-row">
+						<ProjectNavRow v-if="navPills" :agent="routeAgent" :targets="targets" />
 						<CLIProviderList v-if="inlineCLIs && status" class="ml-auto" :clis="status.clis" />
 						</div>
 
@@ -662,15 +664,19 @@ function onWideChange(e: MediaQueryListEvent) {
 onMounted(() => wideQuery.addEventListener("change", onWideChange));
 onUnmounted(() => wideQuery.removeEventListener("change", onWideChange));
 // Tailwind's sm breakpoint, where the board's header actions fit beside an
-// open job's (#1347).
-const smQuery = window.matchMedia("(min-width: 640px)");
+// open job's (#1347). Tailwind 4 defines it in rem, so this matches its sm:
+// classes even when the browser's default font size isn't 16px (#1582).
+const smQuery = window.matchMedia("(width >= 40rem)");
 const smUp = ref(smQuery.matches);
 function onSmChange(e: MediaQueryListEvent) {
 	smUp.value = e.matches;
 }
-onMounted(() => smQuery.addEventListener("change", onSmChange));
+onMounted(() => {
+	smUp.value = smQuery.matches;
+	smQuery.addEventListener("change", onSmChange);
+});
 onUnmounted(() => smQuery.removeEventListener("change", onSmChange));
-// The CLI providers show under the stats when they fit there on one line,
+// The agent models and quota show under the stats when they fit there on one line,
 // and in the details popover otherwise (#1580, #1584).
 const boardBody = ref<HTMLElement | null>(null);
 const cliMeasure = ref<{ $el: HTMLElement } | null>(null);
@@ -679,6 +685,7 @@ const cliFits = useFitsWidth(
 	computed(() => cliMeasure.value?.$el),
 );
 const inlineCLIs = computed(() => cliFits.value && !!status.value?.clis.length);
+const navPills = computed(() => aggregate.value && targets.value.length > 0);
 const statsCompact = computed(() => statsChoice.value ?? !wide.value);
 
 const busyJob = ref("");

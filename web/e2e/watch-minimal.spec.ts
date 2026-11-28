@@ -328,7 +328,7 @@ test("a watch session's Code Loop header is the compact one (#1570)", async ({
 	).toContainText("Issues");
 });
 
-test("a watch session's phone header lists the CLI providers in its details (#1580)", async ({
+test("a watch session's phone header lists the models and quota in its details (#1580)", async ({
 	page,
 }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -353,7 +353,7 @@ test("a watch session's phone header lists the CLI providers in its details (#15
 		});
 		await expect(info).toBeVisible();
 		await expect(
-			page.getByRole("region", { name: "CLI providers" }),
+			page.getByRole("region", { name: "Models and quota" }),
 		).toHaveCount(0);
 		await expect(page.getByTestId("board-info-alert")).toBeVisible();
 		await expect(info).toHaveAccessibleDescription(
@@ -362,7 +362,7 @@ test("a watch session's phone header lists the CLI providers in its details (#15
 		await info.click();
 		const clis = page
 			.getByRole("dialog", { name: "Board details" })
-			.getByRole("region", { name: "CLI providers" });
+			.getByRole("region", { name: "Models and quota" });
 		await expect(clis).toContainText("week 70% left");
 		await expect(clis).toContainText("weekly 0% left");
 		await page.keyboard.press("Escape");
