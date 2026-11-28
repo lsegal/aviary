@@ -7,6 +7,10 @@ import {
 	TASK_CHAT_DEFAULT_HEIGHT,
 	useTaskChatPanel,
 } from "../composables/useTaskChatPanel";
+// The pages this file renders (see component-test/routes.ts).
+import "../components/tasks/dashboard/TaskRunPage.vue";
+import "../views/SettingsView.vue";
+import "../views/TaskView.vue";
 
 // A task's dashboard: its schedule, live run log, run history and chat
 // panel. Each test starts with the default layout (chat on, default height),

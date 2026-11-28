@@ -13,6 +13,11 @@ import {
 	sidebarPages,
 	systemPages,
 } from "./helpers/navCustomize";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChatView.vue";
+import "../views/OverviewView.vue";
+import "../views/SettingsView.vue";
+import "../views/UsageView.vue";
 
 // Customizing the navigation (#1003): the sidebar editor, in Settings →
 // Display (#1093), reorders and hides pages, the result persists on the

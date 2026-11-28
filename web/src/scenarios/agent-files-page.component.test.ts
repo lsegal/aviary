@@ -2,6 +2,8 @@ import { expect, test, vi } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
 
 /** Mocks one agent whose root files live in a store the UI reads and writes. */
 function mockFiles(files: Record<string, string>) {

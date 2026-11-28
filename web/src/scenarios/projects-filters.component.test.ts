@@ -10,6 +10,10 @@ import {
 	setup,
 	stateChip,
 } from "./projects-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../components/projects/ProjectJobDetail.vue";
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 /** Playwright's toHaveText with a list: one entry per element, in order. */
 async function expectTexts(locator: Locator, expected: (string | RegExp)[]) {

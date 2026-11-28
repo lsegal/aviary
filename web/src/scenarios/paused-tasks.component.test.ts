@@ -2,6 +2,9 @@ import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
+import "../views/TaskView.vue";
 
 // Paused scheduled tasks: one amber Paused chip, paused sidebar rows, and
 // Pause/Resume in the sidebar's "…" menu (#975). The touch screen case stays

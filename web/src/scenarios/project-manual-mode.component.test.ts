@@ -3,6 +3,9 @@ import { commands, type Locator, page } from "vitest/browser";
 import { goto, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import { openBoardInfo } from "./helpers/boardHeader";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 // A Code Loop project in manual mode (#1307) is never searched for issues.
 // The mocks keep each project's mode the way the Manager does: project_update

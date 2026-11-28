@@ -17,6 +17,9 @@ import {
 	setup,
 	TASKS,
 } from "./project-schedules-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 test("scheduled cards are compact: trigger and next run share one line (#875)", async () => {
 	setup();

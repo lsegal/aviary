@@ -3,6 +3,9 @@ import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { route } from "../component-test/server";
 import { mobileRowKeys, mockAgents } from "./helpers/navCustomize";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChatView.vue";
+import "../views/SettingsView.vue";
 
 // Customizing the navigation (#1003): a top-row order saved before #1015 is
 // dropped from the server's copy and this browser's. In its own file

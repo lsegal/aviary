@@ -17,6 +17,9 @@ import {
 	setChecked,
 	setup,
 } from "./project-settings.fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 /** Each matched element's text, whitespace collapsed, as Playwright's
  * toHaveText with an array compares them. */

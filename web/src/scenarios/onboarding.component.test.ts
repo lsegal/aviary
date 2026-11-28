@@ -2,6 +2,12 @@ import { expect, test } from "vitest";
 import { commands, page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChatView.vue";
+import "../views/LoginView.vue";
+import "../views/OnboardingView.vue";
+import "../views/OverviewView.vue";
+import "../views/SettingsView.vue";
 
 interface SavedConfig {
 	agents?: { name: string }[];

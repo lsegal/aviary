@@ -12,6 +12,9 @@ import {
 } from "./helpers/boardHeader";
 import { boundingBoxOf } from "./helpers/box";
 import { setup } from "./projects-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 /** What the stubbed clipboard was given, as the e2e init script kept. */
 let copied: string[] = [];

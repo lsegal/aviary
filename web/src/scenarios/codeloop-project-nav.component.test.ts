@@ -13,6 +13,9 @@ import {
 	pill,
 	setup,
 } from "./codeloop-project-nav.fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 // The Code Loop board's project pills lead into each project and its
 // scheduled tasks, so they stay reachable with the sidebar collapsed (#1044).

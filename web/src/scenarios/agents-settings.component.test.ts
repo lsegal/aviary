@@ -23,6 +23,10 @@ import {
 	openTaskSettings,
 	systemList,
 } from "./helpers/sidebar";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChannelView.vue";
+import "../views/OverviewView.vue";
+import "../views/SettingsView.vue";
 
 beforeEach(() => {
 	mockDefault();

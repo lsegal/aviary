@@ -2,6 +2,8 @@ import { expect, test } from "vitest";
 import { renderApp } from "../component-test/app";
 import { route } from "../component-test/server";
 import { mockAgents, sidebarPages } from "./helpers/navCustomize";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/OverviewView.vue";
 
 // Customizing the navigation (#1003): a first load applies the server's
 // saved order. In its own file because the preferences module reads the

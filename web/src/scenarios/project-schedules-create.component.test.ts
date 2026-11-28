@@ -22,6 +22,9 @@ import {
 	schedule,
 	setup,
 } from "./project-schedules-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 afterEach(() => {
 	vi.useRealTimers();

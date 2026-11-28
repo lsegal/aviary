@@ -3,6 +3,10 @@ import { expect, test } from "vitest";
 import { commands, page } from "vitest/browser";
 import { currentURL, goto, renderApp } from "../component-test/app";
 import { inTargets, JOBS, job, setup, stateChip } from "./projects-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../components/projects/ProjectJobDetail.vue";
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 const ZVID_JOB = job({
 	number: 7,

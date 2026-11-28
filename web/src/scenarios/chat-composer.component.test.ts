@@ -3,6 +3,9 @@ import { commands, type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import { chatDraftKey, setChatDraft } from "../components/chat/drafts";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChatView.vue";
+import "../views/SettingsView.vue";
 
 // Drafts live in module state, which outlasts each test in this file; each
 // spec test started from a fresh page with no draft.

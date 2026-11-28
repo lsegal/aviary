@@ -2,6 +2,9 @@ import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { BOARD, JOBS, setup, TARGET } from "./codeloop-queue.fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 // Queueing pull requests for gh-safe-merge and Discussion threads for
 // gh-discuss from a Code Loop board (#1095). Fixtures follow the payloads

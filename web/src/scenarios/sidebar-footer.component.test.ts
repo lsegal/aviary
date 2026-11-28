@@ -9,6 +9,9 @@ import {
 import { mockMCP, routeWebSocket } from "../component-test/server";
 import { boundingBoxOf } from "./helpers/box";
 import { openGearMenuItem } from "./helpers/sidebar";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/OverviewView.vue";
+import "../views/SettingsView.vue";
 
 const health = JSON.stringify({
 	type: "health",

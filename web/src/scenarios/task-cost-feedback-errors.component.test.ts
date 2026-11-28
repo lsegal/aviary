@@ -3,6 +3,8 @@ import { type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
 
 // Fixtures follow task_analyze's result (internal/mcp/task_analyze.go).
 //

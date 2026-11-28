@@ -5,6 +5,8 @@ import {
 	expectNoHorizontalOverflow,
 	mockSettings,
 } from "./settings-mobile-overflow.fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
 
 // Settings pages fit a phone: nothing widens the page or the settings
 // scroller past the screen, so the header never slides off the left edge

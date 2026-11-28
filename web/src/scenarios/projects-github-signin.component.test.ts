@@ -4,6 +4,9 @@ import { commands, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { openBoardInfo } from "./helpers/boardHeader";
 import { browserStatus, SIGNED_OUT, STATUS, setup } from "./projects-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 describe("GitHub sign-in banner", () => {
 	test("a signed-out read shows the banner, never a window", async () => {

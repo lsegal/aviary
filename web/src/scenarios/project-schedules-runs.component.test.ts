@@ -16,6 +16,10 @@ import {
 	schedule,
 	setup,
 } from "./project-schedules-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../components/projects/ProjectJobDetail.vue";
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 // A one-time schedule moves through these states: armed, fired and running
 // (the scheduler lists no next run once it fires), then finished.

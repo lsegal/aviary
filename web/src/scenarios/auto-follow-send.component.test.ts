@@ -2,6 +2,9 @@ import { expect, test } from "vitest";
 import { commands, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { expectAtBottom, Server, scrollToTop } from "./auto-follow.fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChatView.vue";
+import "../views/SettingsView.vue";
 
 // Its own file: the other auto-follow scenarios leave the agent's running
 // turn in module state, where it keeps the composer busy for the rest of

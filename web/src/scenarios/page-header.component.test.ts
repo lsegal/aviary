@@ -3,6 +3,19 @@ import { type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { mockAviary, PAGES } from "./helpers/pageHeaderPages";
 import { expectSettingsHeader } from "./helpers/settingsHeader";
+// The pages this file renders (see component-test/routes.ts).
+import "../components/projects/ProjectJobDetail.vue";
+import "../components/tasks/dashboard/TaskRunPage.vue";
+import "../views/ChannelView.vue";
+import "../views/DaemonsView.vue";
+import "../views/LogsView.vue";
+import "../views/OverviewView.vue";
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
+import "../views/SystemModelsView.vue";
+import "../views/SystemToolsView.vue";
+import "../views/TaskView.vue";
+import "../views/UsageView.vue";
 
 // Every routed page shows the one shared page header (#1147): the Scheduled
 // Tasks task page's header from before #1067, a breadcrumb bar with an arrow

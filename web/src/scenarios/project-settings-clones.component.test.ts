@@ -21,6 +21,8 @@ import {
 	setChecked,
 	setup,
 } from "./project-settings.fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
 
 test("clones show what's in use and unused ones can be cleared", async () => {
 	const calls = setup();

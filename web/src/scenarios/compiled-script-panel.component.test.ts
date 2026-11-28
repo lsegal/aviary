@@ -4,6 +4,9 @@ import { currentURL, reload, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import { useCompiledPanelOpen } from "../composables/useTaskCompiles";
 import { boundingBoxOf } from "./helpers/box";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
+import "../views/TaskView.vue";
 
 interface Task {
 	name: string;

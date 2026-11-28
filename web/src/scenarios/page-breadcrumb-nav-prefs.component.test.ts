@@ -4,6 +4,9 @@ import { goto, reload, renderApp } from "../component-test/app";
 import { mockMCP, route } from "../component-test/server";
 import { useNavPrefs } from "../composables/useNavPrefs";
 import { normalizeNavPrefs } from "../lib/navPrefs";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChannelView.vue";
+import "../views/SettingsView.vue";
 
 // From page-breadcrumb.spec.ts. Its own file: the navigation preferences
 // are fetched once per page load (module state), so the first fetch must be

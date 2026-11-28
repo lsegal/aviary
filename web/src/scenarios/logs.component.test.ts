@@ -3,6 +3,9 @@ import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { eventSourcesOpened, mockMCP, route } from "../component-test/server";
 import { chooseOption } from "./helpers/select";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/LogsView.vue";
+import "../views/SettingsView.vue";
 
 /*
  * System → Logs (#1627): level, component and text filters, Clear, Load

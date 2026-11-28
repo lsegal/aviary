@@ -6,6 +6,9 @@ import {
 	routeWebSocket,
 	type WebSocketRoute,
 } from "../component-test/server";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 // A project added, removed or polled shows in every view at once: in the
 // adding tab before project_add answers, and in every other client through

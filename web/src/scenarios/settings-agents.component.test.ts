@@ -7,6 +7,9 @@ import {
 	SIDEBAR_DEFAULT_WIDTH,
 	useSidebarLayout,
 } from "../composables/useSidebarLayout";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/OverviewView.vue";
+import "../views/SettingsView.vue";
 
 interface MockConfig {
 	server?: Record<string, unknown>;

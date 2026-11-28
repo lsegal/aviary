@@ -4,6 +4,8 @@ import { currentURL, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { chooseOption, expectValue, optionLabels } from "./helpers/select";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
 
 // The open task dialog is module state; a spec's fresh page starts with
 // none open, so close whatever the previous test left open.

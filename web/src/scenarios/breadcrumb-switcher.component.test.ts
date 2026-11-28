@@ -2,6 +2,13 @@ import { beforeEach, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
 import { mockMCP, route } from "../component-test/server";
+// The pages this file renders (see component-test/routes.ts).
+import "../components/projects/ProjectJobDetail.vue";
+import "../components/tasks/dashboard/TaskRunPage.vue";
+import "../views/ChannelView.vue";
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
+import "../views/TaskView.vue";
 
 // The breadcrumb leaf on a project, task, channel or file page switches
 // between its siblings, like GitHub's repository switcher (#1063).

@@ -2,6 +2,9 @@ import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { mockMCP, route } from "../component-test/server";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 // The `aviary watch` session case of codeloop-queue (#1095), in its own
 // file: the signed-out health check it loads is module state that would

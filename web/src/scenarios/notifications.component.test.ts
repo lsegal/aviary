@@ -8,6 +8,10 @@ import {
 	setup,
 	stubSystemNotifications,
 } from "./helpers/notificationServer";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/OverviewView.vue";
+import "../views/SettingsView.vue";
+import "../views/UsageView.vue";
 
 // Notifications (#1215): pushed over /api/ws, shown as a banner, a toast or
 // a system notification with a sound, kept in the bell, and controlled from

@@ -7,6 +7,10 @@ import {
 	type WebSocketRoute,
 } from "../component-test/server";
 import { chooseOption } from "./helpers/select";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChatView.vue";
+import "../views/OverviewView.vue";
+import "../views/SettingsView.vue";
 
 interface Sess {
 	id: string;

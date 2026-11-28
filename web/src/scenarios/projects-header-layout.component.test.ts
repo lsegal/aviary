@@ -5,6 +5,10 @@ import { currentURL, goto, reload, renderApp } from "../component-test/app";
 import { expectHeaderOneLine, headerSettled } from "./helpers/boardHeader";
 import { boundingBoxOf } from "./helpers/box";
 import { at, CLONES, EVENTS, setup, stateChip } from "./projects-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../components/projects/ProjectJobDetail.vue";
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 // A fresh page starts unscrolled; earlier tests here scroll the document.
 beforeEach(() => {

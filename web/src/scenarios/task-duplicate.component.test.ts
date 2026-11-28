@@ -3,6 +3,9 @@ import { type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import { chooseOption } from "./helpers/select";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
+import "../views/TaskView.vue";
 
 // Duplicate opens the create form prefilled from a scheduled task, mainly to
 // copy it to another project (#1465). Fixtures follow config_get's agents

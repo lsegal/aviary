@@ -2,6 +2,8 @@ import { expect, test } from "vitest";
 import { type Locator, page } from "vitest/browser";
 import { goto, renderApp } from "../component-test/app";
 import { mockMCP, type ToolFixtures } from "../component-test/server";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
 
 // From providers.spec.ts. Its own file: the CLI list is module state read
 // from localStorage once, when the module loads, so the cached list must be

@@ -10,6 +10,8 @@ import {
 	nativeDialogs,
 	TRIAGE,
 } from "./workflows-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
 
 // The channel settings' Workflows tab, from web/e2e/workflows.spec.ts. The
 // cached-analysis scenario stays in that spec: it needs real page reloads

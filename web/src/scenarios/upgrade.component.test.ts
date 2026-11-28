@@ -3,6 +3,10 @@ import { page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
 import { mockMCP, routeWebSocket } from "../component-test/server";
 import { openGearMenuItem } from "./helpers/sidebar";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/LoginView.vue";
+import "../views/OverviewView.vue";
+import "../views/SettingsView.vue";
 
 /** The number of elements `loc` matches, as Playwright's toHaveCount. */
 const count = (loc: { elements(): Element[] }) => () => loc.elements().length;

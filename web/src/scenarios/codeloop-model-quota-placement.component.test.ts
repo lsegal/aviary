@@ -6,6 +6,9 @@ import {
 	SIDEBAR_DEFAULT_WIDTH,
 	useSidebarLayout,
 } from "../composables/useSidebarLayout";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 // The Code Loop board's agent models and quota show in exactly one place at
 // every width: inline under the stats when they fit there on one line, or in

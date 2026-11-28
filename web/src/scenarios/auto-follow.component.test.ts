@@ -11,6 +11,12 @@ import {
 	Server,
 	scrollToTop,
 } from "./auto-follow.fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChannelView.vue";
+import "../views/ChatView.vue";
+import "../views/LogsView.vue";
+import "../views/SettingsView.vue";
+import "../views/TaskView.vue";
 
 /*
  * Every chat and live log view shares one auto-follow behavior (#1072): it

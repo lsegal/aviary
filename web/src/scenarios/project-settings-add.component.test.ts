@@ -17,6 +17,9 @@ import {
 	setChecked,
 	setup,
 } from "./project-settings.fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 test('the Add project "+" on Code Loop opens Add project', async () => {
 	setup();

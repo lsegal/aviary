@@ -3,6 +3,8 @@ import { cdp, commands, type Locator, page } from "vitest/browser";
 import { renderApp, setAuthToken } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import { expectValue, listbox, optionLabels } from "./helpers/select";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
 
 declare global {
 	interface ImportMeta {

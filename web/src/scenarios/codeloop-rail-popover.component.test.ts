@@ -7,6 +7,10 @@ import {
 	SIDEBAR_DEFAULT_WIDTH,
 	useSidebarLayout,
 } from "../composables/useSidebarLayout";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChatView.vue";
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 // The collapsed rail's Code Loop flyout names where the work is: each
 // project's running count, running projects first, with a header total that

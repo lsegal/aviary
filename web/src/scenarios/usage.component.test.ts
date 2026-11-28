@@ -3,6 +3,9 @@ import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import { chooseOption } from "./helpers/select";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
+import "../views/UsageView.vue";
 
 const now = new Date().toISOString();
 

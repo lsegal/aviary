@@ -7,6 +7,11 @@ import {
 	SIDEBAR_DEFAULT_WIDTH,
 	useSidebarLayout,
 } from "../composables/useSidebarLayout";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChatView.vue";
+import "../views/OverviewView.vue";
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 // The desktop sidebar collapses to an icon rail and resizes from its right
 // edge, and remembers both per browser (#724).

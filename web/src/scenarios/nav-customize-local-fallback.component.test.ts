@@ -8,6 +8,9 @@ import {
 	openEditor,
 	sidebarPages,
 } from "./helpers/navCustomize";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/OverviewView.vue";
+import "../views/SettingsView.vue";
 
 // Customizing the navigation (#1003): when the server can't keep the
 // preferences, this browser's copy does. In its own file because the

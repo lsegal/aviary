@@ -2,6 +2,12 @@ import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { goto, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChannelView.vue";
+import "../views/ChatView.vue";
+import "../views/OverviewView.vue";
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 // On a phone the document itself never scrolls; only the panes inside the
 // app shell do (#1656). Anything sized by 100vh is taller than the screen

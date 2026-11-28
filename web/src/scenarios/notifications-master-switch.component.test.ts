@@ -7,6 +7,9 @@ import {
 	setup,
 	stubSystemNotifications,
 } from "./helpers/notificationServer";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/OverviewView.vue";
+import "../views/SettingsView.vue";
 
 // Its own file (#1636): useNotifications loads the saved settings once per
 // page, and this test needs the page to load them (the switch off) fresh.

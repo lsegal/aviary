@@ -2,6 +2,9 @@ import { beforeEach, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { mockMCP, route } from "../component-test/server";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/DaemonsView.vue";
+import "../views/SettingsView.vue";
 
 beforeEach(() => {
 	mockMCP({ agent_list: [], job_list: [], config_validate: [] });

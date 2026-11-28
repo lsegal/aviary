@@ -10,6 +10,9 @@ import {
 	openRunDetails,
 	panelWidth,
 } from "./tasks-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/SettingsView.vue";
+import "../views/TaskView.vue";
 
 const count = (loc: Locator) => () => loc.elements().length;
 

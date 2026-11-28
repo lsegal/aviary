@@ -2,6 +2,9 @@ import { describe, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { currentURL, reload, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/OverviewView.vue";
+import "../views/SettingsView.vue";
 
 function agent(name: string) {
 	return { name, model: "anthropic/claude-sonnet-4-5", fallbacks: [] };

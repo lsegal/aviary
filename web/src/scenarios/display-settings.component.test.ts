@@ -8,6 +8,9 @@ import {
 	defaultDisplayPrefs,
 	normalizeDisplayPrefs,
 } from "../lib/displayPrefs";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChatView.vue";
+import "../views/SettingsView.vue";
 
 // Settings → Display (#1093): text size and theme apply at once, persist on
 // the server with a localStorage cache applied before the first paint, and

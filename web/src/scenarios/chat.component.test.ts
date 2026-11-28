@@ -2,6 +2,9 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { reload, renderApp } from "../component-test/app";
 import { mockMCP, webSockets } from "../component-test/server";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChatView.vue";
+import "../views/SettingsView.vue";
 
 // The fake server's unrouted WebSockets open and stay silent, as the spec's
 // stub socket did.

@@ -13,6 +13,10 @@ import {
 	setup,
 	upcomingRun,
 } from "./project-schedules-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
+import "../views/TaskView.vue";
 
 afterEach(() => {
 	vi.useRealTimers();

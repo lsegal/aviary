@@ -10,6 +10,10 @@ import {
 	fillTrigger,
 	TRIGGER_CASES,
 } from "./helpers/triggerEditor";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ChatView.vue";
+import "../views/SettingsView.vue";
+import "../views/TaskView.vue";
 
 // The "on a touch screen" scenario stays in web/e2e/tasks-files-sidebar.spec.ts:
 // it needs a touch browser context, where (hover: none) matches, which a

@@ -16,6 +16,9 @@ import {
 	setup,
 	shown,
 } from "./project-schedules-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 const innerText = (el: Element) => (el.textContent ?? "").trim();
 

@@ -4,6 +4,19 @@ import { currentURL, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import { useSidebarLayout } from "../composables/useSidebarLayout";
 import { expectSettingsHeader } from "./helpers/settingsHeader";
+// The pages this file renders (see component-test/routes.ts).
+import "../components/projects/ProjectJobDetail.vue";
+import "../components/tasks/dashboard/TaskRunPage.vue";
+import "../views/ChannelView.vue";
+import "../views/DaemonsView.vue";
+import "../views/LogsView.vue";
+import "../views/OverviewView.vue";
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
+import "../views/SystemModelsView.vue";
+import "../views/SystemToolsView.vue";
+import "../views/TaskView.vue";
+import "../views/UsageView.vue";
 
 // Every nested page shows where it is, from its agent or System down, with a
 // back link to its parent, also with the sidebar collapsed and on narrow

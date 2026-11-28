@@ -18,6 +18,10 @@ import {
 	setup,
 	stateChip,
 } from "./projects-fixtures";
+// The pages this file renders (see component-test/routes.ts).
+import "../components/projects/ProjectJobDetail.vue";
+import "../views/ProjectsView.vue";
+import "../views/SettingsView.vue";
 
 /** Playwright's isVisible: attached, with a box, and not hidden. */
 function isVisible(locator: Locator): boolean {
