@@ -57,7 +57,7 @@ vi.mock("../composables/useTaskPause", () => ({
 	useTaskPause: () => ({ setTaskEnabled: m.setTaskEnabled }),
 }));
 vi.mock("../composables/useHeaderCollapse", () => ({
-	useHeaderCollapse: () => ref(0),
+	useHeaderCollapse: () => ref(new Set<string>()),
 }));
 vi.mock("../composables/useFilterRowFit", () => ({
 	useFilterRowFit: () => ({ stacked: ref(false), collapsed: ref(false) }),
@@ -482,11 +482,10 @@ describe("ProjectsView header", () => {
 			clis: [{ name: "codex" }] as ProjectStatus["clis"],
 		});
 		const { w } = await render("/agents/bot/projects/o%2Fr");
-		// Below sm the row hides and the details popover shows them (#1582).
-		expect(testid(w, "board-nav-row").classes()).toEqual(
-			expect.arrayContaining(["hidden", "sm:flex"]),
-		);
-		expect(w.findComponent(CLIProviderList).props("clis")).toEqual([
+		// The row shows the list inline when it fits the measured width (#1585).
+		expect(
+			testid(w, "board-nav-row").findComponent(CLIProviderList).props("clis"),
+		).toEqual([
 			{ name: "codex" },
 		]);
 	});
