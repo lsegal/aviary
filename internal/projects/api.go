@@ -2,13 +2,10 @@ package projects
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -256,6 +253,12 @@ type JobListQuery struct {
 	// again. Without it no revision is computed, which costs a second
 	// serialization of the page.
 	Revision string
+	// Delta, with the Revision of an earlier list, returns only what
+	// changed since it (issue #1661): jobs holds the entries added or
+	// changed, removed the keys gone, and keys the new order when it
+	// changed, with delta set. A revision too old to diff gets the full
+	// list, without delta.
+	Delta bool
 }
 
 // ListJobs is project_job_list without card output or a revision; see
@@ -332,11 +335,18 @@ func (m *Manager) ListJobsPage(q JobListQuery) map[string]any {
 	if q.Revision == "" {
 		return list
 	}
-	revision := listRevision(list)
-	if q.Revision == revision {
-		return map[string]any{"unchanged": true, "revision": revision}
+	now, diffable := snapshotList(list, page)
+	if q.Revision == now.revision {
+		return map[string]any{"unchanged": true, "revision": now.revision}
 	}
-	list["revision"] = revision
+	list["revision"] = now.revision
+	if !diffable {
+		return list
+	}
+	m.listDeltas.put(now)
+	if before, ok := m.listDeltas.get(q.Revision); ok && q.Delta {
+		applyListDelta(list, page, now, before)
+	}
 	return list
 }
 
@@ -357,18 +367,6 @@ const NewRevision = "new"
 
 // cardRawBytes is how much of a job's raw output project_job_get returns.
 const cardRawBytes = 64 * 1024
-
-// listRevision is a hash of a job list's content, which changes whenever
-// anything the list reports does.
-func listRevision(list map[string]any) string {
-	data, err := json.Marshal(list)
-	if err != nil {
-		return ""
-	}
-	sum := fnv.New64a()
-	sum.Write(data)
-	return strconv.FormatUint(sum.Sum64(), 36)
-}
 
 // jobSearchKinds are the skill names the dashboards show for each job kind.
 var jobSearchKinds = map[string]string{

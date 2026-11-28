@@ -129,6 +129,7 @@ type Manager struct {
 	// it last heard of each target; see SetProjectObserver.
 	projectObserver atomic.Pointer[ProjectObserver]
 	projectStates   projectStates
+	listDeltas      listDeltas
 }
 
 // ScheduleSource lists core's scheduled tasks with their next fire and run
