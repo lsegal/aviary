@@ -38,7 +38,7 @@
 	<!-- Hidden copies of the inline forms and an icon, measured so the header
 		knows what fits before showing them (#1584). -->
 	<span aria-hidden="true" class="pointer-events-none invisible absolute top-0 left-0 h-0 w-0 overflow-hidden">
-		<span class="flex w-max">
+		<span class="absolute top-0 right-0 flex w-max">
 			<span v-if="status.instanceID" data-testid="instance-badge-measure" :class="BADGE_CLS">Instance <code
 					:class="BADGE_ID_CLS">{{ status.instanceID }}</code></span>
 			<span data-testid="board-meta-measure" :class="SUMMARY_CLS">

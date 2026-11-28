@@ -41,8 +41,8 @@
 			on the right, never wrapping; the page hides the title and moves
 			what doesn't fit into its "…" menu (#1576, #1584). -->
 		<div data-testid="settings-title-row" :style="collapsed ? { marginTop: `-${collapsed}px` } : undefined"
-			class="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 sm:px-6 dark:border-gray-800"
-			:class="{ 'relative flex-nowrap gap-x-2 py-2': compact }">
+			class="flex items-center border-b border-gray-200 px-4 sm:px-6 dark:border-gray-800"
+			:class="compact ? 'relative flex-nowrap gap-2 py-2' : 'flex-wrap gap-3 py-3'">
 			<div class="flex min-w-0 items-center gap-3"
 				:class="compact ? 'flex-[0_1_auto]' : 'flex-[1_1_14rem]'">
 				<span v-if="!compact" data-testid="settings-header-icon" aria-hidden="true"
@@ -54,15 +54,15 @@
 				<div class="min-w-0 flex-1">
 					<!-- The status chips wrap below the title rather than squeeze it
 						(#1209); only a title wider than the row truncates. -->
-					<div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" :class="{ 'flex-nowrap': compact }">
+					<div class="flex min-w-0 items-center gap-x-2 gap-y-1" :class="compact ? 'flex-nowrap' : 'flex-wrap'">
 						<h2 data-testid="settings-title" class="max-w-full min-w-0 truncate text-lg font-bold text-gray-900 dark:text-white"
 							:class="{ 'sr-only left-0 top-0': compact && titleHidden, 'shrink-0': compact }">
 							<a v-if="titleLink" :href="titleLink.href" target="_blank" rel="noopener noreferrer"
 								class="hover:underline" :title="titleLink.title">{{ title }}</a>
 							<template v-else>{{ title }}</template>
 						</h2>
-						<div id="page-header-status" data-testid="settings-status" class="flex min-w-0 max-w-full flex-wrap items-center gap-2 empty:hidden"
-							:class="{ 'flex-nowrap': compact }">
+						<div id="page-header-status" data-testid="settings-status" class="flex min-w-0 max-w-full items-center gap-2 empty:hidden"
+							:class="compact ? 'flex-nowrap' : 'flex-wrap'">
 							<slot name="status" />
 						</div>
 					</div>

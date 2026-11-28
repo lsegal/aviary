@@ -119,7 +119,7 @@
 							fit on one line (#1580, #1584); the hidden copy measures them. -->
 						<div v-if="status?.clis.length" aria-hidden="true"
 							class="pointer-events-none invisible absolute top-0 left-0 h-0 w-0 overflow-hidden">
-							<CLIProviderList ref="cliMeasure" class="w-max" :clis="status.clis" />
+							<div class="absolute top-0 right-0 w-max"><CLIProviderList ref="cliMeasure" :clis="status.clis" /></div>
 						</div>
 						<div v-if="(aggregate && targets.length) || inlineCLIs" class="flex min-w-0 flex-wrap items-center gap-2" data-testid="board-nav-row">
 						<ProjectNavRow v-if="aggregate && targets.length" :agent="routeAgent" :targets="targets" />
