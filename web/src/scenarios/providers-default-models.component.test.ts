@@ -1,10 +1,12 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import { chooseOption, optionLabels } from "./helpers/select";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/SettingsView.vue"));
 
 // From providers.spec.ts. Its own file: the CLI list is module state, so
 // the General tab only probes for it on a page that has not loaded it yet.

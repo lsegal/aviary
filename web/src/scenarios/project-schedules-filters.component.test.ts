@@ -4,6 +4,7 @@
 import { describe, expect, test } from "vitest";
 import { commands, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	AGENT_BOARD,
 	BOARD,
@@ -16,9 +17,9 @@ import {
 	setup,
 	shown,
 } from "./project-schedules-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/ProjectsView.vue"));
 
 const innerText = (el: Element) => (el.textContent ?? "").trim();
 

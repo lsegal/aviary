@@ -3,12 +3,16 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { boundingBoxOf } from "./helpers/box";
 import { JOBS, STATUS, setup } from "./projects-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/OverviewView.vue";
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/OverviewView.vue"),
+	() => import("../views/ProjectsView.vue"),
+	() => import("../views/SettingsView.vue"),
+);
 
 afterEach(() => {
 	vi.useRealTimers();

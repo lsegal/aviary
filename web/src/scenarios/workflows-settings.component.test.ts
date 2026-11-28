@@ -1,6 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { chooseOption } from "./helpers/select";
 import {
 	AGO,
@@ -10,8 +11,9 @@ import {
 	nativeDialogs,
 	TRIAGE,
 } from "./workflows-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/SettingsView.vue"));
 
 // The channel settings' Workflows tab, from web/e2e/workflows.spec.ts. The
 // cached-analysis scenario stays in that spec: it needs real page reloads

@@ -6,9 +6,11 @@ import {
 	renderApp,
 	setAuthToken,
 } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { setup } from "./helpers/notificationServer";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/SettingsView.vue"));
 
 // Its own file (#1636): useNotifications loads the saved settings once per
 // page, and this test needs them to start as the defaults.

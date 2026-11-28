@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { goto, reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { requestLog } from "../component-test/server";
 import { useNavPrefs } from "../composables/useNavPrefs";
 import {
@@ -13,11 +14,14 @@ import {
 	sidebarPages,
 	systemPages,
 } from "./helpers/navCustomize";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChatView.vue";
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
-import "../views/UsageView.vue";
+declarePages(
+	() => import("../views/ChatView.vue"),
+	() => import("../views/OverviewView.vue"),
+	() => import("../views/SettingsView.vue"),
+	() => import("../views/UsageView.vue"),
+);
 
 // Customizing the navigation (#1003): the sidebar editor, in Settings →
 // Display (#1093), reorders and hides pages, the result persists on the

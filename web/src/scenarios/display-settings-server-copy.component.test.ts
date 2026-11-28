@@ -1,9 +1,11 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP, route } from "../component-test/server";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/SettingsView.vue"));
 
 // Settings → Display (#1093): a device with no local copy reads the
 // server's. Its own file because the display preferences load the server's

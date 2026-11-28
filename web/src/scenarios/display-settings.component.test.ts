@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { commands, page } from "vitest/browser";
 import { currentURL, reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import { useDisplayPrefs } from "../composables/useDisplayPrefs";
 import { useNavPrefs } from "../composables/useNavPrefs";
@@ -8,9 +9,12 @@ import {
 	defaultDisplayPrefs,
 	normalizeDisplayPrefs,
 } from "../lib/displayPrefs";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChatView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/ChatView.vue"),
+	() => import("../views/SettingsView.vue"),
+);
 
 // Settings → Display (#1093): text size and theme apply at once, persist on
 // the server with a localStorage cache applied before the first paint, and

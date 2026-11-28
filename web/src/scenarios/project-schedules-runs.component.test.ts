@@ -3,6 +3,7 @@
 import { describe, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { currentURL, goBack, reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	BOARD,
 	expectCount,
@@ -16,10 +17,12 @@ import {
 	schedule,
 	setup,
 } from "./project-schedules-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../components/projects/ProjectJobDetail.vue";
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../components/projects/ProjectJobDetail.vue"),
+	() => import("../views/ProjectsView.vue"),
+);
 
 // A one-time schedule moves through these states: armed, fired and running
 // (the scheduler lists no next run once it fires), then finished.

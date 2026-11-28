@@ -4,6 +4,7 @@
 import { beforeEach, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import {
 	type Args,
@@ -23,10 +24,13 @@ import {
 	openTaskSettings,
 	systemList,
 } from "./helpers/sidebar";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChannelView.vue";
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/ChannelView.vue"),
+	() => import("../views/OverviewView.vue"),
+	() => import("../views/SettingsView.vue"),
+);
 
 beforeEach(() => {
 	mockDefault();

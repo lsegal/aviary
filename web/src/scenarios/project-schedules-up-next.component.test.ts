@@ -3,6 +3,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { boundingBoxOf } from "./helpers/box";
 import {
 	AGENT_BOARD,
@@ -13,10 +14,12 @@ import {
 	setup,
 	upcomingRun,
 } from "./project-schedules-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
-import "../views/TaskView.vue";
+declarePages(
+	() => import("../views/ProjectsView.vue"),
+	() => import("../views/TaskView.vue"),
+);
 
 afterEach(() => {
 	vi.useRealTimers();

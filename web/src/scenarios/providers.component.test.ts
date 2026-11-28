@@ -4,11 +4,15 @@ import modelCatalog from "../../../internal/models/catalog.json" with {
 	type: "json",
 };
 import { currentURL, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP, type ToolFixtures } from "../component-test/server";
 import { systemList } from "./helpers/sidebar";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/SettingsView.vue";
-import "../views/SystemModelsView.vue";
+declarePages(
+	() => import("../views/SettingsView.vue"),
+	() => import("../views/SystemModelsView.vue"),
+);
 
 // The CLI providers list's cached and default-model scenarios live in
 // providers-cache and providers-default-models: the CLI list is module

@@ -4,6 +4,7 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	type Args,
 	CODER_PROJECTS,
@@ -17,9 +18,12 @@ import {
 	setChecked,
 	setup,
 } from "./project-settings.fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/ProjectsView.vue"),
+	() => import("../views/SettingsView.vue"),
+);
 
 test('the Add project "+" on Code Loop opens Add project', async () => {
 	setup();

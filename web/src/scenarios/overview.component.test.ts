@@ -1,15 +1,19 @@
 import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP, route, unroute } from "../component-test/server";
 import { boundingBoxOf } from "./helpers/box";
 import { systemList } from "./helpers/sidebar";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChatView.vue";
-import "../views/LogsView.vue";
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
-import "../views/UsageView.vue";
+declarePages(
+	() => import("../views/ChatView.vue"),
+	() => import("../views/LogsView.vue"),
+	() => import("../views/OverviewView.vue"),
+	() => import("../views/SettingsView.vue"),
+	() => import("../views/UsageView.vue"),
+);
 
 // The MCP retry scenarios ("recovers when the MCP session expires", "retries
 // a transient MCP 502 during overview load") are in overview-mcp-retry-*:

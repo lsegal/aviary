@@ -1,14 +1,15 @@
 import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import {
 	SIDEBAR_DEFAULT_WIDTH,
 	useSidebarLayout,
 } from "../composables/useSidebarLayout";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/ProjectsView.vue"));
 
 // The Code Loop board's agent models and quota show in exactly one place at
 // every width: inline under the stats when they fit there on one line, or in

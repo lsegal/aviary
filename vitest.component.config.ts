@@ -49,10 +49,9 @@ const PREBUNDLED = [
 ].sort();
 
 // The router's lazy page imports, hidden from the module graph so a test
-// depends only on the pages it imports itself, not on every page the router
-// can load; see web/src/component-test/routes.ts. Every .vue module also
-// notes that it evaluated, which is how routes.ts tells a declared page from
-// an undeclared one.
+// depends only on the pages it declares, not on every page the router can
+// load; see web/src/component-test/routes.ts. The pages a test file declares
+// with declarePages(() => import(...)) are noted before it runs.
 const ROUTER_FILES = /\/web\/src\/router\/(index|settingsView)\.ts$/;
 function routePagesAsDeclared(): Plugin {
 	let root = process.cwd();
@@ -64,8 +63,14 @@ function routePagesAsDeclared(): Plugin {
 		},
 		transform(code, id) {
 			const file = id.split("?")[0];
-			if (ROUTER_FILES.test(file)) {
-				return code.replace(
+			if (ROUTER_FILES.test(file) && !id.includes("?")) {
+				// Prefetching the Settings page on idle is a load-time speedup;
+				// in a test it would load a page the test may not render.
+				const unprefetched = code.replace(
+					/export function prefetchSettingsViewWhenIdle\(\)\s*\{/,
+					"$&\n\treturn;",
+				);
+				return unprefetched.replace(
 					/\bimport\(\s*(["'])(\.{1,2}\/[^"']+\.vue)\1\s*\)/g,
 					(_, _quote, spec) => {
 						const target = path.resolve(path.dirname(file), spec);
@@ -74,8 +79,14 @@ function routePagesAsDeclared(): Plugin {
 					},
 				);
 			}
-			if (file.endsWith(".vue") && !id.includes("?")) {
-				return `${code}\n;(globalThis.__aviaryEvaluated ??= new Set()).add(${JSON.stringify(file)});\n`;
+			if (file.endsWith(".component.test.ts")) {
+				const pages = [
+					...code.matchAll(/\bimport\(\s*(["'])(\.{1,2}\/[^"']+\.vue)\1\s*\)/g),
+				].map((m) => path.resolve(path.dirname(file), m[2]));
+				if (!pages.length) return;
+				return `(globalThis.__aviaryDeclared ??= new Set())${pages
+					.map((page) => `.add(${JSON.stringify(page)})`)
+					.join("")};\n${code}`;
 			}
 		},
 	};

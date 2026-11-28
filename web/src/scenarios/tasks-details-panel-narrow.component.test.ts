@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockTasks, openRunDetails, panelWidth } from "./tasks-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/SettingsView.vue"));
 
 // The run details drawer reads its stored width once, when its module loads
 // (#878), so a test that seeds that width needs a page of its own: in

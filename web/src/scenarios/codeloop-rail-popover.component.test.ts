@@ -2,15 +2,18 @@ import { beforeEach, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { nextTick } from "vue";
 import { currentURL, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import {
 	SIDEBAR_DEFAULT_WIDTH,
 	useSidebarLayout,
 } from "../composables/useSidebarLayout";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChatView.vue";
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/ChatView.vue"),
+	() => import("../views/ProjectsView.vue"),
+);
 
 // The collapsed rail's Code Loop flyout names where the work is: each
 // project's running count, running projects first, with a header total that

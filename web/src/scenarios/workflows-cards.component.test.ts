@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	AGO,
 	ARCHIVE,
@@ -10,10 +11,13 @@ import {
 	TRIAGE,
 	TRIGGER_CONTEXT,
 } from "./workflows-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChannelView.vue";
-import "../views/SettingsView.vue";
-import "../views/TaskView.vue";
+declarePages(
+	() => import("../views/ChannelView.vue"),
+	() => import("../views/SettingsView.vue"),
+	() => import("../views/TaskView.vue"),
+);
 
 // The channel chat's workflow cards and a workflow's detail view, from
 // web/e2e/workflows.spec.ts.

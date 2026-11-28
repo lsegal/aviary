@@ -1,14 +1,19 @@
 import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goBack, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import { expectSettingsHeader } from "./helpers/settingsHeader";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChannelView.vue";
-import "../views/OverviewView.vue";
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
-import "../views/TaskView.vue";
+declarePages(
+	() => import("../views/ChannelView.vue"),
+	() => import("../views/ChatView.vue"),
+	() => import("../views/OverviewView.vue"),
+	() => import("../views/ProjectsView.vue"),
+	() => import("../views/SettingsView.vue"),
+	() => import("../views/TaskView.vue"),
+);
 
 // Every Settings page shares one header: a back link to the page the
 // settings belong to and a breadcrumb whose crumbs link to their pages (#986).

@@ -3,6 +3,7 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	chooseOption,
 	chooseValue,
@@ -21,8 +22,9 @@ import {
 	setChecked,
 	setup,
 } from "./project-settings.fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/SettingsView.vue"));
 
 test("clones show what's in use and unused ones can be cleared", async () => {
 	const calls = setup();

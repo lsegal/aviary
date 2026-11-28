@@ -1,10 +1,12 @@
 import { afterEach, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/SettingsView.vue"));
 
 // Fixtures follow task_analyze's result (internal/mcp/task_analyze.go).
 //

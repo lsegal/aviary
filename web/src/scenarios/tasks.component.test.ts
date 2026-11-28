@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import { clickCardAt } from "./helpers/cards";
 import {
@@ -10,9 +11,12 @@ import {
 	openRunDetails,
 	panelWidth,
 } from "./tasks-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/SettingsView.vue";
-import "../views/TaskView.vue";
+declarePages(
+	() => import("../views/SettingsView.vue"),
+	() => import("../views/TaskView.vue"),
+);
 
 const count = (loc: Locator) => () => loc.elements().length;
 

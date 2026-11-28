@@ -2,6 +2,7 @@
 import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { openBoardInfo, openInstanceTag } from "./helpers/boardHeader";
 import { boundingBoxOf } from "./helpers/box";
 import {
@@ -12,9 +13,9 @@ import {
 	setup,
 	stateChip,
 } from "./projects-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/ProjectsView.vue"));
 
 /** Playwright's isVisible: attached, with a box, and not hidden. */
 function isVisible(locator: Locator): boolean {

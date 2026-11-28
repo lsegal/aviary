@@ -1,11 +1,12 @@
 import { describe, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import { openBoardInfo } from "./helpers/boardHeader";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/ProjectsView.vue"));
 
 // The Code Loop header's issue filter is editable inline for one project
 // (#1213). The mocks keep each project's own filter the way the Manager does:

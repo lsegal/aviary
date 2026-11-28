@@ -3,6 +3,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { commands, page } from "vitest/browser";
 import { currentURL, goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { clickCardAt } from "./helpers/cards";
 import {
 	BOARD,
@@ -17,11 +18,13 @@ import {
 	setup,
 	shown,
 } from "./project-schedules-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../components/projects/ProjectJobDetail.vue";
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
-import "../views/TaskView.vue";
+declarePages(
+	() => import("../components/projects/ProjectJobDetail.vue"),
+	() => import("../views/ProjectsView.vue"),
+	() => import("../views/TaskView.vue"),
+);
 
 afterEach(() => {
 	vi.useRealTimers();

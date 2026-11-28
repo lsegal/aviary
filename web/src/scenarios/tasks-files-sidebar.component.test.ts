@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import { useAgentItemDialogs } from "../composables/useAgentItemDialogs";
 import { chooseOption, expectValue, optionLabels } from "./helpers/select";
@@ -10,10 +11,13 @@ import {
 	fillTrigger,
 	TRIGGER_CASES,
 } from "./helpers/triggerEditor";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChatView.vue";
-import "../views/SettingsView.vue";
-import "../views/TaskView.vue";
+declarePages(
+	() => import("../views/ChatView.vue"),
+	() => import("../views/SettingsView.vue"),
+	() => import("../views/TaskView.vue"),
+);
 
 // The "on a touch screen" scenario stays in web/e2e/tasks-files-sidebar.spec.ts:
 // it needs a touch browser context, where (hover: none) matches, which a

@@ -1,10 +1,11 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP, route } from "../component-test/server";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/OverviewView.vue"));
 
 // From overview.spec.ts. Its own file: it counts MCP initializes, and the
 // MCP session is module state, so it needs a page that has not opened one.

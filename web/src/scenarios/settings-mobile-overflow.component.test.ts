@@ -1,12 +1,14 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	expectNoHorizontalOverflow,
 	mockSettings,
 } from "./settings-mobile-overflow.fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/SettingsView.vue"));
 
 // Settings pages fit a phone: nothing widens the page or the settings
 // scroller past the screen, so the header never slides off the left edge

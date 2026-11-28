@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { currentURL, goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	note,
 	removeSystemNotifications,
@@ -8,10 +9,13 @@ import {
 	setup,
 	stubSystemNotifications,
 } from "./helpers/notificationServer";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
-import "../views/UsageView.vue";
+declarePages(
+	() => import("../views/OverviewView.vue"),
+	() => import("../views/SettingsView.vue"),
+	() => import("../views/UsageView.vue"),
+);
 
 // Notifications (#1215): pushed over /api/ws, shown as a banner, a toast or
 // a system notification with a sound, kept in the bell, and controlled from

@@ -1,11 +1,12 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { eventSourcesOpened, mockMCP, route } from "../component-test/server";
 import { chooseOption } from "./helpers/select";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/LogsView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/LogsView.vue"));
 
 /*
  * System → Logs (#1627): level, component and text filters, Clear, Load

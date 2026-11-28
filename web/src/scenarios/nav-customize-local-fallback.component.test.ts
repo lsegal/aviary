@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { requestLog, route } from "../component-test/server";
 import {
 	DEFAULT_PAGES,
@@ -8,9 +9,12 @@ import {
 	openEditor,
 	sidebarPages,
 } from "./helpers/navCustomize";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/OverviewView.vue"),
+	() => import("../views/SettingsView.vue"),
+);
 
 // Customizing the navigation (#1003): when the server can't keep the
 // preferences, this browser's copy does. In its own file because the

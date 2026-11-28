@@ -2,12 +2,15 @@
 import { beforeEach, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { useJobOutputMode } from "../composables/useJobOutput";
 import { at, jobGetWithEvents, STATUS, setup } from "./projects-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../components/projects/ProjectJobDetail.vue";
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../components/projects/ProjectJobDetail.vue"),
+	() => import("../views/ProjectsView.vue"),
+);
 
 // The rich/raw choice is module state that a fresh page would read from the
 // (cleared) storage, so each test starts on the default rich view.

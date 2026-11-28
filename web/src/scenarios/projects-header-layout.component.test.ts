@@ -2,13 +2,16 @@
 import { beforeEach, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { expectHeaderOneLine, headerSettled } from "./helpers/boardHeader";
 import { boundingBoxOf } from "./helpers/box";
 import { at, CLONES, EVENTS, setup, stateChip } from "./projects-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../components/projects/ProjectJobDetail.vue";
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../components/projects/ProjectJobDetail.vue"),
+	() => import("../views/ProjectsView.vue"),
+);
 
 // A fresh page starts unscrolled; earlier tests here scroll the document.
 beforeEach(() => {

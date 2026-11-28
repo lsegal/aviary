@@ -3,6 +3,7 @@
 import { describe, expect, test } from "vitest";
 import { type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { boundingBoxOf } from "./helpers/box";
 import {
 	BOARD,
@@ -17,9 +18,9 @@ import {
 	setup,
 	TASKS,
 } from "./project-schedules-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/ProjectsView.vue"));
 
 test("scheduled cards are compact: trigger and next run share one line (#875)", async () => {
 	setup();

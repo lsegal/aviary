@@ -2,12 +2,15 @@
 import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { boundingBoxOf } from "./helpers/box";
 import { CLONES, JOBS, STATUS, setup } from "./projects-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../components/projects/ProjectJobDetail.vue";
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../components/projects/ProjectJobDetail.vue"),
+	() => import("../views/ProjectsView.vue"),
+);
 
 /** Playwright's toHaveText with a list: one entry per element, in order. */
 async function expectTexts(locator: Locator, expected: (string | RegExp)[]) {

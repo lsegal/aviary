@@ -1,16 +1,20 @@
 import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	mockMCP,
 	routeWebSocket,
 	type WebSocketRoute,
 } from "../component-test/server";
 import { chooseOption } from "./helpers/select";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChatView.vue";
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/ChatView.vue"),
+	() => import("../views/OverviewView.vue"),
+	() => import("../views/SettingsView.vue"),
+);
 
 interface Sess {
 	id: string;

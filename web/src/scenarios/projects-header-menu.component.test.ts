@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	COLLAPSIBLE_HEADER_ITEMS,
 	expectHeaderOneLine,
@@ -12,9 +13,9 @@ import {
 } from "./helpers/boardHeader";
 import { boundingBoxOf } from "./helpers/box";
 import { setup } from "./projects-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/ProjectsView.vue"));
 
 /** What the stubbed clipboard was given, as the e2e init script kept. */
 let copied: string[] = [];

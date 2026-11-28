@@ -1,11 +1,15 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP, route } from "../component-test/server";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
-import "../views/TaskView.vue";
+declarePages(
+	() => import("../views/ProjectsView.vue"),
+	() => import("../views/SettingsView.vue"),
+	() => import("../views/TaskView.vue"),
+);
 
 // From settings-header.spec.ts. Its own file: the navigation preferences
 // are fetched once per page load (module state), so the first fetch must be

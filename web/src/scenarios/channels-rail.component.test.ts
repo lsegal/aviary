@@ -4,11 +4,14 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { currentURL, goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockChannels, TEAM } from "./helpers/channelsServer";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChannelView.vue";
-import "../views/ChatView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/ChannelView.vue"),
+	() => import("../views/ChatView.vue"),
+);
 
 test("the Channels section works in the collapsed rail and the mobile nav", async () => {
 	mockChannels([TEAM]);

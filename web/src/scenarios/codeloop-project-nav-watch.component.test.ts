@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	backToBoard,
 	expectSharedNavOnly,
@@ -8,9 +9,9 @@ import {
 	pill,
 	setup,
 } from "./codeloop-project-nav.fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/ProjectsView.vue"));
 
 // The `aviary watch` session cases of codeloop-project-nav (#1044, #1066),
 // in their own file: the signed-out health check they load is module state

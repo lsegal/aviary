@@ -1,11 +1,15 @@
 import { expect, test } from "vitest";
 import { commands, page } from "vitest/browser";
 import { goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import { chooseOption, listbox, searchOption } from "./helpers/select";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/SettingsView.vue";
-import "../views/TaskView.vue";
+declarePages(
+	() => import("../views/SettingsView.vue"),
+	() => import("../views/TaskView.vue"),
+);
 
 // Code Loop jobs as a task's or workflow's output target (#999): the shared
 // job picker in both forms, the target link in the task view, and the run

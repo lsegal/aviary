@@ -2,14 +2,18 @@ import { beforeEach, expect, test } from "vitest";
 import { commands, page } from "vitest/browser";
 import { nextTick } from "vue";
 import { currentURL, goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import {
 	SIDEBAR_DEFAULT_WIDTH,
 	useSidebarLayout,
 } from "../composables/useSidebarLayout";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/OverviewView.vue"),
+	() => import("../views/SettingsView.vue"),
+);
 
 interface MockConfig {
 	server?: Record<string, unknown>;

@@ -1,15 +1,19 @@
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	note,
 	restoreSystemNotifications,
 	setup,
 	stubSystemNotifications,
 } from "./helpers/notificationServer";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/OverviewView.vue"),
+	() => import("../views/SettingsView.vue"),
+);
 
 // Its own file (#1636): useNotifications loads the saved settings once per
 // page, and this test needs the page to load them (the switch off) fresh.

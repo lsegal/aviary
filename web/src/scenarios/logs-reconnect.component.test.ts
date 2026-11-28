@@ -1,10 +1,11 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { eventSourcesOpened, mockMCP } from "../component-test/server";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/LogsView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/LogsView.vue"));
 
 const logStreams = () =>
 	eventSourcesOpened().filter((s) => new URL(s.url).pathname === "/api/logs");

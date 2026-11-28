@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	type Channel,
 	type Config,
@@ -13,10 +14,13 @@ import {
 	expectValue,
 	optionLabels,
 } from "./helpers/select";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChannelView.vue";
-import "../views/ChatView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/ChannelView.vue"),
+	() => import("../views/ChatView.vue"),
+	() => import("../views/SettingsView.vue"),
+);
 
 /** Each matching element's whitespace-normalized text, in order, as
  * Playwright's toHaveText([...]) compares them. */

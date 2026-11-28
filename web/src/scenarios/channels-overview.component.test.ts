@@ -1,11 +1,15 @@
 import { beforeEach, expect, test } from "vitest";
 import { type Locator, page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP, requestLog } from "../component-test/server";
 import { useChannelDialogs } from "../composables/useChannelDialogs";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChannelView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/ChannelView.vue"),
+	() => import("../views/SettingsView.vue"),
+);
 
 // The add-channel dialog's open state is module state, which a page load
 // starts without; close what an earlier test in the file opened.

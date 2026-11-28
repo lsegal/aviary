@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { nextTick } from "vue";
 import { currentURL, goBack, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	SIDEBAR_DEFAULT_WIDTH,
 	useSidebarLayout,
@@ -13,9 +14,9 @@ import {
 	pill,
 	setup,
 } from "./codeloop-project-nav.fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/ProjectsView.vue"));
 
 // The Code Loop board's project pills lead into each project and its
 // scheduled tasks, so they stay reachable with the sidebar collapsed (#1044).

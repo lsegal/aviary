@@ -1,14 +1,15 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { currentURL, goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import {
 	mockMCP,
 	routeWebSocket,
 	type WebSocketRoute,
 } from "../component-test/server";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/ProjectsView.vue"));
 
 // A project added, removed or polled shows in every view at once: in the
 // adding tab before project_add answers, and in every other client through

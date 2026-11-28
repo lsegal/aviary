@@ -1,11 +1,14 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP, routeWebSocket } from "../component-test/server";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChatView.vue";
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/ChatView.vue"),
+	() => import("../views/OverviewView.vue"),
+);
 
 /*
  * A chat's running turn lives on the server, so a client that opens or

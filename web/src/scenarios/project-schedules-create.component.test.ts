@@ -4,6 +4,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { commands, page } from "vitest/browser";
 import { currentURL, goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { chooseOption, optionLabels } from "./helpers/select";
 import {
 	expectSavedTrigger,
@@ -22,9 +23,12 @@ import {
 	schedule,
 	setup,
 } from "./project-schedules-fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ProjectsView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/ProjectsView.vue"),
+	() => import("../views/SettingsView.vue"),
+);
 
 afterEach(() => {
 	vi.useRealTimers();

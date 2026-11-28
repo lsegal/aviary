@@ -1,18 +1,22 @@
 import { beforeEach, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP, route } from "../component-test/server";
 import { boundingBoxOf } from "./helpers/box";
 import { chooseValue, expectValue } from "./helpers/select";
 import { systemList } from "./helpers/sidebar";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/DaemonsView.vue";
-import "../views/LogsView.vue";
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
-import "../views/SystemModelsView.vue";
-import "../views/SystemToolsView.vue";
-import "../views/UsageView.vue";
+declarePages(
+	() => import("../views/DaemonsView.vue"),
+	() => import("../views/LogsView.vue"),
+	() => import("../views/OverviewView.vue"),
+	() => import("../views/SettingsView.vue"),
+	() => import("../views/SystemModelsView.vue"),
+	() => import("../views/SystemToolsView.vue"),
+	() => import("../views/UsageView.vue"),
+);
 
 /** Waits until locator matches n elements, as Playwright's toHaveCount. */
 async function expectCount(locator: Locator, n: number) {

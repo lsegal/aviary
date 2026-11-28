@@ -1,9 +1,11 @@
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChatView.vue";
+declarePages(() => import("../views/ChatView.vue"));
 
 // From unsaved-changes.spec.ts. Its own file: chat drafts are read from
 // storage once, when their module loads, and the harness loads the app

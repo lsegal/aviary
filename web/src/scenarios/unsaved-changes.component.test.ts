@@ -1,12 +1,16 @@
 import { expect, test } from "vitest";
 import { commands, type Locator, page, userEvent } from "vitest/browser";
 import { currentURL, goBack, reload, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import { openGearMenuItem } from "./helpers/sidebar";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/ChatView.vue";
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
+declarePages(
+	() => import("../views/ChatView.vue"),
+	() => import("../views/OverviewView.vue"),
+	() => import("../views/SettingsView.vue"),
+);
 
 // "stale stored drafts are dropped on load" is in
 // unsaved-changes-stale-drafts: drafts are read from storage once, when

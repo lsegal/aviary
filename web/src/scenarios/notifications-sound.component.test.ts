@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { note, setup, stubAudio } from "./helpers/notificationServer";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/OverviewView.vue";
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/OverviewView.vue"));
 
 // Its own file (#1636): useNotifications loads the saved settings (sound
 // on) once per page, and the sound player keeps its first AudioContext, so

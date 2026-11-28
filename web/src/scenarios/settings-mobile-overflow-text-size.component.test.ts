@@ -1,13 +1,15 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { goto, renderApp } from "../component-test/app";
+import { declarePages } from "../component-test/routes";
 import { route } from "../component-test/server";
 import {
 	expectNoHorizontalOverflow,
 	mockSettings,
 } from "./settings-mobile-overflow.fixtures";
+
 // The pages this file renders (see component-test/routes.ts).
-import "../views/SettingsView.vue";
+declarePages(() => import("../views/SettingsView.vue"));
 
 /** An attribute of the page's root element, where the display prefs show. */
 const htmlAttr = (name: string) => document.documentElement.getAttribute(name);
