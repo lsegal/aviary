@@ -347,3 +347,23 @@ func TestSessionManager_ListSkipsFilesThatAreNotSessions(t *testing.T) {
 	assert.Equal(t, sess.ID, sessions[0].ID)
 	assert.Equal(t, "Kept", sessions[0].Title)
 }
+
+func TestSessionManager_DeleteNotifiesRemoved(t *testing.T) {
+	setupSessionDir(t)
+	var removed []string
+	SetSessionRemovedObserver(func(agentID, sessionID string) {
+		removed = append(removed, agentID+"/"+sessionID)
+	})
+	t.Cleanup(func() { SetSessionRemovedObserver(nil) })
+	sm := NewSessionManager()
+	_, err := sm.GetOrCreate("assistant")
+	require.NoError(t, err)
+
+	require.Error(t, sm.Delete("assistant", "main"))
+	assert.Empty(t, removed, "a refused delete reports nothing")
+
+	sess, err := sm.CreateWithName("assistant", "scratch")
+	require.NoError(t, err)
+	require.NoError(t, sm.Delete("assistant", sess.ID))
+	assert.Equal(t, []string{"assistant/" + sess.ID}, removed)
+}

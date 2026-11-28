@@ -209,6 +209,9 @@ func New(cfg *config.Config, token string) *Server {
 		wsBroadcast(wsEvent{Type: "session_processing", AgentID: agentID, SessionID: sessionID, IsProcessing: &v})
 		replies.turnState(agentID, sessionID, processing)
 	})
+	agent.SetSessionRemovedObserver(func(agentID, sessionID string) {
+		wsBroadcast(wsEvent{Type: "session_removed", AgentID: agentID, SessionID: sessionID})
+	})
 	agent.SetActiveTurnObserver(func(turn agent.ActiveTurn) {
 		wsBroadcast(sessionTurnEvent(turn))
 	})
