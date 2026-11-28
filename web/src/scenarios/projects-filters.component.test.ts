@@ -1,5 +1,5 @@
 // Ported from web/e2e/projects.spec.ts (#1636): search, state filters and the kanban view.
-import { afterEach, expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
 import {

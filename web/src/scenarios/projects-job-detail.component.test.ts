@@ -1,5 +1,5 @@
 // Ported from web/e2e/projects.spec.ts (#1636): the job detail pane: transcript, clone, run view, commands and layout.
-import { afterEach, expect, onTestFinished, test, vi } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
 import { boundingBoxOf } from "./helpers/box";

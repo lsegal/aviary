@@ -1,5 +1,5 @@
 // Ported from web/e2e/projects.spec.ts (#1636): the project board: status, job cards, their layout and actions.
-import { afterEach, expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { openBoardInfo, openInstanceTag } from "./helpers/boardHeader";
@@ -202,6 +202,24 @@ test("long wrapped output never grows a card past half the viewport (#718)", asy
 	await expect
 		.element(card.getByRole("button", { name: "Retry" }))
 		.toBeInViewport();
+});
+
+test("a job card's wrapped meta line never starts with a separator (#1013)", async () => {
+	setup();
+	await renderApp("/agents/coder/projects/lsegal%2Faviary");
+	const card = page.getByTestId("job-card").filter({ hasText: "#218" });
+	const separator = card.getByTestId("job-meta-separator");
+	const pr = card.getByTestId("job-pr");
+	await expect.element(pr).toMatchTextContent("PR #233");
+	// Squeeze the card until the PR wraps onto its own line.
+	(card.element() as HTMLElement).style.width = "90px";
+	const top = async (l: typeof pr) => (await boundingBoxOf(l)).y;
+	const number = card.getByRole("link", { name: "#218", exact: true });
+	await expect.poll(() => top(pr)).toBeGreaterThan(await top(number));
+	// The separator stays at the end of the line above it.
+	expect(Math.abs((await top(separator)) - (await top(number)))).toBeLessThan(
+		4,
+	);
 });
 
 /** Asserts el's right edge sits at the card's right padding. */

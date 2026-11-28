@@ -1,5 +1,5 @@
 // Ported from web/e2e/projects.spec.ts (#1636): job count stat boxes and the job detail header.
-import { afterEach, expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
 import { boundingBoxOf } from "./helpers/box";

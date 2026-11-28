@@ -1,5 +1,5 @@
 // Ported from web/e2e/projects.spec.ts (#1636): the prompt chat and logs panels, and job details beside them.
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import { commands, type Locator, page, userEvent } from "vitest/browser";
 import {
 	currentURL,
@@ -302,6 +302,7 @@ test("prompt chat inserts a newline on Shift+Enter and sends on Enter", async ()
 		.getByTestId("chat-message-content")
 		.filter({ hasText: "line two" });
 	await expect.element(sent).toBeVisible();
+	// biome-ignore lint/performance/useDomNodeTextContent: the rendered line breaks are the point, as in the e2e innerText check.
 	expect((sent.element() as HTMLElement).innerText).toBe("line one\nline two");
 });
 
@@ -497,6 +498,7 @@ test("logs panel wraps long lines and indents multi-line entries", async () => {
 	// up after the timestamp rather than under it.
 	const second = entries.nth(1);
 	const text = second.locator("span").nth(1);
+	// biome-ignore lint/performance/useDomNodeTextContent: the rendered line breaks are the point, as in the e2e innerText check.
 	expect((text.element() as HTMLElement).innerText).toBe(
 		"prompt agent (claude/opus) filing an issue on lsegal/aviary\n## Summary\nBody line two",
 	);

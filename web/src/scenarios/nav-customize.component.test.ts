@@ -175,7 +175,7 @@ describe("the top row", () => {
 			.not.toBeInTheDocument();
 		await expect
 			.element(page.getByTestId("nav-editor"))
-			.not.toHaveTextContent(/top buttons/i);
+			.not.toMatchTextContent(/top buttons/i);
 		await editRow("agentPages", "files").getByTestId("nav-edit-up").click();
 		await editRow("agentPages", "channels")
 			.getByTestId("nav-edit-visibility")

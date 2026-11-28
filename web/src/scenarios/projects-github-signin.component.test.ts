@@ -1,6 +1,6 @@
 // Ported from web/e2e/projects.spec.ts (#1636): the GitHub sign-in banner.
-import { afterEach, describe, expect, test, vi } from "vitest";
-import { commands, type Locator, page } from "vitest/browser";
+import { describe, expect, test } from "vitest";
+import { commands, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { openBoardInfo } from "./helpers/boardHeader";
 import { browserStatus, SIGNED_OUT, STATUS, setup } from "./projects-fixtures";

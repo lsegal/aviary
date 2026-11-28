@@ -4,6 +4,13 @@ import { renderApp, setAuthToken } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import { expectValue, listbox, optionLabels } from "./helpers/select";
 
+declare global {
+	interface ImportMeta {
+		/** Vite's import.meta.glob, which the app's own env.d.ts leaves out. */
+		glob: import("vite").ImportGlobFunction;
+	}
+}
+
 // The shared AppSelect/AppCombobox (web/src/components/ui/select) behind every
 // dropdown in the app.
 

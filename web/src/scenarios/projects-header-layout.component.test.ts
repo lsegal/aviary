@@ -1,5 +1,5 @@
 // Ported from web/e2e/projects.spec.ts (#1636): the rich transcript at narrow widths and the board header layout.
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
 import { expectHeaderOneLine, headerSettled } from "./helpers/boardHeader";

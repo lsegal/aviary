@@ -1,5 +1,5 @@
 // Ported from web/e2e/projects.spec.ts (#1636): the board header's … menu and phone header.
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import {
@@ -28,6 +28,12 @@ function stubClipboard() {
 	});
 }
 
+// A fresh page's pointer hovers nothing; the last test's may rest over a
+// header icon whose hover opens a popover.
+beforeEach(async () => {
+	await commands.mouseMove(0, 0);
+});
+
 afterEach(() => {
 	// Undo the clipboard stub and the text size the tests set.
 	Reflect.deleteProperty(navigator, "clipboard");
@@ -47,6 +53,31 @@ async function expectTexts(locator: Locator, expected: (string | RegExp)[]) {
 				typeof e === "string" ? e : expect.stringMatching(e),
 			),
 		);
+}
+
+/**
+ * Waits for the header's overflow to stop moving items: under load its
+ * resize observer can run a frame or more after headerSettled returns.
+ */
+async function headerStable() {
+	const row = page.getByTestId("settings-title-row");
+	const shown = () =>
+		COLLAPSIBLE_HEADER_ITEMS.filter(({ header }) =>
+			isVisible(row.getByTestId(header)),
+		)
+			.map(({ header }) => header)
+			.join();
+	let last = "";
+	await expect
+		.poll(async () => {
+			const before = shown();
+			await new Promise((r) => setTimeout(r, 150));
+			const now = shown();
+			const stable = now === before && now === last;
+			last = now;
+			return stable;
+		})
+		.toBe(true);
 }
 
 /** Playwright's isVisible: attached, with a box, and not hidden. */
@@ -192,8 +223,8 @@ for (const [board, path, last] of [
 			await headerSettled();
 			await expect.element(page.getByTestId(last)).toBeVisible();
 			await expectHeaderOneLine();
+			await headerStable();
 			const { header, menu } = await headerItemPlaces();
-			console.log("DBG", width, JSON.stringify({ header, menu }));
 			// Each item shows in the header or in "…", never both or neither.
 			for (const id of order) {
 				if (header.includes(id) || menu.includes(id))
@@ -349,6 +380,10 @@ for (const width of [360, 390, 430]) {
 		await page.viewport(width, 800);
 		setup();
 		await renderApp("/agents/coder/projects/lsegal%2Faviary");
+		// Measure once the phone's project row has loaded above the header.
+		await expect
+			.element(page.getByTestId("mobile-sub-nav").getByText("lsegal/zvidlib"))
+			.toBeVisible();
 		await expect
 			.element(page.getByTestId("settings-current"))
 			.toHaveText("lsegal/aviary");
@@ -457,8 +492,12 @@ test("on a phone the models and quota move into the details popover, which warns
 			.toBe(0);
 		if (path.endsWith("projects"))
 			await expect
-				.element(page.getByTestId("board-nav-row"))
-				.not.toMatchTextContent("Models & quota", { useInnerText: true });
+				.poll(() => {
+					const row = page.getByTestId("board-nav-row").element();
+					// biome-ignore lint/performance/useDomNodeTextContent: only rendered text counts, as useInnerText did.
+					return (row as HTMLElement).innerText;
+				})
+				.not.toContain("Models & quota");
 		else await expectHidden(page.getByTestId("board-nav-row"));
 
 		// gemini is signed out, so the closed icon carries a described dot.

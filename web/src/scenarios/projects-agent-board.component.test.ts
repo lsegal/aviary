@@ -1,6 +1,6 @@
 // Ported from web/e2e/projects.spec.ts (#1636): an agent's Code Loop board and job detail actions.
-import { afterEach, expect, test, vi } from "vitest";
-import { commands, type Locator, page } from "vitest/browser";
+import { expect, test } from "vitest";
+import { commands, page } from "vitest/browser";
 import { currentURL, goto, renderApp } from "../component-test/app";
 import { inTargets, JOBS, job, setup, stateChip } from "./projects-fixtures";
 
