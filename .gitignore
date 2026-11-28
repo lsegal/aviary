@@ -47,3 +47,6 @@ test-results
 .devcontainer/aviary/*
 !.devcontainer/aviary/.gitignore
 !.devcontainer/aviary/README.md
+
+# Vitest browser-mode failure screenshots (pnpm test:component)
+.vitest/
