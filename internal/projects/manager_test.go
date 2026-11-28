@@ -25,7 +25,7 @@ import (
 	"github.com/lsegal/aviary/internal/store"
 )
 
-func newTestManager(t *testing.T) *Manager {
+func newTestManager(t testing.TB) *Manager {
 	t.Helper()
 	m, err := NewManager(t.TempDir())
 	if err != nil {

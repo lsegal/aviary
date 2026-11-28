@@ -1,6 +1,5 @@
 import { computed, ref } from "vue";
 import {
-	normalizeJobList,
 	normalizeStatus,
 	type ProjectSummary,
 	parseToolJSON,
@@ -10,9 +9,6 @@ import { useSettingsStore } from "../stores/settings";
 import type { useMCP } from "./useMCP";
 
 type CallTool = ReturnType<typeof useMCP>["callTool"];
-
-// project_job_list's page size when the list reads every job at once.
-const ALL_JOBS_LIMIT = 1_000;
 
 // One project list shared by every view that shows it: the sidebar, the
 // project tabs, the Code Loop page and the overview. A project added,
@@ -78,14 +74,14 @@ async function readProjectList() {
 	if (!callTool) return;
 	const withSchedules = scheduleReaders > 0;
 	try {
-		const [statusText, listText, taskText] = await Promise.all([
+		// project_status counts each project's running and waiting jobs,
+		// so the list never reads every job (#1657).
+		const [statusText, taskText] = await Promise.all([
 			callTool("project_status", {}),
-			callTool("project_job_list", { limit: ALL_JOBS_LIMIT }),
 			withSchedules ? callTool("task_list", {}) : Promise.resolve(""),
 		]);
 		const list = summarizeProjects(
 			normalizeStatus(parseToolJSON(statusText)),
-			normalizeJobList(parseToolJSON(listText)).jobs,
 			withSchedules ? parseToolJSON(taskText) : undefined,
 		);
 		fetched.value = list;

@@ -2,10 +2,13 @@ package projects
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,6 +99,7 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 		delete(counts, target)
 	}
 	modes, modeSources := m.ProjectModes(watched)
+	states, targetJobs := boardCounts(snapshot.Jobs, targets)
 	finishedTTLs, finishedTTLSources, defaultFinishedTTL := m.projectFinishedTTLs(watched)
 	status := map[string]any{
 		"identity":     m.Identity(),
@@ -115,7 +119,10 @@ func (m *Manager) Status(_ context.Context, logOffset int, targets []string) map
 		"finished_ttls":        finishedTTLs,
 		"finished_ttl_sources": finishedTTLSources,
 		"default_finished_ttl": defaultFinishedTTL,
-		"states":               boardStateCounts(snapshot.Jobs, targets),
+		"states":               states,
+		// Each project's running and waiting entries, which the project list
+		// shows, so it never reads every job to count them (issue #1657).
+		"target_jobs": targetJobs,
 		"jobs": map[string]int{
 			"running":    snapshot.Running,
 			"queued":     snapshot.Queued,
@@ -184,16 +191,36 @@ func projectModelLabels(models map[string]ProjectModel) map[string]string {
 	return labels
 }
 
-// boardStateCounts counts the board entries of targets, or of every project
+// TargetJobCounts is a project's running entries, and its waiting, paused
+// or queued ones, as the project list shows them.
+type TargetJobCounts struct {
+	Running int `json:"running"`
+	Waiting int `json:"waiting"`
+}
+
+// waitingStatuses are the job statuses the project list counts as waiting.
+var waitingStatuses = []string{"waiting", "paused", "queued"}
+
+// boardCounts counts the board entries of targets, or of every project
 // without targets, in each board state, so the board's counts match its
 // filters. A schedule counts once, and only while it is starting, running or
-// failed: its finished runs never count as done.
-func boardStateCounts(jobs []JobSnapshot, targets []string) map[string]int {
+// failed: its finished runs never count as done. It also counts every
+// project's running and waiting entries, whatever targets says.
+func boardCounts(jobs []JobSnapshot, targets []string) (map[string]int, map[string]TargetJobCounts) {
 	counts := make(map[string]int, len(core.BoardStates))
 	for _, state := range core.BoardStates {
 		counts[state] = 0
 	}
+	perTarget := map[string]TargetJobCounts{}
 	for _, entry := range boardEntries(jobs) {
+		target := perTarget[entry.job.Target]
+		if entry.state == core.BoardRunning {
+			target.Running++
+		}
+		if slices.Contains(waitingStatuses, entry.job.Status) {
+			target.Waiting++
+		}
+		perTarget[entry.job.Target] = target
 		if len(targets) > 0 && !slices.Contains(targets, entry.job.Target) {
 			continue
 		}
@@ -201,43 +228,86 @@ func boardStateCounts(jobs []JobSnapshot, targets []string) map[string]int {
 			counts[entry.state]++
 		}
 	}
-	return counts
+	return counts, perTarget
 }
 
-// ListJobs is project_job_list: every job, running and errored ones first,
-// filtered by projects, engine status, board states, job kinds and a search
-// query, and paged. A schedule is one entry, its latest run with the
+// JobListQuery is what project_job_list selects and returns: the projects,
+// engine status, board states, job kinds and search query that filter its
+// jobs, the page, and optionally each paged card's latest output.
+type JobListQuery struct {
+	Targets []string
+	Status  string
+	States  []string
+	Kinds   []string
+	Query   string
+	Offset  int
+	Limit   int
+	// OutputLines and OutputEvents, when positive, add each listed job's
+	// last output lines as scrollback and its latest transcript events, so
+	// a board reads its cards' output in this one request rather than one
+	// project_job_get per card (issue #1657). A schedule's entry gets them
+	// only while its latest run is starting or running.
+	OutputLines  int
+	OutputEvents int
+	// Revision asks for the list's revision: NewRevision on a first
+	// request, then the revision the previous identical request returned.
+	// When the page has not changed since, the list carries only unchanged
+	// and the revision, so a polling board neither reads nor renders it
+	// again. Without it no revision is computed, which costs a second
+	// serialization of the page.
+	Revision string
+}
+
+// ListJobs is project_job_list without card output or a revision; see
+// ListJobsPage.
+func (m *Manager) ListJobs(targets []string, status string, states, kinds []string, query string, offset, limit int) map[string]any {
+	return m.ListJobsPage(JobListQuery{Targets: targets, Status: status, States: states, Kinds: kinds, Query: query, Offset: offset, Limit: limit})
+}
+
+// ListJobsPage is project_job_list: every job, running and errored ones
+// first, filtered by projects, engine status, board states, job kinds and a
+// search query, and paged. A schedule is one entry, its latest run with the
 // schedule's last_run, next_run and recent_runs, rather than a job per fire.
 // No targets means every project. total counts the jobs that match them all;
 // with a query, unfiltered_total counts those matching all but the query.
-func (m *Manager) ListJobs(targets []string, status string, states, kinds []string, query string, offset, limit int) map[string]any {
+// Asked for one, a list carries a revision that changes whenever its content
+// does.
+func (m *Manager) ListJobsPage(q JobListQuery) map[string]any {
+	limit := q.Limit
 	if limit <= 0 {
 		limit = defaultJobListLimit
 	}
-	query = strings.ToLower(strings.TrimSpace(query))
+	query := strings.ToLower(strings.TrimSpace(q.Query))
 	display := m.display()
 	var tasks map[string]domain.ScheduledTask
-	var matched []map[string]any
+	var matched []boardEntry
 	unfiltered := 0
 	for _, entry := range boardEntries(display.Jobs) {
 		job := entry.job
-		if len(targets) > 0 && !slices.Contains(targets, job.Target) {
+		if len(q.Targets) > 0 && !slices.Contains(q.Targets, job.Target) {
 			continue
 		}
-		if status != "" && job.Status != status {
+		if q.Status != "" && job.Status != q.Status {
 			continue
 		}
-		if len(states) > 0 && !slices.Contains(states, entry.state) {
+		if len(q.States) > 0 && !slices.Contains(q.States, entry.state) {
 			continue
 		}
-		if len(kinds) > 0 && !slices.Contains(kinds, job.Kind) {
+		if len(q.Kinds) > 0 && !slices.Contains(q.Kinds, job.Kind) {
 			continue
 		}
 		unfiltered++
 		if query != "" && !jobMatches(job, query) {
 			continue
 		}
-		summary := displayJobSummary(display, job)
+		matched = append(matched, entry)
+	}
+	total := len(matched)
+	offset := min(max(q.Offset, 0), total)
+	// Only the page is summarized; the rest of the matches are counted.
+	page := make([]map[string]any, 0, min(limit, total-offset))
+	for _, entry := range matched[offset:min(offset+limit, total)] {
+		summary := displayJobSummary(display, entry.job)
 		if entry.runs != nil {
 			if tasks == nil {
 				tasks = m.scheduledTasks()
@@ -245,22 +315,59 @@ func (m *Manager) ListJobs(targets []string, status string, states, kinds []stri
 			summary["state"] = entry.state
 			addScheduleRuns(summary, entry, tasks)
 		}
-		matched = append(matched, summary)
+		if q.OutputLines > 0 || q.OutputEvents > 0 {
+			if entry.runs == nil || entry.state == core.BoardStarting || entry.state == core.BoardRunning {
+				m.addCardOutput(summary, entry.job, q.OutputLines, q.OutputEvents)
+			}
+		}
+		page = append(page, summary)
 	}
-	total := len(matched)
-	offset = min(max(offset, 0), total)
-	page := matched[offset:min(offset+limit, total)]
-	if page == nil {
-		page = []map[string]any{}
-	}
-	list := map[string]any{"jobs": page, "total": total, "offset": offset, "limit": limit, "stale": display.anyStale(targets)}
+	list := map[string]any{"jobs": page, "total": total, "offset": offset, "limit": limit, "stale": display.anyStale(q.Targets)}
 	if !display.CachedAt.IsZero() {
 		list["cached_at"] = display.CachedAt
 	}
 	if query != "" {
 		list["unfiltered_total"] = unfiltered
 	}
+	if q.Revision == "" {
+		return list
+	}
+	revision := listRevision(list)
+	if q.Revision == revision {
+		return map[string]any{"unchanged": true, "revision": revision}
+	}
+	list["revision"] = revision
 	return list
+}
+
+// addCardOutput adds a job's last lines of scrollback and its latest
+// transcript events to its summary, as a board card shows them.
+func (m *Manager) addCardOutput(summary map[string]any, job core.JobSnapshot, lines, events int) {
+	if lines > 0 {
+		summary["scrollback"] = lastLogLines(job.Log, lines)
+	}
+	if events > 0 {
+		summary["events"] = m.transcripts.For(jobKey(job)).Events(events)
+	}
+}
+
+// NewRevision is the Revision a first job list request passes to get the
+// list's revision back.
+const NewRevision = "new"
+
+// cardRawBytes is how much of a job's raw output project_job_get returns.
+const cardRawBytes = 64 * 1024
+
+// listRevision is a hash of a job list's content, which changes whenever
+// anything the list reports does.
+func listRevision(list map[string]any) string {
+	data, err := json.Marshal(list)
+	if err != nil {
+		return ""
+	}
+	sum := fnv.New64a()
+	sum.Write(data)
+	return strconv.FormatUint(sum.Sum64(), 36)
 }
 
 // jobSearchKinds are the skill names the dashboards show for each job kind.
@@ -337,7 +444,13 @@ func (m *Manager) GetJob(target string, number, lines, events int) (map[string]a
 	detail["scrollback"] = scrollback
 	log := m.transcripts.For(job.Target + "#" + fmt.Sprint(job.Number))
 	detail["events"] = log.Events(max(events, 0))
-	detail["raw_output"] = log.Raw(64 * 1024)
+	// A capped request caps the raw output to the same lines, so a card's
+	// detail read never carries the whole 64 KiB tail (issue #1657).
+	raw := log.Raw(cardRawBytes)
+	if lines > 0 && raw != "" {
+		raw = lastLogLines(raw, lines)
+	}
+	detail["raw_output"] = raw
 	return detail, nil
 }
 

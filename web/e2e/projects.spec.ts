@@ -10,6 +10,7 @@ import {
 } from "./helpers/boardHeader";
 import { boundingBoxOf } from "./helpers/box";
 import { mockMCP, setAuthToken, type ToolFixtures } from "./helpers/mockMCP";
+import { targetJobs } from "./helpers/targetJobs";
 
 // Fixtures follow the payloads internal/projects' Manager returns for
 // project_status, project_job_list and project_job_get.
@@ -320,6 +321,43 @@ async function setup(
 			`ok  internal/scheduler tick ${tick}`,
 		].join("\n");
 	};
+	const defaultDetail = (args?: Record<string, unknown>) => {
+		const found = JOBS.find(
+			(j) => j.target === args?.target && j.number === args?.number,
+		);
+		if (!found) throw new Error("no such job");
+		return {
+			...found,
+			...CLONES[found.number],
+			session_id: "7f3c…a9",
+			scrollback: scrollback(found.number),
+			events: EVENTS[found.number] ?? [],
+			raw_output: RAW_OUTPUT[found.number] ?? "",
+		};
+	};
+	// A test's own project_job_get stands in for the job's output too.
+	const jobDetail = (args?: Record<string, unknown>) =>
+		(typeof extra.project_job_get === "function"
+			? extra.project_job_get(args)
+			: defaultDetail(args)) as Record<string, unknown>;
+	// Like the Manager, project_job_list with output_lines and
+	// output_events adds each card's last scrollback lines and its latest
+	// events (#1657).
+	const withCardOutput = (
+		job: (typeof JOBS)[number],
+		args?: Record<string, unknown>,
+	) => {
+		const lines = Number(args?.output_lines ?? 0);
+		const events = Number(args?.output_events ?? 0);
+		if (!lines && !events) return job;
+		const detail = jobDetail({ target: job.target, number: job.number });
+		const text = String(detail.scrollback ?? "");
+		return {
+			...job,
+			scrollback: text.replace(/\n$/, "").split("\n").slice(-lines).join("\n"),
+			events: ((detail.events as unknown[]) ?? []).slice(-events),
+		};
+	};
 	const ok = (tool: string) => (args?: Record<string, unknown>) => {
 		record(tool, args);
 		return { ok: true };
@@ -338,7 +376,7 @@ async function setup(
 		},
 		// Like the Manager, project_status counts the jobs of the projects
 		// it is passed in each board state.
-		project_status: (args?: Record<string, unknown>) => {
+		project_status: async (args?: Record<string, unknown>) => {
 			record("project_status", args);
 			const states: Record<string, number> = {
 				starting: 0,
@@ -348,7 +386,16 @@ async function setup(
 				failed: 0,
 			};
 			for (const j of JOBS) if (inTargets(args, j.target)) states[j.state]++;
-			return { states, ...status() };
+			// A test's own job list stands in for the project list's counts.
+			const listed =
+				typeof extra.project_job_list === "function"
+					? ((
+							(await extra.project_job_list({ limit: 1000 })) as {
+								jobs: typeof JOBS;
+							}
+						).jobs ?? [])
+					: JOBS;
+			return { states, target_jobs: targetJobs(listed), ...status() };
 		},
 		project_job_list: (args?: Record<string, unknown>) => {
 			record("project_job_list", args);
@@ -357,23 +404,12 @@ async function setup(
 					inTargets(args, j.target) &&
 					(!args?.status || j.status === args.status) &&
 					(!args?.states || (args.states as string[]).includes(j.state)),
-			);
+			).map((j) => withCardOutput(j, args));
 			return { jobs, total: jobs.length, offset: 0, limit: args?.limit ?? 50 };
 		},
 		project_job_get: (args?: Record<string, unknown>) => {
 			record("project_job_get", args);
-			const found = JOBS.find(
-				(j) => j.target === args?.target && j.number === args?.number,
-			);
-			if (!found) throw new Error("no such job");
-			return {
-				...found,
-				...CLONES[found.number],
-				session_id: "7f3c…a9",
-				scrollback: scrollback(found.number),
-				events: EVENTS[found.number] ?? [],
-				raw_output: RAW_OUTPUT[found.number] ?? "",
-			};
+			return jobDetail(args);
 		},
 		project_job_retry: ok("project_job_retry"),
 		project_job_stop: ok("project_job_stop"),
@@ -880,8 +916,10 @@ test("job cards show the transcript in a rich view by default, falling back to r
 	const rich = card.getByTestId("job-output-rich");
 	await expect(rich).toBeVisible();
 	await expect(card.getByTestId("job-output")).toHaveCount(0);
-	// Cards read enough events to fill their output area.
-	expect(calls.project_job_get?.[0]?.events).toBe(40);
+	// Cards read enough events to fill their output area, with the job list
+	// itself rather than one project_job_get per card (#1657).
+	expect(calls.project_job_list?.at(-1)?.output_events).toBe(40);
+	expect(calls.project_job_get).toBeUndefined();
 
 	// Agent messages render as markdown.
 	await expect(rich.locator('[data-row="message"] strong')).toHaveText(

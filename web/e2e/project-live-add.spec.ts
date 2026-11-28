@@ -1,5 +1,6 @@
 import { expect, type Page, test, type WebSocketRoute } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { targetJobs } from "./helpers/targetJobs";
 
 // A project added, removed or polled shows in every view at once: in the
 // adding tab before project_add answers, and in every other client through
@@ -76,7 +77,10 @@ async function setup(page: Page): Promise<Server> {
 		task_list: [],
 		config_validate: [],
 		config_get: () => config,
-		project_status: () => server.status,
+		project_status: () => ({
+			...server.status,
+			target_jobs: targetJobs(server.jobs as { target: string }[]),
+		}),
 		project_job_list: () => ({
 			jobs: server.jobs,
 			total: server.jobs.length,

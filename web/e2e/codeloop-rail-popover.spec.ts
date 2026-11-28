@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { targetJobs } from "./helpers/targetJobs";
 
 // The collapsed rail's Code Loop flyout names where the work is: each
 // project's running count, running projects first, with a header total that
@@ -108,6 +109,7 @@ async function setup(page: Page) {
 				issue_counts: Object.fromEntries(TARGETS.map((t) => [t, 3])),
 				delivery: "poll",
 				states,
+				target_jobs: targetJobs(JOBS),
 				// The engine counts every run: two of each schedule's.
 				jobs: { running: 10 },
 				clis: [],
