@@ -27,6 +27,10 @@ func setupAgentsCLI(t *testing.T, names ...string) *scheduler.Scheduler {
 	t.Helper()
 	base := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", base)
+	// TestMain points AVIARY_CONFIG_BASE_DIR at a directory shared by the
+	// whole package, and config.BaseDir prefers it, so agent task files
+	// would outlive this test without a per-test override.
+	t.Setenv("AVIARY_CONFIG_BASE_DIR", base+"/aviary")
 	store.SetDataDir(base + "/aviary")
 	t.Cleanup(func() { store.SetDataDir("") })
 	require.NoError(t, store.EnsureDirs())
@@ -146,4 +150,18 @@ func TestExpandDayRange(t *testing.T) {
 	assert.Equal(t, "mon,tue,wed,thu,fri", expandDayRange("mon-fri"))
 	assert.Equal(t, "fri,sat,sun,mon", expandDayRange("Friday-Monday"))
 	assert.Equal(t, "mon,wed", expandDayRange("mon,wed"))
+}
+
+func TestSetupAgentsCLIStartsWithoutEarlierTasks(t *testing.T) {
+	s := setupAgentsCLI(t, "bot")
+	_, err := runTaskCmd(t, taskAddCmd, "bot", "leftover", "x", "--at", "09:00")
+	require.NoError(t, err)
+	require.Contains(t, taskIDs(s), "bot/leftover")
+
+	// Adding a task reloads the config from disk, which is where tasks
+	// left by an earlier setup would reappear.
+	s = setupAgentsCLI(t, "bot")
+	_, err = runTaskCmd(t, taskAddCmd, "bot", "fresh", "x", "--at", "09:00")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"bot/fresh"}, taskIDs(s))
 }
