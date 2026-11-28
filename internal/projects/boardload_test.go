@@ -191,7 +191,9 @@ func TestGetJobCapsRawOutputToRequestedLines(t *testing.T) {
 	m := newTestManager(t)
 	m.snapshot.Store(&core.Snapshot{Jobs: []core.JobSnapshot{{Number: 1, Target: "o/r", Kind: core.JobKindIssue, Status: "active"}}})
 	recorder := m.transcripts.For("o/r#1").Recorder(nil)
-	recorder.Write([]byte(strings.Repeat("line\n", 500) + "last\n"))
+	if _, err := recorder.Write([]byte(strings.Repeat("line\n", 500) + "last\n")); err != nil {
+		t.Fatal(err)
+	}
 	recorder.Flush()
 	capped, err := m.GetJob("o/r", 1, 2, 0)
 	if err != nil {

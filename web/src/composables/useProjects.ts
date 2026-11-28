@@ -120,9 +120,10 @@ export function useProjectBoard(
 				revision: last?.revision ?? "new",
 			}),
 		);
-		const raw = (
-			parsed && typeof parsed === "object" ? parsed : {}
-		) as Record<string, unknown>;
+		const raw = (parsed && typeof parsed === "object" ? parsed : {}) as Record<
+			string,
+			unknown
+		>;
 		if (raw.unchanged === true && last)
 			return { value: last.value as T, changed: false };
 		const value = parse(raw);

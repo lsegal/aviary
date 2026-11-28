@@ -6,8 +6,9 @@ import { defineComponent, h, ref } from "vue";
 const callTool = vi.fn();
 vi.mock("./useMCP", () => ({ useMCP: () => ({ callTool }) }));
 
-const { CARD_OUTPUT_EVENTS, CARD_OUTPUT_LINES, useProjectBoard } =
-	await import("./useProjects");
+const { CARD_OUTPUT_EVENTS, CARD_OUTPUT_LINES, useProjectBoard } = await import(
+	"./useProjects"
+);
 
 // #1657: a board load costs a fixed number of requests however many cards it
 // shows, carries card summaries and their output in the list itself, and a

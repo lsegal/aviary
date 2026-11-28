@@ -41,14 +41,20 @@ describe("KanbanBoard", () => {
 		// The column's count still covers every job.
 		expect(column("done").find("h3").text()).toContain("120");
 		expect(cards("running")).toHaveLength(1);
-		expect(column("running").find('[data-testid="kanban-show-more"]').exists()).toBe(false);
+		expect(
+			column("running").find('[data-testid="kanban-show-more"]').exists(),
+		).toBe(false);
 
 		const more = column("done").find('[data-testid="kanban-show-more"]');
 		expect(more.text()).toContain("Show 50 more");
 		await more.trigger("click");
 		expect(cards("done")).toHaveLength(100);
-		await column("done").find('[data-testid="kanban-show-more"]').trigger("click");
+		await column("done")
+			.find('[data-testid="kanban-show-more"]')
+			.trigger("click");
 		expect(cards("done")).toHaveLength(120);
-		expect(column("done").find('[data-testid="kanban-show-more"]').exists()).toBe(false);
+		expect(
+			column("done").find('[data-testid="kanban-show-more"]').exists(),
+		).toBe(false);
 	});
 });
