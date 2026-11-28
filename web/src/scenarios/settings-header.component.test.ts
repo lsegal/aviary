@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
-import { currentURL, goBack, renderApp } from "../component-test/app";
+import { currentURL, goBack, goto, renderApp } from "../component-test/app";
 import { declarePages } from "../component-test/routes";
 import { mockMCP } from "../component-test/server";
 import { expectSettingsHeader } from "./helpers/settingsHeader";
@@ -272,6 +272,32 @@ test("leaving through the header with unsaved edits asks first", async () => {
 	await backLink().click();
 	await expect.poll(currentURL).toMatch(/\/agents\/Aviary\/channels\/signal$/);
 	expect(count(dialog)).toBe(0);
+});
+
+test("System Sessions shows no config Reload or Save Changes (#1671)", async () => {
+	mockSettings();
+	// Nothing on Sessions is config, and Refresh Sessions reloads the table.
+	await renderApp("/system/sessions");
+	await expect
+		.element(page.getByRole("button", { name: "Refresh Sessions" }))
+		.toBeVisible();
+	await expect
+		.poll(
+			() =>
+				page.getByRole("button", { name: "Save Changes" }).elements().length,
+		)
+		.toBe(0);
+	await expect
+		.poll(() => page.getByRole("button", { name: "Reload" }).elements().length)
+		.toBe(0);
+	// System Settings still edits config, so it keeps both.
+	await goto("/system/settings");
+	await expect
+		.element(page.getByRole("button", { name: "Save Changes" }))
+		.toBeVisible();
+	await expect
+		.element(page.getByRole("button", { name: "Reload" }))
+		.toBeVisible();
 });
 
 test("the header fits a phone without horizontal overflow", async () => {

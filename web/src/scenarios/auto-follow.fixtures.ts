@@ -22,6 +22,7 @@ export class Server {
 	items: TurnItem[] = [{ text: "Working" }];
 	sockets: Array<{ send: (m: string) => void }> = [];
 	session = "";
+	lastFrame = "";
 
 	/** Pushes the running turn to every client. */
 	broadcast() {
@@ -37,6 +38,7 @@ export class Server {
 			session_id: this.session,
 			turn,
 		});
+		this.lastFrame = frame;
 		for (const ws of this.sockets) ws.send(frame);
 	}
 
@@ -57,6 +59,10 @@ export class Server {
 	attach(opts: { workflow?: boolean } = {}) {
 		routeWebSocket(/\/api\/ws/, (ws) => {
 			this.sockets.push(ws);
+			// The app opens more than one socket (server status, the chat), and
+			// the chat's can connect after the turn started streaming; it gets
+			// the turn as it stands, as a client that just subscribed would.
+			if (this.lastFrame) ws.send(this.lastFrame);
 		});
 		mockMCP({
 			agent_list: [

@@ -1,9 +1,11 @@
 // The rest of these scenarios are component tests in
-// web/src/scenarios/chat-sidebar.component.test.ts (#1636). This one stays a
-// Playwright spec: it needs a touch browser context where (hover: none)
-// matches, which page.emulateMedia cannot emulate in a component test.
+// web/src/scenarios/chat-sidebar.component.test.ts (#1636). These two stay
+// Playwright specs: one needs a touch browser context where (hover: none)
+// matches, which page.emulateMedia cannot emulate, and the other needs two
+// live tabs at once, where a component test mounts one app.
 import { expect, type Page, test } from "@playwright/test";
 import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { chooseOption } from "./helpers/select";
 
 interface Sess {
 	id: string;
@@ -11,6 +13,7 @@ interface Sess {
 	name: string;
 	title?: string;
 	created_at: string;
+	updated_at?: string;
 	last_message_at?: string;
 }
 
@@ -90,11 +93,39 @@ async function mockChats(
 			record("agent_run")(args);
 			// The server titles a new chat from its first prompt.
 			const s = sessions.find((x) => x.id === args?.session_id);
+			if (args?.session_id && !s)
+				throw new Error(
+					`session "${args.session_id}" not found for agent "assistant"`,
+				);
 			if (s && !s.title) s.title = "Weekend trip plans";
 			return "Sure!";
 		},
 	});
 	return calls;
+}
+
+function chatRows(page: Page) {
+	return page.getByTestId("sidebar-chats").getByTestId("chat-row");
+}
+
+function twoChats(): Sess[] {
+	return [
+		{
+			id: "main",
+			agent_id: "assistant",
+			name: "main",
+			created_at: hoursAgo(48),
+			last_message_at: hoursAgo(3),
+		},
+		{
+			id: "sess_1",
+			agent_id: "assistant",
+			name: "sess_1",
+			title: "Groceries",
+			created_at: hoursAgo(5),
+			last_message_at: hoursAgo(1),
+		},
+	];
 }
 
 /** Opacity of the "+" row action, which hover-capable pointers fade in. */
@@ -134,4 +165,88 @@ test('on a touch screen the sidebar\'s "+" actions show without hovering', async
 	await page.getByTestId("sidebar-new-chat").tap();
 	await expect(page).toHaveURL("/agents/assistant/chat/sess_new");
 	await context.close();
+});
+
+test("a chat removed on System → Sessions leaves other tabs, and a send to a gone chat stops thinking", async ({
+	page,
+	context,
+}) => {
+	const sessions: Sess[] = [
+		...twoChats(),
+		{
+			id: "sess_2",
+			agent_id: "assistant",
+			name: "sess_2",
+			title: "Packing list",
+			created_at: hoursAgo(4),
+			last_message_at: hoursAgo(2),
+		},
+	];
+	const sockets: Array<{ send: (m: string) => void }> = [];
+	await context.routeWebSocket(/\/api\/ws/, (ws) => {
+		sockets.push(ws);
+	});
+	const sessionsTab = await context.newPage();
+	await mockChats(page, sessions);
+	await mockChats(sessionsTab, sessions);
+
+	await page.goto("/agents/assistant/chat/sess_1");
+	await expect(chatRows(page)).toHaveText([
+		/Main Chat/,
+		/Groceries/,
+		/Packing list/,
+	]);
+	await expect.poll(() => sockets.length).toBeGreaterThan(0);
+
+	await sessionsTab.goto("/system/sessions");
+	await chooseOption(
+		sessionsTab.getByRole("combobox", { name: "Agent" }),
+		"assistant",
+	);
+	await sessionsTab
+		.getByRole("row")
+		.filter({ hasText: "Groceries" })
+		.getByTestId("session-remove-button")
+		.click();
+	await sessionsTab
+		.getByRole("alertdialog")
+		.getByRole("button", { name: "Remove" })
+		.click();
+	await expect(sessionsTab.getByRole("row", { name: /Groceries/ })).toHaveCount(
+		0,
+	);
+	// The server tells every client about the removal.
+	for (const ws of sockets)
+		ws.send(
+			JSON.stringify({
+				type: "session_removed",
+				agent_id: "assistant",
+				session_id: "sess_1",
+			}),
+		);
+
+	await expect(page).toHaveURL("/agents/assistant/chat/main");
+	await expect(chatRows(page)).toHaveText([/Main Chat/, /Packing list/]);
+
+	// A chat removed without this tab hearing of it fails the send, and the
+	// failure ends the turn instead of thinking forever.
+	await chatRows(page)
+		.filter({ hasText: "Packing list" })
+		.getByRole("link")
+		.click();
+	await expect(page).toHaveURL("/agents/assistant/chat/sess_2");
+	sessions.splice(
+		sessions.findIndex((s) => s.id === "sess_2"),
+		1,
+	);
+	const input = page.getByPlaceholder("Describe a task or ask a question");
+	await input.fill("message into deleted chat");
+	await input.press("Enter");
+	await expect(page.getByTestId("chat-message-error")).toContainText(
+		'session "sess_2" not found for agent "assistant"',
+	);
+	await expect(page.getByTestId("chat-typing")).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Stop response" })).toHaveCount(
+		0,
+	);
 });

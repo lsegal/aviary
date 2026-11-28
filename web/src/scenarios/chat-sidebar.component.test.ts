@@ -97,6 +97,10 @@ function mockChats(sessions: Sess[], messages: Record<string, Msg[]> = {}) {
 			record("agent_run")(args);
 			// The server titles a new chat from its first prompt.
 			const s = sessions.find((x) => x.id === args?.session_id);
+			if (args?.session_id && !s)
+				throw new Error(
+					`session "${args.session_id}" not found for agent "assistant"`,
+				);
 			if (s && !s.title) s.title = "Weekend trip plans";
 			return "Sure!";
 		},
