@@ -173,6 +173,21 @@ func TestApplySchemaTagsIgnoresMalformedAndUnknownDirectives(t *testing.T) {
 	assert.Empty(t, schema.AllOf)
 }
 
+func TestApplySchemaTagsUsesJSONNameWithoutTagOptions(t *testing.T) {
+	type args struct {
+		Mode  string `json:"mode" schema:"enum=a|b"`
+		Empty string `json:",omitempty" schema:"enum=c|d"`
+	}
+	schema, ok := inferredInputSchema[args]().(*jsonschema.Schema)
+	require.True(t, ok)
+	require.Contains(t, schema.Properties, "mode")
+	assert.Equal(t, []any{"a", "b"}, schema.Properties["mode"].Enum)
+	assert.NotContains(t, schema.Properties, "Mode")
+	// An empty json name still falls back to the Go field name.
+	require.Contains(t, schema.Properties, "Empty")
+	assert.Equal(t, []any{"c", "d"}, schema.Properties["Empty"].Enum)
+}
+
 func TestApplySchemaDirectiveEnumNeedsExistingProperty(t *testing.T) {
 	root := &jsonschema.Schema{}
 	applySchemaDirective(root, "mode", "enum", "a|b")
