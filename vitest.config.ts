@@ -1,5 +1,5 @@
 import vue from "@vitejs/plugin-vue";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 // Unit tests for the web app (#1377). Playwright covers the app end to end
 // under web/e2e; these test web/src modules directly and report their
@@ -8,12 +8,18 @@ export default defineConfig({
 	plugins: [vue()],
 	test: {
 		include: ["web/src/**/*.test.ts"],
+		// Component tests run in a browser: vitest.component.config.ts.
+		exclude: [...configDefaults.exclude, "web/src/**/*.component.test.ts"],
 		coverage: {
 			provider: "v8",
 			// Repository-relative paths, so Qlty maps them without a fixup.
 			reportsDirectory: "web/coverage",
 			include: ["web/src/**/*.{ts,vue}"],
-			exclude: ["web/src/**/*.test.ts", "web/src/**/*.d.ts"],
+			exclude: [
+				"web/src/**/*.test.ts",
+				"web/src/**/*.d.ts",
+				"web/src/component-test/**",
+			],
 		},
 	},
 });
