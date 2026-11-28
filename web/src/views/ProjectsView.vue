@@ -112,11 +112,16 @@
 							</button>
 						</div>
 
-						<!-- The projects' pills lead into each project, left of the CLI
-							providers, which move into the details popover on a phone (#1580). -->
-						<div v-if="(aggregate && targets.length) || inlineCLIs" class="flex min-w-0 flex-wrap items-center gap-2" data-testid="board-nav-row">
-						<ProjectNavRow v-if="aggregate && targets.length" :agent="routeAgent" :targets="targets" />
-						<CLIProviderList v-if="inlineCLIs && status" class="ml-auto" :clis="status.clis" />
+						<!-- The projects' pills lead into each project, left of the agent
+							models and quota, which show in the details popover (or "…")
+							below sm instead (#1580). The same CSS breakpoint hides one and
+							shows the other, so they always show in exactly one place (#1582). -->
+						<div v-if="navPills || status?.clis.length" class="min-w-0 flex-wrap items-center gap-2"
+							:class="navPills ? 'flex' : 'hidden sm:flex'" data-testid="board-nav-row">
+						<ProjectNavRow v-if="navPills" :agent="routeAgent" :targets="targets" />
+						<div v-if="status?.clis.length" class="ml-auto hidden max-w-full sm:block">
+							<CLIProviderList :clis="status.clis" />
+						</div>
 						</div>
 
 						<!-- Search keeps a usable width; the state filters fold into "Filters"
@@ -654,16 +659,19 @@ function onWideChange(e: MediaQueryListEvent) {
 onMounted(() => wideQuery.addEventListener("change", onWideChange));
 onUnmounted(() => wideQuery.removeEventListener("change", onWideChange));
 // Tailwind's sm breakpoint, where the board's header actions fit beside an
-// open job's (#1347).
-const smQuery = window.matchMedia("(min-width: 640px)");
+// open job's (#1347). Tailwind 4 defines it in rem, so this matches its sm:
+// classes even when the browser's default font size isn't 16px (#1582).
+const smQuery = window.matchMedia("(width >= 40rem)");
 const smUp = ref(smQuery.matches);
 function onSmChange(e: MediaQueryListEvent) {
 	smUp.value = e.matches;
 }
-onMounted(() => smQuery.addEventListener("change", onSmChange));
+onMounted(() => {
+	smUp.value = smQuery.matches;
+	smQuery.addEventListener("change", onSmChange);
+});
 onUnmounted(() => smQuery.removeEventListener("change", onSmChange));
-// A phone's CLI providers are in the details popover instead (#1580).
-const inlineCLIs = computed(() => smUp.value && !!status.value?.clis.length);
+const navPills = computed(() => aggregate.value && targets.value.length > 0);
 const statsCompact = computed(() => statsChoice.value ?? !wide.value);
 
 const busyJob = ref("");

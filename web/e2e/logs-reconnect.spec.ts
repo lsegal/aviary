@@ -32,8 +32,13 @@ test("a Logs stream reconnect does not duplicate the tail (#1625)", async ({
 
 	await page.goto("/system/logs");
 	const rows = page.getByTestId("log-row");
-	await expect.poll(() => connections).toBeGreaterThanOrEqual(2);
-	await expect(rows.filter({ hasText: "line 6" })).toHaveCount(1);
+	// Reconnects back off from 1 s, so allow for a slow first page load.
+	await expect
+		.poll(() => connections, { timeout: 15_000 })
+		.toBeGreaterThanOrEqual(2);
+	await expect(rows.filter({ hasText: "line 6" })).toHaveCount(1, {
+		timeout: 15_000,
+	});
 	await expect(rows).toHaveCount(6);
 	for (let i = 1; i <= 6; i++) {
 		await expect(rows.filter({ hasText: `line ${i}` })).toHaveCount(1);
