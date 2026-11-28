@@ -96,7 +96,9 @@ test("shows CLI-reported cost for mixed records", async () => {
 		await count(breakdownRow(title, other).getByTestId("usage-item-cost")).toBe(
 			0,
 		);
-		await expect.element(breakdownRow(title, other)).not.toHaveTextContent("$");
+		await expect
+			.element(breakdownRow(title, other))
+			.not.toMatchTextContent("$");
 	}
 });
 
@@ -448,7 +450,7 @@ test("summarizes project outcomes and wall time apart from token metrics", async
 	]);
 	await expect
 		.element(page.getByTestId("usage-project-row").nth(1))
-		.toHaveTextContent("2h 5m");
+		.toMatchTextContent("2h 5m");
 	// Project records are not token calls.
 	await expect
 		.element(
@@ -506,8 +508,8 @@ test("breakdowns merge model name forms and skip tokenless records", async () =>
 	]) {
 		const rows = breakdown(title).locator("div.mb-3");
 		await count(rows).toBe(1);
-		await expect.element(rows.first()).toHaveTextContent(name);
-		await expect.element(rows.first()).toHaveTextContent("1.0K");
+		await expect.element(rows.first()).toMatchTextContent(name);
+		await expect.element(rows.first()).toMatchTextContent("1.0K");
 	}
 });
 

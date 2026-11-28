@@ -60,6 +60,10 @@ async function mockChat(
 	await renderApp("/agents/assistant/chat");
 	const composer = page.getByTestId("chat-composer");
 	await expect.element(composer).toBeVisible();
+	// The chat's (empty) draft is restored once its session loads; anything
+	// attached before then would be replaced. A spec's round trips left
+	// the session loaded by the first action.
+	await expect.element(page.getByText("No messages yet")).toBeVisible();
 	return {
 		runs,
 		stops,

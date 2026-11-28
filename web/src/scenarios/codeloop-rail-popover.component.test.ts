@@ -1,7 +1,12 @@
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import { page } from "vitest/browser";
+import { nextTick } from "vue";
 import { currentURL, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
+import {
+	SIDEBAR_DEFAULT_WIDTH,
+	useSidebarLayout,
+} from "../composables/useSidebarLayout";
 
 // The collapsed rail's Code Loop flyout names where the work is: each
 // project's running count, running projects first, with a header total that
@@ -84,6 +89,16 @@ const JOBS = [
 	issueJob("lsegal/zvid", 14),
 	issueJob("lsegal/zvid", 15),
 ];
+
+beforeEach(async () => {
+	// The sidebar layout lives in module state, which outlasts a test, so
+	// start each test from a fresh browser's layout.
+	const layout = useSidebarLayout();
+	layout.collapsed.value = false;
+	layout.width.value = SIDEBAR_DEFAULT_WIDTH;
+	await nextTick();
+	localStorage.clear();
+});
 
 function setup() {
 	mockMCP({

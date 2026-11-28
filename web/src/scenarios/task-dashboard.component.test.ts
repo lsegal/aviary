@@ -211,7 +211,9 @@ test("a running task streams its logs, and copy and stop work", async () => {
 	await expect
 		.element(log.getByTestId("task-run-log-title"))
 		.toHaveText("Current run");
-	await expect.element(log.getByTestId("task-run-result")).toHaveText("Running");
+	await expect
+		.element(log.getByTestId("task-run-result"))
+		.toHaveText("Running");
 	await expect
 		.element(log.getByTestId("task-run-log-elapsed"))
 		.toMatchTextContent("elapsed");

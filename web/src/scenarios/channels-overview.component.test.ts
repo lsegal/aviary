@@ -1,7 +1,14 @@
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import { type Locator, page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
-import { mockMCP } from "../component-test/server";
+import { mockMCP, requestLog } from "../component-test/server";
+import { useChannelDialogs } from "../composables/useChannelDialogs";
+
+// The add-channel dialog's open state is module state, which a page load
+// starts without; close what an earlier test in the file opened.
+beforeEach(() => {
+	useChannelDialogs().close();
+});
 
 const NOW = Date.now();
 const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString();
@@ -123,6 +130,17 @@ function mockOverview(
 		task_list: [],
 	});
 	return { calls };
+}
+
+/** Waits until the app has made no requests for a while. Any re-render of
+ * the overview collapses an expanded message, so a click on one waits for
+ * the reloads that follow toggling a channel to land. */
+async function settled() {
+	let last = -1;
+	while (requestLog().length !== last) {
+		last = requestLog().length;
+		await new Promise((r) => setTimeout(r, 500));
+	}
 }
 
 /** Each element's whitespace-normalized text, as Playwright's toHaveText
@@ -258,6 +276,7 @@ test("the populated Channels overview summarizes channels, workflows and recent 
 	// Long text fits one line, with the rest in a tooltip and on click.
 	const long = signalMessages.getByTestId("message-text").nth(1);
 	await expect.element(long).toHaveAttribute("title", LONG);
+	await settled();
 	const oneLine = long.element().getBoundingClientRect().height;
 	await long.click();
 	await expect.element(long).toHaveAttribute("aria-expanded", "true");

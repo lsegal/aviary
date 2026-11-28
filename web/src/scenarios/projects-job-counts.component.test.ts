@@ -389,7 +389,7 @@ test("job detail's Raw output is an icon button that toggles its panel (#834)", 
 	});
 	await expect.element(toggle).toHaveAttribute("aria-pressed", "false");
 	await expect.element(toggle).toHaveText("");
-	await expect.element(toggle).toHaveAttribute("title", /raw CLI output/);
+	await expect.element(toggle).toHaveAttribute("title", expect.stringMatching(/raw CLI output/));
 	const size = async (name: string) => {
 		const box = await boundingBoxOf(
 			actions.getByRole("button", { name, exact: true }),

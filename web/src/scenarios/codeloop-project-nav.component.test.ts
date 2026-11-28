@@ -1,6 +1,11 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
+import { nextTick } from "vue";
 import { currentURL, goBack, renderApp } from "../component-test/app";
+import {
+	SIDEBAR_DEFAULT_WIDTH,
+	useSidebarLayout,
+} from "../composables/useSidebarLayout";
 import {
 	backToBoard,
 	expectSharedNavOnly,
@@ -14,6 +19,16 @@ import {
 // The `aviary watch` session cases live in
 // codeloop-project-nav-watch.component.test.ts: the signed-out health check
 // they load is module state that would carry into the tests after them.
+
+beforeEach(async () => {
+	// The sidebar layout lives in module state, which outlasts a test, so
+	// start each test from a fresh browser's layout.
+	const layout = useSidebarLayout();
+	layout.collapsed.value = false;
+	layout.width.value = SIDEBAR_DEFAULT_WIDTH;
+	await nextTick();
+	localStorage.clear();
+});
 
 afterEach(() => {
 	vi.useRealTimers();

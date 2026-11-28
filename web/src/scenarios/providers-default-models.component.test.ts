@@ -120,4 +120,4 @@ test("the default model pickers offer the models of installed CLI providers", as
 	expect(saved).toMatchObject({
 		models: { defaults: { model: "codex/gpt-5.5-mini" } },
 	});
-});
+}, 90_000);

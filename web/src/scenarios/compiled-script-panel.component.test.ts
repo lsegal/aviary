@@ -1,7 +1,8 @@
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { currentURL, reload, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
+import { useCompiledPanelOpen } from "../composables/useTaskCompiles";
 import { boundingBoxOf } from "./helpers/box";
 
 interface Task {
@@ -173,6 +174,12 @@ function mockCompiled(
 	return { config, calls };
 }
 
+// The panel's open state is module state read from localStorage on load;
+// start each test as a fresh page would, with it closed.
+beforeEach(() => {
+	useCompiledPanelOpen().value = false;
+});
+
 const WORKFLOWS_URL =
 	"/agents/assistant/channels/Team%20Slack/settings?tab=workflows";
 
@@ -335,7 +342,10 @@ test("the compiled panel shows the script beside the prompt, goes stale on edit,
 		{ agent: "assistant", task: "triage" },
 	]);
 
-	// The panel stays open across a reload.
+	// The panel stays open across a reload: the reloaded page reads it back
+	// from storage, as a fresh page load would.
+	useCompiledPanelOpen().value =
+		localStorage.getItem("aviary.compiledPanelOpen") === "true";
 	await reload();
 	const again = await openWorkflowEditor("triage", false);
 	await expect.element(again.getByTestId("compiled-panel")).toBeVisible();

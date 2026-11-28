@@ -124,7 +124,7 @@ test("board shows status, ordered job cards and live output", async () => {
 		.toHaveText("Stacked on PR #226, waiting for it to merge");
 	await expect
 		.element(paused.getByTestId("job-progress"))
-		.toHaveAttribute("style", /width: 83%/);
+		.toHaveAttribute("style", expect.stringMatching(/width: 83%/));
 
 	// Cards stream output and refresh within a few seconds; #221 emits no
 	// events, so it shows its scrollback.
@@ -235,9 +235,9 @@ for (const [label, width] of [
 			const agent = card.getByTestId("job-agent");
 			const title = card.getByRole("heading");
 			await expect.element(time).toHaveText(/\d+(m|h)/);
-			await expect.element(time).toHaveAttribute("title", /^Started /);
+			await expect.element(time).toHaveAttribute("title", expect.stringMatching(/^Started /));
 			await expect.element(agent).toHaveText(/^gh-fix · /);
-			await expect.element(agent).toHaveAttribute("title", /^gh-fix · /);
+			await expect.element(agent).toHaveAttribute("title", expect.stringMatching(/^gh-fix · /));
 			await expectRightAligned(card, time);
 			await expectRightAligned(card, agent);
 			const timeBox = await boundingBoxOf(time);
@@ -269,7 +269,7 @@ test("a long agent label truncates inside the card with a tooltip (#756)", async
 	const card = page.getByTestId("job-card");
 	await expect.poll(() => card.elements().length).toBe(1);
 	const agent = card.getByTestId("job-agent");
-	await expect.element(agent).toHaveAttribute("title", new RegExp(`${model}$`));
+	await expect.element(agent).toHaveAttribute("title", expect.stringMatching(new RegExp(`${model}$`)));
 	await expect.element(agent).toHaveCSS("text-overflow", "ellipsis");
 	await expect.element(agent).toHaveCSS("white-space", "nowrap");
 	const truncated = await ((el) => el.scrollWidth > el.clientWidth)(

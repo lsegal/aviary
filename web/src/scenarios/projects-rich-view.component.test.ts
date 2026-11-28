@@ -1,8 +1,15 @@
 // Ported from web/e2e/projects.spec.ts (#1636): job cards' rich transcript view.
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { reload, renderApp } from "../component-test/app";
+import { useJobOutputMode } from "../composables/useJobOutput";
 import { at, jobGetWithEvents, STATUS, setup } from "./projects-fixtures";
+
+// The rich/raw choice is module state that a fresh page would read from the
+// (cleared) storage, so each test starts on the default rich view.
+beforeEach(() => {
+	useJobOutputMode().value = "rich";
+});
 
 /** Playwright's isVisible: attached, with a box, and not hidden. */
 function isVisible(locator: Locator): boolean {
@@ -67,7 +74,7 @@ test("job cards show the transcript in a rich view by default, falling back to r
 		.toHaveAttribute("aria-pressed", "true");
 	await expect
 		.element(card.getByRole("button", { name: "Raw output" }))
-		.toHaveAttribute("title", /raw terminal scrollback/);
+		.toHaveAttribute("title", expect.stringMatching(/raw terminal scrollback/));
 
 	// A job with no events shows its scrollback, with no error.
 	const fallback = page.getByTestId("job-card").filter({ hasText: "#221" });

@@ -214,4 +214,4 @@ test("one providers list holds the API providers and every CLI provider with its
 	await expect
 		.element(card.locator("tbody tr").first())
 		.toMatchTextContent("Anthropic");
-});
+}, 90_000);

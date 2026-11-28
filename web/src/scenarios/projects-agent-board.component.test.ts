@@ -94,12 +94,12 @@ test("the Code Loop board's header starts with a blue + that adds a project (#73
 	await expect.element(add).toHaveAttribute("title", "Add project");
 	// The sidebar's blue + (#1197): a white + on the same blue.
 	const blue = (el: Element) => getComputedStyle(el).backgroundColor;
+	const sidebarAdd = page.getByTestId("sidebar-add-project");
+	await expect.element(sidebarAdd).toBeInTheDocument();
 	await expect
 		.poll(() => blue(add.element() as HTMLElement))
 		.toBe(
-			await blue(
-				page.getByTestId("sidebar-add-project").element() as HTMLElement,
-			),
+			blue(sidebarAdd.element()),
 		);
 	await expect.element(add).toHaveCSS("color", "rgb(255, 255, 255)");
 	await expect
@@ -143,7 +143,7 @@ test("job actions are icon buttons with tooltips", async () => {
 	for (const action of actions) {
 		await expect.poll(() => action.locator("svg").elements().length).toBe(1);
 		await expect.element(action).toHaveText("");
-		await expect.element(action).toHaveAttribute("title", /\S/);
+		await expect.element(action).toHaveAttribute("title", expect.stringMatching(/\S/));
 	}
 
 	await goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
@@ -151,7 +151,7 @@ test("job actions are icon buttons with tooltips", async () => {
 		const action = page.getByRole("button", { name });
 		await expect.poll(() => action.locator("svg").elements().length).toBe(1);
 		await expect.element(action).toHaveText("");
-		await expect.element(action).toHaveAttribute("title", /\S/);
+		await expect.element(action).toHaveAttribute("title", expect.stringMatching(/\S/));
 	}
 });
 
@@ -176,7 +176,7 @@ test("job detail links #NNN and PR #YYY in the title, with icon-only actions (#8
 		await expect.element(toggle).toHaveText("");
 		await expect.poll(() => toggle.locator("svg").elements().length).toBe(1);
 		await expect.element(toggle).toHaveAttribute("aria-label", "Raw output");
-		await expect.element(toggle).toHaveAttribute("title", /\S/);
+		await expect.element(toggle).toHaveAttribute("title", expect.stringMatching(/\S/));
 	}
 	// Closing the details is a plain dismiss icon, not a bordered action.
 	expect(

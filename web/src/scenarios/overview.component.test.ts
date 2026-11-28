@@ -3,6 +3,7 @@ import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, renderApp } from "../component-test/app";
 import { mockMCP, route, unroute } from "../component-test/server";
 import { boundingBoxOf } from "./helpers/box";
+import { systemList } from "./helpers/sidebar";
 
 // The MCP retry scenarios ("recovers when the MCP session expires", "retries
 // a transient MCP 502 during overview load") are in overview-mcp-retry-*:
@@ -238,8 +239,9 @@ test("a System page keeps its icon in the rail and header, but not the sidebar l
 	await expect.element(usageCard).toBeInTheDocument();
 	const cardIcon = usageCard.element().innerHTML;
 
-	await page.getByTestId("sidebar-system-toggle").click();
-	const sidebarList = page.getByTestId("sidebar-system-list");
+	// The System section's expanded state is module state: expand it only
+	// when collapsed, as a fresh page's toggle click does.
+	const sidebarList = await systemList();
 	await expect
 		.element(sidebarList.getByTestId("sidebar-system-usage"))
 		.toBeVisible();

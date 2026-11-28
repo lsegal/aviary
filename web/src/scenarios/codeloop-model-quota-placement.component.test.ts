@@ -2,6 +2,10 @@ import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
+import {
+	SIDEBAR_DEFAULT_WIDTH,
+	useSidebarLayout,
+} from "../composables/useSidebarLayout";
 
 // The Code Loop board's agent models and quota show in exactly one place at
 // every width: inline under the stats from sm up, or in the ⓘ Board details
@@ -89,7 +93,10 @@ async function sweep(path: string, collapsed: boolean) {
 	for (const width of WIDTHS) {
 		await page.viewport(width, 900);
 		// A fresh page load per width, with the sidebar state stored first.
+		// The layout is read into module state once, so set it there too.
 		localStorage.setItem("aviary.sidebar.collapsed", collapsed ? "1" : "0");
+		useSidebarLayout().collapsed.value = collapsed;
+		useSidebarLayout().width.value = SIDEBAR_DEFAULT_WIDTH;
 		await renderApp(path);
 		await expect.element(page.getByTestId("stats-toggle")).toBeVisible();
 		if (width >= 1024)

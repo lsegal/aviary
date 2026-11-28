@@ -1,6 +1,11 @@
 import { beforeEach, expect, test } from "vitest";
 import { page } from "vitest/browser";
-import { currentURL, reload, renderApp } from "../component-test/app";
+import {
+	currentURL,
+	reload,
+	renderApp,
+	setAuthToken,
+} from "../component-test/app";
 import { setup } from "./helpers/notificationServer";
 
 // Its own file (#1636): useNotifications loads the saved settings once per
@@ -64,6 +69,7 @@ test("Notifications is a Settings tab after Display, under the shared header, so
 	// page stay in module state across the remount; the master switch test
 	// covers a page loading them from the server.)
 	localStorage.clear();
+	setAuthToken(); // as the spec's init script signed each load in
 	await reload();
 	await expect
 		.element(page.getByTestId("notifications-sound"))

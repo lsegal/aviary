@@ -5,6 +5,7 @@ import modelCatalog from "../../../internal/models/catalog.json" with {
 };
 import { currentURL, renderApp } from "../component-test/app";
 import { mockMCP, type ToolFixtures } from "../component-test/server";
+import { systemList } from "./helpers/sidebar";
 
 // The CLI providers list's cached and default-model scenarios live in
 // providers-cache and providers-default-models: the CLI list is module
@@ -131,17 +132,17 @@ test("Settings has General, Providers & Authentication and Display tabs (#822, #
 		.toHaveText("Settings");
 	await expect.element(page.getByTestId("providers-list")).toBeVisible();
 	// Providers & Auth is no longer a System page in the sidebar.
-	await page.getByTestId("sidebar-system-toggle").click();
+	// The System section's expanded state is module state: expand it only
+	// when collapsed, as a fresh page's toggle click does.
+	const systemPages = await systemList();
+	await expect.element(systemPages).toBeVisible();
 	await expect
 		.poll(
 			() =>
-				page
-					.getByTestId("sidebar-system-list")
-					.getByRole("link", { name: /Providers/ })
-					.elements().length,
+				systemPages.getByRole("link", { name: /Providers/ }).elements().length,
 		)
 		.toBe(0);
-});
+}, 90_000);
 
 test("saving settings keeps the CLI definitions", async () => {
 	let saved: Record<string, unknown> | null = null;

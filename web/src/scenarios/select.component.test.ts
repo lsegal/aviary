@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
-import { goto, renderApp, setAuthToken } from "../component-test/app";
+import { renderApp, setAuthToken } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
 import { expectValue, listbox, optionLabels } from "./helpers/select";
 
@@ -70,7 +70,9 @@ async function openSettings() {
 
 async function openTriggerEditor() {
 	await openSettings();
-	await goto("/agents/assistant/tasks?task=daily-briefing");
+	// A fresh load, as page.goto: navigating the mounted Settings view in
+	// place can drop the ?task query once its data is cached.
+	await renderApp("/agents/assistant/tasks?task=daily-briefing");
 	return page.getByTestId("trigger-editor");
 }
 
@@ -274,7 +276,7 @@ test("comboboxes search timezones and models", async () => {
 		.toMatchTextContent("No matching timezones");
 	await commands.keyPress("Escape");
 
-	await goto("/system/settings");
+	await renderApp("/system/settings");
 	const model = page.getByTestId("default-model-selector").locator("input");
 	expect(await optionLabels(model)).toEqual(
 		expect.arrayContaining(["codex/gpt-5.5", "codex/gpt-5.5-mini", "codex/o4"]),
