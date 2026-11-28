@@ -442,7 +442,7 @@ func TestServeDaemonStartsDetachedProcess(t *testing.T) {
 	require.NotNil(t, got)
 	exe, err := os.Executable()
 	require.NoError(t, err)
-	assert.Equal(t, []string{exe, "serve", "start"}, got.Args)
+	assert.Equal(t, []string{exe, "serve", "start", "--config", cfgFile}, got.Args)
 	cfgDir := filepath.Join(env.dir, "daemon")
 	assert.Equal(t, cfgDir, got.Dir)
 	assert.DirExists(t, cfgDir, "the config dir is created for the PID file")
@@ -454,6 +454,30 @@ func TestServeDaemonStartsDetachedProcess(t *testing.T) {
 	startBackground = func(*exec.Cmd) (int, error) { return 0, errors.New("fork failed") }
 	err = serveCmd.RunE(serveCmd, nil)
 	require.EqualError(t, err, "starting background process: fork failed")
+}
+
+func TestDaemonCommandPassesDataDirAndConfig(t *testing.T) {
+	env := setupServeEnv(t)
+	prevDataDir := dataDir
+	t.Cleanup(func() { dataDir = prevDataDir })
+	require.NoError(t, os.Chdir(env.dir))
+
+	// No flags: the child gets none either.
+	cfgFile, dataDir = "", ""
+	assert.Equal(t, []string{"aviary", "serve", "start"}, daemonCommand("aviary").Args)
+
+	// Relative paths resolve against the parent's working directory, since
+	// the child runs in the config's directory.
+	cfgFile, dataDir = filepath.Join("cfg", "aviary.yaml"), "state"
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	c := daemonCommand("aviary")
+	assert.Equal(t, []string{
+		"aviary", "serve", "start",
+		"--config", filepath.Join(wd, "cfg", "aviary.yaml"),
+		"--data-dir", filepath.Join(wd, "state"),
+	}, c.Args)
+	assert.Equal(t, filepath.Join(wd, "cfg"), c.Dir)
 }
 
 func TestStartBackgroundStartsProcess(t *testing.T) {
