@@ -676,17 +676,72 @@ describe("OpenAI sign-in", () => {
 });
 
 describe("Google sign-in", () => {
-	it("offers sign-in and API key methods", async () => {
+	it("shows the Gemini callback countdown and completes", async () => {
+		authFn("startGemini").mockImplementation(async () => {
+			authRef<string>("geminiUrl").value = "https://accounts.google.com/x";
+			authRef<string>("geminiCallbackUrl").value =
+				"http://localhost:45289/oauth2callback";
+			authRef<number>("geminiRemainingSeconds").value = 65;
+		});
 		const w = await mountWizard();
 		await choose(w, "Google (Gemini)");
 		expect(w.text()).toContain("Connect Google (Gemini)");
-		expect(hasButton(w, "Sign in with Google (Gemini)")).toBe(true);
+		await button(w, "Sign in with Gemini").trigger("click");
+		await flushPromises();
+		expect(authFn("startGemini")).toHaveBeenCalled();
+		expect(w.get('a[href="https://accounts.google.com/x"]').text()).toBe(
+			"https://accounts.google.com/x",
+		);
+		expect(w.text()).toContain("http://localhost:45289/oauth2callback");
+		expect(w.text()).toContain("Callback expires in 1:05.");
+
+		await button(w, "I've authorized - Continue").trigger("click");
+		await flushPromises();
+		expect(authFn("completeGemini")).toHaveBeenCalled();
+		expect(w.text()).toContain("Create your first agent");
+		expect(selectorValue(w)).toBe("google-gemini/gemini-3.5-flash");
+	});
+
+	it("disables completion once the Gemini callback times out", async () => {
+		authRef<string>("geminiUrl").value = "https://accounts.google.com/x";
+		const w = await mountWizard();
+		await choose(w, "Google (Gemini)");
+		authRef<boolean>("geminiTimedOut").value = true;
+		await flushPromises();
+		expect(w.text()).toContain(
+			"This Gemini callback timed out. Start over to reopen port 45289.",
+		);
+		expect(button(w, "Timed out").attributes("disabled")).toBeDefined();
+	});
+
+	it("reports Gemini start and completion errors", async () => {
+		authFn("startGemini").mockRejectedValueOnce(new Error("port 45289 busy"));
+		const w = await mountWizard();
+		await choose(w, "Google (Gemini)");
+		await button(w, "Sign in with Gemini").trigger("click");
+		await flushPromises();
+		expect(w.text()).toContain("port 45289 busy");
+
+		authRef<string>("geminiUrl").value = "https://accounts.google.com/x";
+		authFn("completeGemini").mockRejectedValueOnce("not authorized yet");
+		await flushPromises();
+		await button(w, "I've authorized - Continue").trigger("click");
+		await flushPromises();
+		expect(w.text()).toContain("not authorized yet");
+		expect(w.text()).toContain("Connect Google (Gemini)");
+	});
+
+	it("switches between the sign-in and API key methods", async () => {
+		const w = await mountWizard();
+		await choose(w, "Google (Gemini)");
 		await button(w, "API key").trigger("click");
 		expect(w.get('input[type="password"]').attributes("placeholder")).toBe(
 			"AIza...",
 		);
+		expect(hasButton(w, "Sign in with Gemini")).toBe(false);
 		await button(w, "Sign in with Google (Gemini)").trigger("click");
 		expect(w.find('input[type="password"]').exists()).toBe(false);
+		expect(hasButton(w, "Sign in with Gemini")).toBe(true);
 	});
 });
 
