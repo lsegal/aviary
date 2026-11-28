@@ -54,10 +54,20 @@ async function mockSessions(
 	page: Page,
 	store: Record<string, Session[]>,
 	overrides: ToolFixtures = {},
+	holdCreate: (calls: Calls) => Promise<void> = async () => {},
 ) {
-	const calls: Calls = { list: [], create: [], remove: [], clear: [], stop: [] };
+	const calls: Calls = {
+		list: [],
+		create: [],
+		remove: [],
+		clear: [],
+		stop: [],
+	};
 	let created = 0;
 	await setAuthToken(page);
+	// Keep the real server's live frames out; specs that need them route
+	// /api/ws again.
+	await page.routeWebSocket(/\/api\/ws/, () => {});
 	await mockMCP(page, {
 		config_get: {
 			server: { port: 16677 },
@@ -76,17 +86,16 @@ async function mockSessions(
 			calls.list.push(agent);
 			return store[agent] ?? [];
 		},
-		session_create: async (args) => {
+		session_create: async (args?: Record<string, unknown>) => {
 			const agent = String(args?.agent ?? "");
 			calls.create.push(agent);
-			// Long enough for a second quick click to land before the reload.
-			await new Promise((r) => setTimeout(r, 150));
+			await holdCreate(calls);
 			created += 1;
 			const s = session(agent, `sess_new_${created}`);
 			store[agent] = [...(store[agent] ?? []), s];
 			return s;
 		},
-		session_remove: (args) => {
+		session_remove: (args?: Record<string, unknown>) => {
 			calls.remove.push({ ...args });
 			const agent = String(args?.agent ?? "");
 			store[agent] = (store[agent] ?? []).filter(
@@ -94,11 +103,11 @@ async function mockSessions(
 			);
 			return "removed";
 		},
-		session_clear: (args) => {
+		session_clear: (args?: Record<string, unknown>) => {
 			calls.clear.push({ ...args });
 			return "cleared";
 		},
-		session_stop: (args) => {
+		session_stop: (args?: Record<string, unknown>) => {
 			calls.stop.push({ ...args });
 			for (const s of store[String(args?.agent ?? "")] ?? [])
 				if (s.id === args?.session_id) s.is_processing = false;
@@ -133,7 +142,10 @@ test("selects the first agent and reloads the table when switching agents", asyn
 	page,
 }) => {
 	const calls = await mockSessions(page, {
-		assistant: [mainChat("assistant"), session("assistant", "a1", { title: "Alpha" })],
+		assistant: [
+			mainChat("assistant"),
+			session("assistant", "a1", { title: "Alpha" }),
+		],
 		helper: [session("helper", "h1", { title: "Helper chat" })],
 	});
 	await page.goto("/system/sessions");
@@ -153,10 +165,21 @@ test("selects the first agent and reloads the table when switching agents", asyn
 });
 
 test("Create Session adds a New chat row, once per click", async ({ page }) => {
-	const calls = await mockSessions(page, {
-		assistant: [mainChat("assistant")],
-		helper: [],
-	});
+	// Once armed, each create waits for the next one, so the second of two
+	// quick clicks lands while the first create is still running.
+	let pair: { arrived: number; both: Promise<void>; go: () => void } | null =
+		null;
+	const calls = await mockSessions(
+		page,
+		{ assistant: [mainChat("assistant")], helper: [] },
+		{},
+		async () => {
+			if (!pair) return;
+			pair.arrived += 1;
+			if (pair.arrived === 2) pair.go();
+			await pair.both;
+		},
+	);
 	await page.goto("/system/sessions");
 	await expect(rows(page)).toHaveCount(1);
 
@@ -168,8 +191,16 @@ test("Create Session adds a New chat row, once per click", async ({ page }) => {
 	await expect(row(page, "New chat")).toHaveCount(1);
 	expect(calls.create).toEqual(["assistant"]);
 
+	let go: () => void = () => {};
+	const both = new Promise<void>((r) => {
+		go = r;
+	});
+	pair = { arrived: 0, both, go };
 	await create.click();
+	await expect.poll(() => calls.create).toHaveLength(2);
+	await expect(create).toBeEnabled();
 	await create.click();
+	await expect.poll(() => calls.create).toHaveLength(3);
 	await expect(rows(page)).toHaveCount(4);
 	await expect(row(page, "New chat")).toHaveCount(3);
 	expect(calls.create).toEqual(["assistant", "assistant", "assistant"]);
@@ -179,11 +210,14 @@ test("Main Chat is cleared and other chats are removed, and Cancel changes nothi
 	page,
 }) => {
 	const calls = await mockSessions(page, {
-		assistant: [mainChat("assistant"), session("assistant", "a1", { title: "Alpha" })],
+		assistant: [
+			mainChat("assistant"),
+			session("assistant", "a1", { title: "Alpha" }),
+		],
 		helper: [],
 	});
 	await page.goto("/system/sessions");
-	const dialog = page.getByRole("dialog");
+	const dialog = page.getByRole("alertdialog");
 
 	// Main Chat is not deletable, so it offers Clear.
 	const main = row(page, "Main Chat");
@@ -197,9 +231,9 @@ test("Main Chat is cleared and other chats are removed, and Cancel changes nothi
 	await main.getByRole("button", { name: "Clear" }).click();
 	await dialog.getByRole("button", { name: "Clear", exact: true }).click();
 	await expect(dialog).toHaveCount(0);
-	await expect.poll(() => calls.clear).toEqual([
-		{ agent: "assistant", session_id: "assistant_main" },
-	]);
+	await expect
+		.poll(() => calls.clear)
+		.toEqual([{ agent: "assistant", session_id: "assistant_main" }]);
 	await expect(row(page, "Main Chat")).toHaveCount(1);
 
 	// Other chats are deletable, so they offer Remove.
@@ -293,7 +327,9 @@ test("leaving for Skills and coming back keeps the agent and reloads its session
 test("an empty list says so", async ({ page }) => {
 	await mockSessions(page, { assistant: [], helper: [] });
 	await page.goto("/system/sessions");
-	await expect(sessionsCard(page).getByText("No sessions found.")).toBeVisible();
+	await expect(
+		sessionsCard(page).getByText("No sessions found."),
+	).toBeVisible();
 	await expect(sessionsCard(page).locator("table")).toHaveCount(0);
 });
 
@@ -311,7 +347,9 @@ test("a failing session_list shows the error and an empty table", async ({
 	);
 	await page.goto("/system/sessions");
 	await expect(page.getByText("session store unavailable")).toBeVisible();
-	await expect(sessionsCard(page).getByText("No sessions found.")).toBeVisible();
+	await expect(
+		sessionsCard(page).getByText("No sessions found."),
+	).toBeVisible();
 	await expect(sessionsCard(page).locator("table")).toHaveCount(0);
 });
 
