@@ -95,17 +95,7 @@ func startDaemon() error {
 	if err != nil {
 		return fmt.Errorf("resolving executable: %w", err)
 	}
-	c := exec.Command(exe, "serve", "start")
-	c.Env = os.Environ()
-	c.Dir = "."
-	// Run next to the config so the background process writes its PID there
-	// (not in /tmp), honoring an explicit --config flag.
-	if resolvedCfgPath, err := resolveConfigPath(cfgFile); err == nil {
-		cfgDir := filepath.Dir(resolvedCfgPath)
-		_ = os.MkdirAll(cfgDir, 0o750)
-		c.Env = append(c.Env, "AVIARY_CONFIG_BASE_DIR="+cfgDir)
-		c.Dir = cfgDir
-	}
+	c := daemonCommand(exe)
 	if null, err := os.OpenFile(os.DevNull, os.O_RDWR, 0); err == nil {
 		defer null.Close() //nolint:errcheck
 		c.Stdin, c.Stdout, c.Stderr = null, null, null
@@ -116,6 +106,38 @@ func startDaemon() error {
 	}
 	fmt.Printf("Aviary %s started in background (PID %d)\n", buildinfo.Version, pid)
 	return nil
+}
+
+// daemonCommand builds the 'aviary serve start' command startDaemon runs,
+// passing on --config and --data-dir so the background server uses the same
+// config, store, and log file as the parent. Relative paths are made
+// absolute because the child runs in the config's directory.
+func daemonCommand(exe string) *exec.Cmd {
+	args := []string{"serve", "start"}
+	if path := strings.TrimSpace(cfgFile); path != "" {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+		args = append(args, "--config", path)
+	}
+	if dir := strings.TrimSpace(dataDir); dir != "" {
+		if abs, err := filepath.Abs(dir); err == nil {
+			dir = abs
+		}
+		args = append(args, "--data-dir", dir)
+	}
+	c := exec.Command(exe, args...)
+	c.Env = os.Environ()
+	c.Dir = "."
+	// Run next to the config so the background process writes its PID there
+	// (not in /tmp), honoring an explicit --config flag.
+	if resolvedCfgPath, err := resolveConfigPath(cfgFile); err == nil {
+		cfgDir := filepath.Dir(resolvedCfgPath)
+		_ = os.MkdirAll(cfgDir, 0o750)
+		c.Env = append(c.Env, "AVIARY_CONFIG_BASE_DIR="+cfgDir)
+		c.Dir = cfgDir
+	}
+	return c
 }
 
 func resolveConfigPath(path string) (string, error) {
