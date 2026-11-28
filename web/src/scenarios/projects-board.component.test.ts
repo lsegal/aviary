@@ -13,9 +13,6 @@ import {
 	stateChip,
 } from "./projects-fixtures";
 
-
-
-
 /** Playwright's isVisible: attached, with a box, and not hidden. */
 function isVisible(locator: Locator): boolean {
 	const el = locator.query();
@@ -235,9 +232,13 @@ for (const [label, width] of [
 			const agent = card.getByTestId("job-agent");
 			const title = card.getByRole("heading");
 			await expect.element(time).toHaveText(/\d+(m|h)/);
-			await expect.element(time).toHaveAttribute("title", expect.stringMatching(/^Started /));
+			await expect
+				.element(time)
+				.toHaveAttribute("title", expect.stringMatching(/^Started /));
 			await expect.element(agent).toHaveText(/^gh-fix · /);
-			await expect.element(agent).toHaveAttribute("title", expect.stringMatching(/^gh-fix · /));
+			await expect
+				.element(agent)
+				.toHaveAttribute("title", expect.stringMatching(/^gh-fix · /));
 			await expectRightAligned(card, time);
 			await expectRightAligned(card, agent);
 			const timeBox = await boundingBoxOf(time);
@@ -269,7 +270,9 @@ test("a long agent label truncates inside the card with a tooltip (#756)", async
 	const card = page.getByTestId("job-card");
 	await expect.poll(() => card.elements().length).toBe(1);
 	const agent = card.getByTestId("job-agent");
-	await expect.element(agent).toHaveAttribute("title", expect.stringMatching(new RegExp(`${model}$`)));
+	await expect
+		.element(agent)
+		.toHaveAttribute("title", expect.stringMatching(new RegExp(`${model}$`)));
 	await expect.element(agent).toHaveCSS("text-overflow", "ellipsis");
 	await expect.element(agent).toHaveCSS("white-space", "nowrap");
 	const truncated = await ((el) => el.scrollWidth > el.clientWidth)(

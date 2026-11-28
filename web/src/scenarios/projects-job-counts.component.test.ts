@@ -2,10 +2,23 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
+import { boundingBoxOf } from "./helpers/box";
 import { CLONES, JOBS, STATUS, setup } from "./projects-fixtures";
 
-
-
+/** Playwright's toHaveText with a list: one entry per element, in order. */
+async function expectTexts(locator: Locator, expected: (string | RegExp)[]) {
+	const texts = () =>
+		locator
+			.elements()
+			.map((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim());
+	await expect
+		.poll(texts)
+		.toEqual(
+			expected.map((e) =>
+				typeof e === "string" ? e : expect.stringMatching(e),
+			),
+		);
+}
 
 test("job count stat boxes reflow without wrapping mid-value", async () => {
 	setup(() => ({
@@ -112,12 +125,11 @@ test("expanded job count cards fit one row at desktop widths (#923)", async () =
 		await renderApp("/agents/coder/projects/lsegal%2Faviary");
 		const cards = page.getByTestId("stat-card");
 		await expect.poll(() => cards.elements().length).toBe(7);
-		const boxes = ((els) =>
+		const boxes = ((els: Element[]) =>
 			els.map((el) => {
 				const box = el.getBoundingClientRect();
 				return { top: Math.round(box.top), height: box.height };
-			}),
-		)(cards.elements());
+			}))(cards.elements());
 		expect(new Set(boxes.map((b) => b.top)).size, `rows at ${width}px`).toBe(1);
 		for (const box of boxes) {
 			expect(box.height, `card height at ${width}px`).toBeLessThanOrEqual(60);
@@ -132,12 +144,11 @@ test("job counts fold into one compact row on phones (#910)", async () => {
 		concurrency: 20,
 	}));
 	const colors = (testid: string) =>
-		((els) =>
+		((els: Element[]) =>
 			els.map((el) => {
 				const css = getComputedStyle(el);
 				return [css.color, css.backgroundColor, css.borderColor].join(" ");
-			}),
-		)(page.getByTestId(testid).elements());
+			}))(page.getByTestId(testid).elements());
 	for (const scheme of ["light", "dark"] as const) {
 		await commands.emulateMedia({ colorScheme: scheme });
 		await page.viewport(390, 844);
@@ -150,17 +161,15 @@ test("job counts fold into one compact row on phones (#910)", async () => {
 			.poll(() => page.getByTestId("stat-card").elements().length)
 			.toBe(0);
 		const chips = page.getByTestId("stat-chip");
-		await expect
-			.element(chips)
-			.toHaveText([
-				/^\d+\/20slots$/,
-				/^\d+starting$/,
-				/^\d+paused$/,
-				/^\d+running$/,
-				/^\d+done$/,
-				/^\d+failed$/,
-				"65merged 24h",
-			]);
+		await expectTexts(chips, [
+			/^\d+\/20slots$/,
+			/^\d+starting$/,
+			/^\d+paused$/,
+			/^\d+running$/,
+			/^\d+done$/,
+			/^\d+failed$/,
+			"65merged 24h",
+		]);
 		const layout = await ((section) => {
 			const tops = [...section.children].map((chip) =>
 				Math.round(chip.getBoundingClientRect().top),
@@ -321,12 +330,11 @@ for (const { name, width } of [
 		const buttons = actions.locator(":scope > a, :scope > button");
 		// Raw output, Retry, Stop and close; the Issue/PR links live in the title (#835).
 		await expect.poll(() => buttons.elements().length).toBe(4);
-		const boxes = ((els) =>
+		const boxes = ((els: Element[]) =>
 			els.map((el) => {
 				const r = el.getBoundingClientRect();
 				return { top: r.top, height: r.height };
-			}),
-		)(buttons.elements());
+			}))(buttons.elements());
 		// Every action, the close button included, sits on one row at one height.
 		expect(new Set(boxes.map((b) => b.top)).size).toBe(1);
 		expect(new Set(boxes.map((b) => b.height)).size).toBe(1);
@@ -389,7 +397,9 @@ test("job detail's Raw output is an icon button that toggles its panel (#834)", 
 	});
 	await expect.element(toggle).toHaveAttribute("aria-pressed", "false");
 	await expect.element(toggle).toHaveText("");
-	await expect.element(toggle).toHaveAttribute("title", expect.stringMatching(/raw CLI output/));
+	await expect
+		.element(toggle)
+		.toHaveAttribute("title", expect.stringMatching(/raw CLI output/));
 	const size = async (name: string) => {
 		const box = await boundingBoxOf(
 			actions.getByRole("button", { name, exact: true }),
@@ -415,12 +425,10 @@ test("job detail's close button is a borderless ghost, and it and Escape close t
 	await expect.element(close).toHaveAttribute("title", "Close details");
 	const border = (el: Element) =>
 		Number.parseFloat(getComputedStyle(el).borderLeftWidth);
-	expect(await border(close.element() as HTMLElement)).toBe(0);
-	expect(
-		await border(
-			page.getByRole("button", { name: "Retry" }).element() as HTMLElement,
-		),
-	).toBeGreaterThan(0);
+	expect(border(close.element())).toBe(0);
+	const retry = page.getByRole("button", { name: "Retry" });
+	await expect.element(retry).toBeInTheDocument();
+	expect(border(retry.element())).toBeGreaterThan(0);
 	await close.click();
 	await expect.poll(currentURL).toBe("/agents/coder/projects/lsegal%2Faviary");
 	await expect
@@ -436,5 +444,3 @@ test("job detail's close button is a borderless ghost, and it and Escape close t
 		.toBe(0);
 	await expect.element(page.getByTestId("job-card").first()).toBeVisible();
 });
-
-// Long unbroken tokens: a clone path, a URL and minified JSON.

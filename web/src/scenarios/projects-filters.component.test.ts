@@ -1,6 +1,6 @@
 // Ported from web/e2e/projects.spec.ts (#1636): search, state filters and the kanban view.
 import { afterEach, expect, test, vi } from "vitest";
-import { type Locator, page } from "vitest/browser";
+import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
 import {
 	type Calls,
@@ -11,8 +11,20 @@ import {
 	stateChip,
 } from "./projects-fixtures";
 
-
-
+/** Playwright's toHaveText with a list: one entry per element, in order. */
+async function expectTexts(locator: Locator, expected: (string | RegExp)[]) {
+	const texts = () =>
+		locator
+			.elements()
+			.map((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim());
+	await expect
+		.poll(texts)
+		.toEqual(
+			expected.map((e) =>
+				typeof e === "string" ? e : expect.stringMatching(e),
+			),
+		);
+}
 
 test("search filters the whole job list across every field", async () => {
 	// 30 jobs span three pages. The search must find matches on any page, in
@@ -113,7 +125,8 @@ test("search filters the whole job list across every field", async () => {
 
 	// Typing filters at once and lands on the first page of the matches.
 	await expect.element(pages).toMatchTextContent("Page 2 of 3");
-	await search.pressSequentially("351");
+	(search.element() as HTMLElement).focus();
+	await commands.keyType("351");
 	await expect.element(pages).toMatchTextContent("Page 1 of 1");
 	await expect
 		.element(page.getByTestId("search-count"))
@@ -164,18 +177,10 @@ test("the Scheduled and five state filters and kanban toggle sit beside the sear
 	await expect
 		.element(toolbar.getByRole("searchbox", { name: "Search jobs" }))
 		.toBeVisible();
-	await expect
-		.element(
-			toolbar.getByRole("group", { name: "Job filter" }).getByRole("button"),
-		)
-		.toHaveText([
-			/^Scheduled/,
-			/^Starting/,
-			/^Paused/,
-			/^Running/,
-			/^Done/,
-			/^Failed/,
-		]);
+	await expectTexts(
+		toolbar.getByRole("group", { name: "Job filter" }).getByRole("button"),
+		[/^Scheduled/, /^Starting/, /^Paused/, /^Running/, /^Done/, /^Failed/],
+	);
 	await expect.element(toolbar.getByTestId("kanban-toggle")).toBeVisible();
 	// The board has no separate Schedules view to switch to (#767).
 	await expect
@@ -353,16 +358,14 @@ test("the kanban view lays jobs out in state columns of compact cards", async ()
 	const columns = page.getByTestId("kanban-column");
 	// A project board leads with its Scheduled column, empty here.
 	await expect.poll(() => columns.elements().length).toBe(6);
-	await expect
-		.element(columns.locator("h3"))
-		.toHaveText([
-			/Scheduled\s*0/,
-			/Starting\s*1/,
-			/Paused\s*1/,
-			/Running\s*1/,
-			/Done\s*1/,
-			/Failed\s*1/,
-		]);
+	await expectTexts(columns.locator("h3"), [
+		/Scheduled\s*0/,
+		/Starting\s*1/,
+		/Paused\s*1/,
+		/Running\s*1/,
+		/Done\s*1/,
+		/Failed\s*1/,
+	]);
 	await expect
 		.poll(() => page.getByTestId("job-card").elements().length)
 		.toBe(0);

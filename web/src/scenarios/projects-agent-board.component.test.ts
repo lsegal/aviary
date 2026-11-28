@@ -4,9 +4,6 @@ import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, renderApp } from "../component-test/app";
 import { inTargets, JOBS, job, setup, stateChip } from "./projects-fixtures";
 
-
-
-
 const ZVID_JOB = job({
 	number: 7,
 	title: "Decode B-frames",
@@ -98,9 +95,7 @@ test("the Code Loop board's header starts with a blue + that adds a project (#73
 	await expect.element(sidebarAdd).toBeInTheDocument();
 	await expect
 		.poll(() => blue(add.element() as HTMLElement))
-		.toBe(
-			blue(sidebarAdd.element()),
-		);
+		.toBe(blue(sidebarAdd.element()));
 	await expect.element(add).toHaveCSS("color", "rgb(255, 255, 255)");
 	await expect
 		.element(icons.locator(":scope > *").last())
@@ -143,7 +138,9 @@ test("job actions are icon buttons with tooltips", async () => {
 	for (const action of actions) {
 		await expect.poll(() => action.locator("svg").elements().length).toBe(1);
 		await expect.element(action).toHaveText("");
-		await expect.element(action).toHaveAttribute("title", expect.stringMatching(/\S/));
+		await expect
+			.element(action)
+			.toHaveAttribute("title", expect.stringMatching(/\S/));
 	}
 
 	await goto("/agents/coder/projects/lsegal%2Faviary/jobs/218");
@@ -151,7 +148,9 @@ test("job actions are icon buttons with tooltips", async () => {
 		const action = page.getByRole("button", { name });
 		await expect.poll(() => action.locator("svg").elements().length).toBe(1);
 		await expect.element(action).toHaveText("");
-		await expect.element(action).toHaveAttribute("title", expect.stringMatching(/\S/));
+		await expect
+			.element(action)
+			.toHaveAttribute("title", expect.stringMatching(/\S/));
 	}
 });
 
@@ -176,7 +175,9 @@ test("job detail links #NNN and PR #YYY in the title, with icon-only actions (#8
 		await expect.element(toggle).toHaveText("");
 		await expect.poll(() => toggle.locator("svg").elements().length).toBe(1);
 		await expect.element(toggle).toHaveAttribute("aria-label", "Raw output");
-		await expect.element(toggle).toHaveAttribute("title", expect.stringMatching(/\S/));
+		await expect
+			.element(toggle)
+			.toHaveAttribute("title", expect.stringMatching(/\S/));
 	}
 	// Closing the details is a plain dismiss icon, not a bordered action.
 	expect(

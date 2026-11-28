@@ -1,7 +1,14 @@
 // Ported from web/e2e/projects.spec.ts (#1636): the prompt chat and logs panels, and job details beside them.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { commands, type Locator, page, userEvent } from "vitest/browser";
-import { currentURL, goto, reload, renderApp } from "../component-test/app";
+import {
+	currentURL,
+	goBack,
+	goForward,
+	goto,
+	reload,
+	renderApp,
+} from "../component-test/app";
 import { headerSettled } from "./helpers/boardHeader";
 import { boundingBoxOf } from "./helpers/box";
 import {
@@ -11,9 +18,6 @@ import {
 	setup,
 	stateChip,
 } from "./projects-fixtures";
-
-
-
 
 /** Playwright's isVisible: attached, with a box, and not hidden. */
 function isVisible(locator: Locator): boolean {
@@ -172,7 +176,7 @@ test("logs panel docks below the board, streams lines, and resizes", async () =>
 	await expect.element(toggle).toHaveAttribute("aria-pressed", "true");
 	await expect.element(panel).toMatchTextContent("claimed #221");
 	// It docks at the bottom of the board.
-	const viewport = page.viewportSize();
+	const viewport = { height: window.innerHeight };
 	const panelBox = await boundingBoxOf(panel);
 	if (!viewport || !panelBox) throw new Error("no panel");
 	expect(panelBox.y + panelBox.height).toBeCloseTo(viewport.height, 0);
@@ -384,9 +388,9 @@ test("closing job details returns to the board with its filters and search", asy
 	await (() => {
 		(window as unknown as { marker: boolean }).marker = true;
 	})();
-	await page.goBack();
+	await goBack();
 	await expect.element(page.getByTestId("job-detail")).toBeVisible();
-	await page.goForward();
+	await goForward();
 	await expect
 		.poll(() => page.getByTestId("job-detail").elements().length)
 		.toBe(0);
@@ -562,7 +566,9 @@ test("every board shares one prompt chat log with its own project hint", async (
 		.getByPlaceholder("Describe a task or ask a question")
 		.fill("And everywhere?");
 	(
-		chat.getByPlaceholder("Describe a task or ask a question").element() as HTMLElement
+		chat
+			.getByPlaceholder("Describe a task or ask a question")
+			.element() as HTMLElement
 	).focus();
 	await commands.keyPress("Enter");
 	await expect.poll(() => calls.agent_run?.length ?? 0).toBe(2);

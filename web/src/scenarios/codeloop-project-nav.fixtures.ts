@@ -51,15 +51,6 @@ const TASKS = [
 ];
 
 export function setup(jobs: () => ReturnType<typeof job>[], health?: object) {
-	if (health) {
-		route("/api/health", (r) =>
-			r.fulfill({
-				status: 200,
-				contentType: "application/json",
-				body: JSON.stringify(health),
-			}),
-		);
-	}
 	mockMCP({
 		agent_list: [{ name: "coder" }],
 		job_list: [],
@@ -89,6 +80,16 @@ export function setup(jobs: () => ReturnType<typeof job>[], health?: object) {
 		},
 		task_list: TASKS,
 	});
+	// After mockMCP, whose own /api/health route it overrides.
+	if (health) {
+		route("/api/health", (r) =>
+			r.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify(health),
+			}),
+		);
+	}
 }
 
 export const pill = (project: string) =>

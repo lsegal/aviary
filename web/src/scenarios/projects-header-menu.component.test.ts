@@ -34,6 +34,21 @@ afterEach(() => {
 	document.documentElement.style.fontSize = "";
 });
 
+/** Playwright's toHaveText with a list: one entry per element, in order. */
+async function expectTexts(locator: Locator, expected: (string | RegExp)[]) {
+	const texts = () =>
+		locator
+			.elements()
+			.map((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim());
+	await expect
+		.poll(texts)
+		.toEqual(
+			expected.map((e) =>
+				typeof e === "string" ? e : expect.stringMatching(e),
+			),
+		);
+}
+
 /** Playwright's isVisible: attached, with a box, and not hidden. */
 function isVisible(locator: Locator): boolean {
 	const el = locator.query();
@@ -79,15 +94,13 @@ test("the board header's … menu holds Refresh, Clear and Settings (#1488)", as
 	await commands.keyPress("Enter");
 	await expect.element(more).toHaveAttribute("aria-expanded", "true");
 	const menu = page.getByTestId("board-more-items");
-	await expect
-		.element(menu.getByRole("menuitem"))
-		.toHaveText([
-			"Refresh",
-			/Clear done/,
-			/Clear failed/,
-			/Clear all finished/,
-			"Settings",
-		]);
+	await expectTexts(menu.getByRole("menuitem"), [
+		"Refresh",
+		/Clear done/,
+		/Clear failed/,
+		/Clear all finished/,
+		"Settings",
+	]);
 	// Logs and Watch are buttons, so they are not in the menu too.
 	await expect
 		.poll(() => menu.getByTestId("board-logs").elements().length)
@@ -180,6 +193,7 @@ for (const [board, path, last] of [
 			await expect.element(page.getByTestId(last)).toBeVisible();
 			await expectHeaderOneLine();
 			const { header, menu } = await headerItemPlaces();
+			console.log("DBG", width, JSON.stringify({ header, menu }));
 			// Each item shows in the header or in "…", never both or neither.
 			for (const id of order) {
 				if (header.includes(id) || menu.includes(id))
@@ -445,8 +459,7 @@ test("on a phone the models and quota move into the details popover, which warns
 			await expect
 				.element(page.getByTestId("board-nav-row"))
 				.not.toMatchTextContent("Models & quota", { useInnerText: true });
-		else
-			await expectHidden(page.getByTestId("board-nav-row"));
+		else await expectHidden(page.getByTestId("board-nav-row"));
 
 		// gemini is signed out, so the closed icon carries a described dot.
 		const info = page.getByRole("button", {
@@ -464,13 +477,11 @@ test("on a phone the models and quota move into the details popover, which warns
 		const details = page.getByRole("dialog", { name: "Board details" });
 		const clis = details.getByRole("region", { name: "Models and quota" });
 		const rows = clis.getByTestId("cli-provider");
-		await expect
-			.element(rows)
-			.toHaveText([
-				/claude\s*opus\s*38% of 5h quota left/,
-				/codex\s*gpt-5.6-terra\s*quota ok/,
-				/gemini\s*signed out/,
-			]);
+		await expectTexts(rows, [
+			/claude\s*opus\s*38% of 5h quota left/,
+			/codex\s*gpt-5.6-terra\s*quota ok/,
+			/gemini\s*signed out/,
+		]);
 		await expect
 			.element(rows.nth(0).locator("span").first())
 			.toHaveClass(/bg-green-500/);

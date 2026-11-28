@@ -1,4 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
+import { beforeEach, expect, test } from "vitest";
+import { commands, page } from "vitest/browser";
+import { renderApp } from "../component-test/app";
 import { A, mockAviary, PAGES } from "./helpers/pageHeaderPages";
 
 // Every page header's actions sit on one row (#1347): each button, menu and
@@ -30,8 +32,8 @@ const CHANNEL_SESSIONS = [
 ];
 
 /** The header's actions and how they sit in it. */
-async function headerLayout(page: Page) {
-	return page.getByTestId("settings-header").evaluate((header) => {
+function headerLayout() {
+	return ((header: HTMLElement) => {
 		const actions = header.querySelector('[data-testid="settings-actions"]');
 		const row = header.querySelector('[data-testid="settings-title-row"]');
 		const title = header.querySelector('[data-testid="settings-title"]');
@@ -80,24 +82,26 @@ async function headerLayout(page: Page) {
 				document.documentElement.scrollWidth -
 				document.documentElement.clientWidth,
 		};
-	});
+	})(page.getByTestId("settings-header").element() as HTMLElement);
 }
 
-test.beforeEach(async ({ page }) => {
-	await mockAviary(page, { channel_sessions: CHANNEL_SESSIONS });
+beforeEach(() => {
+	mockAviary({ channel_sessions: CHANNEL_SESSIONS });
 });
 
 for (const width of WIDTHS) {
 	for (const p of PAGES) {
-		test(`at ${width}px ${p.url} keeps its header actions on one row`, async ({
-			page,
-		}) => {
-			await page.setViewportSize({ width, height: 800 });
-			await page.goto(p.url);
-			await expect(page.getByTestId("settings-title")).toHaveText(p.title);
+		test(`at ${width}px ${p.url} keeps its header actions on one row`, async () => {
+			await page.viewport(width, 800);
+			await renderApp(p.url);
+			await expect
+				.element(page.getByTestId("settings-title"))
+				.toHaveText(p.title);
 			if (p.url === `${A}/channels/signal`)
-				await expect(page.getByTestId("channel-session-picker")).toBeVisible();
-			const layout = await headerLayout(page);
+				await expect
+					.element(page.getByTestId("channel-session-picker"))
+					.toBeVisible();
+			const layout = headerLayout();
 			const [first] = layout.controls;
 			for (const c of layout.controls) {
 				expect(
@@ -126,42 +130,43 @@ for (const width of WIDTHS) {
 	}
 }
 
-test("the channel page's picker and gear share one row beside the title", async ({
-	page,
-}) => {
+test("the channel page's picker and gear share one row beside the title", async () => {
 	for (const width of [1280, 768]) {
-		await page.setViewportSize({ width, height: 800 });
-		await page.goto(`${A}/channels/signal`);
+		await page.viewport(width, 800);
+		await renderApp(`${A}/channels/signal`);
 		const picker = page.getByTestId("channel-session-picker");
 		const gear = page.getByTestId("channel-settings-link");
-		await expect(picker).toBeVisible();
-		const p = await picker.boundingBox();
-		const g = await gear.boundingBox();
-		if (!p || !g) throw new Error("no picker or gear");
+		await expect.element(picker).toBeVisible();
+		const p = picker.element().getBoundingClientRect();
+		const g = gear.element().getBoundingClientRect();
 		expect(g.height).toBe(36);
 		expect(p.height).toBe(g.height);
 		expect(Math.abs(p.y - g.y)).toBeLessThanOrEqual(1);
 		expect(g.x).toBeGreaterThan(p.x + p.width);
-		expect((await headerLayout(page)).besideTitle).toBe(true);
+		expect(headerLayout().besideTitle).toBe(true);
 	}
 });
 
-test("on a phone an open job keeps its actions and moves the board's behind …", async ({
-	page,
-}) => {
-	await page.setViewportSize({ width: 390, height: 800 });
-	await page.goto(`${A}/projects/o%2Fr/jobs/1013`);
-	await expect(page.getByTestId("job-detail-actions")).toBeVisible();
-	await expect(page.getByTestId("board-more-menu")).toHaveCount(0);
+test("on a phone an open job keeps its actions and moves the board's behind …", async () => {
+	await page.viewport(390, 800);
+	await renderApp(`${A}/projects/o%2Fr/jobs/1013`);
+	await expect.element(page.getByTestId("job-detail-actions")).toBeVisible();
+	await expect
+		.poll(() => page.getByTestId("board-more-menu").elements().length)
+		.toBe(0);
 	await page.getByTestId("header-overflow").click();
 	const items = page.getByTestId("header-overflow-items");
-	await expect(items.getByTestId("logs-toggle")).toBeVisible();
-	await expect(items.getByTestId("board-more-menu")).toBeVisible();
+	await expect.element(items.getByTestId("logs-toggle")).toBeVisible();
+	await expect.element(items.getByTestId("board-more-menu")).toBeVisible();
 	// Wider, the board's actions are back in the row.
-	await page.keyboard.press("Escape");
-	await page.setViewportSize({ width: 768, height: 800 });
-	await expect(page.getByTestId("header-overflow")).toHaveCount(0);
-	await expect(
-		page.getByTestId("settings-actions").getByTestId("board-more-menu"),
-	).toBeVisible();
+	await commands.keyPress("Escape");
+	await page.viewport(768, 800);
+	await expect
+		.poll(() => page.getByTestId("header-overflow").elements().length)
+		.toBe(0);
+	await expect
+		.element(
+			page.getByTestId("settings-actions").getByTestId("board-more-menu"),
+		)
+		.toBeVisible();
 });

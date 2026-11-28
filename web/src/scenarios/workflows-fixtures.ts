@@ -268,7 +268,6 @@ export function mockWorkflows(
 	return { config, calls, failures };
 }
 
-
 /**
  * Records every native alert, confirm or prompt, dismissing each, which the
  * caller expects to stay empty.

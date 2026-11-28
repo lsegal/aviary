@@ -64,7 +64,9 @@ test("job cards show the transcript in a rich view by default, falling back to r
 		.toHaveText("✓ ok");
 	await expect
 		.element(
-			rich.locator('[data-row="tool"]').filter({ hasText: "edit internal/scheduler" }),
+			rich
+				.locator('[data-row="tool"]')
+				.filter({ hasText: "edit internal/scheduler" }),
 		)
 		.toMatchTextContent("+2 −1");
 

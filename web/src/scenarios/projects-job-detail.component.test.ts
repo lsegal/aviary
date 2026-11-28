@@ -1,12 +1,9 @@
 // Ported from web/e2e/projects.spec.ts (#1636): the job detail pane: transcript, clone, run view, commands and layout.
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, expect, onTestFinished, test, vi } from "vitest";
 import { type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
 import { boundingBoxOf } from "./helpers/box";
 import { at, EVENTS, JOBS, RAW_OUTPUT, setup } from "./projects-fixtures";
-
-
-
 
 /** Playwright's isVisible: attached, with a box, and not hidden. */
 function isVisible(locator: Locator): boolean {
@@ -97,11 +94,22 @@ for (const width of [390, 1600]) {
 	});
 }
 
-test("job detail shows the job's clone path, copyable, or why it has none", async ({
-	page,
-	context,
-}) => {
-	await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+test("job detail shows the job's clone path, copyable, or why it has none", async () => {
+	// A clipboard that keeps what it is given, in place of granting the
+	// page clipboard permissions.
+	let clipboard = "";
+	Object.defineProperty(navigator, "clipboard", {
+		configurable: true,
+		value: {
+			writeText: async (t: string) => {
+				clipboard = t;
+			},
+			readText: async () => clipboard,
+		},
+	});
+	onTestFinished(() => {
+		Reflect.deleteProperty(navigator, "clipboard");
+	});
 	setup();
 	const clone = page.getByTestId("job-clone");
 
@@ -250,7 +258,9 @@ test("the run view stepper follows the PR out of draft, like the board icon", as
 			.element(steps.locator('[aria-current="step"]'))
 			.toMatchTextContent("CI");
 		await expect.element(steps.locator("li").nth(3)).toMatchTextContent("✓");
-		await expect.element(steps.locator("li").nth(5)).not.toMatchTextContent("✓");
+		await expect
+			.element(steps.locator("li").nth(5))
+			.not.toMatchTextContent("✓");
 	} finally {
 		job218.pull_request_state = "draft";
 	}
@@ -353,7 +363,9 @@ test("job detail's raw Output starts collapsed, toggles, remembers, and hides he
 		await expect.element(output).toMatchTextContent('"text":"Working"');
 		await expect.element(output).not.toMatchTextContent("tool_progress");
 		await page.getByTestId("raw-output-heartbeats").click();
-		await expect.element(page.getByTestId("raw-output-heartbeats")).toBeChecked();
+		await expect
+			.element(page.getByTestId("raw-output-heartbeats"))
+			.toBeChecked();
 		await expect.element(output).toMatchTextContent('"heartbeat":true');
 
 		await reload();

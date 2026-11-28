@@ -38,7 +38,9 @@ for (const p of PAGES) {
 	test(`${p.url} renders the shared page header and no other`, async () => {
 		await renderApp(p.url);
 		const header = page.getByTestId("settings-header");
-		await expect.element(page.getByTestId("settings-title")).toHaveText(p.title);
+		await expect
+			.element(page.getByTestId("settings-title"))
+			.toHaveText(p.title);
 		await expectSettingsHeader(p.back !== false, p.compact);
 		// The header opens the page, and it is the page's only header.
 		const el = header.element();
@@ -62,7 +64,9 @@ for (const p of PAGES) {
 	test(`on a phone ${p.url}'s header collapses to its parent and page without scrolling sideways`, async () => {
 		await page.viewport(375, 740);
 		await renderApp(p.url);
-		await expect.element(page.getByTestId("settings-title")).toHaveText(p.title);
+		await expect
+			.element(page.getByTestId("settings-title"))
+			.toHaveText(p.title);
 		const crumbs = page
 			.getByTestId("settings-breadcrumb")
 			.getByRole("listitem");

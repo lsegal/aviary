@@ -22,7 +22,7 @@ const bytes = (b64: string) =>
 const PIXEL_PNG = bytes(PIXEL_B64);
 const RED_PNG = bytes(RED_B64);
 const dataURL = (b64: string) => `data:image/png;base64,${b64}`;
-const png = (name: string, data: Uint8Array) =>
+const png = (name: string, data: Uint8Array<ArrayBuffer>) =>
 	new File([data], name, { type: "image/png" });
 
 interface RunArgs {

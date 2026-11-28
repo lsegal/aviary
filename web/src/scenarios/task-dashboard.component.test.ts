@@ -1,11 +1,16 @@
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
+import { nextTick } from "vue";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
 import { mockMCP } from "../component-test/server";
+import {
+	TASK_CHAT_DEFAULT_HEIGHT,
+	useTaskChatPanel,
+} from "../composables/useTaskChatPanel";
 
 // A task's dashboard: its schedule, live run log, run history and chat
-// panel. Each test starts with the default layout (chat on, default height):
-// the harness clears storage between tests, as the spec's init script did.
+// panel. Each test starts with the default layout (chat on, default height),
+// as the spec's init script made it.
 
 interface MockJob {
 	id: string;
@@ -156,6 +161,16 @@ const count = (loc: Locator) => loc.elements().length;
 const box = (loc: Locator) => loc.element().getBoundingClientRect();
 const heightOf = (loc: Locator) =>
 	loc.elements()[0]?.getBoundingClientRect().height;
+
+beforeEach(async () => {
+	// The chat layout lives in module state, which outlasts a test, so reset
+	// it there as well as in storage.
+	const chat = useTaskChatPanel();
+	chat.open.value = true;
+	chat.setHeight(TASK_CHAT_DEFAULT_HEIGHT);
+	await nextTick();
+	localStorage.clear();
+});
 
 afterEach(() => {
 	vi.restoreAllMocks();

@@ -5,9 +5,6 @@ import { renderApp } from "../component-test/app";
 import { openBoardInfo } from "./helpers/boardHeader";
 import { browserStatus, SIGNED_OUT, STATUS, setup } from "./projects-fixtures";
 
-
-
-
 describe("GitHub sign-in banner", () => {
 	test("a signed-out read shows the banner, never a window", async () => {
 		const calls = setup(() => browserStatus(SIGNED_OUT));

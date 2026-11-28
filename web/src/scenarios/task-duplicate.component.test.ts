@@ -1,5 +1,7 @@
-import { expect, type Page, test } from "@playwright/test";
-import { mockMCP, setAuthToken } from "./helpers/mockMCP";
+import { expect, test } from "vitest";
+import { type Locator, page } from "vitest/browser";
+import { renderApp } from "../component-test/app";
+import { mockMCP } from "../component-test/server";
 import { chooseOption } from "./helpers/select";
 
 // Duplicate opens the create form prefilled from a scheduled task, mainly to
@@ -7,6 +9,13 @@ import { chooseOption } from "./helpers/select";
 // and the tools the shared Add task dialog calls.
 
 type Args = Record<string, unknown>;
+
+/** As Playwright's toBeHidden: absent, or present but not visible. */
+async function expectHidden(loc: Locator) {
+	await expect
+		.poll(() => loc.elements().every((el) => !el.checkVisibility()))
+		.toBe(true);
+}
 
 const SOURCE = {
 	name: "aviary-release",
@@ -30,8 +39,7 @@ const SOURCE = {
 	from_file: true,
 };
 
-async function setup(page: Page) {
-	await setAuthToken(page);
+function setup() {
 	const calls: Record<string, Args[]> = {};
 	const record = (tool: string) => (args?: Args) => {
 		calls[tool] ??= [];
@@ -55,7 +63,7 @@ async function setup(page: Page) {
 			tasks: [],
 		},
 	];
-	await mockMCP(page, {
+	mockMCP({
 		agent_list: agents.map((a) => ({ id: a.name, name: a.name })),
 		auth_list: [],
 		config_get: () => ({ agents }),
@@ -102,11 +110,9 @@ function savedTasks(calls: Record<string, Args[]>, agent: string): Args[] {
 	return config.agents.find((a) => a.name === agent)?.tasks ?? [];
 }
 
-test("Duplicate in the sidebar menu prefills the create form, and Cancel saves nothing", async ({
-	page,
-}) => {
-	const calls = await setup(page);
-	await page.goto("/agents/assistant/tasks");
+test("Duplicate in the sidebar menu prefills the create form, and Cancel saves nothing", async () => {
+	const calls = setup();
+	await renderApp("/agents/assistant/tasks");
 	const row = page
 		.getByTestId("sidebar")
 		.locator('[data-testid=task-row][data-task="aviary-release"]');
@@ -115,85 +121,102 @@ test("Duplicate in the sidebar menu prefills the create form, and Cancel saves n
 	await page.getByRole("menuitem", { name: "Duplicate…" }).click();
 
 	const dialog = page.getByRole("dialog", { name: "Duplicate aviary-release" });
-	await expect(dialog).toBeVisible();
+	await expect.element(dialog).toBeVisible();
 	// x and x-2 are taken, so the copy is x-3.
-	await expect(dialog.getByLabel("Task name")).toHaveValue("aviary-release-3");
-	await expect(
-		dialog.getByRole("radiogroup", { name: "Target" }).getByRole("radio", {
-			name: "Project",
-		}),
-	).toHaveAttribute("aria-checked", "true");
-	await expect(dialog.getByLabel("Project", { exact: true })).toHaveValue(
-		"lsegal/aviary",
-	);
-	await expect(dialog.getByLabel("Prompt")).toHaveValue(SOURCE.prompt);
-	await expect(dialog.getByRole("radio", { name: "Weekly" })).toHaveAttribute(
-		"aria-checked",
-		"true",
-	);
-	await expect(dialog.getByLabel("Try to precompile")).toBeChecked();
-	await expect(dialog.getByTestId("task-model-override")).toContainText(
-		"cli/claude/opus",
-	);
-	await expect(dialog.getByLabel("Send To")).toHaveValue("ops · discord");
+	await expect
+		.element(dialog.getByLabelText("Task name"))
+		.toHaveValue("aviary-release-3");
+	await expect
+		.element(
+			dialog.getByRole("radiogroup", { name: "Target" }).getByRole("radio", {
+				name: "Project",
+			}),
+		)
+		.toHaveAttribute("aria-checked", "true");
+	await expect
+		.element(dialog.getByLabelText("Project", { exact: true }))
+		.toHaveValue("lsegal/aviary");
+	await expect
+		.element(dialog.getByLabelText("Prompt"))
+		.toHaveValue(SOURCE.prompt);
+	await expect
+		.element(dialog.getByRole("radio", { name: "Weekly" }))
+		.toHaveAttribute("aria-checked", "true");
+	await expect
+		.element(dialog.getByLabelText("Try to precompile"))
+		.toBeChecked();
+	await expect
+		.element(dialog.getByTestId("task-model-override"))
+		.toMatchTextContent("cli/claude/opus");
+	await expect
+		.element(dialog.getByLabelText("Send To"))
+		.toHaveValue("ops · discord");
 	// The same project raises no warning about its own references.
-	await expect(dialog.getByTestId("task-duplicate-repo-warning")).toHaveCount(
-		0,
-	);
+	await expect
+		.poll(
+			() => dialog.getByTestId("task-duplicate-repo-warning").elements().length,
+		)
+		.toBe(0);
 
 	await dialog.getByRole("button", { name: "Cancel" }).click();
-	await expect(dialog).toBeHidden();
+	await expectHidden(dialog);
 	expect(calls.config_save).toBeUndefined();
 });
 
-test("Duplicate on the task page copies the task to another project, replacing its references only when accepted", async ({
-	page,
-}) => {
-	const calls = await setup(page);
-	await page.goto("/agents/assistant/tasks/aviary-release");
+test("Duplicate on the task page copies the task to another project, replacing its references only when accepted", async () => {
+	const calls = setup();
+	await renderApp("/agents/assistant/tasks/aviary-release");
 	await page.getByTestId("task-duplicate").click();
 
 	const dialog = page.getByRole("dialog", { name: "Duplicate aviary-release" });
-	await expect(dialog.getByLabel("Task name")).toHaveValue("aviary-release-3");
+	await expect
+		.element(dialog.getByLabelText("Task name"))
+		.toHaveValue("aviary-release-3");
 	await chooseOption(
-		dialog.getByLabel("Project", { exact: true }),
+		dialog.getByLabelText("Project", { exact: true }),
 		"lsegal/yard",
 	);
 	// reviewer, which owns lsegal/yard, has no aviary-release.
-	await expect(dialog.getByLabel("Task name")).toHaveValue("aviary-release");
+	await expect
+		.element(dialog.getByLabelText("Task name"))
+		.toHaveValue("aviary-release");
 	// The preview and estimate follow the destination.
 	await expect
 		.poll(() => calls.task_analyze?.at(-1))
 		.toMatchObject({ project: "lsegal/yard", agent: "reviewer" });
 
 	const warning = dialog.getByTestId("task-duplicate-repo-warning");
-	await expect(warning).toContainText("lsegal/aviary");
-	await expect(warning).toContainText("3 references");
+	await expect.element(warning).toMatchTextContent("lsegal/aviary");
+	await expect.element(warning).toMatchTextContent("3 references");
 	// Keep as is leaves the prompt and hides the warning for this project.
 	await warning.getByRole("button", { name: "Keep as is" }).click();
-	await expect(warning).toHaveCount(0);
-	await expect(dialog.getByLabel("Prompt")).toHaveValue(SOURCE.prompt);
+	await expect.poll(() => warning.elements().length).toBe(0);
+	await expect
+		.element(dialog.getByLabelText("Prompt"))
+		.toHaveValue(SOURCE.prompt);
 
 	// Another project asks again; Replace rewrites the references.
 	await chooseOption(
-		dialog.getByLabel("Project", { exact: true }),
+		dialog.getByLabelText("Project", { exact: true }),
 		"lsegal/aviary",
 	);
 	await chooseOption(
-		dialog.getByLabel("Project", { exact: true }),
+		dialog.getByLabelText("Project", { exact: true }),
 		"lsegal/yard",
 	);
-	await expect(warning).toBeVisible();
+	await expect.element(warning).toBeVisible();
 	await warning
 		.getByRole("button", { name: "Replace with lsegal/yard" })
 		.click();
-	await expect(warning).toHaveCount(0);
-	await expect(dialog.getByLabel("Prompt")).toHaveValue(
-		"Cut a release of lsegal/yard: tag https://github.com/lsegal/yard and update ~/src/yard/CHANGELOG.md.",
-	);
+	await expect.poll(() => warning.elements().length).toBe(0);
+	await expect
+		.element(dialog.getByLabelText("Prompt"))
+		.toHaveValue(
+			"Cut a release of lsegal/yard: tag https://github.com/lsegal/yard and update ~/src/yard/CHANGELOG.md.",
+		);
 
 	await dialog.getByRole("button", { name: "Create" }).click();
-	await expect(dialog).toBeHidden();
+	await expectHidden(dialog);
 	const [copy] = savedTasks(calls, "reviewer");
 	expect(copy).toMatchObject({
 		name: "aviary-release",
@@ -221,19 +244,19 @@ test("Duplicate on the task page copies the task to another project, replacing i
 	expect(savedTasks(calls, "assistant")).toHaveLength(2);
 });
 
-test("Duplicate on the Scheduled Tasks page opens the same form", async ({
-	page,
-}) => {
-	const calls = await setup(page);
-	await page.goto("/agents/assistant/tasks");
+test("Duplicate on the Scheduled Tasks page opens the same form", async () => {
+	const calls = setup();
+	await renderApp("/agents/assistant/tasks");
 	await page
 		.locator('[data-testid=task-card][data-task="aviary-release"]')
 		.getByTestId("task-duplicate")
 		.click();
 	const dialog = page.getByRole("dialog", { name: "Duplicate aviary-release" });
-	await expect(dialog.getByLabel("Task name")).toHaveValue("aviary-release-3");
+	await expect
+		.element(dialog.getByLabelText("Task name"))
+		.toHaveValue("aviary-release-3");
 	await dialog.getByRole("button", { name: "Create" }).click();
-	await expect(dialog).toBeHidden();
+	await expectHidden(dialog);
 	expect(savedTasks(calls, "assistant").map((t) => t.name)).toEqual([
 		"aviary-release",
 		"aviary-release-2",

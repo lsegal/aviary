@@ -1,12 +1,30 @@
 // Ported from web/e2e/projects.spec.ts (#1636): the rich transcript at narrow widths and the board header layout.
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { commands, type Locator, page } from "vitest/browser";
 import { currentURL, goto, reload, renderApp } from "../component-test/app";
 import { expectHeaderOneLine, headerSettled } from "./helpers/boardHeader";
 import { boundingBoxOf } from "./helpers/box";
 import { at, CLONES, EVENTS, setup, stateChip } from "./projects-fixtures";
 
+// A fresh page starts unscrolled; earlier tests here scroll the document.
+beforeEach(() => {
+	window.scrollTo(0, 0);
+});
 
+/** Playwright's toHaveText with a list: one entry per element, in order. */
+async function expectTexts(locator: Locator, expected: (string | RegExp)[]) {
+	const texts = () =>
+		locator
+			.elements()
+			.map((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim());
+	await expect
+		.poll(texts)
+		.toEqual(
+			expected.map((e) =>
+				typeof e === "string" ? e : expect.stringMatching(e),
+			),
+		);
+}
 
 /** Playwright's isVisible: attached, with a box, and not hidden. */
 function isVisible(locator: Locator): boolean {
@@ -149,6 +167,10 @@ test("at 390px the Code Loop header is one chip row and the top nav hides its sc
 	await page.viewport(390, 844);
 	setup();
 	await renderApp("/agents/coder/projects");
+	// Measure once the phone's project row has loaded above the header.
+	await expect
+		.element(page.getByTestId("mobile-sub-nav").getByText("lsegal/zvidlib"))
+		.toBeVisible();
 	// The breadcrumb names the page, so the title is only for screen readers.
 	const title = page.getByTestId("settings-title");
 	await expect.element(title).toHaveText("Code Loop");
@@ -171,7 +193,7 @@ test("at 390px the Code Loop header is one chip row and the top nav hides its sc
 		"instance-tag",
 		"board-info",
 	];
-	const boxes: Array<Awaited<ReturnType<Locator["boundingBox"]>>> = [];
+	const boxes: DOMRect[] = [];
 	for (const id of ids) {
 		const box = await boundingBoxOf(page.getByTestId(id));
 		expect(box, id).not.toBeNull();
@@ -345,6 +367,10 @@ test("a job's full header still slides away under the breadcrumb bar (#1437)", a
 	const crumbs = page.getByTestId("settings-crumb-bar");
 	const titleRow = page.getByTestId("settings-title-row");
 	await expect.element(page.getByTestId("job-detail-title")).toBeVisible();
+	// Measure once the phone's project row has loaded above the header.
+	await expect
+		.element(page.getByTestId("mobile-sub-nav").getByText("lsegal/zvidlib"))
+		.toBeVisible();
 	const bar = await boundingBoxOf(crumbs);
 	const row = await boundingBoxOf(titleRow);
 	if (!bar || !row) throw new Error("no header");
@@ -355,7 +381,7 @@ test("a job's full header still slides away under the breadcrumb bar (#1437)", a
 		.toBeLessThan(row.y - 10);
 	expect((await boundingBoxOf(crumbs))?.y).toBeCloseTo(bar.y, 0);
 	// Tabbing to one of its actions brings the row back.
-	await titleRow.getByRole("button").first().focus();
+	(titleRow.getByRole("button").first().element() as HTMLElement).focus();
 	await expect
 		.poll(async () => (await boundingBoxOf(titleRow))?.y)
 		.toBeCloseTo(row.y, 0);
@@ -428,16 +454,14 @@ for (const { width, chat } of [
 		const folded = isVisible(toggle);
 		if (folded) await toggle.click();
 		const group = page.getByRole("group", { name: "Job filter" });
-		await expect
-			.element(group.getByRole("button", { name: /^(?!Clear)/ }))
-			.toHaveText([
-				/^Scheduled/,
-				/^Starting/,
-				/^Paused/,
-				/^Running\s*1$/,
-				/^Done/,
-				/^Failed/,
-			]);
+		await expectTexts(group.getByRole("button", { name: /^(?!Clear)/ }), [
+			/^Scheduled/,
+			/^Starting/,
+			/^Paused/,
+			/^Running\s*1$/,
+			/^Done/,
+			/^Failed/,
+		]);
 		await stateChip("Running").click();
 		await stateChip("Done").click();
 		await expect

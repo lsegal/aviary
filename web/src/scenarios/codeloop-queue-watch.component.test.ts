@@ -8,18 +8,6 @@ import { mockMCP, route } from "../component-test/server";
 // carry into other tests.
 
 test("a watch session's one-project board offers the Queue menu", async () => {
-	route("/api/health", (r) =>
-		r.fulfill({
-			status: 200,
-			contentType: "application/json",
-			body: JSON.stringify({
-				ok: true,
-				version: "dev",
-				auth_disabled: true,
-				minimal: true,
-			}),
-		}),
-	);
 	mockMCP({
 		agent_list: [{ name: "watch" }],
 		job_list: [],
@@ -40,6 +28,19 @@ test("a watch session's one-project board offers the Queue menu", async () => {
 			pull_requests: [],
 		},
 	});
+	// After mockMCP, whose own /api/health route it overrides.
+	route("/api/health", (r) =>
+		r.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				ok: true,
+				version: "dev",
+				auth_disabled: true,
+				minimal: true,
+			}),
+		}),
+	);
 	await renderApp("/agents/watch/projects", { token: null });
 	await page.getByTestId("queue-menu").click();
 	await page.getByTestId("queue-gh-safe-merge").click();

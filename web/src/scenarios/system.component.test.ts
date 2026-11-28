@@ -91,9 +91,9 @@ test("system tools shows grouped MCP tools and active skills", async () => {
 	await expect.element(page.getByTestId("settings-title")).toHaveText("Tools");
 	await expect.element(page.getByText("agent_list")).toBeVisible();
 	await expect.element(page.getByText("task_update")).toBeVisible();
-	await expect.element(
-		page.getByRole("heading", { name: "Activated Skills" }),
-	).toBeVisible();
+	await expect
+		.element(page.getByRole("heading", { name: "Activated Skills" }))
+		.toBeVisible();
 	await expect.element(page.getByText("gogcli", { exact: true })).toBeVisible();
 });
 
@@ -102,62 +102,72 @@ test("system tools can run a tool from the menu and show output", async () => {
 
 	await page.getByTestId("run-tool-task_update").click();
 
-	await expect.element(page.getByRole("heading", { name: "Run Tool" })).toBeVisible();
-	await expect.element(
-		page.getByRole("paragraph").filter({ hasText: "task_update" }),
-	).toBeVisible();
-	await expect.element(
-		page.getByPlaceholder("Task name to run immediately."),
-	).toBeVisible();
+	await expect
+		.element(page.getByRole("heading", { name: "Run Tool" }))
+		.toBeVisible();
+	await expect
+		.element(page.getByRole("paragraph").filter({ hasText: "task_update" }))
+		.toBeVisible();
+	await expect
+		.element(page.getByPlaceholder("Task name to run immediately."))
+		.toBeVisible();
 
 	await page.getByPlaceholder("Task name to run immediately.").fill("nightly");
 	await chooseValue(page.getByRole("combobox").nth(0), "true");
 	await page.getByRole("button", { name: "Run Tool" }).click();
 
-	await expect.element(page.getByTestId("tool-run-output")).toMatchTextContent('"ok":true');
-	await expect.element(page.getByTestId("tool-run-output")).toMatchTextContent(
-		'"name":"nightly"',
-	);
-	await expect.element(page.getByTestId("tool-run-output")).toMatchTextContent(
-		'"enabled":true',
-	);
+	await expect
+		.element(page.getByTestId("tool-run-output"))
+		.toMatchTextContent('"ok":true');
+	await expect
+		.element(page.getByTestId("tool-run-output"))
+		.toMatchTextContent('"name":"nightly"');
+	await expect
+		.element(page.getByTestId("tool-run-output"))
+		.toMatchTextContent('"enabled":true');
 
 	await page.getByRole("button", { name: "Close" }).click();
 	await page.getByTestId("run-tool-task_update").click();
 
-	await expect.element(
-		page.getByPlaceholder("Task name to run immediately."),
-	).toHaveValue("nightly");
+	await expect
+		.element(page.getByPlaceholder("Task name to run immediately."))
+		.toHaveValue("nightly");
 	await expectValue(page.getByRole("combobox").nth(0), "true");
-	await expect.element(page.getByTestId("tool-run-output")).toMatchTextContent('"ok":true');
+	await expect
+		.element(page.getByTestId("tool-run-output"))
+		.toMatchTextContent('"ok":true');
 
 	await page.getByPlaceholder("Task name to run immediately.").fill("weekly");
 	await page.getByRole("button", { name: "Run Tool" }).click();
-	await expect.element(page.getByTestId("tool-run-output")).toHaveClass(
-		/text-gray-400/,
-	);
-	await expect.element(page.getByTestId("tool-run-output")).toMatchTextContent('"ok":true');
-	await expect.element(page.getByTestId("tool-run-output")).toMatchTextContent(
-		'"name":"weekly"',
-	);
+	await expect
+		.element(page.getByTestId("tool-run-output"))
+		.toHaveClass(/text-gray-400/);
+	await expect
+		.element(page.getByTestId("tool-run-output"))
+		.toMatchTextContent('"ok":true');
+	await expect
+		.element(page.getByTestId("tool-run-output"))
+		.toMatchTextContent('"name":"weekly"');
 });
 
 test("system skills can disable and enable installed skills", async () => {
 	await renderApp("/system/skills");
 
-	await expect.element(
-		page.getByRole("heading", { name: "Skills", exact: true }),
-	).toBeVisible();
+	await expect
+		.element(page.getByRole("heading", { name: "Skills", exact: true }))
+		.toBeVisible();
 	// The skills browser sits on the same page as both installed lists.
 	const discovery = page.getByTestId("skills-discovery");
-	await expect.element(discovery).toMatchTextContent("Looking for more skills?");
+	await expect
+		.element(discovery)
+		.toMatchTextContent("Looking for more skills?");
 	await expect.element(discovery).toMatchTextContent("npx skills find notion");
-	await expect.element(
-		discovery.getByRole("link", { name: "Open skills.sh" }),
-	).toHaveAttribute("href", "https://skills.sh/");
-	await expect.element(
-		page.getByRole("region", { name: "Installed in providers" }),
-	).toBeVisible();
+	await expect
+		.element(discovery.getByRole("link", { name: "Open skills.sh" }))
+		.toHaveAttribute("href", "https://skills.sh/");
+	await expect
+		.element(page.getByRole("region", { name: "Installed in providers" }))
+		.toBeVisible();
 	const stats = page.getByTestId("skill-stats");
 	await expect.element(stats).toMatchTextContent("Installed2");
 	await expect.element(stats).toMatchTextContent("Enabled1");
@@ -170,11 +180,15 @@ test("system skills can disable and enable installed skills", async () => {
 	await expect.element(enabled).toBeChecked();
 	await enabled.click();
 	await expect.element(enabled).not.toBeChecked();
-	await expect.element(gogcli.getByText("disabled", { exact: true })).toBeVisible();
+	await expect
+		.element(gogcli.getByText("disabled", { exact: true }))
+		.toBeVisible();
 
 	// The status filter narrows the list to the disabled skills.
 	await page.getByRole("button", { name: "Disabled", exact: true }).click();
-	await expect.element(page.getByText("C:/skills/deploy/SKILL.md")).toBeVisible();
+	await expect
+		.element(page.getByText("C:/skills/deploy/SKILL.md"))
+		.toBeVisible();
 	await expect.element(page.getByText("skills/gogcli/SKILL.md")).toBeVisible();
 	await page.getByRole("button", { name: "Enabled", exact: true }).click();
 	await expect.element(page.getByText("No skills match.")).toBeVisible();
@@ -349,12 +363,12 @@ test("settings tolerates an empty config payload", async () => {
 
 	await renderApp("/system/settings");
 
-	await expect.element(
-		page.getByRole("heading", { name: "Settings", exact: true }),
-	).toBeVisible();
-	await expect.element(
-		page.getByRole("heading", { name: "Server", exact: true }),
-	).toBeVisible();
+	await expect
+		.element(page.getByRole("heading", { name: "Settings", exact: true }))
+		.toBeVisible();
+	await expect
+		.element(page.getByRole("heading", { name: "Server", exact: true }))
+		.toBeVisible();
 	await expectCount(page.getByText("Unexpected end of JSON input"), 0);
 });
 
@@ -381,12 +395,12 @@ test("settings tolerates empty auxiliary JSON payloads on startup", async () => 
 
 	await renderApp("/system/settings");
 
-	await expectCount(
-		page.getByRole("heading", { name: "Settings", exact: true }),
-	).toBeVisible();
-	await expect.element(
-		page.getByRole("heading", { name: "Server", exact: true }),
-	).toBeVisible();
+	await expect
+		.element(page.getByRole("heading", { name: "Settings", exact: true }))
+		.toBeVisible();
+	await expect
+		.element(page.getByRole("heading", { name: "Server", exact: true }))
+		.toBeVisible();
 	await expectCount(page.getByText("Unexpected end of JSON input"), 0);
 });
 
@@ -467,39 +481,41 @@ test("system skills shows provider installs and installs them on one page", asyn
 	await renderApp("/system/skills");
 
 	await expectCount(page.getByRole("tab"), 0);
-	await expectCount(
-		page.getByRole("region", { name: "Installed in providers" }),
-	).toBeVisible();
-	await expect.element(
-		page.getByRole("region", { name: "Available to Aviary agents" }),
-	).toBeVisible();
-	await expect.element(page.getByTestId("coding-skill-gh-fix-claude")).toMatchTextContent(
-		"2.0.0",
-	);
-	await expect.element(page.getByTestId("coding-skill-gh-fix-codex")).toMatchTextContent(
-		"1.5.16",
-	);
-	await expect.element(page.getByTestId("coding-skill-gh-discuss-codex")).toMatchTextContent(
-		"Older copy",
-	);
-	await expect.element(page.getByTestId("coding-skill-gh-create-codex")).toMatchTextContent(
-		"Not installed",
-	);
-	await expect.element(page.getByTestId("coding-skill-gh-fix")).toMatchTextContent(
-		"run by Code Loop",
-	);
-	await expect.element(page.getByTestId("coding-skill-gh-create")).toMatchTextContent(
-		"you run it",
-	);
+	await expect
+		.element(page.getByRole("region", { name: "Installed in providers" }))
+		.toBeVisible();
+	await expect
+		.element(page.getByRole("region", { name: "Available to Aviary agents" }))
+		.toBeVisible();
+	await expect
+		.element(page.getByTestId("coding-skill-gh-fix-claude"))
+		.toMatchTextContent("2.0.0");
+	await expect
+		.element(page.getByTestId("coding-skill-gh-fix-codex"))
+		.toMatchTextContent("1.5.16");
+	await expect
+		.element(page.getByTestId("coding-skill-gh-discuss-codex"))
+		.toMatchTextContent("Older copy");
+	await expect
+		.element(page.getByTestId("coding-skill-gh-create-codex"))
+		.toMatchTextContent("Not installed");
+	await expect
+		.element(page.getByTestId("coding-skill-gh-fix"))
+		.toMatchTextContent("run by Code Loop");
+	await expect
+		.element(page.getByTestId("coding-skill-gh-create"))
+		.toMatchTextContent("you run it");
 
 	await page
 		.getByTestId("coding-skill-gh-create-codex")
 		.getByRole("button", { name: "Install" })
 		.click();
-	await expect.element(page.getByText("Installed gh-create/codex.")).toBeVisible();
-	await expect.element(page.getByTestId("coding-skill-gh-create-codex")).toMatchTextContent(
-		"2.0.0",
-	);
+	await expect
+		.element(page.getByText("Installed gh-create/codex."))
+		.toBeVisible();
+	await expect
+		.element(page.getByTestId("coding-skill-gh-create-codex"))
+		.toMatchTextContent("2.0.0");
 	expect(installCalls[0]).toEqual({ skill: "gh-create", cli: "codex" });
 
 	await page
@@ -511,17 +527,19 @@ test("system skills shows provider installs and installs them on one page", asyn
 	const updateAll = page.getByTestId("coding-skills-update-all");
 	await expect.element(updateAll).toHaveText("Update all (1)");
 	await updateAll.click();
-	await expect.element(page.getByText("Installed gh-discuss/codex.")).toBeVisible();
+	await expect
+		.element(page.getByText("Installed gh-discuss/codex."))
+		.toBeVisible();
 	expect(installCalls[2]).toEqual({ update_only: true });
 	await expect.element(updateAll).toHaveText("Update all (0)");
 	await expect.element(updateAll).toBeDisabled();
 
-	await expect.element(page.getByTestId("coding-skills-install-command")).toHaveText(
-		"aviary install-skills",
-	);
-	await expect.element(
-		page.getByText("Aviary runs it automatically on first launch."),
-	).toBeVisible();
+	await expect
+		.element(page.getByTestId("coding-skills-install-command"))
+		.toHaveText("aviary install-skills");
+	await expect
+		.element(page.getByText("Aviary runs it automatically on first launch."))
+		.toBeVisible();
 
 	const autoUpdate = page.getByTestId("coding-skills-auto-update");
 	await autoUpdate.click();
@@ -541,10 +559,12 @@ test("system skills shows its skills when opened from another settings page", as
 		name: "Available to Aviary agents",
 	});
 	await expect.element(agentSkills).toBeVisible();
-	await expect.element(agentSkills.getByText("skills/gogcli/SKILL.md")).toBeVisible();
-	await expect.element(
-		page.getByRole("heading", { name: "Server", exact: true }),
-	).not.toBeInTheDocument();
+	await expect
+		.element(agentSkills.getByText("skills/gogcli/SKILL.md"))
+		.toBeVisible();
+	await expect
+		.element(page.getByRole("heading", { name: "Server", exact: true }))
+		.not.toBeInTheDocument();
 });
 
 async function mockServerSettings(
@@ -591,19 +611,23 @@ test("checking Disable token authentication asks for confirmation first (#877)",
 
 	const checkbox = disableTokenAuthCheckbox();
 	await expect.element(checkbox).not.toBeChecked();
-	await expect.element(
-		page.getByText("anyone who can reach the server can use it"),
-	).toBeVisible();
+	await expect
+		.element(page.getByText("anyone who can reach the server can use it"))
+		.toBeVisible();
 
 	await checkbox.click();
 	const modal = page.getByTestId("disable-token-auth-modal");
 	await expect.element(modal).toBeVisible();
-	await expect.element(modal).toMatchTextContent(
-		"anyone who can reach the service can use it without a token",
-	);
-	await expect.element(modal).toMatchTextContent(
-		'The risk is greater when "Expose service externally" is on or TLS is disabled.',
-	);
+	await expect
+		.element(modal)
+		.toMatchTextContent(
+			"anyone who can reach the service can use it without a token",
+		);
+	await expect
+		.element(modal)
+		.toMatchTextContent(
+			'The risk is greater when "Expose service externally" is on or TLS is disabled.',
+		);
 	await expect.element(checkbox).not.toBeChecked();
 
 	await modal.getByRole("button", { name: "Cancel" }).click();
@@ -615,11 +639,15 @@ test("checking Disable token authentication asks for confirmation first (#877)",
 		.getByTestId("disable-token-auth-modal")
 		.getByRole("button", { name: "Disable token authentication" })
 		.click();
-	await expect.element(page.getByTestId("disable-token-auth-modal")).not.toBeInTheDocument();
+	await expect
+		.element(page.getByTestId("disable-token-auth-modal"))
+		.not.toBeInTheDocument();
 	await expect.element(checkbox).toBeChecked();
-	await expect.element(
-		page.getByText("Changing server settings will restart the service."),
-	).toBeVisible();
+	await expect
+		.element(
+			page.getByText("Changing server settings will restart the service."),
+		)
+		.toBeVisible();
 
 	await page.getByRole("button", { name: "Save Changes" }).click();
 	await expect.poll(saved).toMatchObject({
@@ -635,11 +663,11 @@ test("dismissing the Disable token authentication modal changes nothing (#877)",
 	await checkbox.click();
 	const modal = page.getByTestId("disable-token-auth-modal");
 	await expect.element(modal).toBeVisible();
-	await expect.element(page.getByTestId("disable-token-auth-extra-risk")).toMatchTextContent(
-		"exposed externally",
-	);
+	await expect
+		.element(page.getByTestId("disable-token-auth-extra-risk"))
+		.toMatchTextContent("exposed externally");
 	await commands.keyPress("Escape");
-	await expect.element(modal).toBeHidden();
+	await expect.element(modal).not.toBeInTheDocument();
 	await expect.element(checkbox).not.toBeChecked();
 
 	// Change something else so the save goes through, and confirm the
@@ -721,26 +749,26 @@ test("system tools shows voice transcription deps and installs them", async () =
 	await renderApp("/system/tools");
 
 	const card = page.getByTestId("transcription-status");
-	await expect.element(card.getByTestId("transcription-engine")).toMatchTextContent(
-		"Missing",
-	);
-	await expect.element(card.getByTestId("transcription-model")).toMatchTextContent(
-		"Model base.en",
-	);
-	await expect.element(card.getByTestId("transcription-model")).toMatchTextContent(
-		"Missing",
-	);
-	await expect.element(card.getByTestId("transcription-ffmpeg")).toMatchTextContent(
-		"/opt/homebrew/bin/ffmpeg",
-	);
+	await expect
+		.element(card.getByTestId("transcription-engine"))
+		.toMatchTextContent("Missing");
+	await expect
+		.element(card.getByTestId("transcription-model"))
+		.toMatchTextContent("Model base.en");
+	await expect
+		.element(card.getByTestId("transcription-model"))
+		.toMatchTextContent("Missing");
+	await expect
+		.element(card.getByTestId("transcription-ffmpeg"))
+		.toMatchTextContent("/opt/homebrew/bin/ffmpeg");
 
 	await card.getByTestId("transcription-install").click();
-	await expect.element(card.getByTestId("transcription-engine")).toMatchTextContent(
-		"Installed",
-	);
-	await expect.element(card.getByTestId("transcription-model")).toMatchTextContent(
-		"Downloaded",
-	);
+	await expect
+		.element(card.getByTestId("transcription-engine"))
+		.toMatchTextContent("Installed");
+	await expect
+		.element(card.getByTestId("transcription-model"))
+		.toMatchTextContent("Downloaded");
 	await expectCount(card.getByTestId("transcription-install"), 0);
 	expect(methods).toEqual(["GET", "POST"]);
 });
@@ -769,7 +797,9 @@ test("the System gear opens Settings, which shows no gear (#932)", async () => {
 	await renderApp("/system/overview");
 	await page.getByRole("link", { name: "Settings", exact: true }).click();
 	await expect.poll(currentURL).toMatch(/\/system\/settings$/);
-	await expect.element(page.getByTestId("settings-title")).toHaveText("Settings");
+	await expect
+		.element(page.getByTestId("settings-title"))
+		.toHaveText("Settings");
 	await expectCount(page.getByRole("dialog"), 0);
 	await expectCount(page.getByTestId("system-settings-link"), 0);
 
