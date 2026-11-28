@@ -208,6 +208,14 @@ export function setup(opts: SetupOptions = {}) {
 		calls[tool].push(args ?? {});
 		return "ok";
 	};
+	// The running card's job: its scrollback and events, which the job list
+	// carries for the card and project_job_get returns in full.
+	const jobDetail = () =>
+		opts.job ?? {
+			...SCHEDULED_JOB,
+			scrollback: "Reading the issues opened since 02:00 yesterday…",
+			events: [],
+		};
 	mockMCP({
 		agent_list: [{ name: "assistant" }, { name: "reviewer" }],
 		auth_list: [],
@@ -282,14 +290,36 @@ export function setup(opts: SetupOptions = {}) {
 								(!kinds || kinds.includes(String((j as Args).kind))),
 						)
 			).filter((j) => !targets || targets.includes(String((j as Args).target)));
-			return { jobs: list, total: list.length };
+			// Like the Manager, output_lines and output_events add each card's
+			// output, a schedule's only while its run starts or runs (#1657).
+			const lines = Number(args?.output_lines ?? 0);
+			const events = Number(args?.output_events ?? 0);
+			if (!lines && !events) return { jobs: list, total: list.length };
+			return {
+				jobs: list.map((j) => {
+					const entry = j as Args;
+					const state = String(entry.state ?? "running");
+					if (
+						kinds?.includes("schedule") &&
+						state !== "starting" &&
+						state !== "running"
+					)
+						return entry;
+					const detail = jobDetail() as Args;
+					return {
+						...entry,
+						scrollback: String(detail.scrollback ?? "")
+							.split("\n")
+							.slice(-lines)
+							.join("\n"),
+						events: ((detail.events as unknown[]) ?? []).slice(-events),
+					};
+				}),
+				total: list.length,
+			};
 		},
 		project_job_dismiss: record("project_job_dismiss"),
-		project_job_get: opts.job ?? {
-			...SCHEDULED_JOB,
-			scrollback: "Reading the issues opened since 02:00 yesterday…",
-			events: [],
-		},
+		project_job_get: () => jobDetail(),
 		project_job_stop: record("project_job_stop"),
 		task_list: () => tasks,
 		task_upcoming: (args?: Args) => {

@@ -8,6 +8,7 @@ import {
 	SIDEBAR_DEFAULT_WIDTH,
 	useSidebarLayout,
 } from "../composables/useSidebarLayout";
+import { targetJobs } from "./helpers/targetJobs";
 
 // The pages this file renders (see component-test/routes.ts).
 declarePages(
@@ -131,6 +132,7 @@ function setup() {
 				issue_counts: Object.fromEntries(TARGETS.map((t) => [t, 3])),
 				delivery: "poll",
 				states,
+				target_jobs: targetJobs(JOBS),
 				// The engine counts every run: two of each schedule's.
 				jobs: { running: 10 },
 				clis: [],

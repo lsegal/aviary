@@ -2,6 +2,7 @@ import { expect } from "vitest";
 import { type Locator, page } from "vitest/browser";
 import { currentURL } from "../component-test/app";
 import { mockMCP, route } from "../component-test/server";
+import { targetJobs } from "./helpers/targetJobs";
 
 // Shared fixtures for codeloop-project-nav*.component.test.ts (#1636).
 // The Code Loop board's project pills lead into each project and its
@@ -70,7 +71,7 @@ export function setup(jobs: () => ReturnType<typeof job>[], health?: object) {
 			for (const j of jobs())
 				states[j.state as keyof typeof states] =
 					(states[j.state as keyof typeof states] ?? 0) + 1;
-			return { states, ...STATUS };
+			return { states, target_jobs: targetJobs(jobs()), ...STATUS };
 		},
 		project_job_list: (args?: Record<string, unknown>) => {
 			const list = (args?.kinds as string[] | undefined)?.includes("schedule")

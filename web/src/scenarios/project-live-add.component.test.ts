@@ -7,6 +7,7 @@ import {
 	routeWebSocket,
 	type WebSocketRoute,
 } from "../component-test/server";
+import { targetJobs } from "./helpers/targetJobs";
 
 // The pages this file renders (see component-test/routes.ts).
 declarePages(() => import("../views/ProjectsView.vue"));
@@ -85,7 +86,10 @@ function setup(): Server {
 		task_list: [],
 		config_validate: [],
 		config_get: () => config,
-		project_status: () => server.status,
+		project_status: () => ({
+			...server.status,
+			target_jobs: targetJobs(server.jobs as { target: string }[]),
+		}),
 		project_job_list: () => ({
 			jobs: server.jobs,
 			total: server.jobs.length,

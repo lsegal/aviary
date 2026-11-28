@@ -42,8 +42,10 @@ test("job cards show the transcript in a rich view by default, falling back to r
 	await expect
 		.poll(() => card.getByTestId("job-output").elements().length)
 		.toBe(0);
-	// Cards read enough events to fill their output area.
-	expect(calls.project_job_get?.[0]?.events).toBe(40);
+	// Cards read enough events to fill their output area, with the job list
+	// itself rather than one project_job_get per card (#1657).
+	expect(calls.project_job_list?.at(-1)?.output_events).toBe(40);
+	expect(calls.project_job_get).toBeUndefined();
 
 	// Agent messages render as markdown.
 	await expect
