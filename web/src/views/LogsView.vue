@@ -58,7 +58,7 @@
           No log entries yet.
         </div>
 
-        <div v-for="entry in logs.filtered.value" :key="entry.seq"
+        <div v-for="entry in logs.filtered.value" :key="entry.seq" data-testid="log-row"
           class="flex gap-2 border-b border-gray-800/40 py-0.5 hover:bg-gray-900">
           <!-- Timestamp -->
           <span class="shrink-0 text-gray-600 tabular-nums">{{ fmtTime(entry.ts) }}</span>
