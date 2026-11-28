@@ -82,6 +82,11 @@ export const useChatSessionsStore = defineStore("chatSessions", () => {
 
 	async function remove(agent: string, id: string) {
 		await callTool("session_remove", { agent, session_id: id });
+		forget(agent, id);
+	}
+
+	/** Drops a chat from the list, such as one another tab removed. */
+	function forget(agent: string, id: string) {
 		byAgent.value = {
 			...byAgent.value,
 			[agent]: sessions(agent).filter((s) => s.id !== id),
@@ -114,6 +119,7 @@ export const useChatSessionsStore = defineStore("chatSessions", () => {
 		create,
 		rename,
 		remove,
+		forget,
 		clear,
 	};
 });

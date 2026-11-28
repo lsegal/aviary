@@ -673,6 +673,11 @@ function connectSessionWS(reconnect = false) {
 				}
 				return;
 			}
+			if (data.type === "session_removed" && data.session_id) {
+				if (!forSelectedAgent(data.agent_id)) return;
+				await leaveRemovedSession(data.session_id);
+				return;
+			}
 			if (data.type !== "session_message") return;
 			if (!forSelectedAgent(data.agent_id)) return;
 			// New messages and titles change the Chats list.
@@ -688,6 +693,26 @@ function connectSessionWS(reconnect = false) {
 			// ignore malformed frames
 		}
 	};
+}
+
+/** Forgets a chat removed elsewhere, such as on System → Sessions, and
+ * leaves it for Main Chat when it is the open one. */
+async function leaveRemovedSession(sessionId: string) {
+	chatSessions.forget(selectedAgent.value, sessionId);
+	const { [sessionId]: _, ...rest } = sessionProcessing.value;
+	sessionProcessing.value = rest;
+	if (sessionId !== selectedSessionId.value) return;
+	// A pinned chat is opened by name and comes back on its next message.
+	if (props.session) {
+		loadMessagesSeq += 1;
+		messages.value = [];
+		liveTurn.value = null;
+		return;
+	}
+	hasInlineError.value = false;
+	await loadSessions();
+	if (!props.agent)
+		router.replace(chatPath(selectedAgent.value, selectedSessionId.value));
 }
 
 async function loadSessions(preferredSessionId = "") {
@@ -976,9 +1001,10 @@ async function runTurn(
 	const agentModel = agentsStore.agents.find(
 		(a) => a.name === selectedAgent.value,
 	)?.model;
+	const turnSessionId = selectedSessionId.value;
 	sessionProcessing.value = {
 		...sessionProcessing.value,
-		[selectedSessionId.value]: true,
+		[turnSessionId]: true,
 	};
 	// Count the stream before yielding so no reload replaces the new message.
 	loadMessagesSeq += 1;
@@ -1135,6 +1161,14 @@ async function runTurn(
 	// earlier would drop replies still streaming. Skip if we showed an inline
 	// error so the error bubble stays visible.
 	if (activeStreams.value > 0) return;
+	// A failed send must not leave the chat looking busy, even when the
+	// server never lists it again, such as a chat removed elsewhere.
+	if (streamError) {
+		sessionProcessing.value = {
+			...sessionProcessing.value,
+			[turnSessionId]: false,
+		};
+	}
 	if (!streamError && !hasInlineError.value) {
 		await loadSessionMessages(true);
 	}

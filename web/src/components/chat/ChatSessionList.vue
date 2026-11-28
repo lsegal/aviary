@@ -130,13 +130,19 @@ function watchSessions() {
 			const data = JSON.parse(e.data as string) as {
 				type?: string;
 				agent_id?: string;
+				session_id?: string;
 			};
-			if (data.type !== "session_message") return;
 			if (
 				data.agent_id !== props.agent &&
 				data.agent_id !== `agent_${props.agent}`
 			)
 				return;
+			// A chat removed elsewhere, such as on System → Sessions, leaves the list.
+			if (data.type === "session_removed" && data.session_id) {
+				store.forget(props.agent, data.session_id);
+				return;
+			}
+			if (data.type !== "session_message") return;
 			clearTimeout(refreshTimer);
 			refreshTimer = setTimeout(reload, 300);
 		} catch {
