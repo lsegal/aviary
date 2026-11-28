@@ -60,7 +60,7 @@ func TestCFPCovChannelCreateValidatesAndDerivesUniqueIDs(t *testing.T) {
 	toolCallContains(t, d, "channel_create", map[string]any{"agent": "ghost", "name": "X", "type": "slack"}, `agent "ghost" is not configured`)
 
 	// A signal channel starts with its conversational behaviors on.
-	callJSON(t, d, "channel_create", map[string]any{"agent": "BOT", "name": "Family", "type": "Signal"})
+	callJSON(t, d, "channel_create", map[string]any{"agent": "BOT", "name": "Family", "type": "signal"})
 	// Names that slug to an ID already taken get a numeric suffix, and a name
 	// with no letters or digits falls back to the channel type.
 	callJSON(t, d, "channel_create", map[string]any{"agent": "bot", "name": "Team Slack", "type": "slack"})
