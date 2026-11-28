@@ -404,7 +404,11 @@ interface SessionRow {
 	id: string;
 	name: string;
 	title?: string;
-	updated_at: string;
+	created_at?: string;
+	/** Changes only when the session is created or cleared. */
+	updated_at?: string;
+	/** Time of the latest message, when the session has any. */
+	last_message_at?: string;
 	is_processing?: boolean;
 	/** False for Main Chat and other chats that can only be cleared. */
 	deletable?: boolean;
@@ -3324,6 +3328,20 @@ function formatDate(value: string): string {
 	return date.toLocaleString();
 }
 
+/** The latest of a session's message, clear, and creation times (#1669). */
+function sessionActivityAt(s: SessionRow): string {
+	let latest = "";
+	let latestMs = Number.NEGATIVE_INFINITY;
+	for (const value of [s.last_message_at, s.updated_at, s.created_at]) {
+		const ms = value ? Date.parse(value) : Number.NaN;
+		if (!Number.isNaN(ms) && ms > latestMs) {
+			latest = value as string;
+			latestMs = ms;
+		}
+	}
+	return latest;
+}
+
 function formatCountdown(seconds: number | null): string {
 	if (seconds == null) return "";
 	const mins = Math.floor(seconds / 60);
@@ -3720,6 +3738,7 @@ const settingsContext = proxyRefs({
 	geminiTimedOut,
 	formatDate,
 	formatCountdown,
+	sessionActivityAt,
 	getAgentFileState,
 	hasEntryToolRestriction,
 	hasToolRestriction,

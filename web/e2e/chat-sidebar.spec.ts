@@ -8,6 +8,7 @@ interface Sess {
 	name: string;
 	title?: string;
 	created_at: string;
+	updated_at?: string;
 	last_message_at?: string;
 }
 
@@ -392,6 +393,44 @@ test("Settings → Sessions offers Clear, not Remove, for Main Chat", async ({
 		tool: "session_remove",
 		args: { agent: "assistant", session_id: "sess_1" },
 	});
+});
+
+test("Settings → Sessions shows the last message time as Updated (#1669)", async ({
+	page,
+}) => {
+	const created = "2026-11-28T04:03:24.000Z";
+	const messaged = "2026-11-28T04:03:29.000Z";
+	const cleared = "2026-11-28T05:10:00.000Z";
+	await mockChats(page, [
+		{
+			id: "main",
+			agent_id: "assistant",
+			name: "main",
+			created_at: created,
+			updated_at: created,
+			last_message_at: messaged,
+		},
+		{
+			// Cleared after its last message: the clear is the latest activity.
+			id: "sess_1",
+			agent_id: "assistant",
+			name: "sess_1",
+			title: "Groceries",
+			created_at: created,
+			updated_at: cleared,
+		},
+	]);
+	await page.goto("/system/sessions");
+	await chooseOption(
+		page.getByRole("combobox", { name: "Agent" }),
+		"assistant",
+	);
+
+	const expected = await page.evaluate(
+		(times) => times.map((t) => new Date(t).toLocaleString()),
+		[messaged, cleared],
+	);
+	await expect(page.getByTestId("session-updated")).toHaveText(expected);
 });
 
 test("a new chat takes its generated name after the first message", async ({
