@@ -18,7 +18,10 @@ export default defineConfig({
 			exclude: [
 				"web/src/**/*.test.ts",
 				"web/src/**/*.d.ts",
+				// Component-test harness and scenario helpers, run in the browser
+				// by vitest.component.config.ts.
 				"web/src/component-test/**",
+				"web/src/scenarios/**",
 			],
 		},
 	},
